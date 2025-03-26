@@ -1,13 +1,14 @@
 import os
 import results
 
-import common
 import tokenizer
+import parser
 
 proc compile(filename: string, content: string): Result[void, string] =
-  var cursor = new_cursor(filename, content)
-  let tokens = ? tokenize(cursor)
-  for t in tokens: echo t
+  let tokens = ? tokenize(filename, content)
+  # for t in tokens: echo($(t))
+  let statements = ? parse(tokens)
+  for s in statements: echo s
   ok()
 
 when isMainModule:

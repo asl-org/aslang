@@ -1,2 +1,2 @@
-Integer.S8 x = 120
+S8 x = 120
 _ = print(x)

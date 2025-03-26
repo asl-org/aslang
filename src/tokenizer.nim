@@ -3,14 +3,31 @@ import strutils, results, strformat, tables
 import common
 
 const Punctuations* = {
-  '.' :TK_PERIOD,
-  '=' :TK_EQUAL,
-  ' ' :TK_SPACE,
-  '\n' :TK_NEW_LINE,
-  '_' :TK_UNDERSCORE,
-  '(' :TK_OPEN_PARENTHESIS,
-  ')' :TK_CLOSE_PARENTHESIS,
+  '.'  : TK_PERIOD,
+  '='  : TK_EQUAL,
+  ','  : TK_COMMA,
+  ' '  : TK_SPACE,
+  '\n' : TK_NEW_LINE,
+  '_'  : TK_UNDERSCORE,
+  '('  : TK_OPEN_PARENTHESIS,
+  ')'  : TK_CLOSE_PARENTHESIS,
 }.to_table
+
+type Cursor = object
+  content: string
+  location: Location
+
+proc can_move(cursor: Cursor): bool = cursor.location.index < cursor.content.len
+proc head(cursor: Cursor): char = cursor.content[cursor.location.index]
+proc move(cursor: var Cursor): Cursor =
+  if cursor.can_move() and cursor.head() == '\n':
+    cursor.location.line += 1
+    cursor.location.column = 1
+  else:
+    cursor.location.column += 1
+  cursor.location.index += 1
+  return cursor
+proc chunk(cursor: Cursor, head: Location): string = cursor.content[head.index..<cursor.location.index]
 
 proc tokenize_alphabets(cursor: var Cursor): Result[Token, string] =
   if not cursor.can_move():
@@ -56,8 +73,12 @@ proc tokenize_punctuation(cursor: var Cursor): Result[Token, string] =
       return ok(token)
   return err(fmt"Expected punctuations but found {cursor.head()} at {cursor.location}")
 
-proc tokenize*(cursor: var Cursor): Result[seq[Token], string] =
+proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
   var tokens: seq[Token] = @[]
+
+  let location = Location(filename: filename, index: 0, line: 1, column: 1)
+  var cursor = Cursor(content: content, location: location)
+
   while cursor.can_move():
     let maybe_alphabets = tokenize_alphabets(cursor)
     if maybe_alphabets.is_ok:

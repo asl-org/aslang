@@ -1,46 +1,91 @@
 import strformat
 
 type Location* = object
-  filename: string
-  index: int
-  line: int
-  column: int
+  filename*: string
+  index*: int
+  line*: int
+  column*: int
 
 proc `$`(location: Location): string =
   fmt"{location.filename}({location.line}, {location.column})"
 
-type TokenKind* = enum
-  TK_ALPHABETS
-  TK_DIGITS
-  TK_PERIOD
-  TK_EQUAL
-  TK_SPACE
-  TK_NEW_LINE
-  TK_UNDERSCORE
-  TK_OPEN_PARENTHESIS
-  TK_CLOSE_PARENTHESIS
+type
+  TokenKind* = enum
+    TK_ALPHABETS
+    TK_DIGITS
+    TK_PERIOD
+    TK_EQUAL
+    TK_COMMA
+    TK_SPACE
+    TK_NEW_LINE
+    TK_UNDERSCORE
+    TK_OPEN_PARENTHESIS
+    TK_CLOSE_PARENTHESIS
 
-type Token* = object
-  kind*: TokenKind
-  symbol*: string
-  location*: Location
+  Token* = object
+    kind*: TokenKind
+    symbol*: string
+    location*: Location
 
-type Cursor* = object
-  content: string
-  location*: Location
+proc `$`(token: Token): string =
+  fmt"{token.symbol} {token.kind} {token.location}"
 
-proc new_cursor*(filename, content: string): Cursor =
-  let location = Location(filename: filename, index: 0, line: 1, column: 1)
-  Cursor(content: content, location: location)
+type
+  Identifier* = object
+    name*: string
+    location*: Location
 
-proc can_move*(cursor: Cursor): bool = cursor.location.index < cursor.content.len
-proc head*(cursor: Cursor): char = cursor.content[cursor.location.index]
-proc move*(cursor: var Cursor): Cursor =
-  if cursor.can_move() and cursor.head() == '\n':
-    cursor.location.line += 1
-    cursor.location.column = 1
-  else:
-    cursor.location.column += 1
-  cursor.location.index += 1
-  return cursor
-proc chunk*(cursor: Cursor, head: Location): string = cursor.content[head.index..<cursor.location.index]
+  Datatype* = object
+    refs*: seq[Identifier]
+    location*: Location
+
+  LiteralKind* = enum
+    LK_INTEGER
+    LK_FLOAT
+    LK_STRING
+  Literal* = object
+    location*: Location
+    case kind*: LiteralKind
+    of LK_INTEGER:
+      int_value*: uint64
+    of LK_FLOAT:
+      float_value*: float64
+    of LK_STRING:
+      str_value*: string
+
+  ArgumentKind* = enum
+    AK_LITERAL
+    AK_IDENTIFIER
+  Argument* = object
+    location*: Location
+    case kind*: ArgumentKind
+    of AK_LITERAL:
+      literal*: Literal
+    of AK_IDENTIFIER:
+      identifier*: Identifier
+  ArgumentList* = object
+    location*: Location
+    args*: seq[Argument]
+
+  Initializer* = object
+    location*: Location
+    datatype*: Datatype
+    variable*: Identifier
+    literal*: Literal
+
+  FunctionCall* = object
+    location*: Location
+    variable*: Identifier
+    name*: Identifier
+    arglist*: ArgumentList
+
+  StatementKind* = enum
+    SK_INIT
+    SK_FNCALL
+  Statement* = object
+    location*: Location
+    case kind*: StatementKind
+    of StatementKind.SK_INIT:
+      initializer*: Initializer
+    of StatementKIND.SK_FNCALL:
+      fncall*: FunctionCall
