@@ -27,7 +27,7 @@ type
     symbol*: string
     location*: Location
 
-proc `$`(token: Token): string =
+proc `$`*(token: Token): string =
   fmt"{token.symbol} {token.kind} {token.location}"
 
 type
