@@ -45,13 +45,8 @@ type
     LK_STRING
   Literal* = object
     location*: Location
-    case kind*: LiteralKind
-    of LK_INTEGER:
-      int_value*: uint64
-    of LK_FLOAT:
-      float_value*: float64
-    of LK_STRING:
-      str_value*: string
+    kind*: LiteralKind
+    value*: string
 
   ArgumentKind* = enum
     AK_LITERAL

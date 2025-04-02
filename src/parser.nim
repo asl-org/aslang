@@ -210,15 +210,8 @@ const datatype_parser_spec = ParserSpec[DataType](expected: "datatype",
     rule: datatype_spec)
 
 proc integer_literal_spec(cursor: var Cursor): Result[Literal, string] =
-  var int_value: uint64
   let integer = ? cursor.expect(digits_parser_spec)
-
-  try:
-    int_value = parseUInt(integer.symbol)
-  except ValueError:
-    return err(fmt"Expected an integer literal upto {high(uint64)} but found {integer.symbol}")
-
-  let literal = Literal(kind: LiteralKind.LK_INTEGER, int_value: int_value,
+  let literal = Literal(kind: LiteralKind.LK_INTEGER, value: integer.symbol,
       location: cursor.head.location)
   return ok(literal)
 
@@ -226,18 +219,12 @@ const integer_literal_parser_spec = ParserSpec[Literal](
     expected: "integer literal", rule: integer_literal_spec)
 
 proc float_literal_spec(cursor: var Cursor): Result[Literal, string] =
-  var float_value: float64
   let first_half = ? cursor.expect(digits_parser_spec)
   let period = ? cursor.expect(period_parser_spec)
   let second_half = ? cursor.expect(digits_parser_spec)
-  let float_literal = first_half.symbol & period.symbol & second_half.symbol
+  let float_value = first_half.symbol & period.symbol & second_half.symbol
 
-  try:
-    float_value = parseFloat(float_literal)
-  except ValueError:
-    return err(fmt"Expected a float literal upto float64 but found {float_literal}")
-
-  let literal = Literal(kind: LiteralKind.LK_FLOAT, float_value: float_value,
+  let literal = Literal(kind: LiteralKind.LK_FLOAT, value: float_value,
       location: cursor.head.location)
   return ok(literal)
 
