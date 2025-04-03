@@ -36,7 +36,7 @@ type
     location*: Location
 
   Datatype* = object
-    refs*: seq[Identifier]
+    name*: string
     location*: Location
 
   LiteralKind* = enum
@@ -47,6 +47,10 @@ type
     location*: Location
     kind*: LiteralKind
     value*: string
+
+  Variable* = object
+    name*: string
+    datatype*: Datatype
 
   ArgumentKind* = enum
     AK_LITERAL
@@ -64,8 +68,7 @@ type
 
   Initializer* = object
     location*: Location
-    datatype*: Datatype
-    variable*: Identifier
+    variable*: Variable
     literal*: Literal
 
   FunctionCall* = object

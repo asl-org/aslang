@@ -1,4 +1,4 @@
-import results, strutils, strformat, sequtils
+import results, strutils, strformat
 
 import common
 
@@ -94,8 +94,7 @@ proc safe_parse_float64(s: string): Result[string, string] =
     return err(fmt"Expected a float value but found {s}")
 
 proc generate_init_code(i: Initializer): Result[string, string] =
-  let datatype = i.datatype.refs.map(proc(
-      x: Identifier): string = x.name).join("_")
+  let datatype = i.variable.datatype.name
   var code: string
   let literal = i.literal
   if literal.kind == LiteralKind.LK_INTEGER:

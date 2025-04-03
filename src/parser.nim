@@ -204,7 +204,8 @@ proc datatype_spec(cursor: var Cursor): Result[Datatype, string] =
   var dt_leading: seq[Identifier] = ? cursor.expect_any(leading_datatype_parser_spec)
   var dt_trailing: Identifier = ? cursor.expect(trailing_datatype_parser_spec)
   dt_leading.add(dt_trailing)
-  return ok(Datatype(refs: dt_leading, location: dt_leading[0].location))
+  let name = dt_leading.map(proc(d: Identifier): string = d.name).join(".")
+  return ok(Datatype(name: name, location: dt_leading[0].location))
 
 const datatype_parser_spec = ParserSpec[DataType](expected: "datatype",
     rule: datatype_spec)
@@ -243,7 +244,7 @@ const literal_parser_spec = ParserSpec[Literal](expected: "literal",
 proc initializer_spec(cursor: var Cursor): Result[Initializer, string] =
   let datatype = ? cursor.expect(datatype_parser_spec)
   var space = ? cursor.expect_at_least_one(space_parser_spec)
-  let variable = ? cursor.expect(identifier_parser_spec)
+  let variable_id = ? cursor.expect(identifier_parser_spec)
   space = ? cursor.expect_any(space_parser_spec)
   let equal = ? cursor.expect(equal_parser_spec)
   discard equal
@@ -252,8 +253,9 @@ proc initializer_spec(cursor: var Cursor): Result[Initializer, string] =
   space = ? cursor.expect_any(space_parser_spec)
   let new_line = ? cursor.expect(new_line_parser_spec)
   discard new_line
-  let initializer = Initializer(datatype: datatype, variable: variable,
-      literal: literal, location: datatype.location)
+  let variable = Variable(datatype: datatype, name: variable_id.name)
+  let initializer = Initializer(variable: variable, literal: literal,
+      location: datatype.location)
   return ok(initializer)
 
 const initializer_parser_spec = ParserSpec[Initializer](expected: "initializer",
