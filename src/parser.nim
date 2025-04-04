@@ -17,8 +17,11 @@ proc move(cursor: var Cursor): Cursor =
   cursor.index += 1
   return cursor
 
+proc can_move(cursor: Cursor): bool =
+  cursor.index < cursor.content.len
+
 proc pin(cursor: var Cursor, expected: string): Result[Cursor, string] =
-  if cursor.index >= cursor.content.len:
+  if not cursor.can_move():
     return err(fmt"Expected {expected} but reached EOF")
   cursor.checkpoints.add(cursor.index)
   return ok(cursor)
@@ -241,6 +244,18 @@ proc literal_spec(cursor: var Cursor): Result[Literal, string] =
 const literal_parser_spec = ParserSpec[Literal](expected: "literal",
     rule: literal_spec)
 
+proc initializer_value_spec(cursor: var Cursor): Result[Value, string] =
+  let literal = cursor.expect(literal_parser_spec)
+  if literal.is_ok:
+    return ok(Value(kind: ValueKind.VK_LITERAL, literal: literal.get))
+
+  let identifier = cursor.expect(identifier_parser_spec)
+  if identifier.is_ok:
+    return ok(Value(kind: ValueKind.VK_IDENTIFIER, identifier: identifier.get))
+
+const initializer_value_parser_spec = ParserSpec[Value](
+    expected: "initializer value", rule: initializer_value_spec)
+
 proc initializer_spec(cursor: var Cursor): Result[Initializer, string] =
   let datatype = ? cursor.expect(datatype_parser_spec)
   var space = ? cursor.expect_at_least_one(space_parser_spec)
@@ -249,12 +264,12 @@ proc initializer_spec(cursor: var Cursor): Result[Initializer, string] =
   let equal = ? cursor.expect(equal_parser_spec)
   discard equal
   space = ? cursor.expect_any(space_parser_spec)
-  let literal = ? cursor.expect(literal_parser_spec)
+  let value = ? cursor.expect(initializer_value_parser_spec)
   space = ? cursor.expect_any(space_parser_spec)
   let new_line = ? cursor.expect(new_line_parser_spec)
   discard new_line
   let variable = Variable(datatype: datatype, name: variable_id.name)
-  let initializer = Initializer(variable: variable, literal: literal,
+  let initializer = Initializer(variable: variable, value: value,
       location: datatype.location)
   return ok(initializer)
 
@@ -332,7 +347,7 @@ proc function_call_spec(cursor: var Cursor): Result[FunctionCall, string] =
   spaces = ? cursor.expect_any(space_parser_spec)
   let new_line = ? cursor.expect_at_least_one(new_line_parser_spec)
   discard new_line
-  let fncall = FunctionCall(variable: variable, name: function_name,
+  let fncall = FunctionCall(variable: variable, name: function_name.name,
       arglist: arglist, location: variable.location)
   return ok(fncall)
 
@@ -358,7 +373,7 @@ const function_call_statement_parser_spec = ParserSpec[Statement](
     expected: "function call statement", rule: function_call_statement_spec)
 
 proc statement_spec(cursor: var Cursor): Result[Statement, string] =
-  return cursor.expect_one_of(@[
+  cursor.expect_one_of(@[
     initializer_statement_parser_spec,
     function_call_statement_parser_spec,
   ])
@@ -368,5 +383,9 @@ const statement_parser_spec = ParserSpec[Statement](expected: "statement",
 
 proc parse*(tokens: seq[Token]): Result[seq[Statement], string] =
   var cursor = Cursor(content: tokens)
-  var statements = ? cursor.expect_at_least_one(statement_parser_spec)
+  var statements: seq[Statement]
+  while cursor.can_move():
+    let statement = cursor.expect(statement_parser_spec)
+    if statement.is_err: return err(statement.error)
+    statements.add(statement.get)
   ok(statements)
