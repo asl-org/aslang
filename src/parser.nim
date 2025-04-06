@@ -244,16 +244,17 @@ proc literal_spec(cursor: var Cursor): Result[Literal, string] =
 const literal_parser_spec = ParserSpec[Literal](expected: "literal",
     rule: literal_spec)
 
-proc initializer_value_spec(cursor: var Cursor): Result[Value, string] =
+proc initializer_value_spec(cursor: var Cursor): Result[Argument, string] =
   let literal = cursor.expect(literal_parser_spec)
   if literal.is_ok:
-    return ok(Value(kind: ValueKind.VK_LITERAL, literal: literal.get))
+    return ok(Argument(kind: ArgumentKind.AK_LITERAL, literal: literal.get))
 
   let identifier = cursor.expect(identifier_parser_spec)
   if identifier.is_ok:
-    return ok(Value(kind: ValueKind.VK_IDENTIFIER, identifier: identifier.get))
+    return ok(Argument(kind: ArgumentKind.AK_IDENTIFIER,
+        identifier: identifier.get))
 
-const initializer_value_parser_spec = ParserSpec[Value](
+const initializer_value_parser_spec = ParserSpec[Argument](
     expected: "initializer value", rule: initializer_value_spec)
 
 proc initializer_spec(cursor: var Cursor): Result[Initializer, string] =

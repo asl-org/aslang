@@ -2,89 +2,65 @@ import results, strformat, strutils
 
 import common
 
-proc safe_parse_integer*(s: string, lo: int, hi: int, convert: proc(
-    value: int): string): Result[string, string] =
-  try:
-    let parsed = s.parseBiggestInt()
-    if parsed >= lo and parsed <= hi:
-      return ok(convert(parsed))
-    return err(fmt"Expected a value between {lo} to {hi} but found {s}")
-  except ValueError:
-    return err(fmt"Failed to parse integer {s}")
+proc safe_parse_number[T](input: string): Result[string, string] =
+  when T is SomeSignedInt:
+    try:
+      let parsed = input.parseBiggestInt()
+      if parsed >= T.low.int and parsed <= T.high.int:
+        return ok($(T(parsed)))
+      return err(fmt"Expected value between {T.low.int} and {T.high.int} but found {input}")
+    except ValueError:
+      return err(fmt"Failed to parse input: {input}")
+  elif T is SomeUnsignedInt:
+    try:
+      let parsed = input.parseBiggestUInt()
+      if parsed <= T.high.uint:
+        return ok($(T(parsed)))
+      return err(fmt"Expected value between 0 and {T.high.uint} but found {input}")
+    except ValueError:
+      return err(fmt"Failed to parse input: {input}")
+  elif T is SomeFloat:
+    try:
+      let parsed = input.parseFloat()
+      let reconstructed = $(T(parsed))
+      if reconstructed == input.strip:
+        return ok(reconstructed)
+      return err(fmt"Precision loss encountered original: {parsed} stored: {T(parsed)}")
+    except ValueError:
+      return err(fmt"Failed to parse input: {input}")
 
-proc safe_parse_int8*(s: string): Result[string, string] =
-  safe_parse_integer(s, int8.low.int, int8.high.int, proc (v: int): string = $(int8(v)))
+proc to_c_number(input: string, datatype: string): Result[string, string] =
+  case datatype:
+    of "S8": safe_parse_number[int8](input)
+    of "S16": safe_parse_number[int16](input)
+    of "S32": safe_parse_number[int32](input)
+    of "S64": safe_parse_number[int64](input)
+    of "U8": safe_parse_number[uint8](input)
+    of "U16": safe_parse_number[uint16](input)
+    of "U32": safe_parse_number[uint32](input)
+    of "U64": safe_parse_number[uint64](input)
+    of "F32": safe_parse_number[float32](input)
+    of "F64": safe_parse_number[float64](input)
+    else: err(fmt"Found unexpected datatype {datatype}")
 
-proc safe_parse_int16*(s: string): Result[string, string] =
-  safe_parse_integer(s, int16.low.int, int16.high.int, proc (
-      v: int): string = $(int16(v)))
-
-proc safe_parse_int32*(s: string): Result[string, string] =
-  safe_parse_integer(s, int32.low.int, int32.high.int, proc (
-      v: int): string = $(int32(v)))
-
-proc safe_parse_int64*(s: string): Result[string, string] =
-  safe_parse_integer(s, int64.low.int, int64.high.int, proc (
-      v: int): string = $(int64(v)))
-
-proc safe_parse_uint8*(s: string): Result[string, string] =
-  safe_parse_integer(s, uint8.low.int, uint8.high.int, proc (
-      v: int): string = $(uint8(v)))
-
-proc safe_parse_uint16*(s: string): Result[string, string] =
-  safe_parse_integer(s, uint16.low.int, uint16.high.int, proc (
-      v: int): string = $(uint16(v)))
-
-proc safe_parse_uint32*(s: string): Result[string, string] =
-  safe_parse_integer(s, uint32.low.int, uint32.high.int, proc (
-      v: int): string = $(uint32(v)))
-
-proc safe_parse_uint64*(s: string): Result[string, string] =
-  safe_parse_integer(s, uint64.low.int, uint64.high.int, proc (
-      v: int): string = $(uint64(v)))
-
-proc safe_parse_float32*(s: string): Result[string, string] =
-  try:
-    let parsed = s.parseFloat()
-    # make sure we do not lose any precision while casting
-    if float64(float32(parsed)) == parsed:
-      return ok($(float32(parsed)))
-    return err(fmt"1 Expected a float value but found {s}")
-  except ValueError:
-    return err(fmt"Expected a float value but found {s}")
-
-proc safe_parse_float64*(s: string): Result[string, string] =
-  try:
-    let parsed = s.parseFloat()
-    return ok($(float64(parsed)))
-  except ValueError:
-    return err(fmt"Expected a float value but found {s}")
+proc to_c_datatype(datatype: string): Result[string, string] =
+  case datatype:
+  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64", "F32", "F64": ok(
+      datatype)
+  else: err(fmt"Found unexpected datatype {datatype}")
 
 type Scope* = object
   variables*: seq[Variable]
   functions*: seq[Function]
+  temp_var_count: int = 0
 
-proc get_variable*(scope: Scope, variable_name: string): Result[Variable, string] =
+proc get_variable(scope: Scope, variable_name: string): Result[Variable, string] =
   for v in scope.variables:
     if variable_name == v.name:
       return ok(v)
   return err(fmt"Variable {variable_name} is not defined in the scope")
 
-proc get_function*(scope: Scope, func_name: string): Result[Function, string] =
-  for f in scope.functions:
-    if f.name == func_name:
-      return ok(f)
-  return err(fmt"Function {func_name} is not defined in the scope")
-
-proc initialize_variable*(scope: var Scope, variable: Variable): Result[
-    Scope, string] =
-  let variable_defined_in_scope = scope.get_variable(variable.name)
-  if variable_defined_in_scope.is_ok:
-    return err(fmt"Variable {variable.name} is already defined at {variable_defined_in_scope.get.datatype.location}")
-  scope.variables.add(variable)
-  ok(scope)
-
-proc move_value*(scope: Scope, dest: Variable,
+proc match_datatypes(scope: var Scope, dest: Variable,
     src: string): Result[Scope, string] =
   let src_variable = ? scope.get_variable(src)
   let dest_datatype = dest.datatype.name
@@ -93,84 +69,94 @@ proc move_value*(scope: Scope, dest: Variable,
     return err(fmt"Variable {src} ({src_datatype}) can not be assigned to {dest.name} ({dest_datatype})")
   ok(scope)
 
-proc get_native_function_call(scope: Scope, def: FunctionDefinition, args: seq[
-    Argument]): Result[string, string] =
+proc get_function_defintions(scope: Scope, func_name: string): Result[seq[
+    FunctionDefinition], string] =
+  for f in scope.functions:
+    if f.name == func_name:
+      return ok(f.defs)
+  return err(fmt"Function {func_name} is not defined in the scope")
+
+proc c_function_arg(scope: var Scope, def_arg: Variable,
+    arg: Argument): Result[string, string] =
+  case arg.kind:
+  of ArgumentKind.AK_IDENTIFIER:
+    scope = ? scope.match_datatypes(def_arg, arg.identifier.name)
+    ok(arg.identifier.name)
+  of ArgumentKind.AK_LITERAL:
+    case arg.literal.kind:
+    of LiteralKind.LK_INTEGER, LiteralKind.LK_FLOAT:
+      arg.literal.value.to_c_number(def_arg.datatype.name)
+    of LiteralKind.LK_STRING:
+      return err(fmt"String literal are not yet supported")
+
+proc c_function_call(scope: var Scope, def: FunctionDefinition,
+    args: seq[Argument]): Result[string, string] =
 
   var call_args: seq[string]
   for index, arg in pairs(args):
-    case arg.kind:
-    of ArgumentKind.AK_IDENTIFIER:
-      discard ? scope.move_value(def.args[index], arg.identifier.name)
-      call_args.add(arg.identifier.name)
-    of ArgumentKind.AK_LITERAL:
-      case arg.literal.kind:
-      of LiteralKind.LK_INTEGER:
-        case def.args[index].datatype.name:
-        of "S8":
-          if safe_parse_int8(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else: break
-        of "S16":
-          if safe_parse_int16(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-        of "S32":
-          if safe_parse_int32(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-        of "S64":
-          if safe_parse_int64(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-        of "U8":
-          if safe_parse_uint8(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-        of "U16":
-          if safe_parse_uint16(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-        of "U32":
-          if safe_parse_uint32(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-        of "U64":
-          if safe_parse_uint64(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-      of LiteralKind.LK_FLOAT:
-        case def.args[index].datatype.name:
-        of "F32":
-          if safe_parse_float32(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-        of "F64":
-          if safe_parse_float64(arg.literal.value).is_ok:
-            call_args.add(arg.literal.value)
-          else:
-            break
-      of LiteralKind.LK_STRING:
-        return err(fmt"String literal are not yet supported")
+    let call_arg = ? scope.c_function_arg(def.args[index], arg)
+    call_args.add(call_arg)
 
   let native_call_args = call_args.join(", ")
   return ok(fmt"{def.native_function}({native_call_args});")
 
-proc find_function*(scope: Scope, func_name: string, args: seq[
-    Argument]): Result[string, string] =
-  let function = ? get_function(scope, func_name)
-  for def in function.defs:
+proc define_variable(scope: var Scope, variable: Variable): Result[
+    Scope, string] =
+  let variable_defined_in_scope = scope.get_variable(variable.name)
+  if variable_defined_in_scope.is_ok:
+    return err(fmt"Variable {variable.name} is already defined at {variable_defined_in_scope.get.datatype.location}")
+  scope.variables.add(variable)
+  ok(scope)
+
+proc move_variable(scope: var Scope, dest: Variable,
+    src: string): Result[Scope, string] =
+  scope = ? scope.match_datatypes(dest, src)
+  scope = ? scope.define_variable(dest)
+  ok(scope)
+
+proc get_destination_variable(scope: var Scope, dest_var_name: string,
+    datatype: Datatype): Result[Variable, string] =
+  var dest_name: string
+  # in case output is ignored in ASL make a temporary variable to assign to
+  if dest_var_name == "_":
+    dest_name = fmt"__asl_temp_{scope.temp_var_count}"
+    scope.temp_var_count += 1
+  else:
+    dest_name = dest_var_name
+
+  let dest_variable = Variable(name: dest_name, datatype: datatype)
+  scope = ? scope.define_variable(dest_variable)
+  return ok(dest_variable)
+
+proc init*(scope: var Scope, i: Initializer): Result[string, string] =
+  let asl_datatype = i.variable.datatype.name
+  let c_datatype: string = ? asl_datatype.to_c_datatype()
+
+  case i.value.kind:
+  of ArgumentKind.AK_LITERAL:
+    let literal = i.value.literal
+    case literal.kind:
+    of LiteralKind.LK_INTEGER, LiteralKind.LK_FLOAT:
+      var number_value: string = ? literal.value.to_c_number(asl_datatype)
+      scope = ? scope.define_variable(i.variable)
+      ok(fmt"{c_datatype} {i.variable.name} = {number_value};")
+    else:
+      err(fmt"Expected an integer/float value but found {literal}")
+  of ArgumentKind.AK_IDENTIFIER:
+    scope = ? scope.move_variable(i.variable, i.value.identifier.name)
+    ok(fmt"{c_datatype} {i.variable.name} = {i.value.identifier.name};")
+
+proc call*(scope: var Scope, f: FunctionCall): Result[string, string] =
+
+  let args = f.arglist.args
+  let func_defs = ? get_function_defintions(scope, f.name)
+  for def in func_defs:
     # arg len must be same for call and defintion
     if def.args.len != args.len: continue
 
-    let native_function_call = scope.get_native_function_call(def, args)
-    if native_function_call.is_ok: return ok(native_function_call.get)
+    let native_function_call = scope.c_function_call(def, args)
+    if native_function_call.is_ok:
+      let dest_var = ? scope.get_destination_variable(f.variable.name, def.result)
+      return ok(fmt"{dest_var.datatype.name} {dest_var.name} = {native_function_call.get}")
 
   return err(fmt"Failed to resolve the function none of the function defintions match")

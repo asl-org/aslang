@@ -48,16 +48,6 @@ type
     kind*: LiteralKind
     value*: string
 
-  ValueKind* = enum
-    VK_LITERAL
-    VK_IDENTIFIER
-  Value* = object
-    case kind*: ValueKind
-    of VK_LITERAL:
-      literal*: Literal
-    of VK_IDENTIFIER:
-      identifier*: Identifier
-
   Variable* = object
     name*: string
     datatype*: Datatype
@@ -79,7 +69,7 @@ type
   Initializer* = object
     location*: Location
     variable*: Variable
-    value*: Value
+    value*: Argument
 
   FunctionCall* = object
     location*: Location
@@ -97,7 +87,6 @@ type
       initializer*: Initializer
     of StatementKIND.SK_FNCALL:
       fncall*: FunctionCall
-
 
 type FunctionDefinition* = object
   native_function*: string
