@@ -2,6 +2,8 @@ import results, strformat, strutils
 
 import common
 
+const ASL_VAR_PREFIX = "__asl_"
+
 proc safe_parse_number[T](input: string): Result[string, string] =
   when T is SomeSignedInt:
     try:
@@ -81,7 +83,7 @@ proc c_function_arg(scope: var Scope, def_arg: Variable,
   case arg.kind:
   of ArgumentKind.AK_IDENTIFIER:
     scope = ? scope.match_datatypes(def_arg, arg.identifier.name)
-    ok(arg.identifier.name)
+    ok(fmt"{ASL_VAR_PREFIX}{arg.identifier.name}")
   of ArgumentKind.AK_LITERAL:
     case arg.literal.kind:
     of LiteralKind.LK_INTEGER, LiteralKind.LK_FLOAT:
@@ -119,7 +121,7 @@ proc get_destination_variable(scope: var Scope, dest_var_name: string,
   var dest_name: string
   # in case output is ignored in ASL make a temporary variable to assign to
   if dest_var_name == "_":
-    dest_name = fmt"__asl_temp_{scope.temp_var_count}"
+    dest_name = fmt"_temp_{scope.temp_var_count}"
     scope.temp_var_count += 1
   else:
     dest_name = dest_var_name
@@ -139,15 +141,14 @@ proc init*(scope: var Scope, i: Initializer): Result[string, string] =
     of LiteralKind.LK_INTEGER, LiteralKind.LK_FLOAT:
       var number_value: string = ? literal.value.to_c_number(asl_datatype)
       scope = ? scope.define_variable(i.variable)
-      ok(fmt"{c_datatype} {i.variable.name} = {number_value};")
+      ok(fmt"{c_datatype} {ASL_VAR_PREFIX}{i.variable.name} = {number_value};")
     else:
       err(fmt"Expected an integer/float value but found {literal}")
   of ArgumentKind.AK_IDENTIFIER:
     scope = ? scope.move_variable(i.variable, i.value.identifier.name)
-    ok(fmt"{c_datatype} {i.variable.name} = {i.value.identifier.name};")
+    ok(fmt"{c_datatype} {ASL_VAR_PREFIX}{i.variable.name} = {ASL_VAR_PREFIX}{i.value.identifier.name};")
 
 proc call*(scope: var Scope, f: FunctionCall): Result[string, string] =
-
   let args = f.arglist.args
   let func_defs = ? get_function_defintions(scope, f.name)
   for def in func_defs:
@@ -157,6 +158,6 @@ proc call*(scope: var Scope, f: FunctionCall): Result[string, string] =
     let native_function_call = scope.c_function_call(def, args)
     if native_function_call.is_ok:
       let dest_var = ? scope.get_destination_variable(f.variable.name, def.result)
-      return ok(fmt"{dest_var.datatype.name} {dest_var.name} = {native_function_call.get}")
+      return ok(fmt"{dest_var.datatype.name} {ASL_VAR_PREFIX}{dest_var.name} = {native_function_call.get}")
 
-  return err(fmt"Failed to resolve the function none of the function defintions match")
+  return err(fmt"Failed to resolve the function none of the function defintions match {f.location}")
