@@ -15,9 +15,9 @@ proc write_file(code: string): Result[void, string] =
 
 proc compile(filename: string, content: string): Result[void, string] =
   let tokens = ? tokenize(filename, content)
-  # for t in tokens: echo t
+  # for t in tokens: echo $(t)
   let statements = ? parse(tokens)
-  # for s in statements: echo s
+  # for s in statements: echo $(s)
   let code = ? generate(statements)
   ? write_file(code)
   ok()

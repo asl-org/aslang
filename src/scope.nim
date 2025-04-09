@@ -51,7 +51,7 @@ proc to_c_datatype(datatype: string): Result[string, string] =
       datatype)
   else: err(fmt"Found unexpected datatype {datatype}")
 
-type Scope* = object
+type Scope* = ref object
   variables*: seq[Variable]
   functions*: seq[Function]
   temp_var_count: int = 0

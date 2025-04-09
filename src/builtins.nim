@@ -1,6 +1,6 @@
 import common
 
-const print_fn =
+let print_fn =
   Function(
     name: "unsafe_print",
     defs: @[
@@ -56,7 +56,7 @@ const print_fn =
     ),
 ])
 
-const add_fn =
+let add_fn =
   Function(
     name: "unsafe_add",
     defs: @[

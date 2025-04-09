@@ -3,17 +3,17 @@ import strutils, results, strformat, tables
 import common
 
 const Punctuations* = {
-  '.'  : TK_PERIOD,
-  '='  : TK_EQUAL,
-  ','  : TK_COMMA,
-  ' '  : TK_SPACE,
-  '\n' : TK_NEW_LINE,
-  '_'  : TK_UNDERSCORE,
-  '('  : TK_OPEN_PARENTHESIS,
-  ')'  : TK_CLOSE_PARENTHESIS,
+  '.': TK_PERIOD,
+  '=': TK_EQUAL,
+  ',': TK_COMMA,
+  ' ': TK_SPACE,
+  '\n': TK_NEW_LINE,
+  '_': TK_UNDERSCORE,
+  '(': TK_OPEN_PARENTHESIS,
+  ')': TK_CLOSE_PARENTHESIS,
 }.to_table
 
-type Cursor = object
+type Cursor = ref object
   content: string
   location: Location
 
@@ -27,7 +27,8 @@ proc move(cursor: var Cursor): Cursor =
     cursor.location.column += 1
   cursor.location.index += 1
   return cursor
-proc chunk(cursor: Cursor, head: Location): string = cursor.content[head.index..<cursor.location.index]
+proc chunk(cursor: Cursor, head: Location): string = cursor.content[
+    head.index..<cursor.location.index]
 
 proc tokenize_alphabets(cursor: var Cursor): Result[Token, string] =
   if not cursor.can_move():
@@ -42,7 +43,8 @@ proc tokenize_alphabets(cursor: var Cursor): Result[Token, string] =
     cursor.location = start
     return err(fmt"Expected alphabets but found {cursor.head()} at {cursor.location}")
 
-  let token = Token(kind: TokenKind.TK_ALPHABETS, location: start, symbol: alphabets)
+  let token = Token(kind: TokenKind.TK_ALPHABETS, location: start,
+      symbol: alphabets)
   return ok(token)
 
 proc tokenize_digits(cursor: var Cursor): Result[Token, string] =

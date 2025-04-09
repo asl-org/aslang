@@ -2,7 +2,7 @@ import results, strformat, strutils, sequtils
 
 import common
 
-type Cursor = object
+type Cursor = ref object
   content: seq[Token]
   index: int
   checkpoints: seq[int]
