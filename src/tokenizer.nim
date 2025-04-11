@@ -11,6 +11,7 @@ const Punctuations* = {
   '_': TK_UNDERSCORE,
   '(': TK_OPEN_PARENTHESIS,
   ')': TK_CLOSE_PARENTHESIS,
+  '#': TK_HASHTAG,
 }.to_table
 
 type Cursor = ref object

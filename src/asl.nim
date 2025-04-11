@@ -2,7 +2,7 @@ import os
 import results
 
 import tokenizer
-import parser
+import parser/main
 import codegen
 
 

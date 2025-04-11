@@ -1,6 +1,6 @@
 import results, strformat, strutils, sequtils
 
-import common
+import "../common"
 
 type Cursor = ref object
   content: seq[Token]
@@ -141,6 +141,15 @@ proc close_parenthesis_spec(cursor: var Cursor): Result[Token, string] =
 const close_parenthesis_parser_spec = ParserSpec[Token](
     expected: "close parenthesis", rule: close_parenthesis_spec)
 
+proc hashtag_spec(cursor: var Cursor): Result[Token, string] =
+  let head = cursor.head()
+  if head.kind != TokenKind.TK_HASHTAG: return err("")
+  cursor = cursor.move()
+  return ok(head)
+
+const hashtag_parser_spec = ParserSpec[Token](
+    expected: "close parenthesis", rule: hashtag_spec)
+
 proc alphabets_spec(cursor: var Cursor): Result[Token, string] =
   let head = cursor.head()
   if head.kind != TokenKind.TK_ALPHABETS: return err("")
@@ -257,7 +266,7 @@ proc initializer_value_spec(cursor: var Cursor): Result[Argument, string] =
 const initializer_value_parser_spec = ParserSpec[Argument](
     expected: "initializer value", rule: initializer_value_spec)
 
-proc initializer_spec(cursor: var Cursor): Result[Initializer, string] =
+proc initializer_spec(cursor: var Cursor): Result[Statement, string] =
   let datatype = ? cursor.expect(datatype_parser_spec)
   var space = ? cursor.expect_at_least_one(space_parser_spec)
   let variable_id = ? cursor.expect(identifier_parser_spec)
@@ -272,9 +281,11 @@ proc initializer_spec(cursor: var Cursor): Result[Initializer, string] =
   let variable = Variable(datatype: datatype, name: variable_id.name)
   let initializer = Initializer(variable: variable, value: value,
       location: datatype.location)
-  return ok(initializer)
+  let statement = Statement(kind: StatementKind.SK_INIT,
+      initializer: initializer, location: initializer.location)
+  return ok(statement)
 
-const initializer_parser_spec = ParserSpec[Initializer](expected: "initializer",
+const initializer_parser_spec = ParserSpec[Statement](expected: "initializer",
     rule: initializer_spec)
 
 proc argument_identifier_spec(cursor: var Cursor): Result[Argument, string] =
@@ -336,7 +347,7 @@ proc argument_list_spec(cursor: var Cursor): Result[ArgumentList, string] =
 const argument_list_parser_spec = ParserSpec[ArgumentList](
     expected: "argument list", rule: argument_list_spec)
 
-proc function_call_spec(cursor: var Cursor): Result[FunctionCall, string] =
+proc function_call_spec(cursor: var Cursor): Result[Statement, string] =
   let variable = ? cursor.expect(identifier_parser_spec)
   var spaces = ? cursor.expect_any(space_parser_spec)
   let equal = ? cursor.expect(equal_parser_spec)
@@ -350,43 +361,77 @@ proc function_call_spec(cursor: var Cursor): Result[FunctionCall, string] =
   discard new_line
   let fncall = FunctionCall(variable: variable, name: function_name.name,
       arglist: arglist, location: variable.location)
-  return ok(fncall)
+  let statement = Statement(kind: StatementKind.SK_FNCALL, fncall: fncall,
+      location: fncall.location)
+  return ok(statement)
 
-const function_call_parser_spec = ParserSpec[FunctionCall](
+const function_call_parser_spec = ParserSpec[Statement](
     expected: "function call", rule: function_call_spec)
 
-proc initializer_statement_spec(cursor: var Cursor): Result[Statement, string] =
-  let initializer = ? cursor.expect(initializer_parser_spec)
-  let statement = Statement(kind: StatementKind.SK_INIT,
-      initializer: initializer, location: initializer.location)
-  return ok(statement)
+proc statement_spec(cursor: var Cursor): Result[Line, string] =
+  let statement = ? cursor.expect_one_of(@[
+    initializer_parser_spec,
+    function_call_parser_spec,
+  ])
+  ok(Line(kind: LineKind.LK_STATEMENT, statement: statement))
 
-const initializer_statement_parser_spec = ParserSpec[Statement](
-    expected: "initializer statement", rule: initializer_statement_spec)
+const statement_parser_spec = ParserSpec[Line](expected: "statement",
+    rule: statement_spec)
 
-proc function_call_statement_spec(cursor: var Cursor): Result[Statement, string] =
-  let function_call = ? cursor.expect(function_call_parser_spec)
-  let statement = Statement(kind: StatementKind.SK_FNCALL,
-      fncall: function_call, location: function_call.location)
-  return ok(statement)
+proc empty_line_spec(cursor: var Cursor): Result[Line, string] =
+  let new_line = ? cursor.expect(new_line_parser_spec)
+  discard newline
+  ok(Line(kind: LineKind.LK_EMPTY))
 
-const function_call_statement_parser_spec = ParserSpec[Statement](
-    expected: "function call statement", rule: function_call_statement_spec)
+const empty_line_parser_spec = ParserSpec[Line](expected: "empty line",
+    rule: empty_line_spec)
 
-proc statement_spec(cursor: var Cursor): Result[Statement, string] =
+proc comment_text_spec(cursor: var Cursor): Result[Token, string] =
   cursor.expect_one_of(@[
-    initializer_statement_parser_spec,
-    function_call_statement_parser_spec,
+    space_parser_spec,
+    period_parser_spec,
+    underscore_parser_spec,
+    comma_parser_spec,
+    equal_parser_spec,
+    open_parenthesis_parser_spec,
+    close_parenthesis_parser_spec,
+    hashtag_parser_spec,
+    alphabets_parser_spec,
+    digits_parser_spec,
   ])
 
-const statement_parser_spec = ParserSpec[Statement](expected: "statement",
-    rule: statement_spec)
+const comment_text_parser_spec = ParserSpec[Token](expected: "comment text",
+    rule: comment_text_spec)
+
+proc comment_spec(cursor: var Cursor): Result[Line, string] =
+  let empty_spaces = ? cursor.expect_any(space_parser_spec)
+  discard empty_spaces
+  let hashtag = ? cursor.expect(hashtag_parser_spec)
+  discard hashtag
+  let comment_text = ? cursor.expect_any(comment_text_parser_spec)
+  discard comment_text
+  let new_line = ? cursor.expect(new_line_parser_spec)
+  discard newline
+  ok(Line(kind: LineKind.LK_COMMENT))
+
+const comment_parser_spec = ParserSpec[Line](expected: "comment",
+    rule: comment_spec)
+
+proc line_spec(cursor: var Cursor): Result[Line, string] =
+  cursor.expect_one_of(@[
+    empty_line_parser_spec,
+    comment_parser_spec,
+    statement_parser_spec,
+  ])
+
+const line_parser_spec = ParserSpec[Line](expected: "line",
+    rule: line_spec)
 
 proc parse*(tokens: seq[Token]): Result[seq[Statement], string] =
   var cursor = Cursor(content: tokens)
   var statements: seq[Statement]
   while cursor.can_move():
-    let statement = cursor.expect(statement_parser_spec)
-    if statement.is_err: return err(statement.error)
-    statements.add(statement.get)
+    let line = ? cursor.expect(line_parser_spec)
+    if line.kind == LineKind.LK_STATEMENT:
+      statements.add(line.statement)
   ok(statements)

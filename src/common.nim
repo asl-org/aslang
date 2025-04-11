@@ -21,6 +21,7 @@ type
     TK_UNDERSCORE
     TK_OPEN_PARENTHESIS
     TK_CLOSE_PARENTHESIS
+    TK_HASHTAG
 
   Token* = ref object of RootObj
     kind*: TokenKind
@@ -121,6 +122,18 @@ proc `$`*(s: Statement): string =
     fmt"{s.location} {s.initializer}"
   of StatementKind.SK_FNCALL:
     fmt"{s.location} {s.fncall}"
+
+type
+  LineKind* = enum
+    LK_EMPTY
+    LK_COMMENT
+    LK_STATEMENT
+  Line* = ref object of RootObj
+    case kind*: LineKind
+    of LK_STATEMENT:
+      statement*: Statement
+    else: discard
+
 
 type FunctionDefinition* = ref object of RootObj
   native_function*: string
