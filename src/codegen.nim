@@ -12,6 +12,7 @@ import builtins/unsafe_modulo
 import builtins/bitwise_and
 import builtins/bitwise_or
 import builtins/bitwise_xor
+import builtins/bitwise_not
 
 proc builtin_functions*(): seq[Function] = @[
   print_fn,
@@ -23,6 +24,7 @@ proc builtin_functions*(): seq[Function] = @[
   bitwise_and_fn,
   bitwise_or_fn,
   bitwise_xor_fn,
+  bitwise_not_fn,
 ]
 
 proc compile(scope: var Scope, s: Statement): Result[string, string] =

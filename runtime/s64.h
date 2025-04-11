@@ -88,5 +88,7 @@ S64 S64_xor_U8(S64 num1, U8 num2) { return num1 ^ num2; }
 S64 S64_xor_U16(S64 num1, U16 num2) { return num1 ^ num2; }
 S64 S64_xor_U32(S64 num1, U32 num2) { return num1 ^ num2; }
 S64 S64_xor_U64(S64 num1, U64 num2) { return num1 ^ num2; }
+// Function: not
+S64 S64_not(S64 num) { return ~num; }
 
 #endif // ASL_S64_H

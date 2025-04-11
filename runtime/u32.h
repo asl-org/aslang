@@ -88,5 +88,7 @@ U32 U32_xor_U8(U32 num1, U8 num2) { return num1 ^ num2; }
 U32 U32_xor_U16(U32 num1, U16 num2) { return num1 ^ num2; }
 U32 U32_xor_U32(U32 num1, U32 num2) { return num1 ^ num2; }
 U64 U32_xor_U64(U32 num1, U64 num2) { return num1 ^ num2; }
+// Function: not
+U32 U32_not(U32 num) { return ~num; }
 
 #endif // ASL_U32_H

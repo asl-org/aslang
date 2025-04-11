@@ -88,5 +88,7 @@ S32 S32_xor_U8(S32 num1, U8 num2) { return num1 ^ num2; }
 S32 S32_xor_U16(S32 num1, U16 num2) { return num1 ^ num2; }
 S32 S32_xor_U32(S32 num1, U32 num2) { return num1 ^ num2; }
 S64 S32_xor_U64(S32 num1, U64 num2) { return num1 ^ num2; }
+// Function: not
+S32 S32_not(S32 num) { return ~num; }
 
 #endif // ASL_S32_H
