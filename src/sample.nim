@@ -94,6 +94,14 @@ type
   RegexKind = enum
     RK_EXACT_ONE, RK_ANY, RK_AT_LEAST_ONE, RK_AT_MOST_ONE
 
+  TerminalKind = enum
+    TK_STATIC, TK_DYNAMIC
+
+  Terminal = ref object of RootObj
+    case kind: TerminalKind
+    of TK_STATIC: value: string
+    of TK_DYNAMIC: matcher: proc(x: char): bool
+
   Symbol = ref object of RootObj
     name: string
     kind: RegexKind
@@ -102,15 +110,13 @@ type
     symbols: seq[Symbol]
 
   RuleKind = enum
-    RK_STATIC_TERMINAL, RK_DYNAMIC_TERMINAL, RK_NON_TERMINAL
+    RK_TERMINAL, RK_NON_TERMINAL
 
   Rule = ref object of RootObj
     name: string
     case kind: RuleKind
-    of RK_STATIC_TERMINAL:
-      terminal: string
-    of RK_DYNAMIC_TERMINAL:
-      matcher: proc(x: char): bool
+    of RK_TERMINAL:
+      terminal: Terminal
     of RK_NON_TERMINAL:
       productions: seq[Production]
 
@@ -133,24 +139,26 @@ proc find(grammar: Grammar, rule: string): Result[Rule, string] =
 proc match(rule: Rule, grammar: Grammar, content: string,
     index: int = 0): Result[MatchResult, string] =
   case rule.kind:
-  of RK_STATIC_TERMINAL:
-    let endpoint = index + rule.terminal.len
-    if endpoint > content.len:
-      return err(fmt"Expected '{rule.terminal}' but reached end of input at position {index}")
-    let segment = content[index..<endpoint]
-    if segment == rule.terminal:
-      return ok(MatchResult(nextIndex: endpoint, matchedText: segment))
-    else:
-      return err(fmt"Expected '{rule.terminal}' at position {index}, got '{segment}'")
+  of RK_TERMINAL:
+    case rule.terminal.kind:
+    of TK_STATIC:
+      let endpoint = index + rule.terminal.value.len
+      if endpoint > content.len:
+        return err(fmt"Expected '{rule.terminal.value}' but reached end of input at position {index}")
+      let segment = content[index..<endpoint]
+      if segment == rule.terminal.value:
+        return ok(MatchResult(nextIndex: endpoint, matchedText: segment))
+      else:
+        return err(fmt"Expected '{rule.terminal.value}' at position {index}, got '{segment}'")
 
-  of RK_DYNAMIC_TERMINAL:
-    if index >= content.len:
-      return err(fmt"Expected dynamic terminal at {index}, but input ended")
-    let ch = content[index]
-    if rule.matcher(ch):
-      return ok(MatchResult(nextIndex: index + 1, matchedText: $ch))
-    else:
-      return err(fmt"Dynamic matcher failed at position {index} for char '{ch}'")
+    of TK_DYNAMIC:
+      if index >= content.len:
+        return err(fmt"Expected dynamic terminal at {index}, but input ended")
+      let ch = content[index]
+      if rule.terminal.matcher(ch):
+        return ok(MatchResult(nextIndex: index + 1, matchedText: $ch))
+      else:
+        return err(fmt"Dynamic matcher failed at position {index} for char '{ch}'")
 
   of RK_NON_TERMINAL:
     for prod in rule.productions:
@@ -217,15 +225,18 @@ let content = @[
 let grammar = Grammar(
   entry: "program",
   rules: @[
-    Rule(name: "new_line", kind: RuleKind.RK_STATIC_TERMINAL, terminal: "\n"),
-    Rule(name: "space", kind: RuleKind.RK_STATIC_TERMINAL, terminal: " "),
-    Rule(name: "equal", kind: RuleKind.RK_STATIC_TERMINAL, terminal: "="),
-    Rule(name: "lowercase_alphabet", kind: RuleKind.RK_DYNAMIC_TERMINAL,
-        matcher: isLowerAscii),
-    Rule(name: "uppercase_alphabet", kind: RuleKind.RK_DYNAMIC_TERMINAL,
-        matcher: isUpperAscii),
-    Rule(name: "digit", kind: RuleKind.RK_DYNAMIC_TERMINAL,
-        matcher: isDigit),
+    Rule(name: "new_line", kind: RuleKind.RK_TERMINAL, terminal: Terminal(
+        kind: TK_STATIC, value: "\n")),
+    Rule(name: "space", kind: RuleKind.RK_TERMINAL, terminal: Terminal(
+        kind: TK_STATIC, value: " ")),
+    Rule(name: "equal", kind: RuleKind.RK_TERMINAL, terminal: Terminal(
+        kind: TK_STATIC, value: "=")),
+    Rule(name: "lowercase_alphabet", kind: RuleKind.RK_TERMINAL,
+        terminal: Terminal(kind: TK_DYNAMIC, matcher: isLowerAscii)),
+    Rule(name: "uppercase_alphabet", kind: RuleKind.RK_TERMINAL,
+        terminal: Terminal(kind: TK_DYNAMIC, matcher: isUpperAscii)),
+    Rule(name: "digit", kind: RuleKind.RK_TERMINAL,
+        terminal: Terminal(kind: TK_DYNAMIC, matcher: isDigit)),
     Rule(name: "alphabet", kind: RuleKind.RK_NON_TERMINAL,
         productions: @[
           Production(symbols: @[Symbol(name: "lowercase_alphabet",
