@@ -11,6 +11,30 @@ let grammar = new_grammar(
   static_terminal_rule("space", " "),
   # equal ::= "="
   static_terminal_rule("equal", "="),
+  # colon ::= ":"
+  static_terminal_rule("colon", ":"),
+  # comma ::= ","
+  static_terminal_rule("comma", ","),
+  # period ::= "."
+  static_terminal_rule("period", "."),
+  # single_quote ::= "'"
+  static_terminal_rule("single_quote", "'"),
+  # double_quote ::= "\""
+  static_terminal_rule("double_quote", "\""),
+  # backslash ::= "\\"
+  static_terminal_rule("backslash", "\\"),
+  # open_curly ::= "{"
+  static_terminal_rule("open_curly", "{"),
+  # close_curly ::= "}"
+  static_terminal_rule("close_curly", "}"),
+  # open_square ::= "["
+  static_terminal_rule("open_square", "["),
+  # close_square ::= "]"
+  static_terminal_rule("close_square", "]"),
+  # open_paren ::= "("
+  static_terminal_rule("open_paren", "("),
+  # close_paren ::= ")"
+  static_terminal_rule("close_paren", ")"),
   # digit ::= [0-9]
   dynamic_terminal_rule("digit", isDigit),
   # lowercase_alphabet ::= [a-z]
@@ -23,9 +47,9 @@ let grammar = new_grammar(
   non_terminal_rule("word", @["alphabet+"]),
   # integer ::= digit+
   non_terminal_rule("integer", @["digit+"]),
-  # identifier_head ::= underscore | word
+  # identifier_head ::= word | underscore
   non_terminal_rule("identifier_head", @["word", "underscore"]),
-  # identifier_tail ::= underscore | word | integer
+  # identifier_tail ::= word | underscore | integer
   non_terminal_rule("identifier_tail", @["word", "underscore", "integer"]),
   # identifier ::= identifier_head identifier_tail*
   non_terminal_rule("identifier", @["identifier_head identifier_tail*"]),
@@ -35,26 +59,21 @@ let grammar = new_grammar(
   non_terminal_rule("module_tail", @["identifier"]),
   # module ::= module_head* module_tail
   non_terminal_rule("identifier", @["module_head* module_tail"]),
-  # empty_line ::= space* new_line
-  non_terminal_rule("empty_line", @["space* new_line"]),
-  # statement ::= identifier space* equal space* integer empty_line+
-  non_terminal_rule("statement", @["identifier space* equal space* integer empty_line+"]),
-  # last_statement ::= identifier space* equal space* integer space*
-  non_terminal_rule("last_statement", @[
-      "identifier space* equal space* integer space*"]),
-  # program ::= statement* last_statement
-  non_terminal_rule("program", @["statement* last_statement"]),
+  # statement ::= identifier space* equal space* integer space* new_line?
+  non_terminal_rule("statement", @["identifier space* equal space* integer space* new_line?"]),
+  # program ::= statement+
+  non_terminal_rule("program", @["statement+"]),
 ])
 
 let content = @[
   "x = 1",
   "dsdf=2",
   "dkhjk    =2",
-  "erb=   2",
-  "dsxvc    =   2",
+  "erb=   2  ",
+  "dsxvc    =   2   \n",
 ].join("\n")
 
 when isMainModule:
   let maybe_match = grammar.match(content)
   if maybe_match.isErr: echo maybe_match.error
-  echo maybe_match.get
+  else: echo maybe_match.get
