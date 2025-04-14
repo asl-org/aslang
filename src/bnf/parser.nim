@@ -1,9 +1,17 @@
-import re, results, strformat, strutils
+import re, results, strformat, strutils, options
 
 type
+  Location = object
+    filename: string
+    line*: int = 1
+    column*: int = 1
+    index*: int = 0
+
   StructKind* = enum
     SK_RAW, SK_NON_TERMINAL
+
   Struct* = ref object of RootObj
+    location*: Location
     case kind*: StructKind
     of SK_RAW: value*: string
     else: discard
@@ -39,112 +47,109 @@ type
       productions: seq[Production]
 
   Grammar = ref object of RootObj
-    entry: string
     rules: seq[Rule]
 
-  MatchResult = object
-    struct: Struct
-    head: int
-    tail: int
+  Parser = ref object of RootObj
+    grammar: Grammar
+    content: string
+    location: Location
+
+proc `$`(location: Location): string =
+  fmt"{location.filename}({location.line}, {location.column})"
 
 proc raw_transform(parts: seq[seq[Struct]]): Struct =
   var value: string
+  var location: Option[Location]
   for group in parts:
     var collected: string
     for chunk in group:
       case chunk.kind:
       of StructKind.SK_RAW:
+        if location.is_none: location = some(chunk.location)
         collected.add(chunk.value)
-      else:
-        discard
+      else: discard
     value.add(collected)
-  Struct(kind: StructKind.SK_RAW, value: value)
+  Struct(kind: StructKind.SK_RAW, location: location.get, value: value)
 
-proc find(grammar: Grammar, rule: string): Result[Rule, string] =
-  for r in grammar.rules:
+proc find_rule(parser: Parser, rule: string): Result[Rule, string] =
+  for r in parser.grammar.rules:
     if r.name == rule:
       return ok(r)
   return err(fmt"Failed to find rule: {rule}")
 
-proc match(rule: Rule, grammar: Grammar, content: string,
-    index: int = 0): Result[MatchResult, string] =
+proc look_ahead(parser: Parser, count: int): Result[string, string] =
+  let head = parser.location.index
+  let tail = parser.location.index + count
+  if tail > parser.content.len:
+    return err(fmt"Expected {count} more characters but reached end of input at position {parser.location}")
+  return ok(parser.content[head..<tail])
+
+proc terminal_result(parser: Parser, value: string): Struct =
+  let location = parser.location
+  for ch in value:
+    if ch == '\n':
+      parser.location.line += 1
+      parser.location.column = 1
+    else:
+      parser.location.column += 1
+    parser.location.index += 1
+
+  Struct(kind: SK_RAW, location: location, value: value)
+
+proc parse_static_terminal(parser: Parser, value: string): Result[Struct, string] =
+  let segment = ? parser.look_ahead(value.len)
+  if segment == value: return ok(parser.terminal_result(segment))
+  err(fmt"{parser.location} Expected '{value}', got '{segment}'")
+
+proc parse_dynamic_terminal(parser: Parser, matcher: proc(
+    x: char): bool): Result[Struct, string] =
+  let segment = ? parser.look_ahead(1)
+  if matcher(segment[0]): return ok(parser.terminal_result(segment))
+  err(fmt"{parser.location} Dynamic matcher failed for char '{segment}'")
+
+proc parse_terminal(parser: Parser, terminal: Terminal): Result[Struct, string] =
+  case terminal.kind:
+  of TK_STATIC:
+    parser.parse_static_terminal(terminal.value)
+  of TK_DYNAMIC:
+    parser.parse_dynamic_terminal(terminal.matcher)
+
+proc parse(parser: Parser, rule_name: string): Result[Struct, string] =
+  let rule = ? parser.find_rule(rule_name)
   case rule.kind:
   of RK_TERMINAL:
-    case rule.terminal.kind:
-    of TK_STATIC:
-      let tail = index + rule.terminal.value.len
-      if tail > content.len:
-        return err(fmt"Expected '{rule.terminal.value}' but reached end of input at position {index}")
-      let segment = content[index..<tail]
-      if segment == rule.terminal.value:
-        return ok(MatchResult(head: index, tail: tail, struct: Struct(kind: SK_RAW,
-                value: segment)))
-      else:
-        return err(fmt"Expected '{rule.terminal.value}' at position {index}, got '{segment}'")
-
-    of TK_DYNAMIC:
-      if index >= content.len:
-        return err(fmt"Expected dynamic terminal at {index}, but input ended")
-      let ch = content[index]
-      if rule.terminal.matcher(ch):
-        return ok(MatchResult(head: index, tail: index + 1, struct: Struct(kind: SK_RAW,
-                value: $ch)))
-      else:
-        return err(fmt"Dynamic matcher failed at position {index} for char '{ch}'")
+    return parser.parse_terminal(rule.terminal)
   of RK_NON_TERMINAL:
+    var location = parser.location
     for prod in rule.productions:
-      var head = index
-      var matchedText: seq[string]
       var failed = false
       var parts: seq[seq[Struct]]
       for sym in prod.symbols:
-        let maybe_sub_rule = grammar.find(sym.name)
-        if maybe_sub_rule.is_err: failed = true; break
+        var collected_parts: seq[Struct]
+        var matched = parser.parse(sym.name)
 
         case sym.kind:
         of RK_AT_MOST_ONE:
-          let matched = maybe_sub_rule.get.match(grammar, content, head)
-          if matched.is_ok:
-            head = matched.get.tail
-            parts.add(@[matched.get.struct])
-          else:
-            parts.add(@[])
+          if matched.is_err: continue
+          collected_parts.add(matched.get)
         of RK_EXACT_ONE:
-          let matched = maybe_sub_rule.get.match(grammar, content, head)
           if matched.is_err: failed = true; break
-          head = matched.get.tail
-          parts.add(@[matched.get.struct])
+          collected_parts.add(matched.get)
         of RK_AT_LEAST_ONE:
-          var matched = maybe_sub_rule.get.match(grammar, content, head)
-          var match_count = 0
-          var collected: seq[string]
-          var collected_parts: seq[Struct]
+          if matched.is_err: failed = true; break
           while matched.is_ok:
-            match_count += 1
-            head = matched.get.tail
-            collected_parts.add(matched.get.struct)
-            matched = maybe_sub_rule.get.match(grammar, content, head)
-          if match_count < 1: failed = true; break
-          matchedText.add(collected.join(""))
-          parts.add(collected_parts)
+            collected_parts.add(matched.get)
+            matched = parser.parse(sym.name)
         of RK_ANY:
-          var collected: seq[string]
-          var collected_parts: seq[Struct]
-          while true:
-            let matched = maybe_sub_rule.get.match(grammar, content, head)
-            if matched.is_err: break
-            head = matched.get.tail
-            collected_parts.add(matched.get.struct)
-          matchedText.add(collected.join(""))
-          parts.add(collected_parts)
+          while matched.is_ok:
+            collected_parts.add(matched.get)
+            matched = parser.parse(sym.name)
 
-      if not failed:
-        return ok(MatchResult(head: index, tail: head, struct: rule.transform(parts)))
-    return err(fmt"Failed to match any production of <{rule.name}> at position {index}")
+        parts.add(collected_parts)
 
-proc match*(grammar: Grammar, content: string): Result[MatchResult, string] =
-  let entryRule = ? grammar.find(grammar.entry)
-  return entryRule.match(grammar, content)
+      if not failed: return ok(rule.transform(parts))
+      else: parser.location = location
+    return err(fmt"Failed to match any production of <{rule.name}> at position {location}")
 
 proc static_terminal_rule*(name, value: string): Rule =
   Rule(name: name, kind: RuleKind.RK_TERMINAL, terminal: Terminal(
@@ -182,5 +187,9 @@ proc non_terminal_rule*(name: string, raw_productions: seq[string],
   Rule(name: name, kind: RuleKind.RK_NON_TERMINAL, productions: productions,
       transform: transform)
 
-proc new_grammar*(entry: string, rules: seq[Rule]): Grammar =
-  Grammar(entry: entry, rules: rules)
+proc parse*(filename, entry: string, rules: seq[Rule]): Result[
+    Struct, string] =
+  let content = readFile(filename)
+  let parser = Parser(grammar: Grammar(rules: rules),
+      content: content, location: Location(filename: filename))
+  parser.parse(entry)
