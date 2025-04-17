@@ -42,8 +42,9 @@ type
     case kind: RuleKind
     of RK_TERMINAL:
       terminal: Terminal
+      terminal_transform: proc(value: string, location: Location): Struct
     of RK_NON_TERMINAL:
-      transform: proc(parts: seq[seq[Struct]]): Struct
+      non_terminal_transform: proc(parts: seq[seq[Struct]]): Struct
       productions: seq[Production]
 
   Grammar = ref object of RootObj
@@ -147,7 +148,7 @@ proc parse(parser: Parser, rule_name: string): Result[Struct, string] =
 
         parts.add(collected_parts)
 
-      if not failed: return ok(rule.transform(parts))
+      if not failed: return ok(rule.non_terminal_transform(parts))
       else: parser.location = location
     return err(fmt"Failed to match any production of <{rule.name}> at position {location}")
 
@@ -185,7 +186,7 @@ proc non_terminal_rule*(name: string, raw_productions: seq[string],
     productions.add(Production(symbols: symbols))
 
   Rule(name: name, kind: RuleKind.RK_NON_TERMINAL, productions: productions,
-      transform: transform)
+      non_terminal_transform: transform)
 
 proc parse*(filename, entry: string, rules: seq[Rule]): Result[
     Struct, string] =
