@@ -1,121 +1,138 @@
-import os, results, strutils, strformat
+
+import strutils
 
 import parser
+import transformer
 
 proc is_visible(x: char): bool = x.ord in 32..<127
 proc is_not_double_quote(x: char): bool = x.is_visible and x != '"'
 
-let rules =
+let rules* =
   @[
   # new_line ::= "\n"
-  static_terminal_rule("new_line", "\n"),
+  static_terminal_rule("new_line", "\n", raw_terminal),
   # space ::= " "
-  static_terminal_rule("space", " "),
+  static_terminal_rule("space", " ", raw_terminal),
   # equal ::= "="
-  static_terminal_rule("equal", "="),
+  static_terminal_rule("equal", "=", raw_terminal),
   # colon ::= ":"
-  static_terminal_rule("colon", ":"),
+  static_terminal_rule("colon", ":", raw_terminal),
   # comma ::= ","
-  static_terminal_rule("comma", ","),
+  static_terminal_rule("comma", ",", raw_terminal),
   # period ::= "."
-  static_terminal_rule("period", "."),
+  static_terminal_rule("period", ".", raw_terminal),
   # underscore ::= "_"
-  static_terminal_rule("underscore", "_"),
+  static_terminal_rule("underscore", "_", raw_terminal),
   # hashtag ::= "_"
-  static_terminal_rule("hashtag", "#"),
+  static_terminal_rule("hashtag", "#", raw_terminal),
   # single_quote ::= "'"
-  static_terminal_rule("single_quote", "'"),
+  static_terminal_rule("single_quote", "'", raw_terminal),
   # double_quote ::= "\""
-  static_terminal_rule("double_quote", "\""),
+  static_terminal_rule("double_quote", "\"", raw_terminal),
   # backslash ::= "\\"
-  static_terminal_rule("backslash", "\\"),
+  static_terminal_rule("backslash", "\\", raw_terminal),
   # open_curly ::= "{"
-  static_terminal_rule("open_curly", "{"),
+  static_terminal_rule("open_curly", "{", raw_terminal),
   # close_curly ::= "}"
-  static_terminal_rule("close_curly", "}"),
+  static_terminal_rule("close_curly", "}", raw_terminal),
   # open_square ::= "["
-  static_terminal_rule("open_square", "["),
+  static_terminal_rule("open_square", "[", raw_terminal),
   # close_square ::= "]"
-  static_terminal_rule("close_square", "]"),
+  static_terminal_rule("close_square", "]", raw_terminal),
   # open_paren ::= "("
-  static_terminal_rule("open_paren", "("),
+  static_terminal_rule("open_paren", "(", raw_terminal),
   # close_paren ::= ")"
-  static_terminal_rule("close_paren", ")"),
+  static_terminal_rule("close_paren", ")", raw_terminal),
   # except_new_line ::= [^\n]
-  dynamic_terminal_rule("except_new_line", is_visible),
+  dynamic_terminal_rule("except_new_line", is_visible, raw_terminal),
   # except_double_quote ::= [^"]
-  dynamic_terminal_rule("except_double_quote", is_not_double_quote),
+  dynamic_terminal_rule("except_double_quote", is_not_double_quote,
+      raw_terminal),
   # digit ::= [0-9]
-  dynamic_terminal_rule("digit", is_digit),
+  dynamic_terminal_rule("digit", is_digit, raw_terminal),
   # lowercase_alphabet ::= [a-z]
-  dynamic_terminal_rule("lowercase_alphabet", is_lower_ascii),
+  dynamic_terminal_rule("lowercase_alphabet", is_lower_ascii,
+      raw_terminal),
   # uppercase_alphabet ::= [A-Z]
-  dynamic_terminal_rule("uppercase_alphabet", is_upper_ascii),
+  dynamic_terminal_rule("uppercase_alphabet", is_upper_ascii,
+      raw_terminal),
   # alphabet ::= lowercase_alphabet | uppercase_alphabet
-  non_terminal_rule("alphabet", @["lowercase_alphabet", "uppercase_alphabet"]),
+  non_terminal_rule("alphabet", @["lowercase_alphabet", "uppercase_alphabet"],
+      raw_non_terminal),
   # word ::= alphabet+
-  non_terminal_rule("word", @["alphabet+"]),
+  non_terminal_rule("word", @["alphabet+"], raw_non_terminal),
   # integer ::= digit+
-  non_terminal_rule("integer", @["digit+"]),
+  non_terminal_rule("integer", @["digit+"], raw_non_terminal),
   # float ::= integer period integer
-  non_terminal_rule("float", @["integer period integer"]),
+  non_terminal_rule("float", @["integer period integer"],
+      raw_non_terminal),
   # number ::= float | integer
-  non_terminal_rule("number", @["float", "integer"]),
+  non_terminal_rule("number", @["float", "integer"],
+      raw_non_terminal),
   # empty_space ::= space* new_line | space+
-  non_terminal_rule("empty_space", @["space* new_line", "space+"]),
+  non_terminal_rule("empty_space", @["space* new_line", "space+"],
+      raw_non_terminal),
   # comment ::= space* hashtag except_new_line+ new_line?
-  non_terminal_rule("comment", @["space* hashtag except_new_line+ new_line?"]),
+  non_terminal_rule("comment", @["space* hashtag except_new_line+ new_line?"],
+      raw_non_terminal),
   # identifier_head ::= word | underscore
-  non_terminal_rule("identifier_head", @["word", "underscore"]),
+  non_terminal_rule("identifier_head", @["word", "underscore"],
+      raw_non_terminal),
   # identifier_tail ::= word | underscore | integer
-  non_terminal_rule("identifier_tail", @["word", "underscore", "integer"]),
+  non_terminal_rule("identifier_tail", @["word", "underscore", "integer"],
+      raw_non_terminal),
   # identifier ::= identifier_head identifier_tail*
-  non_terminal_rule("identifier", @["identifier_head identifier_tail*"]),
+  non_terminal_rule("identifier", @["identifier_head identifier_tail*"],
+      raw_non_terminal),
   # module_head ::= identifier period
-  non_terminal_rule("module_head", @["identifier period"]),
+  non_terminal_rule("module_head", @["identifier period"],
+      raw_non_terminal),
   # module_tail ::= identifier
-  non_terminal_rule("module_tail", @["identifier"]),
+  non_terminal_rule("module_tail", @["identifier"], raw_non_terminal),
   # module ::= module_head* module_tail
-  non_terminal_rule("module", @["module_head* module_tail"]),
+  non_terminal_rule("module", @["module_head* module_tail"],
+      raw_non_terminal),
   # escaped_double_quote ::= backslash double_quote
-  non_terminal_rule("escaped_double_quote", @["backslash double_quote"]),
+  non_terminal_rule("escaped_double_quote", @["backslash double_quote"],
+      raw_non_terminal),
   # string_content ::= except_double_quote | escaped_double_quote
   non_terminal_rule("string_content", @["except_double_quote",
-      "escaped_double_quote"]),
+      "escaped_double_quote"], raw_non_terminal),
   # string ::= double_quote string_content* double_quote
-  non_terminal_rule("string", @["double_quote string_content* double_quote"]),
+  non_terminal_rule("string", @["double_quote string_content* double_quote"],
+      raw_non_terminal),
   # field_value ::= number | identifier (order matters here)
-  non_terminal_rule("field_value", @["number", "identifier"]),
+  non_terminal_rule("field_value", @["number", "identifier"],
+      raw_non_terminal),
   # field ::= identifier space* colon space* integer comma
-  non_terminal_rule("field", @["identifier space* colon space* field_value comma space*"]),
+  non_terminal_rule("field", @["identifier space* colon space* field_value comma space*"],
+      raw_non_terminal),
   # last_field ::= identifier space* colon space* integer
-  non_terminal_rule("last_field", @["identifier space* colon space* field_value"]),
+  non_terminal_rule("last_field", @["identifier space* colon space* field_value"],
+      raw_non_terminal),
   # struct ::= open_curly space* field* last_field space* close_curly
-  non_terminal_rule("struct", @["open_curly space* field* last_field space* close_curly"]),
+  non_terminal_rule("struct", @["open_curly space* field* last_field space* close_curly"],
+      raw_non_terminal),
   # initializer ::= identifier space* equal space* module space* struct empty_space
-  non_terminal_rule("initializer", @["identifier space* equal space* module space* struct empty_space"]),
+  non_terminal_rule("initializer", @["identifier space* equal space* module space* struct empty_space"],
+      raw_non_terminal),
   # argument ::= identifier space* comma space*
-  non_terminal_rule("argument", @["identifier space* comma space*"]),
+  non_terminal_rule("argument", @["identifier space* comma space*"],
+      raw_non_terminal),
   # call_arguments ::= open_paren space* argument* identifier space* close_paren
   non_terminal_rule("call_arguments", @[
-      "open_paren space* argument* identifier space* close_paren"]),
+      "open_paren space* argument* identifier space* close_paren"],
+      raw_non_terminal),
   # function_call ::= identifier space* equal space* module space* call_arguments empty_space
   non_terminal_rule("function_call", @[
-      "identifier space* equal space* module space* call_arguments empty_space"]),
-  # move_op ::= identifier space* equal space* identifier empty_space
-  non_terminal_rule("move_op", @["identifier space* equal space* identifier empty_space"]),
+      "identifier space* equal space* module space* call_arguments empty_space"],
+      raw_non_terminal),
   # statement ::= initializer | function_call | move_op | comment
-  non_terminal_rule("statement", @["initializer", "function_call", "move_op"]),
+  non_terminal_rule("statement", @["initializer", "function_call"],
+      raw_non_terminal),
   # line ::= statement | comment | empty_space
-  non_terminal_rule("line", @["statement", "comment", "empty_space"]),
+  non_terminal_rule("line", @["statement", "comment", "empty_space"],
+      raw_non_terminal),
   # program ::= statement+
-  non_terminal_rule("program", @["line+"]),
+  non_terminal_rule("program", @["line+"], raw_non_terminal),
 ]
-
-proc `$`(struct: Struct): string =
-  fmt"{struct.location} {struct.kind}"
-
-when is_main_module:
-  let maybe_parsed = "example.asl".absolute_path.parse("program", rules)
-  if maybe_parsed.isErr: echo maybe_parsed.error
-  else: echo $(maybe_parsed.get)

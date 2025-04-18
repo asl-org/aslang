@@ -1,24 +1,8 @@
-import re, results, strformat, strutils, options
+import re, strformat, results, sequtils
+
+import location
 
 type
-  Location = object
-    filename: string
-    line*: int = 1
-    column*: int = 1
-    index*: int = 0
-
-  StructKind* = enum
-    SK_RAW, SK_NON_TERMINAL
-
-  Struct* = ref object of RootObj
-    location*: Location
-    case kind*: StructKind
-    of SK_RAW: value*: string
-    else: discard
-
-  RegexKind = enum
-    RK_EXACT_ONE, RK_ANY, RK_AT_LEAST_ONE, RK_AT_MOST_ONE
-
   TerminalKind = enum
     TK_STATIC, TK_DYNAMIC
 
@@ -27,9 +11,12 @@ type
     of TK_STATIC: value: string
     of TK_DYNAMIC: matcher: proc(x: char): bool
 
+  SymbolKind = enum
+    SK_EXACT_ONE, SK_ANY, SK_AT_LEAST_ONE, SK_AT_MOST_ONE
+
   Symbol = ref object of RootObj
     name: string
-    kind: RegexKind
+    kind: SymbolKind
 
   Production = ref object of RootObj
     symbols: seq[Symbol]
@@ -37,46 +24,20 @@ type
   RuleKind = enum
     RK_TERMINAL, RK_NON_TERMINAL
 
-  Rule = ref object of RootObj
+  Rule[T] = ref object of RootObj
     name: string
     case kind: RuleKind
     of RK_TERMINAL:
       terminal: Terminal
-      terminal_transform: proc(value: string, location: Location): Struct
+      terminal_transform: proc(value: string, location: Location): T
     of RK_NON_TERMINAL:
-      non_terminal_transform: proc(parts: seq[seq[Struct]]): Struct
+      non_terminal_transform: proc(parts: seq[seq[T]], location: Location): T
       productions: seq[Production]
 
-  Grammar = ref object of RootObj
-    rules: seq[Rule]
-
-  Parser = ref object of RootObj
-    grammar: Grammar
+  Parser[T] = ref object of RootObj
+    grammar: seq[Rule[T]]
     content: string
     location: Location
-
-proc `$`(location: Location): string =
-  fmt"{location.filename}({location.line}, {location.column})"
-
-proc raw_transform(parts: seq[seq[Struct]]): Struct =
-  var value: string
-  var location: Option[Location]
-  for group in parts:
-    var collected: string
-    for chunk in group:
-      case chunk.kind:
-      of StructKind.SK_RAW:
-        if location.is_none: location = some(chunk.location)
-        collected.add(chunk.value)
-      else: discard
-    value.add(collected)
-  Struct(kind: StructKind.SK_RAW, location: location.get, value: value)
-
-proc find_rule(parser: Parser, rule: string): Result[Rule, string] =
-  for r in parser.grammar.rules:
-    if r.name == rule:
-      return ok(r)
-  return err(fmt"Failed to find rule: {rule}")
 
 proc look_ahead(parser: Parser, count: int): Result[string, string] =
   let head = parser.location.index
@@ -85,8 +46,7 @@ proc look_ahead(parser: Parser, count: int): Result[string, string] =
     return err(fmt"Expected {count} more characters but reached end of input at position {parser.location}")
   return ok(parser.content[head..<tail])
 
-proc terminal_result(parser: Parser, value: string): Struct =
-  let location = parser.location
+proc update_location(parser: Parser, value: string): void =
   for ch in value:
     if ch == '\n':
       parser.location.line += 1
@@ -95,102 +55,91 @@ proc terminal_result(parser: Parser, value: string): Struct =
       parser.location.column += 1
     parser.location.index += 1
 
-  Struct(kind: SK_RAW, location: location, value: value)
+proc find_rule[T](parser: Parser[T], rule_name: string): Result[Rule[T], string] =
+  for rule in parser.grammar:
+    if rule.name == rule_name:
+      return ok(rule)
+  return err(fmt"Failed to find rule: {rule_name}")
 
-proc parse_static_terminal(parser: Parser, value: string): Result[Struct, string] =
-  let segment = ? parser.look_ahead(value.len)
-  if segment == value: return ok(parser.terminal_result(segment))
-  err(fmt"{parser.location} Expected '{value}', got '{segment}'")
-
-proc parse_dynamic_terminal(parser: Parser, matcher: proc(
-    x: char): bool): Result[Struct, string] =
-  let segment = ? parser.look_ahead(1)
-  if matcher(segment[0]): return ok(parser.terminal_result(segment))
-  err(fmt"{parser.location} Dynamic matcher failed for char '{segment}'")
-
-proc parse_terminal(parser: Parser, terminal: Terminal): Result[Struct, string] =
-  case terminal.kind:
-  of TK_STATIC:
-    parser.parse_static_terminal(terminal.value)
-  of TK_DYNAMIC:
-    parser.parse_dynamic_terminal(terminal.matcher)
-
-proc parse(parser: Parser, rule_name: string): Result[Struct, string] =
+proc parse[T](parser: Parser[T], rule_name: string): Result[T, string] =
   let rule = ? parser.find_rule(rule_name)
+  let location = parser.location
   case rule.kind:
   of RK_TERMINAL:
-    return parser.parse_terminal(rule.terminal)
+    var segment: string
+
+    case rule.terminal.kind:
+    of TK_STATIC:
+      segment = ? parser.look_ahead(rule.terminal.value.len)
+      if segment != rule.terminal.value:
+        return err(fmt"{parser.location} Expected '{rule.terminal.value}', got '{segment}'")
+    of TK_DYNAMIC:
+      segment = ? parser.look_ahead(1)
+      if not rule.terminal.matcher(segment[0]):
+        return err(fmt"{parser.location} Regex matcher failed for char '{segment}'")
+
+    parser.update_location(segment)
+    return ok(rule.terminal_transform(segment, location))
   of RK_NON_TERMINAL:
-    var location = parser.location
     for prod in rule.productions:
       var failed = false
-      var parts: seq[seq[Struct]]
+      var parts: seq[seq[T]]
       for sym in prod.symbols:
-        var collected_parts: seq[Struct]
+        var collected_parts: seq[T]
         var matched = parser.parse(sym.name)
 
         case sym.kind:
-        of RK_AT_MOST_ONE:
+        of SK_AT_MOST_ONE:
           if matched.is_err: continue
           collected_parts.add(matched.get)
-        of RK_EXACT_ONE:
+        of SK_EXACT_ONE:
           if matched.is_err: failed = true; break
           collected_parts.add(matched.get)
-        of RK_AT_LEAST_ONE:
+        of SK_AT_LEAST_ONE:
           if matched.is_err: failed = true; break
           while matched.is_ok:
             collected_parts.add(matched.get)
             matched = parser.parse(sym.name)
-        of RK_ANY:
+        of SK_ANY:
           while matched.is_ok:
             collected_parts.add(matched.get)
             matched = parser.parse(sym.name)
 
         parts.add(collected_parts)
 
-      if not failed: return ok(rule.non_terminal_transform(parts))
+      if not failed: return ok(rule.non_terminal_transform(parts, location))
       else: parser.location = location
     return err(fmt"Failed to match any production of <{rule.name}> at position {location}")
 
-proc static_terminal_rule*(name, value: string): Rule =
-  Rule(name: name, kind: RuleKind.RK_TERMINAL, terminal: Terminal(
-      kind: TK_STATIC, value: value))
+proc parse*[T](rules: seq[Rule[T]], filename, entry: string): Result[T, string] =
+  let content = readFile(filename)
+  let parser = Parser[T](grammar: rules, content: content, location: Location(
+      filename: filename))
+  parser.parse(entry)
 
-proc dynamic_terminal_rule*(name: string, matcher: proc(x: char): bool): Rule =
-  Rule(name: name, kind: RuleKind.RK_TERMINAL, terminal: Terminal(
-      kind: TK_DYNAMIC, matcher: matcher))
+proc static_terminal_rule*[T](name, value: string, transform: proc(
+    value: string, location: Location): T): Rule[T] =
+  Rule[T](name: name, kind: RuleKind.RK_TERMINAL, terminal_transform: transform,
+      terminal: Terminal(kind: TK_STATIC, value: value))
 
-proc non_terminal_rule*(name: string, raw_productions: seq[string],
-    transform: proc(parts: seq[seq[Struct]]): Struct = raw_transform): Rule =
+proc dynamic_terminal_rule*[T](name: string, matcher: proc(x: char): bool,
+    transform: proc(value: string, location: Location): T): Rule[T] =
+  Rule[T](name: name, kind: RuleKind.RK_TERMINAL, terminal_transform: transform,
+      terminal: Terminal(kind: TK_DYNAMIC, matcher: matcher))
+
+proc parse_symbol(symbol: string): Symbol =
+  case symbol[^1]:
+  of '+': Symbol(kind: SK_AT_LEAST_ONE, name: symbol[0..<(symbol.len - 1)])
+  of '?': Symbol(kind: SK_AT_MOST_ONE, name: symbol[0..<(symbol.len - 1)])
+  of '*': Symbol(kind: SK_ANY, name: symbol[0..<(symbol.len - 1)])
+  else: Symbol(kind: SK_EXACT_ONE, name: symbol)
+
+proc non_terminal_rule*[T](name: string, raw_productions: seq[string],
+    transform: proc(parts: seq[seq[T]], location: Location): T): Rule[T] =
   var productions: seq[Production]
   for p in raw_productions:
-    let raw_symbols = p.replace(re"\s+", " ").strip().split(" ")
-    var symbols: seq[Symbol]
-    for s in raw_symbols:
-      var kind: RegexKind
-      var name: string
-      case s[^1]:
-      of '+':
-        name = s[0..<(s.len - 1)].join("")
-        kind = RegexKind.RK_AT_LEAST_ONE
-      of '?':
-        name = s[0..<(s.len - 1)].join("")
-        kind = RegexKind.RK_AT_MOST_ONE
-      of '*':
-        name = s[0..<(s.len - 1)].join("")
-        kind = RegexKind.RK_ANY
-      else:
-        name = s
-        kind = RegexKind.RK_EXACT_ONE
-      symbols.add(Symbol(name: name, kind: kind))
+    let symbols = p.replace(re"\s+", " ").strip().split(" ").map(parse_symbol)
     productions.add(Production(symbols: symbols))
 
-  Rule(name: name, kind: RuleKind.RK_NON_TERMINAL, productions: productions,
+  Rule[T](name: name, kind: RuleKind.RK_NON_TERMINAL, productions: productions,
       non_terminal_transform: transform)
-
-proc parse*(filename, entry: string, rules: seq[Rule]): Result[
-    Struct, string] =
-  let content = readFile(filename)
-  let parser = Parser(grammar: Grammar(rules: rules),
-      content: content, location: Location(filename: filename))
-  parser.parse(entry)
