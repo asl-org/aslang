@@ -31,7 +31,8 @@ type
       terminal: Terminal
       terminal_transform: proc(value: string, location: Location): T
     of RK_NON_TERMINAL:
-      non_terminal_transform: proc(parts: seq[seq[T]], location: Location): T
+      non_terminal_transform: proc(parts: seq[seq[seq[T]]],
+          location: Location): T
       productions: seq[Production]
 
   Parser[T] = ref object of RootObj
@@ -81,7 +82,8 @@ proc parse[T](parser: Parser[T], rule_name: string): Result[T, string] =
     parser.update_location(segment)
     return ok(rule.terminal_transform(segment, location))
   of RK_NON_TERMINAL:
-    for prod in rule.productions:
+    var acc = new_seq[seq[seq[T]]](rule.productions.len)
+    for index, prod in rule.productions.pairs:
       var failed = false
       var parts: seq[seq[T]]
       for sym in prod.symbols:
@@ -107,7 +109,9 @@ proc parse[T](parser: Parser[T], rule_name: string): Result[T, string] =
 
         parts.add(collected_parts)
 
-      if not failed: return ok(rule.non_terminal_transform(parts, location))
+      if not failed:
+        acc[index] = parts
+        return ok(rule.non_terminal_transform(acc, location))
       else: parser.location = location
     return err(fmt"Failed to match any production of <{rule.name}> at position {location}")
 
@@ -135,7 +139,7 @@ proc parse_symbol(symbol: string): Symbol =
   else: Symbol(kind: SK_EXACT_ONE, name: symbol)
 
 proc non_terminal_rule*[T](name: string, raw_productions: seq[string],
-    transform: proc(parts: seq[seq[T]], location: Location): T): Rule[T] =
+    transform: proc(parts: seq[seq[seq[T]]], location: Location): T): Rule[T] =
   var productions: seq[Production]
   for p in raw_productions:
     let symbols = p.replace(re"\s+", " ").strip().split(" ").map(parse_symbol)

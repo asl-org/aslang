@@ -61,36 +61,11 @@ let rules* =
       raw_non_terminal),
   # word ::= alphabet+
   non_terminal_rule("word", @["alphabet+"], raw_non_terminal),
-  # integer ::= digit+
-  non_terminal_rule("integer", @["digit+"], raw_non_terminal),
-  # float ::= integer period integer
-  non_terminal_rule("float", @["integer period integer"],
-      raw_non_terminal),
-  # number ::= float | integer
-  non_terminal_rule("number", @["float", "integer"],
-      raw_non_terminal),
-  # empty_space ::= space* new_line | space+
-  non_terminal_rule("empty_space", @["space* new_line", "space+"],
-      raw_non_terminal),
   # comment ::= space* hashtag except_new_line+ new_line?
   non_terminal_rule("comment", @["space* hashtag except_new_line+ new_line?"],
       raw_non_terminal),
-  # identifier_head ::= word | underscore
-  non_terminal_rule("identifier_head", @["word", "underscore"],
-      raw_non_terminal),
-  # identifier_tail ::= word | underscore | integer
-  non_terminal_rule("identifier_tail", @["word", "underscore", "integer"],
-      raw_non_terminal),
-  # identifier ::= identifier_head identifier_tail*
-  non_terminal_rule("identifier", @["identifier_head identifier_tail*"],
-      raw_non_terminal),
-  # module_head ::= identifier period
-  non_terminal_rule("module_head", @["identifier period"],
-      raw_non_terminal),
-  # module_tail ::= identifier
-  non_terminal_rule("module_tail", @["identifier"], raw_non_terminal),
-  # module ::= module_head* module_tail
-  non_terminal_rule("module", @["module_head* module_tail"],
+  # empty_space ::= space* new_line | space+
+  non_terminal_rule("empty_space", @["space* new_line", "space+"],
       raw_non_terminal),
   # escaped_double_quote ::= backslash double_quote
   non_terminal_rule("escaped_double_quote", @["backslash double_quote"],
@@ -101,38 +76,62 @@ let rules* =
   # string ::= double_quote string_content* double_quote
   non_terminal_rule("string", @["double_quote string_content* double_quote"],
       raw_non_terminal),
-  # field_value ::= number | identifier (order matters here)
-  non_terminal_rule("field_value", @["number", "identifier"],
+  # integer ::= digit+
+  non_terminal_rule("integer", @["digit+"], raw_non_terminal),
+  # float ::= integer period integer
+  non_terminal_rule("float", @["integer period integer"],
       raw_non_terminal),
-  # field ::= identifier space* colon space* integer comma
-  non_terminal_rule("field", @["identifier space* colon space* field_value comma space*"],
+  # literal ::= number | identifier (order matters here)
+  non_terminal_rule("literal", @["float", "integer", "string"],
+      literal),
+  # identifier_head ::= word | underscore
+  non_terminal_rule("identifier_head", @["word", "underscore"],
       raw_non_terminal),
-  # last_field ::= identifier space* colon space* integer
-  non_terminal_rule("last_field", @["identifier space* colon space* field_value"],
+  # identifier_tail ::= word | underscore | integer
+  non_terminal_rule("identifier_tail", @["word", "underscore", "integer"],
       raw_non_terminal),
+  # identifier ::= identifier_head identifier_tail*
+  non_terminal_rule("identifier", @["identifier_head identifier_tail*"],
+      identifier),
+  # argument ::= literal | identifier
+  non_terminal_rule("argument", @["literal", "identifier"], argument),
+  # module_ref_head ::= identifier period
+  non_terminal_rule("module_ref_head", @["identifier period"],
+      module),
+  # module_ref_tail ::= identifier
+  non_terminal_rule("module_ref_tail", @["identifier"], module),
+  # module_ref ::= module_ref_head* module_ref_tail
+  non_terminal_rule("module_ref", @["module_ref_head* module_ref_tail"],
+      module_ref),
+  # field ::= identifier space* colon space* argument comma
+  non_terminal_rule("field", @["identifier space* colon space* argument comma space*"],
+      struct_field),
+  # last_field ::= identifier space* colon space* argument
+  non_terminal_rule("last_field", @["identifier space* colon space* argument"],
+      struct_field),
   # struct ::= open_curly space* field* last_field space* close_curly
   non_terminal_rule("struct", @["open_curly space* field* last_field space* close_curly"],
-      raw_non_terminal),
-  # initializer ::= identifier space* equal space* module space* struct empty_space
-  non_terminal_rule("initializer", @["identifier space* equal space* module space* struct empty_space"],
-      raw_non_terminal),
-  # argument ::= identifier space* comma space*
-  non_terminal_rule("argument", @["identifier space* comma space*"],
-      raw_non_terminal),
-  # call_arguments ::= open_paren space* argument* identifier space* close_paren
-  non_terminal_rule("call_arguments", @[
-      "open_paren space* argument* identifier space* close_paren"],
-      raw_non_terminal),
-  # function_call ::= identifier space* equal space* module space* call_arguments empty_space
+      struct_literal),
+  # initializer ::= identifier space* equal space* module_ref space* struct empty_space
+  non_terminal_rule("initializer", @["identifier space* equal space* module_ref space* struct empty_space"],
+      initializer),
+  # call_argument ::= argument space* comma space*
+  non_terminal_rule("call_argument", @["argument space* comma space*"],
+      call_argument),
+  # call_argument_list ::= open_paren space* call_argument* identifier space* close_paren
+  non_terminal_rule("call_argument_list", @[
+      "open_paren space* call_argument* argument space* close_paren"],
+      call_argument_list),
+  # function_call ::= identifier space* equal space* module_ref space* call_argument_list empty_space
   non_terminal_rule("function_call", @[
-      "identifier space* equal space* module space* call_arguments empty_space"],
-      raw_non_terminal),
+      "identifier space* equal space* module_ref space* call_argument_list empty_space"],
+      function_call),
   # statement ::= initializer | function_call | move_op | comment
   non_terminal_rule("statement", @["initializer", "function_call"],
-      raw_non_terminal),
+      statement),
   # line ::= statement | comment | empty_space
   non_terminal_rule("line", @["statement", "comment", "empty_space"],
-      raw_non_terminal),
+      line),
   # program ::= statement+
-  non_terminal_rule("program", @["line+"], raw_non_terminal),
+  non_terminal_rule("program", @["line+"], program),
 ]
