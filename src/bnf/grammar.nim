@@ -97,12 +97,12 @@ let rules* =
   non_terminal_rule("argument", @["literal", "identifier"], argument),
   # module_ref_head ::= identifier period
   non_terminal_rule("module_ref_head", @["identifier period"],
-      module),
+      module_ref),
   # module_ref_tail ::= identifier
-  non_terminal_rule("module_ref_tail", @["identifier"], module),
+  non_terminal_rule("module_ref_tail", @["identifier"], module_ref),
   # module_ref ::= module_ref_head* module_ref_tail
   non_terminal_rule("module_ref", @["module_ref_head* module_ref_tail"],
-      module_ref),
+      nested_module_ref),
   # field ::= identifier space* colon space* argument comma
   non_terminal_rule("field", @["identifier space* colon space* argument comma space*"],
       struct_field),

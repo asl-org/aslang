@@ -1,6 +1,5 @@
 import sequtils
 
-import location
 import common
 
 type
@@ -12,7 +11,6 @@ type
     PRK_ARGUMENT,
     PRK_FIELD,
     PRK_STRUCT,
-    PRK_MODULE,
     PRK_MODULE_REF,
     PRK_INITIALIZER,
     PRK_ARGUMENT_LIST,
@@ -30,8 +28,7 @@ type
     of PRK_LITERAL: literal: Literal
     of PRK_ARGUMENT: argument: Argument
     of PRK_FIELD: field: Field
-    of PRK_STRUCT: struct_literal: StructLiteral
-    of PRK_MODULE: module: Module
+    of PRK_STRUCT: struct_literal: Struct
     of PRK_MODULE_REF: module_ref: ModuleRef
     of PRK_INITIALIZER: init: Initializer
     of PRK_ARGUMENT_LIST: arglist: ArgumentList
@@ -48,7 +45,6 @@ proc `$`*(struct: ParseResult): string =
   of PRK_ARGUMENT: $(struct.argument)
   of PRK_FIELD: $(struct.field)
   of PRK_STRUCT: $(struct.struct_literal)
-  of PRK_MODULE: $(struct.module)
   of PRK_MODULE_REF: $(struct.module_ref)
   of PRK_INITIALIZER: $(struct.init)
   of PRK_ARGUMENT_LIST: $(struct.arglist)
@@ -78,7 +74,7 @@ proc literal*(parts: seq[seq[seq[ParseResult]]],
   elif parts[2].len > 0:
     literal = new_str_literal(parts[2][0][0].raw_value, location)
 
-  return ParseResult(kind: PRK_LITERAL, literal: literal)
+  ParseResult(kind: PRK_LITERAL, literal: literal)
 
 proc identifier*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
@@ -110,14 +106,16 @@ proc struct_literal*(parts: seq[seq[seq[ParseResult]]],
       s: ParseResult): Field = s.field)
   ParseResult(kind: PRK_STRUCT, struct_literal: new_struct(fields, location))
 
-proc module*(parts: seq[seq[seq[ParseResult]]],
-    location: Location): ParseResult =
-  ParseResult(kind: PRK_MODULE, module: new_module(parts[0][0][0].identifier, location))
-
 proc module_ref*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
-  let refs = (parts[0][0] & parts[0][1]).map(proc(
-      s: ParseResult): Module = s.module)
+  ParseResult(kind: PRK_MODULE_REF, module_ref: new_module_ref(@[parts[0][0][
+      0].identifier], location))
+
+proc nested_module_ref*(parts: seq[seq[seq[ParseResult]]],
+    location: Location): ParseResult =
+  var refs: seq[Identifier]
+  for p in (parts[0][0] & parts[0][1]):
+    refs.add(p.module_ref.refs)
   ParseResult(kind: PRK_MODULE_REF, module_ref: new_module_ref(refs, location))
 
 proc initializer*(parts: seq[seq[seq[ParseResult]]],

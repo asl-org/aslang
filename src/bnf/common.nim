@@ -1,6 +1,14 @@
 import strformat, strutils, sequtils
 
-import location
+type
+  Location* = object
+    filename*: string
+    line*: int = 1
+    column*: int = 1
+    index*: int = 0
+
+proc `$`*(location: Location): string =
+  fmt"{location.filename}({location.line}, {location.column})"
 
 type Identifier* = ref object of RootObj
   name: string
@@ -68,47 +76,38 @@ proc `$`*(field: Field): string =
 proc new_field*(name: Identifier, value: Argument, location: Location): Field =
   Field(name: name, value: value, location: location)
 
-type StructLiteral* = ref object of RootObj
+type Struct* = ref object of RootObj
   fields: seq[Field]
   location: Location
 
-proc `$`*(literal: StructLiteral): string =
+proc `$`*(literal: Struct): string =
   let fields = literal.fields.map(proc(f: Field): string = $(f)).join(", ")
   "{ " & fields & " }"
 
-proc new_struct*(fields: seq[Field], location: Location): StructLiteral =
-  StructLiteral(fields: fields, location: location)
-
-type Module* = ref object of RootObj
-  name: Identifier
-  location: Location
-
-proc `$`*(module: Module): string = $(module.name)
-
-proc new_module*(name: Identifier, location: Location): Module =
-  Module(name: name, location: location)
+proc new_struct*(fields: seq[Field], location: Location): Struct =
+  Struct(fields: fields, location: location)
 
 type ModuleRef* = ref object of RootObj
-  refs: seq[Module]
+  refs*: seq[Identifier]
   location: Location
 
 proc `$`*(module_ref: ModuleRef): string =
-  module_ref.refs.map(proc(m: Module): string = $(m)).join(".")
+  module_ref.refs.map(proc(m: Identifier): string = $(m)).join(".")
 
-proc new_module_ref*(refs: seq[Module], location: Location): ModuleRef =
+proc new_module_ref*(refs: seq[Identifier], location: Location): ModuleRef =
   ModuleRef(refs: refs, location: location)
 
 type Initializer* = ref object of RootObj
   result: Identifier
   module: ModuleRef
-  struct: StructLiteral
+  struct: Struct
   location: Location
 
 proc `$`*(init: Initializer): string =
   fmt"{init.result} = {init.module} {init.struct}"
 
 proc new_initializer*(dest: Identifier, module: ModuleRef,
-    struct: StructLiteral, location: Location): Initializer =
+    struct: Struct, location: Location): Initializer =
   Initializer(result: dest, module: module, struct: struct, location: location)
 
 type ArgumentList* = ref object of RootObj

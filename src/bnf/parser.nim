@@ -1,6 +1,6 @@
 import re, strformat, results, sequtils
 
-import location
+from common import Location
 
 type
   TerminalKind = enum
