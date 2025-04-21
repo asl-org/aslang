@@ -16,6 +16,9 @@ type Identifier* = ref object of RootObj
 
 proc `$`*(identifier: Identifier): string = identifier.name
 
+proc new_identifier*(name: string): Identifier =
+  Identifier(name: name)
+
 proc new_identifier*(name: string, location: Location): Identifier =
   Identifier(name: name, location: location)
 
@@ -94,6 +97,9 @@ type ModuleRef* = ref object of RootObj
 proc `$`*(module_ref: ModuleRef): string =
   module_ref.refs.map(proc(m: Identifier): string = $(m)).join(".")
 
+proc new_module_ref*(refs: seq[string]): ModuleRef =
+  ModuleRef(refs: refs.map(new_identifier))
+
 proc new_module_ref*(refs: seq[Identifier], location: Location): ModuleRef =
   ModuleRef(refs: refs, location: location)
 
@@ -136,14 +142,14 @@ proc new_function_call*(dest: Identifier, module: ModuleRef,
       location: location)
 
 type
-  StatementKind = enum
+  StatementKind* = enum
     SK_INITIALIZER, SK_FUNCTION_CALL
 
   Statement* = ref object of RootObj
-    location: Location
-    case kind: StatementKind
-    of SK_INITIALIZER: init: Initializer
-    of SK_FUNCTION_CALL: fncall: Functioncall
+    location*: Location
+    case kind*: StatementKind
+    of SK_INITIALIZER: init*: Initializer
+    of SK_FUNCTION_CALL: fncall*: Functioncall
 
 proc `$`*(statement: Statement): string =
   case statement.kind:
