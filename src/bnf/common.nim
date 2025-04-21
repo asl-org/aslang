@@ -23,14 +23,14 @@ proc new_identifier*(name: string, location: Location): Identifier =
   Identifier(name: name, location: location)
 
 type
-  LiteralKind = enum
+  LiteralKind* = enum
     LK_INTEGER, LK_FLOAT, LK_STRING
   Literal* = ref object of RootObj
-    location: Location
-    case kind: LiteralKind
-    of LK_INTEGER: integer_value: string
-    of LK_FLOAT: float_value: string
-    of LK_STRING: string_value: string
+    location*: Location
+    case kind*: LiteralKind
+    of LK_INTEGER: integer_value*: string
+    of LK_FLOAT: float_value*: string
+    of LK_STRING: string_value*: string
 
 proc `$`*(literal: Literal): string =
   case literal.kind:
@@ -48,13 +48,13 @@ proc new_str_literal*(value: string, location: Location): Literal =
   Literal(kind: LK_STRING, string_value: value, location: location)
 
 type
-  ArgumentKind = enum
+  ArgumentKind* = enum
     AK_LITERAL, AK_IDENTIFIER
   Argument* = ref object of RootObj
-    location: Location
-    case kind: ArgumentKind
-    of AK_LITERAL: literal: Literal
-    of AK_IDENTIFIER: identifier: Identifier
+    location*: Location
+    case kind*: ArgumentKind
+    of AK_LITERAL: literal*: Literal
+    of AK_IDENTIFIER: identifier*: Identifier
 
 proc `$`*(argument: Argument): string =
   case argument.kind:
@@ -69,9 +69,9 @@ proc new_identifier_argument*(identifier: Identifier,
   Argument(kind: AK_IDENTIFIER, identifier: identifier, location: location)
 
 type Field* = ref object of RootObj
-  name: Identifier
-  value: Argument
-  location: Location
+  name*: Identifier
+  value*: Argument
+  location*: Location
 
 proc `$`*(field: Field): string =
   fmt"{field.name}: {field.value}"
@@ -80,8 +80,8 @@ proc new_field*(name: Identifier, value: Argument, location: Location): Field =
   Field(name: name, value: value, location: location)
 
 type Struct* = ref object of RootObj
-  fields: seq[Field]
-  location: Location
+  fields*: seq[Field]
+  location*: Location
 
 proc `$`*(literal: Struct): string =
   let fields = literal.fields.map(proc(f: Field): string = $(f)).join(", ")
@@ -104,10 +104,10 @@ proc new_module_ref*(refs: seq[Identifier], location: Location): ModuleRef =
   ModuleRef(refs: refs, location: location)
 
 type Initializer* = ref object of RootObj
-  result: Identifier
-  module: ModuleRef
-  struct: Struct
-  location: Location
+  result*: Identifier
+  module*: ModuleRef
+  struct*: Struct
+  location*: Location
 
 proc `$`*(init: Initializer): string =
   fmt"{init.result} = {init.module} {init.struct}"
