@@ -1,163 +1,117 @@
-import results, strformat, strutils
+import strformat, results, strutils, options
 
-import common
+import common/main
 
-const ASL_VAR_PREFIX = "__asl_"
+type Scope = ref object of RootObj
+  modules: seq[Module]
+  variables: seq[Variable]
 
-proc safe_parse_number[T](input: string): Result[string, string] =
-  when T is SomeSignedInt:
-    try:
-      let parsed = input.parseBiggestInt()
-      if parsed >= T.low.int and parsed <= T.high.int:
-        return ok($(T(parsed)))
-      return err(fmt"Expected value between {T.low.int} and {T.high.int} but found {input}")
-    except ValueError:
-      return err(fmt"Failed to parse input: {input}")
-  elif T is SomeUnsignedInt:
-    try:
-      let parsed = input.parseBiggestUInt()
-      if parsed <= T.high.uint:
-        return ok($(T(parsed)))
-      return err(fmt"Expected value between 0 and {T.high.uint} but found {input}")
-    except ValueError:
-      return err(fmt"Failed to parse input: {input}")
-  elif T is SomeFloat:
-    try:
-      let parsed = input.parseFloat()
-      let reconstructed = $(T(parsed))
-      if reconstructed == input.strip:
-        return ok(reconstructed)
-      return err(fmt"Precision loss encountered original: {parsed} stored: {T(parsed)}")
-    except ValueError:
-      return err(fmt"Failed to parse input: {input}")
+proc find_module(scope: Scope, module_name: Identifier): Result[Module, string] =
+  for scoped_module in scope.modules:
+    if $(scoped_module.name) == $(module_name):
+      return ok(scoped_module)
+  err(fmt"{module_name} is undefined the scope")
 
-proc to_c_number(input: string, datatype: string): Result[string, string] =
-  case datatype:
-    of "S8": safe_parse_number[int8](input)
-    of "S16": safe_parse_number[int16](input)
-    of "S32": safe_parse_number[int32](input)
-    of "S64": safe_parse_number[int64](input)
-    of "U8": safe_parse_number[uint8](input)
-    of "U16": safe_parse_number[uint16](input)
-    of "U32": safe_parse_number[uint32](input)
-    of "U64": safe_parse_number[uint64](input)
-    of "F32": safe_parse_number[float32](input)
-    of "F64": safe_parse_number[float64](input)
-    else: err(fmt"Found unexpected datatype {datatype}")
+proc add_module(scope: Scope, module: Module): Result[Scope, string] =
+  let maybe_module = scope.find_module(module.name)
+  if maybe_module.is_ok:
+    return err(fmt"{module.name} is already defined in the scope")
 
-proc to_c_datatype(datatype: string): Result[string, string] =
-  case datatype:
-  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64", "F32", "F64": ok(
-      datatype)
-  else: err(fmt"Found unexpected datatype {datatype}")
+  scope.modules.add(module)
+  return ok(scope)
 
-type Scope* = ref object
-  variables*: seq[Variable]
-  functions*: seq[Function]
-  temp_var_count: int = 0
+proc find_variable(scope: Scope, variable: Identifier): Result[Variable, string] =
+  for var_in_scope in scope.variables:
+    if $(var_in_scope.name) == $(variable):
+      return ok(var_in_scope)
+  return err(fmt"{variable} is undefined in the scope")
 
-proc get_variable(scope: Scope, variable_name: string): Result[Variable, string] =
-  for v in scope.variables:
-    if variable_name == v.name:
-      return ok(v)
-  return err(fmt"Variable {variable_name} is not defined in the scope")
+proc add_variable(scope: Scope, name: Identifier,
+    module_ref: Identifier): Result[void, string] =
+  let maybe_variable = scope.find_variable(name)
+  if maybe_variable.is_ok:
+    return err(fmt"{maybe_variable.get} is already defined in the scope.")
+  scope.variables.add(new_variable(name, module_ref))
+  ok()
 
-proc match_datatypes(scope: var Scope, dest: Variable,
-    src: string): Result[Scope, string] =
-  let src_variable = ? scope.get_variable(src)
-  let dest_datatype = dest.datatype.name
-  let src_datatype = src_variable.datatype.name
-  if src_datatype != dest_datatype:
-    return err(fmt"Variable {src} ({src_datatype}) can not be assigned to {dest.name} ({dest_datatype})")
-  ok(scope)
+proc generate*(program: Program): Result[string, string] =
+  var code: seq[string]
+  var scope = Scope()
+  let native_modules = ? modules()
+  for module in native_modules:
+    scope = ? scope.add_module(module)
 
-proc get_function_defintions(scope: Scope, func_name: string): Result[seq[
-    FunctionDefinition], string] =
-  for f in scope.functions:
-    if f.name == func_name:
-      return ok(f.defs)
-  return err(fmt"Function {func_name} is not defined in the scope")
+  for statement in program.statements:
+    case statement.kind:
+    of SK_INITIALIZER:
+      let module = ? scope.find_module(statement.init.module)
+      case module.kind:
+      of MK_NATIVE:
+        let value =
+          case $(module.name):
+          of "S64": ( ? statement.init.literal.as_integer())
+          of "F64": ( ? statement.init.literal.as_float())
+          else: return err(fmt"Native module {module.name} is not yet supported")
 
-proc c_function_arg(scope: var Scope, def_arg: Variable,
-    arg: Argument): Result[string, string] =
-  case arg.kind:
-  of ArgumentKind.AK_IDENTIFIER:
-    scope = ? scope.match_datatypes(def_arg, arg.identifier.name)
-    ok(fmt"{ASL_VAR_PREFIX}{arg.identifier.name}")
-  of ArgumentKind.AK_LITERAL:
-    case arg.literal.kind:
-    of LiteralKind.LK_INTEGER, LiteralKind.LK_FLOAT:
-      arg.literal.value.to_c_number(def_arg.datatype.name)
-    of LiteralKind.LK_STRING:
-      return err(fmt"String literal are not yet supported")
+        ? scope.add_variable(statement.init.result_var(), statement.init.module)
+        code.add(fmt"{module.name} {statement.init.result_var()} = {value};")
 
-proc c_function_call(scope: var Scope, def: FunctionDefinition,
-    args: seq[Argument]): Result[string, string] =
+      of MK_ASL:
+        return err(fmt"ASL Modules are not yet supported.")
+    of SK_FUNCTION_CALL:
+      let module = ? scope.find_module(statement.fncall.module)
+      let def = ? module.find_function_def(statement.fncall.name)
 
-  var call_args: seq[string]
-  for index, arg in pairs(args):
-    let call_arg = ? scope.c_function_arg(def.args[index], arg)
-    call_args.add(call_arg)
+      var return_module: Option[Identifier]
+      for sign_index, sign in def.signatures:
+        if sign.variables.len != statement.fncall.arglist.arguments.len:
+          continue
 
-  let native_call_args = call_args.join(", ")
-  return ok(fmt"{def.native_function}({native_call_args});")
+        var matched = true
+        for arg_index, arg in statement.fncall.arglist.arguments:
+          case arg.kind:
+          of AK_IDENTIFIER:
+            let variable = ? scope.find_variable(arg.identifier)
+            if variable.module != sign.variables[arg_index].module:
+              matched = false
+              break
+          of AK_LITERAL:
+            case arg.literal.kind:
+            of NLK_FLOAT:
+              let maybe_float = arg.literal.as_float()
+              if maybe_float.is_err or $(sign.variables[arg_index].module) != "F64":
+                matched = false
+                break
+            of NLK_INTEGER:
+              let maybe_integer = arg.literal.as_integer()
+              if maybe_integer.is_err or $(sign.variables[arg_index].module) != "S64":
+                matched = false
+                break
+            else:
+              return err(fmt"Function calls do not yet support string literals yet")
 
-proc define_variable(scope: var Scope, variable: Variable): Result[
-    Scope, string] =
-  let variable_defined_in_scope = scope.get_variable(variable.name)
-  if variable_defined_in_scope.is_ok:
-    return err(fmt"Variable {variable.name} is already defined at {variable_defined_in_scope.get.datatype.location}")
-  scope.variables.add(variable)
-  ok(scope)
+          if matched:
+            return_module = some(sign.returns)
+      if return_module.is_none:
+        return err(fmt"Failed to find matching signatures for the function call {statement.fncall}")
 
-proc move_variable(scope: var Scope, dest: Variable,
-    src: string): Result[Scope, string] =
-  scope = ? scope.match_datatypes(dest, src)
-  scope = ? scope.define_variable(dest)
-  ok(scope)
+      let result_var = statement.fncall.result_var
+      let c_fncall =
+        case $(result_var):
+        of "_":
+          fmt"{statement.fncall.c_name}{statement.fncall.arglist};"
+        else:
+          ? scope.add_variable(result_var, return_module.get)
+          fmt"{return_module.get} {result_var} = {statement.fncall.c_name}{statement.fncall.arglist};"
+      code.add(c_fncall)
 
-proc get_destination_variable(scope: var Scope, dest_var_name: string,
-    datatype: Datatype): Result[Variable, string] =
-  var dest_name: string
-  # in case output is ignored in ASL make a temporary variable to assign to
-  if dest_var_name == "_":
-    dest_name = fmt"_temp_{scope.temp_var_count}"
-    scope.temp_var_count += 1
-  else:
-    dest_name = dest_var_name
+  let c = @[
+    "#include \"runtime/asl.h\"",
+    "",
+    "int main(int argc, char** argv) {",
+    code.join("\n"),
+    "return 0;",
+    "}"
+  ].join("\n")
 
-  let dest_variable = Variable(name: dest_name, datatype: datatype)
-  scope = ? scope.define_variable(dest_variable)
-  return ok(dest_variable)
-
-proc init*(scope: var Scope, i: Initializer): Result[string, string] =
-  let asl_datatype = i.variable.datatype.name
-  let c_datatype: string = ? asl_datatype.to_c_datatype()
-
-  case i.value.kind:
-  of ArgumentKind.AK_LITERAL:
-    let literal = i.value.literal
-    case literal.kind:
-    of LiteralKind.LK_INTEGER, LiteralKind.LK_FLOAT:
-      var number_value: string = ? literal.value.to_c_number(asl_datatype)
-      scope = ? scope.define_variable(i.variable)
-      ok(fmt"{c_datatype} {ASL_VAR_PREFIX}{i.variable.name} = {number_value};")
-    else:
-      err(fmt"Expected an integer/float value but found {literal}")
-  of ArgumentKind.AK_IDENTIFIER:
-    scope = ? scope.move_variable(i.variable, i.value.identifier.name)
-    ok(fmt"{c_datatype} {ASL_VAR_PREFIX}{i.variable.name} = {ASL_VAR_PREFIX}{i.value.identifier.name};")
-
-proc call*(scope: var Scope, f: FunctionCall): Result[string, string] =
-  let args = f.arglist.args
-  let func_defs = ? get_function_defintions(scope, f.name)
-  for def in func_defs:
-    # arg len must be same for call and defintion
-    if def.args.len != args.len: continue
-
-    let native_function_call = scope.c_function_call(def, args)
-    if native_function_call.is_ok:
-      let dest_var = ? scope.get_destination_variable(f.variable.name, def.result)
-      return ok(fmt"{dest_var.datatype.name} {ASL_VAR_PREFIX}{dest_var.name} = {native_function_call.get}")
-
-  return err(fmt"Failed to resolve the function none of the function defintions match {f.location}")
+  ok(c)

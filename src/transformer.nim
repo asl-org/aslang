@@ -1,16 +1,17 @@
 import sequtils
 
-import common
+import common/main
 
 type
   ParseResultKind = enum
     PRK_NONE,
     PRK_RAW,
     PRK_IDENTIFIER,
-    PRK_LITERAL,
-    PRK_ARGUMENT,
+    PRK_NATIVE_LITERAL,
+    PRK_NATIVE_ARGUMENT,
     PRK_KWARG,
     PRK_STRUCT,
+    PRK_LITERAL,
     PRK_INITIALIZER,
     PRK_ARGUMENT_LIST,
     PRK_FUNCTION_CALL,
@@ -24,30 +25,32 @@ type
       raw_value: string
     of PRK_NONE: discard
     of PRK_IDENTIFIER: identifier: Identifier
-    of PRK_LITERAL: literal: Literal
-    of PRK_ARGUMENT: argument: Argument
+    of PRK_NATIVE_LITERAL: native_literal: NativeLiteral
+    of PRK_NATIVE_ARGUMENT: native_argument: NativeArgument
     of PRK_KWARG: kwarg: KeywordArgument
     of PRK_STRUCT: struct_literal: Struct
+    of PRK_LITERAL: literal: Literal
     of PRK_INITIALIZER: init: Initializer
     of PRK_ARGUMENT_LIST: arglist: ArgumentList
     of PRK_FUNCTION_CALL: fncall: FunctionCall
     of PRK_STATEMENT: statement: Statement
     of PRK_PROGRAM: program*: Program
 
-proc `$`*(struct: ParseResult): string =
-  case struct.kind:
-  of PRK_RAW: struct.raw_value
+proc `$`*(parse_result: ParseResult): string =
+  case parse_result.kind:
+  of PRK_RAW: parse_result.raw_value
   of PRK_NONE: ""
-  of PRK_IDENTIFIER: $(struct.identifier)
-  of PRK_LITERAL: $(struct.literal)
-  of PRK_ARGUMENT: $(struct.argument)
-  of PRK_KWARG: $(struct.kwarg)
-  of PRK_STRUCT: $(struct.struct_literal)
-  of PRK_INITIALIZER: $(struct.init)
-  of PRK_ARGUMENT_LIST: $(struct.arglist)
-  of PRK_FUNCTION_CALL: $(struct.fncall)
-  of PRK_STATEMENT: $(struct.statement)
-  of PRK_PROGRAM: $(struct.program)
+  of PRK_IDENTIFIER: $(parse_result.identifier)
+  of PRK_NATIVE_LITERAL: $(parse_result.native_literal)
+  of PRK_NATIVE_ARGUMENT: $(parse_result.native_argument)
+  of PRK_KWARG: $(parse_result.kwarg)
+  of PRK_STRUCT: $(parse_result.struct_literal)
+  of PRK_LITERAL: $(parse_result.literal)
+  of PRK_INITIALIZER: $(parse_result.init)
+  of PRK_ARGUMENT_LIST: $(parse_result.arglist)
+  of PRK_FUNCTION_CALL: $(parse_result.fncall)
+  of PRK_STATEMENT: $(parse_result.statement)
+  of PRK_PROGRAM: $(parse_result.program)
 
 proc raw_terminal*(value: string, location: Location): ParseResult =
   ParseResult(kind: PRK_RAW, location: location, raw_value: value)
@@ -61,17 +64,17 @@ proc raw_non_terminal*(parts: seq[seq[seq[ParseResult]]],
         value.add($(item))
   ParseResult(kind: PRK_RAW, location: location, raw_value: value)
 
-proc literal*(parts: seq[seq[seq[ParseResult]]],
+proc native_literal*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
-  var literal: Literal
+  var native_literal: NativeLiteral
   if parts[0].len > 0:
-    literal = new_float_literal(parts[0][0][0].raw_value, location)
+    native_literal = new_native_float_literal(parts[0][0][0].raw_value, location)
   elif parts[1].len > 0:
-    literal = new_int_literal(parts[1][0][0].raw_value, location)
+    native_literal = new_native_int_literal(parts[1][0][0].raw_value, location)
   elif parts[2].len > 0:
-    literal = new_str_literal(parts[2][0][0].raw_value, location)
+    native_literal = new_native_str_literal(parts[2][0][0].raw_value, location)
 
-  ParseResult(kind: PRK_LITERAL, literal: literal)
+  ParseResult(kind: PRK_NATIVE_LITERAL, native_literal: native_literal)
 
 proc identifier*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
@@ -82,19 +85,20 @@ proc identifier*(parts: seq[seq[seq[ParseResult]]],
         value.add($(item))
   ParseResult(kind: PRK_IDENTIFIER, identifier: new_identifier(value, location))
 
-proc argument*(parts: seq[seq[seq[ParseResult]]],
+proc native_argument*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
-  var argument: Argument
+  var native_argument: NativeArgument
   if parts[0].len > 0:
-    argument = new_literal_argument(parts[0][0][0].literal, location)
+    native_argument = new_native_literal_argument(parts[0][0][0].native_literal, location)
   elif parts[1].len > 0:
-    argument = new_identifier_argument(parts[1][0][0].identifier, location)
+    native_argument = new_native_identifier_argument(parts[1][0][0].identifier, location)
 
-  ParseResult(kind: PRK_ARGUMENT, argument: argument)
+  ParseResult(kind: PRK_NATIVE_ARGUMENT, native_argument: native_argument)
 
 proc struct_kwarg*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
-  let kwarg = new_kwarg(parts[0][0][0].identifier, parts[0][4][0].argument, location)
+  let kwarg = new_kwarg(parts[0][0][0].identifier, parts[0][4][
+      0].native_argument, location)
   ParseResult(kind: PRK_KWARG, kwarg: kwarg)
 
 proc struct_literal*(parts: seq[seq[seq[ParseResult]]],
@@ -103,12 +107,22 @@ proc struct_literal*(parts: seq[seq[seq[ParseResult]]],
       s: ParseResult): KeywordArgument = s.kwarg)
   ParseResult(kind: PRK_STRUCT, struct_literal: new_struct(kwargs, location))
 
+proc literal*(parts: seq[seq[seq[ParseResult]]],
+    location: Location): ParseResult =
+  var literal: Literal
+  if parts[0].len > 0:
+    literal = new_native_literal(parts[0][0][0].native_literal, location)
+  elif parts[1].len > 0:
+    literal = new_struct_literal(parts[1][0][0].struct_literal, location)
+  ParseResult(kind: PRK_LITERAL, literal: literal)
+
 proc initializer*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
   let dest = parts[0][0][0].identifier
   let module = parts[0][4][0].identifier
-  let struct = parts[0][6][0].struct_literal
-  ParseResult(kind: PRK_INITIALIZER, init: new_initializer(dest, module, struct, location))
+  let literal = parts[0][6][0].literal
+  ParseResult(kind: PRK_INITIALIZER, init: new_initializer(dest, module,
+      literal, location))
 
 proc call_argument*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult = parts[0][0][0]
@@ -116,7 +130,7 @@ proc call_argument*(parts: seq[seq[seq[ParseResult]]],
 proc call_argument_list*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
   let arguments = (parts[0][2] & parts[0][3]).map(proc(
-      x: ParseResult): Argument = x.argument)
+      x: ParseResult): NativeArgument = x.native_argument)
   ParseResult(kind: PRK_ARGUMENT_LIST, arglist: new_argument_list(arguments, location))
 
 proc function_call*(parts: seq[seq[seq[ParseResult]]],

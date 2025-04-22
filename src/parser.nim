@@ -1,6 +1,6 @@
 import re, strformat, results, sequtils
 
-from common import Location
+from common/location import Location
 
 type
   TerminalKind = enum

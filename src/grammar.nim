@@ -81,9 +81,9 @@ let rules* =
   # float ::= integer period integer
   non_terminal_rule("float", @["integer period integer"],
       raw_non_terminal),
-  # literal ::= number | identifier (order matters here)
-  non_terminal_rule("literal", @["float", "integer", "string"],
-      literal),
+  # native_literal ::= number | identifier (order matters here)
+  non_terminal_rule("native_literal", @["float", "integer", "string"],
+      native_literal),
   # identifier_head ::= word | underscore
   non_terminal_rule("identifier_head", @["word", "underscore"],
       raw_non_terminal),
@@ -93,26 +93,31 @@ let rules* =
   # identifier ::= identifier_head identifier_tail*
   non_terminal_rule("identifier", @["identifier_head identifier_tail*"],
       identifier),
-  # argument ::= literal | identifier
-  non_terminal_rule("argument", @["literal", "identifier"], argument),
- # kwarg ::= identifier space* colon space* argument comma
-  non_terminal_rule("kwarg", @["identifier space* colon space* argument comma space*"],
+  # native_argument ::= native_literal | identifier
+  non_terminal_rule("native_argument", @["native_literal", "identifier"],
+      native_argument),
+ # kwarg ::= identifier space* colon space* native_argument comma
+  non_terminal_rule("kwarg", @["identifier space* colon space* native_argument comma space*"],
       struct_kwarg),
-  # last_kwarg ::= identifier space* colon space* argument
-  non_terminal_rule("last_kwarg", @["identifier space* colon space* argument"],
+  # last_kwarg ::= identifier space* colon space* native_argument
+  non_terminal_rule("last_kwarg", @["identifier space* colon space* native_argument"],
       struct_kwarg),
-  # struct ::= open_curly space* kwarg* last_kwarg space* close_curly
-  non_terminal_rule("struct", @["open_curly space* kwarg* last_kwarg space* close_curly"],
+  # TODO: Struct Literal do not support nesting due to readability constraints.
+  # struct_literal ::= open_curly space* kwarg* last_kwarg space* close_curly
+  non_terminal_rule("struct_literal", @[
+      "open_curly space* kwarg* last_kwarg space* close_curly"],
       struct_literal),
-  # initializer ::= identifier space* equal space* identifier space* struct empty_space
-  non_terminal_rule("initializer", @["identifier space* equal space* identifier space* struct empty_space"],
+  # literal ::= native_literal | struct_literal
+  non_terminal_rule("literal", @["native_literal", "struct_literal"], literal),
+  # initializer ::= identifier space* equal space* identifier space* struct_literal empty_space
+  non_terminal_rule("initializer", @["identifier space* equal space* identifier space* literal empty_space"],
       initializer),
-  # call_argument ::= argument space* comma space*
-  non_terminal_rule("call_argument", @["argument space* comma space*"],
+  # call_argument ::= native_argument space* comma space*
+  non_terminal_rule("call_argument", @["native_argument space* comma space*"],
       call_argument),
   # call_argument_list ::= open_paren space* call_argument* identifier space* close_paren
   non_terminal_rule("call_argument_list", @[
-      "open_paren space* call_argument* argument space* close_paren"],
+      "open_paren space* call_argument* native_argument space* close_paren"],
       call_argument_list),
   # function_call ::= identifier space* equal space* identifier period identifier space* call_argument_list empty_space
   non_terminal_rule("function_call", @[
