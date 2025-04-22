@@ -9,9 +9,8 @@ type
     PRK_IDENTIFIER,
     PRK_LITERAL,
     PRK_ARGUMENT,
-    PRK_FIELD,
+    PRK_KWARG,
     PRK_STRUCT,
-    PRK_MODULE_REF,
     PRK_INITIALIZER,
     PRK_ARGUMENT_LIST,
     PRK_FUNCTION_CALL,
@@ -27,9 +26,8 @@ type
     of PRK_IDENTIFIER: identifier: Identifier
     of PRK_LITERAL: literal: Literal
     of PRK_ARGUMENT: argument: Argument
-    of PRK_FIELD: field: Field
+    of PRK_KWARG: kwarg: KeywordArgument
     of PRK_STRUCT: struct_literal: Struct
-    of PRK_MODULE_REF: module_ref: ModuleRef
     of PRK_INITIALIZER: init: Initializer
     of PRK_ARGUMENT_LIST: arglist: ArgumentList
     of PRK_FUNCTION_CALL: fncall: FunctionCall
@@ -43,9 +41,8 @@ proc `$`*(struct: ParseResult): string =
   of PRK_IDENTIFIER: $(struct.identifier)
   of PRK_LITERAL: $(struct.literal)
   of PRK_ARGUMENT: $(struct.argument)
-  of PRK_FIELD: $(struct.field)
+  of PRK_KWARG: $(struct.kwarg)
   of PRK_STRUCT: $(struct.struct_literal)
-  of PRK_MODULE_REF: $(struct.module_ref)
   of PRK_INITIALIZER: $(struct.init)
   of PRK_ARGUMENT_LIST: $(struct.arglist)
   of PRK_FUNCTION_CALL: $(struct.fncall)
@@ -95,33 +92,21 @@ proc argument*(parts: seq[seq[seq[ParseResult]]],
 
   ParseResult(kind: PRK_ARGUMENT, argument: argument)
 
-proc struct_field*(parts: seq[seq[seq[ParseResult]]],
+proc struct_kwarg*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
-  let field = new_field(parts[0][0][0].identifier, parts[0][4][0].argument, location)
-  ParseResult(kind: PRK_FIELD, field: field)
+  let kwarg = new_kwarg(parts[0][0][0].identifier, parts[0][4][0].argument, location)
+  ParseResult(kind: PRK_KWARG, kwarg: kwarg)
 
 proc struct_literal*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
-  let fields = (parts[0][2] & parts[0][3]).map(proc(
-      s: ParseResult): Field = s.field)
-  ParseResult(kind: PRK_STRUCT, struct_literal: new_struct(fields, location))
-
-proc module_ref*(parts: seq[seq[seq[ParseResult]]],
-    location: Location): ParseResult =
-  ParseResult(kind: PRK_MODULE_REF, module_ref: new_module_ref(@[parts[0][0][
-      0].identifier], location))
-
-proc nested_module_ref*(parts: seq[seq[seq[ParseResult]]],
-    location: Location): ParseResult =
-  var refs: seq[Identifier]
-  for p in (parts[0][0] & parts[0][1]):
-    refs.add(p.module_ref.refs)
-  ParseResult(kind: PRK_MODULE_REF, module_ref: new_module_ref(refs, location))
+  let kwargs = (parts[0][2] & parts[0][3]).map(proc(
+      s: ParseResult): KeywordArgument = s.kwarg)
+  ParseResult(kind: PRK_STRUCT, struct_literal: new_struct(kwargs, location))
 
 proc initializer*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
   let dest = parts[0][0][0].identifier
-  let module = parts[0][4][0].module_ref
+  let module = parts[0][4][0].identifier
   let struct = parts[0][6][0].struct_literal
   ParseResult(kind: PRK_INITIALIZER, init: new_initializer(dest, module, struct, location))
 
@@ -137,10 +122,11 @@ proc call_argument_list*(parts: seq[seq[seq[ParseResult]]],
 proc function_call*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
   let dest = parts[0][0][0].identifier
-  let module = parts[0][4][0].module_ref
-  let arglist = parts[0][6][0].arglist
-  ParseResult(kind: PRK_FUNCTION_CALL, fncall: new_function_call(dest, module,
-      arglist, location))
+  let module = parts[0][4][0].identifier
+  let name = parts[0][6][0].identifier
+  let arglist = parts[0][8][0].arglist
+  ParseResult(kind: PRK_FUNCTION_CALL, fncall: new_function_call(name, dest,
+      module, arglist, location))
 
 proc statement*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =

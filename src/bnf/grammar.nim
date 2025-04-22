@@ -95,25 +95,17 @@ let rules* =
       identifier),
   # argument ::= literal | identifier
   non_terminal_rule("argument", @["literal", "identifier"], argument),
-  # module_ref_head ::= identifier period
-  non_terminal_rule("module_ref_head", @["identifier period"],
-      module_ref),
-  # module_ref_tail ::= identifier
-  non_terminal_rule("module_ref_tail", @["identifier"], module_ref),
-  # module_ref ::= module_ref_head* module_ref_tail
-  non_terminal_rule("module_ref", @["module_ref_head* module_ref_tail"],
-      nested_module_ref),
-  # field ::= identifier space* colon space* argument comma
-  non_terminal_rule("field", @["identifier space* colon space* argument comma space*"],
-      struct_field),
-  # last_field ::= identifier space* colon space* argument
-  non_terminal_rule("last_field", @["identifier space* colon space* argument"],
-      struct_field),
-  # struct ::= open_curly space* field* last_field space* close_curly
-  non_terminal_rule("struct", @["open_curly space* field* last_field space* close_curly"],
+ # kwarg ::= identifier space* colon space* argument comma
+  non_terminal_rule("kwarg", @["identifier space* colon space* argument comma space*"],
+      struct_kwarg),
+  # last_kwarg ::= identifier space* colon space* argument
+  non_terminal_rule("last_kwarg", @["identifier space* colon space* argument"],
+      struct_kwarg),
+  # struct ::= open_curly space* kwarg* last_kwarg space* close_curly
+  non_terminal_rule("struct", @["open_curly space* kwarg* last_kwarg space* close_curly"],
       struct_literal),
-  # initializer ::= identifier space* equal space* module_ref space* struct empty_space
-  non_terminal_rule("initializer", @["identifier space* equal space* module_ref space* struct empty_space"],
+  # initializer ::= identifier space* equal space* identifier space* struct empty_space
+  non_terminal_rule("initializer", @["identifier space* equal space* identifier space* struct empty_space"],
       initializer),
   # call_argument ::= argument space* comma space*
   non_terminal_rule("call_argument", @["argument space* comma space*"],
@@ -122,11 +114,11 @@ let rules* =
   non_terminal_rule("call_argument_list", @[
       "open_paren space* call_argument* argument space* close_paren"],
       call_argument_list),
-  # function_call ::= identifier space* equal space* module_ref space* call_argument_list empty_space
+  # function_call ::= identifier space* equal space* identifier period identifier space* call_argument_list empty_space
   non_terminal_rule("function_call", @[
-      "identifier space* equal space* module_ref space* call_argument_list empty_space"],
+      "identifier space* equal space* identifier period identifier space* call_argument_list empty_space"],
       function_call),
-  # statement ::= initializer | function_call | move_op | comment
+  # statement ::= initializer | function_call | comment
   non_terminal_rule("statement", @["initializer", "function_call"],
       statement),
   # line ::= statement | comment | empty_space

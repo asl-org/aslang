@@ -15,6 +15,7 @@ type Identifier* = ref object of RootObj
   location: Location
 
 proc `$`*(identifier: Identifier): string = identifier.name
+proc `==`*(self: Identifier, other: Identifier): bool = self.name == other.name
 
 proc new_identifier*(name: string): Identifier =
   Identifier(name: name)
@@ -68,51 +69,39 @@ proc new_identifier_argument*(identifier: Identifier,
     location: Location): Argument =
   Argument(kind: AK_IDENTIFIER, identifier: identifier, location: location)
 
-type Field* = ref object of RootObj
+type KeywordArgument* = ref object of RootObj
   name*: Identifier
   value*: Argument
   location*: Location
 
-proc `$`*(field: Field): string =
-  fmt"{field.name}: {field.value}"
+proc `$`*(kwarg: KeywordArgument): string =
+  fmt"{kwarg.name}: {kwarg.value}"
 
-proc new_field*(name: Identifier, value: Argument, location: Location): Field =
-  Field(name: name, value: value, location: location)
+proc new_kwarg*(name: Identifier, value: Argument,
+    location: Location): KeywordArgument =
+  KeywordArgument(name: name, value: value, location: location)
 
 type Struct* = ref object of RootObj
-  fields*: seq[Field]
+  kwargs*: seq[KeywordArgument]
   location*: Location
 
 proc `$`*(literal: Struct): string =
-  let fields = literal.fields.map(proc(f: Field): string = $(f)).join(", ")
-  "{ " & fields & " }"
+  let kwargs = literal.kwargs.map(proc(f: KeywordArgument): string = $(f)).join(", ")
+  "{ " & kwargs & " }"
 
-proc new_struct*(fields: seq[Field], location: Location): Struct =
-  Struct(fields: fields, location: location)
-
-type ModuleRef* = ref object of RootObj
-  refs*: seq[Identifier]
-  location: Location
-
-proc `$`*(module_ref: ModuleRef): string =
-  module_ref.refs.map(proc(m: Identifier): string = $(m)).join(".")
-
-proc new_module_ref*(refs: seq[string]): ModuleRef =
-  ModuleRef(refs: refs.map(new_identifier))
-
-proc new_module_ref*(refs: seq[Identifier], location: Location): ModuleRef =
-  ModuleRef(refs: refs, location: location)
+proc new_struct*(kwargs: seq[KeywordArgument], location: Location): Struct =
+  Struct(kwargs: kwargs, location: location)
 
 type Initializer* = ref object of RootObj
   result*: Identifier
-  module*: ModuleRef
+  module*: Identifier
   struct*: Struct
   location*: Location
 
 proc `$`*(init: Initializer): string =
   fmt"{init.result} = {init.module} {init.struct}"
 
-proc new_initializer*(dest: Identifier, module: ModuleRef,
+proc new_initializer*(dest: Identifier, module: Identifier,
     struct: Struct, location: Location): Initializer =
   Initializer(result: dest, module: module, struct: struct, location: location)
 
@@ -128,17 +117,21 @@ proc new_argument_list*(args: seq[Argument], location: Location): ArgumentList =
   ArgumentList(arguments: args, location: location)
 
 type Functioncall* = ref object of RootObj
-  result: Identifier
-  module: ModuleRef
-  arglist: ArgumentList
-  location: Location
+  name*: Identifier
+  result*: Identifier
+  module*: Identifier
+  arglist*: ArgumentList
+  location*: Location
 
 proc `$`*(fncall: Functioncall): string =
   fmt"{fncall.result} = {fncall.module}{fncall.arglist}"
 
-proc new_function_call*(dest: Identifier, module: ModuleRef,
+proc c_name*(fncall: Functioncall): string =
+  fmt"{fncall.module}_{fncall.name}"
+
+proc new_function_call*(name: Identifier, dest: Identifier, module: Identifier,
     arglist: ArgumentList, location: Location): Functioncall =
-  Functioncall(result: dest, module: module, arglist: arglist,
+  Functioncall(name: name, result: dest, module: module, arglist: arglist,
       location: location)
 
 type
