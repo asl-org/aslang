@@ -124,8 +124,8 @@ let rules* =
       "identifier space* equal space* identifier period identifier space* call_argument_list empty_space"],
       function_call),
   # statement ::= initializer | function_call | comment
-  non_terminal_rule("statement", @["initializer", "function_call"],
-      statement),
+  non_terminal_rule("statement", @["space* initializer",
+      "space* function_call"], statement),
   # line ::= statement | comment | empty_space
   non_terminal_rule("line", @["statement", "comment", "empty_space"],
       line),

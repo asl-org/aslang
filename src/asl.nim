@@ -28,7 +28,8 @@ proc write_c_file(code: string, filename: string): Result[void, string] =
 
 proc compile(filename: string, output_file: string = "asl.c"): Result[void, string] =
   let parse_result = ? rules.parse(filename, "program")
-  let code = ? parse_result.program.generate
+  let blocks = ? extract_blocks(parse_result.program)
+  let code = ? blocks.generate()
   code.write_c_file(output_file)
 
 proc show_help() =

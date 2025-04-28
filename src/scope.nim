@@ -34,6 +34,21 @@ proc add_variable(scope: Scope, name: Identifier,
   scope.variables.add(new_variable(name, module_ref))
   ok()
 
+proc extract_blocks*(program: Program): Result[Program, string] =
+  var scope = Scope()
+  let native_modules = ? modules()
+  for module in native_modules:
+    scope = ? scope.add_module(module)
+  for statement in program.statements:
+    # TODO: ASL only support 2 spaced indentation
+    if statement.level mod 2 == 1:
+      let msg = [
+        fmt"Indentation error encounted at {statement.location}",
+        $(statement)
+      ].join("\n")
+      return err(msg)
+  ok(program)
+
 proc generate*(program: Program): Result[string, string] =
   var code: seq[string]
   var scope = Scope()

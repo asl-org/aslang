@@ -146,9 +146,10 @@ proc statement*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
   var statement: Statement
   if parts[0].len > 0:
-    statement = new_init_statement(parts[0][0][0].init, location)
+    statement = new_init_statement(parts[0][0].len, parts[0][1][0].init, location)
   elif parts[1].len > 0:
-    statement = new_fncall_statement(parts[1][0][0].fncall, location)
+    statement = new_fncall_statement(parts[1][
+        0].len, parts[1][1][0].fncall, location)
 
   ParseResult(kind: PRK_STATEMENT, statement: statement)
 
