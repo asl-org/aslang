@@ -1,6 +1,7 @@
 import sequtils, strutils
 
-import location, line
+import "../location"
+import line
 
 type Program* = ref object of RootObj
   lines: seq[Line]

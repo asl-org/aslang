@@ -1,6 +1,6 @@
 import strformat, results, strutils, options
 
-import common/main
+import grammar/common/main
 
 type Scope = ref object of RootObj
   modules: seq[Module]

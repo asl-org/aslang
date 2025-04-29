@@ -1,6 +1,7 @@
 import strformat
 
-import location, identifier, argument_list
+import "../location"
+import identifier, argument_list
 
 type Functioncall* = ref object of RootObj
   name: Identifier

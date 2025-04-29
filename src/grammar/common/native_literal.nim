@@ -1,6 +1,6 @@
 import hashes, results, strformat, strutils
 
-import location
+import "../location"
 
 type
   NativeLiteralKind* = enum

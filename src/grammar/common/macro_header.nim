@@ -1,6 +1,7 @@
 import strformat, strutils, sequtils
 
-import identifier, location
+import "../location"
+import identifier
 
 type FunctionMacro* = ref object of RootObj
   name: Identifier

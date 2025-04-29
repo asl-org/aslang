@@ -1,7 +1,6 @@
 import os, results, strformat, parseopt
 
 import grammar
-import parser
 import scope
 
 const
@@ -27,7 +26,7 @@ proc write_c_file(code: string, filename: string): Result[void, string] =
     err(fmt"Failed to write output file '{filename}': {e.msg}")
 
 proc compile(filename: string, output_file: string = "asl.c"): Result[void, string] =
-  let parse_result = ? rules.parse(filename, "program")
+  let parse_result = ? parse(rules, filename, "program")
   let blocks = ? extract_blocks(parse_result.program)
   let code = ? blocks.generate()
   code.write_c_file(output_file)

@@ -1,6 +1,7 @@
 import hashes, results, strformat
 
-import location, native_literal, struct
+import "../location"
+import native_literal, struct
 
 type
   LiteralKind = enum

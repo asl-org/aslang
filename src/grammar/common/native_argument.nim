@@ -1,6 +1,7 @@
 import hashes
 
-import location, identifier, native_literal
+import "../location"
+import identifier, native_literal
 
 type
   NativeArgumentKind* = enum

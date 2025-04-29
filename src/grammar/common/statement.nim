@@ -1,4 +1,5 @@
-import location, initializer, function_call
+import "../location"
+import initializer, function_call
 
 type
   StatementKind* = enum

@@ -1,6 +1,7 @@
 import sequtils, strutils, hashes
 
-import location, keyword_argument
+import "../location"
+import keyword_argument
 
 type Struct* = ref object of RootObj
   kwargs: seq[KeywordArgument]

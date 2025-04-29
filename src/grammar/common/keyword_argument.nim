@@ -1,6 +1,7 @@
 import strformat, hashes
 
-import location, identifier, native_argument
+import "../location"
+import identifier, native_argument
 
 type KeywordArgument* = ref object of RootObj
   name: Identifier

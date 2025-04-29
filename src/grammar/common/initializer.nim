@@ -1,6 +1,7 @@
 import strformat
 
-import location, identifier, literal
+import "../location"
+import identifier, literal
 
 type Initializer* = ref object of RootObj
   result_var: Identifier

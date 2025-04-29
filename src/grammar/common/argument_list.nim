@@ -1,6 +1,7 @@
 import strformat, sequtils, strutils
 
-import location, native_argument
+import "../location"
+import native_argument
 
 # TODO: Support struct literals as the argument
 type ArgumentList* = ref object of RootObj

@@ -1,6 +1,6 @@
-import re, strformat, results, sequtils
+import re, strformat, results, sequtils, strutils
 
-from common/location import Location
+import location
 
 type
   TerminalKind = enum
@@ -24,7 +24,7 @@ type
   RuleKind = enum
     RK_TERMINAL, RK_NON_TERMINAL
 
-  Rule[T] = ref object of RootObj
+  Rule*[T] = ref object of RootObj
     name: string
     case kind: RuleKind
     of RK_TERMINAL:

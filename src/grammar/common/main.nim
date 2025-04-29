@@ -1,4 +1,4 @@
-import location
+import "../location"
 export location
 
 # parser constructs

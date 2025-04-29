@@ -1,6 +1,6 @@
 import hashes
 
-import location
+import "../location"
 
 type Identifier* = ref object of RootObj
   name: string
@@ -8,6 +8,7 @@ type Identifier* = ref object of RootObj
 
 proc `$`*(identifier: Identifier): string = identifier.name
 proc `==`*(self: Identifier, other: Identifier): bool = self.name == other.name
+proc location*(identifier: Identifier): Location = identifier.location
 
 proc new_identifier*(name: string): Identifier =
   Identifier(name: name)
