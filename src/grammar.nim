@@ -43,6 +43,12 @@ let rules* =
   static_terminal_rule("open_paren", "(", raw_terminal),
   # close_paren ::= ")"
   static_terminal_rule("close_paren", ")", raw_terminal),
+  # fn_macro ::= "fn"
+  static_terminal_rule("fn_macro", "fn", raw_terminal),
+  # ret_macro ::= "returns"
+  static_terminal_rule("ret_macro", "returns", raw_terminal),
+  # args_macro ::= "args"
+  static_terminal_rule("args_macro", "args", raw_terminal),
   # except_new_line ::= [^\n]
   dynamic_terminal_rule("except_new_line", is_visible, raw_terminal),
   # except_double_quote ::= [^"]
@@ -123,12 +129,28 @@ let rules* =
   non_terminal_rule("function_call", @[
       "identifier space* equal space* identifier period identifier space* call_argument_list empty_space"],
       function_call),
-  # statement ::= initializer | function_call | comment
+  # statement ::= space* initializer | space* function_call
   non_terminal_rule("statement", @["space* initializer",
       "space* function_call"], statement),
+  # fn_macro_header ::= fn_macro identifier ret_macro identifier colon
+  non_terminal_rule("fn_macro_header", @[
+      "fn_macro identifier ret_macro identifier colon"], fn_macro),
+  # args_macro_argument ::= native_argument space* comma space*
+  non_terminal_rule("args_macro_argument", @[
+      "identifier space* identifier space* comma space*"], args_macro_argument),
+  # args_macro_argumentlist ::= open_paren space* args_macro_argument* identifier space* identifier space* close_paren
+  non_terminal_rule("args_macro_argumentlist", @[
+      "open_paren space* args_macro_argument* identifier space* identifier space* close_paren"],
+      args_macro_argument_list),
+  # args_macro ::= args space* args_macro_argumentlist space* colon
+  non_terminal_rule("args_macro", @[
+      "args_macro space* args_macro_argumentlist space* colon"],
+      args_macro),
+  # macro ::= fn_macro_header | args_macro
+  non_terminal_rule("macro", @["fn_macro_header", "args_macro"],
+      macro_header),
   # line ::= statement | comment | empty_space
-  non_terminal_rule("line", @["statement", "comment", "empty_space"],
-      line),
+  non_terminal_rule("line", @["statement", "macro", "comment", "empty_space"], line),
   # program ::= statement+
   non_terminal_rule("program", @["line+"], program),
 ]

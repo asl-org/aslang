@@ -32,6 +32,12 @@ export function_call
 import statement
 export statement
 
+import macro_header
+export macro_header
+
+import line
+export line
+
 import program
 export program
 

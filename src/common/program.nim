@@ -1,15 +1,15 @@
 import sequtils, strutils
 
-import location, statement
+import location, line
 
 type Program* = ref object of RootObj
-  statements: seq[Statement]
+  lines: seq[Line]
   location: Location
 
-proc statements*(program: Program): seq[Statement] = program.statements
+proc lines*(program: Program): seq[Line] = program.lines
 
 proc `$`*(program: Program): string =
-  program.statements.map(proc(s: Statement): string = $(s)).join("\n")
+  program.lines.map(proc(s: Line): string = $(s)).join("\n")
 
-proc new_program*(statements: seq[Statement], location: Location): Program =
-  Program(statements: statements, location: location)
+proc new_program*(lines: seq[Line], location: Location): Program =
+  Program(lines: lines, location: location)

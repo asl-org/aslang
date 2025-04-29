@@ -16,6 +16,11 @@ type
     PRK_ARGUMENT_LIST,
     PRK_FUNCTION_CALL,
     PRK_STATEMENT,
+    PRK_FN_MACRO,
+    PRK_ARGUMENT_DEF,
+    PRK_ARGUMENT_DEF_LIST,
+    PRK_MACRO,
+    PRK_LINE,
     PRK_PROGRAM,
 
   ParseResult = ref object of RootObj
@@ -34,6 +39,11 @@ type
     of PRK_ARGUMENT_LIST: arglist: ArgumentList
     of PRK_FUNCTION_CALL: fncall: FunctionCall
     of PRK_STATEMENT: statement: Statement
+    of PRK_FN_MACRO: fn_macro: FunctionMacro
+    of PRK_ARGUMENT_DEF: arg_def: ArgumentDef
+    of PRK_ARGUMENT_DEF_LIST: arg_defs: ArgumentDefList
+    of PRK_MACRO: macro_header: MacroHeader
+    of PRK_LINE: line: Line
     of PRK_PROGRAM: program*: Program
 
 proc `$`*(parse_result: ParseResult): string =
@@ -50,6 +60,11 @@ proc `$`*(parse_result: ParseResult): string =
   of PRK_ARGUMENT_LIST: $(parse_result.arglist)
   of PRK_FUNCTION_CALL: $(parse_result.fncall)
   of PRK_STATEMENT: $(parse_result.statement)
+  of PRK_FN_MACRO: $(parse_result.fn_macro)
+  of PRK_ARGUMENT_DEF: $(parse_result.arg_def)
+  of PRK_ARGUMENT_DEF_LIST: $(parse_result.arg_defs)
+  of PRK_MACRO: $(parse_result.macro_header)
+  of PRK_LINE: $(parse_result.line)
   of PRK_PROGRAM: $(parse_result.program)
 
 proc raw_terminal*(value: string, location: Location): ParseResult =
@@ -153,11 +168,52 @@ proc statement*(parts: seq[seq[seq[ParseResult]]],
 
   ParseResult(kind: PRK_STATEMENT, statement: statement)
 
+proc fn_macro*(parts: seq[seq[seq[ParseResult]]],
+    location: Location): ParseResult =
+  let name = parts[0][1][0].identifier
+  let returns = parts[0][3][0].identifier
+  ParseResult(kind: PRK_FN_MACRO, fn_macro: new_fn_macro(name, returns, location))
+
+proc args_macro_argument*(parts: seq[seq[seq[ParseResult]]],
+    location: Location): ParseResult =
+  let module = parts[0][0][0].identifier
+  let name = parts[0][2][0].identifier
+  ParseResult(kind: PRK_ARGUMENT_DEF, arg_def: new_args_def(name, module, location))
+
+proc args_macro_argument_list*(parts: seq[seq[seq[ParseResult]]],
+    location: Location): ParseResult =
+  var leading_arg_defs = parts[0][2].map(proc(
+      x: ParseResult): ArgumentDef = x.arg_def)
+  let module = parts[0][3][0].identifier
+  let name = parts[0][5][0].identifier
+  leading_arg_defs.add(new_args_def(name, module, parts[0][5][0].location))
+  ParseResult(kind: PRK_ARGUMENT_DEF_LIST, arg_defs: new_args_def_list(
+      leading_arg_defs, location))
+
+proc args_macro*(parts: seq[seq[seq[ParseResult]]],
+    location: Location): ParseResult =
+  parts[0][2][0]
+
+proc macro_header*(parts: seq[seq[seq[ParseResult]]],
+    location: Location): ParseResult =
+  echo parts
+  if parts[0].len > 0:
+    return ParseResult(kind: PRK_MACRO, macro_header: new_fn_macro_header(parts[
+        0][0][0].fn_macro))
+  elif parts[1].len > 0:
+    return ParseResult(kind: PRK_MACRO, macro_header: new_args_macro_header(
+        parts[1][0][0].arg_defs))
+
 proc line*(parts: seq[seq[seq[ParseResult]]], location: Location): ParseResult =
-  if parts[0].len > 0: parts[0][0][0] else: ParseResult(kind: PRK_NONE)
+  if parts[0].len > 0:
+    return ParseResult(kind: PRK_LINE, line: new_statement_line(parts[0][0][0].statement))
+  elif parts[1].len > 0:
+    return ParseResult(kind: PRK_LINE, line: new_macro_header_line(parts[1][0][
+        0].macro_header))
+  else:
+    return ParseResult(kind: PRK_LINE, line: new_ignorable_line())
 
 proc program*(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
-  let statements = parts[0][0].filter(proc(p: ParseResult): bool = p.kind !=
-      PRK_NONE).map(proc(p: ParseResult): Statement = p.statement)
-  ParseResult(kind: PRK_PROGRAM, program: new_program(statements, location))
+  let lines = parts[0][0].map(proc(p: ParseResult): Line = p.line)
+  ParseResult(kind: PRK_PROGRAM, program: new_program(lines, location))
