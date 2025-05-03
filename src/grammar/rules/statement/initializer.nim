@@ -1,8 +1,4 @@
-import "../parser"
-import "../transformer"
-
-import "../location"
-import "../common/initializer"
+import "../base"
 
 proc initializer_transform(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
@@ -13,6 +9,6 @@ proc initializer_transform(parts: seq[seq[seq[ParseResult]]],
 
 var initializer_rules* = @[
   # initializer ::= identifier equal_separated identifier space* literal empty_space
-  non_terminal_rule("initializer", @["identifier equal_separated identifier space* literal empty_space"],
+  non_terminal_rule("initializer", @["identifier equal_separated identifier space* literal"],
       initializer_transform),
 ]

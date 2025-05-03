@@ -1,6 +1,6 @@
 import strformat, results, strutils, options
 
-import grammar/common/main
+import grammar/struct
 
 type Scope = ref object of RootObj
   modules: seq[Module]
@@ -39,18 +39,18 @@ proc extract_blocks*(program: Program): Result[Program, string] =
   let native_modules = ? modules()
   for module in native_modules:
     scope = ? scope.add_module(module)
-  for line in program.lines:
-    case line.kind:
-    of LK_STATEMENT:
-      # TODO: ASL only support 2 spaced indentation
-      if line.statement.level mod 2 == 1:
-        let msg = [
-          fmt"Indentation error encounted at {line.statement.location}",
-          $(line.statement)
-        ].join("\n")
-        return err(msg)
-    else:
-      discard
+  # for line in program.lines:
+  #   case line.kind:
+  #   of LK_STATEMENT:
+  #     # TODO: ASL only support 2 spaced indentation
+  #     if line.statement.level mod 2 == 1:
+  #       let msg = [
+  #         fmt"Indentation error encounted at {line.statement.location}",
+  #         $(line.statement)
+  #       ].join("\n")
+  #       return err(msg)
+  #   else:
+  #     discard
   ok(program)
 
 proc generate*(program: Program): Result[string, string] =
@@ -111,8 +111,6 @@ proc generate*(program: Program): Result[string, string] =
                     arg_index].module) != "S64":
                   matched = false
                   break
-              else:
-                return err(fmt"Function calls do not yet support string literals yet")
 
             if matched:
               return_module = some(sign.returns)

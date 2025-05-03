@@ -1,17 +1,17 @@
 import strformat, hashes
 
 import "../location"
-import identifier, native_argument
+import identifier, argument
 
 type KeywordArgument* = ref object of RootObj
   name: Identifier
-  value: NativeArgument
+  value: Argument
   location: Location
 
 proc `$`*(kwarg: KeywordArgument): string =
   fmt"{kwarg.name}: {kwarg.value}"
 
-proc new_kwarg*(name: Identifier, value: NativeArgument,
+proc new_kwarg*(name: Identifier, value: Argument,
     location: Location): KeywordArgument =
   KeywordArgument(name: name, value: value, location: location)
 

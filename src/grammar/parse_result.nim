@@ -1,11 +1,13 @@
-import common/main
+import struct
+import location
 
 type
   ParseResultKind = enum
     PRK_RAW,
     PRK_IDENTIFIER,
-    PRK_NATIVE_LITERAL,
-    PRK_NATIVE_ARGUMENT,
+    PRK_NUMERIC_LITERAL,
+    PRK_STRING_LITERAL,
+    PRK_ARGUMENT,
     PRK_KWARG,
     PRK_STRUCT,
     PRK_LITERAL,
@@ -26,10 +28,11 @@ type
       location: Location
       raw_value*: string
     of PRK_IDENTIFIER: identifier*: Identifier
-    of PRK_NATIVE_LITERAL: native_literal*: NativeLiteral
-    of PRK_NATIVE_ARGUMENT: native_argument*: NativeArgument
+    of PRK_NUMERIC_LITERAL: numeric_literal*: NumericLiteral
+    of PRK_STRING_LITERAL: string_literal*: StringLiteral
+    of PRK_ARGUMENT: argument*: Argument
     of PRK_KWARG: kwarg*: KeywordArgument
-    of PRK_STRUCT: struct_literal*: Struct
+    of PRK_STRUCT: struct_literal*: StructLiteral
     of PRK_LITERAL: literal*: Literal
     of PRK_INITIALIZER: init*: Initializer
     of PRK_ARGUMENT_LIST: arglist*: ArgumentList
@@ -46,8 +49,9 @@ proc `$`*(parse_result: ParseResult): string =
   case parse_result.kind:
   of PRK_RAW: parse_result.raw_value
   of PRK_IDENTIFIER: $(parse_result.identifier)
-  of PRK_NATIVE_LITERAL: $(parse_result.native_literal)
-  of PRK_NATIVE_ARGUMENT: $(parse_result.native_argument)
+  of PRK_NUMERIC_LITERAL: $(parse_result.numeric_literal)
+  of PRK_STRING_LITERAL: $(parse_result.string_literal)
+  of PRK_ARGUMENT: $(parse_result.argument)
   of PRK_KWARG: $(parse_result.kwarg)
   of PRK_STRUCT: $(parse_result.struct_literal)
   of PRK_LITERAL: $(parse_result.literal)
@@ -69,16 +73,19 @@ proc new_raw_value_parse_result*(value: string,
 proc new_identifier_parse_result*(identifier: Identifier): ParseResult =
   ParseResult(kind: PRK_IDENTIFIER, identifier: identifier)
 
-proc new_native_literal_parse_result*(native_literal: NativeLiteral): ParseResult =
-  ParseResult(kind: PRK_NATIVE_LITERAL, native_literal: native_literal)
+proc new_numeric_literal_parse_result*(numeric_literal: NumericLiteral): ParseResult =
+  ParseResult(kind: PRK_NUMERIC_LITERAL, numeric_literal: numeric_literal)
 
-proc new_native_arg_parse_result*(native_arg: NativeArgument): ParseResult =
-  ParseResult(kind: PRK_NATIVE_ARGUMENT, native_argument: native_arg)
+proc new_string_literal_parse_result*(string_literal: StringLiteral): ParseResult =
+  ParseResult(kind: PRK_STRING_LITERAL, string_literal: string_literal)
+
+proc new_argument_parse_result*(argument: Argument): ParseResult =
+  ParseResult(kind: PRK_ARGUMENT, argument: argument)
 
 proc new_keyword_arg_parse_result*(keyword_arg: KeywordArgument): ParseResult =
   ParseResult(kind: PRK_KWARG, kwarg: keyword_arg)
 
-proc new_struct_literal_parse_result*(struct_literal: Struct): ParseResult =
+proc new_struct_literal_parse_result*(struct_literal: StructLiteral): ParseResult =
   ParseResult(kind: PRK_STRUCT, struct_literal: struct_literal)
 
 proc new_literal_parse_result*(literal: Literal): ParseResult =

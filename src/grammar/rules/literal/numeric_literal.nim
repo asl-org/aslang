@@ -1,8 +1,6 @@
 import strutils
 
-import "../parser"
-
-from common import raw_value_transform, raw_parts_transform
+import "../base"
 
 let numeric_literal_rules* = @[
   # digit ::= [0-9]

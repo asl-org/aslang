@@ -1,6 +1,4 @@
-import "../parser"
-
-from common import raw_value_transform
+import base
 
 let symbol_rules* = @[
   # new_line ::= "\n"
@@ -38,9 +36,9 @@ let symbol_rules* = @[
   # close_paren ::= ")"
   static_terminal_rule("close_paren", ")", raw_value_transform),
   # fn_macro ::= "fn"
-  static_terminal_rule("fn_macro", "fn", raw_value_transform),
+  static_terminal_rule("fn_keyword", "fn", raw_value_transform),
   # ret_macro ::= "returns"
-  static_terminal_rule("ret_macro", "returns", raw_value_transform),
+  static_terminal_rule("ret_keyword", "returns", raw_value_transform),
   # args_macro ::= "args"
-  static_terminal_rule("args_macro", "args", raw_value_transform),
+  static_terminal_rule("args_keyword", "args", raw_value_transform),
 ]

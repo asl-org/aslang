@@ -7,7 +7,6 @@ type
 
   Statement* = ref object of RootObj
     location: Location
-    level: int
     case kind: StatementKind
     of SK_INITIALIZER: init*: Initializer
     of SK_FUNCTION_CALL: fncall*: Functioncall
@@ -23,12 +22,10 @@ proc `$`*(statement: Statement): string =
   of SK_INITIALIZER: $(statement.init)
   of SK_FUNCTION_CALL: $(statement.fncall)
 
-proc new_init_statement*(level: int, init: Initializer,
+proc new_init_statement*(init: Initializer,
     location: Location): Statement =
-  Statement(kind: SK_INITIALIZER, init: init, level: level,
-      location: location)
+  Statement(kind: SK_INITIALIZER, init: init, location: location)
 
-proc new_fncall_statement*(level: int, fncall: Functioncall,
+proc new_fncall_statement*(fncall: Functioncall,
     location: Location): Statement =
-  Statement(kind: SK_FUNCTION_CALL, fncall: fncall, level: level,
-      location: location)
+  Statement(kind: SK_FUNCTION_CALL, fncall: fncall, location: location)

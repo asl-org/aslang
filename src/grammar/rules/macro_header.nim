@@ -1,11 +1,6 @@
 import sequtils
 
-import "../parser"
-import "../transformer"
-
-import "../location"
-import "../common/macro_header"
-import "../common/identifier"
+import base
 
 proc fn_macro_transform(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =
@@ -43,22 +38,23 @@ proc macro_header_transform(parts: seq[seq[seq[ParseResult]]],
         0].arg_defs).new_macro_header_parse_result()
 
 var macro_header_rules* = @[
-  # fn_macro_header ::= fn_macro identifier ret_macro identifier colon
+  # fn_macro_header ::= fn_keyword identifier ret_keyword identifier colon
   non_terminal_rule("fn_macro_header", @[
-      "fn_macro identifier ret_macro identifier colon"], fn_macro_transform),
-  # args_macro_argument ::= native_argument comma_separated
-  non_terminal_rule("args_macro_argument", @[
-      "identifier space* identifier comma_separated"],
+      "fn_keyword identifier ret_keyword identifier colon"],
+      fn_macro_transform),
+  # leading_arg_def ::= identifier space+ identifier comma_separated
+  non_terminal_rule("leading_arg_def", @[
+      "identifier space+ identifier comma_separated"],
       args_macro_argument_transform),
-  # args_macro_argumentlist ::= open_paren space* args_macro_argument* identifier space* identifier space* close_paren
-  non_terminal_rule("args_macro_argumentlist", @[
-      "open_paren space* args_macro_argument* identifier space* identifier space* close_paren"],
+  # arg_def_list ::= open_paren space* args_macro_argument* identifier space* identifier space* close_paren
+  non_terminal_rule("arg_def_list", @[
+      "open_paren space* leading_arg_def* identifier space+ identifier space* close_paren"],
       args_macro_argument_list_transform),
-  # args_macro ::= args space* args_macro_argumentlist space* colon
-  non_terminal_rule("args_macro", @[
-      "args_macro space* args_macro_argumentlist space* colon"],
+  # args_macro_header ::= args space* arg_def_list space* colon
+  non_terminal_rule("args_macro_header", @[
+      "args_keyword space* arg_def_list space* colon"],
       args_macro_transform),
-  # macro ::= fn_macro_header | args_macro
-  non_terminal_rule("macro", @["fn_macro_header", "args_macro"],
+  # macro ::= fn_macro_header | args_macro_header
+  non_terminal_rule("macro", @["fn_macro_header", "args_macro_header"],
       macro_header_transform),
 ]

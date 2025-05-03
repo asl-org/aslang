@@ -1,11 +1,6 @@
 import sequtils
 
-import "../parser"
-import "../transformer"
-
-import "../location"
-import "../common/line"
-import "../common/program"
+import base
 
 proc program_transform(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =

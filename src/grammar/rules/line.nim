@@ -1,8 +1,4 @@
-import "../parser"
-import "../transformer"
-
-import "../location"
-import "../common/line"
+import base
 
 proc line_transform(parts: seq[seq[seq[ParseResult]]],
     location: Location): ParseResult =

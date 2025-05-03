@@ -51,7 +51,3 @@ _ = S64.unsafe_print(p)
 # bitwise not
 r = S64.not(n)
 _ = S64.unsafe_print(r)
-
-fn sum return S64:
-  args(S64 x):
-    S64.unsafe_add(x, 1)
