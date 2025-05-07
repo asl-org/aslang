@@ -1,7 +1,7 @@
 import os, results, strformat, parseopt
 
-import grammar
-import scope
+import parser
+import rules
 
 const
   Version = "0.1.0"
@@ -18,18 +18,30 @@ Options:
   -d, --debug          Enable debug mode
 """
 
-proc write_c_file(code: string, filename: string): Result[void, string] =
+# proc write_c_file(code: string, filename: string): Result[void, string] =
+#   try:
+#     write_file(filename, code)
+#     ok()
+#   except OSError as e:
+#     err(fmt"Failed to write output file '{filename}': {e.msg}")
+
+proc read_file_safe(filename: string): Result[string, string] =
   try:
-    write_file(filename, code)
-    ok()
-  except OSError as e:
-    err(fmt"Failed to write output file '{filename}': {e.msg}")
+    ok(readFile(filename))
+  except IOError as e:
+    err(fmt"Failed to read file '{filename}': {e.msg}")
 
 proc compile(filename: string, output_file: string = "asl.c"): Result[void, string] =
-  let parse_result = ? parse(rules, filename, "program")
-  let blocks = ? extract_blocks(parse_result.program)
-  let code = ? blocks.generate()
-  code.write_c_file(output_file)
+  let content = ? read_file_safe(filename)
+  let grammar = ? asl_grammar()
+  let parser = grammar.new_parser(content, new_location(filename))
+  let parse_result = ? parser.parse("program")
+  let program = parse_result.program.only_statements
+  echo program
+  ok()
+  # let blocks = ? extract_blocks(parse_result.program)
+  # let code = ? blocks.generate()
+  # code.write_c_file(output_file)
 
 proc show_help() =
   echo fmt"ASL Compiler v{Version}"
