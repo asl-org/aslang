@@ -1,9 +1,12 @@
 import init, fncall
 
+import location
+
 type
   ValueKind = enum
     VK_INIT, VK_FNCALL
   Value* = ref object of RootObj
+    location: Location
     case kind: ValueKind
     of VK_INIT: init: Initializer
     of VK_FNCALL: fncall: FunctionCall

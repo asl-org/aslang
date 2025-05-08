@@ -1,4 +1,5 @@
 import parse_result/location; export location
+import parse_result/identifier; export identifier
 import parse_result/init; export init
 import parse_result/arglist; export arglist
 import parse_result/fncall; export fncall
@@ -10,7 +11,8 @@ import parse_result/program; export program
 
 type
   ParserResultKind* = enum
-    PRK_STRING,
+    PRK_RAW_STRING,
+    PRK_IDENTIFER,
     PRK_INIT,
     PRK_ARGLIST,
     PRK_FNCALL,
@@ -26,8 +28,9 @@ type
     PRK_LINE,
     PRK_PROGRAM
   ParseResult* = ref object of RootObj
-    case kind: ParserResultKind
-    of PRK_STRING: content*: string
+    case kind*: ParserResultKind
+    of PRK_RAW_STRING: raw_string*: string
+    of PRK_IDENTIFER: identifier*: Identifier
     of PRK_INIT: init*: Initializer
     of PRK_ARGLIST: arglist*: ArgumentList
     of PRK_FNCALL: fncall*: FunctionCall
@@ -45,7 +48,8 @@ type
 
 proc `$`*(pr: ParseResult): string =
   case pr.kind:
-  of PRK_STRING: pr.content
+  of PRK_RAW_STRING: pr.raw_string
+  of PRK_IDENTIFER: $(pr.identifier)
   of PRK_INIT: $(pr.init)
   of PRK_ARGLIST: $(pr.arglist)
   of PRK_FNCALL: $(pr.fncall)
@@ -61,8 +65,11 @@ proc `$`*(pr: ParseResult): string =
   of PRK_LINE: $(pr.line)
   of PRK_PROGRAM: $(pr.program)
 
-proc to_parse_result*(value: string): ParseResult =
-  ParseResult(kind: PRK_STRING, content: value)
+proc to_parse_result*(raw_string: string): ParseResult =
+  ParseResult(kind: PRK_RAW_STRING, raw_string: raw_string)
+
+proc to_parse_result*(identifier: Identifier): ParseResult =
+  ParseResult(kind: PRK_IDENTIFER, identifier: identifier)
 
 proc to_parse_result*(init: Initializer): ParseResult =
   ParseResult(kind: PRK_INIT, init: init)

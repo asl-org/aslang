@@ -2,6 +2,7 @@ import os, results, strformat, parseopt
 
 import parser
 import rules
+import blocks
 
 const
   Version = "0.1.0"
@@ -36,8 +37,8 @@ proc compile(filename: string, output_file: string = "asl.c"): Result[void, stri
   let grammar = ? asl_grammar()
   let parser = grammar.new_parser(content, new_location(filename))
   let parse_result = ? parser.parse("program")
-  let program = parse_result.program.only_statements
-  echo program
+  let maybe_blocks = parse_result.program.to_blocks()
+  if maybe_blocks.is_err: echo "Hello ", maybe_blocks.error
   ok()
   # let blocks = ? extract_blocks(parse_result.program)
   # let code = ? blocks.generate()

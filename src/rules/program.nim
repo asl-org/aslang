@@ -1,6 +1,6 @@
 import "../parser"
-import base
 
+import character
 import statement
 import reducer
 

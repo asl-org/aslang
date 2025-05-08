@@ -1,5 +1,7 @@
 import reducer/parse_result; export parse_result
 
+import reducer/raw; export raw
+import reducer/identifier; export identifier
 import reducer/init; export init
 import reducer/arglist; export arglist
 import reducer/fncall; export fncall

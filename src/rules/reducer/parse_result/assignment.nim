@@ -2,15 +2,16 @@ import strformat
 
 import location
 import value
+import identifier
 
 type Assignment* = ref object of RootObj
-  dest_var_name: string
+  dest: Identifier
   value: Value
   location: Location
 
-proc new_assignment*(dest: string, value: Value,
+proc new_assignment*(dest: Identifier, value: Value,
     location: Location): Assignment =
-  Assignment(dest_var_name: dest, value: value, location: location)
+  Assignment(dest: dest, value: value, location: location)
 
-proc `$`*(assign: Assignment): string =
-  fmt"{assign.dest_var_name} = {assign.value}"
+proc `$`*(assignment: Assignment): string =
+  fmt"{assignment.dest} = {assignment.value}"

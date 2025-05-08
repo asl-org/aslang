@@ -1,13 +1,13 @@
 import "../parser"
 
-import base
-
+from identifier import identifier_rule
 from value import value_rule
 from reducer import assignment_reducer
+import character
 
 let assignment_rule* = non_terminal_rule("assignment", @[
   new_production(@[
-    identifier.exact_one,
+    identifier_rule.exact_one,
     space.any,
     equal.exact_one,
     space.any,

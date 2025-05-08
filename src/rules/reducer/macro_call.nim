@@ -2,15 +2,15 @@ import parse_result
 
 proc fn_macro_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
-  let name = parts[0][2][0].content
-  let module = parts[0][6][0].content
+  let name = parts[0][2][0].identifier
+  let module = parts[0][6][0].identifier
 
   (location, new_fn_macro(name, module).to_parse_result())
 
 proc arg_def_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
     Location, ParseResult) =
-  let module = parts[0][0][0].content
-  let name = parts[0][2][0].content
+  let module = parts[0][0][0].identifier
+  let name = parts[0][2][0].identifier
 
   (location, new_arg_def(module, name).to_parse_result())
 
@@ -29,7 +29,7 @@ proc args_macro_reducer*(location: Location, parts: seq[seq[seq[
 
 proc app_macro_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
-  let name = parts[0][2][0].content
+  let name = parts[0][2][0].identifier
   (location, name.new_app_macro().to_parse_result())
 
 proc macro_call_reducer*(location: Location, parts: seq[seq[seq[

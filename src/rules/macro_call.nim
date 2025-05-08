@@ -1,17 +1,20 @@
 import "../parser"
 
-import base
 import reducer
+
+import character
+import keyword
+from identifier import identifier_rule
 
 let fn_macro_rule* = non_terminal_rule("fn_macro", @[
   new_production(@[
     fn_keyword.exact_one,
     space.any,
-    identifier.exact_one,
+    identifier_rule.exact_one,
     space.any,
     returns_keyword.exact_one,
     space.any,
-    identifier.exact_one,
+    identifier_rule.exact_one,
     space.any,
     colon.exact_one,
   ])
@@ -19,9 +22,9 @@ let fn_macro_rule* = non_terminal_rule("fn_macro", @[
 
 let arg_def_rule* = non_terminal_rule("arg_def", @[
   new_production(@[
-    identifier.exact_one,
+    identifier_rule.exact_one,
     space.any,
-    identifier.exact_one,
+    identifier_rule.exact_one,
   ]),
 ], arg_def_reducer)
 
@@ -59,7 +62,7 @@ let app_macro_rule* = non_terminal_rule("app_macro", @[
   new_production(@[
     app_keyword.exact_one,
     space.any,
-    identifier.exact_one,
+    identifier_rule.exact_one,
     space.any,
     colon.exact_one,
   ])

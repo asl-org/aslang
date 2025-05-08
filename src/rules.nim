@@ -3,7 +3,10 @@ import results
 import parser
 
 import rules/reducer; export reducer
-import rules/base; export base
+import rules/character; export character
+import rules/number; export number
+import rules/keyword; export keyword
+import rules/identifier; export identifier
 import rules/init; export init
 import rules/arglist; export arglist
 import rules/fncall; export fncall
@@ -29,10 +32,10 @@ proc asl_grammar*(): Result[Grammar[Location, ParseResult], string] =
     digit,
     lowercase_alphabet,
     uppercase_alphabet,
-    alphabet,
-    identifier_head,
-    identifier_tail,
-    identifier,
+    alphabet_rule,
+    identifier_head_rule,
+    identifier_tail_rule,
+    identifier_rule,
     integer,
     init_rule,
     leading_arg_rule,

@@ -5,7 +5,7 @@ import parse_result
 proc comment_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
     Location, ParseResult) =
   var comment: string
-  for x in parts[0][1]: comment.add(x.content)
+  for x in parts[0][1]: comment.add(x.raw_string)
   let pr = new_comment(comment).to_parse_result()
   (location, pr)
 
