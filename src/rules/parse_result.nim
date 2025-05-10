@@ -1,5 +1,6 @@
 import strutils, strformat, sequtils, results
 
+# location.nim
 type Location* = object
   file: string
   line*: int = 1

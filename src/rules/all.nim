@@ -1,0 +1,224 @@
+import strutils
+
+import "../parser"
+import reducer
+
+# character.nim
+let space* = static_rule("space", "' '", " ", raw_string_reducer)
+let newline* = static_rule("newline", "'\\n'", "\n", raw_string_reducer)
+
+let underscore* = static_rule("underscore", "'_'", "_", raw_string_reducer)
+let equal* = static_rule("equal", "'='", "=", raw_string_reducer)
+let period* = static_rule("period", "'.'", ".", raw_string_reducer)
+let comma* = static_rule("comma", "','", ",", raw_string_reducer)
+let colon* = static_rule("colon", "':'", ":", raw_string_reducer)
+let hashtag* = static_rule("hashtag", "'#'", "#", raw_string_reducer)
+let paren_open* = static_rule("paren_open", "'('", "(", raw_string_reducer)
+let paren_close* = static_rule("paren_close", "')'", ")", raw_string_reducer)
+
+proc is_visible(x: char): bool = 32 <= x.ord and x.ord < 127
+let visible_character* = matcher_rule("visible_character", "ascii 32..<127",
+    is_visible, raw_string_reducer)
+let digit* = matcher_rule("digit", "[0-9]", isDigit, raw_string_reducer)
+let lowercase_alphabet* = matcher_rule("lowercase_alphabet", "[a-z]",
+    isLowerAscii, raw_string_reducer)
+let uppercase_alphabet* = matcher_rule("uppercase_alphabet", "[A-Z]",
+    isUpperAscii, raw_string_reducer)
+
+# keyword.nim
+let fn_keyword* = static_rule("fn_keyword", "'fn'", "fn",
+    raw_string_reducer)
+let returns_keyword* = static_rule("returns_keyword", "'returns'", "returns",
+    raw_string_reducer)
+let args_keyword* = static_rule("args_keyword", "'args'", "args",
+    raw_string_reducer)
+let app_keyword* = static_rule("app_keyword", "'app'", "app",
+    raw_string_reducer)
+
+# identifier.nim
+let alphabet_rule* = non_terminal_rule("alphabet", @[
+  new_production(@[lowercase_alphabet.exact_one]),
+  new_production(@[uppercase_alphabet.exact_one])
+], raw_parts_reducer)
+
+let identifier_head_rule* = non_terminal_rule("identifier_head", @[
+  new_production(@[underscore.exact_one]),
+  new_production(@[alphabet_rule.exact_one])
+], raw_parts_reducer)
+
+let identifier_tail_rule* = non_terminal_rule("identifier_tail", @[
+  new_production(@[identifier_head_rule.exact_one]),
+  new_production(@[digit.exact_one])
+], raw_parts_reducer)
+
+let identifier_rule* = non_terminal_rule("identifier", @[
+  new_production(@[identifier_head_rule.exact_one(), identifier_tail_rule.any()])
+], identifier_reducer)
+
+# number.nim
+let integer* = non_terminal_rule("integer", @[
+  new_production(@[digit.at_least_one])
+], raw_parts_reducer)
+
+# init.nim
+let init_rule* = non_terminal_rule("init", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    space.any,
+    integer.exact_one
+  ])
+], init_reducer)
+
+# arglist.nim
+let leading_arg_rule* = non_terminal_rule("leading_arg", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    space.any,
+    comma.exact_one,
+    space.any
+  ])
+], leading_arg_reducer)
+
+let arglist_rule* = non_terminal_rule("arglist", @[
+  new_production(@[
+    paren_open.exact_one,
+    space.any,
+    leading_arg_rule.any,
+    identifier_rule.exact_one,
+    space.any,
+    paren_close.exact_one
+  ])
+], arglist_reducer)
+
+# fncall.nim
+let fncall_rule* = non_terminal_rule("fncall", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    period.exact_one,
+    identifier_rule.exact_one,
+    arglist_rule.exact_one,
+  ])
+], fncall_reducer)
+
+# value.nim
+let value_rule* = non_terminal_rule("value", @[
+  new_production(@[init_rule.exact_one]),
+  new_production(@[fncall_rule.exact_one])
+], value_reducer)
+
+# assignment.nim
+let assignment_rule* = non_terminal_rule("assignment", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    space.any,
+    equal.exact_one,
+    space.any,
+    value_rule.exact_one,
+  ])
+], assignment_reducer)
+
+# fn_macro.nim
+let fn_macro_rule* = non_terminal_rule("fn_macro", @[
+  new_production(@[
+    fn_keyword.exact_one,
+    space.any,
+    identifier_rule.exact_one,
+    space.any,
+    returns_keyword.exact_one,
+    space.any,
+    identifier_rule.exact_one,
+    space.any,
+    colon.exact_one,
+  ])
+], fn_macro_reducer)
+
+# args_macro.nim
+let arg_def_rule* = non_terminal_rule("arg_def", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    space.any,
+    identifier_rule.exact_one,
+  ]),
+], arg_def_reducer)
+
+let leading_arg_def_rule* = non_terminal_rule("leading_arg_def", @[
+  new_production(@[
+    arg_def_rule.exact_one,
+    space.any,
+    comma.exact_one,
+    space.any,
+  ]),
+], leading_arg_def_reducer)
+
+let arg_def_list_rule* = non_terminal_rule("arg_def_list", @[
+  new_production(@[
+    paren_open.exact_one,
+    space.any,
+    leading_arg_def_rule.any,
+    arg_def_rule.exact_one,
+    space.any,
+    paren_close.exact_one,
+  ])
+], arg_def_list_reducer)
+
+let args_macro_rule* = non_terminal_rule("args_macro", @[
+  new_production(@[
+    args_keyword.exact_one,
+    space.any,
+    arg_def_list_rule.exact_one,
+    space.any,
+    colon.exact_one,
+  ])
+], args_macro_reducer)
+
+# app_macro.nim
+let app_macro_rule* = non_terminal_rule("app_macro", @[
+  new_production(@[
+    app_keyword.exact_one,
+    space.any,
+    identifier_rule.exact_one,
+    space.any,
+    colon.exact_one,
+  ])
+], app_macro_reducer)
+
+# macro_call.nim
+let macro_call_rule* = non_terminal_rule("macro_call", @[
+  new_production(@[fn_macro_rule.exact_one]),
+  new_production(@[args_macro_rule.exact_one]),
+  new_production(@[app_macro_rule.exact_one])
+], macro_call_reducer)
+
+# statement.nim
+let statement_rule* = non_terminal_rule("statement", @[
+  new_production(@[macro_call_rule.exact_one]),
+  new_production(@[assignment_rule.exact_one]),
+], statement_reducer)
+
+# comment.nim
+let comment_rule* = non_terminal_rule("comment", @[
+  new_production(@[
+    hashtag.exact_one,
+    visible_character.at_least_one,
+  ])
+], comment_reducer)
+
+# line.nim
+let line_rule* = non_terminal_rule("line", @[
+  new_production(@[space.any, statement_rule.exact_one, space.any]),
+  new_production(@[space.any, comment_rule.exact_one, space.any]),
+  new_production(@[space.any]),
+], line_reducer)
+
+let leading_line_rule* = non_terminal_rule("leading_line", @[
+  new_production(@[line_rule.exact_one, newline.exact_one]),
+], leading_line_reducer)
+
+# program.nim
+let program_rule* = non_terminal_rule("program", @[
+  new_production(@[
+    leading_line_rule.any,
+    line_rule.exact_one,
+    newline.at_most_one
+  ])
+], program_reducer)

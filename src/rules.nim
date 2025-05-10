@@ -3,18 +3,7 @@ import results
 import parser
 
 import rules/reducer; export reducer
-import rules/character; export character
-import rules/number; export number
-import rules/keyword; export keyword
-import rules/identifier; export identifier
-import rules/init; export init
-import rules/arglist; export arglist
-import rules/fncall; export fncall
-import rules/value; export value
-import rules/assignment; export assignment
-import rules/macro_call; export macro_call
-import rules/statement; export statement
-import rules/program; export program
+import rules/all
 
 proc asl_grammar*(): Result[Grammar[Location, ParseResult], string] =
   new_grammar[Location, ParseResult](@[
