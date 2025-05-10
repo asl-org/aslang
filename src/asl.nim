@@ -37,9 +37,7 @@ proc compile(filename: string, output_file: string = "asl.c"): Result[void, stri
   let grammar = ? asl_grammar()
   let parser = grammar.new_parser(content, new_location(filename))
   let parse_result = ? parser.parse("program")
-  let maybe_blocks = parse_result.program.to_blocks()
-  if maybe_blocks.is_err: echo "Hello ", maybe_blocks.error
-  ok()
+  parse_result.program.collect_defintions()
   # let blocks = ? extract_blocks(parse_result.program)
   # let code = ? blocks.generate()
   # code.write_c_file(output_file)

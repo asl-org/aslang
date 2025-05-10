@@ -112,4 +112,5 @@ proc parse*[State, Output](parser: Parser[State, Output],
 
 proc new_parser*[State, Output](grammar: Grammar[State, Output],
     content: string, state: State): Parser[State, Output] =
-  Parser[State, Output](grammar: grammar, content: content, state: state)
+  let content_with_eof = content & '\0'
+  Parser[State, Output](grammar: grammar, content: content_with_eof, state: state)

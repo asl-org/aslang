@@ -79,12 +79,13 @@ proc assignment_reducer*(location: Location, parts: seq[seq[seq[
   (location, pr)
 
 # macro_call.nim
-proc fn_macro_reducer*(location: Location, parts: seq[seq[seq[
+proc fn_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   let name = parts[0][2][0].identifier
-  let module = parts[0][6][0].identifier
+  let arg_def_list = parts[0][4][0].arg_def_list
+  let returns = parts[0][8][0].identifier
 
-  (location, new_fn_macro(name, module).to_parse_result())
+  (location, new_fn_def(name, returns, arg_def_list).to_parse_result())
 
 proc arg_def_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
     Location, ParseResult) =
@@ -103,23 +104,33 @@ proc arg_def_list_reducer*(location: Location, parts: seq[seq[seq[
   for arg_def in arg_def_list: defs.add(arg_def.arg_def)
   (location, new_arg_def_list(defs).to_parse_result())
 
-proc args_macro_reducer*(location: Location, parts: seq[seq[seq[
-    ParseResult]]]): (Location, ParseResult) = (location, parts[0][2][0])
-
-proc app_macro_reducer*(location: Location, parts: seq[seq[seq[
+proc app_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   let name = parts[0][2][0].identifier
-  (location, name.new_app_macro().to_parse_result())
+  (location, name.new_app_def().to_parse_result())
+
+proc module_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let name = parts[0][2][0].identifier
+  (location, name.new_module_def().to_parse_result())
+
+proc struct_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let name = parts[0][2][0].identifier
+  (location, name.new_struct_def().to_parse_result())
+
+proc union_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let name = parts[0][2][0].identifier
+  (location, name.new_union_def().to_parse_result())
 
 proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   var macro_call: MacroCall
   if parts[0].len > 0:
-    macro_call = new_macro_call(parts[0][0][0].fn_macro)
+    macro_call = new_macro_call(parts[0][0][0].fn_def)
   elif parts[1].len > 0:
-    macro_call = new_macro_call(parts[1][0][0].arg_def_list)
-  elif parts[2].len > 0:
-    macro_call = new_macro_call(parts[2][0][0].app_macro)
+    macro_call = new_macro_call(parts[1][0][0].app_def)
 
   (location, macro_call.to_parse_result())
 
@@ -131,6 +142,8 @@ proc statement_reducer*(location: Location, parts: seq[seq[seq[
     statement = new_statement(parts[0][0][0].macro_call)
   elif parts[1].len > 0:
     statement = new_statement(parts[1][0][0].assign)
+  elif parts[2].len > 0:
+    statement = new_statement(parts[2][0][0].fncall)
 
   (location, to_parse_result(statement))
 
