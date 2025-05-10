@@ -1,12 +1,169 @@
-import reducer/parse_result; export parse_result
+import parse_result
+export parse_result
 
-import reducer/raw; export raw
-import reducer/identifier; export identifier
-import reducer/init; export init
-import reducer/arglist; export arglist
-import reducer/fncall; export fncall
-import reducer/value; export value
-import reducer/assignment; export assignment
-import reducer/macro_call; export macro_call
-import reducer/statement; export statement
-import reducer/program; export program
+import strutils, sequtils
+
+# raw.nim
+proc raw_string_reducer*(location: Location, value: string): (Location, ParseResult) =
+  var updated = location
+  for x in value:
+    if x == '\n': updated.line += 1; updated.col = 1
+    else: updated.col += 1
+  (updated, to_parse_result(value))
+
+proc raw_parts_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  var value: string
+  for prod in parts:
+    for sym in prod:
+      for item in sym:
+        value.add($(item))
+  (location, to_parse_result(value))
+
+# identifier.nim
+proc identifier_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let head = parts[0][0][0].raw_string
+  let tail = parts[0][1].map(proc(x: ParseResult): string = x.raw_string).join("")
+  let identifier = new_identifier(head & tail, location)
+  (location, identifier.to_parse_result())
+
+# init.nim
+proc init_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let module_name = parts[0][0][0].identifier
+  let literal = parts[0][2][0].identifier
+  let pr = new_init(module_name, literal, location).to_parse_result()
+
+  (location, pr)
+
+# arglist.nim
+proc leading_arg_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) = (location, parts[0][0][0])
+
+proc arglist_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let args = (parts[0][2] & parts[0][3]).map(proc(
+      x: ParseResult): Identifier = x.identifier)
+  let pr = new_arglist(args, location).to_parse_result()
+  (location, pr)
+
+# fncall.nim
+proc fncall_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let module_name = parts[0][0][0].identifier
+  let fn_name = parts[0][2][0].identifier
+  let arglist = parts[0][3][0].arglist
+  let pr = new_fncall(module_name, fn_name, arglist).to_parse_result()
+
+  (location, pr)
+
+# value.nim
+proc value_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  var pr: ParseResult
+  if parts[0].len > 0:
+    pr = parts[0][0][0].init.new_value().to_parse_result()
+  elif parts[1].len > 0:
+    pr = parts[1][0][0].fncall.new_value().to_parse_result()
+
+  (location, pr)
+
+# assignment.nim
+proc assignment_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let result_var_name = parts[0][0][0].identifier
+  let value = parts[0][4][0].value
+  let pr = new_assignment(result_var_name, value, location).to_parse_result()
+
+  (location, pr)
+
+# macro_call.nim
+proc fn_macro_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let name = parts[0][2][0].identifier
+  let module = parts[0][6][0].identifier
+
+  (location, new_fn_macro(name, module).to_parse_result())
+
+proc arg_def_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
+    Location, ParseResult) =
+  let module = parts[0][0][0].identifier
+  let name = parts[0][2][0].identifier
+
+  (location, new_arg_def(module, name).to_parse_result())
+
+proc leading_arg_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) = (location, parts[0][0][0])
+
+proc arg_def_list_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  var defs: seq[ArgumentDefintion]
+  let arg_def_list = parts[0][2] & parts[0][3]
+  for arg_def in arg_def_list: defs.add(arg_def.arg_def)
+  (location, new_arg_def_list(defs).to_parse_result())
+
+proc args_macro_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) = (location, parts[0][2][0])
+
+proc app_macro_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let name = parts[0][2][0].identifier
+  (location, name.new_app_macro().to_parse_result())
+
+proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  var macro_call: MacroCall
+  if parts[0].len > 0:
+    macro_call = new_macro_call(parts[0][0][0].fn_macro)
+  elif parts[1].len > 0:
+    macro_call = new_macro_call(parts[1][0][0].arg_def_list)
+  elif parts[2].len > 0:
+    macro_call = new_macro_call(parts[2][0][0].app_macro)
+
+  (location, macro_call.to_parse_result())
+
+# statement.nim
+proc statement_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  var statement: Statement
+  if parts[0].len > 0:
+    statement = new_statement(parts[0][0][0].macro_call)
+  elif parts[1].len > 0:
+    statement = new_statement(parts[1][0][0].assign)
+
+  (location, to_parse_result(statement))
+
+# program.nim
+
+proc comment_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
+    Location, ParseResult) =
+  var comment: string
+  for x in parts[0][1]: comment.add(x.raw_string)
+  let pr = new_comment(comment).to_parse_result()
+  (location, pr)
+
+proc line_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  var pr: ParseResult
+  if parts[0].len > 0:
+    let spaces = parts[0][0].len
+    pr = parts[0][1][0].statement.new_line(spaces).to_parse_result()
+  elif parts[1].len > 0:
+    let spaces = parts[1][0].len
+    pr = parts[1][1][0].comment.new_line(spaces).to_parse_result()
+  else:
+    let spaces = parts[2][0].len
+    pr = new_empty_line(spaces).to_parse_result()
+  (location, pr)
+
+proc leading_line_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) = (location, parts[0][0][0])
+
+proc program_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
+    Location, ParseResult) =
+  let lines = parts[0][0] & parts[0][1]
+  let program = lines.map(proc(x: ParseResult): Line = x.line).new_program()
+  let pr = program.to_parse_result()
+  (location, pr)
+
