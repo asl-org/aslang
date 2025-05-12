@@ -42,6 +42,8 @@ type ArgumentList* = ref object of RootObj
   args: seq[Identifier]
   location: Location
 
+proc args*(arglist: ArgumentList): seq[Identifier] = arglist.args
+
 proc new_arglist*(args: seq[Identifier], location: Location): ArgumentList =
   ArgumentList(args: args, location: location)
 
@@ -54,6 +56,10 @@ type FunctionCall* = ref object of RootObj
   fn_name: Identifier
   arglist: ArgumentList
   location: Location
+
+proc module_name*(fncall: FunctionCall): Identifier = fncall.module_name
+proc fn_name*(fncall: FunctionCall): Identifier = fncall.fn_name
+proc arglist*(fncall: FunctionCall): ArgumentList = fncall.arglist
 
 proc new_fncall*(module_name: Identifier, fn_name: Identifier,
     arglist: ArgumentList): FunctionCall =
@@ -99,6 +105,9 @@ type ArgumentDefintion* = ref object of RootObj
   module: Identifier
   name: Identifier
   location: Location
+
+proc name*(arg_def: ArgumentDefintion): Identifier = arg_def.name
+proc module*(arg_def: ArgumentDefintion): Identifier = arg_def.module
 
 proc new_arg_def*(module: Identifier, name: Identifier): ArgumentDefintion =
   ArgumentDefintion(module: module, name: name)

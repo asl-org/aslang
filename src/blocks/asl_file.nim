@@ -20,3 +20,5 @@ proc close*(file: AslFile): Result[void, string] =
   if file.apps.len != 1:
     return err(fmt"root block must have an app block")
   ok()
+
+proc c*(file: AslFile): Result[string, string] = file.apps[0].c

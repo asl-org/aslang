@@ -19,28 +19,28 @@ Options:
   -d, --debug          Enable debug mode
 """
 
-# proc write_c_file(code: string, filename: string): Result[void, string] =
-#   try:
-#     write_file(filename, code)
-#     ok()
-#   except OSError as e:
-#     err(fmt"Failed to write output file '{filename}': {e.msg}")
+proc write_file_safe(code: string, filename: string): Result[void, string] =
+  try:
+    write_file(filename, code)
+    ok()
+  except OSError as e:
+    err(fmt"Failed to write output file '{filename}': {e.msg}")
 
 proc read_file_safe(filename: string): Result[string, string] =
   try:
     ok(readFile(filename))
-  except IOError as e:
+  except OSError as e:
     err(fmt"Failed to read file '{filename}': {e.msg}")
 
-proc compile(filename: string, output_file: string = "asl.c"): Result[void, string] =
+proc compile(filename: string, output_file: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let grammar = ? asl_grammar()
   let parser = grammar.new_parser(content, new_location(filename))
   let parse_result = ? parser.parse("program")
-  parse_result.program.collect_defintions()
+  let code = ? parse_result.program.collect_defintions()
   # let blocks = ? extract_blocks(parse_result.program)
   # let code = ? blocks.generate()
-  # code.write_c_file(output_file)
+  code.write_file_safe(output_file)
 
 proc show_help() =
   echo fmt"ASL Compiler v{Version}"
@@ -54,7 +54,7 @@ proc show_version() =
 when is_main_module:
   var
     input_file = ""
-    output_file = "asl.c"
+    output_file = "example.c"
     debug_mode = false
 
   for kind, key, val in getopt():

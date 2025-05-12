@@ -98,7 +98,7 @@ proc to_blocks(program: Program): Result[Block, string] =
   let file = ? stack.pop()
   ok(file)
 
-proc collect_defintions*(program: Program): Result[void, string] =
+proc collect_defintions*(program: Program): Result[string, string] =
   let asl_block = ? program.to_blocks()
-  echo asl_block
-  ok()
+  let code = ? asl_block.file.c
+  ok(code)
