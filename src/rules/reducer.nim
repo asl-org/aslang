@@ -139,11 +139,9 @@ proc statement_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   var statement: Statement
   if parts[0].len > 0:
-    statement = new_statement(parts[0][0][0].macro_call)
+    statement = new_statement(parts[0][0][0].assign)
   elif parts[1].len > 0:
-    statement = new_statement(parts[1][0][0].assign)
-  elif parts[2].len > 0:
-    statement = new_statement(parts[2][0][0].fncall)
+    statement = new_statement(parts[1][0][0].fncall)
 
   (location, to_parse_result(statement))
 
@@ -163,6 +161,9 @@ proc line_reducer*(location: Location, parts: seq[seq[seq[
     let spaces = parts[0][0].len
     pr = parts[0][1][0].statement.new_line(spaces).to_parse_result()
   elif parts[1].len > 0:
+    let spaces = parts[1][0].len
+    pr = parts[1][1][0].macro_call.new_line(spaces).to_parse_result()
+  elif parts[2].len > 0:
     let spaces = parts[1][0].len
     pr = parts[1][1][0].comment.new_line(spaces).to_parse_result()
   else:

@@ -229,7 +229,6 @@ let macro_call_rule* = non_terminal_rule("macro_call", @[
 
 # statement.nim
 let statement_rule* = non_terminal_rule("statement", @[
-  new_production(@[macro_call_rule.exact_one]),
   new_production(@[assignment_rule.exact_one]),
   new_production(@[fncall_rule.exact_one]),
 ], statement_reducer)
@@ -245,6 +244,7 @@ let comment_rule* = non_terminal_rule("comment", @[
 # line.nim
 let line_rule* = non_terminal_rule("line", @[
   new_production(@[space.any, statement_rule.exact_one, space.any]),
+  new_production(@[space.any, macro_call_rule.exact_one, space.any]),
   new_production(@[space.any, comment_rule.exact_one, space.any]),
   new_production(@[space.any]),
 ], line_reducer)

@@ -209,7 +209,6 @@ proc `$`*(macro_call: MacroCall): string =
 proc kind*(macro_call: MacroCall): MacroCallKind = macro_call.kind
 proc app_def*(macro_call: MacroCall): AppDefinition = macro_call.app_def
 proc fn_def*(macro_call: MacroCall): FunctionDefinition = macro_call.fn_def
-proc arg_def_list*(macro_call: MacroCall): ArgumentDefintionList = macro_call.arg_def_list
 
 proc safe_app_def*(macro_call: MacroCall): Result[AppDefinition, string] =
   case macro_call.kind:
@@ -230,53 +229,34 @@ proc new_macro_call*(app_def: AppDefinition): MacroCall =
 # statement.nim
 type
   StatementKind* = enum
-    SK_ASSIGNMENT, SK_MACRO_CALL, SK_FNCALL
+    SK_ASSIGNMENT, SK_FNCALL
   Statement* = ref object of RootObj
     location: Location
     case kind: StatementKind
     of SK_ASSIGNMENT: assign: Assignment
-    of SK_MACRO_CALL: macro_call: MacroCall
     of SK_FNCALL: fncall: FunctionCall
 
 proc `$`*(statement: Statement): string =
   case statement.kind:
   of SK_ASSIGNMENT: $(statement.assign)
-  of SK_MACRO_CALL: $(statement.macro_call)
   of SK_FNCALL: $(statement.fncall)
 
 proc kind*(statement: Statement): StatementKind = statement.kind
-proc macro_call*(statement: Statement): MacroCall = statement.macro_call
 proc assign*(statement: Statement): Assignment = statement.assign
 proc fncall*(statement: Statement): FunctionCall = statement.fncall
 
-proc safe_macro_call*(statement: Statement): Result[MacroCall, string] =
-  case statement.kind:
-  of SK_ASSIGNMENT, SK_FNCALL: err(fmt"Statement {statement} is not a macro call")
-  of SK_MACRO_CALL: ok(statement.macro_call)
-
 proc safe_assignment*(statement: Statement): Result[Assignment, string] =
   case statement.kind:
-  of SK_ASSIGNMENT, SK_FNCALL: ok(statement.assign)
-  of SK_MACRO_CALL: err(fmt"Statement {statement} is not an assignment")
+  of SK_ASSIGNMENT: ok(statement.assign)
+  of SK_FNCALL: err(fmt"Statement {statement} is not an assignment")
 
 proc safe_fncall*(statement: Statement): Result[FunctionCall, string] =
   case statement.kind:
   of SK_FNCALL: ok(statement.fncall)
-  of SK_MACRO_CALL, SK_ASSIGNMENT: err(fmt"Statement {statement} is not an function call")
-
-proc safe_app_def*(statement: Statement): Result[AppDefinition, string] =
-  let macro_call = ? statement.safe_macro_call()
-  return macro_call.safe_app_def()
-
-proc safe_fn_def*(statement: Statement): Result[FunctionDefinition, string] =
-  let macro_call = ? statement.safe_macro_call()
-  return macro_call.safe_fn_def()
+  of SK_ASSIGNMENT: err(fmt"Statement {statement} is not a function call")
 
 proc new_statement*(assign: Assignment): Statement =
   Statement(kind: SK_ASSIGNMENT, assign: assign)
-
-proc new_statement*(macro_call: MacroCall): Statement =
-  Statement(kind: SK_MACRO_CALL, macro_call: macro_call)
 
 proc new_statement*(fncall: FunctionCall): Statement =
   Statement(kind: SK_FNCALL, fncall: fncall)
@@ -294,11 +274,12 @@ proc `$`*(comment: Comment): string =
 # line.nim
 type
   LineKind* = enum
-    LK_STATEMENT, LK_COMMENT, LK_EMPTY
+    LK_STATEMENT, LK_MACRO_CALL, LK_COMMENT, LK_EMPTY
   Line* = ref object of RootObj
     spaces: int
     case kind: LineKind
     of LK_STATEMENT: statement: Statement
+    of LK_MACRO_CALL: macro_call: MacroCall
     of LK_COMMENT: comment: Comment
     of LK_EMPTY: discard
 
@@ -306,6 +287,7 @@ proc `$`*(line: Line): string =
   let content =
     case line.kind:
     of LK_STATEMENT: $(line.statement)
+    of LK_MACRO_CALL: $(line.macro_call)
     of LK_COMMENT: $(line.comment)
     of LK_EMPTY: ""
 
@@ -313,6 +295,7 @@ proc `$`*(line: Line): string =
 
 proc kind*(line: Line): LineKind = line.kind
 proc statement*(line: Line): Statement = line.statement
+proc macro_call*(line: Line): MacroCall = line.macro_call
 proc spaces*(line: Line): int = line.spaces
 
 proc safe_statement*(line: Line): Result[Statement, string] =
@@ -320,24 +303,24 @@ proc safe_statement*(line: Line): Result[Statement, string] =
   of LK_STATEMENT: ok(line.statement)
   else: err("Line {line} is not a statement")
 
-proc safe_non_macro_statement*(line: Line): Result[Statement, string] =
+proc safe_macro_call*(line: Line): Result[MacroCall, string] =
   case line.kind:
-  of LK_STATEMENT:
-    case line.statement.kind:
-    of SK_MACRO_CALL: err("Line {line} is not an assignment/function call")
-    of SK_ASSIGNMENT, SK_FNCALL: ok(line.statement)
+  of LK_MACRO_CALL: ok(line.macro_call)
   else: err("Line {line} is not a statement")
 
 proc safe_app_def*(line: Line): Result[AppDefinition, string] =
-  let statement = ? line.safe_statement()
-  statement.safe_app_def()
+  let macro_call = ? line.safe_macro_call()
+  macro_call.safe_app_def()
 
 proc safe_fn_def*(line: Line): Result[FunctionDefinition, string] =
-  let statement = ? line.safe_statement()
-  statement.safe_fn_def()
+  let macro_call = ? line.safe_macro_call()
+  macro_call.safe_fn_def()
 
 proc new_line*(statement: Statement, spaces: int): Line =
   Line(kind: LK_STATEMENT, statement: statement, spaces: spaces)
+
+proc new_line*(macro_call: MacroCall, spaces: int): Line =
+  Line(kind: LK_MACRO_CALL, macro_call: macro_call, spaces: spaces)
 
 proc new_line*(comment: Comment, spaces: int): Line =
   Line(kind: LK_COMMENT, comment: comment, spaces: spaces)
@@ -358,7 +341,8 @@ proc new_program*(lines: seq[Line]): Program =
 proc lines*(program: Program): seq[Line] = program.lines
 
 proc only_statements*(program: Program): Program =
-  program.lines = program.lines.filter(proc(l: Line): bool = l.kind == LK_STATEMENT)
+  program.lines = program.lines.filter(proc(l: Line): bool = l.kind in @[
+      LK_STATEMENT, LK_MACRO_CALL])
   return program
 
 # parse_result.nim
