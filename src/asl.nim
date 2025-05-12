@@ -54,7 +54,7 @@ proc show_version() =
 when is_main_module:
   var
     input_file = ""
-    output_file = "example.c"
+    output_file = "asl.c"
     debug_mode = false
 
   for kind, key, val in getopt():

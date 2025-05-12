@@ -48,8 +48,7 @@ Byte Byte_print(Byte value) {
 """,
     fn_code_str,
     "int main(int argc, char** argv) {",
-    fmt"{app.def.name}_start((Byte)argc);",
-    "return 0;",
+    fmt"return {app.def.name}_start((Byte)argc);",
     "}"
   ]
 

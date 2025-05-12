@@ -41,7 +41,21 @@ proc c*(fn: Function, module: Identifier): Result[string, string] =
   for index, s in fn.statements:
     case s.kind:
     of SK_ASSIGNMENT:
-      return err(fmt"Assignment code generation is not yet implemented")
+      case s.assign.value.kind:
+      of VK_INIT:
+        let init = s.assign.value.init
+        statements_code.add(fmt"{init.module_name} {s.assign.dest} = {init.literal};")
+      of VK_FNCALL:
+        let fncall = s.assign.value.fncall
+        var fncall_args: seq[string]
+        for arg in fncall.arglist.args:
+          fncall_args.add($(arg))
+        let fncall_args_str = fncall_args.join(", ")
+        statements_code.add(fmt"{fncall.module_name}_{fncall.fn_name}({fncall_args_str});")
+
+      # last line must be a return
+      if index == fn.statements.len - 1:
+        statements_code.add(fmt"return {s.assign.dest};")
     of SK_FNCALL:
       let fncall = s.fncall
 
@@ -51,6 +65,7 @@ proc c*(fn: Function, module: Identifier): Result[string, string] =
       let fncall_args_str = fncall_args.join(", ")
       var fncall_code = fmt"{fncall.module_name}_{fncall.fn_name}({fncall_args_str});"
 
+      # last line must be a return
       if index == fn.statements.len - 1:
         fncall_code = fmt"return {fncall_code}"
 

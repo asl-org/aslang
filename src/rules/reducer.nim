@@ -32,7 +32,7 @@ proc identifier_reducer*(location: Location, parts: seq[seq[seq[
 proc init_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   let module_name = parts[0][0][0].identifier
-  let literal = parts[0][2][0].identifier
+  let literal = parts[0][2][0].raw_string
   let pr = new_init(module_name, literal, location).to_parse_result()
 
   (location, pr)
@@ -164,10 +164,10 @@ proc line_reducer*(location: Location, parts: seq[seq[seq[
     let spaces = parts[1][0].len
     pr = parts[1][1][0].macro_call.new_line(spaces).to_parse_result()
   elif parts[2].len > 0:
-    let spaces = parts[1][0].len
-    pr = parts[1][1][0].comment.new_line(spaces).to_parse_result()
-  else:
     let spaces = parts[2][0].len
+    pr = parts[2][1][0].comment.new_line(spaces).to_parse_result()
+  else:
+    let spaces = parts[3][0].len
     pr = new_empty_line(spaces).to_parse_result()
   (location, pr)
 

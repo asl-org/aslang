@@ -27,13 +27,16 @@ proc new_identifier*(name: string, location: Location): Identifier =
 # init.nim
 type Initializer* = ref object of RootObj
   module_name: Identifier
-  literal: Identifier
+  literal: string
   location: Location
+
+proc module_name*(init: Initializer): Identifier = init.module_name
+proc literal*(init: Initializer): string = init.literal
 
 proc `$`*(init: Initializer): string =
   fmt"{init.module_name} {init.literal}"
 
-proc new_init*(mod_name: Identifier, literal: Identifier,
+proc new_init*(mod_name: Identifier, literal: string,
     location: Location): Initializer =
   Initializer(module_name: mod_name, literal: literal, location: location)
 
@@ -70,13 +73,17 @@ proc `$`*(fncall: FunctionCall): string =
 
 # value.nim
 type
-  ValueKind = enum
+  ValueKind* = enum
     VK_INIT, VK_FNCALL
   Value* = ref object of RootObj
     location: Location
     case kind: ValueKind
     of VK_INIT: init: Initializer
     of VK_FNCALL: fncall: FunctionCall
+
+proc kind*(value: Value): ValueKind = value.kind
+proc init*(value: Value): Initializer = value.init
+proc fncall*(value: Value): FunctionCall = value.fncall
 
 proc new_value*(init: Initializer): Value = Value(kind: VK_INIT, init: init)
 proc new_value*(fncall: FunctionCall): Value = Value(kind: VK_FNCALL,
@@ -92,6 +99,9 @@ type Assignment* = ref object of RootObj
   dest: Identifier
   value: Value
   location: Location
+
+proc dest*(assignment: Assignment): Identifier = assignment.dest
+proc value*(assignment: Assignment): Value = assignment.value
 
 proc new_assignment*(dest: Identifier, value: Value,
     location: Location): Assignment =
