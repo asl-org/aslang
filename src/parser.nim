@@ -102,6 +102,7 @@ proc parse[State, Output](parser: Parser[State, Output], rule_name: string,
         parser.state = new_state
         return ok(output)
       else:
+        # echo rule.name, " ", start, " ", parser.state
         parser.index = start
 
   err(fmt"Failed to match any production of <{rule.name}> at position {start}")

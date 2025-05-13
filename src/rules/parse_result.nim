@@ -24,6 +24,9 @@ proc location*(identifier: Identifier): Location = identifier.location
 proc new_identifier*(name: string, location: Location): Identifier =
   Identifier(name: name, location: location)
 
+proc new_identifier*(name: string): Identifier =
+  Identifier(name: name)
+
 # init.nim
 type Initializer* = ref object of RootObj
   module_name: Identifier
@@ -111,33 +114,33 @@ proc `$`*(assignment: Assignment): string =
   fmt"{assignment.dest} = {assignment.value}"
 
 # arg_def.nim
-type ArgumentDefintion* = ref object of RootObj
+type ArgumentDefinition* = ref object of RootObj
   module: Identifier
   name: Identifier
   location: Location
 
-proc name*(arg_def: ArgumentDefintion): Identifier = arg_def.name
-proc module*(arg_def: ArgumentDefintion): Identifier = arg_def.module
+proc name*(arg_def: ArgumentDefinition): Identifier = arg_def.name
+proc module*(arg_def: ArgumentDefinition): Identifier = arg_def.module
 
-proc new_arg_def*(module: Identifier, name: Identifier): ArgumentDefintion =
-  ArgumentDefintion(module: module, name: name)
+proc new_arg_def*(module: Identifier, name: Identifier): ArgumentDefinition =
+  ArgumentDefinition(module: module, name: name)
 
-proc `$`*(arg_def: ArgumentDefintion): string =
+proc `$`*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.module} {arg_def.name}"
 
 # arg_def_list.nim
-type ArgumentDefintionList* = ref object of RootObj
-  defs: seq[ArgumentDefintion]
+type ArgumentDefinitionList* = ref object of RootObj
+  defs: seq[ArgumentDefinition]
   location: Location
 
-proc defs*(arg_def_list: ArgumentDefintionList): seq[
-    ArgumentDefintion] = arg_def_list.defs
+proc defs*(arg_def_list: ArgumentDefinitionList): seq[
+    ArgumentDefinition] = arg_def_list.defs
 
-proc new_arg_def_list*(defs: seq[ArgumentDefintion]): ArgumentDefintionList =
-  ArgumentDefintionList(defs: defs)
+proc new_arg_def_list*(defs: seq[ArgumentDefinition]): ArgumentDefinitionList =
+  ArgumentDefinitionList(defs: defs)
 
-proc `$`*(arg_def_list: ArgumentDefintionList): string =
-  let defs = arg_def_list.defs.map(proc(x: ArgumentDefintion): string = $(
+proc `$`*(arg_def_list: ArgumentDefinitionList): string =
+  let defs = arg_def_list.defs.map(proc(x: ArgumentDefinition): string = $(
       x)).join(", ")
   "(" & defs & ")"
 
@@ -145,93 +148,73 @@ proc `$`*(arg_def_list: ArgumentDefintionList): string =
 type FunctionDefinition* = ref object of RootObj
   name: Identifier
   returns: Identifier
-  arg_def_list: ArgumentDefintionList
+  arg_def_list: ArgumentDefinitionList
   location: Location
 
 proc name*(fn_def: FunctionDefinition): Identifier = fn_def.name
 proc returns*(fn_def: FunctionDefinition): Identifier = fn_def.returns
-proc arg_def_list*(fn_def: FunctionDefinition): ArgumentDefintionList = fn_def.arg_def_list
+proc arg_def_list*(fn_def: FunctionDefinition): ArgumentDefinitionList = fn_def.arg_def_list
 
 proc new_fn_def*(name: Identifier, returns: Identifier,
-    arg_def_list: ArgumentDefintionList): FunctionDefinition =
+    arg_def_list: ArgumentDefinitionList): FunctionDefinition =
   FunctionDefinition(name: name, returns: returns, arg_def_list: arg_def_list)
 
 proc `$`*(fn_def: FunctionDefinition): string =
   fmt"fn {fn_def.name}{fn_def.arg_def_list} returns {fn_def.returns}:"
 
-# app_def.nim
-type AppDefinition* = ref object of RootObj
-  name: Identifier
-  location: Location
-
-proc name*(app_def: AppDefinition): Identifier = app_def.name
-
-proc new_app_def*(name: Identifier): AppDefinition =
-  AppDefinition(name: name)
-
-proc `$`*(app_def: AppDefinition): string =
-  fmt"app {app_def.name}:"
-
 # module_def.nim
-type ModuleDefinition* = ref object of RootObj
-  name: Identifier
-  location: Location
+type
+  ModuleDefinitionKind* = enum
+    MDK_APP, MDK_MODULE, MDK_STRUCT, MDK_UNION
+  ModuleDefinition* = ref object of RootObj
+    kind: ModuleDefinitionKind
+    name: Identifier
+    location: Location
 
 proc name*(module_def: ModuleDefinition): Identifier = module_def.name
 
+proc new_app_def*(name: Identifier): ModuleDefinition =
+  ModuleDefinition(kind: MDK_APP, name: name)
+
 proc new_module_def*(name: Identifier): ModuleDefinition =
-  ModuleDefinition(name: name)
+  ModuleDefinition(kind: MDK_MODULE, name: name)
+
+proc new_struct_def*(name: Identifier): ModuleDefinition =
+  ModuleDefinition(kind: MDK_STRUCT, name: name)
+
+proc new_union_def*(name: Identifier): ModuleDefinition =
+  ModuleDefinition(kind: MDK_UNION, name: name)
 
 proc `$`*(module_def: ModuleDefinition): string =
-  fmt"module {module_def.name}:"
-
-# struct_def.nim
-type StructDefinition* = ref object of RootObj
-  name: Identifier
-  location: Location
-
-proc name*(struct_def: StructDefinition): Identifier = struct_def.name
-
-proc new_struct_def*(name: Identifier): StructDefinition =
-  StructDefinition(name: name)
-
-proc `$`*(struct_def: StructDefinition): string =
-  fmt"struct {struct_def.name}:"
-
-# union_def.nim
-type UnionDefinition* = ref object of RootObj
-  name: Identifier
-  location: Location
-
-proc name*(union_def: UnionDefinition): Identifier = union_def.name
-
-proc new_union_def*(name: Identifier): UnionDefinition =
-  UnionDefinition(name: name)
-
-proc `$`*(union_def: UnionDefinition): string =
-  fmt"union {union_def.name}:"
+  let prefix =
+    case module_def.kind:
+    of MDK_APP: "app"
+    of MDK_MODULE: "module"
+    of MDK_STRUCT: "struct"
+    of MDK_UNION: "union"
+  fmt"{prefix} {module_def.name}:"
 
 # macro_call.nim
 type
   MacroCallKind* = enum
-    MCK_FN, MCK_APP
+    MCK_FN, MCK_MODULE
   MacroCall* = ref object of RootObj
     case kind: MacroCallKind
     of MCK_FN: fn_def: FunctionDefinition
-    of MCK_APP: app_def: AppDefinition
+    of MCK_MODULE: module_def: ModuleDefinition
 
 proc `$`*(macro_call: MacroCall): string =
   case macro_call.kind:
   of MCK_FN: $(macro_call.fn_def)
-  of MCK_APP: $(macro_call.app_def)
+  of MCK_MODULE: $(macro_call.module_def)
 
 proc kind*(macro_call: MacroCall): MacroCallKind = macro_call.kind
-proc app_def*(macro_call: MacroCall): AppDefinition = macro_call.app_def
+proc module_def*(macro_call: MacroCall): ModuleDefinition = macro_call.module_def
 proc fn_def*(macro_call: MacroCall): FunctionDefinition = macro_call.fn_def
 
-proc safe_app_def*(macro_call: MacroCall): Result[AppDefinition, string] =
+proc safe_module_def*(macro_call: MacroCall): Result[ModuleDefinition, string] =
   case macro_call.kind:
-  of MCK_APP: ok(macro_call.app_def)
+  of MCK_MODULE: ok(macro_call.module_def)
   else: return err(fmt"Macro {macro_call} is not an app macro")
 
 proc safe_fn_def*(macro_call: MacroCall): Result[FunctionDefinition, string] =
@@ -242,8 +225,8 @@ proc safe_fn_def*(macro_call: MacroCall): Result[FunctionDefinition, string] =
 proc new_macro_call*(fn_def: FunctionDefinition): MacroCall =
   MacroCall(kind: MCK_FN, fn_def: fn_def)
 
-proc new_macro_call*(app_def: AppDefinition): MacroCall =
-  MacroCall(kind: MCK_APP, app_def: app_def)
+proc new_macro_call*(module_def: ModuleDefinition): MacroCall =
+  MacroCall(kind: MCK_MODULE, module_def: module_def)
 
 # statement.nim
 type
@@ -327,9 +310,9 @@ proc safe_macro_call*(line: Line): Result[MacroCall, string] =
   of LK_MACRO_CALL: ok(line.macro_call)
   else: err("Line {line} is not a statement")
 
-proc safe_app_def*(line: Line): Result[AppDefinition, string] =
+proc safe_app_def*(line: Line): Result[ModuleDefinition, string] =
   let macro_call = ? line.safe_macro_call()
-  macro_call.safe_app_def()
+  macro_call.safe_module_def()
 
 proc safe_fn_def*(line: Line): Result[FunctionDefinition, string] =
   let macro_call = ? line.safe_macro_call()
@@ -377,10 +360,7 @@ type
     PRK_FN_MACRO,
     PRK_ARG_DEF,
     PRK_ARG_DEF_LIST,
-    PRK_APP_MACRO,
     PRK_MODULE_MACRO,
-    PRK_STRUCT_MACRO,
-    PRK_UNION_MACRO,
     PRK_MACRO_CALL,
     PRK_COMMENT,
     PRK_STATEMENT,
@@ -396,12 +376,9 @@ type
     of PRK_VALUE: value*: Value
     of PRK_ASSINGMENT: assign*: Assignment
     of PRK_FN_MACRO: fn_def*: FunctionDefinition
-    of PRK_ARG_DEF: arg_def*: ArgumentDefintion
-    of PRK_ARG_DEF_LIST: arg_def_list*: ArgumentDefintionList
-    of PRK_APP_MACRO: app_def*: AppDefinition
+    of PRK_ARG_DEF: arg_def*: ArgumentDefinition
+    of PRK_ARG_DEF_LIST: arg_def_list*: ArgumentDefinitionList
     of PRK_MODULE_MACRO: module_def*: ModuleDefinition
-    of PRK_STRUCT_MACRO: struct_def*: StructDefinition
-    of PRK_UNION_MACRO: union_def*: UnionDefinition
     of PRK_MACRO_CALL: macro_call*: MacroCall
     of PRK_COMMENT: comment*: Comment
     of PRK_STATEMENT: statement*: Statement
@@ -420,10 +397,7 @@ proc `$`*(pr: ParseResult): string =
   of PRK_FN_MACRO: $(pr.fn_def)
   of PRK_ARG_DEF: $(pr.arg_def)
   of PRK_ARG_DEF_LIST: $(pr.arg_def_list)
-  of PRK_APP_MACRO: $(pr.app_def)
   of PRK_MODULE_MACRO: $(pr.module_def)
-  of PRK_STRUCT_MACRO: $(pr.struct_def)
-  of PRK_UNION_MACRO: $(pr.union_def)
   of PRK_MACRO_CALL: $(pr.macro_call)
   of PRK_COMMENT: $(pr.comment)
   of PRK_STATEMENT: $(pr.statement)
@@ -454,23 +428,14 @@ proc to_parse_result*(assign: Assignment): ParseResult =
 proc to_parse_result*(fn_def: FunctionDefinition): ParseResult =
   ParseResult(kind: PRK_FN_MACRO, fn_def: fn_def)
 
-proc to_parse_result*(arg_def: ArgumentDefintion): ParseResult =
+proc to_parse_result*(arg_def: ArgumentDefinition): ParseResult =
   ParseResult(kind: PRK_ARG_DEF, arg_def: arg_def)
 
-proc to_parse_result*(arg_def_list: ArgumentDefintionList): ParseResult =
+proc to_parse_result*(arg_def_list: ArgumentDefinitionList): ParseResult =
   ParseResult(kind: PRK_ARG_DEF_LIST, arg_def_list: arg_def_list)
-
-proc to_parse_result*(app_def: AppDefinition): ParseResult =
-  ParseResult(kind: PRK_APP_MACRO, app_def: app_def)
 
 proc to_parse_result*(module_def: ModuleDefinition): ParseResult =
   ParseResult(kind: PRK_MODULE_MACRO, module_def: module_def)
-
-proc to_parse_result*(struct_def: StructDefinition): ParseResult =
-  ParseResult(kind: PRK_STRUCT_MACRO, struct_def: struct_def)
-
-proc to_parse_result*(union_def: UnionDefinition): ParseResult =
-  ParseResult(kind: PRK_UNION_MACRO, union_def: union_def)
 
 proc to_parse_result*(macro_call: MacroCall): ParseResult =
   ParseResult(kind: PRK_MACRO_CALL, macro_call: macro_call)

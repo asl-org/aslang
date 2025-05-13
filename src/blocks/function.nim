@@ -1,12 +1,24 @@
-import results, strformat, strutils
+import results, strformat, strutils, sets
 import "../rules"
 
 import common
 
-type Function* = ref object of RootObj
-  def: FunctionDefinition
-  statements: seq[Statement]
-  spaces: int
+type
+  FunctionKind* = enum
+    FK_USER, FK_NATIVE
+  Function* = ref object of RootObj
+    def: FunctionDefinition
+    spaces: int
+    case kind: FunctionKind
+    of FK_USER: statements: seq[Statement]
+    of FK_NATIVE: discard
+
+proc def*(fn: Function): FunctionDefinition = fn.def
+proc spaces*(fn: Function): int = fn.spaces
+proc statements*(fn: Function): Result[seq[Statement], string] =
+  case fn.kind:
+  of FK_USER: ok(fn.statements)
+  of FK_NATIVE: return err(fmt"Native functions do not have statements")
 
 proc `$`*(fn: Function): string =
   let prefix = prefix(fn.spaces)
@@ -16,66 +28,54 @@ proc `$`*(fn: Function): string =
     content.add((child_prefix & $(statement)))
   return content.join("\n")
 
-proc new_function*(def: FunctionDefinition,
+proc new_user_function*(def: FunctionDefinition,
     spaces: int): Function =
-  Function(def: def, spaces: spaces)
+  Function(kind: FK_USER, def: def, spaces: spaces)
+
+proc new_native_function*(def: FunctionDefinition): Function =
+  Function(kind: FK_NATIVE, def: def, spaces: 4)
 
 # TODO: add duplicate block validation
-proc add_statement*(fn: Function, statement: Statement): void =
-  fn.statements.add(statement)
+proc add_statement*(fn: Function, statement: Statement): Result[void, string] =
+  case fn.kind:
+  of FK_NATIVE:
+    err(fmt"Native functions do not support statements")
+  of FK_USER:
+    fn.statements.add(statement)
+    ok()
 
 # TODO: perform final validation
 proc close*(fn: Function): Result[void, string] =
+  case fn.kind:
+  of FK_NATIVE:
+    return err(fmt"Native function can not have statements")
+  of FK_USER:
+    discard
+
   if fn.statements.len == 0:
     return err(fmt"function block must have at least one statement")
+
+  var arg_name_set: HashSet[string]
+  for arg_def in fn.def.arg_def_list.defs:
+    let name = $(arg_def.name)
+    if name in arg_name_set:
+      return err(fmt"Parameter {name} is used twice in the function definition")
+    arg_name_set.incl(name)
   ok()
 
-proc c*(fn: Function, module: Identifier): Result[string, string] =
-  var arg_code: seq[string]
-  for arg in fn.def.arg_def_list.defs:
-    arg_code.add(fmt"{arg.module} {arg.name}")
+proc match_fn_def*(self: Function, other: Function): bool =
+  # same name
+  if $(self.def.name) != $(other.def.name): return false
+  # same return value
+  if $(self.def.returns) != $(other.def.returns): return false
+  # same arity (arg count)
+  if self.def.arg_def_list.defs.len != other.def.arg_def_list.defs.len: return false
 
-  let arg_code_str = arg_code.join(", ")
+  # same arg datatypes
+  for index, self_arg_def in self.def.arg_def_list.defs:
+    let other_arg_def = other.def.arg_def_list.defs[index]
+    if $(self_arg_def.module) != $(other_arg_def.module):
+      return false
 
-  var statements_code: seq[string]
-  for index, s in fn.statements:
-    case s.kind:
-    of SK_ASSIGNMENT:
-      case s.assign.value.kind:
-      of VK_INIT:
-        let init = s.assign.value.init
-        statements_code.add(fmt"{init.module_name} {s.assign.dest} = {init.literal};")
-      of VK_FNCALL:
-        let fncall = s.assign.value.fncall
-        var fncall_args: seq[string]
-        for arg in fncall.arglist.args:
-          fncall_args.add($(arg))
-        let fncall_args_str = fncall_args.join(", ")
-        statements_code.add(fmt"{fncall.module_name}_{fncall.fn_name}({fncall_args_str});")
+  return true
 
-      # last line must be a return
-      if index == fn.statements.len - 1:
-        statements_code.add(fmt"return {s.assign.dest};")
-    of SK_FNCALL:
-      let fncall = s.fncall
-
-      var fncall_args: seq[string]
-      for arg in fncall.arglist.args:
-        fncall_args.add($(arg))
-      let fncall_args_str = fncall_args.join(", ")
-      var fncall_code = fmt"{fncall.module_name}_{fncall.fn_name}({fncall_args_str});"
-
-      # last line must be a return
-      if index == fn.statements.len - 1:
-        fncall_code = fmt"return {fncall_code}"
-
-      statements_code.add(fncall_code)
-
-  let statements_code_str = statements_code.join("\n")
-  let fn_code = @[
-    fmt"{fn.def.returns} {module}_{fn.def.name}(" & arg_code_str & ") {",
-    fmt"{statements_code_str}",
-    "}"
-  ]
-
-  ok(fn_code.join("\n"))

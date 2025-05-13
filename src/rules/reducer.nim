@@ -99,7 +99,7 @@ proc leading_arg_def_reducer*(location: Location, parts: seq[seq[seq[
 
 proc arg_def_list_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
-  var defs: seq[ArgumentDefintion]
+  var defs: seq[ArgumentDefinition]
   let arg_def_list = parts[0][2] & parts[0][3]
   for arg_def in arg_def_list: defs.add(arg_def.arg_def)
   (location, new_arg_def_list(defs).to_parse_result())
@@ -129,8 +129,14 @@ proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
   var macro_call: MacroCall
   if parts[0].len > 0:
     macro_call = new_macro_call(parts[0][0][0].fn_def)
-  elif parts[1].len > 0:
-    macro_call = new_macro_call(parts[1][0][0].app_def)
+  elif parts[1].len > 0: # app def
+    macro_call = new_macro_call(parts[1][0][0].module_def)
+  elif parts[2].len > 0: # module def
+    macro_call = new_macro_call(parts[2][0][0].module_def)
+  elif parts[3].len > 0: # struct def
+    macro_call = new_macro_call(parts[3][0][0].module_def)
+  elif parts[4].len > 0: # union def
+    macro_call = new_macro_call(parts[4][0][0].module_def)
 
   (location, macro_call.to_parse_result())
 
