@@ -36,7 +36,11 @@ proc compile(filename: string, output_file: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let grammar = ? asl_grammar()
   let parser = grammar.new_parser(content, new_location(filename))
-  let parse_result = ? parser.parse("program")
+  let maybe_parse_result = parser.parse("program")
+  if maybe_parse_result.is_err:
+    return err($(maybe_parse_result.error))
+
+  let parse_result = maybe_parse_result.get
   let code = ? parse_result.program.collect_defintions()
   # let blocks = ? extract_blocks(parse_result.program)
   # let code = ? blocks.generate()
@@ -78,7 +82,8 @@ when is_main_module:
 
   let maybe_compiled = input_file.absolute_path.compile(output_file)
   if maybe_compiled.is_err:
-    echo fmt"Compilation failed: {maybe_compiled.error}"
+    echo "Compilation failed:"
+    echo maybe_compiled.error
     quit(QuitFailure)
 
   echo fmt"Successfully compiled {input_file} to {output_file}"
