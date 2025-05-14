@@ -1,4 +1,4 @@
-import results, strutils
+import results, strutils, strformat
 
 import common
 
@@ -9,12 +9,18 @@ type Else* = ref object of RootObj
   statements: seq[Statement]
 
 proc spaces*(else_block: Else): int = else_block.spaces
+proc statements*(else_block: Else): seq[Statement] = else_block.statements
 
 proc new_else*(spaces: int): Else =
   Else(spaces: spaces)
 
 proc `$`*(else_block: Else): string =
-  prefix(else_block.spaces) & "else:"
+  let prefix = prefix(else_block.spaces)
+  let child_prefix = child_prefix(else_block.spaces)
+  var content = @[prefix & "else:"]
+  for statement in else_block.statements:
+    content.add(child_prefix & $(statement))
+  return content.join("\n")
 
 proc add_statement*(else_block: Else, statement: Statement): Result[void, string] =
   else_block.statements.add(statement)
@@ -31,6 +37,8 @@ type Case* = ref object of RootObj
   statements: seq[Statement]
 
 proc spaces*(case_block: Case): int = case_block.spaces
+proc statements*(case_block: Case): seq[Statement] = case_block.statements
+proc value*(case_block: Case): string = case_block.value
 
 proc new_case*(value: string, spaces: int): Case =
   Case(value: value, spaces: spaces)
@@ -58,25 +66,34 @@ type Matcher* = ref object of RootObj
   cases: seq[Case]
   else_blocks: seq[Else]
 
+proc value*(matcher: Matcher): Identifier = matcher.value
 proc spaces*(matcher: Matcher): int = matcher.spaces
+proc cases*(matcher: Matcher): seq[Case] = matcher.cases
+proc else_blocks*(matcher: Matcher): seq[Else] = matcher.else_blocks
 
 proc new_matcher*(value: Identifier, spaces: int): Matcher =
   Matcher(value: value, spaces: spaces)
 
 proc add_case*(matcher: Matcher, case_block: Case): Result[void, string] =
-  if matcher.else_blocks.len > 0:
+  if matcher.else_blocks.len == 1:
     return err("Match block does not support case blocks after an else block")
   matcher.cases.add(case_block)
   ok()
 
 proc add_else*(matcher: Matcher, else_block: Else): Result[void, string] =
-  if matcher.else_blocks.len > 0:
+  if matcher.else_blocks.len == 1:
     return err("Match block does not support multiple else blocks")
   matcher.else_blocks.add(else_block)
   ok()
 
 proc `$`*(matcher: Matcher): string =
-  prefix(matcher.spaces) & "match " & $(matcher.value) & ":"
+  let prefix = prefix(matcher.spaces)
+  var content = @[fmt"{prefix}match {matcher.value}:"]
+  for case_block in matcher.cases:
+    content.add($(case_block))
+  for else_block in matcher.else_blocks:
+    content.add($(else_block))
+  return content.join("\n")
 
 proc close*(matcher: Matcher): Result[void, string] =
   if matcher.cases.len == 0:

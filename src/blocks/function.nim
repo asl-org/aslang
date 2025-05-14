@@ -23,6 +23,14 @@ proc statements*(fn: Function): Result[seq[Statement], string] =
   of FK_USER: ok(fn.statements)
   of FK_NATIVE: return err(fmt"Native functions do not have statements")
 
+proc match_block*(fn: Function): Result[Matcher, string] =
+  case fn.kind:
+  of FK_USER:
+    if fn.match_blocks.len == 0:
+      return err(fmt"No match block found")
+    ok(fn.match_blocks[0])
+  of FK_NATIVE: return err(fmt"Native functions do not have statements")
+
 proc `$`*(fn: Function): string =
   let prefix = prefix(fn.spaces)
   let child_prefix = child_prefix(fn.spaces)
@@ -44,7 +52,7 @@ proc add_statement*(fn: Function, statement: Statement): Result[void, string] =
   of FK_NATIVE:
     err(fmt"Native functions do not support statements")
   of FK_USER:
-    if fn.match_blocks.len > 0:
+    if fn.match_blocks.len == 1:
       return err(fmt"There can be no statements after match block in a function")
     fn.statements.add(statement)
     ok()
@@ -54,7 +62,7 @@ proc add_match_block*(fn: Function, matcher: Matcher): Result[void, string] =
   of FK_NATIVE:
     err(fmt"Native functions do not support statements")
   of FK_USER:
-    if fn.match_blocks.len > 0:
+    if fn.match_blocks.len == 1:
       return err(fmt"Function do not support multiple match blocks yet")
     fn.match_blocks.add(matcher)
     ok()
