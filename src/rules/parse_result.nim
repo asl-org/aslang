@@ -195,7 +195,7 @@ proc `$`*(module_def: ModuleDefinition): string =
   fmt"{prefix} {module_def.name}:"
 
 # match_def.nim
-type MatchDefinition = ref object of RootObj
+type MatchDefinition* = ref object of RootObj
   name: Identifier
 
 proc name*(match_def: MatchDefinition): Identifier = match_def.name
@@ -206,7 +206,7 @@ proc `$`*(match_def: MatchDefinition): string =
 proc new_match_def*(name: Identifier): MatchDefinition = MatchDefinition(name: name)
 
 # case_def.nim
-type CaseDefinition = ref object of RootObj
+type CaseDefinition* = ref object of RootObj
   value: string
 
 proc value*(case_def: CaseDefinition): string = case_def.value
@@ -382,13 +382,25 @@ proc safe_macro_call*(line: Line): Result[MacroCall, string] =
   of LK_MACRO_CALL: ok(line.macro_call)
   else: err("Line {line} is not a statement")
 
-proc safe_app_def*(line: Line): Result[ModuleDefinition, string] =
+proc safe_module_def*(line: Line): Result[ModuleDefinition, string] =
   let macro_call = ? line.safe_macro_call()
   macro_call.safe_module_def()
 
 proc safe_fn_def*(line: Line): Result[FunctionDefinition, string] =
   let macro_call = ? line.safe_macro_call()
   macro_call.safe_fn_def()
+
+proc safe_match_def*(line: Line): Result[MatchDefinition, string] =
+  let macro_call = ? line.safe_macro_call()
+  macro_call.safe_match_def()
+
+proc safe_case_def*(line: Line): Result[CaseDefinition, string] =
+  let macro_call = ? line.safe_macro_call()
+  macro_call.safe_case_def()
+
+proc safe_else_def*(line: Line): Result[ElseDefinition, string] =
+  let macro_call = ? line.safe_macro_call()
+  macro_call.safe_else_def()
 
 proc new_line*(statement: Statement, spaces: int): Line =
   Line(kind: LK_STATEMENT, statement: statement, spaces: spaces)

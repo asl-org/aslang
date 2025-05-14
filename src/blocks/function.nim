@@ -2,6 +2,7 @@ import results, strformat, strutils, sets
 import "../rules"
 
 import common
+import matcher
 
 type
   FunctionKind* = enum
@@ -10,7 +11,9 @@ type
     def: FunctionDefinition
     spaces: int
     case kind: FunctionKind
-    of FK_USER: statements: seq[Statement]
+    of FK_USER:
+      statements: seq[Statement]
+      match_blocks: seq[Matcher]
     of FK_NATIVE: discard
 
 proc def*(fn: Function): FunctionDefinition = fn.def
@@ -41,7 +44,19 @@ proc add_statement*(fn: Function, statement: Statement): Result[void, string] =
   of FK_NATIVE:
     err(fmt"Native functions do not support statements")
   of FK_USER:
+    if fn.match_blocks.len > 0:
+      return err(fmt"There can be no statements after match block in a function")
     fn.statements.add(statement)
+    ok()
+
+proc add_match_block*(fn: Function, matcher: Matcher): Result[void, string] =
+  case fn.kind:
+  of FK_NATIVE:
+    err(fmt"Native functions do not support statements")
+  of FK_USER:
+    if fn.match_blocks.len > 0:
+      return err(fmt"Function do not support multiple match blocks yet")
+    fn.match_blocks.add(matcher)
     ok()
 
 # TODO: perform final validation
@@ -52,8 +67,8 @@ proc close*(fn: Function): Result[void, string] =
   of FK_USER:
     discard
 
-  if fn.statements.len == 0:
-    return err(fmt"function block must have at least one statement")
+  if fn.statements.len == 0 and fn.match_blocks.len == 0:
+    return err(fmt"function block must have at least one statement or match block")
 
   var arg_name_set: HashSet[string]
   for arg_def in fn.def.arg_def_list.defs:
