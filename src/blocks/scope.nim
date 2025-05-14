@@ -60,6 +60,8 @@ proc new_scope*(): Result[Scope, string] =
     ("subtract", "S64", @[("S64", "a"), ("S64", "b")]),
     ("multiply", "S64", @[("S64", "a"), ("S64", "b")]),
     ("quotient", "S64", @[("S64", "a"), ("S64", "b")]),
+    ("remainder", "S64", @[("S64", "a"), ("S64", "b")]),
+    ("compare", "S64", @[("S64", "a"), ("S64", "b")]),
     ("print", "S64", @[("S64", "a")]),
   ])
   ? scope.add_native_module(s64_module)
@@ -239,6 +241,16 @@ S64 S64_multiply(S64 a, S64 b)
 S64 S64_quotient(S64 a, S64 b)
 {
   return a / b;
+}
+
+S64 S64_remainder(S64 a, S64 b)
+{
+  return a % b;
+}
+
+S64 S64_compare(S64 a, S64 b)
+{
+  return a > b ? 1 : (a == b ? 0 : -1);
 }
 
 S64 S64_print(S64 value)
