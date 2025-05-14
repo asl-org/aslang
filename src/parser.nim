@@ -138,7 +138,7 @@ proc parse[State, Output](parser: Parser[State, Output], rule_name: string,
           prod_err = maybe_parsed.error
         # echo rule.name, " ", start, " ", parser.state
         parser.index = start
-
+    # echo rule.name, " ", rule.kind, " ", depth, " ", parser.index
     err(prod_err.push(start, fmt"Failed to match rule {rule_name} at index: {start}"))
 
 proc parse*[State, Output](parser: Parser[State, Output],

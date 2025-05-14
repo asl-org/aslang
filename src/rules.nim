@@ -28,6 +28,8 @@ proc asl_grammar*(): Result[Grammar[Location, ParseResult], string] =
     identifier_rule,
     integer,
     init_rule,
+    literal_rule,
+    arg_rule,
     leading_arg_rule,
     arglist_rule,
     fncall_rule,

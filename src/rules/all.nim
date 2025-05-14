@@ -86,10 +86,20 @@ let init_rule* = non_terminal_rule("init", @[
   ])
 ], init_reducer)
 
+# literal.nim
+let literal_rule* = non_terminal_rule("literal", @[
+  new_production(@[integer.exact_one]),
+], literal_reducer)
+
+let arg_rule* = non_terminal_rule("arg", @[
+  new_production(@[identifier_rule.exact_one]),
+  new_production(@[literal_rule.exact_one]),
+], arg_reducer)
+
 # arglist.nim
 let leading_arg_rule* = non_terminal_rule("leading_arg", @[
   new_production(@[
-    identifier_rule.exact_one,
+    arg_rule.exact_one,
     space.any,
     comma.exact_one,
     space.any
@@ -101,7 +111,7 @@ let arglist_rule* = non_terminal_rule("arglist", @[
     paren_open.exact_one,
     space.any,
     leading_arg_rule.any,
-    identifier_rule.exact_one,
+    arg_rule.exact_one,
     space.any,
     paren_close.exact_one
   ])

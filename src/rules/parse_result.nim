@@ -43,36 +43,66 @@ proc new_init*(mod_name: Identifier, literal: string,
     location: Location): Initializer =
   Initializer(module_name: mod_name, literal: literal, location: location)
 
-# arglist.nim
-type ArgumentList* = ref object of RootObj
-  args: seq[Identifier]
-  location: Location
+# literal.nim
+type
+  LiteralKind* = enum
+    LTK_INTEGER
+  Literal* = ref object of RootObj
+    case kind: LiteralKind
+    of LTK_INTEGER: integer*: string
 
-proc args*(arglist: ArgumentList): seq[Identifier] = arglist.args
+proc kind*(literal: Literal): LiteralKind = literal.kind
+proc integer*(literal: Literal): string = literal.integer
 
-proc new_arglist*(args: seq[Identifier], location: Location): ArgumentList =
-  ArgumentList(args: args, location: location)
+proc new_literal*(integer: string): Literal =
+  Literal(kind: LTK_INTEGER, integer: integer)
 
-proc `$`*(arglist: ArgumentList): string =
-  "(" & arglist.args.join(", ") & ")"
+proc `$`*(literal: Literal): string =
+  case literal.kind:
+  of LTK_INTEGER: $(literal.integer)
+
+# argument.nim
+type
+  ArgumentKind* = enum
+    AK_IDENTIFIER, AK_LITERAL
+  Argument* = ref object of RootObj
+    case kind: ArgumentKind
+    of AK_IDENTIFIER: name: Identifier
+    of AK_LITERAL: literal: Literal
+
+proc `$`*(arg: Argument): string =
+  case arg.kind:
+  of AK_IDENTIFIER: $(arg.name)
+  of AK_LITERAL: $(arg.literal)
+
+proc kind*(arg: Argument): ArgumentKind = arg.kind
+proc name*(arg: Argument): Identifier = arg.name
+proc literal*(arg: Argument): Literal = arg.literal
+
+proc new_argument*(literal: Literal): Argument =
+  Argument(kind: AK_LITERAL, literal: literal)
+
+proc new_argument*(name: Identifier): Argument =
+  Argument(kind: AK_IDENTIFIER, name: name)
 
 # fncall.nim
 type FunctionCall* = ref object of RootObj
   module_name: Identifier
   fn_name: Identifier
-  arglist: ArgumentList
+  arglist: seq[Argument]
   location: Location
 
 proc module_name*(fncall: FunctionCall): Identifier = fncall.module_name
 proc fn_name*(fncall: FunctionCall): Identifier = fncall.fn_name
-proc arglist*(fncall: FunctionCall): ArgumentList = fncall.arglist
+proc arglist*(fncall: FunctionCall): seq[Argument] = fncall.arglist
 
 proc new_fncall*(module_name: Identifier, fn_name: Identifier,
-    arglist: ArgumentList): FunctionCall =
+    arglist: seq[Argument]): FunctionCall =
   FunctionCall(module_name: module_name, fn_name: fn_name, arglist: arglist)
 
 proc `$`*(fncall: FunctionCall): string =
-  fmt"{fncall.module_name}.{fncall.fn_name}{fncall.arglist}"
+  let arg_list_str = fncall.arglist.map(proc(x: Argument): string = $(x)).join(", ")
+  fmt"{fncall.module_name}.{fncall.fn_name}({arg_list_str})"
 
 # value.nim
 type
@@ -128,35 +158,20 @@ proc new_arg_def*(module: Identifier, name: Identifier): ArgumentDefinition =
 proc `$`*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.module} {arg_def.name}"
 
-# arg_def_list.nim
-type ArgumentDefinitionList* = ref object of RootObj
-  defs: seq[ArgumentDefinition]
-  location: Location
-
-proc defs*(arg_def_list: ArgumentDefinitionList): seq[
-    ArgumentDefinition] = arg_def_list.defs
-
-proc new_arg_def_list*(defs: seq[ArgumentDefinition]): ArgumentDefinitionList =
-  ArgumentDefinitionList(defs: defs)
-
-proc `$`*(arg_def_list: ArgumentDefinitionList): string =
-  let defs = arg_def_list.defs.map(proc(x: ArgumentDefinition): string = $(
-      x)).join(", ")
-  "(" & defs & ")"
-
 # fn_def.nim
 type FunctionDefinition* = ref object of RootObj
   name: Identifier
   returns: Identifier
-  arg_def_list: ArgumentDefinitionList
+  arg_def_list: seq[ArgumentDefinition]
   location: Location
 
 proc name*(fn_def: FunctionDefinition): Identifier = fn_def.name
 proc returns*(fn_def: FunctionDefinition): Identifier = fn_def.returns
-proc arg_def_list*(fn_def: FunctionDefinition): ArgumentDefinitionList = fn_def.arg_def_list
+proc arg_def_list*(fn_def: FunctionDefinition): seq[
+    ArgumentDefinition] = fn_def.arg_def_list
 
 proc new_fn_def*(name: Identifier, returns: Identifier,
-    arg_def_list: ArgumentDefinitionList): FunctionDefinition =
+    arg_def_list: seq[ArgumentDefinition]): FunctionDefinition =
   FunctionDefinition(name: name, returns: returns, arg_def_list: arg_def_list)
 
 proc `$`*(fn_def: FunctionDefinition): string =
@@ -437,6 +452,8 @@ type
     PRK_RAW_STRING,
     PRK_IDENTIFER,
     PRK_INIT,
+    PRK_LITERAL,
+    PRK_ARG,
     PRK_ARGLIST,
     PRK_FNCALL,
     PRK_VALUE,
@@ -458,13 +475,15 @@ type
     of PRK_RAW_STRING: raw_string*: string
     of PRK_IDENTIFER: identifier*: Identifier
     of PRK_INIT: init*: Initializer
-    of PRK_ARGLIST: arglist*: ArgumentList
+    of PRK_LITERAL: literal*: Literal
+    of PRK_ARG: arg*: Argument
+    of PRK_ARGLIST: arglist*: seq[Argument]
     of PRK_FNCALL: fncall*: FunctionCall
     of PRK_VALUE: value*: Value
     of PRK_ASSINGMENT: assign*: Assignment
     of PRK_FN_MACRO: fn_def*: FunctionDefinition
     of PRK_ARG_DEF: arg_def*: ArgumentDefinition
-    of PRK_ARG_DEF_LIST: arg_def_list*: ArgumentDefinitionList
+    of PRK_ARG_DEF_LIST: arg_def_list*: seq[ArgumentDefinition]
     of PRK_MODULE_MACRO: module_def*: ModuleDefinition
     of PRK_MATCH_DEF_MACRO: match_def*: MatchDefinition
     of PRK_CASE_DEF_MACRO: case_def*: CaseDefinition
@@ -480,6 +499,8 @@ proc `$`*(pr: ParseResult): string =
   of PRK_RAW_STRING: pr.raw_string
   of PRK_IDENTIFER: $(pr.identifier)
   of PRK_INIT: $(pr.init)
+  of PRK_LITERAL: $(pr.literal)
+  of PRK_ARG: $(pr.arg)
   of PRK_ARGLIST: $(pr.arglist)
   of PRK_FNCALL: $(pr.fncall)
   of PRK_VALUE: $(pr.value)
@@ -506,7 +527,13 @@ proc to_parse_result*(identifier: Identifier): ParseResult =
 proc to_parse_result*(init: Initializer): ParseResult =
   ParseResult(kind: PRK_INIT, init: init)
 
-proc to_parse_result*(arglist: ArgumentList): ParseResult =
+proc to_parse_result*(literal: Literal): ParseResult =
+  ParseResult(kind: PRK_LITERAL, literal: literal)
+
+proc to_parse_result*(arg: Argument): ParseResult =
+  ParseResult(kind: PRK_ARG, arg: arg)
+
+proc to_parse_result*(arglist: seq[Argument]): ParseResult =
   ParseResult(kind: PRK_ARGLIST, arglist: arglist)
 
 proc to_parse_result*(fncall: FunctionCall): ParseResult =
@@ -524,7 +551,7 @@ proc to_parse_result*(fn_def: FunctionDefinition): ParseResult =
 proc to_parse_result*(arg_def: ArgumentDefinition): ParseResult =
   ParseResult(kind: PRK_ARG_DEF, arg_def: arg_def)
 
-proc to_parse_result*(arg_def_list: ArgumentDefinitionList): ParseResult =
+proc to_parse_result*(arg_def_list: seq[ArgumentDefinition]): ParseResult =
   ParseResult(kind: PRK_ARG_DEF_LIST, arg_def_list: arg_def_list)
 
 proc to_parse_result*(module_def: ModuleDefinition): ParseResult =

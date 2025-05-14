@@ -12,18 +12,14 @@ app Example:
       case 1:
         d
       else:
-        s = S64 2
-        e = S64.remainder(a, s)
+        e = S64.remainder(a, 2)
         f = MODULE.apply(a, d, e)
         g = S64.add(a, b)
         MODULE.solve(b, g, c, f)
 
   fn start(Byte seed) returns Byte:
-    a = S64 1
-    b = S64 2
-    c = S64 4000000
-    d = S64 0
-    e = Example.solve(a, b, c, d)
-    S64.print(e)
-    f = Byte 0
+    exit_success = Byte 0
+    a = Example.solve(1, 2, 4000000, 0)
+    S64.print(a)
+    exit_success
 

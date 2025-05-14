@@ -37,6 +37,24 @@ proc init_reducer*(location: Location, parts: seq[seq[seq[
 
   (location, pr)
 
+# literal.nim
+proc literal_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
+    Location, ParseResult) =
+  var pr: ParseResult
+  if parts[0].len > 0:
+    pr = parts[0][0][0].raw_string.new_literal().to_parse_result
+  (location, pr)
+
+# argument.nim
+proc arg_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
+    Location, ParseResult) =
+  var pr: ParseResult
+  if parts[0].len > 0:
+    pr = parts[0][0][0].identifier.new_argument().to_parse_result()
+  elif parts[1].len > 0:
+    pr = parts[1][0][0].literal.new_argument().to_parse_result()
+  (location, pr)
+
 # arglist.nim
 proc leading_arg_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) = (location, parts[0][0][0])
@@ -44,9 +62,8 @@ proc leading_arg_reducer*(location: Location, parts: seq[seq[seq[
 proc arglist_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   let args = (parts[0][2] & parts[0][3]).map(proc(
-      x: ParseResult): Identifier = x.identifier)
-  let pr = new_arglist(args, location).to_parse_result()
-  (location, pr)
+      x: ParseResult): Argument = x.arg)
+  (location, args.to_parse_result())
 
 # fncall.nim
 proc fncall_reducer*(location: Location, parts: seq[seq[seq[
@@ -102,7 +119,7 @@ proc arg_def_list_reducer*(location: Location, parts: seq[seq[seq[
   var defs: seq[ArgumentDefinition]
   let arg_def_list = parts[0][2] & parts[0][3]
   for arg_def in arg_def_list: defs.add(arg_def.arg_def)
-  (location, new_arg_def_list(defs).to_parse_result())
+  (location, defs.to_parse_result())
 
 proc app_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =

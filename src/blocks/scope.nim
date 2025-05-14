@@ -1,4 +1,4 @@
-import results, strformat, strutils
+import results, strformat, strutils, tables, sequtils
 
 import module
 import function
@@ -16,9 +16,8 @@ proc make_native_module(name: string, fns: seq[(string, string, seq[(
       let arg_def = new_arg_def(new_identifier(module), new_identifier(name))
       arg_defs.add(arg_def)
 
-    let arg_def_list = new_arg_def_list(arg_defs)
     let fn_def = new_fn_def(new_identifier(fn_name), new_identifier(
-        returns), arg_def_list)
+        returns), arg_defs)
 
     ? native_module.add_fn(new_native_function(fn_def))
 
@@ -86,8 +85,87 @@ proc find_module(scope: Scope, module_name: Identifier): Result[Module, string] 
 
   return err(fmt"{module_name} is not defined in scope")
 
+proc resolve_function_definition(scope: Scope,
+    fn_def: FunctionDefinition): Result[void, string] =
+  discard ? scope.find_module(fn_def.returns)
+  for arg in fn_def.arg_def_list:
+    discard ? scope.find_module(arg.module)
+  ok()
+
+proc resolve_initializer(scope: Scope, module: Identifier,
+    init: Initializer): Result[Module, string] =
+  var module_name = init.module_name
+  if $(module_name) == "MODULE": module_name = module
+  # TODO: Resolve literal value for appropriate module
+  return scope.find_module(module_name)
+
+proc resolve_function_call_module(scope: Scope, module: Identifier,
+    fncall: FunctionCall): Result[Module, string] =
+  var module_name = fncall.module_name
+  if $(module_name) == "MODULE": module_name = module
+
+  return scope.find_module(module_name)
+
+type FunctionScope* = ref object of RootObj
+  mapping: Table[string, ArgumentDefinition] = initTable[string,
+      ArgumentDefinition]()
+
+proc add_arg(fn_scope: FunctionScope, arg_def: ArgumentDefinition): Result[
+    void, string] =
+  let arg_name = $(arg_def.name)
+  if arg_name in fn_scope.mapping:
+    return err(fmt"{arg_name} already exists in the scope")
+
+  fn_scope.mapping[arg_name] = arg_def
+  return ok()
+
+proc get_arg(fn_scope: FunctionScope, arg_name: Identifier): Result[
+    ArgumentDefinition, string] =
+  let arg_name_str = $(arg_name)
+  if not (arg_name_str in fn_scope.mapping):
+    return err(fmt"{arg_name} is not present in the scope")
+  ok(fn_scope.mapping[arg_name_str])
+
+proc add_function_definition(fn_scope: FunctionScope,
+    fn_def: FunctionDefinition): Result[void, string] =
+  for arg in fn_def.arg_def_list:
+    ? fn_scope.add_arg(arg)
+  ok()
+
+proc resolve_function_call_arg(fn_scope: FunctionScope, scope: Scope,
+    arg: Argument, arg_def: ArgumentDefinition): Result[void, string] =
+  case arg.kind:
+  of AK_IDENTIFIER:
+    let scope_arg_def = ? fn_scope.get_arg(arg.name)
+    if $(arg_def.module) != $(scope_arg_def.module):
+      return err(fmt"{arg.name} is expected to be of type {arg_def.module} but found {scope_arg_def.module}")
+  of AK_LITERAL:
+    # TODO: check if literal can be cast to the expected module
+    let module = ? scope.find_module(arg_def.module)
+    case module.kind:
+    of MK_NATIVE: discard
+    of MK_USER: discard
+  return ok()
+
+proc resolve_function_call_arglist(fn_scope: FunctionScope, scope: Scope,
+    arg_def_list: seq[ArgumentDefinition], arglist: seq[
+        Argument]): Result[void, string] =
+  for (arg_def, actual_arg) in zip(arg_def_list, arglist):
+    let maybe_resolved = fn_scope.resolve_function_call_arg(scope, actual_arg, arg_def)
+    ? maybe_resolved
+  ok()
+
+proc resolve_function_call(fn_scope: FunctionScope, scope: Scope,
+    fn_module: Module, fncall: FunctionCall): Result[Identifier, string] =
+  for fn in fn_module.find_fn(fncall.fn_name, fncall.arglist.len):
+    let maybe_resolved = fn_scope.resolve_function_call_arglist(scope,
+        fn.def.arg_def_list, fncall.arglist)
+    if maybe_resolved.is_ok:
+      return ok(fn.def.returns)
+  return err(fmt"None of the functions calls matched with {fncall}")
+
 proc generate_statement(scope: Scope, s: Statement, module: Identifier,
-    fn_scope_args: var seq[ArgumentDefinition], last_statement: bool): Result[
+    fn_scope: FunctionScope, last_statement: bool): Result[
     string, string] =
   var statements_code: seq[string]
   case s.kind:
@@ -95,60 +173,23 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
     case s.assign.value.kind:
     of VK_INIT:
       let init = s.assign.value.init
-
-      var module_name = init.module_name
-      if $(module_name) == "MODULE": module_name = module
-
-      discard ? scope.find_module(init.module_name)
-      # TODO: Also make sure that literal value matches with the module/struct definition
-      statements_code.add(fmt"{module_name} {s.assign.dest} = {init.literal};")
-      # TODO: Look into self assignment from within the function of the same module.
-      # Basically ensure that MODULE init does not mess things up
-      fn_scope_args.add(new_arg_def(module_name, s.assign.dest))
+      let module = ? scope.resolve_initializer(module, init)
+      ? fn_scope.add_arg(new_arg_def(module.def.name, s.assign.dest))
+      statements_code.add(fmt"{module.def.name} {s.assign.dest} = {init.literal};")
     of VK_FNCALL:
       let fncall = s.assign.value.fncall
-      var module_name: Identifier
-      if $(fncall.module_name) == "MODULE": module_name = module
-      else: module_name = fncall.module_name
-
-      let fn_module = ? scope.find_module(module_name)
-      var fncall_arg_defs: seq[Identifier]
-      for arg in fncall.arglist.args:
-        var found = false
-        for fn_scope_arg in fn_scope_args:
-          if $(fn_scope_arg.name) == $(arg):
-            found = true
-            fncall_arg_defs.add(fn_scope_arg.module)
-        if not found:
-          return err(fmt"{arg} does not exist in function scope")
-
-      var return_type: Identifier
-      var found_signature = false
-      for fn in fn_module.fns:
-        if $(fn.def.name) != $(fncall.fn_name): continue
-        if fncall_arg_defs.len != fn.def.arg_def_list.defs.len: continue
-        var args_matched = true
-        for index, arg_def in fn.def.arg_def_list.defs:
-          let expected_module = arg_def.module
-          let actual_module = fncall_arg_defs[index]
-          if $(expected_module) != $(actual_module):
-            args_matched = false
-            break
-        if args_matched:
-          return_type = fn.def.returns
-          found_signature = true
-          break
-
-      if not found_signature:
-        return err(fmt"Could not find matching signature for {fncall}")
+      let fn_module = ? scope.resolve_function_call_module(module, fncall)
+      let return_type = ? fn_scope.resolve_function_call(scope, fn_module, fncall)
 
       var fncall_args: seq[string]
-      for arg in fncall.arglist.args:
+      for arg in fncall.arglist:
         fncall_args.add($(arg))
       let fncall_args_str = fncall_args.join(", ")
       # TODO: Check the return type of function call in scope, for now using work around
-      statements_code.add(fmt"{return_type} {s.assign.dest} = {module_name}_{fncall.fn_name}({fncall_args_str});")
-      fn_scope_args.add(new_arg_def(return_type, s.assign.dest))
+      statements_code.add(fmt"{return_type} {s.assign.dest} = {fn_module.def.name}_{fncall.fn_name}({fncall_args_str});")
+      let new_arg_def = new_arg_def(return_type, s.assign.dest)
+      let arg_added = fn_scope.add_arg(new_arg_def)
+      ? arg_added
 
     # last line must be a return
     if last_statement:
@@ -157,7 +198,7 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
     let fncall = s.fncall
 
     var fncall_args: seq[string]
-    for arg in fncall.arglist.args:
+    for arg in fncall.arglist:
       fncall_args.add($(arg))
     let fncall_args_str = fncall_args.join(", ")
 
@@ -172,18 +213,9 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
 
     statements_code.add(fncall_code)
   of SK_IDENTIFIER:
-    let arg = s.identifier
-
-    var found = false
-    for fn_scope_arg in fn_scope_args:
-      if $(fn_scope_arg.name) == $(arg):
-        found = true
-        break
-    if not found:
-      return err(fmt"{arg} does not exist in function scope")
-
+    discard ? fn_scope.get_arg(s.identifier)
     if last_statement:
-      statements_code.add(fmt"return {arg};")
+      statements_code.add(fmt"return {s.identifier};")
 
   return ok(statements_code.join("\n"))
 
@@ -192,14 +224,14 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
     string, string] =
   var fn_code: seq[string]
   var arg_code: seq[string]
-  var fn_scope_args: seq[ArgumentDefinition]
+  var fn_scope = FunctionScope()
+
+  ? scope.resolve_function_definition(fn.def)
+  ? fn_scope.add_function_definition(fn.def)
 
   # function signature c code
-  discard ? scope.find_module(fn.def.returns)
-  for arg in fn.def.arg_def_list.defs:
-    discard ? scope.find_module(arg.module)
+  for arg in fn.def.arg_def_list:
     arg_code.add(fmt"{arg.module} {arg.name}")
-    fn_scope_args.add(new_arg_def(arg.module, arg.name))
 
   let arg_code_str = arg_code.join(", ")
   fn_code.add(fmt"{fn.def.returns} {module}_{fn.def.name}(" & arg_code_str & ") {")
@@ -215,21 +247,15 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
       last_statement = false
     else:
       last_statement = index == statements.len - 1
-    let scode = ? scope.generate_statement(s, module, fn_scope_args, last_statement)
+    let scode = ? scope.generate_statement(s, module, fn_scope, last_statement)
     statements_code.add(scode)
 
   fn_code.add(statements_code.join("\n"))
 
   if maybe_match_block.is_ok:
     let match_block = maybe_match_block.get
-
-    var found = false
-    for fn_scope_arg in fn_scope_args:
-      if $(fn_scope_arg.name) == $(match_block.value):
-        found = true
-        break
-    if not found:
-      return err(fmt"{match_block.value} does not exist in function scope")
+    let maybe_arg = fn_scope.get_arg(match_block.value)
+    discard ? maybe_arg
 
     var match_block_code = @[fmt"switch({match_block.value})" & "{"]
 
@@ -237,7 +263,7 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
       # TODO: Make sure literal is of appropriate kind
       var case_block_code = @[fmt"case {case_block.value}:" & "{"]
       for i, s in case_block.statements:
-        let scode = ? scope.generate_statement(s, module, fn_scope_args, i ==
+        let scode = ? scope.generate_statement(s, module, fn_scope, i ==
             case_block.statements.len - 1)
         case_block_code.add(scode)
 
@@ -251,7 +277,7 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
     for else_block in match_block.else_blocks:
       var else_block_code = @[fmt"default:" & "{"]
       for i, s in else_block.statements:
-        let scode = ? scope.generate_statement(s, module, fn_scope_args, i ==
+        let scode = ? scope.generate_statement(s, module, fn_scope, i ==
             else_block.statements.len - 1)
         else_block_code.add(scode)
 

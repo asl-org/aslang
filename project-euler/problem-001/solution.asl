@@ -1,11 +1,9 @@
 app Example:
 
   fn sum(S64 a) returns S64:
-    x = S64 1
-    y = S64 2
-    b = S64.add(a, x)
+    b = S64.add(a, 1)
     c = S64.multiply(a, b)
-    S64.quotient(c, y)
+    S64.quotient(c, 2)
 
   fn count(S64 a, S64 b) returns S64:
     c = S64.quotient(a, b)
@@ -13,18 +11,15 @@ app Example:
     S64.multiply(b, d)
 
   fn start(Byte argc) returns Byte:
-    n  = S64 999
-    na = S64 3
-    nb = S64 5
-    nc = S64 15
+    exit_success = Byte 0
 
-    a = MODULE.count(n, na)
-    b = MODULE.count(n, nb)
-    c = MODULE.count(n, nc)
+    a = MODULE.count(999, 3)
+    b = MODULE.count(999, 5)
 
+    c = MODULE.count(999, 15)
     d = S64.add(a, b)
+
     e = S64.subtract(d, c)
     S64.print(e)
 
-    # return code 0
-    _ = Byte 0
+    exit_success

@@ -16,6 +16,7 @@ type
 proc def*(module: Module): ModuleDefinition = module.def
 proc fns*(module: Module): seq[Function] = module.fns
 proc spaces*(module: Module): int = module.spaces
+proc kind*(module: Module): ModuleKind = module.kind
 
 proc `$`*(module: Module): string =
   var content: seq[string] = @[prefix(module.spaces) & $(module.def)]
@@ -36,6 +37,14 @@ proc add_fn*(module: Module, new_fn: Function): Result[void, string] =
       return err(fmt"Function {new_fn.def} is already defined")
   module.fns.add(new_fn)
   ok()
+
+proc find_fn*(module: Module, name: Identifier, arity: int): seq[Function] =
+  var matching_fns: seq[Function]
+  for fn in module.fns:
+    if $(fn.def.name) != $(name): continue
+    if fn.def.arg_def_list.len != arity: continue
+    matching_fns.add(fn)
+  return matching_fns
 
 # TODO: perform final validation
 proc close*(module: Module): Result[void, string] =

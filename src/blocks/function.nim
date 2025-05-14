@@ -79,7 +79,7 @@ proc close*(fn: Function): Result[void, string] =
     return err(fmt"function block must have at least one statement or match block")
 
   var arg_name_set: HashSet[string]
-  for arg_def in fn.def.arg_def_list.defs:
+  for arg_def in fn.def.arg_def_list:
     let name = $(arg_def.name)
     if name in arg_name_set:
       return err(fmt"Parameter {name} is used twice in the function definition")
@@ -92,11 +92,11 @@ proc match_fn_def*(self: Function, other: Function): bool =
   # same return value
   if $(self.def.returns) != $(other.def.returns): return false
   # same arity (arg count)
-  if self.def.arg_def_list.defs.len != other.def.arg_def_list.defs.len: return false
+  if self.def.arg_def_list.len != other.def.arg_def_list.len: return false
 
   # same arg datatypes
-  for index, self_arg_def in self.def.arg_def_list.defs:
-    let other_arg_def = other.def.arg_def_list.defs[index]
+  for index, self_arg_def in self.def.arg_def_list:
+    let other_arg_def = other.def.arg_def_list[index]
     if $(self_arg_def.module) != $(other_arg_def.module):
       return false
 
