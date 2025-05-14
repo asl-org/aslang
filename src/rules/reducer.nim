@@ -124,6 +124,20 @@ proc union_def_reducer*(location: Location, parts: seq[seq[seq[
   let name = parts[0][2][0].identifier
   (location, name.new_union_def().to_parse_result())
 
+proc match_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let name = parts[0][2][0].identifier
+  (location, name.new_match_def().to_parse_result())
+
+proc case_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let literal = parts[0][2][0].raw_string
+  (location, literal.new_case_def().to_parse_result())
+
+proc else_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  (location, new_else_def().to_parse_result())
+
 proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   var macro_call: MacroCall
@@ -137,6 +151,12 @@ proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
     macro_call = new_macro_call(parts[3][0][0].module_def)
   elif parts[4].len > 0: # union def
     macro_call = new_macro_call(parts[4][0][0].module_def)
+  elif parts[5].len > 0: # match def
+    macro_call = new_macro_call(parts[5][0][0].match_def)
+  elif parts[6].len > 0: # case def
+    macro_call = new_macro_call(parts[6][0][0].case_def)
+  elif parts[7].len > 0: # else def
+    macro_call = new_macro_call(parts[7][0][0].else_def)
 
   (location, macro_call.to_parse_result())
 
@@ -148,6 +168,8 @@ proc statement_reducer*(location: Location, parts: seq[seq[seq[
     statement = new_statement(parts[0][0][0].assign)
   elif parts[1].len > 0:
     statement = new_statement(parts[1][0][0].fncall)
+  elif parts[2].len > 0:
+    statement = new_statement(parts[2][0][0].identifier)
 
   (location, to_parse_result(statement))
 
@@ -165,10 +187,10 @@ proc line_reducer*(location: Location, parts: seq[seq[seq[
   var pr: ParseResult
   if parts[0].len > 0:
     let spaces = parts[0][0].len
-    pr = parts[0][1][0].statement.new_line(spaces).to_parse_result()
+    pr = parts[0][1][0].macro_call.new_line(spaces).to_parse_result()
   elif parts[1].len > 0:
     let spaces = parts[1][0].len
-    pr = parts[1][1][0].macro_call.new_line(spaces).to_parse_result()
+    pr = parts[1][1][0].statement.new_line(spaces).to_parse_result()
   elif parts[2].len > 0:
     let spaces = parts[2][0].len
     pr = parts[2][1][0].comment.new_line(spaces).to_parse_result()

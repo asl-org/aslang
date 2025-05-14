@@ -194,23 +194,60 @@ proc `$`*(module_def: ModuleDefinition): string =
     of MDK_UNION: "union"
   fmt"{prefix} {module_def.name}:"
 
+# match_def.nim
+type MatchDefinition = ref object of RootObj
+  name: Identifier
+
+proc name*(match_def: MatchDefinition): Identifier = match_def.name
+
+proc `$`*(match_def: MatchDefinition): string =
+  fmt"match {match_def.name}:"
+
+proc new_match_def*(name: Identifier): MatchDefinition = MatchDefinition(name: name)
+
+# case_def.nim
+type CaseDefinition = ref object of RootObj
+  value: string
+
+proc value*(case_def: CaseDefinition): string = case_def.value
+
+proc `$`*(case_def: CaseDefinition): string =
+  fmt"case {case_def.value}:"
+
+proc new_case_def*(value: string): CaseDefinition = CaseDefinition(value: value)
+
+type ElseDefinition = ref object of RootObj
+
+proc `$`*(else_def: ElseDefinition): string = "else:"
+
+proc new_else_def*(): ElseDefinition = ElseDefinition()
+
 # macro_call.nim
 type
   MacroCallKind* = enum
-    MCK_FN, MCK_MODULE
+    MCK_FN, MCK_MODULE, MCK_MATCH_DEF, MCK_CASE_DEF, MCK_ELSE_DEF
   MacroCall* = ref object of RootObj
     case kind: MacroCallKind
     of MCK_FN: fn_def: FunctionDefinition
     of MCK_MODULE: module_def: ModuleDefinition
+    of MCK_MATCH_DEF: match_def: MatchDefinition
+    of MCK_CASE_DEF: case_def: CaseDefinition
+    of MCK_ELSE_DEF: else_def: ElseDefinition
 
 proc `$`*(macro_call: MacroCall): string =
   case macro_call.kind:
   of MCK_FN: $(macro_call.fn_def)
   of MCK_MODULE: $(macro_call.module_def)
+  of MCK_MATCH_DEF: $(macro_call.match_def)
+  of MCK_CASE_DEF: $(macro_call.case_def)
+  of MCK_ELSE_DEF: $(macro_call.else_def)
 
 proc kind*(macro_call: MacroCall): MacroCallKind = macro_call.kind
 proc module_def*(macro_call: MacroCall): ModuleDefinition = macro_call.module_def
 proc fn_def*(macro_call: MacroCall): FunctionDefinition = macro_call.fn_def
+proc match_def*(macro_call: MacroCall): MatchDefinition = macro_call.match_def
+proc case_def*(macro_call: MacroCall): CaseDefinition = macro_call.case_def
+proc else_def*(macro_call: MacroCall): ElseDefinition = macro_call.else_def
 
 proc safe_module_def*(macro_call: MacroCall): Result[ModuleDefinition, string] =
   case macro_call.kind:
@@ -222,46 +259,81 @@ proc safe_fn_def*(macro_call: MacroCall): Result[FunctionDefinition, string] =
   of MCK_FN: ok(macro_call.fn_def)
   else: return err(fmt"Macro {macro_call} is not an app macro")
 
+proc safe_match_def*(macro_call: MacroCall): Result[MatchDefinition, string] =
+  case macro_call.kind:
+  of MCK_MATCH_DEF: ok(macro_call.match_def)
+  else: return err(fmt"Macro {macro_call} is not a match statement")
+
+proc safe_case_def*(macro_call: MacroCall): Result[CaseDefinition, string] =
+  case macro_call.kind:
+  of MCK_CASE_DEF: ok(macro_call.case_def)
+  else: return err(fmt"Macro {macro_call} is not a case statement")
+
+proc safe_else_def*(macro_call: MacroCall): Result[ElseDefinition, string] =
+  case macro_call.kind:
+  of MCK_ELSE_DEF: ok(macro_call.else_def)
+  else: return err(fmt"Macro {macro_call} is not a case statement")
+
 proc new_macro_call*(fn_def: FunctionDefinition): MacroCall =
   MacroCall(kind: MCK_FN, fn_def: fn_def)
 
 proc new_macro_call*(module_def: ModuleDefinition): MacroCall =
   MacroCall(kind: MCK_MODULE, module_def: module_def)
 
+proc new_macro_call*(match_def: MatchDefinition): MacroCall =
+  MacroCall(kind: MCK_MATCH_DEF, match_def: match_def)
+
+proc new_macro_call*(case_def: CaseDefinition): MacroCall =
+  MacroCall(kind: MCK_CASE_DEF, case_def: case_def)
+
+proc new_macro_call*(else_def: ElseDefinition): MacroCall =
+  MacroCall(kind: MCK_ELSE_DEF, else_def: else_def)
+
 # statement.nim
 type
   StatementKind* = enum
-    SK_ASSIGNMENT, SK_FNCALL
+    SK_ASSIGNMENT, SK_FNCALL, SK_IDENTIFIER
   Statement* = ref object of RootObj
     location: Location
     case kind: StatementKind
     of SK_ASSIGNMENT: assign: Assignment
     of SK_FNCALL: fncall: FunctionCall
+    of SK_IDENTIFIER: identifier: Identifier
 
 proc `$`*(statement: Statement): string =
   case statement.kind:
   of SK_ASSIGNMENT: $(statement.assign)
   of SK_FNCALL: $(statement.fncall)
+  of SK_IDENTIFIER: $(statement.identifier)
 
 proc kind*(statement: Statement): StatementKind = statement.kind
 proc assign*(statement: Statement): Assignment = statement.assign
 proc fncall*(statement: Statement): FunctionCall = statement.fncall
+proc identifier*(statement: Statement): Identifier = statement.identifier
 
 proc safe_assignment*(statement: Statement): Result[Assignment, string] =
   case statement.kind:
   of SK_ASSIGNMENT: ok(statement.assign)
-  of SK_FNCALL: err(fmt"Statement {statement} is not an assignment")
+  else: err(fmt"Statement {statement} is not an assignment")
 
 proc safe_fncall*(statement: Statement): Result[FunctionCall, string] =
   case statement.kind:
   of SK_FNCALL: ok(statement.fncall)
-  of SK_ASSIGNMENT: err(fmt"Statement {statement} is not a function call")
+  else: err(fmt"Statement {statement} is not a function call")
+
+proc safe_identifier*(statement: Statement): Result[Identifier, string] =
+  case statement.kind:
+  of SK_IDENTIFIER: ok(statement.identifier)
+  else: err(fmt"Statement {statement} is not an identifier")
 
 proc new_statement*(assign: Assignment): Statement =
   Statement(kind: SK_ASSIGNMENT, assign: assign)
 
 proc new_statement*(fncall: FunctionCall): Statement =
   Statement(kind: SK_FNCALL, fncall: fncall)
+
+proc new_statement*(identifier: Identifier): Statement =
+  Statement(kind: SK_IDENTIFIER, identifier: identifier)
 
 # comment.nim
 type Comment* = ref object of RootObj
@@ -361,6 +433,9 @@ type
     PRK_ARG_DEF,
     PRK_ARG_DEF_LIST,
     PRK_MODULE_MACRO,
+    PRK_MATCH_DEF_MACRO,
+    PRK_CASE_DEF_MACRO,
+    PRK_ELSE_DEF_MACRO,
     PRK_MACRO_CALL,
     PRK_COMMENT,
     PRK_STATEMENT,
@@ -379,6 +454,9 @@ type
     of PRK_ARG_DEF: arg_def*: ArgumentDefinition
     of PRK_ARG_DEF_LIST: arg_def_list*: ArgumentDefinitionList
     of PRK_MODULE_MACRO: module_def*: ModuleDefinition
+    of PRK_MATCH_DEF_MACRO: match_def*: MatchDefinition
+    of PRK_CASE_DEF_MACRO: case_def*: CaseDefinition
+    of PRK_ELSE_DEF_MACRO: else_def*: ElseDefinition
     of PRK_MACRO_CALL: macro_call*: MacroCall
     of PRK_COMMENT: comment*: Comment
     of PRK_STATEMENT: statement*: Statement
@@ -398,6 +476,9 @@ proc `$`*(pr: ParseResult): string =
   of PRK_ARG_DEF: $(pr.arg_def)
   of PRK_ARG_DEF_LIST: $(pr.arg_def_list)
   of PRK_MODULE_MACRO: $(pr.module_def)
+  of PRK_MATCH_DEF_MACRO: $(pr.match_def)
+  of PRK_CASE_DEF_MACRO: $(pr.case_def)
+  of PRK_ELSE_DEF_MACRO: $(pr.else_def)
   of PRK_MACRO_CALL: $(pr.macro_call)
   of PRK_COMMENT: $(pr.comment)
   of PRK_STATEMENT: $(pr.statement)
@@ -436,6 +517,15 @@ proc to_parse_result*(arg_def_list: ArgumentDefinitionList): ParseResult =
 
 proc to_parse_result*(module_def: ModuleDefinition): ParseResult =
   ParseResult(kind: PRK_MODULE_MACRO, module_def: module_def)
+
+proc to_parse_result*(match_def: MatchDefinition): ParseResult =
+  ParseResult(kind: PRK_MATCH_DEF_MACRO, match_def: match_def)
+
+proc to_parse_result*(case_def: CaseDefinition): ParseResult =
+  ParseResult(kind: PRK_CASE_DEF_MACRO, case_def: case_def)
+
+proc to_parse_result*(else_def: ElseDefinition): ParseResult =
+  ParseResult(kind: PRK_ELSE_DEF_MACRO, else_def: else_def)
 
 proc to_parse_result*(macro_call: MacroCall): ParseResult =
   ParseResult(kind: PRK_MACRO_CALL, macro_call: macro_call)

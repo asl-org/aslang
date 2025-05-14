@@ -180,6 +180,20 @@ proc generate_function*(fn: Function, module: Identifier, scope: Scope): Result[
 
       statements_code.add(fncall_code)
 
+    of SK_IDENTIFIER:
+      let arg = s.identifier
+
+      var found = false
+      for fn_scope_arg in fn_scope_args:
+        if $(fn_scope_arg.name) == $(arg):
+          found = true
+          break
+      if not found:
+        return err(fmt"{arg} does not exist in function scope")
+
+      if index == ( ? fn.statements).len - 1:
+        statements_code.add(fmt"return {arg};")
+
   let statements_code_str = statements_code.join("\n")
   let fn_code = @[
     fmt"{fn.def.returns} {module}_{fn.def.name}(" & arg_code_str & ") {",
