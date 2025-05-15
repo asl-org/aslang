@@ -285,6 +285,7 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
       match_block_code.add(else_block_code.join("\n"))
 
     match_block_code.add("}")
+    match_block_code.add("UNREACHABLE();")
     fn_code.add(match_block_code.join("\n"))
 
   fn_code.add("}")
@@ -306,6 +307,16 @@ proc generate_app*(scope: Scope): Result[string, string] =
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
+
+#ifdef __GNUC__
+  #define UNREACHABLE() __builtin_unreachable()
+#elif defined(_MSC_VER)
+  #define UNREACHABLE() __assume(0)
+#else
+  #include <stdlib.h>
+  #define UNREACHABLE() abort()
+#endif
+
 typedef uint8_t Byte;
 typedef int64_t S64;
 
