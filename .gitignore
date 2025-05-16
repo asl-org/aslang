@@ -1,5 +1,5 @@
 asl
-asl.c
+*.c
 example
 .vscode
 solution

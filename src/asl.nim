@@ -1,4 +1,4 @@
-import os, results, strformat, parseopt
+import os, results, strformat, parseopt, osproc
 
 import parser
 import rules
@@ -32,7 +32,7 @@ proc read_file_safe(filename: string): Result[string, string] =
   except OSError as e:
     err(fmt"Failed to read file '{filename}': {e.msg}")
 
-proc compile(filename: string, output_file: string): Result[void, string] =
+proc compile(filename: string, output_binary: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let grammar = ? asl_grammar()
   let parser = grammar.new_parser(content, new_location(filename))
@@ -42,9 +42,11 @@ proc compile(filename: string, output_file: string): Result[void, string] =
 
   let parse_result = maybe_parse_result.get
   let code = ? parse_result.program.collect_defintions()
-  # let blocks = ? extract_blocks(parse_result.program)
-  # let code = ? blocks.generate()
-  code.write_file_safe(output_file)
+  let output_file = "generated.c"
+  ? code.write_file_safe(output_file)
+  discard exec_process(fmt"gcc -O3 -o {output_binary} {output_file}")
+  ok()
+
 
 proc show_help() =
   echo fmt"ASL Compiler v{Version}"
@@ -58,11 +60,11 @@ proc show_version() =
 when is_main_module:
   var
     input_file = ""
-    output_file = "asl.c"
+    output_file = "example"
     debug_mode = false
 
-  for kind, key, val in getopt():
-    case kind
+  for (kind, key, val) in getopt():
+    case kind:
     of cmdArgument:
       input_file = key
     of cmdLongOption, cmdShortOption:

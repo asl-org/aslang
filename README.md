@@ -51,5 +51,5 @@ chmod +x bootstrap.sh
 ./bootstrap.sh
 
 # Compile
-asl example.asl
+asl -o=example example.asl
 ```
