@@ -27,22 +27,6 @@ proc new_identifier*(name: string, location: Location): Identifier =
 proc new_identifier*(name: string): Identifier =
   Identifier(name: name)
 
-# init.nim
-type Initializer* = ref object of RootObj
-  module_name: Identifier
-  literal: string
-  location: Location
-
-proc module_name*(init: Initializer): Identifier = init.module_name
-proc literal*(init: Initializer): string = init.literal
-
-proc `$`*(init: Initializer): string =
-  fmt"{init.module_name} {init.literal}"
-
-proc new_init*(mod_name: Identifier, literal: string,
-    location: Location): Initializer =
-  Initializer(module_name: mod_name, literal: literal, location: location)
-
 # literal.nim
 type
   LiteralKind* = enum
@@ -60,6 +44,22 @@ proc new_literal*(integer: string): Literal =
 proc `$`*(literal: Literal): string =
   case literal.kind:
   of LTK_INTEGER: $(literal.integer)
+
+# init.nim
+type Initializer* = ref object of RootObj
+  module_name: Identifier
+  literal: Literal
+  location: Location
+
+proc module_name*(init: Initializer): Identifier = init.module_name
+proc literal*(init: Initializer): Literal = init.literal
+
+proc `$`*(init: Initializer): string =
+  fmt"{init.module_name} {init.literal}"
+
+proc new_init*(mod_name: Identifier, literal: Literal,
+    location: Location): Initializer =
+  Initializer(module_name: mod_name, literal: literal, location: location)
 
 # argument.nim
 type

@@ -32,7 +32,7 @@ proc identifier_reducer*(location: Location, parts: seq[seq[seq[
 proc init_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
   let module_name = parts[0][0][0].identifier
-  let literal = parts[0][2][0].raw_string
+  let literal = parts[0][2][0].literal
   let pr = new_init(module_name, literal, location).to_parse_result()
 
   (location, pr)

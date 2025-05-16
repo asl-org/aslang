@@ -77,19 +77,19 @@ let integer* = non_terminal_rule("integer", @[
   new_production(@[digit.at_least_one])
 ], raw_parts_reducer)
 
+# literal.nim
+let literal_rule* = non_terminal_rule("literal", @[
+  new_production(@[integer.exact_one]),
+], literal_reducer)
+
 # init.nim
 let init_rule* = non_terminal_rule("init", @[
   new_production(@[
     identifier_rule.exact_one,
     space.any,
-    integer.exact_one
+    literal_rule.exact_one
   ])
 ], init_reducer)
-
-# literal.nim
-let literal_rule* = non_terminal_rule("literal", @[
-  new_production(@[integer.exact_one]),
-], literal_reducer)
 
 let arg_rule* = non_terminal_rule("arg", @[
   new_production(@[identifier_rule.exact_one]),

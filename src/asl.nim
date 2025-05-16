@@ -44,7 +44,8 @@ proc compile(filename: string, output_binary: string): Result[void, string] =
   let code = ? parse_result.program.collect_defintions()
   let output_file = "generated.c"
   ? code.write_file_safe(output_file)
-  discard exec_process(fmt"gcc -O3 -o {output_binary} {output_file}")
+  let exit_code = exec_cmd(fmt"gcc -O3 -o {output_binary} {output_file}")
+  if exit_code != 0: return err(fmt"GCC Compilation failed.")
   ok()
 
 
