@@ -89,6 +89,27 @@ proc new_scope*(): Result[Scope, string] =
   ])
   ? scope.add_native_module(s64_module)
 
+  # Pointer module
+  let ptr_module = ? make_native_module("Pointer", @[
+    ("Pointer", "shift", @[("Pointer", "ptr"), ("U64", "offset")]),
+    ("U64", "print", @[("Pointer", "ptr")]),
+    ("U8", "read_U8", @[("Pointer", "ptr")]),
+    ("U64", "read_U64", @[("Pointer", "ptr")]),
+    ("S64", "read_S64", @[("Pointer", "ptr")]),
+    ("Pointer", "write_U8", @[("Pointer", "ptr"), ("U8", "value")]),
+    ("Pointer", "write_U64", @[("Pointer", "ptr"), ("U64", "value")]),
+    ("Pointer", "write_S64", @[("Pointer", "ptr"), ("S64", "value")]),
+    ("U8", "free", @[("Pointer", "ptr")]),
+  ])
+  ? scope.add_native_module(ptr_module)
+
+  # S64 module
+  let sys_module = ? make_native_module("System", @[
+    ("Pointer", "allocate", @[("U64", "bytes")]),
+    ("U8", "free", @[("Pointer", "ptr")]),
+  ])
+  ? scope.add_native_module(sys_module)
+
   # Bitset module
   # let bitset_module = ? make_native_module("Bitset", @[
   #   ("Bitset", "init", @[("U64", "bits")]),
