@@ -27,39 +27,72 @@ proc new_identifier*(name: string, location: Location): Identifier =
 proc new_identifier*(name: string): Identifier =
   Identifier(name: name)
 
-# init.nim
-type Initializer* = ref object of RootObj
-  module_name: Identifier
-  literal: string
-  location: Location
+# keyword_arg.nim
+type KeywordArg* = ref object of RootObj
+  name: Identifier
+  value: string
 
-proc module_name*(init: Initializer): Identifier = init.module_name
-proc literal*(init: Initializer): string = init.literal
+proc name*(kwarg: KeywordArg): Identifier = kwarg.name
+proc value*(kwarg: KeywordArg): string = kwarg.value
 
-proc `$`*(init: Initializer): string =
-  fmt"{init.module_name} {init.literal}"
+proc `$`*(kwarg: KeywordArg): string =
+  fmt"{kwarg.name}: {kwarg.value}"
 
-proc new_init*(mod_name: Identifier, literal: string,
-    location: Location): Initializer =
-  Initializer(module_name: mod_name, literal: literal, location: location)
+proc new_keyword_arg*(name: Identifier, value: string): KeywordArg =
+  KeywordArg(name: name, value: value)
+
+# struct.nim
+type Struct* = ref object of RootObj
+  kwargs: seq[KeywordArg]
+
+proc kwargs*(struct: Struct): seq[KeywordArg] = struct.kwargs
+
+proc `$`*(struct: Struct): string =
+  let fields = struct.kwargs.map(proc(x: KeywordArg): string = $(x)).join(", ")
+  "{" & fields & "}"
+
+proc new_struct*(kwargs: seq[KeywordArg]): Struct =
+  Struct(kwargs: kwargs)
 
 # literal.nim
 type
   LiteralKind* = enum
-    LTK_INTEGER
+    LTK_INTEGER, LTK_STRUCT
   Literal* = ref object of RootObj
     case kind: LiteralKind
     of LTK_INTEGER: integer*: string
+    of LTK_STRUCT: struct*: Struct
 
 proc kind*(literal: Literal): LiteralKind = literal.kind
 proc integer*(literal: Literal): string = literal.integer
+proc struct*(literal: Literal): Struct = literal.struct
 
 proc new_literal*(integer: string): Literal =
   Literal(kind: LTK_INTEGER, integer: integer)
 
+proc new_literal*(struct: Struct): Literal =
+  Literal(kind: LTK_STRUCT, struct: struct)
+
 proc `$`*(literal: Literal): string =
   case literal.kind:
   of LTK_INTEGER: $(literal.integer)
+  of LTK_STRUCT: $(literal.struct)
+
+# init.nim
+type Initializer* = ref object of RootObj
+  module_name: Identifier
+  literal: Literal
+  location: Location
+
+proc module_name*(init: Initializer): Identifier = init.module_name
+proc literal*(init: Initializer): Literal = init.literal
+
+proc `$`*(init: Initializer): string =
+  fmt"{init.module_name} {init.literal}"
+
+proc new_init*(mod_name: Identifier, literal: Literal,
+    location: Location): Initializer =
+  Initializer(module_name: mod_name, literal: literal, location: location)
 
 # argument.nim
 type
@@ -147,13 +180,15 @@ proc `$`*(assignment: Assignment): string =
 type ArgumentDefinition* = ref object of RootObj
   module: Identifier
   name: Identifier
+  refcount: int = 0
   location: Location
 
 proc name*(arg_def: ArgumentDefinition): Identifier = arg_def.name
 proc module*(arg_def: ArgumentDefinition): Identifier = arg_def.module
 
-proc new_arg_def*(module: Identifier, name: Identifier): ArgumentDefinition =
-  ArgumentDefinition(module: module, name: name)
+proc new_arg_def*(module: Identifier, name: Identifier,
+    refcount: int = 0): ArgumentDefinition =
+  ArgumentDefinition(module: module, name: name, refcount: refcount)
 
 proc `$`*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.module} {arg_def.name}"
@@ -451,8 +486,10 @@ type
   ParserResultKind* = enum
     PRK_RAW_STRING,
     PRK_IDENTIFER,
-    PRK_INIT,
+    PRK_KEYWORD_ARG,
+    PRK_STRUCT,
     PRK_LITERAL,
+    PRK_INIT,
     PRK_ARG,
     PRK_ARGLIST,
     PRK_FNCALL,
@@ -474,8 +511,10 @@ type
     case kind*: ParserResultKind
     of PRK_RAW_STRING: raw_string*: string
     of PRK_IDENTIFER: identifier*: Identifier
-    of PRK_INIT: init*: Initializer
+    of PRK_KEYWORD_ARG: kwarg*: KeywordArg
+    of PRK_STRUCT: struct*: Struct
     of PRK_LITERAL: literal*: Literal
+    of PRK_INIT: init*: Initializer
     of PRK_ARG: arg*: Argument
     of PRK_ARGLIST: arglist*: seq[Argument]
     of PRK_FNCALL: fncall*: FunctionCall
@@ -498,8 +537,10 @@ proc `$`*(pr: ParseResult): string =
   case pr.kind:
   of PRK_RAW_STRING: pr.raw_string
   of PRK_IDENTIFER: $(pr.identifier)
-  of PRK_INIT: $(pr.init)
+  of PRK_KEYWORD_ARG: $(pr.kwarg)
+  of PRK_STRUCT: $(pr.struct)
   of PRK_LITERAL: $(pr.literal)
+  of PRK_INIT: $(pr.init)
   of PRK_ARG: $(pr.arg)
   of PRK_ARGLIST: $(pr.arglist)
   of PRK_FNCALL: $(pr.fncall)
@@ -524,11 +565,17 @@ proc to_parse_result*(raw_string: string): ParseResult =
 proc to_parse_result*(identifier: Identifier): ParseResult =
   ParseResult(kind: PRK_IDENTIFER, identifier: identifier)
 
-proc to_parse_result*(init: Initializer): ParseResult =
-  ParseResult(kind: PRK_INIT, init: init)
+proc to_parse_result*(kwarg: KeywordArg): ParseResult =
+  ParseResult(kind: PRK_KEYWORD_ARG, kwarg: kwarg)
+
+proc to_parse_result*(struct: Struct): ParseResult =
+  ParseResult(kind: PRK_STRUCT, struct: struct)
 
 proc to_parse_result*(literal: Literal): ParseResult =
   ParseResult(kind: PRK_LITERAL, literal: literal)
+
+proc to_parse_result*(init: Initializer): ParseResult =
+  ParseResult(kind: PRK_INIT, init: init)
 
 proc to_parse_result*(arg: Argument): ParseResult =
   ParseResult(kind: PRK_ARG, arg: arg)

@@ -5,90 +5,39 @@
 
 // Module: U64
 
-// Function: unsafe_print
-S32 U64_unsafe_print(U64 num) { return printf("%" PRIu64 "\n", num); }
+U64 U64_add(U64 a, U64 b)
+{
+  return a + b;
+}
 
-// Function: unsafe_add
-S64 U64_unsafe_add_S8(U64 num1, S8 num2) { return num1 + num2; }
-S64 U64_unsafe_add_S16(U64 num1, S16 num2) { return num1 + num2; }
-S64 U64_unsafe_add_S32(U64 num1, S32 num2) { return num1 + num2; }
-S64 U64_unsafe_add_S64(U64 num1, S64 num2) { return num1 + num2; }
-U64 U64_unsafe_add_U8(U64 num1, U8 num2) { return num1 + num2; }
-U64 U64_unsafe_add_U16(U64 num1, U16 num2) { return num1 + num2; }
-U64 U64_unsafe_add_U32(U64 num1, U32 num2) { return num1 + num2; }
-U64 U64_unsafe_add_U64(U64 num1, U64 num2) { return num1 + num2; }
-F64 U64_unsafe_add_F32(U64 num1, F32 num2) { return num1 + num2; }
-F64 U64_unsafe_add_F64(U64 num1, F64 num2) { return num1 + num2; }
-// Function: unsafe_subtract
-U64 U64_unsafe_subtract_S8(U64 num1, S8 num2) { return num1 - num2; }
-U64 U64_unsafe_subtract_S16(U64 num1, S16 num2) { return num1 - num2; }
-U64 U64_unsafe_subtract_S32(U64 num1, S32 num2) { return num1 - num2; }
-U64 U64_unsafe_subtract_S64(U64 num1, S64 num2) { return num1 - num2; }
-U64 U64_unsafe_subtract_U8(U64 num1, U8 num2) { return num1 - num2; }
-U64 U64_unsafe_subtract_U16(U64 num1, U16 num2) { return num1 - num2; }
-U64 U64_unsafe_subtract_U32(U64 num1, U32 num2) { return num1 - num2; }
-U64 U64_unsafe_subtract_U64(U64 num1, U64 num2) { return num1 - num2; }
-F64 U64_unsafe_subtract_F32(U64 num1, F32 num2) { return num1 - num2; }
-F64 U64_unsafe_subtract_F64(U64 num1, F64 num2) { return num1 - num2; }
-// Function: unsafe_multiply
-S64 U64_unsafe_multiply_S8(U64 num1, S8 num2) { return num1 * num2; }
-S64 U64_unsafe_multiply_S16(U64 num1, S16 num2) { return num1 * num2; }
-S64 U64_unsafe_multiply_S32(U64 num1, S32 num2) { return num1 * num2; }
-S64 U64_unsafe_multiply_S64(U64 num1, S64 num2) { return num1 * num2; }
-U64 U64_unsafe_multiply_U8(U64 num1, U8 num2) { return num1 * num2; }
-U64 U64_unsafe_multiply_U16(U64 num1, U16 num2) { return num1 * num2; }
-U64 U64_unsafe_multiply_U32(U64 num1, U32 num2) { return num1 * num2; }
-U64 U64_unsafe_multiply_U64(U64 num1, U64 num2) { return num1 * num2; }
-F64 U64_unsafe_multiply_F32(U64 num1, F32 num2) { return num1 * num2; }
-F64 U64_unsafe_multiply_F64(U64 num1, F64 num2) { return num1 * num2; }
-// Function: unsafe_division
-S64 U64_unsafe_division_S8(U64 num1, S8 num2) { return num1 / num2; }
-S64 U64_unsafe_division_S16(U64 num1, S16 num2) { return num1 / num2; }
-S64 U64_unsafe_division_S32(U64 num1, S32 num2) { return num1 / num2; }
-S64 U64_unsafe_division_S64(U64 num1, S64 num2) { return num1 / num2; }
-U64 U64_unsafe_division_U8(U64 num1, U8 num2) { return num1 / num2; }
-U64 U64_unsafe_division_U16(U64 num1, U16 num2) { return num1 / num2; }
-U64 U64_unsafe_division_U32(U64 num1, U32 num2) { return num1 / num2; }
-U64 U64_unsafe_division_U64(U64 num1, U64 num2) { return num1 / num2; }
-F64 U64_unsafe_division_F32(U64 num1, F32 num2) { return num1 / num2; }
-F64 U64_unsafe_division_F64(U64 num1, F64 num2) { return num1 / num2; }
-// Function: unsafe_modulo (Does not support F32/F64)
-S8 U64_unsafe_modulo_S8(U64 num1, S8 num2) { return num1 % num2; }
-S16 U64_unsafe_modulo_S16(U64 num1, S16 num2) { return num1 % num2; }
-S32 U64_unsafe_modulo_S32(U64 num1, S32 num2) { return num1 % num2; }
-S64 U64_unsafe_modulo_S64(U64 num1, S64 num2) { return num1 % num2; }
-U8 U64_unsafe_modulo_U8(U64 num1, U8 num2) { return num1 % num2; }
-U16 U64_unsafe_modulo_U16(U64 num1, U16 num2) { return num1 % num2; }
-U32 U64_unsafe_modulo_U32(U64 num1, U32 num2) { return num1 % num2; }
-U64 U64_unsafe_modulo_U64(U64 num1, U64 num2) { return num1 % num2; }
-// Function: and (Does not support F32/F64)
-U8 U64_and_S8(U64 num1, S8 num2) { return num1 & num2; }
-U16 U64_and_S16(U64 num1, S16 num2) { return num1 & num2; }
-U32 U64_and_S32(U64 num1, S32 num2) { return num1 & num2; }
-U64 U64_and_S64(U64 num1, S64 num2) { return num1 & num2; }
-U8 U64_and_U8(U64 num1, U8 num2) { return num1 & num2; }
-U16 U64_and_U16(U64 num1, U16 num2) { return num1 & num2; }
-U32 U64_and_U32(U64 num1, U32 num2) { return num1 & num2; }
-U64 U64_and_U64(U64 num1, U64 num2) { return num1 & num2; }
-// Function: or (Does not support F32/F64)
-U64 U64_or_S8(U64 num1, S8 num2) { return num1 | num2; }
-U64 U64_or_S16(U64 num1, S16 num2) { return num1 | num2; }
-U64 U64_or_S32(U64 num1, S32 num2) { return num1 | num2; }
-U64 U64_or_S64(U64 num1, S64 num2) { return num1 | num2; }
-U64 U64_or_U8(U64 num1, U8 num2) { return num1 | num2; }
-U64 U64_or_U16(U64 num1, U16 num2) { return num1 | num2; }
-U64 U64_or_U32(U64 num1, U32 num2) { return num1 | num2; }
-U64 U64_or_U64(U64 num1, U64 num2) { return num1 | num2; }
-// Function: xor (Does not support F32/F64)
-U64 U64_xor_S8(U64 num1, S8 num2) { return num1 ^ num2; }
-U64 U64_xor_S16(U64 num1, S16 num2) { return num1 ^ num2; }
-U64 U64_xor_S32(U64 num1, S32 num2) { return num1 ^ num2; }
-U64 U64_xor_S64(U64 num1, S64 num2) { return num1 ^ num2; }
-U64 U64_xor_U8(U64 num1, U8 num2) { return num1 ^ num2; }
-U64 U64_xor_U16(U64 num1, U16 num2) { return num1 ^ num2; }
-U64 U64_xor_U32(U64 num1, U32 num2) { return num1 ^ num2; }
-U64 U64_xor_U64(U64 num1, U64 num2) { return num1 ^ num2; }
-// Function: not
-U64 U64_not(U64 num) { return ~num; }
+U64 U64_subtract(U64 a, U64 b)
+{
+  return a - b;
+}
+
+U64 U64_multiply(U64 a, U64 b)
+{
+  return a * b;
+}
+
+U64 U64_quotient(U64 a, U64 b)
+{
+  return a / b;
+}
+
+U64 U64_remainder(U64 a, U64 b)
+{
+  return a % b;
+}
+
+S64 U64_compare(U64 a, U64 b)
+{
+  return a > b ? 1 : (a == b ? 0 : -1);
+}
+
+U64 U64_print(U64 value)
+{
+  return (U64)printf("%llu\n", value);
+}
 
 #endif // ASL_U64_H

@@ -10,8 +10,8 @@ app Example:
     d = MODULE.sum(c)
     S64.multiply(b, d)
 
-  fn start(Byte argc) returns Byte:
-    exit_success = Byte 0
+  fn start(U8 argc) returns U8:
+    exit_success = U8 0
 
     a = MODULE.count(999, 3)
     b = MODULE.count(999, 5)

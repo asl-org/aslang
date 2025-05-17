@@ -15,6 +15,8 @@ let colon* = static_rule("colon", "':'", ":", raw_string_reducer)
 let hashtag* = static_rule("hashtag", "'#'", "#", raw_string_reducer)
 let paren_open* = static_rule("paren_open", "'('", "(", raw_string_reducer)
 let paren_close* = static_rule("paren_close", "')'", ")", raw_string_reducer)
+let brace_open* = static_rule("brace_open", "'{'", "{", raw_string_reducer)
+let brace_close* = static_rule("brace_close", "'}'", "}", raw_string_reducer)
 
 proc is_visible(x: char): bool = 32 <= x.ord and x.ord < 127
 let visible_character* = matcher_rule("visible_character", "ascii 32..<127",
@@ -77,19 +79,52 @@ let integer* = non_terminal_rule("integer", @[
   new_production(@[digit.at_least_one])
 ], raw_parts_reducer)
 
+# keyword_arg.nim
+let keyword_arg_rule* = non_terminal_rule("keyword_arg", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    space.any,
+    colon.exact_one,
+    space.any,
+    integer.exact_one,
+  ])
+], keyword_arg_reducer)
+
+let leading_keyword_arg_rule* = non_terminal_rule("leading_keyword_arg", @[
+  new_production(@[
+    keyword_arg_rule.exact_one,
+    space.any,
+    comma.exact_one,
+    space.any,
+  ])
+], leading_keyword_arg_reducer)
+
+# struct.nim
+let struct_rule* = non_terminal_rule("struct", @[
+  new_production(@[
+    brace_open.exact_one,
+    space.any,
+    leading_keyword_arg_rule.any,
+    keyword_arg_rule.exact_one,
+    space.any,
+    brace_close.exact_one,
+  ])
+], struct_reducer)
+
+# literal.nim
+let literal_rule* = non_terminal_rule("literal", @[
+  new_production(@[integer.exact_one]),
+  new_production(@[struct_rule.exact_one])
+], literal_reducer)
+
 # init.nim
 let init_rule* = non_terminal_rule("init", @[
   new_production(@[
     identifier_rule.exact_one,
     space.any,
-    integer.exact_one
+    literal_rule.exact_one
   ])
 ], init_reducer)
-
-# literal.nim
-let literal_rule* = non_terminal_rule("literal", @[
-  new_production(@[integer.exact_one]),
-], literal_reducer)
 
 let arg_rule* = non_terminal_rule("arg", @[
   new_production(@[identifier_rule.exact_one]),

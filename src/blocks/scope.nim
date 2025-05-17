@@ -6,13 +6,22 @@ import matcher
 
 import "../rules/parse_result"
 
+# proc process_module(module: string): (string, int) =
+#   let index = module.find("*")
+#   if index == -1:
+#     return (module, 0)
+#   else:
+#     return (module.substr(0, index), module.count("*"))
+
 proc make_native_module(name: string, fns: seq[(string, string, seq[(
     string, string)])]): Result[Module, string] =
   let native_module = name.new_identifier().new_module_def().new_native_module()
 
-  for (fn_name, returns, args) in fns:
+  for (returns, fn_name, args) in fns:
     var arg_defs: seq[ArgumentDefinition]
     for (module, name) in args:
+      # let (module_name, refcount) = module.process_module()
+      # let arg_def = new_arg_def(new_identifier(module_name), new_identifier(name), refcount)
       let arg_def = new_arg_def(new_identifier(module), new_identifier(name))
       arg_defs.add(arg_def)
 
@@ -50,21 +59,47 @@ proc add_native_module*(scope: Scope, new_module: Module): Result[void, string] 
 
 proc new_scope*(): Result[Scope, string] =
   var scope = Scope()
-  let byte_module = ? make_native_module("Byte", @[
-    ("print", "Byte", @[("Byte", "value")])
+  # U8 module
+  let byte_module = ? make_native_module("U8", @[
+    ("U8", "print", @[("U8", "value")])
   ])
   ? scope.add_native_module(byte_module)
 
+  # U64 module
+  let u64_module = ? make_native_module("U64", @[
+    ("U64", "add", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "subtract", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "multiply", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "quotient", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "remainder", @[("U64", "a"), ("U64", "b")]),
+    ("S64", "compare", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "print", @[("U64", "a")]),
+  ])
+  ? scope.add_native_module(u64_module)
+
+  # S64 module
   let s64_module = ? make_native_module("S64", @[
-    ("add", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("subtract", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("multiply", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("quotient", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("remainder", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("compare", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("print", "S64", @[("S64", "a")]),
+    ("S64", "add", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "subtract", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "multiply", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "quotient", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "remainder", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "compare", @[("S64", "a"), ("S64", "b")]),
+    ("U64", "print", @[("S64", "a")]),
   ])
   ? scope.add_native_module(s64_module)
+
+  # Bitset module
+  # let bitset_module = ? make_native_module("Bitset", @[
+  #   ("Bitset", "init", @[("U64", "bits")]),
+  #   ("U64", "print", @[("Bitset*", "value")]),
+  #   ("Byte", "get", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("Bitset*", "set", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("Bitset*", "unset", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("Bitset*", "toggle", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("U64", "free", @[("Bitset*", "value")]),
+  # ])
+  # ? scope.add_native_module(bitset_module)
 
   ok(scope)
 
@@ -165,7 +200,7 @@ proc resolve_function_call(fn_scope: FunctionScope, scope: Scope,
   return err(fmt"None of the functions calls matched with {fncall}")
 
 proc generate_statement(scope: Scope, s: Statement, module: Identifier,
-    fn_scope: FunctionScope, last_statement: bool): Result[
+    fn: Function, fn_scope: FunctionScope, last_statement: bool): Result[
     string, string] =
   var statements_code: seq[string]
   case s.kind:
@@ -197,6 +232,9 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
   of SK_FNCALL:
     let fncall = s.fncall
 
+    let fn_module = ? scope.resolve_function_call_module(module, fncall)
+    let return_type = ? fn_scope.resolve_function_call(scope, fn_module, fncall)
+
     var fncall_args: seq[string]
     for arg in fncall.arglist:
       fncall_args.add($(arg))
@@ -209,6 +247,8 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
 
     # last line must be a return
     if last_statement:
+      if $(return_type) != $(fn.def.returns):
+        return err(fmt"Expected {fncall} to return {fn.def.returns} but found {return_type}")
       fncall_code = fmt"return {fncall_code}"
 
     statements_code.add(fncall_code)
@@ -219,6 +259,52 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
 
   return ok(statements_code.join("\n"))
 
+proc generate_case_block(fn_scope: FunctionScope, scope: Scope,
+    module: Identifier, fn: Function, case_block: Case): Result[string, string] =
+    # TODO: Make sure literal is of appropriate kind
+  var case_block_code = @[fmt"case {case_block.value}:" & "{"]
+  for i, s in case_block.statements:
+    let scode = ? scope.generate_statement(s, module, fn, fn_scope, i ==
+        case_block.statements.len - 1)
+    case_block_code.add(scode)
+
+  case_block_code.add("}")
+  return ok(case_block_code.join("\n"))
+
+proc generate_else_block(fn_scope: FunctionScope, scope: Scope,
+    module: Identifier, fn: Function, else_block: Else): Result[string, string] =
+  var else_block_code = @[fmt"default:" & "{"]
+  for i, s in else_block.statements:
+    let scode = ? scope.generate_statement(s, module, fn, fn_scope, i ==
+        else_block.statements.len - 1)
+    else_block_code.add(scode)
+  else_block_code.add("}")
+  return ok(else_block_code.join("\n"))
+
+proc generate_match_block(fn_scope: FunctionScope, scope: Scope,
+    module: Identifier, fn: Function, match_block: Matcher): Result[string, string] =
+  discard ? fn_scope.get_arg(match_block.value)
+
+  var match_block_code = @[fmt"switch({match_block.value})" & "{"]
+  if match_block.cases.len == 0:
+    # if this error shows up something is wrong with blockification logic
+    return err(fmt"Match block should at least have 1 case block")
+
+  for case_block in match_block.cases:
+    let case_block_code = ? fn_scope.generate_case_block(scope, module, fn, case_block)
+    match_block_code.add(case_block_code)
+
+  if match_block.else_blocks.len > 1:
+    # if this error shows up something is wrong with blockification logic
+    return err(fmt"Match block can not have more than 1 else blocks")
+
+  for else_block in match_block.else_blocks:
+    let else_block_code = ? fn_scope.generate_else_block(scope, module, fn, else_block)
+    match_block_code.add(else_block_code)
+
+  match_block_code.add("}")
+  match_block_code.add("UNREACHABLE();")
+  return ok(match_block_code.join("\n"))
 
 proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
     string, string] =
@@ -247,46 +333,15 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
       last_statement = false
     else:
       last_statement = index == statements.len - 1
-    let scode = ? scope.generate_statement(s, module, fn_scope, last_statement)
+    let scode = ? scope.generate_statement(s, module, fn, fn_scope, last_statement)
     statements_code.add(scode)
 
   fn_code.add(statements_code.join("\n"))
 
   if maybe_match_block.is_ok:
-    let match_block = maybe_match_block.get
-    let maybe_arg = fn_scope.get_arg(match_block.value)
-    discard ? maybe_arg
-
-    var match_block_code = @[fmt"switch({match_block.value})" & "{"]
-
-    for case_block in match_block.cases:
-      # TODO: Make sure literal is of appropriate kind
-      var case_block_code = @[fmt"case {case_block.value}:" & "{"]
-      for i, s in case_block.statements:
-        let scode = ? scope.generate_statement(s, module, fn_scope, i ==
-            case_block.statements.len - 1)
-        case_block_code.add(scode)
-
-      case_block_code.add("}")
-      match_block_code.add(case_block_code.join("\n"))
-
-    if match_block.else_blocks.len > 1:
-      # if this error shows up something is wrong with blockification logic
-      return err(fmt"Match block can not have more than 1 else blocks")
-
-    for else_block in match_block.else_blocks:
-      var else_block_code = @[fmt"default:" & "{"]
-      for i, s in else_block.statements:
-        let scode = ? scope.generate_statement(s, module, fn_scope, i ==
-            else_block.statements.len - 1)
-        else_block_code.add(scode)
-
-      else_block_code.add("}")
-      match_block_code.add(else_block_code.join("\n"))
-
-    match_block_code.add("}")
-    match_block_code.add("UNREACHABLE();")
-    fn_code.add(match_block_code.join("\n"))
+    let match_block_code = ? fn_scope.generate_match_block(scope, module, fn,
+        maybe_match_block.get)
+    fn_code.add(match_block_code)
 
   fn_code.add("}")
 
@@ -303,65 +358,10 @@ proc generate_app*(scope: Scope): Result[string, string] =
   let fn_code_str = fn_code.join("\n")
 
   let code = @[
-    """
-#include <stdio.h>
-#include <stdint.h>
-#include <inttypes.h>
-
-#ifdef __GNUC__
-  #define UNREACHABLE() __builtin_unreachable()
-#elif defined(_MSC_VER)
-  #define UNREACHABLE() __assume(0)
-#else
-  #include <stdlib.h>
-  #define UNREACHABLE() abort()
-#endif
-
-typedef uint8_t Byte;
-typedef int64_t S64;
-
-S64 S64_add(S64 a, S64 b)
-{
-  return a + b;
-}
-
-S64 S64_subtract(S64 a, S64 b)
-{
-  return a - b;
-}
-
-S64 S64_multiply(S64 a, S64 b)
-{
-  return a * b;
-}
-
-S64 S64_quotient(S64 a, S64 b)
-{
-  return a / b;
-}
-
-S64 S64_remainder(S64 a, S64 b)
-{
-  return a % b;
-}
-
-S64 S64_compare(S64 a, S64 b)
-{
-  return a > b ? 1 : (a == b ? 0 : -1);
-}
-
-S64 S64_print(S64 value)
-{
-  return (S64)printf("%lld\n", value);
-}
-
-Byte Byte_print(Byte value) {
-  return printf("%d\n", value);
-}
-""",
+    """#include "runtime/asl.h"""",
     fn_code_str,
     "int main(int argc, char** argv) {",
-    fmt"return {app.def.name}_start((Byte)argc);",
+    fmt"return {app.def.name}_start((U8)argc);",
     "}"
   ]
 

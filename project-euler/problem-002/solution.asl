@@ -17,8 +17,8 @@ app Example:
         g = S64.add(a, b)
         MODULE.solve(b, g, c, f)
 
-  fn start(Byte seed) returns Byte:
-    exit_success = Byte 0
+  fn start(U8 seed) returns U8:
+    exit_success = U8 0
     a = Example.solve(1, 2, 4000000, 0)
     S64.print(a)
     exit_success

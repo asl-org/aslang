@@ -28,14 +28,22 @@ proc identifier_reducer*(location: Location, parts: seq[seq[seq[
   let identifier = new_identifier(head & tail, location)
   (location, identifier.to_parse_result())
 
-# init.nim
-proc init_reducer*(location: Location, parts: seq[seq[seq[
+# keyword_arg.nim
+proc keyword_arg_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): (Location, ParseResult) =
-  let module_name = parts[0][0][0].identifier
-  let literal = parts[0][2][0].raw_string
-  let pr = new_init(module_name, literal, location).to_parse_result()
+  let name = parts[0][0][0].identifier
+  let value = parts[0][4][0].raw_string
+  (location, name.new_keyword_arg(value).to_parse_result())
 
-  (location, pr)
+proc leading_keyword_arg_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) = (location, parts[0][0][0])
+
+# struct.nim
+proc struct_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let kwargs = (parts[0][2] & parts[0][3]).map(proc(
+      x: ParseResult): KeywordArg = x.kwarg)
+  (location, kwargs.new_struct().to_parse_result())
 
 # literal.nim
 proc literal_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
@@ -43,6 +51,17 @@ proc literal_reducer*(location: Location, parts: seq[seq[seq[ParseResult]]]): (
   var pr: ParseResult
   if parts[0].len > 0:
     pr = parts[0][0][0].raw_string.new_literal().to_parse_result
+  if parts[1].len > 0:
+    pr = parts[1][0][0].struct.new_literal().to_parse_result
+  (location, pr)
+
+# init.nim
+proc init_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): (Location, ParseResult) =
+  let module_name = parts[0][0][0].identifier
+  let literal = parts[0][2][0].literal
+  let pr = new_init(module_name, literal, location).to_parse_result()
+
   (location, pr)
 
 # argument.nim
