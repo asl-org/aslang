@@ -35,7 +35,7 @@ S64 S64_compare(S64 a, S64 b)
   return a > b ? 1 : (a == b ? 0 : -1);
 }
 
-S64 S64_print(S64 value)
+U64 S64_print(S64 value)
 {
   return (S64)printf("%lld\n", value);
 }

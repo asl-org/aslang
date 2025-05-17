@@ -6,13 +6,22 @@ import matcher
 
 import "../rules/parse_result"
 
+# proc process_module(module: string): (string, int) =
+#   let index = module.find("*")
+#   if index == -1:
+#     return (module, 0)
+#   else:
+#     return (module.substr(0, index), module.count("*"))
+
 proc make_native_module(name: string, fns: seq[(string, string, seq[(
     string, string)])]): Result[Module, string] =
   let native_module = name.new_identifier().new_module_def().new_native_module()
 
-  for (fn_name, returns, args) in fns:
+  for (returns, fn_name, args) in fns:
     var arg_defs: seq[ArgumentDefinition]
     for (module, name) in args:
+      # let (module_name, refcount) = module.process_module()
+      # let arg_def = new_arg_def(new_identifier(module_name), new_identifier(name), refcount)
       let arg_def = new_arg_def(new_identifier(module), new_identifier(name))
       arg_defs.add(arg_def)
 
@@ -50,21 +59,47 @@ proc add_native_module*(scope: Scope, new_module: Module): Result[void, string] 
 
 proc new_scope*(): Result[Scope, string] =
   var scope = Scope()
-  let byte_module = ? make_native_module("Byte", @[
-    ("print", "Byte", @[("Byte", "value")])
+  # U8 module
+  let byte_module = ? make_native_module("U8", @[
+    ("U8", "print", @[("U8", "value")])
   ])
   ? scope.add_native_module(byte_module)
 
+  # U64 module
+  let u64_module = ? make_native_module("U64", @[
+    ("U64", "add", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "subtract", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "multiply", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "quotient", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "remainder", @[("U64", "a"), ("U64", "b")]),
+    ("S64", "compare", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "print", @[("U64", "a")]),
+  ])
+  ? scope.add_native_module(u64_module)
+
+  # S64 module
   let s64_module = ? make_native_module("S64", @[
-    ("add", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("subtract", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("multiply", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("quotient", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("remainder", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("compare", "S64", @[("S64", "a"), ("S64", "b")]),
-    ("print", "S64", @[("S64", "a")]),
+    ("S64", "add", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "subtract", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "multiply", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "quotient", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "remainder", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "compare", @[("S64", "a"), ("S64", "b")]),
+    ("U64", "print", @[("S64", "a")]),
   ])
   ? scope.add_native_module(s64_module)
+
+  # Bitset module
+  # let bitset_module = ? make_native_module("Bitset", @[
+  #   ("Bitset", "init", @[("U64", "bits")]),
+  #   ("U64", "print", @[("Bitset*", "value")]),
+  #   ("Byte", "get", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("Bitset*", "set", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("Bitset*", "unset", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("Bitset*", "toggle", @[("Bitset*", "value"), ("U64", "bit")]),
+  #   ("U64", "free", @[("Bitset*", "value")]),
+  # ])
+  # ? scope.add_native_module(bitset_module)
 
   ok(scope)
 
@@ -326,7 +361,7 @@ proc generate_app*(scope: Scope): Result[string, string] =
     """#include "runtime/asl.h"""",
     fn_code_str,
     "int main(int argc, char** argv) {",
-    fmt"return {app.def.name}_start((Byte)argc);",
+    fmt"return {app.def.name}_start((U8)argc);",
     "}"
   ]
 

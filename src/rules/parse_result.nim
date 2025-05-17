@@ -180,13 +180,15 @@ proc `$`*(assignment: Assignment): string =
 type ArgumentDefinition* = ref object of RootObj
   module: Identifier
   name: Identifier
+  refcount: int = 0
   location: Location
 
 proc name*(arg_def: ArgumentDefinition): Identifier = arg_def.name
 proc module*(arg_def: ArgumentDefinition): Identifier = arg_def.module
 
-proc new_arg_def*(module: Identifier, name: Identifier): ArgumentDefinition =
-  ArgumentDefinition(module: module, name: name)
+proc new_arg_def*(module: Identifier, name: Identifier,
+    refcount: int = 0): ArgumentDefinition =
+  ArgumentDefinition(module: module, name: name, refcount: refcount)
 
 proc `$`*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.module} {arg_def.name}"
