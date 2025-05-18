@@ -5,6 +5,6 @@
 #include "u8.h"
 #include "s64.h"
 #include "u64.h"
-#include "bitset.h"
+#include "pointer.h"
 
 #endif // ASL_H

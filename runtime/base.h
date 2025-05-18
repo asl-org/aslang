@@ -12,6 +12,9 @@ typedef uint8_t U8;
 typedef uint64_t U64;
 typedef int64_t S64;
 
+// Pointer type
+typedef uintptr_t Pointer;
+
 // Floating-point type aliases
 typedef float F32;
 typedef double F64;

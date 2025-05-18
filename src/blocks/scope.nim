@@ -61,12 +61,22 @@ proc new_scope*(): Result[Scope, string] =
   var scope = Scope()
   # U8 module
   let byte_module = ? make_native_module("U8", @[
+    ("U8", "or", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "and", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "lshift", @[("U8", "a"), ("U64", "b")]),
+    ("U8", "rshift", @[("U8", "a"), ("U64", "b")]),
+    ("U8", "not", @[("U8", "a")]),
     ("U8", "print", @[("U8", "value")])
   ])
   ? scope.add_native_module(byte_module)
 
   # U64 module
   let u64_module = ? make_native_module("U64", @[
+    ("U64", "or", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "and", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "lshift", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "rshift", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "not", @[("U64", "a")]),
     ("U64", "add", @[("U64", "a"), ("U64", "b")]),
     ("U64", "subtract", @[("U64", "a"), ("U64", "b")]),
     ("U64", "multiply", @[("U64", "a"), ("U64", "b")]),
@@ -85,21 +95,32 @@ proc new_scope*(): Result[Scope, string] =
     ("S64", "quotient", @[("S64", "a"), ("S64", "b")]),
     ("S64", "remainder", @[("S64", "a"), ("S64", "b")]),
     ("S64", "compare", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "from_U8", @[("U8", "a")]),
+    ("S64", "from_U64", @[("U64", "a")]),
     ("U64", "print", @[("S64", "a")]),
   ])
   ? scope.add_native_module(s64_module)
 
-  # Bitset module
-  # let bitset_module = ? make_native_module("Bitset", @[
-  #   ("Bitset", "init", @[("U64", "bits")]),
-  #   ("U64", "print", @[("Bitset*", "value")]),
-  #   ("Byte", "get", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("Bitset*", "set", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("Bitset*", "unset", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("Bitset*", "toggle", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("U64", "free", @[("Bitset*", "value")]),
-  # ])
-  # ? scope.add_native_module(bitset_module)
+  # Pointer module
+  let ptr_module = ? make_native_module("Pointer", @[
+    ("Pointer", "shift", @[("Pointer", "ptr"), ("U64", "offset")]),
+    ("U64", "print", @[("Pointer", "ptr")]),
+    ("U8", "read_U8", @[("Pointer", "ptr")]),
+    ("U64", "read_U64", @[("Pointer", "ptr")]),
+    ("S64", "read_S64", @[("Pointer", "ptr")]),
+    ("Pointer", "write_U8", @[("Pointer", "ptr"), ("U8", "value")]),
+    ("Pointer", "write_U64", @[("Pointer", "ptr"), ("U64", "value")]),
+    ("Pointer", "write_S64", @[("Pointer", "ptr"), ("S64", "value")]),
+    ("U8", "free", @[("Pointer", "ptr")]),
+  ])
+  ? scope.add_native_module(ptr_module)
+
+  # S64 module
+  let sys_module = ? make_native_module("System", @[
+    ("Pointer", "allocate", @[("U64", "bytes")]),
+    ("U8", "free", @[("Pointer", "ptr")]),
+  ])
+  ? scope.add_native_module(sys_module)
 
   ok(scope)
 
@@ -349,17 +370,22 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
 
 
 proc generate_app*(scope: Scope): Result[string, string] =
-  let app = scope.modules[0]
-  var fn_code: seq[string]
+  var module_code: seq[string]
+  for app in scope.modules:
+    var fn_code: seq[string]
+    for fn in app.fns:
+      let fnc = ? scope.generate_function(fn, app.def.name)
+      fn_code.add(fnc)
+    module_code.add(fn_code.join("\n"))
 
-  for fn in app.fns:
-    let fnc = ? scope.generate_function(fn, app.def.name)
-    fn_code.add(fnc)
-  let fn_code_str = fn_code.join("\n")
+  var app: Module
+  for module in scope.modules:
+    if module.def.kind == MDK_APP:
+      app = module
 
   let code = @[
     """#include "runtime/asl.h"""",
-    fn_code_str,
+    module_code.join("\n"),
     "int main(int argc, char** argv) {",
     fmt"return {app.def.name}_start((U8)argc);",
     "}"
