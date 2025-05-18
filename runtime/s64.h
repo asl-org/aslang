@@ -40,4 +40,14 @@ U64 S64_print(S64 value)
   return (S64)printf("%lld\n", value);
 }
 
+S64 S64_from_U8(U8 value)
+{
+  return (S64)value;
+}
+
+S64 S64_from_U64(U64 value)
+{
+  return (S64)value;
+}
+
 #endif // ASL_S64_H

@@ -2,10 +2,13 @@
 #define ASL_POINTER_H
 
 #include "base.h"
+#include <string.h>
 
 Pointer System_allocate(U64 bytes)
 {
-  return (Pointer)malloc(bytes);
+  Pointer ptr = (Pointer)malloc(bytes);
+  memset((void *)ptr, 0, bytes);
+  return ptr;
 }
 
 U8 System_free(Pointer ptr)

@@ -1,10 +1,88 @@
 app Example:
 
-  fn start(U8 seed) returns U8:
-    exit_success = U8 0
-    exit_failure = U8 1
+  fn bitset_init(U64 size) returns Pointer:
+    System.allocate(size)
 
-    ptr = System.allocate(64)
+  fn bitset_free(Pointer ptr) returns U8:
+    System.free(ptr)
+
+  fn bitset_read(Pointer ptr, U64 bit) returns U8:
+    byte = U64.quotient(bit, 8)
+    bptr = Pointer.shift(ptr, byte)
+    Pointer.read_U8(bptr)
+
+  fn bitset_get(Pointer ptr, U64 size, U64 bit) returns S64:
+    failed = S64.subtract(0, 1)
+    op = U64.compare(bit, size)
+    match op:
+      case 1:
+        failed
+      case 0:
+        failed
+      else:
+        byte = U64.quotient(bit, 8)
+        offset = U64.remainder(bit, 8)
+
+        bptr = Pointer.shift(ptr, byte)
+        data = Pointer.read_U8(bptr)
+
+        bdata = U8.rshift(data, offset)
+        res = U8.and(bdata, 1)
+        S64.from_U8(res)
+
+  fn bitset_set(Pointer ptr, U64 size, U64 bit) returns S64:
+    failed = S64.subtract(0, 1)
+    op = U64.compare(bit, size)
+    match op:
+      case 1:
+        failed
+      case 0:
+        failed
+      else:
+        byte = U64.quotient(bit, 8)
+        offset = U64.remainder(bit, 8)
+
+        bptr = Pointer.shift(ptr, byte)
+        data = Pointer.read_U8(bptr)
+
+        mask = U8.lshift(1, offset)
+        res = U8.or(data, mask)
+        Pointer.write_U8(bptr, res)
+        S64.from_U8(res)
+
+  fn bitset_clear(Pointer ptr, U64 size, U64 bit) returns S64:
+    failed = S64.subtract(0, 1)
+    op = U64.compare(bit, size)
+    match op:
+      case 1:
+        failed
+      case 0:
+        failed
+      else:
+        byte = U64.quotient(bit, 8)
+        offset = U64.remainder(bit, 8)
+
+        bptr = Pointer.shift(ptr, byte)
+        data = Pointer.read_U8(bptr)
+
+        mask = U8.lshift(1, offset)
+        imask = U8.not(mask)
+        res = U8.and(data, imask)
+        Pointer.write_U8(bptr, res)
+        S64.from_U8(res)
+
+  fn bitset_toggle(Pointer ptr, U64 size, U64 bit) returns S64:
+    data = MODULE.bitset_get(ptr, size, bit)
+    match data:
+      case 0:
+        MODULE.bitset_set(ptr, size, bit)
+      case 1:
+        MODULE.bitset_clear(ptr, size, bit)
+      else:
+        data
+
+  fn sample(U64 bytes) returns U8:
+    ptr = System.allocate(bytes)
     Pointer.print(ptr)
 
     Pointer.write_U8(ptr, 255)
@@ -17,8 +95,28 @@ app Example:
     val1 = Pointer.read_U8(ptr1)
     U8.print(val1)
 
-    # ptr6 = Pointer.write_U64(ptr5, 4)
     val2 = Pointer.read_U64(ptr)
     U64.print(val2)
 
     System.free(ptr)
+
+  fn start(U8 seed) returns U8:
+    exit_success = U8 0
+    exit_failure = U8 1
+
+    # MODULE.sample(64)
+
+    max_primes = U64 1000001
+    primes = MODULE.bitset_init(max_primes)
+
+    is_prime_1 = MODULE.bitset_get(primes, max_primes, 1)
+    S64.print(is_prime_1)
+
+    MODULE.bitset_set(primes, max_primes, 1)
+
+    is_prime_1_2 = MODULE.bitset_get(primes, max_primes, 1)
+    S64.print(is_prime_1_2)
+
+    MODULE.bitset_free(primes)
+
+    exit_success

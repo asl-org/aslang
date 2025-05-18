@@ -5,6 +5,31 @@
 
 // Module: U64
 
+U64 U64_and(U64 a, U64 b)
+{
+  return a & b;
+}
+
+U64 U64_or(U64 a, U64 b)
+{
+  return a | b;
+}
+
+U64 U64_not(U64 a)
+{
+  return ~a;
+}
+
+U64 U64_lshift(U64 a, U64 b)
+{
+  return a << b;
+}
+
+U64 U64_rshift(U64 a, U64 b)
+{
+  return a >> b;
+}
+
 U64 U64_add(U64 a, U64 b)
 {
   return a + b;

@@ -61,12 +61,22 @@ proc new_scope*(): Result[Scope, string] =
   var scope = Scope()
   # U8 module
   let byte_module = ? make_native_module("U8", @[
+    ("U8", "or", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "and", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "lshift", @[("U8", "a"), ("U64", "b")]),
+    ("U8", "rshift", @[("U8", "a"), ("U64", "b")]),
+    ("U8", "not", @[("U8", "a")]),
     ("U8", "print", @[("U8", "value")])
   ])
   ? scope.add_native_module(byte_module)
 
   # U64 module
   let u64_module = ? make_native_module("U64", @[
+    ("U64", "or", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "and", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "lshift", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "rshift", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "not", @[("U64", "a")]),
     ("U64", "add", @[("U64", "a"), ("U64", "b")]),
     ("U64", "subtract", @[("U64", "a"), ("U64", "b")]),
     ("U64", "multiply", @[("U64", "a"), ("U64", "b")]),
@@ -85,6 +95,8 @@ proc new_scope*(): Result[Scope, string] =
     ("S64", "quotient", @[("S64", "a"), ("S64", "b")]),
     ("S64", "remainder", @[("S64", "a"), ("S64", "b")]),
     ("S64", "compare", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "from_U8", @[("U8", "a")]),
+    ("S64", "from_U64", @[("U64", "a")]),
     ("U64", "print", @[("S64", "a")]),
   ])
   ? scope.add_native_module(s64_module)
