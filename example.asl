@@ -1,17 +1,11 @@
-app Example:
-
-  fn bitset_init(U64 size) returns Pointer:
+module Bitset:
+  fn init(U64 size) returns Pointer:
     System.allocate(size)
 
-  fn bitset_free(Pointer ptr) returns U8:
+  fn free(Pointer ptr) returns U8:
     System.free(ptr)
 
-  fn bitset_read(Pointer ptr, U64 bit) returns U8:
-    byte = U64.quotient(bit, 8)
-    bptr = Pointer.shift(ptr, byte)
-    Pointer.read_U8(bptr)
-
-  fn bitset_get(Pointer ptr, U64 size, U64 bit) returns S64:
+  fn get(Pointer ptr, U64 size, U64 bit) returns S64:
     failed = S64.subtract(0, 1)
     op = U64.compare(bit, size)
     match op:
@@ -30,7 +24,7 @@ app Example:
         res = U8.and(bdata, 1)
         S64.from_U8(res)
 
-  fn bitset_set(Pointer ptr, U64 size, U64 bit) returns S64:
+  fn set(Pointer ptr, U64 size, U64 bit) returns S64:
     failed = S64.subtract(0, 1)
     op = U64.compare(bit, size)
     match op:
@@ -50,7 +44,7 @@ app Example:
         Pointer.write_U8(bptr, res)
         S64.from_U8(res)
 
-  fn bitset_clear(Pointer ptr, U64 size, U64 bit) returns S64:
+  fn clear(Pointer ptr, U64 size, U64 bit) returns S64:
     failed = S64.subtract(0, 1)
     op = U64.compare(bit, size)
     match op:
@@ -71,16 +65,17 @@ app Example:
         Pointer.write_U8(bptr, res)
         S64.from_U8(res)
 
-  fn bitset_toggle(Pointer ptr, U64 size, U64 bit) returns S64:
-    data = MODULE.bitset_get(ptr, size, bit)
+  fn toggle(Pointer ptr, U64 size, U64 bit) returns S64:
+    data = MODULE.get(ptr, size, bit)
     match data:
       case 0:
-        MODULE.bitset_set(ptr, size, bit)
+        MODULE.set(ptr, size, bit)
       case 1:
-        MODULE.bitset_clear(ptr, size, bit)
+        MODULE.clear(ptr, size, bit)
       else:
         data
 
+app Example:
   fn sample(U64 bytes) returns U8:
     ptr = System.allocate(bytes)
     Pointer.print(ptr)
@@ -107,16 +102,15 @@ app Example:
     # MODULE.sample(64)
 
     max_primes = U64 1000001
-    primes = MODULE.bitset_init(max_primes)
+    primes = Bitset.init(max_primes)
 
-    is_prime_1 = MODULE.bitset_get(primes, max_primes, 1)
+    is_prime_1 = Bitset.get(primes, max_primes, 1)
     S64.print(is_prime_1)
 
-    MODULE.bitset_set(primes, max_primes, 1)
+    Bitset.set(primes, max_primes, 1)
 
-    is_prime_1_2 = MODULE.bitset_get(primes, max_primes, 1)
+    is_prime_1_2 = Bitset.get(primes, max_primes, 1)
     S64.print(is_prime_1_2)
 
-    MODULE.bitset_free(primes)
-
+    Bitset.free(primes)
     exit_success

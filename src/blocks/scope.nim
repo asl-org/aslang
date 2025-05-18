@@ -122,18 +122,6 @@ proc new_scope*(): Result[Scope, string] =
   ])
   ? scope.add_native_module(sys_module)
 
-  # Bitset module
-  # let bitset_module = ? make_native_module("Bitset", @[
-  #   ("Bitset", "init", @[("U64", "bits")]),
-  #   ("U64", "print", @[("Bitset*", "value")]),
-  #   ("Byte", "get", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("Bitset*", "set", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("Bitset*", "unset", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("Bitset*", "toggle", @[("Bitset*", "value"), ("U64", "bit")]),
-  #   ("U64", "free", @[("Bitset*", "value")]),
-  # ])
-  # ? scope.add_native_module(bitset_module)
-
   ok(scope)
 
 # TODO: perform final validation
@@ -382,17 +370,22 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
 
 
 proc generate_app*(scope: Scope): Result[string, string] =
-  let app = scope.modules[0]
-  var fn_code: seq[string]
+  var module_code: seq[string]
+  for app in scope.modules:
+    var fn_code: seq[string]
+    for fn in app.fns:
+      let fnc = ? scope.generate_function(fn, app.def.name)
+      fn_code.add(fnc)
+    module_code.add(fn_code.join("\n"))
 
-  for fn in app.fns:
-    let fnc = ? scope.generate_function(fn, app.def.name)
-    fn_code.add(fnc)
-  let fn_code_str = fn_code.join("\n")
+  var app: Module
+  for module in scope.modules:
+    if module.def.kind == MDK_APP:
+      app = module
 
   let code = @[
     """#include "runtime/asl.h"""",
-    fn_code_str,
+    module_code.join("\n"),
     "int main(int argc, char** argv) {",
     fmt"return {app.def.name}_start((U8)argc);",
     "}"

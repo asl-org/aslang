@@ -222,6 +222,7 @@ type
     location: Location
 
 proc name*(module_def: ModuleDefinition): Identifier = module_def.name
+proc kind*(module_def: ModuleDefinition): ModuleDefinitionKind = module_def.kind
 
 proc new_app_def*(name: Identifier): ModuleDefinition =
   ModuleDefinition(kind: MDK_APP, name: name)
