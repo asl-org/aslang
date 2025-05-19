@@ -10,6 +10,7 @@ proc asl_grammar*(): Result[Grammar[ParseResult], string] =
     space,
     newline,
     underscore,
+    minus,
     equal,
     comma,
     colon,

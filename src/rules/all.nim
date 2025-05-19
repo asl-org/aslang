@@ -7,6 +7,8 @@ import reducer
 let space* = static_rule("space", "' '", " ", raw_string_reducer)
 let newline* = static_rule("newline", "'\\n'", "\n", raw_string_reducer)
 
+let minus* = static_rule("minus", "'-'", "-", raw_string_reducer)
+
 let underscore* = static_rule("underscore", "'_'", "_", raw_string_reducer)
 let equal* = static_rule("equal", "'='", "=", raw_string_reducer)
 let period* = static_rule("period", "'.'", ".", raw_string_reducer)
@@ -76,7 +78,7 @@ let identifier_rule* = non_terminal_rule("identifier", @[
 
 # number.nim
 let integer* = non_terminal_rule("integer", @[
-  new_production(@[digit.at_least_one])
+  new_production(@[minus.at_most_one, digit.at_least_one])
 ], raw_parts_reducer)
 
 # keyword_arg.nim
