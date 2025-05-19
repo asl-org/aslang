@@ -50,7 +50,7 @@ proc struct_reducer*(location: Location, parts: seq[seq[seq[
   let kwargs = (parts[0][2] & parts[0][3]).map(proc(
       x: ParseResult): KeywordArg = x.kwarg)
   # echo location, " ", kwargs.new_struct().to_parse_result()
-  kwargs.new_struct().to_parse_result()
+  kwargs.new_struct(location).to_parse_result()
 
 # literal.nim
 proc literal_reducer*(location: Location, parts: seq[seq[seq[

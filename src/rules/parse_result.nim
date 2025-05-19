@@ -45,14 +45,16 @@ proc new_keyword_arg*(name: Identifier, value: string): KeywordArg =
 # struct.nim
 type Struct* = ref object of RootObj
   kwargs: seq[KeywordArg]
+  location: Location
 
 proc kwargs*(struct: Struct): seq[KeywordArg] = struct.kwargs
+proc location*(struct: Struct): Location = struct.location
 
 proc `$`*(struct: Struct): string =
   let fields = struct.kwargs.map(proc(x: KeywordArg): string = $(x)).join(", ")
   "{" & fields & "}"
 
-proc new_struct*(kwargs: seq[KeywordArg]): Struct =
+proc new_struct*(kwargs: seq[KeywordArg], location: Location): Struct =
   Struct(kwargs: kwargs)
 
 # literal.nim
@@ -67,6 +69,10 @@ type
 proc kind*(literal: Literal): LiteralKind = literal.kind
 proc integer*(literal: Literal): Atom = literal.integer
 proc struct*(literal: Literal): Struct = literal.struct
+proc location*(literal: Literal): Location =
+  case literal.kind:
+  of LTK_INTEGER: literal.integer.location
+  of LTK_STRUCT: literal.struct.location
 
 proc new_literal*(integer: Atom): Literal =
   Literal(kind: LTK_INTEGER, integer: integer)
@@ -112,6 +118,10 @@ proc `$`*(arg: Argument): string =
 proc kind*(arg: Argument): ArgumentKind = arg.kind
 proc name*(arg: Argument): Identifier = arg.name
 proc literal*(arg: Argument): Literal = arg.literal
+proc location*(arg: Argument): Location =
+  case arg.kind:
+  of AK_IDENTIFIER: arg.name.location
+  of AK_LITERAL: arg.literal.location
 
 proc new_argument*(literal: Literal): Argument =
   Argument(kind: AK_LITERAL, literal: literal)

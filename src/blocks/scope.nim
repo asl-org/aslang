@@ -400,7 +400,7 @@ proc resolve_function_call_arg(fn_scope: FunctionScope, scope: Scope,
   of AK_IDENTIFIER:
     let scope_arg_def = ? fn_scope.get_arg(arg.name)
     if $(arg_def.module) != $(scope_arg_def.module):
-      return err(fmt"{arg.name} is expected to be of type {arg_def.module} but found {scope_arg_def.module}")
+      return err(fmt"{arg.location} {arg.name} is expected to be of type {arg_def.module} but found {scope_arg_def.module}")
   of AK_LITERAL:
     # TODO: check if literal can be cast to the expected module
     let module = ? scope.find_module(arg_def.module)
@@ -475,7 +475,7 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
     # last line must be a return
     if last_statement:
       if $(return_type) != $(fn.def.returns):
-        return err(fmt"Expected {fncall} to return {fn.def.returns} but found {return_type}")
+        return err(fmt"{fncall.location} Expected {fncall} to return {fn.def.returns} but found {return_type}")
       fncall_code = fmt"return {fncall_code}"
 
     statements_code.add(fncall_code)
