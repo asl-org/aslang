@@ -5,8 +5,8 @@ import parser
 import rules/reducer; export reducer
 import rules/all
 
-proc asl_grammar*(): Result[Grammar[Location, ParseResult], string] =
-  new_grammar[Location, ParseResult](@[
+proc asl_grammar*(): Result[Grammar[ParseResult], string] =
+  new_grammar[ParseResult](@[
     space,
     newline,
     underscore,

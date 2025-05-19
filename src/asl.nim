@@ -35,7 +35,7 @@ proc read_file_safe(filename: string): Result[string, string] =
 proc compile(filename: string, output_binary: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let grammar = ? asl_grammar()
-  let parser = grammar.new_parser(content, new_location(filename))
+  let parser = grammar.new_parser(filename, content)
   let maybe_parse_result = parser.parse("program")
   if maybe_parse_result.is_err:
     return err($(maybe_parse_result.error))

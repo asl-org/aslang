@@ -4,74 +4,81 @@ import parser/grammar
 export grammar
 
 type ParseError* = ref object of RootObj
-  stack: seq[(int, string)]
+  stack: seq[(Location, string)]
 
-proc push(parse_error: ParseError, index: int, message: string): ParseError =
-  parse_error.stack.add((index, message))
+proc push(parse_error: ParseError, location: Location,
+    message: string): ParseError =
+  parse_error.stack.add((location, message))
   parse_error
 
 proc new_parse_error(): ParseError = ParseError()
 
-proc new_parse_error(index: int, message: string): ParseError =
-  new_parse_error().push(index, message)
+proc new_parse_error(location: Location, message: string): ParseError =
+  new_parse_error().push(location, message)
 
-proc index(parse_error: ParseError): int =
-  if parse_error.stack.len > 0:
-    parse_error.stack[0][0]
-  else:
-    return 0
+proc location(parse_error: ParseError): Location =
+  if parse_error.stack.len == 0: Location()
+  else: parse_error.stack[0][0]
 
 proc `$`*(parse_error: ParseError): string =
   var content: seq[string]
-  for (index, message) in parse_error.stack:
-    content.add(fmt"{message} at index {index}")
+  for (location, message) in parse_error.stack:
+    content.add(fmt"{location} {message}")
   return content.join("\n")
 
 type
-  Parser[State, Output] = ref object of RootObj
-    grammar: Grammar[State, Output]
+  Parser[Output] = ref object of RootObj
+    grammar: Grammar[Output]
     content: string
-    index: int = 0
-    state: State
+    location: Location
 
 proc look_ahead(parser: Parser, count: int): Result[string, ParseError] =
-  let head = parser.index
-  let tail = parser.index + count
+  let head = parser.location.index
+  let tail = head + count
   if tail > parser.content.len:
-    return err(new_parse_error(head, fmt"Expected {count} more characters but reached end of input at position {parser.index}"))
+    return err(new_parse_error(parser.location,
+        fmt"Expected {count} more characters but reached end of input"))
   return ok(parser.content[head..<tail])
 
-proc parse_static_rule[State, Output](parser: Parser[State, Output], rule: Rule[
-    State, Output]): Result[Output, ParseError] =
-  let start = parser.index
+proc update_location(content: string, location: Location): Location =
+  var updated = location
+  for ch in content:
+    if ch == '\n':
+      updated.line += 1
+      updated.col = 1
+    else: updated.col += 1
+    updated.index += 1
+  return updated
+
+proc parse_static_rule[Output](parser: Parser[Output], rule: Rule[
+    Output]): Result[Output, ParseError] =
   var segment = ? parser.look_ahead(rule.value.len)
   if segment != rule.value:
     let value_str = rule.value
-    return err(new_parse_error(start, fmt"Expected '{value_str}', got '{segment}' at index: {start}"))
+    return err(new_parse_error(parser.location,
+        fmt"Expected '{value_str}', got '{segment}'"))
 
-  parser.index += segment.len
-  let (new_state, output) = rule.reduce_static(parser.state, segment)
-  parser.state = new_state
+  parser.location = update_location(segment, parser.location)
+  let output = rule.reduce_static(parser.location, segment)
   return ok(output)
 
-proc parse_matcher_rule[State, Output](parser: Parser[State, Output],
-    rule: Rule[State, Output]): Result[Output, ParseError] =
-  let start = parser.index
+proc parse_matcher_rule[Output](parser: Parser[Output],
+    rule: Rule[Output]): Result[Output, ParseError] =
   var segment = ? parser.look_ahead(1)
   if not rule.matcher()(segment[0]):
     let rule_name = rule.name
-    return err(new_parse_error(start, fmt"{rule_name} Regex matcher failed for char '{segment}' at index: {start}"))
+    return err(new_parse_error(parser.location,
+        fmt"{rule_name} Regex matcher failed for char '{segment}'"))
 
-  parser.index += segment.len
-  let (new_state, output) = rule.reduce_match(parser.state, segment)
-  parser.state = new_state
+  parser.location = update_location(segment, parser.location)
+  let output = rule.reduce_match(parser.location, segment)
   return ok(output)
 
 # forward declaration for cyclic dependency of parse_production & parse
-proc parse[State, Output](parser: Parser[State, Output], rule_name: string,
+proc parse[Output](parser: Parser[Output], rule_name: string,
     depth: int = 0): Result[Output, ParseError]
 
-proc parse_production[State, Output](parser: Parser[State, Output],
+proc parse_production[Output](parser: Parser[Output],
     prod: Production, depth: int): Result[seq[seq[Output]], ParseError] =
   var failed_symbol_index = -1
   var parts: seq[seq[Output]]
@@ -101,23 +108,19 @@ proc parse_production[State, Output](parser: Parser[State, Output],
 
   if failed_symbol_index != -1:
     let symbol = $(prod.symbols[failed_symbol_index])
-    return err(matched.error.push(parser.index,
+    return err(matched.error.push(parser.location,
         fmt"Failed to match symbol {symbol}"))
 
   ok(parts)
 
-proc parse[State, Output](parser: Parser[State, Output], rule_name: string,
+proc parse[Output](parser: Parser[Output], rule_name: string,
     depth: int): Result[Output, ParseError] =
   let maybe_rule = parser.grammar.find_rule(rule_name)
   if maybe_rule.is_err:
-    return err(new_parse_error(parser.index, maybe_rule.error))
+    return err(new_parse_error(parser.location, maybe_rule.error))
 
   let rule = maybe_rule.get
-  let start = parser.index
-
-  # TODO: May need in future to control memory usage of parser
-  # echo rule.name, " ", rule.kind, " ", depth, " ", parser.index
-  # if depth > 10: return err(fmt"stack overflow")
+  var initial_location = parser.location
 
   case rule.kind:
   of RK_STATIC: return parser.parse_static_rule(rule)
@@ -130,22 +133,20 @@ proc parse[State, Output](parser: Parser[State, Output], rule_name: string,
       let maybe_parsed = parser.parse_production(prod, depth)
       if maybe_parsed.is_ok:
         acc[index] = maybe_parsed.get
-        let (new_state, output) = rule.reduce_recursive(parser.state, acc)
-        parser.state = new_state
+        let output = rule.reduce_recursive(initial_location, acc)
         return ok(output)
       else:
-        if prod_err.index < maybe_parsed.error.index:
+        if prod_err.location < maybe_parsed.error.location:
           prod_err = maybe_parsed.error
-        # echo rule.name, " ", start, " ", parser.state
-        parser.index = start
-    # echo rule.name, " ", rule.kind, " ", depth, " ", parser.index
-    err(prod_err.push(start, fmt"Failed to match rule {rule_name} at index: {start}"))
+        parser.location = initial_location
+    err(prod_err.push(initial_location, fmt"Failed to match rule {rule_name}"))
 
-proc parse*[State, Output](parser: Parser[State, Output],
+proc parse*[Output](parser: Parser[Output],
     rule_name: string): Result[Output, ParseError] =
   parser.parse(rule_name, 0)
 
-proc new_parser*[State, Output](grammar: Grammar[State, Output],
-    content: string, state: State): Parser[State, Output] =
+proc new_parser*[Output](grammar: Grammar[Output],
+    filename: string, content: string): Parser[Output] =
   let content_with_eof = content & '\0'
-  Parser[State, Output](grammar: grammar, content: content_with_eof, state: state)
+  Parser[Output](grammar: grammar, content: content_with_eof,
+      location: new_location(filename))
