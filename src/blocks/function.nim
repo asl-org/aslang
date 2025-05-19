@@ -14,7 +14,8 @@ type
     of FK_USER:
       statements: seq[Statement]
       match_blocks: seq[Matcher]
-    of FK_NATIVE: discard
+    of FK_NATIVE:
+      native_fn_name: string
 
 proc def*(fn: Function): FunctionDefinition = fn.def
 proc spaces*(fn: Function): int = fn.spaces
@@ -43,8 +44,9 @@ proc new_user_function*(def: FunctionDefinition,
     spaces: int): Function =
   Function(kind: FK_USER, def: def, spaces: spaces)
 
-proc new_native_function*(def: FunctionDefinition): Function =
-  Function(kind: FK_NATIVE, def: def, spaces: 4)
+proc new_native_function*(def: FunctionDefinition,
+    native_fn_name: string): Function =
+  Function(kind: FK_NATIVE, def: def, native_fn_name: native_fn_name, spaces: 4)
 
 # TODO: add duplicate block validation
 proc add_statement*(fn: Function, statement: Statement): Result[void, string] =

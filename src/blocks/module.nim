@@ -50,4 +50,13 @@ proc find_fn*(module: Module, name: Identifier, arity: int): seq[Function] =
 proc close*(module: Module): Result[void, string] =
   if module.fns.len == 0:
     return err(fmt"app block must have at least one function block")
+  case module.kind:
+  of MK_NATIVE:
+    return err(fmt"Something went wrong because an asl module can not be used as native")
+  of MK_USER:
+    case module.def.kind:
+    of MDK_APP: discard
+    of MDK_MODULE: discard
+    of MDK_STRUCT: discard
+    of MDK_UNION: discard
   ok()
