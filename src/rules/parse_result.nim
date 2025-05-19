@@ -1,16 +1,17 @@
 import strutils, strformat, sequtils, results
 
-# location.nim
-type Location* = object
-  file: string
-  line*: int = 1
-  col*: int = 1
+import "../parser"; export parser;
 
-proc `$`*(location: Location): string =
-  fmt"{location.file}({location.line},{location.col})"
+type Atom* = ref object of RootObj
+  value: string
+  location: Location
 
-proc new_location*(file: string): Location =
-  Location(file: file)
+proc `$`*(atom: Atom): string = atom.value
+proc value*(atom: Atom): string = atom.value
+proc location*(atom: Atom): Location = atom.location
+
+proc new_atom*(value: string, location: Location): Atom =
+  Atom(value: value, location: location)
 
 # identifier.nim
 type Identifier* = ref object of RootObj
@@ -60,14 +61,14 @@ type
     LTK_INTEGER, LTK_STRUCT
   Literal* = ref object of RootObj
     case kind: LiteralKind
-    of LTK_INTEGER: integer*: string
+    of LTK_INTEGER: integer*: Atom
     of LTK_STRUCT: struct*: Struct
 
 proc kind*(literal: Literal): LiteralKind = literal.kind
-proc integer*(literal: Literal): string = literal.integer
+proc integer*(literal: Literal): Atom = literal.integer
 proc struct*(literal: Literal): Struct = literal.struct
 
-proc new_literal*(integer: string): Literal =
+proc new_literal*(integer: Atom): Literal =
   Literal(kind: LTK_INTEGER, integer: integer)
 
 proc new_literal*(struct: Struct): Literal =
@@ -258,14 +259,14 @@ proc new_match_def*(name: Identifier): MatchDefinition = MatchDefinition(name: n
 
 # case_def.nim
 type CaseDefinition* = ref object of RootObj
-  value: string
+  value: Atom
 
-proc value*(case_def: CaseDefinition): string = case_def.value
+proc value*(case_def: CaseDefinition): Atom = case_def.value
 
 proc `$`*(case_def: CaseDefinition): string =
   fmt"case {case_def.value}:"
 
-proc new_case_def*(value: string): CaseDefinition = CaseDefinition(value: value)
+proc new_case_def*(value: Atom): CaseDefinition = CaseDefinition(value: value)
 
 type ElseDefinition = ref object of RootObj
 
@@ -485,7 +486,7 @@ proc only_statements*(program: Program): Program =
 # parse_result.nim
 type
   ParserResultKind* = enum
-    PRK_RAW_STRING,
+    PRK_ATOM,
     PRK_IDENTIFER,
     PRK_KEYWORD_ARG,
     PRK_STRUCT,
@@ -510,7 +511,7 @@ type
     PRK_PROGRAM
   ParseResult* = ref object of RootObj
     case kind*: ParserResultKind
-    of PRK_RAW_STRING: raw_string*: string
+    of PRK_ATOM: atom*: Atom
     of PRK_IDENTIFER: identifier*: Identifier
     of PRK_KEYWORD_ARG: kwarg*: KeywordArg
     of PRK_STRUCT: struct*: Struct
@@ -536,7 +537,7 @@ type
 
 proc `$`*(pr: ParseResult): string =
   case pr.kind:
-  of PRK_RAW_STRING: pr.raw_string
+  of PRK_ATOM: $(pr.atom)
   of PRK_IDENTIFER: $(pr.identifier)
   of PRK_KEYWORD_ARG: $(pr.kwarg)
   of PRK_STRUCT: $(pr.struct)
@@ -560,8 +561,8 @@ proc `$`*(pr: ParseResult): string =
   of PRK_LINE: $(pr.line)
   of PRK_PROGRAM: $(pr.program)
 
-proc to_parse_result*(raw_string: string): ParseResult =
-  ParseResult(kind: PRK_RAW_STRING, raw_string: raw_string)
+proc to_parse_result*(atom: Atom): ParseResult =
+  ParseResult(kind: PRK_ATOM, atom: atom)
 
 proc to_parse_result*(identifier: Identifier): ParseResult =
   ParseResult(kind: PRK_IDENTIFER, identifier: identifier)

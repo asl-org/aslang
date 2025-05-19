@@ -1,26 +1,49 @@
-import results, strutils
+import results, strutils, strformat
 import production, symbol
+
+type Location* = object
+  file: string
+  line*: int = 1
+  col*: int = 1
+  index*: int = 0
+
+proc `$`*(location: Location): string =
+  fmt"{location.file}({location.line},{location.col})"
+
+proc `<`*(a: Location, b: Location): bool =
+  if a.line == b.line: a.col < b.col
+  else: a.line < b.line
+
+proc `>`*(a: Location, b: Location): bool =
+  if a.line == b.line: a.col > b.col
+  else: a.line > b.line
+
+proc `==`*(a: Location, b: Location): bool =
+  a.line == b.line and a.col == b.col
+
+proc new_location*(filename: string): Location =
+  Location(file: filename)
 
 type
   RuleKind* = enum RK_STATIC, RK_MATCHER, RK_RECURSIVE
   RuleMatcher* = proc(x: char): bool
-  RuleReducer*[State, Output] = proc(state: State, value: string): (State, Output)
-  RecursiveRuleReducer*[State, Output] = proc(state: State, parts: seq[seq[seq[
-      Output]]]): (State, Output)
+  RuleReducer*[Output] = proc(loc: Location, value: string): Output
+  RecursiveRuleReducer*[Output] = proc(loc: Location, parts: seq[seq[seq[
+      Output]]]): Output
 
-  Rule*[State, Output] = ref object of RootObj
+  Rule*[Output] = ref object of RootObj
     name: string
     desc: string
     case kind: RuleKind
     of RK_STATIC:
       value: string
-      static_reducer: RuleReducer[State, Output]
+      static_reducer: RuleReducer[Output]
     of RK_MATCHER:
       matcher: RuleMatcher
-      match_reducer: RuleReducer[State, Output]
+      match_reducer: RuleReducer[Output]
     of RK_RECURSIVE:
       productions: seq[Production]
-      recursive_reducer: RecursiveRuleReducer[State, Output]
+      recursive_reducer: RecursiveRuleReducer[Output]
 
 proc name*(rule: Rule): string = rule.name
 proc kind*(rule: Rule): RuleKind = rule.kind
@@ -29,27 +52,27 @@ proc value*(rule: Rule): string = rule.value
 proc matcher*(rule: Rule): RuleMatcher = rule.matcher
 proc productions*(rule: Rule): seq[Production] = rule.productions
 
-proc reduce_static*[State, Output](rule: Rule[State, Output], state: State,
-    value: string): (State, Output) = rule.static_reducer(state, value)
-proc reduce_match*[State, Output](rule: Rule[State, Output], state: State,
-    value: string): (State, Output) = rule.match_reducer(state, value)
-proc reduce_recursive*[State, Output](rule: Rule[State, Output], state: State,
-    parts: seq[seq[seq[Output]]]): (State, Output) = rule.recursive_reducer(
-        state, parts)
+proc reduce_static*[Output](rule: Rule[Output], loc: Location,
+    value: string): Output = rule.static_reducer(loc, value)
+proc reduce_match*[Output](rule: Rule[Output], loc: Location,
+    value: string): Output = rule.match_reducer(loc, value)
+proc reduce_recursive*[Output](rule: Rule[Output], loc: Location,
+    parts: seq[seq[seq[Output]]]): Output = rule.recursive_reducer(
+        loc, parts)
 
-proc static_rule*[State, Output](name, desc, value: string,
-    reducer: RuleReducer[State, Output]): Rule[State, Output] =
-  Rule[State, Output](kind: RK_STATIC, name: name, desc: desc, value: value,
+proc static_rule*[Output](name, desc, value: string,
+    reducer: RuleReducer[Output]): Rule[Output] =
+  Rule[Output](kind: RK_STATIC, name: name, desc: desc, value: value,
       static_reducer: reducer)
 
-proc matcher_rule*[State, Output](name, desc: string, matcher: RuleMatcher,
-    reducer: RuleReducer[State, Output]): Rule[State, Output] =
-  Rule[State, Output](kind: RK_MATCHER, name: name, desc: desc,
+proc matcher_rule*[Output](name, desc: string, matcher: RuleMatcher,
+    reducer: RuleReducer[Output]): Rule[Output] =
+  Rule[Output](kind: RK_MATCHER, name: name, desc: desc,
       matcher: matcher, match_reducer: reducer)
 
-proc non_terminal_rule*[State, Output](name: string, productions: seq[
-    Production], reducer: RecursiveRuleReducer[State, Output]): Rule[State, Output] =
-  Rule[State, Output](name: name, kind: RuleKind.RK_RECURSIVE,
+proc non_terminal_rule*[Output](name: string, productions: seq[
+    Production], reducer: RecursiveRuleReducer[Output]): Rule[Output] =
+  Rule[Output](name: name, kind: RuleKind.RK_RECURSIVE,
       productions: productions, recursive_reducer: reducer)
 
 proc any*(rule: Rule): Symbol = new_symbol_any(rule.name)
