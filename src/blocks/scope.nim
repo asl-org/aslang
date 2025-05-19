@@ -60,45 +60,251 @@ proc add_native_module*(scope: Scope, new_module: Module): Result[void, string] 
 proc new_scope*(): Result[Scope, string] =
   var scope = Scope()
   # U8 module
-  let byte_module = ? make_native_module("U8", @[
-    ("U8", "or", @[("U8", "a"), ("U8", "b")]),
+  let u8_module = ? make_native_module("U8", @[
+    # binary
     ("U8", "and", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "or", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "xor", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "not", @[("U8", "a")]),
     ("U8", "lshift", @[("U8", "a"), ("U64", "b")]),
     ("U8", "rshift", @[("U8", "a"), ("U64", "b")]),
-    ("U8", "not", @[("U8", "a")]),
-    ("U8", "print", @[("U8", "value")])
+    # arithematic
+    ("U8", "add", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "subtract", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "multiply", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "quotient", @[("U8", "a"), ("U8", "b")]),
+    ("U8", "remainder", @[("U8", "a"), ("U8", "b")]),
+    # branch
+    ("S64", "compare", @[("U8", "a"), ("U8", "b")]),
+    # debug
+    ("U64", "print", @[("U8", "value")]),
+    # cast
+    ("U8", "from_S8", @[("S8", "value")]),
+    ("U8", "from_S16", @[("S16", "value")]),
+    ("U8", "from_S32", @[("S32", "value")]),
+    ("U8", "from_S64", @[("S64", "value")]),
+    ("U8", "from_U16", @[("U16", "value")]),
+    ("U8", "from_U32", @[("U32", "value")]),
+    ("U8", "from_U64", @[("U64", "value")]),
   ])
-  ? scope.add_native_module(byte_module)
+
+  ? scope.add_native_module(u8_module)
+
+  # U16 module
+  let u16_module = ? make_native_module("U16", @[
+    # binary
+    ("U16", "and", @[("U16", "a"), ("U16", "b")]),
+    ("U16", "or", @[("U16", "a"), ("U16", "b")]),
+    ("U16", "xor", @[("U16", "a"), ("U16", "b")]),
+    ("U16", "not", @[("U16", "a")]),
+    ("U16", "lshift", @[("U16", "a"), ("U64", "b")]),
+    ("U16", "rshift", @[("U16", "a"), ("U64", "b")]),
+    # arithematic
+    ("U16", "add", @[("U16", "a"), ("U16", "b")]),
+    ("U16", "subtract", @[("U16", "a"), ("U16", "b")]),
+    ("U16", "multiply", @[("U16", "a"), ("U16", "b")]),
+    ("U16", "quotient", @[("U16", "a"), ("U16", "b")]),
+    ("U16", "remainder", @[("U16", "a"), ("U16", "b")]),
+    # branch
+    ("S64", "compare", @[("U16", "a"), ("U16", "b")]),
+    # debug
+    ("U64", "print", @[("U16", "value")]),
+    # cast
+    ("U16", "from_S8", @[("S8", "value")]),
+    ("U16", "from_S16", @[("S16", "value")]),
+    ("U16", "from_S32", @[("S32", "value")]),
+    ("U16", "from_S64", @[("S64", "value")]),
+    ("U16", "from_U8", @[("U8", "value")]),
+    ("U16", "from_U32", @[("U32", "value")]),
+    ("U16", "from_U64", @[("U64", "value")]),
+  ])
+
+  ? scope.add_native_module(u16_module)
+
+  # U32 module
+  let u32_module = ? make_native_module("U32", @[
+    # binary
+    ("U32", "and", @[("U32", "a"), ("U32", "b")]),
+    ("U32", "or", @[("U32", "a"), ("U32", "b")]),
+    ("U32", "xor", @[("U32", "a"), ("U32", "b")]),
+    ("U32", "not", @[("U32", "a")]),
+    ("U32", "lshift", @[("U32", "a"), ("U64", "b")]),
+    ("U32", "rshift", @[("U32", "a"), ("U64", "b")]),
+    # arithematic
+    ("U32", "add", @[("U32", "a"), ("U32", "b")]),
+    ("U32", "subtract", @[("U32", "a"), ("U32", "b")]),
+    ("U32", "multiply", @[("U32", "a"), ("U32", "b")]),
+    ("U32", "quotient", @[("U32", "a"), ("U32", "b")]),
+    ("U32", "remainder", @[("U32", "a"), ("U32", "b")]),
+    # branch
+    ("S64", "compare", @[("U32", "a"), ("U32", "b")]),
+    # debug
+    ("U64", "print", @[("U32", "value")]),
+    # cast
+    ("U32", "from_S8", @[("S8", "value")]),
+    ("U32", "from_S16", @[("S16", "value")]),
+    ("U32", "from_S32", @[("S32", "value")]),
+    ("U32", "from_S64", @[("S64", "value")]),
+    ("U32", "from_U8", @[("U8", "value")]),
+    ("U32", "from_U16", @[("U16", "value")]),
+    ("U32", "from_U64", @[("U64", "value")]),
+  ])
+
+  ? scope.add_native_module(u32_module)
 
   # U64 module
   let u64_module = ? make_native_module("U64", @[
-    ("U64", "or", @[("U64", "a"), ("U64", "b")]),
+    # binary
     ("U64", "and", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "or", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "xor", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "not", @[("U64", "a")]),
     ("U64", "lshift", @[("U64", "a"), ("U64", "b")]),
     ("U64", "rshift", @[("U64", "a"), ("U64", "b")]),
-    ("U64", "not", @[("U64", "a")]),
+    # arithematic
     ("U64", "add", @[("U64", "a"), ("U64", "b")]),
     ("U64", "subtract", @[("U64", "a"), ("U64", "b")]),
     ("U64", "multiply", @[("U64", "a"), ("U64", "b")]),
     ("U64", "quotient", @[("U64", "a"), ("U64", "b")]),
     ("U64", "remainder", @[("U64", "a"), ("U64", "b")]),
+    # branch
     ("S64", "compare", @[("U64", "a"), ("U64", "b")]),
-    ("U64", "print", @[("U64", "a")]),
+    # debug
+    ("U64", "print", @[("U64", "value")]),
+    # cast
+    ("U64", "from_S8", @[("S8", "value")]),
+    ("U64", "from_S16", @[("S16", "value")]),
+    ("U64", "from_S32", @[("S32", "value")]),
+    ("U64", "from_S64", @[("S64", "value")]),
+    ("U64", "from_U8", @[("U8", "value")]),
+    ("U64", "from_U16", @[("U16", "value")]),
+    ("U64", "from_U32", @[("U32", "value")]),
   ])
+
   ? scope.add_native_module(u64_module)
+
+  # S8 module
+  let s8_module = ? make_native_module("S8", @[
+    # binary
+    ("S8", "and", @[("S8", "a"), ("S8", "b")]),
+    ("S8", "or", @[("S8", "a"), ("S8", "b")]),
+    ("S8", "xor", @[("S8", "a"), ("S8", "b")]),
+    ("S8", "not", @[("S8", "a")]),
+    ("S8", "lshift", @[("S8", "a"), ("U64", "b")]),
+    ("S8", "rshift", @[("S8", "a"), ("U64", "b")]),
+    # arithematic
+    ("S8", "add", @[("S8", "a"), ("S8", "b")]),
+    ("S8", "subtract", @[("S8", "a"), ("S8", "b")]),
+    ("S8", "multiply", @[("S8", "a"), ("S8", "b")]),
+    ("S8", "quotient", @[("S8", "a"), ("S8", "b")]),
+    ("S8", "remainder", @[("S8", "a"), ("S8", "b")]),
+    # branch
+    ("S64", "compare", @[("S8", "a"), ("S8", "b")]),
+    # debug
+    ("U64", "print", @[("S8", "value")]),
+    # cast
+    ("S8", "from_S16", @[("S16", "value")]),
+    ("S8", "from_S32", @[("S32", "value")]),
+    ("S8", "from_S64", @[("S64", "value")]),
+    ("S8", "from_U8", @[("U8", "value")]),
+    ("S8", "from_U16", @[("U16", "value")]),
+    ("S8", "from_U32", @[("U32", "value")]),
+    ("S8", "from_U64", @[("U64", "value")]),
+  ])
+
+  ? scope.add_native_module(s8_module)
+
+  # S16 module
+  let s16_module = ? make_native_module("S16", @[
+    # binary
+    ("S16", "and", @[("S16", "a"), ("S16", "b")]),
+    ("S16", "or", @[("S16", "a"), ("S16", "b")]),
+    ("S16", "xor", @[("S16", "a"), ("S16", "b")]),
+    ("S16", "not", @[("S16", "a")]),
+    ("S16", "lshift", @[("S16", "a"), ("U64", "b")]),
+    ("S16", "rshift", @[("S16", "a"), ("U64", "b")]),
+    # arithematic
+    ("S16", "add", @[("S16", "a"), ("S16", "b")]),
+    ("S16", "subtract", @[("S16", "a"), ("S16", "b")]),
+    ("S16", "multiply", @[("S16", "a"), ("S16", "b")]),
+    ("S16", "quotient", @[("S16", "a"), ("S16", "b")]),
+    ("S16", "remainder", @[("S16", "a"), ("S16", "b")]),
+    # branch
+    ("S64", "compare", @[("S16", "a"), ("S16", "b")]),
+    # debug
+    ("U64", "print", @[("S16", "value")]),
+    # cast
+    ("S16", "from_S8", @[("S8", "value")]),
+    ("S16", "from_S32", @[("S32", "value")]),
+    ("S16", "from_S64", @[("S64", "value")]),
+    ("S16", "from_U8", @[("U8", "value")]),
+    ("S16", "from_U16", @[("U16", "value")]),
+    ("S16", "from_U32", @[("U32", "value")]),
+    ("S16", "from_U64", @[("U64", "value")]),
+  ])
+
+  ? scope.add_native_module(s16_module)
+
+  # S32 module
+  let S32_module = ? make_native_module("S32", @[
+    # binary
+    ("S32", "and", @[("S32", "a"), ("S32", "b")]),
+    ("S32", "or", @[("S32", "a"), ("S32", "b")]),
+    ("S32", "xor", @[("S32", "a"), ("S32", "b")]),
+    ("S32", "not", @[("S32", "a")]),
+    ("S32", "lshift", @[("S32", "a"), ("U64", "b")]),
+    ("S32", "rshift", @[("S32", "a"), ("U64", "b")]),
+    # arithematic
+    ("S32", "add", @[("S32", "a"), ("S32", "b")]),
+    ("S32", "subtract", @[("S32", "a"), ("S32", "b")]),
+    ("S32", "multiply", @[("S32", "a"), ("S32", "b")]),
+    ("S32", "quotient", @[("S32", "a"), ("S32", "b")]),
+    ("S32", "remainder", @[("S32", "a"), ("S32", "b")]),
+    # branch
+    ("S64", "compare", @[("S32", "a"), ("S32", "b")]),
+    # debug
+    ("U64", "print", @[("S32", "value")]),
+    # cast
+    ("S32", "from_S8", @[("S8", "value")]),
+    ("S32", "from_S16", @[("S16", "value")]),
+    ("S32", "from_S64", @[("S64", "value")]),
+    ("S32", "from_U8", @[("U8", "value")]),
+    ("S32", "from_U16", @[("U16", "value")]),
+    ("S32", "from_U32", @[("U32", "value")]),
+    ("S32", "from_U64", @[("U64", "value")]),
+  ])
+
+  ? scope.add_native_module(S32_module)
 
   # S64 module
   let s64_module = ? make_native_module("S64", @[
+    # binary
+    ("S64", "and", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "or", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "xor", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "not", @[("S64", "a")]),
+    ("S64", "lshift", @[("S64", "a"), ("S64", "b")]),
+    ("S64", "rshift", @[("S64", "a"), ("S64", "b")]),
+    # arithematic
     ("S64", "add", @[("S64", "a"), ("S64", "b")]),
     ("S64", "subtract", @[("S64", "a"), ("S64", "b")]),
     ("S64", "multiply", @[("S64", "a"), ("S64", "b")]),
     ("S64", "quotient", @[("S64", "a"), ("S64", "b")]),
     ("S64", "remainder", @[("S64", "a"), ("S64", "b")]),
+    # branch
     ("S64", "compare", @[("S64", "a"), ("S64", "b")]),
-    ("S64", "from_U8", @[("U8", "a")]),
-    ("S64", "from_U64", @[("U64", "a")]),
-    ("U64", "print", @[("S64", "a")]),
+    # debug
+    ("U64", "print", @[("S64", "value")]),
+    # cast
+    ("S64", "from_S8", @[("S8", "value")]),
+    ("S64", "from_S16", @[("S16", "value")]),
+    ("S64", "from_S32", @[("S32", "value")]),
+    ("S64", "from_U8", @[("U8", "value")]),
+    ("S64", "from_U16", @[("U16", "value")]),
+    ("S64", "from_U32", @[("U32", "value")]),
+    ("S64", "from_U64", @[("U64", "value")]),
   ])
+
   ? scope.add_native_module(s64_module)
 
   # Pointer module
