@@ -7,19 +7,10 @@ type Location* = object
   col*: int = 1
   index*: int = 0
 
-proc `$`*(location: Location): string =
-  fmt"{location.file}({location.line},{location.col})"
-
-proc `<`*(a: Location, b: Location): bool =
-  if a.line == b.line: a.col < b.col
-  else: a.line < b.line
-
-proc `>`*(a: Location, b: Location): bool =
-  if a.line == b.line: a.col > b.col
-  else: a.line > b.line
-
-proc `==`*(a: Location, b: Location): bool =
-  a.line == b.line and a.col == b.col
+proc `$`*(location: Location): string = fmt"{location.file}({location.line},{location.col})"
+proc `<`*(a: Location, b: Location): bool = a.index < b.index
+proc `>`*(a: Location, b: Location): bool = a.index > b.index
+proc `==`*(a: Location, b: Location): bool = a.index == b.index
 
 proc new_location*(filename: string): Location =
   Location(file: filename)

@@ -105,7 +105,7 @@ app Example:
         ans
 
   fn handle_prime(Pointer primes, U64 max_primes, U64 i, U64 ans) returns U64:
-    op = Bitset.get(primes, i)
+    op = Bitset.get(primes, max_primes, i)
     match op:
       case 0:
         j = U64.multiply(i, 2)
@@ -123,11 +123,12 @@ app Example:
         ans
       else:
         res = MODULE.handle_prime(primes, max_primes, start, ans)
-        MODULE.solve(primes, max_primes, start + 1, res)
+        next_start = U64.add(start, 1)
+        MODULE.solve(primes, max_primes, next_start, res)
 
 
-  fn start(Byte seed) returns Byte:
-    exit_success = Byte 0
+  fn start(U8 seed) returns U8:
+    exit_success = U8 0
 
     max_primes = U64 1000001
     primes = Bitset.init(max_primes)
