@@ -29,7 +29,7 @@ for dir in project-euler/*/; do
     echo "▶️  Testing ${dir}"
 
     # Step 1: Run ASLang
-    if ! asl "$solution_asl"; then
+    if ! ./asl "$solution_asl"; then
         echo "❌ ASLang compilation failed for $solution_asl"
         ((failures++))
         continue
