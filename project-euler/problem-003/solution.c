@@ -64,7 +64,8 @@ int main(int argc, char const *argv[])
   int n = 1000000;
   int prime[n + 1];
   memset(prime, 0, sizeof(prime));
-  printf("%d\n", solve_recur(prime, n));
+  // printf("%d\n", solve_re cur(prime, n));
+  printf("%d\n", solve_iter(prime, n));
   return 0;
 }
 
