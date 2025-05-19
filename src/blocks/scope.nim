@@ -345,7 +345,7 @@ proc find_module(scope: Scope, module_name: Identifier): Result[Module, string] 
     if $(module.def.name) == $(module_name):
       return ok(module)
 
-  return err(fmt"{module_name} is not defined in scope")
+  return err(fmt"{module_name.location} {module_name} is not defined in scope")
 
 proc resolve_function_definition(scope: Scope,
     fn_def: FunctionDefinition): Result[void, string] =
@@ -424,7 +424,7 @@ proc resolve_function_call(fn_scope: FunctionScope, scope: Scope,
         fn.def.arg_def_list, fncall.arglist)
     if maybe_resolved.is_ok:
       return ok(fn.def.returns)
-  return err(fmt"None of the functions calls matched with {fncall}")
+  return err(fmt"{fncall.location} None of the functions calls matched with {fncall}")
 
 proc generate_statement(scope: Scope, s: Statement, module: Identifier,
     fn: Function, fn_scope: FunctionScope, last_statement: bool): Result[

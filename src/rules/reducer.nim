@@ -101,7 +101,7 @@ proc fncall_reducer*(location: Location, parts: seq[seq[seq[
   let fn_name = parts[0][2][0].identifier
   let arglist = parts[0][3][0].arglist
   # echo location, " ", new_fncall(module_name, fn_name, arglist).to_parse_result()
-  new_fncall(module_name, fn_name, arglist).to_parse_result()
+  new_fncall(module_name, fn_name, arglist, location).to_parse_result()
 
 # value.nim
 proc value_reducer*(location: Location, parts: seq[seq[seq[

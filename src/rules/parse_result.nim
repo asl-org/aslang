@@ -129,10 +129,12 @@ type FunctionCall* = ref object of RootObj
 proc module_name*(fncall: FunctionCall): Identifier = fncall.module_name
 proc fn_name*(fncall: FunctionCall): Identifier = fncall.fn_name
 proc arglist*(fncall: FunctionCall): seq[Argument] = fncall.arglist
+proc location*(fncall: FunctionCall): Location = fncall.location
 
 proc new_fncall*(module_name: Identifier, fn_name: Identifier,
-    arglist: seq[Argument]): FunctionCall =
-  FunctionCall(module_name: module_name, fn_name: fn_name, arglist: arglist)
+    arglist: seq[Argument], location: Location): FunctionCall =
+  FunctionCall(module_name: module_name, fn_name: fn_name, arglist: arglist,
+      location: location)
 
 proc `$`*(fncall: FunctionCall): string =
   let arg_list_str = fncall.arglist.map(proc(x: Argument): string = $(x)).join(", ")
