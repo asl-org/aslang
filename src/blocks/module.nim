@@ -33,7 +33,7 @@ proc new_native_module*(def: ModuleDefinition): Module =
 # TODO: add duplicate block validation
 proc add_fn*(module: Module, new_fn: Function): Result[void, string] =
   for fn in module.fns:
-    if fn.match_fn_def(new_fn):
+    if fn == new_fn:
       return err(fmt"Function {new_fn.def} is already defined")
   module.fns.add(new_fn)
   ok()

@@ -5,6 +5,29 @@ import common
 import matcher
 
 type
+  FunctionStepKind* = enum
+    FSK_STATEMENT, FSK_MATCHER
+  FunctionStep* = ref object of RootObj
+    case kind: FunctionStepKind
+    of FSK_STATEMENT: statement: Statement
+    of FSK_MATCHER: matcher: Match
+
+proc new_function_step(matcher: Match): FunctionStep =
+  FunctionStep(kind: FSK_MATCHER, matcher: matcher)
+
+proc new_function_step(statement: Statement): FunctionStep =
+  FunctionStep(kind: FSK_STATEMENT, statement: statement)
+
+proc kind*(step: FunctionStep): FunctionStepKind = step.kind
+proc statement*(step: FunctionStep): Statement = step.statement
+proc matcher*(step: FunctionStep): Match = step.matcher
+
+proc `$`(step: FunctionStep): string =
+  case step.kind:
+  of FSK_MATCHER: $(step.matcher)
+  of FSK_STATEMENT: $(step.statement)
+
+type
   FunctionKind* = enum
     FK_USER, FK_NATIVE
   Function* = ref object of RootObj
@@ -12,32 +35,31 @@ type
     spaces: int
     case kind: FunctionKind
     of FK_USER:
-      statements: seq[Statement]
-      match_blocks: seq[Matcher]
+      steps: seq[FunctionStep]
     of FK_NATIVE:
       native_fn_name: string
 
 proc def*(fn: Function): FunctionDefinition = fn.def
 proc spaces*(fn: Function): int = fn.spaces
-proc statements*(fn: Function): Result[seq[Statement], string] =
+proc steps*(fn: Function): Result[seq[FunctionStep], string] =
   case fn.kind:
-  of FK_USER: ok(fn.statements)
+  of FK_USER: ok(fn.steps)
   of FK_NATIVE: return err(fmt"Native functions do not have statements")
 
-proc match_block*(fn: Function): Result[Matcher, string] =
+proc match_block*(fn: Function): Result[Match, string] =
   case fn.kind:
   of FK_USER:
-    if fn.match_blocks.len == 0:
-      return err(fmt"No match block found")
-    ok(fn.match_blocks[0])
-  of FK_NATIVE: return err(fmt"Native functions do not have statements")
+    case fn.steps[^1].kind:
+    of FSK_MATCHER: ok(fn.steps[^1].matcher)
+    of FSK_STATEMENT: return err(fmt"No match block found")
+  of FK_NATIVE: err(fmt"Native functions do not have statements")
 
 proc `$`*(fn: Function): string =
   let prefix = prefix(fn.spaces)
   let child_prefix = child_prefix(fn.spaces)
   var content: seq[string] = @[prefix & $(fn.def)]
-  for statement in fn.statements:
-    content.add((child_prefix & $(statement)))
+  for step in fn.steps:
+    content.add((child_prefix & $(step)))
   return content.join("\n")
 
 proc new_user_function*(def: FunctionDefinition,
@@ -49,25 +71,26 @@ proc new_native_function*(def: FunctionDefinition,
   Function(kind: FK_NATIVE, def: def, native_fn_name: native_fn_name, spaces: 4)
 
 # TODO: add duplicate block validation
-proc add_statement*(fn: Function, statement: Statement): Result[void, string] =
+proc add_step*(fn: Function, step: FunctionStep): Result[void, string] =
   case fn.kind:
-  of FK_NATIVE:
-    err(fmt"Native functions do not support statements")
+  of FK_NATIVE: err(fmt"Native functions do not support steps")
   of FK_USER:
-    if fn.match_blocks.len == 1:
-      return err(fmt"There can be no statements after match block in a function")
-    fn.statements.add(statement)
-    ok()
+    if fn.steps.len == 0:
+      fn.steps.add(step)
+      return ok()
 
-proc add_match_block*(fn: Function, matcher: Matcher): Result[void, string] =
-  case fn.kind:
-  of FK_NATIVE:
-    err(fmt"Native functions do not support statements")
-  of FK_USER:
-    if fn.match_blocks.len == 1:
-      return err(fmt"Function do not support multiple match blocks yet")
-    fn.match_blocks.add(matcher)
-    ok()
+    case fn.steps[^1].kind:
+    of FSK_MATCHER:
+      return err(fmt"Match block must be the last step of a function")
+    of FSK_STATEMENT:
+      fn.steps.add(step)
+      return ok()
+
+proc add_statement*(fn: Function, statement: Statement): Result[void, string] =
+  fn.add_step(new_function_step(statement))
+
+proc add_match_block*(fn: Function, matcher: Match): Result[void, string] =
+  fn.add_step(new_function_step(matcher))
 
 # TODO: perform final validation
 proc close*(fn: Function): Result[void, string] =
@@ -75,28 +98,27 @@ proc close*(fn: Function): Result[void, string] =
   of FK_NATIVE:
     return err(fmt"Native function can not have statements")
   of FK_USER:
-    discard
+    if fn.steps.len == 0:
+      return err(fmt"function block must have at least one statement or match block")
 
-  if fn.statements.len == 0 and fn.match_blocks.len == 0:
-    return err(fmt"function block must have at least one statement or match block")
-
-  var arg_name_set: HashSet[string]
-  for arg_def in fn.def.arg_def_list:
-    let name = $(arg_def.name)
-    if name in arg_name_set:
-      return err(fmt"Parameter {name} is used twice in the function definition")
-    arg_name_set.incl(name)
+    var arg_name_set: HashSet[string]
+    for arg_def in fn.def.arg_def_list:
+      let name = $(arg_def.name)
+      if name in arg_name_set:
+        return err(fmt"Parameter {name} is used twice in the function definition")
+      arg_name_set.incl(name)
   ok()
 
-proc match_fn_def*(self: Function, other: Function): bool =
+proc `==`*(self: Function, other: Function): bool =
   # same name
-  if $(self.def.name) != $(other.def.name): return false
-  # same return value
-  if $(self.def.returns) != $(other.def.returns): return false
-  # same arity (arg count)
-  if self.def.arg_def_list.len != other.def.arg_def_list.len: return false
+  if $(self.def.name) != $(other.def.name):
+    return false
 
-  # same arg datatypes
+  # same arity (arg count)
+  if self.def.arg_def_list.len != other.def.arg_def_list.len:
+    return false
+
+  # same arg types
   for index, self_arg_def in self.def.arg_def_list:
     let other_arg_def = other.def.arg_def_list[index]
     if $(self_arg_def.module) != $(other_arg_def.module):

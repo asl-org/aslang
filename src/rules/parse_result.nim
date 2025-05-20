@@ -93,6 +93,7 @@ type Initializer* = ref object of RootObj
 
 proc module_name*(init: Initializer): Identifier = init.module_name
 proc literal*(init: Initializer): Literal = init.literal
+proc location*(init: Initializer): Location = init.location
 
 proc `$`*(init: Initializer): string =
   fmt"{init.module_name} {init.literal}"
@@ -236,6 +237,7 @@ type
 
 proc name*(module_def: ModuleDefinition): Identifier = module_def.name
 proc kind*(module_def: ModuleDefinition): ModuleDefinitionKind = module_def.kind
+proc location*(module_def: ModuleDefinition): Location = module_def.location
 
 proc new_app_def*(name: Identifier): ModuleDefinition =
   ModuleDefinition(kind: MDK_APP, name: name)

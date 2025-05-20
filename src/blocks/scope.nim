@@ -1,10 +1,41 @@
-import results, strformat, strutils, tables, sequtils
+import results, strformat, strutils, tables, sequtils, parseutils, typetraits
 
 import module
 import function
 import matcher
 
 import "../rules/parse_result"
+
+proc safe_parse[T](input: string): Result[T, string] =
+  when T is SomeSignedInt:
+    var temp: BiggestInt
+    let code = parseBiggestInt(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse signed int from: " & input)
+    if temp < T.low.BiggestInt or temp > T.high.BiggestInt:
+      return err("Overflow: Value out of range for type " & $T)
+    ok(T(temp))
+  elif T is SomeUnsignedInt:
+    var temp: BiggestUInt
+    let code = parseBiggestUInt(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse unsigned int from: " & input)
+    if temp < T.low.BiggestUInt or temp > T.high.BiggestUInt:
+      return err("Overflow: Value out of range for type " & $T)
+    ok(T(temp))
+  elif T is SomeFloat:
+    var temp: BiggestFloat
+    let code = parseBiggestFloat(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse float from: " & input)
+    let casted = T(temp)
+    if BiggestFloat(casted) != temp:
+      return err("Precision loss when converting to " & $T)
+    ok(casted)
+  else:
+    err("safeParse only supports signed/unsigned integers and floating-point types")
+
+
 
 proc make_native_module(name: string, fns: seq[(string, string, string, seq[(
     string, string)])]): Result[Module, string] =
@@ -32,20 +63,43 @@ proc spaces*(scope: Scope): int = scope.spaces
 proc `$`*(scope: Scope): string =
   $(scope.modules[0])
 
-# TODO: add duplicate block validation
-proc add_module*(scope: Scope, new_module: Module): Result[void, string] =
+proc find_user_module(scope: Scope, module_name: Identifier): Result[Module, string] =
   for module in scope.modules:
-    if $(new_module.def.name) == $(module.def.name):
-      return err(fmt"Module {new_module.def.name} is already defined in the scope")
-  scope.modules.add(new_module)
+    if $(module.def.name) == $(module_name):
+      return ok(module)
+
+  return err(fmt"{module_name} is not defined in scope.")
+
+proc find_native_module(scope: Scope, module_name: Identifier): Result[Module, string] =
+  for module in scope.native_modules:
+    if $(module.def.name) == $(module_name):
+      return ok(module)
+
+  return err(fmt"{module_name} is not defined in scope.")
+
+proc find_module(scope: Scope, module_name: Identifier): Result[Module, string] =
+  let maybe_native_module = scope.find_native_module(module_name)
+  if maybe_native_module.is_ok: return maybe_native_module
+
+  let maybe_user_module = scope.find_user_module(module_name)
+  if maybe_user_module.is_ok: return maybe_user_module
+
+  return err(fmt"{module_name.location} {module_name} is not defined in scope")
+
+proc add_native_module*(scope: Scope, new_module: Module): Result[void, string] =
+  let maybe_native_module = scope.find_native_module(new_module.def.name)
+  if maybe_native_module.is_ok:
+    return err(fmt"{new_module.def.location} {new_module.def.name} is already defined in the scope")
+
+  scope.native_modules.add(new_module)
   ok()
 
-# TODO: add duplicate block validation
-proc add_native_module*(scope: Scope, new_module: Module): Result[void, string] =
-  for module in scope.native_modules:
-    if $(new_module.def.name) == $(module.def.name):
-      return err(fmt"Module {new_module.def.name} is already defined in the scope")
-  scope.native_modules.add(new_module)
+proc add_user_module*(scope: Scope, new_module: Module): Result[void, string] =
+  let maybe_user_module = scope.find_user_module(new_module.def.name)
+  if maybe_user_module.is_ok:
+    return err(fmt"{new_module.def.location} Module {new_module.def.name} is already defined in the scope")
+
+  scope.modules.add(new_module)
   ok()
 
 proc new_scope*(): Result[Scope, string] =
@@ -326,17 +380,6 @@ proc close*(scope: Scope): Result[void, string] =
     return err(fmt"root block must have an app block")
   ok()
 
-proc find_module(scope: Scope, module_name: Identifier): Result[Module, string] =
-  for module in scope.native_modules:
-    if $(module.def.name) == $(module_name):
-      return ok(module)
-
-  for module in scope.modules:
-    if $(module.def.name) == $(module_name):
-      return ok(module)
-
-  return err(fmt"{module_name.location} {module_name} is not defined in scope")
-
 proc resolve_function_definition(scope: Scope,
     fn_def: FunctionDefinition): Result[void, string] =
   discard ? scope.find_module(fn_def.returns)
@@ -344,19 +387,42 @@ proc resolve_function_definition(scope: Scope,
     discard ? scope.find_module(arg.module)
   ok()
 
-proc resolve_initializer(scope: Scope, module: Identifier,
+proc resolve_initializer(scope: Scope, module: Module,
     init: Initializer): Result[Module, string] =
-  var module_name = init.module_name
-  if $(module_name) == "MODULE": module_name = module
-  # TODO: Resolve literal value for appropriate module
-  return scope.find_module(module_name)
+  let resolved_module =
+    if $(init.module_name) == "MODULE": module
+    else: (? scope.find_module(init.module_name))
 
-proc resolve_function_call_module(scope: Scope, module: Identifier,
+  case init.literal.kind:
+    of LTK_INTEGER:
+      let numeric_value = $(init.literal.integer)
+      case $(resolved_module.def.name):
+      of "U8": discard ? safe_parse[uint8](numeric_value)
+      of "S8": discard ? safe_parse[int8](numeric_value)
+
+      of "U16": discard ? safe_parse[uint16](numeric_value)
+      of "S16": discard ? safe_parse[int16](numeric_value)
+
+      of "U32": discard ? safe_parse[uint32](numeric_value)
+      of "S32": discard ? safe_parse[int32](numeric_value)
+      of "F32": discard ? safe_parse[float32](numeric_value)
+
+      of "U64": discard ? safe_parse[uint64](numeric_value)
+      of "S64": discard ? safe_parse[int64](numeric_value)
+      of "F64": discard ? safe_parse[float64](numeric_value)
+      else: return err(fmt"Only U8/U16/U32/U64/S8/S16/S32/S64/F32/F64 support numeric values in initializer")
+    of LTK_STRUCT:
+      return err(fmt"ASL does not yet support struct literals")
+
+  ok(resolved_module)
+
+proc resolve_function_call_module(scope: Scope, module: Module,
     fncall: FunctionCall): Result[Module, string] =
-  var module_name = fncall.module_name
-  if $(module_name) == "MODULE": module_name = module
+  let resolved_module =
+    if $(fncall.module_name) == "MODULE": module
+    else: ? scope.find_module(fncall.module_name)
 
-  return scope.find_module(module_name)
+  return ok(resolved_module)
 
 type FunctionScope* = ref object of RootObj
   mapping: Table[string, ArgumentDefinition] = initTable[string,
@@ -407,8 +473,7 @@ proc resolve_function_call_arglist(fn_scope: FunctionScope, scope: Scope,
     ? maybe_resolved
   ok()
 
-proc resolve_function_call(fn_scope: FunctionScope, scope: Scope,
-    fn_module: Module, fncall: FunctionCall): Result[Identifier, string] =
+proc resolve_function_call(scope: Scope, fn_module: Module, fn_scope: FunctionScope, fncall: FunctionCall): Result[Identifier, string] =
   for fn in fn_module.find_fn(fncall.fn_name, fncall.arglist.len):
     let maybe_resolved = fn_scope.resolve_function_call_arglist(scope,
         fn.def.arg_def_list, fncall.arglist)
@@ -416,7 +481,7 @@ proc resolve_function_call(fn_scope: FunctionScope, scope: Scope,
       return ok(fn.def.returns)
   return err(fmt"{fncall.location} None of the functions calls matched with {fncall}")
 
-proc generate_statement(scope: Scope, s: Statement, module: Identifier,
+proc generate_statement(scope: Scope, s: Statement, module: Module,
     fn: Function, fn_scope: FunctionScope, last_statement: bool): Result[
     string, string] =
   var statements_code: seq[string]
@@ -425,13 +490,13 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
     case s.assign.value.kind:
     of VK_INIT:
       let init = s.assign.value.init
-      let module = ? scope.resolve_initializer(module, init)
-      ? fn_scope.add_arg(new_arg_def(module.def.name, s.assign.dest))
-      statements_code.add(fmt"{module.def.name} {s.assign.dest} = {init.literal};")
+      let init_module = ? scope.resolve_initializer(module, init)
+      ? fn_scope.add_arg(new_arg_def(init_module.def.name, s.assign.dest))
+      statements_code.add(fmt"{init_module.def.name} {s.assign.dest} = {init.literal};")
     of VK_FNCALL:
       let fncall = s.assign.value.fncall
       let fn_module = ? scope.resolve_function_call_module(module, fncall)
-      let return_type = ? fn_scope.resolve_function_call(scope, fn_module, fncall)
+      let return_type = ? scope.resolve_function_call(fn_module, fn_scope, fncall)
 
       var fncall_args: seq[string]
       for arg in fncall.arglist:
@@ -439,9 +504,7 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
       let fncall_args_str = fncall_args.join(", ")
       # TODO: Check the return type of function call in scope, for now using work around
       statements_code.add(fmt"{return_type} {s.assign.dest} = {fn_module.def.name}_{fncall.fn_name}({fncall_args_str});")
-      let new_arg_def = new_arg_def(return_type, s.assign.dest)
-      let arg_added = fn_scope.add_arg(new_arg_def)
-      ? arg_added
+      ? fn_scope.add_arg(new_arg_def(return_type, s.assign.dest))
 
     # last line must be a return
     if last_statement:
@@ -450,16 +513,14 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
     let fncall = s.fncall
 
     let fn_module = ? scope.resolve_function_call_module(module, fncall)
-    let return_type = ? fn_scope.resolve_function_call(scope, fn_module, fncall)
+    let return_type = ? scope.resolve_function_call(fn_module, fn_scope, fncall)
 
     var fncall_args: seq[string]
     for arg in fncall.arglist:
       fncall_args.add($(arg))
     let fncall_args_str = fncall_args.join(", ")
 
-    var module_name = fncall.module_name
-    if $(module_name) == "MODULE":
-      module_name = module
+    var module_name = fn_module.def.name
     var fncall_code = fmt"{module_name}_{fncall.fn_name}({fncall_args_str});"
 
     # last line must be a return
@@ -477,7 +538,7 @@ proc generate_statement(scope: Scope, s: Statement, module: Identifier,
   return ok(statements_code.join("\n"))
 
 proc generate_case_block(fn_scope: FunctionScope, scope: Scope,
-    module: Identifier, fn: Function, case_block: Case): Result[string, string] =
+    module: Module, fn: Function, case_block: Case): Result[string, string] =
     # TODO: Make sure literal is of appropriate kind
   var case_block_code = @[fmt"case {case_block.value}:" & "{"]
   for i, s in case_block.statements:
@@ -489,7 +550,7 @@ proc generate_case_block(fn_scope: FunctionScope, scope: Scope,
   return ok(case_block_code.join("\n"))
 
 proc generate_else_block(fn_scope: FunctionScope, scope: Scope,
-    module: Identifier, fn: Function, else_block: Else): Result[string, string] =
+    module: Module, fn: Function, else_block: Else): Result[string, string] =
   var else_block_code = @[fmt"default:" & "{"]
   for i, s in else_block.statements:
     let scode = ? scope.generate_statement(s, module, fn, fn_scope, i ==
@@ -499,7 +560,7 @@ proc generate_else_block(fn_scope: FunctionScope, scope: Scope,
   return ok(else_block_code.join("\n"))
 
 proc generate_match_block(fn_scope: FunctionScope, scope: Scope,
-    module: Identifier, fn: Function, match_block: Matcher): Result[string, string] =
+    module: Module, fn: Function, match_block: Match): Result[string, string] =
   discard ? fn_scope.get_arg(match_block.value)
 
   var match_block_code = @[fmt"switch({match_block.value})" & "{"]
@@ -523,7 +584,7 @@ proc generate_match_block(fn_scope: FunctionScope, scope: Scope,
   match_block_code.add("UNREACHABLE();")
   return ok(match_block_code.join("\n"))
 
-proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
+proc generate_function*(scope: Scope, module: Module, fn: Function): Result[
     string, string] =
   var fn_code: seq[string]
   var arg_code: seq[string]
@@ -537,53 +598,50 @@ proc generate_function*(scope: Scope, fn: Function, module: Identifier): Result[
     arg_code.add(fmt"{arg.module} {arg.name}")
 
   let arg_code_str = arg_code.join(", ")
-  fn_code.add(fmt"{fn.def.returns} {module}_{fn.def.name}(" & arg_code_str & ") {")
-
-  let maybe_match_block = fn.match_block()
+  fn_code.add(fmt"{fn.def.returns} {module.def.name}_{fn.def.name}(" & arg_code_str & ") {")
 
   # statement c code
-  var statements_code: seq[string]
-  let statements = ( ? fn.statements)
-  for index, s in statements:
-    var last_statement: bool
-    if maybe_match_block.is_ok:
-      last_statement = false
-    else:
-      last_statement = index == statements.len - 1
-    let scode = ? scope.generate_statement(s, module, fn, fn_scope, last_statement)
-    statements_code.add(scode)
+  var steps_code: seq[string]
+  let steps = ? fn.steps
+  for index, step in steps:
+    let step_code =
+      case step.kind:
+      of FSK_STATEMENT: scope.generate_statement(step.statement, module, fn, fn_scope, index == steps.len - 1)
+      of FSK_MATCHER: fn_scope.generate_match_block(scope, module, fn, step.matcher)
+    steps_code.add(? step_code)
 
-  fn_code.add(statements_code.join("\n"))
-
-  if maybe_match_block.is_ok:
-    let match_block_code = ? fn_scope.generate_match_block(scope, module, fn,
-        maybe_match_block.get)
-    fn_code.add(match_block_code)
-
+  fn_code.add(steps_code.join("\n"))
   fn_code.add("}")
 
   ok(fn_code.join("\n"))
 
-
 proc generate_app*(scope: Scope): Result[string, string] =
   var module_code: seq[string]
-  for app in scope.modules:
+  for module in scope.modules:
     var fn_code: seq[string]
-    for fn in app.fns:
-      let fnc = ? scope.generate_function(fn, app.def.name)
+    for fn in module.fns:
+      let fnc = ? scope.generate_function(module, fn)
       fn_code.add(fnc)
     module_code.add(fn_code.join("\n"))
 
-  var app: Module
+  var apps: seq[Module]
   for module in scope.modules:
     if module.def.kind == MDK_APP:
-      app = module
+      apps.add(module)
+
+  if apps.len == 0:
+    return err(fmt"Failed to find `app` module")
+  if apps.len > 1:
+    var message = @[fmt"The ASL Program must contain only one app module but found {apps.len} definitions"]
+    for app in apps:
+      message.add($(app.def.location))
+    return err(message.join("\n"))
 
   let code = @[
     """#include "runtime/asl.h"""",
     module_code.join("\n"),
     "int main(int argc, char** argv) {",
-    fmt"return {app.def.name}_start((U8)argc);",
+    fmt"return {apps[0].def.name}_start((U8)argc);",
     "}"
   ]
 

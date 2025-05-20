@@ -16,7 +16,7 @@ type
     of BK_SCOPE: scope: Scope
     of BK_MODULE: module: Module
     of BK_FUNCTION: fn: Function
-    of BK_MATCH: match_block: Matcher
+    of BK_MATCH: match_block: Match
     of BK_CASE: case_block: Case
     of BK_ELSE: else_block: Else
 
@@ -63,7 +63,7 @@ proc add_block(parent_block, child_block: Block): Result[Block, string] =
   case parent_block.kind:
   of BK_SCOPE:
     case child_block.kind:
-    of BK_MODULE: ? parent_block.scope.add_module(child_block.module)
+    of BK_MODULE: ? parent_block.scope.add_user_module(child_block.module)
     else: return err(fmt"root block only supports module block as a child")
   of BK_MODULE:
     case child_block.kind:
