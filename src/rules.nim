@@ -39,7 +39,7 @@ proc asl_grammar*(): Result[Grammar[ParseResult], string] =
     leading_arg_rule,
     arglist_rule,
     fncall_rule,
-    value_rule,
+    expr_rule,
     assignment_rule,
     fn_keyword,
     returns_keyword,

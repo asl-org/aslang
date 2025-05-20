@@ -107,20 +107,19 @@ proc fncall_reducer*(location: Location, parts: seq[seq[seq[
 proc value_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   if parts[0].len > 0:
-    # echo location, " ", parts[0][0][0].init.new_value().to_parse_result()
     return parts[0][0][0].init.new_value().to_parse_result()
 
   if parts[1].len > 0:
-    # echo location, " ", parts[1][0][0].fncall.new_value().to_parse_result()
     return parts[1][0][0].fncall.new_value().to_parse_result()
+
+  if parts[2].len > 0:
+    return parts[2][0][0].identifier.new_value().to_parse_result()
 
 # assignment.nim
 proc assignment_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   let result_var_name = parts[0][0][0].identifier
-  let value = parts[0][4][0].value
-  # echo location, " ", new_assignment(result_var_name, value,
-  #     location).to_parse_result()
+  let value = parts[0][4][0].expression
   new_assignment(result_var_name, value, location).to_parse_result()
 
 # macro_call.nim
@@ -156,25 +155,25 @@ proc app_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   let name = parts[0][2][0].identifier
   # echo location, " ", name.new_app_def().to_parse_result()
-  name.new_app_def().to_parse_result()
+  name.new_app_def(location).to_parse_result()
 
 proc module_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   let name = parts[0][2][0].identifier
   # echo location, " ", name.new_module_def().to_parse_result()
-  name.new_module_def().to_parse_result()
+  name.new_module_def(location).to_parse_result()
 
 proc struct_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   let name = parts[0][2][0].identifier
   # echo location, " ", name.new_struct_def().to_parse_result()
-  name.new_struct_def().to_parse_result()
+  name.new_struct_def(location).to_parse_result()
 
 proc union_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   let name = parts[0][2][0].identifier
   # echo location, " ", name.new_union_def().to_parse_result()
-  name.new_union_def().to_parse_result()
+  name.new_union_def(location).to_parse_result()
 
 proc match_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
@@ -223,11 +222,8 @@ proc statement_reducer*(location: Location, parts: seq[seq[seq[
   if parts[0].len > 0:
     statement = new_statement(parts[0][0][0].assign)
   elif parts[1].len > 0:
-    statement = new_statement(parts[1][0][0].fncall)
-  elif parts[2].len > 0:
-    statement = new_statement(parts[2][0][0].identifier)
+    statement = new_statement(parts[1][0][0].expression)
 
-  # echo location, " ", statement.to_parse_result()
   statement.to_parse_result()
 
 # program.nim

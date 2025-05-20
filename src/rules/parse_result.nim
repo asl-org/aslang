@@ -28,6 +28,9 @@ proc new_identifier*(name: string, location: Location): Identifier =
 proc new_identifier*(name: string): Identifier =
   Identifier(name: name)
 
+proc clone(identifier: Identifier): Identifier =
+  Identifier(name: identifier.name, location: identifier.location)
+
 # keyword_arg.nim
 type KeywordArg* = ref object of RootObj
   name: Identifier
@@ -60,10 +63,10 @@ proc new_struct*(kwargs: seq[KeywordArg], location: Location): Struct =
 # literal.nim
 type
   LiteralKind* = enum
-    LTK_INTEGER, LTK_STRUCT
+    LTK_NATIVE_NUMERIC, LTK_STRUCT
   Literal* = ref object of RootObj
     case kind: LiteralKind
-    of LTK_INTEGER: integer*: Atom
+    of LTK_NATIVE_NUMERIC: integer*: Atom
     of LTK_STRUCT: struct*: Struct
 
 proc kind*(literal: Literal): LiteralKind = literal.kind
@@ -71,18 +74,18 @@ proc integer*(literal: Literal): Atom = literal.integer
 proc struct*(literal: Literal): Struct = literal.struct
 proc location*(literal: Literal): Location =
   case literal.kind:
-  of LTK_INTEGER: literal.integer.location
+  of LTK_NATIVE_NUMERIC: literal.integer.location
   of LTK_STRUCT: literal.struct.location
 
 proc new_literal*(integer: Atom): Literal =
-  Literal(kind: LTK_INTEGER, integer: integer)
+  Literal(kind: LTK_NATIVE_NUMERIC, integer: integer)
 
 proc new_literal*(struct: Struct): Literal =
   Literal(kind: LTK_STRUCT, struct: struct)
 
 proc `$`*(literal: Literal): string =
   case literal.kind:
-  of LTK_INTEGER: $(literal.integer)
+  of LTK_NATIVE_NUMERIC: $(literal.integer)
   of LTK_STRUCT: $(literal.struct)
 
 # init.nim
@@ -153,42 +156,57 @@ proc `$`*(fncall: FunctionCall): string =
 
 # value.nim
 type
-  ValueKind* = enum
-    VK_INIT, VK_FNCALL
-  Value* = ref object of RootObj
+  ExpressionKind* = enum
+    EK_INIT, EK_FNCALL, EK_IDENTIFIER
+  Expression* = ref object of RootObj
     location: Location
-    case kind: ValueKind
-    of VK_INIT: init: Initializer
-    of VK_FNCALL: fncall: FunctionCall
+    case kind: ExpressionKind
+    of EK_INIT: init: Initializer
+    of EK_FNCALL: fncall: FunctionCall
+    of EK_IDENTIFIER: identifier: Identifier
 
-proc kind*(value: Value): ValueKind = value.kind
-proc init*(value: Value): Initializer = value.init
-proc fncall*(value: Value): FunctionCall = value.fncall
+proc kind*(expression: Expression): ExpressionKind = expression.kind
+proc init*(expression: Expression): Initializer = expression.init
+proc fncall*(expression: Expression): FunctionCall = expression.fncall
+proc identifier*(expression: Expression): Identifier = expression.identifier
 
-proc new_value*(init: Initializer): Value = Value(kind: VK_INIT, init: init)
-proc new_value*(fncall: FunctionCall): Value = Value(kind: VK_FNCALL,
+proc safe_fncall(expression: Expression): Result[FunctionCall, string] =
+  case expression.kind:
+  of EK_FNCALL: return ok(expression.fncall)
+  else: return err(fmt"{expression.kind} is not a function call")
+
+proc safe_identifier(expression: Expression): Result[Identifier, string] =
+  case expression.kind:
+  of EK_IDENTIFIER: return ok(expression.identifier)
+  else: return err(fmt"{expression.kind} is not an identifier")
+
+proc new_value*(init: Initializer): Expression = Expression(kind: EK_INIT, init: init)
+proc new_value*(fncall: FunctionCall): Expression = Expression(kind: EK_FNCALL,
     fncall: fncall)
+proc new_value*(identifier: Identifier): Expression = Expression(
+    kind: EK_IDENTIFIER, identifier: identifier)
 
-proc `$`*(value: Value): string =
+proc `$`*(value: Expression): string =
   case value.kind:
-  of VK_INIT: $(value.init)
-  of VK_FNCALL: $(value.fncall)
+  of EK_INIT: $(value.init)
+  of EK_FNCALL: $(value.fncall)
+  of EK_IDENTIFIER: $(value.identifier)
 
 # assignment.nim
 type Assignment* = ref object of RootObj
   dest: Identifier
-  value: Value
+  expression: Expression
   location: Location
 
 proc dest*(assignment: Assignment): Identifier = assignment.dest
-proc value*(assignment: Assignment): Value = assignment.value
+proc expression*(assignment: Assignment): Expression = assignment.expression
 
-proc new_assignment*(dest: Identifier, value: Value,
+proc new_assignment*(dest: Identifier, expression: Expression,
     location: Location): Assignment =
-  Assignment(dest: dest, value: value, location: location)
+  Assignment(dest: dest, expression: expression, location: location)
 
 proc `$`*(assignment: Assignment): string =
-  fmt"{assignment.dest} = {assignment.value}"
+  fmt"{assignment.dest} = {assignment.expression}"
 
 # arg_def.nim
 type ArgumentDefinition* = ref object of RootObj
@@ -203,6 +221,14 @@ proc module*(arg_def: ArgumentDefinition): Identifier = arg_def.module
 proc new_arg_def*(module: Identifier, name: Identifier,
     refcount: int = 0): ArgumentDefinition =
   ArgumentDefinition(module: module, name: name, refcount: refcount)
+
+proc clone*(arg_def: ArgumentDefinition): ArgumentDefinition =
+  ArgumentDefinition(
+    module: arg_def.module.clone,
+    name: arg_def.name.clone,
+    location: arg_def.location,
+    refcount: arg_def.refcount
+  )
 
 proc `$`*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.module} {arg_def.name}"
@@ -224,7 +250,9 @@ proc new_fn_def*(name: Identifier, returns: Identifier,
   FunctionDefinition(name: name, returns: returns, arg_def_list: arg_def_list)
 
 proc `$`*(fn_def: FunctionDefinition): string =
-  fmt"fn {fn_def.name}{fn_def.arg_def_list} returns {fn_def.returns}:"
+  let arglist = fn_def.arg_def_list.map(proc(x: ArgumentDefinition): string = $(
+      x)).join(", ")
+  fmt"fn {fn_def.name}({arglist}) returns {fn_def.returns}:"
 
 # module_def.nim
 type
@@ -239,17 +267,17 @@ proc name*(module_def: ModuleDefinition): Identifier = module_def.name
 proc kind*(module_def: ModuleDefinition): ModuleDefinitionKind = module_def.kind
 proc location*(module_def: ModuleDefinition): Location = module_def.location
 
-proc new_app_def*(name: Identifier): ModuleDefinition =
-  ModuleDefinition(kind: MDK_APP, name: name)
+proc new_app_def*(name: Identifier, location: Location): ModuleDefinition =
+  ModuleDefinition(kind: MDK_APP, name: name, location: location)
 
-proc new_module_def*(name: Identifier): ModuleDefinition =
-  ModuleDefinition(kind: MDK_MODULE, name: name)
+proc new_module_def*(name: Identifier, location: Location): ModuleDefinition =
+  ModuleDefinition(kind: MDK_MODULE, name: name, location: location)
 
-proc new_struct_def*(name: Identifier): ModuleDefinition =
-  ModuleDefinition(kind: MDK_STRUCT, name: name)
+proc new_struct_def*(name: Identifier, location: Location): ModuleDefinition =
+  ModuleDefinition(kind: MDK_STRUCT, name: name, location: location)
 
-proc new_union_def*(name: Identifier): ModuleDefinition =
-  ModuleDefinition(kind: MDK_UNION, name: name)
+proc new_union_def*(name: Identifier, location: Location): ModuleDefinition =
+  ModuleDefinition(kind: MDK_UNION, name: name, location: location)
 
 proc `$`*(module_def: ModuleDefinition): string =
   let prefix =
@@ -358,24 +386,21 @@ proc new_macro_call*(else_def: ElseDefinition): MacroCall =
 # statement.nim
 type
   StatementKind* = enum
-    SK_ASSIGNMENT, SK_FNCALL, SK_IDENTIFIER
+    SK_ASSIGNMENT, SK_EXPR
   Statement* = ref object of RootObj
     location: Location
     case kind: StatementKind
     of SK_ASSIGNMENT: assign: Assignment
-    of SK_FNCALL: fncall: FunctionCall
-    of SK_IDENTIFIER: identifier: Identifier
+    of SK_EXPR: expression: Expression
 
 proc `$`*(statement: Statement): string =
   case statement.kind:
   of SK_ASSIGNMENT: $(statement.assign)
-  of SK_FNCALL: $(statement.fncall)
-  of SK_IDENTIFIER: $(statement.identifier)
+  of SK_EXPR: $(statement.expression)
 
 proc kind*(statement: Statement): StatementKind = statement.kind
 proc assign*(statement: Statement): Assignment = statement.assign
-proc fncall*(statement: Statement): FunctionCall = statement.fncall
-proc identifier*(statement: Statement): Identifier = statement.identifier
+proc expression*(statement: Statement): Expression = statement.expression
 
 proc safe_assignment*(statement: Statement): Result[Assignment, string] =
   case statement.kind:
@@ -384,22 +409,19 @@ proc safe_assignment*(statement: Statement): Result[Assignment, string] =
 
 proc safe_fncall*(statement: Statement): Result[FunctionCall, string] =
   case statement.kind:
-  of SK_FNCALL: ok(statement.fncall)
+  of SK_EXPR: statement.expression.safe_fncall
   else: err(fmt"Statement {statement} is not a function call")
 
 proc safe_identifier*(statement: Statement): Result[Identifier, string] =
   case statement.kind:
-  of SK_IDENTIFIER: ok(statement.identifier)
+  of SK_EXPR: statement.expression.safe_identifier
   else: err(fmt"Statement {statement} is not an identifier")
 
 proc new_statement*(assign: Assignment): Statement =
   Statement(kind: SK_ASSIGNMENT, assign: assign)
 
-proc new_statement*(fncall: FunctionCall): Statement =
-  Statement(kind: SK_FNCALL, fncall: fncall)
-
-proc new_statement*(identifier: Identifier): Statement =
-  Statement(kind: SK_IDENTIFIER, identifier: identifier)
+proc new_statement*(expression: Expression): Statement =
+  Statement(kind: SK_EXPR, expression: expression)
 
 # comment.nim
 type Comment* = ref object of RootObj
@@ -509,7 +531,7 @@ type
     PRK_ARG,
     PRK_ARGLIST,
     PRK_FNCALL,
-    PRK_VALUE,
+    PRK_EXPR,
     PRK_ASSINGMENT,
     PRK_FN_MACRO,
     PRK_ARG_DEF,
@@ -534,7 +556,7 @@ type
     of PRK_ARG: arg*: Argument
     of PRK_ARGLIST: arglist*: seq[Argument]
     of PRK_FNCALL: fncall*: FunctionCall
-    of PRK_VALUE: value*: Value
+    of PRK_EXPR: expression*: Expression
     of PRK_ASSINGMENT: assign*: Assignment
     of PRK_FN_MACRO: fn_def*: FunctionDefinition
     of PRK_ARG_DEF: arg_def*: ArgumentDefinition
@@ -560,7 +582,7 @@ proc `$`*(pr: ParseResult): string =
   of PRK_ARG: $(pr.arg)
   of PRK_ARGLIST: $(pr.arglist)
   of PRK_FNCALL: $(pr.fncall)
-  of PRK_VALUE: $(pr.value)
+  of PRK_EXPR: $(pr.expression)
   of PRK_ASSINGMENT: $(pr.assign)
   of PRK_FN_MACRO: $(pr.fn_def)
   of PRK_ARG_DEF: $(pr.arg_def)
@@ -602,8 +624,8 @@ proc to_parse_result*(arglist: seq[Argument]): ParseResult =
 proc to_parse_result*(fncall: FunctionCall): ParseResult =
   ParseResult(kind: PRK_FNCALL, fncall: fncall)
 
-proc to_parse_result*(value: Value): ParseResult =
-  ParseResult(kind: PRK_VALUE, value: value)
+proc to_parse_result*(expression: Expression): ParseResult =
+  ParseResult(kind: PRK_EXPR, expression: expression)
 
 proc to_parse_result*(assign: Assignment): ParseResult =
   ParseResult(kind: PRK_ASSINGMENT, assign: assign)

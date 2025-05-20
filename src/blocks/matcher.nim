@@ -32,15 +32,15 @@ proc close*(else_block: Else): Result[void, string] =
   ok()
 
 type Case* = ref object of RootObj
-  value: string
+  value: Atom
   spaces: int
   statements: seq[Statement]
 
 proc spaces*(case_block: Case): int = case_block.spaces
 proc statements*(case_block: Case): seq[Statement] = case_block.statements
-proc value*(case_block: Case): string = case_block.value
+proc value*(case_block: Case): Atom = case_block.value
 
-proc new_case*(value: string, spaces: int): Case =
+proc new_case*(value: Atom, spaces: int): Case =
   Case(value: value, spaces: spaces)
 
 proc `$`*(case_block: Case): string =
@@ -77,6 +77,11 @@ proc new_matcher*(value: Identifier, spaces: int): Match =
 proc add_case*(matcher: Match, case_block: Case): Result[void, string] =
   if matcher.else_blocks.len == 1:
     return err("Match block does not support case blocks after an else block")
+
+  for cb in matcher.cases:
+    if $(cb.value) == $(case_block.value):
+      return err("Duplicate case block condition `case {case_block.value}:`")
+
   matcher.cases.add(case_block)
   ok()
 

@@ -1,4 +1,4 @@
-import results, strformat, strutils, sets
+import results, strformat, strutils, sets, sequtils
 import "../rules"
 
 import common
@@ -22,7 +22,7 @@ proc kind*(step: FunctionStep): FunctionStepKind = step.kind
 proc statement*(step: FunctionStep): Statement = step.statement
 proc matcher*(step: FunctionStep): Match = step.matcher
 
-proc `$`(step: FunctionStep): string =
+proc `$`*(step: FunctionStep): string =
   case step.kind:
   of FSK_MATCHER: $(step.matcher)
   of FSK_STATEMENT: $(step.statement)
@@ -43,10 +43,7 @@ proc kind*(fn: Function): FunctionKind = fn.kind
 proc def*(fn: Function): FunctionDefinition = fn.def
 proc spaces*(fn: Function): int = fn.spaces
 proc native_fn_name*(fn: Function): string = fn.native_fn_name
-proc steps*(fn: Function): Result[seq[FunctionStep], string] =
-  case fn.kind:
-  of FK_USER: ok(fn.steps)
-  of FK_NATIVE: return err(fmt"Native functions do not have statements")
+proc steps*(fn: Function): seq[FunctionStep] = fn.steps
 
 proc match_block*(fn: Function): Result[Match, string] =
   case fn.kind:
@@ -60,8 +57,9 @@ proc `$`*(fn: Function): string =
   let prefix = prefix(fn.spaces)
   let child_prefix = child_prefix(fn.spaces)
   var content: seq[string] = @[prefix & $(fn.def)]
-  for step in fn.steps:
-    content.add((child_prefix & $(step)))
+  if fn.kind == FK_USER:
+    for step in fn.steps:
+      content.add((child_prefix & $(step)))
   return content.join("\n")
 
 proc new_user_function*(def: FunctionDefinition,
@@ -121,8 +119,8 @@ proc `==`*(self: Function, other: Function): bool =
     return false
 
   # same arg types
-  for index, self_arg_def in self.def.arg_def_list:
-    let other_arg_def = other.def.arg_def_list[index]
+  for (self_arg_def, other_arg_def) in zip(self.def.arg_def_list,
+      other.def.arg_def_list):
     if $(self_arg_def.module) != $(other_arg_def.module):
       return false
 

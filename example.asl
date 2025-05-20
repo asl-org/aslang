@@ -22,7 +22,7 @@ module Bitset:
 
         bdata = U8.rshift(data, offset)
         res = U8.and(bdata, 1)
-        S64.from_U8(res)
+        S64.from(res)
 
   fn set(Pointer ptr, U64 size, U64 bit) returns S64:
     failed = S64.subtract(0, 1)
@@ -41,8 +41,8 @@ module Bitset:
 
         mask = U8.lshift(1, offset)
         res = U8.or(data, mask)
-        Pointer.write_U8(bptr, res)
-        S64.from_U8(res)
+        Pointer.write(bptr, res)
+        S64.from(res)
 
   fn clear(Pointer ptr, U64 size, U64 bit) returns S64:
     failed = S64.subtract(0, 1)
@@ -62,8 +62,8 @@ module Bitset:
         mask = U8.lshift(1, offset)
         imask = U8.not(mask)
         res = U8.and(data, imask)
-        Pointer.write_U8(bptr, res)
-        S64.from_U8(res)
+        Pointer.write(bptr, res)
+        S64.from(res)
 
   fn toggle(Pointer ptr, U64 size, U64 bit) returns S64:
     data = MODULE.get(ptr, size, bit)
@@ -80,13 +80,13 @@ app Example:
     ptr = System.allocate(bytes)
     Pointer.print(ptr)
 
-    Pointer.write_U8(ptr, 255)
+    Pointer.write(ptr, 255)
     val = Pointer.read_U8(ptr)
     U8.print(val)
 
     ptr1 = Pointer.shift(ptr, 1)
     Pointer.print(ptr1)
-    Pointer.write_U8(ptr1, 255)
+    Pointer.write(ptr1, 255)
     val1 = Pointer.read_U8(ptr1)
     U8.print(val1)
 

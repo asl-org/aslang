@@ -1,3 +1,4 @@
+
 module Bitset:
   fn init(U64 size) returns Pointer:
     System.allocate(size)
@@ -88,33 +89,35 @@ app Example:
       else:
         primes
 
-  fn update_ans(U64 i, U64 ans) returns U64:
-    r = U64.remainder(600851475143, i)
+  fn check_count(Pointer primes, U64 max_primes, U64 i, U64 c) returns U64:
+    r = U64.compare(c, 10000)
     match r:
       case 0:
-        Example.max(ans, i)
+        i
       else:
-        ans
+        next_c = U64.add(c, 1)
+        next_i = U64.add(i, 1)
+        Example.solve(primes, max_primes, next_i, next_c)
 
-  fn handle_prime(Pointer primes, U64 max_primes, U64 i, U64 ans) returns U64:
+  fn handle_prime(Pointer primes, U64 max_primes, U64 i, U64 c) returns U64:
     op = Bitset.get(primes, max_primes, i)
     match op:
       case 0:
         j = U64.multiply(i, 2)
         Example.mark_non_prime(primes, j, max_primes, i)
-        Example.update_ans(i, ans)
+        Example.check_count(primes, max_primes, i, c)
       case 1:
-        ans
+        next_i = U64.add(i, 1)
+        Example.solve(primes, max_primes, next_i, c)
 
-  fn solve(Pointer primes, U64 max_primes, U64 start, U64 ans) returns U64:
-    op = U64.compare(start, max_primes)
+  fn solve(Pointer primes, U64 max_primes, U64 i, U64 c) returns U64:
+    failed = U64 0
+    op = U64.compare(i, max_primes)
     match op:
       case -1:
-        res = Example.handle_prime(primes, max_primes, start, ans)
-        next_start = U64.add(start, 1)
-        Example.solve(primes, max_primes, next_start, res)
+        Example.handle_prime(primes, max_primes, i, c)
       else:
-        ans
+        failed
 
   fn start(U8 seed) returns U8:
     exit_success = U8 0
@@ -125,3 +128,26 @@ app Example:
     U64.print(ans)
 
     exit_success
+
+# int *remove_non_primes(int primes[], int max_primes, int i, int j)
+# {
+#   if (j >= max_primes)
+#     return primes;
+#   primes[j] = 1;
+#   return remove_non_primes(primes, max_primes, i, j + i);
+# }
+
+# int solve_recur(int primes[], int max_primes, int i, int c)
+# {
+#   if (i >= max_primes)
+#     return 0;
+
+#   if (!primes[i])
+#   {
+#     if (c == 10000)
+#       return i;
+#     c += 1;
+#     primes = remove_non_primes(primes, max_primes, i, 2 * i);
+#   }
+#   return solve_recur(primes, max_primes, i + 1, c);
+# }
