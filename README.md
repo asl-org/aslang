@@ -50,6 +50,10 @@ cd aslang
 chmod +x bootstrap.sh
 ./bootstrap.sh
 
+# Run tests
+chmod +x test.sh
+./test.sh
+
 # Compile
 asl -o=example example.asl
 ```
