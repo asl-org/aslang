@@ -18,7 +18,7 @@ module Bitset:
 
         bdata = U8.rshift(data, offset)
         res = U8.and(bdata, 1)
-        S64.from_U8(res)
+        S64.from(res)
       else:
         failed
 
@@ -35,8 +35,8 @@ module Bitset:
 
         mask = U8.lshift(1, offset)
         res = U8.or(data, mask)
-        Pointer.write_U8(bptr, res)
-        S64.from_U8(res)
+        Pointer.write(bptr, res)
+        S64.from(res)
       else:
         failed
 
@@ -54,8 +54,8 @@ module Bitset:
         mask = U8.lshift(1, offset)
         imask = U8.not(mask)
         res = U8.and(data, imask)
-        Pointer.write_U8(bptr, res)
-        S64.from_U8(res)
+        Pointer.write(bptr, res)
+        S64.from(res)
       else:
         failed
 

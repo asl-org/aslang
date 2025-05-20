@@ -35,8 +35,6 @@ proc safe_parse[T](input: string): Result[T, string] =
   else:
     err("safeParse only supports signed/unsigned integers and floating-point types")
 
-
-
 proc make_native_module(name: string, fns: seq[(string, string, string, seq[(
     string, string)])]): Result[Module, string] =
   let native_module = name.new_identifier().new_module_def().new_native_module()
@@ -124,13 +122,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("U8", "value")]),
     # cast
-    ("U8_from_S8", "U8", "from_S8", @[("S8", "value")]),
-    ("U8_from_S16", "U8", "from_S16", @[("S16", "value")]),
-    ("U8_from_S32", "U8", "from_S32", @[("S32", "value")]),
-    ("U8_from_S64", "U8", "from_S64", @[("S64", "value")]),
-    ("U8_from_U16", "U8", "from_U16", @[("U16", "value")]),
-    ("U8_from_U32", "U8", "from_U32", @[("U32", "value")]),
-    ("U8_from_U64", "U8", "from_U64", @[("U64", "value")]),
+    ("U8_from_S8", "U8", "from", @[("S8", "value")]),
+    ("U8_from_S16", "U8", "from", @[("S16", "value")]),
+    ("U8_from_S32", "U8", "from", @[("S32", "value")]),
+    ("U8_from_S64", "U8", "from", @[("S64", "value")]),
+    ("U8_from_U16", "U8", "from", @[("U16", "value")]),
+    ("U8_from_U32", "U8", "from", @[("U32", "value")]),
+    ("U8_from_U64", "U8", "from", @[("U64", "value")]),
   ])
 
   ? scope.add_native_module(u8_module)
@@ -155,13 +153,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("U16", "value")]),
     # cast
-    ("U16_from_S8", "U16", "from_S8", @[("S8", "value")]),
-    ("U16_from_S16", "U16", "from_S16", @[("S16", "value")]),
-    ("U16_from_S32", "U16", "from_S32", @[("S32", "value")]),
-    ("U16_from_S64", "U16", "from_S64", @[("S64", "value")]),
-    ("U16_from_U8", "U16", "from_U8", @[("U8", "value")]),
-    ("U16_from_U32", "U16", "from_U32", @[("U32", "value")]),
-    ("U16_from_U64", "U16", "from_U64", @[("U64", "value")]),
+    ("U16_from_S8", "U16", "from", @[("S8", "value")]),
+    ("U16_from_S16", "U16", "from", @[("S16", "value")]),
+    ("U16_from_S32", "U16", "from", @[("S32", "value")]),
+    ("U16_from_S64", "U16", "from", @[("S64", "value")]),
+    ("U16_from_U8", "U16", "from", @[("U8", "value")]),
+    ("U16_from_U32", "U16", "from", @[("U32", "value")]),
+    ("U16_from_U64", "U16", "from", @[("U64", "value")]),
   ])
 
   ? scope.add_native_module(u16_module)
@@ -186,13 +184,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("U32", "value")]),
     # cast
-    ("U32_from_S8", "U32", "from_S8", @[("S8", "value")]),
-    ("U32_from_S16", "U32", "from_S16", @[("S16", "value")]),
-    ("U32_from_S32", "U32", "from_S32", @[("S32", "value")]),
-    ("U32_from_S64", "U32", "from_S64", @[("S64", "value")]),
-    ("U32_from_U8", "U32", "from_U8", @[("U8", "value")]),
-    ("U32_from_U16", "U32", "from_U16", @[("U16", "value")]),
-    ("U32_from_U64", "U32", "from_U64", @[("U64", "value")]),
+    ("U32_from_S8", "U32", "from", @[("S8", "value")]),
+    ("U32_from_S16", "U32", "from", @[("S16", "value")]),
+    ("U32_from_S32", "U32", "from", @[("S32", "value")]),
+    ("U32_from_S64", "U32", "from", @[("S64", "value")]),
+    ("U32_from_U8", "U32", "from", @[("U8", "value")]),
+    ("U32_from_U16", "U32", "from", @[("U16", "value")]),
+    ("U32_from_U64", "U32", "from", @[("U64", "value")]),
   ])
 
   ? scope.add_native_module(u32_module)
@@ -217,13 +215,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("U64", "value")]),
     # cast
-    ("U64_from_S8", "U64", "from_S8", @[("S8", "value")]),
-    ("U64_from_S16", "U64", "from_S16", @[("S16", "value")]),
-    ("U64_from_S32", "U64", "from_S32", @[("S32", "value")]),
-    ("U64_from_S64", "U64", "from_S64", @[("S64", "value")]),
-    ("U64_from_U8", "U64", "from_U8", @[("U8", "value")]),
-    ("U64_from_U16", "U64", "from_U16", @[("U16", "value")]),
-    ("U64_from_U32", "U64", "from_U32", @[("U32", "value")]),
+    ("U64_from_S8", "U64", "from", @[("S8", "value")]),
+    ("U64_from_S16", "U64", "from", @[("S16", "value")]),
+    ("U64_from_S32", "U64", "from", @[("S32", "value")]),
+    ("U64_from_S64", "U64", "from", @[("S64", "value")]),
+    ("U64_from_U8", "U64", "from", @[("U8", "value")]),
+    ("U64_from_U16", "U64", "from", @[("U16", "value")]),
+    ("U64_from_U32", "U64", "from", @[("U32", "value")]),
   ])
 
   ? scope.add_native_module(u64_module)
@@ -248,13 +246,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("S8", "value")]),
     # cast
-    ("S8_from_S16", "S8", "from_S16", @[("S16", "value")]),
-    ("S8_from_S32", "S8", "from_S32", @[("S32", "value")]),
-    ("S8_from_S64", "S8", "from_S64", @[("S64", "value")]),
-    ("S8_from_U8", "S8", "from_U8", @[("U8", "value")]),
-    ("S8_from_U16", "S8", "from_U16", @[("U16", "value")]),
-    ("S8_from_U32", "S8", "from_U32", @[("U32", "value")]),
-    ("S8_from_U64", "S8", "from_U64", @[("U64", "value")]),
+    ("S8_from_S16", "S8", "from", @[("S16", "value")]),
+    ("S8_from_S32", "S8", "from", @[("S32", "value")]),
+    ("S8_from_S64", "S8", "from", @[("S64", "value")]),
+    ("S8_from_U8", "S8", "from", @[("U8", "value")]),
+    ("S8_from_U16", "S8", "from", @[("U16", "value")]),
+    ("S8_from_U32", "S8", "from", @[("U32", "value")]),
+    ("S8_from_U64", "S8", "from", @[("U64", "value")]),
   ])
 
   ? scope.add_native_module(s8_module)
@@ -279,13 +277,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("S16", "value")]),
     # cast
-    ("S16_from_S8", "S16", "from_S8", @[("S8", "value")]),
-    ("S16_from_S32", "S16", "from_S32", @[("S32", "value")]),
-    ("S16_from_S64", "S16", "from_S64", @[("S64", "value")]),
-    ("S16_from_U8", "S16", "from_U8", @[("U8", "value")]),
-    ("S16_from_U16", "S16", "from_U16", @[("U16", "value")]),
-    ("S16_from_U32", "S16", "from_U32", @[("U32", "value")]),
-    ("S16_from_U64", "S16", "from_U64", @[("U64", "value")]),
+    ("S16_from_S8", "S16", "from", @[("S8", "value")]),
+    ("S16_from_S32", "S16", "from", @[("S32", "value")]),
+    ("S16_from_S64", "S16", "from", @[("S64", "value")]),
+    ("S16_from_U8", "S16", "from", @[("U8", "value")]),
+    ("S16_from_U16", "S16", "from", @[("U16", "value")]),
+    ("S16_from_U32", "S16", "from", @[("U32", "value")]),
+    ("S16_from_U64", "S16", "from", @[("U64", "value")]),
   ])
 
   ? scope.add_native_module(s16_module)
@@ -310,13 +308,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("S32", "value")]),
     # cast
-    ("S32_from_S8", "S32", "from_S8", @[("S8", "value")]),
-    ("S32_from_S16", "S32", "from_S16", @[("S16", "value")]),
-    ("S32_from_S64", "S32", "from_S64", @[("S64", "value")]),
-    ("S32_from_U8", "S32", "from_U8", @[("U8", "value")]),
-    ("S32_from_U16", "S32", "from_U16", @[("U16", "value")]),
-    ("S32_from_U32", "S32", "from_U32", @[("U32", "value")]),
-    ("S32_from_U64", "S32", "from_U64", @[("U64", "value")]),
+    ("S32_from_S8", "S32", "from", @[("S8", "value")]),
+    ("S32_from_S16", "S32", "from", @[("S16", "value")]),
+    ("S32_from_S64", "S32", "from", @[("S64", "value")]),
+    ("S32_from_U8", "S32", "from", @[("U8", "value")]),
+    ("S32_from_U16", "S32", "from", @[("U16", "value")]),
+    ("S32_from_U32", "S32", "from", @[("U32", "value")]),
+    ("S32_from_U64", "S32", "from", @[("U64", "value")]),
   ])
 
   ? scope.add_native_module(S32_module)
@@ -341,13 +339,13 @@ proc new_scope*(): Result[Scope, string] =
     # debug
     ("U64_print", "U64", "print", @[("S64", "value")]),
     # cast
-    ("S64_from_S8", "S64", "from_S8", @[("S8", "value")]),
-    ("S64_from_S16", "S64", "from_S16", @[("S16", "value")]),
-    ("S64_from_S32", "S64", "from_S32", @[("S32", "value")]),
-    ("S64_from_U8", "S64", "from_U8", @[("U8", "value")]),
-    ("S64_from_U16", "S64", "from_U16", @[("U16", "value")]),
-    ("S64_from_U32", "S64", "from_U32", @[("U32", "value")]),
-    ("S64_from_U64", "S64", "from_U64", @[("U64", "value")]),
+    ("S64_from_S8", "S64", "from", @[("S8", "value")]),
+    ("S64_from_S16", "S64", "from", @[("S16", "value")]),
+    ("S64_from_S32", "S64", "from", @[("S32", "value")]),
+    ("S64_from_U8", "S64", "from", @[("U8", "value")]),
+    ("S64_from_U16", "S64", "from", @[("U16", "value")]),
+    ("S64_from_U32", "S64", "from", @[("U32", "value")]),
+    ("S64_from_U64", "S64", "from", @[("U64", "value")]),
   ])
 
   ? scope.add_native_module(s64_module)
@@ -359,9 +357,9 @@ proc new_scope*(): Result[Scope, string] =
     ("Pointer_read_U8", "U8", "read_U8", @[("Pointer", "ptr")]),
     ("Pointer_read_U64", "U64", "read_U64", @[("Pointer", "ptr")]),
     ("Pointer_read_S64", "S64", "read_S64", @[("Pointer", "ptr")]),
-    ("Pointer_write_U8", "Pointer", "write_U8", @[("Pointer", "ptr"), ("U8", "value")]),
-    ("Pointer_write_U64", "Pointer", "write_U64", @[("Pointer", "ptr"), ("U64", "value")]),
-    ("Pointer_write_S64", "Pointer", "write_S64", @[("Pointer", "ptr"), ("S64", "value")]),
+    ("Pointer_write_U8", "Pointer", "write", @[("Pointer", "ptr"), ("U8", "value")]),
+    ("Pointer_write_U64", "Pointer", "write", @[("Pointer", "ptr"), ("U64", "value")]),
+    ("Pointer_write_S64", "Pointer", "write", @[("Pointer", "ptr"), ("S64", "value")]),
   ])
   ? scope.add_native_module(ptr_module)
 
@@ -473,12 +471,12 @@ proc resolve_function_call_arglist(fn_scope: FunctionScope, scope: Scope,
     ? maybe_resolved
   ok()
 
-proc resolve_function_call(scope: Scope, fn_module: Module, fn_scope: FunctionScope, fncall: FunctionCall): Result[Identifier, string] =
+proc resolve_function_call(scope: Scope, fn_module: Module, fn_scope: FunctionScope, fncall: FunctionCall): Result[Function, string] =
   for fn in fn_module.find_fn(fncall.fn_name, fncall.arglist.len):
     let maybe_resolved = fn_scope.resolve_function_call_arglist(scope,
         fn.def.arg_def_list, fncall.arglist)
     if maybe_resolved.is_ok:
-      return ok(fn.def.returns)
+      return ok(fn)
   return err(fmt"{fncall.location} None of the functions calls matched with {fncall}")
 
 proc generate_statement(scope: Scope, s: Statement, module: Module,
@@ -496,15 +494,20 @@ proc generate_statement(scope: Scope, s: Statement, module: Module,
     of VK_FNCALL:
       let fncall = s.assign.value.fncall
       let fn_module = ? scope.resolve_function_call_module(module, fncall)
-      let return_type = ? scope.resolve_function_call(fn_module, fn_scope, fncall)
+      let target_fn = ? scope.resolve_function_call(fn_module, fn_scope, fncall)
+
+      let target_fn_name =
+        case target_fn.kind:
+        of FK_NATIVE: target_fn.native_fn_name
+        of FK_USER: fmt"{fn_module.def.name}_{fncall.fn_name}"
 
       var fncall_args: seq[string]
       for arg in fncall.arglist:
         fncall_args.add($(arg))
       let fncall_args_str = fncall_args.join(", ")
       # TODO: Check the return type of function call in scope, for now using work around
-      statements_code.add(fmt"{return_type} {s.assign.dest} = {fn_module.def.name}_{fncall.fn_name}({fncall_args_str});")
-      ? fn_scope.add_arg(new_arg_def(return_type, s.assign.dest))
+      statements_code.add(fmt"{target_fn.def.returns} {s.assign.dest} = {target_fn_name}({fncall_args_str});")
+      ? fn_scope.add_arg(new_arg_def(target_fn.def.returns, s.assign.dest))
 
     # last line must be a return
     if last_statement:
@@ -513,20 +516,24 @@ proc generate_statement(scope: Scope, s: Statement, module: Module,
     let fncall = s.fncall
 
     let fn_module = ? scope.resolve_function_call_module(module, fncall)
-    let return_type = ? scope.resolve_function_call(fn_module, fn_scope, fncall)
+    let target_fn = ? scope.resolve_function_call(fn_module, fn_scope, fncall)
+
+    let target_fn_name =
+        case target_fn.kind:
+        of FK_NATIVE: target_fn.native_fn_name
+        of FK_USER: fmt"{fn_module.def.name}_{fncall.fn_name}"
 
     var fncall_args: seq[string]
     for arg in fncall.arglist:
       fncall_args.add($(arg))
     let fncall_args_str = fncall_args.join(", ")
 
-    var module_name = fn_module.def.name
-    var fncall_code = fmt"{module_name}_{fncall.fn_name}({fncall_args_str});"
+    var fncall_code = fmt"{target_fn_name}({fncall_args_str});"
 
     # last line must be a return
     if last_statement:
-      if $(return_type) != $(fn.def.returns):
-        return err(fmt"{fncall.location} Expected {fncall} to return {fn.def.returns} but found {return_type}")
+      if $(target_fn.def.returns) != $(fn.def.returns):
+        return err(fmt"{fncall.location} Expected {fncall} to return {fn.def.returns} but found {target_fn.def.returns}")
       fncall_code = fmt"return {fncall_code}"
 
     statements_code.add(fncall_code)

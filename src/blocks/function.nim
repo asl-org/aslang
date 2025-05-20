@@ -39,8 +39,10 @@ type
     of FK_NATIVE:
       native_fn_name: string
 
+proc kind*(fn: Function): FunctionKind = fn.kind
 proc def*(fn: Function): FunctionDefinition = fn.def
 proc spaces*(fn: Function): int = fn.spaces
+proc native_fn_name*(fn: Function): string = fn.native_fn_name
 proc steps*(fn: Function): Result[seq[FunctionStep], string] =
   case fn.kind:
   of FK_USER: ok(fn.steps)
