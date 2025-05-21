@@ -7,23 +7,24 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
-// Integer type aliases
+// Signed Integer type aliases
 typedef uint8_t U8;
 typedef uint16_t U16;
 typedef uint32_t U32;
 typedef uint64_t U64;
 
+// Unsigned Integer type aliases
 typedef int8_t S8;
 typedef int16_t S16;
 typedef int32_t S32;
 typedef int64_t S64;
 
-// Pointer type
-typedef uintptr_t Pointer;
-
 // Floating-point type aliases
 typedef float F32;
 typedef double F64;
+
+// Pointer type
+typedef uintptr_t Pointer;
 
 // C specific type aliases
 typedef unsigned char UChar;

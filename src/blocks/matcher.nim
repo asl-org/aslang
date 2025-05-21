@@ -32,15 +32,15 @@ proc close*(else_block: Else): Result[void, string] =
   ok()
 
 type Case* = ref object of RootObj
-  value: string
+  value: Atom
   spaces: int
   statements: seq[Statement]
 
 proc spaces*(case_block: Case): int = case_block.spaces
 proc statements*(case_block: Case): seq[Statement] = case_block.statements
-proc value*(case_block: Case): string = case_block.value
+proc value*(case_block: Case): Atom = case_block.value
 
-proc new_case*(value: string, spaces: int): Case =
+proc new_case*(value: Atom, spaces: int): Case =
   Case(value: value, spaces: spaces)
 
 proc `$`*(case_block: Case): string =
@@ -60,33 +60,38 @@ proc close*(case_block: Case): Result[void, string] =
     return err("Case block must have at least 1 statement")
   ok()
 
-type Matcher* = ref object of RootObj
+type Match* = ref object of RootObj
   value: Identifier
   spaces: int
   cases: seq[Case]
   else_blocks: seq[Else]
 
-proc value*(matcher: Matcher): Identifier = matcher.value
-proc spaces*(matcher: Matcher): int = matcher.spaces
-proc cases*(matcher: Matcher): seq[Case] = matcher.cases
-proc else_blocks*(matcher: Matcher): seq[Else] = matcher.else_blocks
+proc value*(matcher: Match): Identifier = matcher.value
+proc spaces*(matcher: Match): int = matcher.spaces
+proc cases*(matcher: Match): seq[Case] = matcher.cases
+proc else_blocks*(matcher: Match): seq[Else] = matcher.else_blocks
 
-proc new_matcher*(value: Identifier, spaces: int): Matcher =
-  Matcher(value: value, spaces: spaces)
+proc new_matcher*(value: Identifier, spaces: int): Match =
+  Match(value: value, spaces: spaces)
 
-proc add_case*(matcher: Matcher, case_block: Case): Result[void, string] =
+proc add_case*(matcher: Match, case_block: Case): Result[void, string] =
   if matcher.else_blocks.len == 1:
     return err("Match block does not support case blocks after an else block")
+
+  for cb in matcher.cases:
+    if $(cb.value) == $(case_block.value):
+      return err("Duplicate case block condition `case {case_block.value}:`")
+
   matcher.cases.add(case_block)
   ok()
 
-proc add_else*(matcher: Matcher, else_block: Else): Result[void, string] =
+proc add_else*(matcher: Match, else_block: Else): Result[void, string] =
   if matcher.else_blocks.len == 1:
     return err("Match block does not support multiple else blocks")
   matcher.else_blocks.add(else_block)
   ok()
 
-proc `$`*(matcher: Matcher): string =
+proc `$`*(matcher: Match): string =
   let prefix = prefix(matcher.spaces)
   var content = @[fmt"{prefix}match {matcher.value}:"]
   for case_block in matcher.cases:
@@ -95,7 +100,7 @@ proc `$`*(matcher: Matcher): string =
     content.add($(else_block))
   return content.join("\n")
 
-proc close*(matcher: Matcher): Result[void, string] =
+proc close*(matcher: Match): Result[void, string] =
   if matcher.cases.len == 0:
     return err("Match block must have at least one case statement")
   ok()

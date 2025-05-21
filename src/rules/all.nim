@@ -165,9 +165,10 @@ let fncall_rule* = non_terminal_rule("fncall", @[
 ], fncall_reducer)
 
 # value.nim
-let value_rule* = non_terminal_rule("value", @[
+let expr_rule* = non_terminal_rule("expr_value", @[
   new_production(@[init_rule.exact_one]),
-  new_production(@[fncall_rule.exact_one])
+  new_production(@[fncall_rule.exact_one]),
+  new_production(@[identifier_rule.exact_one]),
 ], value_reducer)
 
 # assignment.nim
@@ -177,9 +178,15 @@ let assignment_rule* = non_terminal_rule("assignment", @[
     space.any,
     equal.exact_one,
     space.any,
-    value_rule.exact_one,
+    expr_rule.exact_one,
   ])
 ], assignment_reducer)
+
+# statement.nim
+let statement_rule* = non_terminal_rule("statement", @[
+  new_production(@[assignment_rule.exact_one]),
+  new_production(@[expr_rule.exact_one]),
+], statement_reducer)
 
 # arg_def.nim
 let arg_def_rule* = non_terminal_rule("arg_def", @[
@@ -312,13 +319,6 @@ let macro_call_rule* = non_terminal_rule("macro_call", @[
   new_production(@[case_def_rule.exact_one]),
   new_production(@[else_def_rule.exact_one]),
 ], macro_call_reducer)
-
-# statement.nim
-let statement_rule* = non_terminal_rule("statement", @[
-  new_production(@[assignment_rule.exact_one]),
-  new_production(@[fncall_rule.exact_one]),
-  new_production(@[identifier_rule.exact_one]),
-], statement_reducer)
 
 # comment.nim
 let comment_rule* = non_terminal_rule("comment", @[

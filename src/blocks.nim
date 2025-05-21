@@ -10,19 +10,19 @@ import blocks/scope; export scope
 
 type
   BlockKind* = enum
-    BK_SCOPE, BK_MODULE, BK_FUNCTION, BK_MATCH, BK_CASE, BK_ELSE
+    BK_FILE, BK_MODULE, BK_FUNCTION, BK_MATCH, BK_CASE, BK_ELSE
   Block* = ref object of RootObj
     case kind: BlockKind
-    of BK_SCOPE: scope: Scope
+    of BK_FILE: scope: Scope
     of BK_MODULE: module: Module
     of BK_FUNCTION: fn: Function
-    of BK_MATCH: match_block: Matcher
+    of BK_MATCH: match_block: Match
     of BK_CASE: case_block: Case
     of BK_ELSE: else_block: Else
 
 proc `$`*(asl_block: Block): string =
   case asl_block.kind:
-  of BK_SCOPE: $(asl_block.scope)
+  of BK_FILE: $(asl_block.scope)
   of BK_MODULE: $(asl_block.module)
   of BK_FUNCTION: $(asl_block.fn)
   of BK_MATCH: $(asl_block.match_block)
@@ -41,18 +41,18 @@ proc new_block(matcher: MatchDefinition, spaces: int): Result[Block, string] =
   ok(Block(kind: BK_MATCH, match_block: new_matcher(matcher.name, spaces)))
 
 proc new_block(case_def: CaseDefinition, spaces: int): Result[Block, string] =
-  ok(Block(kind: BK_CASE, case_block: new_case($(case_def.value), spaces)))
+  ok(Block(kind: BK_CASE, case_block: new_case(case_def.value, spaces)))
 
 proc new_block(spaces: int): Result[Block, string] =
   ok(Block(kind: BK_ELSE, else_block: new_else(spaces)))
 
 proc new_block(): Result[Block, string] =
   let scope = ? new_scope()
-  ok(Block(kind: BK_SCOPE, scope: scope))
+  ok(Block(kind: BK_FILE, scope: scope))
 
 proc spaces*(asl_block: Block): int =
   case asl_block.kind:
-  of BK_SCOPE: asl_block.scope.spaces
+  of BK_FILE: asl_block.scope.spaces
   of BK_MODULE: asl_block.module.spaces
   of BK_FUNCTION: asl_block.fn.spaces
   of BK_MATCH: asl_block.match_block.spaces
@@ -61,9 +61,9 @@ proc spaces*(asl_block: Block): int =
 
 proc add_block(parent_block, child_block: Block): Result[Block, string] =
   case parent_block.kind:
-  of BK_SCOPE:
+  of BK_FILE:
     case child_block.kind:
-    of BK_MODULE: ? parent_block.scope.add_module(child_block.module)
+    of BK_MODULE: ? parent_block.scope.add_user_module(child_block.module)
     else: return err(fmt"root block only supports module block as a child")
   of BK_MODULE:
     case child_block.kind:
@@ -91,7 +91,7 @@ proc add_block(parent_block, child_block: Block): Result[Block, string] =
 
 proc close(child_block: Block): Result[Block, string] =
   case child_block.kind:
-  of BK_SCOPE: ? child_block.scope.close()
+  of BK_FILE: ? child_block.scope.close()
   of BK_MODULE: ? child_block.module.close()
   of BK_FUNCTION: ? child_block.fn.close()
   of BK_MATCH: ? child_block.match_block.close()
@@ -177,6 +177,7 @@ proc to_blocks(program: Program): Result[Block, string] =
     parent_block = ? parent_block.add_block(child_block)
 
   scope = ? stack.pop()
+  discard ? scope.close()
   ok(scope)
 
 proc collect_defintions*(program: Program): Result[string, string] =

@@ -13,9 +13,9 @@ app Example:
         d
       else:
         e = S64.remainder(a, 2)
-        f = MODULE.apply(a, d, e)
+        f = Example.apply(a, d, e)
         g = S64.add(a, b)
-        MODULE.solve(b, g, c, f)
+        Example.solve(b, g, c, f)
 
   fn start(U8 seed) returns U8:
     exit_success = U8 0

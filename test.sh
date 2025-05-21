@@ -48,7 +48,7 @@ for dir in project-euler/*/; do
     fi
 
     # Step 2: Compile and run C
-    if ! gcc "$solution_c" -o example_c; then
+    if ! gcc "$solution_c" -O3 -o example_c; then
         echo "❌ C compilation failed for $solution_c"
         ((failures++))
         continue
