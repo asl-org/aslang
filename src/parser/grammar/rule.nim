@@ -38,6 +38,7 @@ type
 
 proc name*(rule: Rule): string = rule.name
 proc kind*(rule: Rule): RuleKind = rule.kind
+proc desc*(rule: Rule): string = rule.desc
 
 proc value*(rule: Rule): string = rule.value
 proc matcher*(rule: Rule): RuleMatcher = rule.matcher

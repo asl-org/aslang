@@ -4,6 +4,35 @@ import common
 
 import "../rules/parse_result"
 
+type Fields* = ref object of RootObj
+  spaces: int
+  field_defs: seq[ArgumentDefinition]
+
+proc spaces*(fields_block: Fields): int = fields_block.spaces
+proc field_defs*(fields_block: Fields): seq[
+    ArgumentDefinition] = fields_block.field_defs
+
+proc new_fields*(spaces: int): Fields =
+  Fields(spaces: spaces)
+
+proc `$`*(fields_block: Fields): string =
+  let prefix = prefix(fields_block.spaces)
+  let child_prefix = child_prefix(fields_block.spaces)
+  var content = @[prefix & "fields:"]
+  for field_def in fields_block.field_defs:
+    content.add(child_prefix & $(field_def))
+  return content.join("\n")
+
+proc add_field_def*(fields_block: Fields,
+    field_def: ArgumentDefinition): Result[void, string] =
+  fields_block.field_defs.add(field_def)
+  ok()
+
+proc close*(fields_block: Fields): Result[void, string] =
+  if fields_block.field_defs.len == 0:
+    return err("Fields block must have at least 1 field definition")
+  ok()
+
 type Else* = ref object of RootObj
   spaces: int
   statements: seq[Statement]

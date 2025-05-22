@@ -10,7 +10,7 @@ import blocks/scope; export scope
 
 type
   BlockKind* = enum
-    BK_FILE, BK_MODULE, BK_FUNCTION, BK_MATCH, BK_CASE, BK_ELSE
+    BK_FILE, BK_MODULE, BK_FUNCTION, BK_MATCH, BK_CASE, BK_ELSE, BK_FIELDS
   Block* = ref object of RootObj
     case kind: BlockKind
     of BK_FILE: scope: Scope
@@ -19,6 +19,7 @@ type
     of BK_MATCH: match_block: Match
     of BK_CASE: case_block: Case
     of BK_ELSE: else_block: Else
+    of BK_FIELDS: fields_block: Fields
 
 proc `$`*(asl_block: Block): string =
   case asl_block.kind:
@@ -28,6 +29,7 @@ proc `$`*(asl_block: Block): string =
   of BK_MATCH: $(asl_block.match_block)
   of BK_CASE: $(asl_block.case_block)
   of BK_ELSE: $(asl_block.else_block)
+  of BK_FIELDS: $(asl_block.fields_block)
 
 proc new_block(def: ModuleDefinition, spaces: int): Result[Block, string] =
   ? validate_prefix(spaces, 0)
@@ -43,8 +45,11 @@ proc new_block(matcher: MatchDefinition, spaces: int): Result[Block, string] =
 proc new_block(case_def: CaseDefinition, spaces: int): Result[Block, string] =
   ok(Block(kind: BK_CASE, case_block: new_case(case_def.value, spaces)))
 
-proc new_block(spaces: int): Result[Block, string] =
+proc new_else_block(spaces: int): Result[Block, string] =
   ok(Block(kind: BK_ELSE, else_block: new_else(spaces)))
+
+proc new_fields_block(spaces: int): Result[Block, string] =
+  ok(Block(kind: BK_FIELDS, fields_block: new_fields(spaces)))
 
 proc new_block(): Result[Block, string] =
   let scope = ? new_scope()
@@ -58,6 +63,7 @@ proc spaces*(asl_block: Block): int =
   of BK_MATCH: asl_block.match_block.spaces
   of BK_CASE: asl_block.case_block.spaces
   of BK_ELSE: asl_block.else_block.spaces
+  of BK_FIELDS: asl_block.fields_block.spaces
 
 proc add_block(parent_block, child_block: Block): Result[Block, string] =
   case parent_block.kind:
@@ -68,6 +74,7 @@ proc add_block(parent_block, child_block: Block): Result[Block, string] =
   of BK_MODULE:
     case child_block.kind:
     of BK_FUNCTION: ? parent_block.module.add_fn(child_block.fn)
+    of BK_FIELDS: ? parent_block.module.add_fields(child_block.fields_block)
     else: return err(fmt"module block only supports function block as a child")
   of BK_FUNCTION:
     case child_block.kind:
@@ -87,6 +94,8 @@ proc add_block(parent_block, child_block: Block): Result[Block, string] =
     return err(fmt"case block does not support any further nested blocks")
   of BK_ELSE:
     return err(fmt"else block does not support any further nested blocks")
+  of BK_FIELDS:
+    return err(fmt"else block does not support any further nested blocks")
   return ok(parent_block)
 
 proc close(child_block: Block): Result[Block, string] =
@@ -97,6 +106,7 @@ proc close(child_block: Block): Result[Block, string] =
   of BK_MATCH: ? child_block.match_block.close()
   of BK_CASE: ? child_block.case_block.close()
   of BK_ELSE: ? child_block.else_block.close()
+  of BK_FIELDS: ? child_block.fields_block.close()
   return ok(child_block)
 
 proc to_blocks(program: Program): Result[Block, string] =
@@ -112,6 +122,7 @@ proc to_blocks(program: Program): Result[Block, string] =
       child_block = ? child_block.close()
       parent_block = ? parent_block.add_block(child_block)
 
+    # statement
     let maybe_statement = line.safe_statement()
     if maybe_statement.is_ok:
       var asl_block = ? stack.peek()
@@ -133,10 +144,32 @@ proc to_blocks(program: Program): Result[Block, string] =
 
       continue
 
+    # struct field def
+    let maybe_struct_field_def = line.safe_struct_field_def()
+    if maybe_struct_field_def.is_ok:
+      var asl_block = ? stack.peek()
+      # echo line
+      # echo asl_block.kind
+      case asl_block.kind:
+      of BK_FIELDS:
+        if line.spaces != 4:
+          return err(fmt"Expected 4 spaces before the struct field definition but found {line.spaces}")
+        ? asl_block.fields_block.add_field_def(maybe_struct_field_def.get)
+      else: return err(fmt"Line {line} can not be added to any block")
+
+      continue
+
+    # fields def
+    let maybe_fields_def = line.safe_fields_def()
+    if maybe_fields_def.is_ok:
+      let fields = ? new_fields_block(line.spaces)
+      ? stack.push(fields)
+      continue
+
     # else block
     let maybe_else_def = line.safe_else_def()
     if maybe_else_def.is_ok:
-      let fn = ? new_block(line.spaces)
+      let fn = ? new_else_block(line.spaces)
       ? stack.push(fn)
       continue
 
