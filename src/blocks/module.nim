@@ -22,6 +22,11 @@ proc kind*(module: Module): ModuleKind = module.kind
 
 proc `$`*(module: Module): string =
   var content: seq[string] = @[prefix(module.spaces) & $(module.def)]
+
+  case module.def.kind:
+  of MDK_STRUCT: content.add($(module.fields.get))
+  else: discard
+
   for fn in module.fns:
     content.add($(fn))
   content.join("\n")
@@ -87,7 +92,8 @@ proc close*(module: Module): Result[void, string] =
       if module.fns.len == 0:
         return err(fmt"app block must have at least one function block")
     of MDK_STRUCT:
-      discard
+      if module.fields.is_none:
+        return err(fmt"struct module must have exactly one fields block")
     of MDK_UNION:
       if module.fns.len == 0:
         return err(fmt"app block must have at least one function block")

@@ -84,13 +84,18 @@ let integer* = non_terminal_rule("integer", @[
 ], raw_parts_reducer)
 
 # keyword_arg.nim
+let keyword_arg_value_rule* = non_terminal_rule("keyword_arg_value", @[
+  new_production(@[integer.exact_one]),
+  new_production(@[identifier_rule.exact_one])
+], keyword_arg_value_reducer)
+
 let keyword_arg_rule* = non_terminal_rule("keyword_arg", @[
   new_production(@[
     identifier_rule.exact_one,
     space.any,
     colon.exact_one,
     space.any,
-    integer.exact_one,
+    keyword_arg_value_rule.exact_one,
   ])
 ], keyword_arg_reducer)
 

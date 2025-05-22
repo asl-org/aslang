@@ -1,4 +1,6 @@
-import results, strformat, strutils, tables, sequtils, parseutils, typetraits, sets
+import results, options, strformat, typetraits
+import strutils, sequtils, parseutils
+import sets, tables, algorithm
 
 import native
 import module
@@ -184,38 +186,87 @@ proc get(q: ResolutionQueue): (Module, Function) =
   q.data.delete(0)
   return info
 
-proc resolve_native_numeric(module: Module, literal: Literal): Result[string, string] =
-  let numeric_value = $(literal.integer)
+proc resolve_native_numeric(module: Module, numeric_value: Atom): Result[string, string] =
+  let numeric_value_str = $(numeric_value)
   case $(module.def.name):
-  of "U8": ok($( ? safe_parse[uint8](numeric_value)))
-  of "U16": ok($( ? safe_parse[uint16](numeric_value)))
-  of "U32": ok($( ? safe_parse[uint32](numeric_value)))
-  of "U64": ok($( ? safe_parse[uint64](numeric_value)))
-  of "S8": ok($( ? safe_parse[int8](numeric_value)))
-  of "S16": ok($( ? safe_parse[int16](numeric_value)))
-  of "S32": ok($( ? safe_parse[int32](numeric_value)))
-  of "S64": ok($( ? safe_parse[int64](numeric_value)))
-  of "F32": ok($( ? safe_parse[float32](numeric_value)))
-  of "F64": ok($( ? safe_parse[float64](numeric_value)))
+  of "U8": ok($( ? safe_parse[uint8](numeric_value_str)))
+  of "U16": ok($( ? safe_parse[uint16](numeric_value_str)))
+  of "U32": ok($( ? safe_parse[uint32](numeric_value_str)))
+  of "U64": ok($( ? safe_parse[uint64](numeric_value_str)))
+  of "S8": ok($( ? safe_parse[int8](numeric_value_str)))
+  of "S16": ok($( ? safe_parse[int16](numeric_value_str)))
+  of "S32": ok($( ? safe_parse[int32](numeric_value_str)))
+  of "S64": ok($( ? safe_parse[int64](numeric_value_str)))
+  of "F32": ok($( ? safe_parse[float32](numeric_value_str)))
+  of "F64": ok($( ? safe_parse[float64](numeric_value_str)))
   else: err(fmt"Only U8/U16/U32/U64/S8/S16/S32/S64/F32/F64 support numeric values in initializer")
 
-proc resolve_literal(module: Module, literal: Literal): Result[string, string] =
+proc resolve_literal(
+  scope: Scope,
+  fn_scope: FunctionScope,
+  module: Module,
+  literal: Literal,
+  queue: ResolutionQueue,
+): Result[string, string] =
   case module.kind:
   of MK_NATIVE:
     case literal.kind:
     of LTK_STRUCT:
       return err(fmt"ASL native modules do not support structs")
     of LTK_NATIVE_NUMERIC:
-      return resolve_native_numeric(module, literal)
+      return resolve_native_numeric(module, literal.integer)
   of MK_USER:
-    # TODO: check for init function with matching keyword arg list
-    err(fmt"Should be unreachable since structs are not supported yet")
+    case module.def.kind:
+    of MDK_STRUCT:
+      case literal.kind:
+      of LTK_STRUCT:
+        if module.fields.is_none:
+          return err(fmt"Unexpected error there is some problem with blockification logic")
+        if module.fields.get.field_defs.len != literal.struct.kwargs.len:
+          return err(fmt"{literal.location} Expected {module.fields.get.field_defs.len} fields but found {literal.struct.kwargs.len}")
+
+        # TODO: make sure initialization also adds a destruction call.
+        var struct_literal_code: seq[string]
+        for kwarg in literal.struct.kwargs:
+          var found = false
+          var field: ArgumentDefinition
+          for field_def in module.fields.get.field_defs:
+            if $(kwarg.name) == $(field_def.name):
+              found = true
+              field = field_def
+              break
+
+          if not found:
+            return err(fmt"{literal.location} Unknown field {kwarg.name} found")
+
+          case kwarg.value.kind:
+          of KWAV_ATOM:
+            let literal_module = ? scope.find_module(field.module)
+            let nn_code = ? resolve_native_numeric(literal_module,
+                kwarg.value.atom)
+            struct_literal_code.add(fmt".{field.name} = {nn_code}")
+          of KWAV_IDENTIFIER:
+            let arg = ? fn_scope.get_arg(kwarg.value.identifier)
+            if $(arg.module) != $(field.module):
+              return err(fmt"{kwarg.value.identifier.location} expected {field.module} but found {arg.module}")
+            struct_literal_code.add(fmt".{field.name} = {kwarg.value.identifier}")
+
+        let init_fn = "init".new_identifier.new_fn_def(module.def.name,
+            module.fields.get.field_defs).new_native_function(fmt"{module.def.name}_init")
+        queue.add(module, init_fn)
+        ok("{" & struct_literal_code.join(", ") & "}")
+      of LTK_NATIVE_NUMERIC:
+        err(fmt"User defined modules can not use native numerics for initialization")
+    else:
+      # TODO: check for init function with matching keyword arg list
+      err(fmt"Should be unreachable since union are not supported yet")
 
 proc resolve_fncall(
   scope: Scope,
   module: Module,
   fn_scope: FunctionScope,
-  fncall: FunctionCall
+  fncall: FunctionCall,
+  queue: ResolutionQueue,
 ): Result[(Function, string), string] =
   for fn in module.fns:
     if $(fn.def.name) != $(fncall.fn_name): continue
@@ -231,7 +282,8 @@ proc resolve_fncall(
           break
       of AK_LITERAL:
         let expected_module = ? scope.find_module(arg_def.module)
-        let maybe_resolved = expected_module.resolve_literal(arg.literal)
+        let maybe_resolved = scope.resolve_literal(fn_scope, expected_module,
+            arg.literal, queue)
         if maybe_resolved.is_err:
           matched = false
           break
@@ -257,14 +309,15 @@ proc resolve_expression(
   of EK_INIT:
     let init = expression.init
     let init_module = ? scope.find_module(init.module_name)
-    let literal_str = ? init_module.resolve_literal(init.literal)
+    let literal_str = ? scope.resolve_literal(fn_scope, init_module,
+        init.literal, queue)
 
     return ok((init_module.def.name, literal_str))
   of EK_FNCALL:
     let fncall = expression.fncall
     let fncall_module = ? scope.find_module(fncall.module_name)
     let (fncall_fn, fncall_code) = ? scope.resolve_fncall(fncall_module,
-        fn_scope, fncall)
+        fn_scope, fncall, queue)
     queue.add(fncall_module, fncall_fn)
 
     return ok((fncall_fn.def.returns, fncall_code))
@@ -302,7 +355,8 @@ proc resolve_case_block(
 ): Result[(ArgumentDefinition, string), string] =
   var case_scope = ? fn_scope.clone()
 
-  let case_value = ? module.resolve_literal(case_block.value.new_literal())
+  let case_value = ? scope.resolve_literal(fn_scope, module,
+      case_block.value.new_literal(), queue)
   var case_block_code = @[fmt"case {case_value}: " & "{"]
 
   for index, statement in case_block.statements:
@@ -394,11 +448,24 @@ proc resolve_function(scope: Scope, app_module: Module,
   while queue.len > 0:
     let (module, fn) = queue.get()
     # echo fn.def.name
-
-    # resolve user functions only since native functions do not have steps
-    case fn.kind:
-    of FK_NATIVE: continue
-    of FK_USER: discard
+    case module.kind:
+    of MK_NATIVE:
+      continue
+    of MK_USER:
+      # resolve user functions only since native functions do not have steps
+      case fn.kind:
+      of FK_NATIVE:
+        case $(fn.def.name):
+        of "init":
+          let struct_def_code = @[
+            "typedef struct {",
+            fn.def.arg_def_list.map_it(fmt"{it.module} {it.name};").join("\n"),
+            "}" & fmt"{fn.def.returns};",
+          ].join("\n")
+          app_impl_code.add(struct_def_code)
+        else: discard
+        continue
+      of FK_USER: discard
 
     # only user functions will reach here
     var fn_scope = FunctionScope()
@@ -447,7 +514,7 @@ proc resolve_function(scope: Scope, app_module: Module,
     fn_code.add("}")
     app_impl_code.add(fn_code.join("\n"))
 
-  let app_code = @[app_def_code.join("\n"), app_impl_code.join("\n")]
+  let app_code = @[app_def_code.join("\n"), app_impl_code.reversed().join("\n")]
   ok(app_code.join("\n"))
 
 proc resolve(scope: Scope): Result[(Module, string), string] =
