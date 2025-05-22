@@ -30,6 +30,7 @@ proc asl_grammar*(): Result[Grammar[ParseResult], string] =
     identifier_tail_rule,
     identifier_rule,
     integer,
+    keyword_arg_value_rule,
     keyword_arg_rule,
     leading_keyword_arg_rule,
     struct_rule,

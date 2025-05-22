@@ -29,10 +29,17 @@ proc identifier_reducer*(location: Location, parts: seq[seq[seq[
   identifier.to_parse_result()
 
 # keyword_arg.nim
+proc keyword_arg_value_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  if parts[0].len > 0:
+    return parts[0][0][0].atom.new_keyword_arg_value().to_parse_result()
+  if parts[1].len > 0:
+    return parts[1][0][0].identifier.new_keyword_arg_value().to_parse_result()
+
 proc keyword_arg_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   let name = parts[0][0][0].identifier
-  let value = $(parts[0][4][0].atom)
+  let value = parts[0][4][0].kwarg_val
   name.new_keyword_arg(value).to_parse_result()
 
 proc leading_keyword_arg_reducer*(location: Location, parts: seq[seq[seq[

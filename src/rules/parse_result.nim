@@ -32,17 +32,42 @@ proc clone(identifier: Identifier): Identifier =
   Identifier(name: identifier.name, location: identifier.location)
 
 # keyword_arg.nim
+type
+  KeywordArgValueKind* = enum
+    KWAV_ATOM, KWAV_IDENTIFIER
+  KeywordArgValue* = ref object of RootObj
+    location: Location
+    case kind: KeywordArgValueKind
+    of KWAV_ATOM: atom*: Atom
+    of KWAV_IDENTIFIER: identifier*: Identifier
+
+
+proc kind*(kwarg_val: KeywordArgValue): KeywordArgValueKind = kwarg_val.kind
+proc atom*(kwarg_val: KeywordArgValue): Atom = kwarg_val.atom
+proc identifier*(kwarg_val: KeywordArgValue): Identifier = kwarg_val.identifier
+
+proc `$`*(kwarg_val: KeywordArgValue): string =
+  case kwarg_val.kind:
+  of KWAV_ATOM: $(kwarg_val.atom)
+  of KWAV_IDENTIFIER: $(kwarg_val.identifier)
+
+proc new_keyword_arg_value*(atom: Atom): KeywordArgValue =
+  KeywordArgValue(kind: KWAV_ATOM, atom: atom)
+
+proc new_keyword_arg_value*(identifier: Identifier): KeywordArgValue =
+  KeywordArgValue(kind: KWAV_IDENTIFIER, identifier: identifier)
+
 type KeywordArg* = ref object of RootObj
   name: Identifier
-  value: string
+  value: KeywordArgValue
 
 proc name*(kwarg: KeywordArg): Identifier = kwarg.name
-proc value*(kwarg: KeywordArg): string = kwarg.value
+proc value*(kwarg: KeywordArg): KeywordArgValue = kwarg.value
 
 proc `$`*(kwarg: KeywordArg): string =
   fmt"{kwarg.name}: {kwarg.value}"
 
-proc new_keyword_arg*(name: Identifier, value: string): KeywordArg =
+proc new_keyword_arg*(name: Identifier, value: KeywordArgValue): KeywordArg =
   KeywordArg(name: name, value: value)
 
 # struct.nim
@@ -560,6 +585,7 @@ type
   ParserResultKind* = enum
     PRK_ATOM,
     PRK_IDENTIFER,
+    PRK_KEYWORD_ARG_VALUE,
     PRK_KEYWORD_ARG,
     PRK_STRUCT,
     PRK_LITERAL,
@@ -586,6 +612,7 @@ type
     case kind*: ParserResultKind
     of PRK_ATOM: atom*: Atom
     of PRK_IDENTIFER: identifier*: Identifier
+    of PRK_KEYWORD_ARG_VALUE: kwarg_val*: KeywordArgValue
     of PRK_KEYWORD_ARG: kwarg*: KeywordArg
     of PRK_STRUCT: struct*: Struct
     of PRK_LITERAL: literal*: Literal
@@ -613,6 +640,7 @@ proc `$`*(pr: ParseResult): string =
   case pr.kind:
   of PRK_ATOM: $(pr.atom)
   of PRK_IDENTIFER: $(pr.identifier)
+  of PRK_KEYWORD_ARG_VALUE: $(pr.kwarg_val)
   of PRK_KEYWORD_ARG: $(pr.kwarg)
   of PRK_STRUCT: $(pr.struct)
   of PRK_LITERAL: $(pr.literal)
@@ -641,6 +669,9 @@ proc to_parse_result*(atom: Atom): ParseResult =
 
 proc to_parse_result*(identifier: Identifier): ParseResult =
   ParseResult(kind: PRK_IDENTIFER, identifier: identifier)
+
+proc to_parse_result*(kwarg_val: KeywordArgValue): ParseResult =
+  ParseResult(kind: PRK_KEYWORD_ARG_VALUE, kwarg_val: kwarg_val)
 
 proc to_parse_result*(kwarg: KeywordArg): ParseResult =
   ParseResult(kind: PRK_KEYWORD_ARG, kwarg: kwarg)
