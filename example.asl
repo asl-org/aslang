@@ -1,18 +1,21 @@
-struct Bitset:
+struct Array:
   fields:
     Pointer ptr
-    U64 bits
+    U64 size
+
+  fn create(U64 size) returns Array:
+    ptr = System.allocate(size)
+    Array { ptr: ptr, size: size }
+
+  fn destroy(Array arr) returns U8:
+    System.free(arr.ptr)
 
 app Example:
   fn start(U8 seed) returns U8:
     exit_success = U8 0
 
-    bits = U64 64
-    ptr = System.allocate(bits)
-
-    primes = Bitset { ptr: ptr, bits: 64 }
-    U64.print(primes.bits)
-
-    System.free(ptr)
+    arr = Array.create(10)
+    res = Array.destroy(arr)
+    U8.print(res)
 
     exit_success

@@ -386,18 +386,40 @@ proc resolve_statement(
     of MK_NATIVE:
       statement_code = fmt"{return_type} {statement.assign.dest} = {expr_code};"
     of MK_USER:
-      let temp_var = fn_scope.temp_variable()
-      statement_code = @[
-        fmt"{return_type} {temp_var} = {expr_code};",
-        fmt"{return_type}* {statement.assign.dest} = &{temp_var};",
-      ].join("\n")
+      # TODO: Cleanup if possible
+      case statement.assign.expression.kind:
+      of EK_INIT:
+        let temp_var = fn_scope.temp_variable()
+        statement_code = @[
+          fmt"{return_type} {temp_var} = {expr_code};",
+          fmt"{return_type}* {statement.assign.dest} = &{temp_var};",
+        ].join("\n")
+      else:
+        let return_type_code = ? scope.resolve_return_type(return_type)
+        statement_code = fmt"{return_type_code} {statement.assign.dest} = {expr_code};"
     ok((return_arg_def, statement_code))
   of SK_EXPR:
     let (return_type, expr_code) = ? scope.resolve_expression(fn_scope,
         statement.expression, queue)
     let return_arg_def = new_arg_def(return_type, fn_scope.temp_variable)
+
+    let return_arg_module = ? scope.find_module(return_type)
     let return_type_code = ? scope.resolve_return_type(return_type)
-    var statement_code = fmt"{return_type_code} {return_arg_def.name} = {expr_code};"
+    var statement_code: string
+
+    case return_arg_module.kind:
+    of MK_NATIVE:
+      statement_code = fmt"{return_type_code} {return_arg_def.name} = {expr_code};"
+    of MK_USER:
+      case statement.expression.kind:
+      of EK_INIT:
+        let temp_var_name = fn_scope.temp_variable()
+        statement_code = @[
+          fmt"{return_type} {temp_var_name} = {expr_code};",
+          fmt"{return_type}* {return_arg_def.name} = &{temp_var_name};"
+        ].join("\n")
+      else:
+        statement_code = fmt"{return_type_code} {return_arg_def.name} = {expr_code};"
     ok((return_arg_def, statement_code))
 
 proc resolve_case_block(
