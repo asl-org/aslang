@@ -130,33 +130,57 @@ proc new_init*(mod_name: Identifier, literal: Literal,
     location: Location): Initializer =
   Initializer(module_name: mod_name, literal: literal, location: location)
 
+# struct.nim
+type
+  StructGetter* = ref object of RootObj
+    target: Identifier
+    field: Identifier
+    location: Location
+
+proc `$`*(struct_getter: StructGetter): string =
+  fmt"{struct_getter.target}->{struct_getter.field}"
+
+proc target*(struct_getter: StructGetter): Identifier = struct_getter.target
+proc field*(struct_getter: StructGetter): Identifier = struct_getter.field
+
+proc new_struct_getter*(target: Identifier, field: Identifier,
+    location: Location): StructGetter =
+  StructGetter(target: target, field: field, location: location)
+
 # argument.nim
 type
   ArgumentKind* = enum
-    AK_IDENTIFIER, AK_LITERAL
+    AK_IDENTIFIER, AK_LITERAL, AK_STRUCT_GETTER
   Argument* = ref object of RootObj
     case kind: ArgumentKind
     of AK_IDENTIFIER: name: Identifier
     of AK_LITERAL: literal: Literal
+    of AK_STRUCT_GETTER: struct_getter: StructGetter
 
 proc `$`*(arg: Argument): string =
   case arg.kind:
   of AK_IDENTIFIER: $(arg.name)
   of AK_LITERAL: $(arg.literal)
+  of AK_STRUCT_GETTER: $(arg.struct_getter)
 
 proc kind*(arg: Argument): ArgumentKind = arg.kind
 proc name*(arg: Argument): Identifier = arg.name
 proc literal*(arg: Argument): Literal = arg.literal
+proc struct_getter*(arg: Argument): StructGetter = arg.struct_getter
 proc location*(arg: Argument): Location =
   case arg.kind:
   of AK_IDENTIFIER: arg.name.location
   of AK_LITERAL: arg.literal.location
+  of AK_STRUCT_GETTER: arg.struct_getter.location
 
 proc new_argument*(literal: Literal): Argument =
   Argument(kind: AK_LITERAL, literal: literal)
 
 proc new_argument*(name: Identifier): Argument =
   Argument(kind: AK_IDENTIFIER, name: name)
+
+proc new_argument*(struct_getter: StructGetter): Argument =
+  Argument(kind: AK_STRUCT_GETTER, struct_getter: struct_getter)
 
 # fncall.nim
 type FunctionCall* = ref object of RootObj
@@ -590,6 +614,7 @@ type
     PRK_STRUCT,
     PRK_LITERAL,
     PRK_INIT,
+    # PRK_STRUCT_GETTER,
     PRK_ARG,
     PRK_ARGLIST,
     PRK_FNCALL,
@@ -617,6 +642,7 @@ type
     of PRK_STRUCT: struct*: Struct
     of PRK_LITERAL: literal*: Literal
     of PRK_INIT: init*: Initializer
+    # of PRK_STRUCT_GETTER: struct_getter*: StructGetter
     of PRK_ARG: arg*: Argument
     of PRK_ARGLIST: arglist*: seq[Argument]
     of PRK_FNCALL: fncall*: FunctionCall
@@ -645,6 +671,7 @@ proc `$`*(pr: ParseResult): string =
   of PRK_STRUCT: $(pr.struct)
   of PRK_LITERAL: $(pr.literal)
   of PRK_INIT: $(pr.init)
+  # of PRK_STRUCT_GETTER: $(pr.struct_getter)
   of PRK_ARG: $(pr.arg)
   of PRK_ARGLIST: $(pr.arglist)
   of PRK_FNCALL: $(pr.fncall)
@@ -684,6 +711,9 @@ proc to_parse_result*(literal: Literal): ParseResult =
 
 proc to_parse_result*(init: Initializer): ParseResult =
   ParseResult(kind: PRK_INIT, init: init)
+
+# proc to_parse_result*(struct_getter: StructGetter): ParseResult =
+#   ParseResult(kind: PRK_STRUCT_GETTER, struct_getter: struct_getter)
 
 proc to_parse_result*(arg: Argument): ParseResult =
   ParseResult(kind: PRK_ARG, arg: arg)

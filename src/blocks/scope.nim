@@ -261,6 +261,32 @@ proc resolve_literal(
       # TODO: check for init function with matching keyword arg list
       err(fmt"Should be unreachable since union are not supported yet")
 
+proc resolve_struct_getter(
+  scope: Scope,
+  fn_scope: FunctionScope,
+  arg_def: ArgumentDefinition,
+  struct_getter: StructGetter,
+): Result[string, string] =
+  let arg_in_scope = ? fn_scope.get_arg(struct_getter.target)
+  let arg_module = ? scope.find_module(arg_in_scope.module)
+  case arg_module.kind:
+  of MK_NATIVE:
+    return err(fmt"Native modules can not be structs")
+  of MK_USER:
+    case arg_module.def.kind:
+    of MDK_STRUCT:
+      var found = false
+      for field_def in arg_module.fields.get.field_defs:
+        if $(field_def.name) != $(struct_getter.field): continue
+        if $(field_def.module) != $(arg_def.module): continue
+        found = true; break
+      if not found:
+        return err(fmt"{struct_getter} did not match the function signature")
+      else:
+        return ok("{struct_getter.target}->{struct_getter.field}")
+    else:
+      return err(fmt"{arg_module.def} is not a struct")
+
 proc resolve_fncall(
   scope: Scope,
   module: Module,
@@ -282,8 +308,16 @@ proc resolve_fncall(
           break
       of AK_LITERAL:
         let expected_module = ? scope.find_module(arg_def.module)
+        # TODO: resolving a struct literal here will be passed to fncall
+        # by value which may cause un-necessary copies. Handle that.
         let maybe_resolved = scope.resolve_literal(fn_scope, expected_module,
             arg.literal, queue)
+        if maybe_resolved.is_err:
+          matched = false
+          break
+      of AK_STRUCT_GETTER:
+        let maybe_resolved = scope.resolve_struct_getter(fn_scope, arg_def,
+            arg.struct_getter)
         if maybe_resolved.is_err:
           matched = false
           break
@@ -325,6 +359,15 @@ proc resolve_expression(
     let arg_in_scope = ? fn_scope.get_arg(expression.identifier)
     return ok((arg_in_scope.module, $(arg_in_scope.name)))
 
+proc resolve_return_type(scope: Scope, module_name: Identifier): Result[string, string] =
+  let module = ? scope.find_module(module_name)
+  case module.kind:
+  of MK_NATIVE: ok(fmt"{module_name}")
+  of MK_USER:
+    case module.def.kind:
+    of MDK_STRUCT: ok(fmt"{module_name}*")
+    else: ok(fmt"{module_name}")
+
 proc resolve_statement(
   scope: Scope,
   fn_scope: FunctionScope,
@@ -336,13 +379,25 @@ proc resolve_statement(
     let (return_type, expr_code) = ? scope.resolve_expression(fn_scope,
         statement.assign.expression, queue)
     let return_arg_def = new_arg_def(return_type, statement.assign.dest)
-    let statement_code = fmt"{return_type} {statement.assign.dest} = {expr_code};"
+    let return_arg_module = ? scope.find_module(return_arg_def.module)
+
+    var statement_code: string
+    case return_arg_module.kind:
+    of MK_NATIVE:
+      statement_code = fmt"{return_type} {statement.assign.dest} = {expr_code};"
+    of MK_USER:
+      let temp_var = fn_scope.temp_variable()
+      statement_code = @[
+        fmt"{return_type} {temp_var} = {expr_code};",
+        fmt"{return_type}* {statement.assign.dest} = &{temp_var};",
+      ].join("\n")
     ok((return_arg_def, statement_code))
   of SK_EXPR:
     let (return_type, expr_code) = ? scope.resolve_expression(fn_scope,
         statement.expression, queue)
     let return_arg_def = new_arg_def(return_type, fn_scope.temp_variable)
-    let statement_code = fmt"{return_type} {return_arg_def.name} = {expr_code};"
+    let return_type_code = ? scope.resolve_return_type(return_type)
+    var statement_code = fmt"{return_type_code} {return_arg_def.name} = {expr_code};"
     ok((return_arg_def, statement_code))
 
 proc resolve_case_block(
@@ -354,7 +409,9 @@ proc resolve_case_block(
   queue: ResolutionQueue
 ): Result[(ArgumentDefinition, string), string] =
   var case_scope = ? fn_scope.clone()
-
+  # TODO: case macros do yet support pattern matching via
+  # structs they only support native numeric. Ensure that
+  # it does not occurs unintentionally.
   let case_value = ? scope.resolve_literal(fn_scope, module,
       case_block.value.new_literal(), queue)
   var case_block_code = @[fmt"case {case_value}: " & "{"]
@@ -435,7 +492,8 @@ proc resolve_match_block(
   # IMPORTANT
   # insert the `match_block_result_var` since we don't know up until now about the
   # data type that will be returned from the switch case statement
-  match_block_code.insert(fmt"{block_return_module[0]} {match_block_result_var};", 0)
+  let return_type_code = ? scope.resolve_return_type(block_return_module[0])
+  match_block_code.insert(fmt"{return_type_code} {match_block_result_var};", 0)
   return ok((return_arg_def, match_block_code.join("\n")))
 
 proc resolve_function(scope: Scope, app_module: Module,
@@ -443,7 +501,8 @@ proc resolve_function(scope: Scope, app_module: Module,
   var queue = new_resolution_queue()
   queue.add(app_module, start_fn)
   var app_impl_code: seq[string]
-  var app_def_code: seq[string]
+  var app_fn_def_code: seq[string]
+  var app_struct_def_code: seq[string]
   # perform function dependent bfs
   while queue.len > 0:
     let (module, fn) = queue.get()
@@ -462,26 +521,24 @@ proc resolve_function(scope: Scope, app_module: Module,
             fn.def.arg_def_list.map_it(fmt"{it.module} {it.name};").join("\n"),
             "}" & fmt"{fn.def.returns};",
           ].join("\n")
-          app_impl_code.add(struct_def_code)
+          app_struct_def_code.add(struct_def_code)
         else: discard
         continue
       of FK_USER: discard
 
     # only user functions will reach here
     var fn_scope = FunctionScope()
+    var return_code = ? scope.resolve_return_type(fn.def.returns)
 
-    discard ? scope.find_module(fn.def.returns)
+    var arg_def_code: seq[string]
     for arg in fn.def.arg_def_list:
-      discard ? scope.find_module(arg.module)
+      let arg_type_code = ? scope.resolve_return_type(arg.module)
       ? fn_scope.add_arg(arg)
+      arg_def_code.add(fmt"{arg_type_code} {arg.name}")
 
-
-    let fn_arg_def_code = fn.def.arg_def_list.map_it($(it.module)).join(", ")
-    app_def_code.add(fmt"{fn.def.returns} {module.def.name}_{fn.def.name}({fn_arg_def_code});")
-
-    let args_def_code = fn.def.arg_def_list.map_it(
-        fmt"{it.module} {it.name}").join(", ")
-    var fn_code = @[fmt"{fn.def.returns} {module.def.name}_{fn.def.name}({args_def_code})" & "{"]
+    let args_def_code_str = arg_def_code.join(", ")
+    app_fn_def_code.add(fmt"{return_code} {module.def.name}_{fn.def.name}({args_def_code_str});")
+    var fn_code = @[fmt"{return_code} {module.def.name}_{fn.def.name}({args_def_code_str})" & "{"]
 
     for index, step in fn.steps:
       case step.kind:
@@ -514,8 +571,12 @@ proc resolve_function(scope: Scope, app_module: Module,
     fn_code.add("}")
     app_impl_code.add(fn_code.join("\n"))
 
-  let app_code = @[app_def_code.join("\n"), app_impl_code.reversed().join("\n")]
-  ok(app_code.join("\n"))
+  let app_code = @[
+      app_struct_def_code.reversed.join("\n"),
+      app_fn_def_code.reversed.join("\n"),
+      app_impl_code.reversed.join("\n")
+    ].join("\n")
+  ok(app_code)
 
 proc resolve(scope: Scope): Result[(Module, string), string] =
   let app = ? scope.find_app()
