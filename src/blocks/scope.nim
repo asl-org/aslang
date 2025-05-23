@@ -201,6 +201,55 @@ proc resolve_native_numeric(module: Module, numeric_value: Atom): Result[string,
   of "F64": ok($( ? safe_parse[float64](numeric_value_str)))
   else: err(fmt"Only U8/U16/U32/U64/S8/S16/S32/S64/F32/F64 support numeric values in initializer")
 
+proc resolve_struct_literal(
+  scope: Scope,
+  fn_scope: FunctionScope,
+  module: Module,
+  literal: Literal,
+  queue: ResolutionQueue
+): Result[string, string] =
+  case literal.kind:
+  of LTK_STRUCT:
+    if module.fields.is_none:
+      return err(fmt"Unexpected error there is some problem with blockification logic")
+    if module.fields.get.field_defs.len != literal.struct.kwargs.len:
+      return err(fmt"{literal.location} Expected {module.fields.get.field_defs.len} fields but found {literal.struct.kwargs.len}")
+
+    # TODO: make sure initialization also adds a destruction call.
+    var struct_init_fncall_args: seq[string]
+    for kwarg in literal.struct.kwargs:
+      var found = false
+      var field: ArgumentDefinition
+      for field_def in module.fields.get.field_defs:
+        if $(kwarg.name) == $(field_def.name):
+          found = true
+          field = field_def
+          break
+
+      if not found:
+        return err(fmt"{literal.location} Unknown field {kwarg.name} found")
+
+      case kwarg.value.kind:
+      of KWAV_ATOM:
+        let literal_module = ? scope.find_module(field.module)
+        let nn_code = ? resolve_native_numeric(literal_module,
+            kwarg.value.atom)
+        struct_init_fncall_args.add(nn_code)
+      of KWAV_IDENTIFIER:
+        let arg = ? fn_scope.get_arg(kwarg.value.identifier)
+        if $(arg.module) != $(field.module):
+          return err(fmt"{kwarg.value.identifier.location} expected {field.module} but found {arg.module}")
+        struct_init_fncall_args.add(fmt"{kwarg.value.identifier}")
+
+    let init_fn = "init".new_identifier.new_fn_def(module.def.name,
+        module.fields.get.field_defs).new_native_function(fmt"{module.def.name}_init")
+    queue.add(module, init_fn)
+
+    let struct_init_fncall_args_str = struct_init_fncall_args.join(", ")
+    ok(fmt"{module.def.name}_init({struct_init_fncall_args_str})")
+  of LTK_NATIVE_NUMERIC:
+    err(fmt"User defined modules can not use native numerics for initialization")
+
 proc resolve_literal(
   scope: Scope,
   fn_scope: FunctionScope,
@@ -211,52 +260,11 @@ proc resolve_literal(
   case module.kind:
   of MK_NATIVE:
     case literal.kind:
-    of LTK_STRUCT:
-      return err(fmt"ASL native modules do not support structs")
-    of LTK_NATIVE_NUMERIC:
-      return resolve_native_numeric(module, literal.integer)
+    of LTK_STRUCT: err(fmt"ASL native modules do not support structs")
+    of LTK_NATIVE_NUMERIC: resolve_native_numeric(module, literal.integer)
   of MK_USER:
     case module.def.kind:
-    of MDK_STRUCT:
-      case literal.kind:
-      of LTK_STRUCT:
-        if module.fields.is_none:
-          return err(fmt"Unexpected error there is some problem with blockification logic")
-        if module.fields.get.field_defs.len != literal.struct.kwargs.len:
-          return err(fmt"{literal.location} Expected {module.fields.get.field_defs.len} fields but found {literal.struct.kwargs.len}")
-
-        # TODO: make sure initialization also adds a destruction call.
-        var struct_literal_code: seq[string]
-        for kwarg in literal.struct.kwargs:
-          var found = false
-          var field: ArgumentDefinition
-          for field_def in module.fields.get.field_defs:
-            if $(kwarg.name) == $(field_def.name):
-              found = true
-              field = field_def
-              break
-
-          if not found:
-            return err(fmt"{literal.location} Unknown field {kwarg.name} found")
-
-          case kwarg.value.kind:
-          of KWAV_ATOM:
-            let literal_module = ? scope.find_module(field.module)
-            let nn_code = ? resolve_native_numeric(literal_module,
-                kwarg.value.atom)
-            struct_literal_code.add(fmt".{field.name} = {nn_code}")
-          of KWAV_IDENTIFIER:
-            let arg = ? fn_scope.get_arg(kwarg.value.identifier)
-            if $(arg.module) != $(field.module):
-              return err(fmt"{kwarg.value.identifier.location} expected {field.module} but found {arg.module}")
-            struct_literal_code.add(fmt".{field.name} = {kwarg.value.identifier}")
-
-        let init_fn = "init".new_identifier.new_fn_def(module.def.name,
-            module.fields.get.field_defs).new_native_function(fmt"{module.def.name}_init")
-        queue.add(module, init_fn)
-        ok("{" & struct_literal_code.join(", ") & "}")
-      of LTK_NATIVE_NUMERIC:
-        err(fmt"User defined modules can not use native numerics for initialization")
+    of MDK_STRUCT: scope.resolve_struct_literal(fn_scope, module, literal, queue)
     else:
       # TODO: check for init function with matching keyword arg list
       err(fmt"Should be unreachable since union are not supported yet")
@@ -270,8 +278,7 @@ proc resolve_struct_getter(
   let arg_in_scope = ? fn_scope.get_arg(struct_getter.target)
   let arg_module = ? scope.find_module(arg_in_scope.module)
   case arg_module.kind:
-  of MK_NATIVE:
-    return err(fmt"Native modules can not be structs")
+  of MK_NATIVE: err(fmt"Native modules can not be structs")
   of MK_USER:
     case arg_module.def.kind:
     of MDK_STRUCT:
@@ -279,13 +286,39 @@ proc resolve_struct_getter(
       for field_def in arg_module.fields.get.field_defs:
         if $(field_def.name) != $(struct_getter.field): continue
         if $(field_def.module) != $(arg_def.module): continue
-        found = true; break
-      if not found:
-        return err(fmt"{struct_getter} did not match the function signature")
-      else:
-        return ok("{struct_getter.target}->{struct_getter.field}")
-    else:
-      return err(fmt"{arg_module.def} is not a struct")
+        found = true
+        break
+
+      if found: ok("{struct_getter.target}->{struct_getter.field}")
+      else: err(fmt"{struct_getter} did not match the function signature")
+    else: err(fmt"{arg_module.def} is not a struct")
+
+proc resolve_fncall_arg(
+  scope: Scope,
+  fn_scope: FunctionScope,
+  arg_def: ArgumentDefinition,
+  arg: Argument,
+  queue: ResolutionQueue,
+): Result[void, string] =
+  case arg.kind:
+  of AK_IDENTIFIER:
+    let arg_in_scope = ? fn_scope.get_arg(arg.name)
+    if $(arg_in_scope.module) != $(arg_def.module):
+      return err(fmt"Expected {arg.name} to be of type {arg_def.module} but found {arg_in_scope.module}")
+  of AK_LITERAL:
+    let expected_module = ? scope.find_module(arg_def.module)
+    # TODO: resolving a struct literal here will be passed to fncall
+    # by value which may cause un-necessary copies. Handle that.
+    let maybe_resolved = scope.resolve_literal(fn_scope, expected_module,
+        arg.literal, queue)
+    if maybe_resolved.is_err:
+      return err(fmt"Expected {arg.literal} to be of type {arg_def.module}")
+  of AK_STRUCT_GETTER:
+    let maybe_resolved = scope.resolve_struct_getter(fn_scope, arg_def,
+        arg.struct_getter)
+    if maybe_resolved.is_err:
+      return err(fmt"Expected {arg.struct_getter} to be of type {arg_def.module}")
+  ok()
 
 proc resolve_fncall(
   scope: Scope,
@@ -300,27 +333,10 @@ proc resolve_fncall(
 
     var matched = true
     for (arg_def, arg) in zip(fn.def.arg_def_list, fncall.arglist):
-      case arg.kind:
-      of AK_IDENTIFIER:
-        let arg_in_scope = ? fn_scope.get_arg(arg.name)
-        if $(arg_in_scope.module) != $(arg_def.module):
-          matched = false
-          break
-      of AK_LITERAL:
-        let expected_module = ? scope.find_module(arg_def.module)
-        # TODO: resolving a struct literal here will be passed to fncall
-        # by value which may cause un-necessary copies. Handle that.
-        let maybe_resolved = scope.resolve_literal(fn_scope, expected_module,
-            arg.literal, queue)
-        if maybe_resolved.is_err:
-          matched = false
-          break
-      of AK_STRUCT_GETTER:
-        let maybe_resolved = scope.resolve_struct_getter(fn_scope, arg_def,
-            arg.struct_getter)
-        if maybe_resolved.is_err:
-          matched = false
-          break
+      let maybe_resolved = scope.resolve_fncall_arg(fn_scope, arg_def, arg, queue)
+      if maybe_resolved.is_err:
+        matched = false
+        break
 
     if matched:
       let args_str = fncall.arglist.map_it($(it)).join(", ")
@@ -379,18 +395,8 @@ proc resolve_statement(
     let (return_type, expr_code) = ? scope.resolve_expression(fn_scope,
         statement.assign.expression, queue)
     let return_arg_def = new_arg_def(return_type, statement.assign.dest)
-    let return_arg_module = ? scope.find_module(return_arg_def.module)
-
-    var statement_code: string
-    case return_arg_module.kind:
-    of MK_NATIVE:
-      statement_code = fmt"{return_type} {statement.assign.dest} = {expr_code};"
-    of MK_USER:
-      let temp_var = fn_scope.temp_variable()
-      statement_code = @[
-        fmt"{return_type} {temp_var} = {expr_code};",
-        fmt"{return_type}* {statement.assign.dest} = &{temp_var};",
-      ].join("\n")
+    let return_type_code = ? scope.resolve_return_type(return_type)
+    var statement_code = fmt"{return_type_code} {statement.assign.dest} = {expr_code};"
     ok((return_arg_def, statement_code))
   of SK_EXPR:
     let (return_type, expr_code) = ? scope.resolve_expression(fn_scope,
@@ -412,8 +418,7 @@ proc resolve_case_block(
   # TODO: case macros do yet support pattern matching via
   # structs they only support native numeric. Ensure that
   # it does not occurs unintentionally.
-  let case_value = ? scope.resolve_literal(fn_scope, module,
-      case_block.value.new_literal(), queue)
+  let case_value = ? resolve_native_numeric(module, case_block.value)
   var case_block_code = @[fmt"case {case_value}: " & "{"]
 
   for index, statement in case_block.statements:
@@ -522,6 +527,30 @@ proc resolve_function(scope: Scope, app_module: Module,
             "}" & fmt"{fn.def.returns};",
           ].join("\n")
           app_struct_def_code.add(struct_def_code)
+
+          # Hacky stuff here, need to fix this but prioritizing simplicity for now.
+          # TODO: make sure the allocated memory is free when the function returns
+          let init_temp_ptr_arg = "_asl_temp_ptr"
+          let init_temp_value_arg = "_asl_temp_value"
+          var args_copy_code: seq[string]
+          var args_def_code: seq[string]
+
+          for arg in fn.def.arg_def_list:
+            args_copy_code.add(fmt"{init_temp_value_arg}->{arg.name} = {arg.name};")
+            args_def_code.add(fmt"{arg.module} {arg.name}")
+
+          let args_def_code_str = args_def_code.join(", ")
+          let init_impl_code = @[
+            fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str})" &
+            "{",
+            fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module.def.name}));",
+            fmt"{module.def.name}* {init_temp_value_arg} = ({module.def.name}*){init_temp_ptr_arg};",
+            args_copy_code.join("\n"),
+            fmt"return {init_temp_value_arg};",
+            "}"
+          ]
+
+          app_impl_code.add(init_impl_code.join("\n"))
         else: discard
         continue
       of FK_USER: discard
