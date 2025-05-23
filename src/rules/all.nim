@@ -136,6 +136,8 @@ let init_rule* = non_terminal_rule("init", @[
 ], init_reducer)
 
 let arg_rule* = non_terminal_rule("arg", @[
+  new_production(@[identifier_rule.exact_one, period.exact_one,
+      identifier_rule.exact_one]),
   new_production(@[identifier_rule.exact_one]),
   new_production(@[literal_rule.exact_one]),
 ], arg_reducer)

@@ -73,9 +73,13 @@ proc init_reducer*(location: Location, parts: seq[seq[seq[
 proc arg_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   if parts[0].len > 0:
-    return parts[0][0][0].identifier.new_argument().to_parse_result()
+    let target = parts[0][0][0].identifier
+    let field = parts[0][2][0].identifier
+    return target.new_struct_getter(field, location).new_argument().to_parse_result()
   elif parts[1].len > 0:
-    return parts[1][0][0].literal.new_argument().to_parse_result()
+    return parts[1][0][0].identifier.new_argument().to_parse_result()
+  elif parts[2].len > 0:
+    return parts[2][0][0].literal.new_argument().to_parse_result()
 
 # arglist.nim
 proc leading_arg_reducer*(location: Location, parts: seq[seq[seq[

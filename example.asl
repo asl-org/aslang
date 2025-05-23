@@ -11,6 +11,7 @@ app Example:
     ptr = System.allocate(bits)
 
     primes = Bitset { ptr: ptr, bits: 64 }
+    U64.print(primes.bits)
 
     System.free(ptr)
 
