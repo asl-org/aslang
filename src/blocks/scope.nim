@@ -481,6 +481,14 @@ proc resolve_native_init_function(
 
   ok((struct_def_code, init_def_code, init_impl_code))
 
+proc resolve_step(scope: Scope, fn_scope: FunctionScope, step: FunctionStep,
+    queue: ResolutionQueue): Result[(ArgumentDefinition, string), string] =
+  case step.kind:
+  of FSK_STATEMENT:
+    scope.resolve_statement(fn_scope, step.statement, queue)
+  of FSK_MATCHER:
+    scope.resolve_match_block(fn_scope, step.matcher, queue)
+
 proc resolve_app(scope: Scope, app_module: Module,
     start_fn: Function): Result[string, string] =
   var queue = new_resolution_queue()
@@ -526,32 +534,16 @@ proc resolve_app(scope: Scope, app_module: Module,
     var fn_code = @[fmt"{return_code} {module.def.name}_{fn.def.name}({args_def_code_str})" & "{"]
 
     for index, step in fn.steps:
-      case step.kind:
-      of FSK_STATEMENT:
-        let (return_arg_def, statement_code) = ? scope.resolve_statement(
-            fn_scope, step.statement, queue)
-        ? fn_scope.add_arg(return_arg_def)
-        fn_code.add(statement_code)
+      let (return_arg_def, step_code) = ? scope.resolve_step(fn_scope, step, queue)
+      ? fn_scope.add_arg(return_arg_def)
+      fn_code.add(step_code)
 
-        if index == fn.steps.len - 1:
-          if $(return_arg_def.module) != $(fn.def.returns):
-            return err(fmt"Expected {step.statement} to return {fn.def.returns} but found {return_arg_def.module}")
-          else:
-            fn_code.add(fmt"return {return_arg_def.name};")
-      of FSK_MATCHER:
-        if index == fn.steps.len - 1:
-          let (return_arg_def, match_code) = ? scope.resolve_match_block(
-              fn_scope, step.matcher, queue)
-          ? fn_scope.add_arg(return_arg_def)
-          fn_code.add(match_code)
-
-
-          if $(return_arg_def.module) != $(fn.def.returns):
-            return err(fmt"Expected {step.matcher} to return {fn.def.returns} but found {return_arg_def.module}")
-          else:
-            fn_code.add(fmt"return {return_arg_def.name};")
+      # add return statement after resolving last function step.
+      if index == fn.steps.len - 1:
+        if $(return_arg_def.module) != $(fn.def.returns):
+          return err(fmt"Expected {step.statement} to return {fn.def.returns} but found {return_arg_def.module}")
         else:
-          return err(fmt"Match block must be the last step in the function")
+          fn_code.add(fmt"return {return_arg_def.name};")
 
     fn_code.add("}")
     app_impl_code.add(fn_code.join("\n"))
