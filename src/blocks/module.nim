@@ -1,8 +1,39 @@
-import strutils, results, strformat, options
+import strutils, results, strformat, options, sets, typetraits, parseutils
 
 import "../rules"
 
 import common, function, matcher
+
+proc safe_parse*[T](input: string): Result[T, string] =
+  when T is SomeSignedInt:
+    var temp: BiggestInt
+    let code = parseBiggestInt(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse signed int from: " & input)
+    if temp < T.low.BiggestInt or temp > T.high.BiggestInt:
+      return err("Overflow: Value out of range for type " & $T)
+    ok(T(temp))
+  elif T is SomeUnsignedInt:
+    var temp: BiggestUInt
+    let code = parseBiggestUInt(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse unsigned int from: " & input)
+    if temp < T.low.BiggestUInt or temp > T.high.BiggestUInt:
+      return err("Overflow: Value out of range for type " & $T)
+    ok(T(temp))
+  elif T is SomeFloat:
+    var temp: BiggestFloat
+    let code = parseBiggestFloat(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse float from: " & input)
+    let casted = T(temp)
+    if BiggestFloat(casted) != temp:
+      return err("Precision loss when converting to " & $T)
+    ok(casted)
+  else:
+    err("safeParse only supports signed/unsigned integers and floating-point types")
+
+
 
 type
   ModuleKind* = enum
@@ -114,3 +145,32 @@ proc resolve_native_numeric*(module: Module, numeric_value: Atom): Result[
   of "F32": ok($( ? safe_parse[float32](numeric_value_str)))
   of "F64": ok($( ? safe_parse[float64](numeric_value_str)))
   else: err(fmt"Only U8/U16/U32/U64/S8/S16/S32/S64/F32/F64 support numeric values in initializer")
+
+proc resolve_struct_literal*(module: Module, struct: Struct): Result[seq[
+    ArgumentDefinition], string] =
+  case module.kind:
+  of MK_NATIVE: return err(fmt"Native modules can not be struct literal")
+  of MK_USER: discard
+
+  case module.def.kind:
+  of MDK_STRUCT: discard
+  else: return err(fmt"{module.def.name} must be a struct")
+
+  if module.fields.is_none:
+    return err(fmt"Unexpected error there is some problem with blockification logic")
+  if module.fields.get.field_defs.len != struct.kwargs.len:
+    return err(fmt"{struct.location} Expected {module.fields.get.field_defs.len} fields but found {struct.kwargs.len}")
+
+  var field_name_set: HashSet[string]
+  var expected_fields: seq[ArgumentDefinition]
+
+  for kwarg in struct.kwargs:
+    if $(kwarg.name) in field_name_set:
+      return err(fmt"Field {kwarg.name} is defined twice")
+
+    field_name_set.incl($(kwarg.name))
+
+    let field_def = ? module.fields.get.get_field_def(kwarg.name)
+    expected_fields.add(field_def)
+
+  return ok(expected_fields)

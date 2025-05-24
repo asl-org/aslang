@@ -1,5 +1,5 @@
 import results, options, strformat, typetraits
-import strutils, sequtils, parseutils
+import strutils, sequtils
 import sets, tables, algorithm
 
 import native
@@ -166,25 +166,10 @@ proc resolve_struct_literal(
 ): Result[string, string] =
   case literal.kind:
   of LTK_STRUCT:
-    if module.fields.is_none:
-      return err(fmt"Unexpected error there is some problem with blockification logic")
-    if module.fields.get.field_defs.len != literal.struct.kwargs.len:
-      return err(fmt"{literal.location} Expected {module.fields.get.field_defs.len} fields but found {literal.struct.kwargs.len}")
-
     # TODO: make sure initialization also adds a destruction call.
     var struct_init_fncall_args: seq[string]
-    for kwarg in literal.struct.kwargs:
-      var found = false
-      var field: ArgumentDefinition
-      for field_def in module.fields.get.field_defs:
-        if $(kwarg.name) == $(field_def.name):
-          found = true
-          field = field_def
-          break
-
-      if not found:
-        return err(fmt"{literal.location} Unknown field {kwarg.name} found")
-
+    let expected_fields = ? module.resolve_struct_literal(literal.struct)
+    for (field, kwarg) in zip(expected_fields, literal.struct.kwargs):
       case kwarg.value.kind:
       of KWAV_ATOM:
         let literal_module = ? scope.find_module(field.module)
