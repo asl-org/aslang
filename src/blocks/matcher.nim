@@ -1,4 +1,4 @@
-import results, strutils, strformat
+import results, strutils, strformat, tables
 
 import common
 
@@ -7,13 +7,16 @@ import "../rules/parse_result"
 type Fields* = ref object of RootObj
   spaces: int
   field_defs: seq[ArgumentDefinition]
+  field_defs_mapping: Table[string, ArgumentDefinition]
 
 proc spaces*(fields_block: Fields): int = fields_block.spaces
 proc field_defs*(fields_block: Fields): seq[
     ArgumentDefinition] = fields_block.field_defs
 
 proc new_fields*(spaces: int): Fields =
-  Fields(spaces: spaces)
+  let field_defs_mapping = init_table[string, ArgumentDefinition]()
+  Fields(field_defs: @[], field_defs_mapping: field_defs_mapping,
+      spaces: spaces)
 
 proc `$`*(fields_block: Fields): string =
   let prefix = prefix(fields_block.spaces)
@@ -25,8 +28,18 @@ proc `$`*(fields_block: Fields): string =
 
 proc add_field_def*(fields_block: Fields,
     field_def: ArgumentDefinition): Result[void, string] =
+  if $(field_def.name) in fields_block.field_defs_mapping:
+    return err(fmt"{field_def.name} already exists")
+
+  fields_block.field_defs_mapping[$(field_def.name)] = field_def
   fields_block.field_defs.add(field_def)
   ok()
+
+proc get_field_def*(fields: Fields, field_name: Identifier): Result[
+    ArgumentDefinition, string] =
+  if $(field_name) in fields.field_defs_mapping:
+    return ok(fields.field_defs_mapping[$(field_name)])
+  return err(fmt"Found unknown field {field_name}")
 
 proc close*(fields_block: Fields): Result[void, string] =
   if fields_block.field_defs.len == 0:
