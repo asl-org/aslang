@@ -98,3 +98,19 @@ proc close*(module: Module): Result[void, string] =
       if module.fns.len == 0:
         return err(fmt"app block must have at least one function block")
   ok()
+
+proc resolve_native_numeric*(module: Module, numeric_value: Atom): Result[
+    string, string] =
+  let numeric_value_str = $(numeric_value)
+  case $(module.def.name):
+  of "U8": ok($( ? safe_parse[uint8](numeric_value_str)))
+  of "U16": ok($( ? safe_parse[uint16](numeric_value_str)))
+  of "U32": ok($( ? safe_parse[uint32](numeric_value_str)))
+  of "U64": ok($( ? safe_parse[uint64](numeric_value_str)))
+  of "S8": ok($( ? safe_parse[int8](numeric_value_str)))
+  of "S16": ok($( ? safe_parse[int16](numeric_value_str)))
+  of "S32": ok($( ? safe_parse[int32](numeric_value_str)))
+  of "S64": ok($( ? safe_parse[int64](numeric_value_str)))
+  of "F32": ok($( ? safe_parse[float32](numeric_value_str)))
+  of "F64": ok($( ? safe_parse[float64](numeric_value_str)))
+  else: err(fmt"Only U8/U16/U32/U64/S8/S16/S32/S64/F32/F64 support numeric values in initializer")

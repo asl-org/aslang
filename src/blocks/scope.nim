@@ -9,35 +9,6 @@ import matcher
 
 import "../rules/parse_result"
 
-proc safe_parse[T](input: string): Result[T, string] =
-  when T is SomeSignedInt:
-    var temp: BiggestInt
-    let code = parseBiggestInt(input, temp)
-    if code == 0 or code != input.len:
-      return err("Failed to parse signed int from: " & input)
-    if temp < T.low.BiggestInt or temp > T.high.BiggestInt:
-      return err("Overflow: Value out of range for type " & $T)
-    ok(T(temp))
-  elif T is SomeUnsignedInt:
-    var temp: BiggestUInt
-    let code = parseBiggestUInt(input, temp)
-    if code == 0 or code != input.len:
-      return err("Failed to parse unsigned int from: " & input)
-    if temp < T.low.BiggestUInt or temp > T.high.BiggestUInt:
-      return err("Overflow: Value out of range for type " & $T)
-    ok(T(temp))
-  elif T is SomeFloat:
-    var temp: BiggestFloat
-    let code = parseBiggestFloat(input, temp)
-    if code == 0 or code != input.len:
-      return err("Failed to parse float from: " & input)
-    let casted = T(temp)
-    if BiggestFloat(casted) != temp:
-      return err("Precision loss when converting to " & $T)
-    ok(casted)
-  else:
-    err("safeParse only supports signed/unsigned integers and floating-point types")
-
 proc make_native_module(spec: (string, seq[(string, string, string, seq[(
     string, string)])])): Result[Module, string] =
   let (name, fns) = spec
@@ -186,21 +157,6 @@ proc get(q: ResolutionQueue): (Module, Function) =
   q.data.delete(0)
   return info
 
-proc resolve_native_numeric(module: Module, numeric_value: Atom): Result[string, string] =
-  let numeric_value_str = $(numeric_value)
-  case $(module.def.name):
-  of "U8": ok($( ? safe_parse[uint8](numeric_value_str)))
-  of "U16": ok($( ? safe_parse[uint16](numeric_value_str)))
-  of "U32": ok($( ? safe_parse[uint32](numeric_value_str)))
-  of "U64": ok($( ? safe_parse[uint64](numeric_value_str)))
-  of "S8": ok($( ? safe_parse[int8](numeric_value_str)))
-  of "S16": ok($( ? safe_parse[int16](numeric_value_str)))
-  of "S32": ok($( ? safe_parse[int32](numeric_value_str)))
-  of "S64": ok($( ? safe_parse[int64](numeric_value_str)))
-  of "F32": ok($( ? safe_parse[float32](numeric_value_str)))
-  of "F64": ok($( ? safe_parse[float64](numeric_value_str)))
-  else: err(fmt"Only U8/U16/U32/U64/S8/S16/S32/S64/F32/F64 support numeric values in initializer")
-
 proc resolve_struct_literal(
   scope: Scope,
   fn_scope: FunctionScope,
@@ -232,8 +188,7 @@ proc resolve_struct_literal(
       case kwarg.value.kind:
       of KWAV_ATOM:
         let literal_module = ? scope.find_module(field.module)
-        let nn_code = ? resolve_native_numeric(literal_module,
-            kwarg.value.atom)
+        let nn_code = ? literal_module.resolve_native_numeric(kwarg.value.atom)
         struct_init_fncall_args.add(nn_code)
       of KWAV_IDENTIFIER:
         let arg = ? fn_scope.get_arg(kwarg.value.identifier)
@@ -261,7 +216,7 @@ proc resolve_literal(
   of MK_NATIVE:
     case literal.kind:
     of LTK_STRUCT: err(fmt"ASL native modules do not support structs")
-    of LTK_NATIVE_NUMERIC: resolve_native_numeric(module, literal.integer)
+    of LTK_NATIVE_NUMERIC: module.resolve_native_numeric(literal.integer)
   of MK_USER:
     case module.def.kind:
     of MDK_STRUCT: scope.resolve_struct_literal(fn_scope, module, literal, queue)
@@ -418,7 +373,7 @@ proc resolve_case_block(
   # TODO: case macros do yet support pattern matching via
   # structs they only support native numeric. Ensure that
   # it does not occurs unintentionally.
-  let case_value = ? resolve_native_numeric(module, case_block.value)
+  let case_value = ? module.resolve_native_numeric(case_block.value)
   var case_block_code = @[fmt"case {case_value}: " & "{"]
 
   for index, statement in case_block.statements:
@@ -501,7 +456,47 @@ proc resolve_match_block(
   match_block_code.insert(fmt"{return_type_code} {match_block_result_var};", 0)
   return ok((return_arg_def, match_block_code.join("\n")))
 
-proc resolve_function(scope: Scope, app_module: Module,
+proc resolve_native_init_function(
+  module: Module,
+  fn: Function
+): Result[(string, string, string), string] =
+  case $(fn.def.name):
+  of "init": discard
+  else: return err(fmt"Expected a native init function")
+
+  # Hacky stuff here, need to fix this but prioritizing simplicity for now.
+  # TODO: make sure the allocated memory is free when the function returns
+  let struct_def_code = @[
+    "typedef struct {",
+    fn.def.arg_def_list.map_it(fmt"{it.module} {it.name};").join("\n"),
+    "}" & fmt"{fn.def.returns};",
+  ].join("\n")
+
+  let init_temp_ptr_arg = "_asl_temp_ptr"
+  let init_temp_value_arg = "_asl_temp_value"
+  var args_assignment_code: seq[string]
+  var args_def_code: seq[string]
+
+  for arg in fn.def.arg_def_list:
+    args_assignment_code.add(fmt"{init_temp_value_arg}->{arg.name} = {arg.name};")
+    args_def_code.add(fmt"{arg.module} {arg.name}")
+
+  let args_def_code_str = args_def_code.join(", ")
+
+  let init_def_code = fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str});"
+  let init_impl_code = @[
+    fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str})" &
+    "{",
+    fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module.def.name}));",
+    fmt"{module.def.name}* {init_temp_value_arg} = ({module.def.name}*){init_temp_ptr_arg};",
+    args_assignment_code.join("\n"),
+    fmt"return {init_temp_value_arg};",
+    "}"
+  ].join("\n")
+
+  ok((struct_def_code, init_def_code, init_impl_code))
+
+proc resolve_app(scope: Scope, app_module: Module,
     start_fn: Function): Result[string, string] =
   var queue = new_resolution_queue()
   queue.add(app_module, start_fn)
@@ -511,49 +506,25 @@ proc resolve_function(scope: Scope, app_module: Module,
   # perform function dependent bfs
   while queue.len > 0:
     let (module, fn) = queue.get()
-    # echo fn.def.name
+
+    # skip native module resolution
     case module.kind:
-    of MK_NATIVE:
-      continue
-    of MK_USER:
-      # resolve user functions only since native functions do not have steps
-      case fn.kind:
-      of FK_NATIVE:
-        case $(fn.def.name):
-        of "init":
-          let struct_def_code = @[
-            "typedef struct {",
-            fn.def.arg_def_list.map_it(fmt"{it.module} {it.name};").join("\n"),
-            "}" & fmt"{fn.def.returns};",
-          ].join("\n")
-          app_struct_def_code.add(struct_def_code)
+    of MK_NATIVE: continue
+    of MK_USER: discard
 
-          # Hacky stuff here, need to fix this but prioritizing simplicity for now.
-          # TODO: make sure the allocated memory is free when the function returns
-          let init_temp_ptr_arg = "_asl_temp_ptr"
-          let init_temp_value_arg = "_asl_temp_value"
-          var args_copy_code: seq[string]
-          var args_def_code: seq[string]
-
-          for arg in fn.def.arg_def_list:
-            args_copy_code.add(fmt"{init_temp_value_arg}->{arg.name} = {arg.name};")
-            args_def_code.add(fmt"{arg.module} {arg.name}")
-
-          let args_def_code_str = args_def_code.join(", ")
-          let init_impl_code = @[
-            fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str})" &
-            "{",
-            fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module.def.name}));",
-            fmt"{module.def.name}* {init_temp_value_arg} = ({module.def.name}*){init_temp_ptr_arg};",
-            args_copy_code.join("\n"),
-            fmt"return {init_temp_value_arg};",
-            "}"
-          ]
-
-          app_impl_code.add(init_impl_code.join("\n"))
-        else: discard
+    # resolve auto generated init functions for struct
+    # since they are marked as native at the time of resolution
+    case fn.kind:
+    of FK_USER: discard
+    of FK_NATIVE:
+      let maybe_native_init = module.resolve_native_init_function(fn)
+      if maybe_native_init.is_ok:
+        let (struct_def_code, init_def_code,
+          init_impl_code) = maybe_native_init.get
+        app_struct_def_code.add(struct_def_code)
+        app_fn_def_code.add(init_def_code)
+        app_impl_code.add(init_impl_code)
         continue
-      of FK_USER: discard
 
     # only user functions will reach here
     var fn_scope = FunctionScope()
@@ -610,7 +581,7 @@ proc resolve_function(scope: Scope, app_module: Module,
 proc resolve(scope: Scope): Result[(Module, string), string] =
   let app = ? scope.find_app()
   let start = ? app.find_start()
-  let app_code = ? scope.resolve_function(app, start)
+  let app_code = ? scope.resolve_app(app, start)
   ok((app, app_code))
 
 proc generate_app*(scope: Scope): Result[string, string] =
