@@ -1,5 +1,5 @@
 struct Bitset:
-  fields:
+  struct:
     Pointer ptr
     U64 size
 

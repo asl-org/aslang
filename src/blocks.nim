@@ -160,7 +160,7 @@ proc to_blocks(program: Program): Result[Block, string] =
       continue
 
     # fields def
-    let maybe_fields_def = line.safe_fields_def()
+    let maybe_fields_def = line.safe_struct_fields_macro()
     if maybe_fields_def.is_ok:
       let fields = ? new_fields_block(line.spaces)
       ? stack.push(fields)

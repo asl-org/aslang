@@ -549,8 +549,8 @@ proc resolve_app(scope: Scope, app_module: Module,
     app_impl_code.add(fn_code.join("\n"))
 
   let app_code = @[
-      app_struct_def_code.reversed.join("\n"),
-      app_fn_def_code.reversed.join("\n"),
+      app_struct_def_code.join("\n"),
+      app_fn_def_code.join("\n"),
       app_impl_code.reversed.join("\n")
     ].join("\n")
   ok(app_code)

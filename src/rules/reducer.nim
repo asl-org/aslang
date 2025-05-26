@@ -178,9 +178,9 @@ proc else_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   new_else_def().to_parse_result()
 
-proc fields_def_reducer*(location: Location, parts: seq[seq[seq[
+proc struct_fields_macro_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
-  new_fields_def(location).to_parse_result()
+  new_struct_fields_macro(location).to_parse_result()
 
 proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
@@ -202,7 +202,7 @@ proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
   elif parts[7].len > 0: # else def
     macro_call = new_macro_call(parts[7][0][0].else_def)
   elif parts[8].len > 0: # fields def
-    macro_call = new_macro_call(parts[8][0][0].fields)
+    macro_call = new_macro_call(parts[8][0][0].struct_fields_macro)
 
   macro_call.to_parse_result()
 
