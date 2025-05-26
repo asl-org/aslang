@@ -1,5 +1,5 @@
-struct Array:
-  fields:
+module Array:
+  struct:
     Pointer ptr
     U64 size
 

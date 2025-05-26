@@ -106,6 +106,7 @@ proc add_fields*(module: Module, fields: Fields): Result[void, string] =
   if module.fields.is_some:
     return err(fmt"Module {module.def.name} can only contain 1 fields block")
   module.fields = some(fields)
+  module.def.kind = MDK_STRUCT
   ok()
 
 # TODO: perform final validation

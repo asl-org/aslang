@@ -55,8 +55,6 @@ let case_keyword* = static_rule("case_keyword", "'case'", "case",
     raw_string_reducer)
 let else_keyword* = static_rule("else_keyword", "'else'", "else",
     raw_string_reducer)
-let fields_keyword* = static_rule("fields_keyword", "'fields'", "fields",
-    raw_string_reducer)
 
 # identifier.nim
 let alphabet_rule* = non_terminal_rule("alphabet", @[
@@ -265,28 +263,6 @@ let module_def_rule* = non_terminal_rule("module_def", @[
   ])
 ], module_def_reducer)
 
-# struct_def.nim
-let struct_def_rule* = non_terminal_rule("struct_def", @[
-  new_production(@[
-    struct_keyword.exact_one,
-    space.any,
-    identifier_rule.exact_one,
-    space.any,
-    colon.exact_one,
-  ])
-], struct_def_reducer)
-
-# union_def.nim
-let union_def_rule* = non_terminal_rule("union_def", @[
-  new_production(@[
-    union_keyword.exact_one,
-    space.any,
-    identifier_rule.exact_one,
-    space.any,
-    colon.exact_one,
-  ])
-], union_def_reducer)
-
 # match_def.nim
 let match_def_rule* = non_terminal_rule("match_def", @[
   new_production(@[
@@ -318,26 +294,24 @@ let else_def_rule* = non_terminal_rule("else_def", @[
 ], else_def_reducer)
 
 # fields_def.nim
-let fields_def_rule* = non_terminal_rule("fields_def", @[
+let struct_fields_macro_rule* = non_terminal_rule("struct_fields_macro", @[
   new_production(@[
-    fields_keyword.exact_one,
+    struct_keyword.exact_one,
     space.any,
     colon.exact_one,
     space.any,
   ])
-], fields_def_reducer)
+], struct_fields_macro_reducer)
 
 # macro_call.nim
 let macro_call_rule* = non_terminal_rule("macro_call", @[
   new_production(@[fn_def_rule.exact_one]),
   new_production(@[app_def_rule.exact_one]),
   new_production(@[module_def_rule.exact_one]),
-  new_production(@[struct_def_rule.exact_one]),
-  new_production(@[union_def_rule.exact_one]),
   new_production(@[match_def_rule.exact_one]),
   new_production(@[case_def_rule.exact_one]),
   new_production(@[else_def_rule.exact_one]),
-  new_production(@[fields_def_rule.exact_one]),
+  new_production(@[struct_fields_macro_rule.exact_one]),
 ], macro_call_reducer)
 
 # comment.nim

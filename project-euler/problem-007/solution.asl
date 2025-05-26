@@ -1,5 +1,5 @@
-struct Bitset:
-  fields:
+module Bitset:
+  struct:
     Pointer ptr
     U64 size
 
