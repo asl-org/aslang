@@ -1,4 +1,4 @@
-struct Bitset:
+module Bitset:
   struct:
     Pointer ptr
     U64 size

@@ -309,12 +309,11 @@ type
   ModuleDefinitionKind* = enum
     MDK_APP, MDK_MODULE, MDK_STRUCT, MDK_UNION
   ModuleDefinition* = ref object of RootObj
-    kind: ModuleDefinitionKind
+    kind*: ModuleDefinitionKind
     name: Identifier
     location: Location
 
 proc name*(module_def: ModuleDefinition): Identifier = module_def.name
-proc kind*(module_def: ModuleDefinition): ModuleDefinitionKind = module_def.kind
 proc location*(module_def: ModuleDefinition): Location = module_def.location
 
 proc new_app_def*(name: Identifier, location: Location): ModuleDefinition =
@@ -322,9 +321,6 @@ proc new_app_def*(name: Identifier, location: Location): ModuleDefinition =
 
 proc new_module_def*(name: Identifier, location: Location): ModuleDefinition =
   ModuleDefinition(kind: MDK_MODULE, name: name, location: location)
-
-proc new_struct_def*(name: Identifier, location: Location): ModuleDefinition =
-  ModuleDefinition(kind: MDK_STRUCT, name: name, location: location)
 
 proc new_union_def*(name: Identifier, location: Location): ModuleDefinition =
   ModuleDefinition(kind: MDK_UNION, name: name, location: location)

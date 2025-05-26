@@ -154,11 +154,6 @@ proc module_def_reducer*(location: Location, parts: seq[seq[seq[
   let name = parts[0][2][0].identifier
   name.new_module_def(location).to_parse_result()
 
-proc struct_def_reducer*(location: Location, parts: seq[seq[seq[
-    ParseResult]]]): ParseResult =
-  let name = parts[0][2][0].identifier
-  name.new_struct_def(location).to_parse_result()
-
 proc union_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   let name = parts[0][2][0].identifier
@@ -191,18 +186,16 @@ proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
     macro_call = new_macro_call(parts[1][0][0].module_def)
   elif parts[2].len > 0: # module def
     macro_call = new_macro_call(parts[2][0][0].module_def)
-  elif parts[3].len > 0: # struct def
+  elif parts[3].len > 0: # union def
     macro_call = new_macro_call(parts[3][0][0].module_def)
-  elif parts[4].len > 0: # union def
-    macro_call = new_macro_call(parts[4][0][0].module_def)
-  elif parts[5].len > 0: # match def
-    macro_call = new_macro_call(parts[5][0][0].match_def)
-  elif parts[6].len > 0: # case def
-    macro_call = new_macro_call(parts[6][0][0].case_def)
-  elif parts[7].len > 0: # else def
-    macro_call = new_macro_call(parts[7][0][0].else_def)
-  elif parts[8].len > 0: # fields def
-    macro_call = new_macro_call(parts[8][0][0].struct_fields_macro)
+  elif parts[4].len > 0: # match def
+    macro_call = new_macro_call(parts[4][0][0].match_def)
+  elif parts[5].len > 0: # case def
+    macro_call = new_macro_call(parts[5][0][0].case_def)
+  elif parts[6].len > 0: # else def
+    macro_call = new_macro_call(parts[6][0][0].else_def)
+  elif parts[7].len > 0: # fields def
+    macro_call = new_macro_call(parts[7][0][0].struct_fields_macro)
 
   macro_call.to_parse_result()
 

@@ -1,4 +1,4 @@
-struct Array:
+module Array:
   struct:
     Pointer ptr
     U64 size
