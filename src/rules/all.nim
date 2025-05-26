@@ -263,17 +263,6 @@ let module_def_rule* = non_terminal_rule("module_def", @[
   ])
 ], module_def_reducer)
 
-# union_def.nim
-let union_def_rule* = non_terminal_rule("union_def", @[
-  new_production(@[
-    union_keyword.exact_one,
-    space.any,
-    identifier_rule.exact_one,
-    space.any,
-    colon.exact_one,
-  ])
-], union_def_reducer)
-
 # match_def.nim
 let match_def_rule* = non_terminal_rule("match_def", @[
   new_production(@[
@@ -319,7 +308,6 @@ let macro_call_rule* = non_terminal_rule("macro_call", @[
   new_production(@[fn_def_rule.exact_one]),
   new_production(@[app_def_rule.exact_one]),
   new_production(@[module_def_rule.exact_one]),
-  new_production(@[union_def_rule.exact_one]),
   new_production(@[match_def_rule.exact_one]),
   new_production(@[case_def_rule.exact_one]),
   new_production(@[else_def_rule.exact_one]),

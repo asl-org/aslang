@@ -322,16 +322,11 @@ proc new_app_def*(name: Identifier, location: Location): ModuleDefinition =
 proc new_module_def*(name: Identifier, location: Location): ModuleDefinition =
   ModuleDefinition(kind: MDK_MODULE, name: name, location: location)
 
-proc new_union_def*(name: Identifier, location: Location): ModuleDefinition =
-  ModuleDefinition(kind: MDK_UNION, name: name, location: location)
-
 proc `$`*(module_def: ModuleDefinition): string =
   let prefix =
     case module_def.kind:
     of MDK_APP: "app"
-    of MDK_MODULE: "module"
-    of MDK_STRUCT: "struct"
-    of MDK_UNION: "union"
+    else: "module"
   fmt"{prefix} {module_def.name}:"
 
 # match_def.nim
