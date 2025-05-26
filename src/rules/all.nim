@@ -82,6 +82,45 @@ let integer* = non_terminal_rule("integer", @[
 ], raw_parts_reducer)
 
 # keyword_arg.nim
+
+let keyword_arg_def_rule* = non_terminal_rule("keyword_arg_def", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    space.any,
+    colon.exact_one,
+    space.any,
+    identifier_rule.exact_one,
+  ])
+], keyword_arg_def_reducer)
+
+let leading_keyword_arg_def_rule* = non_terminal_rule("leading_keyword_arg_def", @[
+  new_production(@[
+    keyword_arg_def_rule.exact_one,
+    space.any,
+    comma.exact_one,
+    space.any,
+  ])
+], leading_keyword_arg_def_reducer)
+
+let struct_def_rule* = non_terminal_rule("struct_def", @[
+  new_production(@[
+    brace_open.exact_one,
+    space.any,
+    leading_keyword_arg_def_rule.any,
+    keyword_arg_def_rule.exact_one,
+    space.any,
+    brace_close.exact_one,
+  ])
+], struct_def_reducer)
+
+let union_def_rule* = non_terminal_rule("union_def", @[
+  new_production(@[
+    identifier_rule.exact_one,
+    space.any,
+    struct_def_rule.exact_one,
+  ])
+], union_def_reducer)
+
 let keyword_arg_value_rule* = non_terminal_rule("keyword_arg_value", @[
   new_production(@[integer.exact_one]),
   new_production(@[identifier_rule.exact_one])
@@ -293,15 +332,25 @@ let else_def_rule* = non_terminal_rule("else_def", @[
   ])
 ], else_def_reducer)
 
-# fields_def.nim
-let struct_fields_macro_rule* = non_terminal_rule("struct_fields_macro", @[
+# struct.nim
+let struct_macro_rule* = non_terminal_rule("struct_macro", @[
   new_production(@[
     struct_keyword.exact_one,
     space.any,
     colon.exact_one,
     space.any,
   ])
-], struct_fields_macro_reducer)
+], struct_macro_reducer)
+
+# union.nim
+let union_macro_rule* = non_terminal_rule("union_macro", @[
+  new_production(@[
+    union_keyword.exact_one,
+    space.any,
+    colon.exact_one,
+    space.any,
+  ])
+], union_macro_reducer)
 
 # macro_call.nim
 let macro_call_rule* = non_terminal_rule("macro_call", @[
@@ -311,7 +360,8 @@ let macro_call_rule* = non_terminal_rule("macro_call", @[
   new_production(@[match_def_rule.exact_one]),
   new_production(@[case_def_rule.exact_one]),
   new_production(@[else_def_rule.exact_one]),
-  new_production(@[struct_fields_macro_rule.exact_one]),
+  new_production(@[struct_macro_rule.exact_one]),
+  new_production(@[union_macro_rule.exact_one]),
 ], macro_call_reducer)
 
 # comment.nim
@@ -327,6 +377,7 @@ let line_rule* = non_terminal_rule("line", @[
   new_production(@[space.any, macro_call_rule.exact_one, space.any]),
   new_production(@[space.any, arg_def_rule.exact_one, space.any]),
   new_production(@[space.any, statement_rule.exact_one, space.any]),
+  new_production(@[space.any, union_def_rule.exact_one, space.any]),
   new_production(@[space.any, comment_rule.exact_one, space.any]),
   new_production(@[space.any]),
 ], line_reducer)

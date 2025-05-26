@@ -4,29 +4,96 @@ import common
 
 import "../rules/parse_result"
 
-type Fields* = ref object of RootObj
+type Union* = ref object of RootObj
+  spaces: int
+  union_defs: seq[UnionDef]
+  union_defs_mapping: Table[string, UnionDef]
+  union_def_fields_mapping: Table[string, Table[string, ArgumentDefinition]]
+
+proc spaces*(fields_block: Union): int = fields_block.spaces
+proc union_defs*(fields_block: Union): seq[
+    UnionDef] = fields_block.union_defs
+
+proc new_union*(spaces: int): Union =
+  let union_defs_mapping = init_table[string, UnionDef]()
+  let union_def_fields_mapping = init_table[string, Table[string,
+      ArgumentDefinition]]()
+  Union(
+    union_defs: @[],
+    union_defs_mapping: union_defs_mapping,
+    union_def_fields_mapping: union_def_fields_mapping,
+    spaces: spaces
+  )
+
+proc `$`*(union_block: Union): string =
+  let prefix = prefix(union_block.spaces)
+  let child_prefix = child_prefix(union_block.spaces)
+  var content = @[prefix & "union:"]
+  for field_def in union_block.union_defs:
+    content.add(child_prefix & $(field_def))
+  return content.join("\n")
+
+proc add_union_def*(union_block: Union,
+    union_def: UnionDef): Result[void, string] =
+  if $(union_def.name) in union_block.union_defs_mapping:
+    return err(fmt"{union_def.name} already exists")
+
+  # union def mapping
+  union_block.union_defs_mapping[$(union_def.name)] = union_def
+
+  # union def field mapping
+  union_block.union_def_fields_mapping[$(union_def.name)] = init_table[string,
+      ArgumentDefinition]()
+  for field_def in union_def.fields:
+    union_block.union_def_fields_mapping[$(union_def.name)][$(
+        field_def.name)] = field_def
+
+  union_block.union_defs.add(union_def)
+  ok()
+
+proc get_union_def*(union: Union, union_name: Identifier): Result[
+    UnionDef, string] =
+  if $(union_name) in union.union_defs_mapping:
+    return ok(union.union_defs_mapping[$(union_name)])
+  return err(fmt"Found unknown union {union_name}")
+
+proc get_union_def_field*(union: Union, union_name: Identifier,
+    field_name: Identifier): Result[ArgumentDefinition, string] =
+  if $(union_name) notin union.union_defs_mapping:
+    return err(fmt"Found unknown union {union_name}")
+  let union_def_fields = union.union_def_fields_mapping[$(union_name)]
+  if $(field_name) notin union_def_fields:
+    return err(fmt"Found unknown field {field_name} in union {union_name}")
+  return ok(union_def_fields[$(field_name)])
+
+proc close*(union_block: Union): Result[void, string] =
+  if union_block.union_defs.len == 0:
+    return err("struct block must have at least 1 union definition")
+  ok()
+
+type StructDef* = ref object of RootObj
   spaces: int
   field_defs: seq[ArgumentDefinition]
   field_defs_mapping: Table[string, ArgumentDefinition]
 
-proc spaces*(fields_block: Fields): int = fields_block.spaces
-proc field_defs*(fields_block: Fields): seq[
+proc spaces*(fields_block: StructDef): int = fields_block.spaces
+proc field_defs*(fields_block: StructDef): seq[
     ArgumentDefinition] = fields_block.field_defs
 
-proc new_fields*(spaces: int): Fields =
+proc new_struct_def*(spaces: int): StructDef =
   let field_defs_mapping = init_table[string, ArgumentDefinition]()
-  Fields(field_defs: @[], field_defs_mapping: field_defs_mapping,
+  StructDef(field_defs: @[], field_defs_mapping: field_defs_mapping,
       spaces: spaces)
 
-proc `$`*(fields_block: Fields): string =
+proc `$`*(fields_block: StructDef): string =
   let prefix = prefix(fields_block.spaces)
   let child_prefix = child_prefix(fields_block.spaces)
-  var content = @[prefix & "fields:"]
+  var content = @[prefix & "struct:"]
   for field_def in fields_block.field_defs:
     content.add(child_prefix & $(field_def))
   return content.join("\n")
 
-proc add_field_def*(fields_block: Fields,
+proc add_field_def*(fields_block: StructDef,
     field_def: ArgumentDefinition): Result[void, string] =
   if $(field_def.name) in fields_block.field_defs_mapping:
     return err(fmt"{field_def.name} already exists")
@@ -35,15 +102,15 @@ proc add_field_def*(fields_block: Fields,
   fields_block.field_defs.add(field_def)
   ok()
 
-proc get_field_def*(fields: Fields, field_name: Identifier): Result[
+proc get_field_def*(fields: StructDef, field_name: Identifier): Result[
     ArgumentDefinition, string] =
   if $(field_name) in fields.field_defs_mapping:
     return ok(fields.field_defs_mapping[$(field_name)])
   return err(fmt"Found unknown field {field_name}")
 
-proc close*(fields_block: Fields): Result[void, string] =
+proc close*(fields_block: StructDef): Result[void, string] =
   if fields_block.field_defs.len == 0:
-    return err("Fields block must have at least 1 field definition")
+    return err("struct block must have at least 1 field definition")
   ok()
 
 type Else* = ref object of RootObj

@@ -1,3 +1,8 @@
+module Status:
+  union:
+    Ok { value: U8 }
+    Err { code: U8 }
+
 module Array:
   struct:
     Pointer ptr
