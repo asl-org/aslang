@@ -35,6 +35,8 @@ proc asl_grammar*(): Result[Grammar[ParseResult], string] =
     leading_keyword_arg_rule,
     struct_rule,
     literal_rule,
+    leading_module_ref_rule,
+    module_ref_rule,
     init_rule,
     arg_rule,
     leading_arg_rule,

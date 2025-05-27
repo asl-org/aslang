@@ -1,4 +1,4 @@
-import strutils, results, strformat, options, sets, typetraits, parseutils
+import strutils, results, strformat, options, sets, typetraits, parseutils, sequtils
 
 import "../rules"
 
@@ -49,6 +49,7 @@ type
 proc def*(module: Module): ModuleDefinition = module.def
 proc fns*(module: Module): seq[Function] = module.fns
 proc struct*(module: Module): Option[StructDef] = module.struct
+proc union*(module: Module): Option[Union] = module.union
 proc spaces*(module: Module): int = module.spaces
 proc kind*(module: Module): ModuleKind = module.kind
 
@@ -187,3 +188,80 @@ proc resolve_struct_literal*(module: Module, struct: Struct): Result[seq[
     expected_fields.add(field_def)
 
   return ok(expected_fields)
+
+proc resolve_union_literal*(module: Module, union_name: Identifier,
+    struct: Struct): Result[seq[ArgumentDefinition], string] =
+  case module.kind:
+  of MK_NATIVE: return err(fmt"Native modules can not be union literal")
+  of MK_USER: discard
+
+  case module.def.kind:
+  of MDK_UNION: discard
+  else: return err(fmt"{module.def.name} must be a union")
+
+  if module.union.is_none:
+    return err(fmt"Unexpected error there is some problem with blockification logic")
+
+  let union = module.union.get
+  let union_def = ? union.get_union_def(union_name)
+  if union_def.fields.len != struct.kwargs.len:
+    return err(fmt"{struct.location} Expected {union_def.fields.len} struct but found {struct.kwargs.len}")
+
+  var field_name_set: HashSet[string]
+  var expected_fields: seq[ArgumentDefinition]
+
+  for kwarg in struct.kwargs:
+    if $(kwarg.name) in field_name_set:
+      return err(fmt"Field {kwarg.name} is defined twice")
+
+    field_name_set.incl($(kwarg.name))
+
+    let field_def = ? union.get_union_def_field(union_name, kwarg.name)
+    expected_fields.add(field_def)
+
+  return ok(expected_fields)
+
+proc resolve_struct_definition*(module: Module): Result[string, string] =
+  case module.kind:
+  of MK_USER: discard
+  else: return err(fmt"{module} must be a user module")
+
+  case module.def.kind:
+  of MDK_STRUCT: discard
+  else: return err(fmt"{module} must be a struct")
+
+  let struct_def_code = @[
+    "typedef struct {",
+    module.struct.get.field_defs.map_it(fmt"{it.module} {it.name};").join("\n"),
+    "}" & fmt"{module.def.name};",
+  ].join("\n")
+  ok(struct_def_code)
+
+proc resolve_union_definition*(module: Module): Result[string, string] =
+  case module.kind:
+  of MK_USER: discard
+  else: return err(fmt"{module} must be a user module")
+
+  case module.def.kind:
+  of MDK_UNION: discard
+  else: return err(fmt"{module} must be a union")
+
+  var union_kind_def_code: seq[string]
+  for union_def in module.union.get.union_defs:
+    let fields = union_def.fields.map_it(fmt"{it.module} {it.name};").join("\n");
+    union_kind_def_code.add(@[
+      "struct {",
+      fields,
+      "}" & $(union_def.name) & ";",
+    ].join("\n"))
+
+
+  let union_def_code = @[
+    "typedef struct {",
+    "U64 id;",
+    "union {",
+    union_kind_def_code.join("\n"),
+    "}",
+    "}" & fmt"{module.def.name};",
+  ].join("\n")
+  ok(union_def_code)

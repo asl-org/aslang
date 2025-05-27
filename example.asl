@@ -16,9 +16,15 @@ module Array:
     System.free(arr.ptr)
 
   # unsafe
-  fn get(Array arr, U64 index) returns U8:
-    target = Pointer.shift(arr.ptr, index)
-    Pointer.read_U8(target)
+  fn get(Array arr, U64 index) returns Status:
+    op = U64.compare(index, arr.size)
+    match op:
+      case -1:
+        target = Pointer.shift(arr.ptr, index)
+        value = Pointer.read_U8(target)
+        Status.Ok { value: value }
+      else:
+        Status.Err { code: 1 }
 
   # unsafe
   fn set(Array arr, U64 index, U8 value) returns Array:
@@ -32,11 +38,11 @@ app Example:
 
     arr = Array.create(10)
     val = Array.get(arr, 0)
-    U8.print(val)
+    # U8.print(val)
 
-    Array.set(arr, 0, 1)
-    val1 = Array.get(arr, 0)
-    U8.print(val1)
+    # Array.set(arr, 0, 1)
+    # val1 = Array.get(arr, 0)
+    # U8.print(val1)
 
     Array.destroy(arr)
     exit_success
