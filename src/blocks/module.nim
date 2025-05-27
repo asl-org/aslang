@@ -42,12 +42,13 @@ type
     kind: ModuleKind
     def: ModuleDefinition
     fns: seq[Function]
-    fields: Option[Fields]
+    struct: Option[StructDef]
+    union: Option[Union]
     spaces: int
 
 proc def*(module: Module): ModuleDefinition = module.def
 proc fns*(module: Module): seq[Function] = module.fns
-proc fields*(module: Module): Option[Fields] = module.fields
+proc struct*(module: Module): Option[StructDef] = module.struct
 proc spaces*(module: Module): int = module.spaces
 proc kind*(module: Module): ModuleKind = module.kind
 
@@ -55,7 +56,7 @@ proc `$`*(module: Module): string =
   var content: seq[string] = @[prefix(module.spaces) & $(module.def)]
 
   case module.def.kind:
-  of MDK_STRUCT: content.add($(module.fields.get))
+  of MDK_STRUCT: content.add($(module.struct.get))
   else: discard
 
   for fn in module.fns:
@@ -102,11 +103,22 @@ proc add_fn*(module: Module, new_fn: Function): Result[void, string] =
   module.fns.add(new_fn)
   ok()
 
-proc add_fields*(module: Module, fields: Fields): Result[void, string] =
-  if module.fields.is_some:
-    return err(fmt"Module {module.def.name} can only contain 1 fields block")
-  module.fields = some(fields)
+proc add_fields*(module: Module, struct: StructDef): Result[void, string] =
+  if module.struct.is_some:
+    return err(fmt"Module {module.def.name} can only contain 1 struct block")
+  if module.union.is_some:
+    return err(fmt"Module {module.def.name} can only contain 1 union block")
+  module.struct = some(struct)
   module.def.kind = MDK_STRUCT
+  ok()
+
+proc add_union*(module: Module, union: Union): Result[void, string] =
+  if module.struct.is_some:
+    return err(fmt"Module {module.def.name} can only contain 1 struct block")
+  if module.union.is_some:
+    return err(fmt"Module {module.def.name} can only contain 1 union block")
+  module.union = some(union)
+  module.def.kind = MDK_UNION
   ok()
 
 # TODO: perform final validation
@@ -124,11 +136,11 @@ proc close*(module: Module): Result[void, string] =
       if module.fns.len == 0:
         return err(fmt"app block must have at least one function block")
     of MDK_STRUCT:
-      if module.fields.is_none:
-        return err(fmt"struct module must have exactly one fields block")
+      if module.struct.is_none:
+        return err(fmt"struct module must have exactly one struct block")
     of MDK_UNION:
-      if module.fns.len == 0:
-        return err(fmt"app block must have at least one function block")
+      if module.union.is_none:
+        return err(fmt"union module must have exactly one union block")
   ok()
 
 proc resolve_native_numeric*(module: Module, numeric_value: Atom): Result[
@@ -157,10 +169,10 @@ proc resolve_struct_literal*(module: Module, struct: Struct): Result[seq[
   of MDK_STRUCT: discard
   else: return err(fmt"{module.def.name} must be a struct")
 
-  if module.fields.is_none:
+  if module.struct.is_none:
     return err(fmt"Unexpected error there is some problem with blockification logic")
-  if module.fields.get.field_defs.len != struct.kwargs.len:
-    return err(fmt"{struct.location} Expected {module.fields.get.field_defs.len} fields but found {struct.kwargs.len}")
+  if module.struct.get.field_defs.len != struct.kwargs.len:
+    return err(fmt"{struct.location} Expected {module.struct.get.field_defs.len} struct but found {struct.kwargs.len}")
 
   var field_name_set: HashSet[string]
   var expected_fields: seq[ArgumentDefinition]
@@ -171,7 +183,7 @@ proc resolve_struct_literal*(module: Module, struct: Struct): Result[seq[
 
     field_name_set.incl($(kwarg.name))
 
-    let field_def = ? module.fields.get.get_field_def(kwarg.name)
+    let field_def = ? module.struct.get.get_field_def(kwarg.name)
     expected_fields.add(field_def)
 
   return ok(expected_fields)

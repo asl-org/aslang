@@ -283,6 +283,24 @@ proc clone*(arg_def: ArgumentDefinition): ArgumentDefinition =
 proc `$`*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.module} {arg_def.name}"
 
+type UnionDef* = ref object of RootObj
+  name: Identifier
+  fields: seq[ArgumentDefinition]
+  location: Location
+
+proc fields*(struct: UnionDef): seq[ArgumentDefinition] = struct.fields
+proc name*(struct: UnionDef): Identifier = struct.name
+proc location*(struct: UnionDef): Location = struct.location
+
+proc `$`*(union: UnionDef): string =
+  let union_fields = union.fields.map(proc(
+      x: ArgumentDefinition): string = fmt"{x.name}: {x.module}").join(", ")
+  $(union.name) & " { " & union_fields & " }"
+
+proc new_union_def*(name: Identifier, fields: seq[ArgumentDefinition],
+    location: Location): UnionDef =
+  UnionDef(name: name, fields: fields, location: location)
+
 # fn_def.nim
 type FunctionDefinition* = ref object of RootObj
   name: Identifier
@@ -357,20 +375,29 @@ proc `$`*(else_def: ElseDefinition): string = "else:"
 
 proc new_else_def*(): ElseDefinition = ElseDefinition()
 
-# struct_fields_def.nim
-
-type StructFieldsMacro = ref object of RootObj
+# struct_macro.nim
+type StructMacro = ref object of RootObj
   location: Location
 
-proc `$`*(else_def: StructFieldsMacro): string = "struct:"
+proc `$`*(struct_macro: StructMacro): string = "struct:"
 
-proc new_struct_fields_macro*(location: Location): StructFieldsMacro = StructFieldsMacro(
+proc new_struct_macro*(location: Location): StructMacro = StructMacro(
+    location: location)
+
+# union_macro.nim
+type UnionMacro = ref object of RootObj
+  location: Location
+
+proc `$`*(union_macro: UnionMacro): string = "union:"
+
+proc new_union_macro*(location: Location): UnionMacro = UnionMacro(
     location: location)
 
 # macro_call.nim
 type
   MacroCallKind* = enum
-    MCK_FN, MCK_MODULE, MCK_MATCH_DEF, MCK_CASE_DEF, MCK_ELSE_DEF, MCK_STRUCT_FIELDS_MACRO
+    MCK_FN, MCK_MODULE, MCK_MATCH_DEF, MCK_CASE_DEF, MCK_ELSE_DEF,
+      MCK_STRUCT_MACRO, MCK_UNION_MACRO
   MacroCall* = ref object of RootObj
     case kind: MacroCallKind
     of MCK_FN: fn_def: FunctionDefinition
@@ -378,7 +405,8 @@ type
     of MCK_MATCH_DEF: match_def: MatchDefinition
     of MCK_CASE_DEF: case_def: CaseDefinition
     of MCK_ELSE_DEF: else_def: ElseDefinition
-    of MCK_STRUCT_FIELDS_MACRO: struct_fields_macro: StructFieldsMacro
+    of MCK_STRUCT_MACRO: struct_macro: StructMacro
+    of MCK_UNION_MACRO: union_macro: UnionMacro
 
 proc `$`*(macro_call: MacroCall): string =
   case macro_call.kind:
@@ -387,7 +415,8 @@ proc `$`*(macro_call: MacroCall): string =
   of MCK_MATCH_DEF: $(macro_call.match_def)
   of MCK_CASE_DEF: $(macro_call.case_def)
   of MCK_ELSE_DEF: $(macro_call.else_def)
-  of MCK_STRUCT_FIELDS_MACRO: $(macro_call.struct_fields_macro)
+  of MCK_STRUCT_MACRO: $(macro_call.struct_macro)
+  of MCK_UNION_MACRO: $(macro_call.union_macro)
 
 proc kind*(macro_call: MacroCall): MacroCallKind = macro_call.kind
 proc module_def*(macro_call: MacroCall): ModuleDefinition = macro_call.module_def
@@ -395,7 +424,8 @@ proc fn_def*(macro_call: MacroCall): FunctionDefinition = macro_call.fn_def
 proc match_def*(macro_call: MacroCall): MatchDefinition = macro_call.match_def
 proc case_def*(macro_call: MacroCall): CaseDefinition = macro_call.case_def
 proc else_def*(macro_call: MacroCall): ElseDefinition = macro_call.else_def
-proc struct_fields_macro*(macro_call: MacroCall): StructFieldsMacro = macro_call.struct_fields_macro
+proc struct_macro*(macro_call: MacroCall): StructMacro = macro_call.struct_macro
+proc union_macro*(macro_call: MacroCall): UnionMacro = macro_call.union_macro
 
 proc safe_module_def*(macro_call: MacroCall): Result[ModuleDefinition, string] =
   case macro_call.kind:
@@ -422,10 +452,15 @@ proc safe_else_def*(macro_call: MacroCall): Result[ElseDefinition, string] =
   of MCK_ELSE_DEF: ok(macro_call.else_def)
   else: return err(fmt"Macro {macro_call} is not a else statement")
 
-proc safe_struct_fields_macro*(macro_call: MacroCall): Result[StructFieldsMacro, string] =
+proc safe_struct_macro*(macro_call: MacroCall): Result[StructMacro, string] =
   case macro_call.kind:
-  of MCK_STRUCT_FIELDS_MACRO: ok(macro_call.struct_fields_macro)
+  of MCK_STRUCT_MACRO: ok(macro_call.struct_macro)
   else: return err(fmt"Macro {macro_call} is not a struct macro")
+
+proc safe_union_macro*(macro_call: MacroCall): Result[UnionMacro, string] =
+  case macro_call.kind:
+  of MCK_UNION_MACRO: ok(macro_call.union_macro)
+  else: return err(fmt"Macro {macro_call} is not a union macro")
 
 proc new_macro_call*(fn_def: FunctionDefinition): MacroCall =
   MacroCall(kind: MCK_FN, fn_def: fn_def)
@@ -442,9 +477,11 @@ proc new_macro_call*(case_def: CaseDefinition): MacroCall =
 proc new_macro_call*(else_def: ElseDefinition): MacroCall =
   MacroCall(kind: MCK_ELSE_DEF, else_def: else_def)
 
-proc new_macro_call*(struct_fields_def: StructFieldsMacro): MacroCall =
-  MacroCall(kind: MCK_STRUCT_FIELDS_MACRO,
-      struct_fields_macro: struct_fields_def)
+proc new_macro_call*(struct_macro: StructMacro): MacroCall =
+  MacroCall(kind: MCK_STRUCT_MACRO, struct_macro: struct_macro)
+
+proc new_macro_call*(union_macro: UnionMacro): MacroCall =
+  MacroCall(kind: MCK_UNION_MACRO, union_macro: union_macro)
 
 # statement.nim
 type
@@ -499,13 +536,14 @@ proc `$`*(comment: Comment): string =
 # line.nim
 type
   LineKind* = enum
-    LK_STATEMENT, LK_MACRO_CALL, LK_STRUCT_FIELD_DEF, LK_COMMENT, LK_EMPTY
+    LK_STATEMENT, LK_MACRO_CALL, LK_STRUCT_FIELD_DEF, LK_UNION_DEF, LK_COMMENT, LK_EMPTY
   Line* = ref object of RootObj
     spaces: int
     case kind: LineKind
     of LK_STATEMENT: statement: Statement
     of LK_MACRO_CALL: macro_call: MacroCall
     of LK_STRUCT_FIELD_DEF: struct_field_def: ArgumentDefinition
+    of LK_UNION_DEF: union_def: UnionDef
     of LK_COMMENT: comment: Comment
     of LK_EMPTY: discard
 
@@ -515,6 +553,7 @@ proc `$`*(line: Line): string =
     of LK_STATEMENT: $(line.statement)
     of LK_MACRO_CALL: $(line.macro_call)
     of LK_STRUCT_FIELD_DEF: $(line.struct_field_def)
+    of LK_UNION_DEF: $(line.union_def)
     of LK_COMMENT: $(line.comment)
     of LK_EMPTY: ""
 
@@ -524,12 +563,18 @@ proc kind*(line: Line): LineKind = line.kind
 proc statement*(line: Line): Statement = line.statement
 proc macro_call*(line: Line): MacroCall = line.macro_call
 proc struct_field_def*(line: Line): ArgumentDefinition = line.struct_field_def
+proc union_def*(line: Line): UnionDef = line.union_def
 proc spaces*(line: Line): int = line.spaces
 
 proc safe_struct_field_def*(line: Line): Result[ArgumentDefinition, string] =
   case line.kind:
   of LK_STRUCT_FIELD_DEF: ok(line.struct_field_def)
   else: err("Line {line} is not a struct field definition")
+
+proc safe_union_def*(line: Line): Result[UnionDef, string] =
+  case line.kind:
+  of LK_UNION_DEF: ok(line.union_def)
+  else: err("Line {line} is not a union field definition")
 
 proc safe_statement*(line: Line): Result[Statement, string] =
   case line.kind:
@@ -561,9 +606,42 @@ proc safe_else_def*(line: Line): Result[ElseDefinition, string] =
   let macro_call = ? line.safe_macro_call()
   macro_call.safe_else_def()
 
-proc safe_struct_fields_macro*(line: Line): Result[StructFieldsMacro, string] =
+proc safe_struct_macro*(line: Line): Result[StructMacro, string] =
   let macro_call = ? line.safe_macro_call()
-  macro_call.safe_struct_fields_macro()
+  macro_call.safe_struct_macro()
+
+proc safe_union_macro*(line: Line): Result[UnionMacro, string] =
+  let macro_call = ? line.safe_macro_call()
+  macro_call.safe_union_macro()
+
+# TODO: Hacky stuff
+proc hacky_union_def*(line: Line): Result[UnionDef, string] =
+  case line.kind:
+  of LK_STATEMENT: discard
+  else: return err(fmt"Expected a statement")
+
+  case line.statement.kind:
+  of SK_EXPR: discard
+  else: return err(fmt"Expected an expression")
+
+  case line.statement.expression.kind:
+  of EK_INIT: discard
+  else: return err(fmt"Expected an initializer")
+
+  let init = line.statement.expression.init
+  case init.literal.kind:
+  of LTK_STRUCT: discard
+  else: return err(fmt"Expected a struct")
+
+  let union_name = init.module_name
+  var arg_def_list: seq[ArgumentDefinition]
+  for kwarg in init.literal.struct.kwargs:
+    case kwarg.value.kind:
+    of KWAV_IDENTIFIER: discard
+    else: return err(fmt"Expected identifier")
+    arg_def_list.add(new_arg_def(kwarg.value.identifier, kwarg.name))
+
+  ok(new_union_def(union_name, arg_def_list, init.location))
 
 proc new_line*(statement: Statement, spaces: int): Line =
   Line(kind: LK_STATEMENT, statement: statement, spaces: spaces)
@@ -573,6 +651,10 @@ proc new_line*(macro_call: MacroCall, spaces: int): Line =
 
 proc new_line*(struct_field_def: ArgumentDefinition, spaces: int): Line =
   Line(kind: LK_STRUCT_FIELD_DEF, struct_field_def: struct_field_def,
+      spaces: spaces)
+
+proc new_line*(union_def: UnionDef, spaces: int): Line =
+  Line(kind: LK_UNION_DEF, union_def: union_def,
       spaces: spaces)
 
 proc new_line*(comment: Comment, spaces: int): Line =
@@ -595,7 +677,7 @@ proc lines*(program: Program): seq[Line] = program.lines
 
 proc only_statements*(program: Program): Program =
   program.lines = program.lines.filter(proc(l: Line): bool = l.kind in @[
-      LK_STATEMENT, LK_MACRO_CALL, LK_STRUCT_FIELD_DEF])
+      LK_STATEMENT, LK_MACRO_CALL, LK_STRUCT_FIELD_DEF, LK_UNION_DEF])
   return program
 
 # parse_result.nim
@@ -617,8 +699,10 @@ type
     PRK_FN_MACRO,
     PRK_ARG_DEF,
     PRK_ARG_DEF_LIST,
+    PRK_UNION_DEF,
     PRK_MODULE_MACRO,
-    PRK_FIELDS_MACRO,
+    PRK_STRUCT_MACRO,
+    PRK_UNION_MACRO,
     PRK_MATCH_DEF_MACRO,
     PRK_CASE_DEF_MACRO,
     PRK_ELSE_DEF_MACRO,
@@ -644,11 +728,13 @@ type
     of PRK_FN_MACRO: fn_def*: FunctionDefinition
     of PRK_ARG_DEF: arg_def*: ArgumentDefinition
     of PRK_ARG_DEF_LIST: arg_def_list*: seq[ArgumentDefinition]
+    of PRK_UNION_DEF: union_def*: UnionDef
     of PRK_MODULE_MACRO: module_def*: ModuleDefinition
     of PRK_MATCH_DEF_MACRO: match_def*: MatchDefinition
     of PRK_CASE_DEF_MACRO: case_def*: CaseDefinition
     of PRK_ELSE_DEF_MACRO: else_def*: ElseDefinition
-    of PRK_FIELDS_MACRO: struct_fields_macro*: StructFieldsMacro
+    of PRK_STRUCT_MACRO: struct_macro*: StructMacro
+    of PRK_UNION_MACRO: union_macro*: UnionMacro
     of PRK_MACRO_CALL: macro_call*: MacroCall
     of PRK_COMMENT: comment*: Comment
     of PRK_STATEMENT: statement*: Statement
@@ -672,11 +758,13 @@ proc `$`*(pr: ParseResult): string =
   of PRK_FN_MACRO: $(pr.fn_def)
   of PRK_ARG_DEF: $(pr.arg_def)
   of PRK_ARG_DEF_LIST: $(pr.arg_def_list)
+  of PRK_UNION_DEF: $(pr.union_def)
   of PRK_MODULE_MACRO: $(pr.module_def)
   of PRK_MATCH_DEF_MACRO: $(pr.match_def)
   of PRK_CASE_DEF_MACRO: $(pr.case_def)
   of PRK_ELSE_DEF_MACRO: $(pr.else_def)
-  of PRK_FIELDS_MACRO: $(pr.struct_fields_macro)
+  of PRK_STRUCT_MACRO: $(pr.struct_macro)
+  of PRK_UNION_MACRO: $(pr.union_macro)
   of PRK_MACRO_CALL: $(pr.macro_call)
   of PRK_COMMENT: $(pr.comment)
   of PRK_STATEMENT: $(pr.statement)
@@ -728,6 +816,9 @@ proc to_parse_result*(arg_def: ArgumentDefinition): ParseResult =
 proc to_parse_result*(arg_def_list: seq[ArgumentDefinition]): ParseResult =
   ParseResult(kind: PRK_ARG_DEF_LIST, arg_def_list: arg_def_list)
 
+proc to_parse_result*(union_def: UnionDef): ParseResult =
+  ParseResult(kind: PRK_UNION_DEF, union_def: union_def)
+
 proc to_parse_result*(module_def: ModuleDefinition): ParseResult =
   ParseResult(kind: PRK_MODULE_MACRO, module_def: module_def)
 
@@ -740,8 +831,11 @@ proc to_parse_result*(case_def: CaseDefinition): ParseResult =
 proc to_parse_result*(else_def: ElseDefinition): ParseResult =
   ParseResult(kind: PRK_ELSE_DEF_MACRO, else_def: else_def)
 
-proc to_parse_result*(struct_fields_macro: StructFieldsMacro): ParseResult =
-  ParseResult(kind: PRK_FIELDS_MACRO, struct_fields_macro: struct_fields_macro)
+proc to_parse_result*(struct_macro: StructMacro): ParseResult =
+  ParseResult(kind: PRK_STRUCT_MACRO, struct_macro: struct_macro)
+
+proc to_parse_result*(union_macro: UnionMacro): ParseResult =
+  ParseResult(kind: PRK_UNION_MACRO, union_macro: union_macro)
 
 proc to_parse_result*(macro_call: MacroCall): ParseResult =
   ParseResult(kind: PRK_MACRO_CALL, macro_call: macro_call)

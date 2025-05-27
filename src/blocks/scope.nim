@@ -182,7 +182,7 @@ proc resolve_struct_literal(
         struct_init_fncall_args.add(fmt"{kwarg.value.identifier}")
 
     let init_fn = "init".new_identifier.new_fn_def(module.def.name,
-        module.fields.get.field_defs).new_native_function(fmt"{module.def.name}_init")
+        module.struct.get.field_defs).new_native_function(fmt"{module.def.name}_init")
     queue.add(module, init_fn)
 
     let struct_init_fncall_args_str = struct_init_fncall_args.join(", ")
@@ -223,7 +223,7 @@ proc resolve_struct_getter(
     case arg_module.def.kind:
     of MDK_STRUCT:
       var found = false
-      for field_def in arg_module.fields.get.field_defs:
+      for field_def in arg_module.struct.get.field_defs:
         if $(field_def.name) != $(struct_getter.field): continue
         if $(field_def.module) != $(arg_def.module): continue
         found = true

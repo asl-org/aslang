@@ -29,6 +29,29 @@ proc identifier_reducer*(location: Location, parts: seq[seq[seq[
   identifier.to_parse_result()
 
 # keyword_arg.nim
+proc keyword_arg_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  let name = parts[0][0][0].identifier
+  let module = parts[0][4][0].identifier
+  module.new_arg_def(name).to_parse_result()
+
+proc leading_keyword_arg_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  parts[0][0][0]
+
+# struct.nim
+proc struct_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  let kwarg_defs = (parts[0][2] & parts[0][3]).map(proc(
+      x: ParseResult): ArgumentDefinition = x.arg_def)
+  kwarg_defs.to_parse_result()
+
+proc union_def_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  let name = parts[0][0][0].identifier
+  let fields = parts[0][2][0].arg_def_list
+  name.new_union_def(fields, location).to_parse_result()
+
 proc keyword_arg_value_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   if parts[0].len > 0:
@@ -168,9 +191,13 @@ proc else_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   new_else_def().to_parse_result()
 
-proc struct_fields_macro_reducer*(location: Location, parts: seq[seq[seq[
+proc struct_macro_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
-  new_struct_fields_macro(location).to_parse_result()
+  new_struct_macro(location).to_parse_result()
+
+proc union_macro_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  new_union_macro(location).to_parse_result()
 
 proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
@@ -187,9 +214,10 @@ proc macro_call_reducer*(location: Location, parts: seq[seq[seq[
     macro_call = new_macro_call(parts[4][0][0].case_def)
   elif parts[5].len > 0: # else def
     macro_call = new_macro_call(parts[5][0][0].else_def)
-  elif parts[6].len > 0: # fields def
-    macro_call = new_macro_call(parts[6][0][0].struct_fields_macro)
-
+  elif parts[6].len > 0: # struct macro
+    macro_call = new_macro_call(parts[6][0][0].struct_macro)
+  elif parts[7].len > 0: # union macro
+    macro_call = new_macro_call(parts[7][0][0].union_macro)
   macro_call.to_parse_result()
 
 # statement.nim
@@ -225,9 +253,12 @@ proc line_reducer*(location: Location, parts: seq[seq[seq[
     pr = parts[2][1][0].statement.new_line(spaces).to_parse_result()
   elif parts[3].len > 0:
     let spaces = parts[3][0].len
-    pr = parts[3][1][0].comment.new_line(spaces).to_parse_result()
-  else:
+    pr = parts[3][1][0].union_def.new_line(spaces).to_parse_result()
+  elif parts[4].len > 0:
     let spaces = parts[4][0].len
+    pr = parts[4][1][0].comment.new_line(spaces).to_parse_result()
+  else:
+    let spaces = parts[5][0].len
     pr = new_empty_line(spaces).to_parse_result()
   pr
 
