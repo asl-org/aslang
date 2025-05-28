@@ -366,7 +366,7 @@ proc resolve_return_type(scope: Scope, module_name: Identifier): Result[string, 
   of MK_NATIVE: ok(fmt"{module_name}")
   of MK_USER:
     case module.def.kind:
-    of MDK_STRUCT: ok(fmt"{module_name}*")
+    of MDK_STRUCT, MDK_UNION: ok(fmt"{module_name}*")
     else: ok(fmt"{module_name}")
 
 proc resolve_statement(
@@ -495,56 +495,10 @@ proc resolve_native_init_function(
 
   # struct initialization
   if $(fn.def.name) == "init":
-    # Hacky stuff here, need to fix this but prioritizing simplicity for now.
-    # TODO: make sure the allocated memory is free when the function returns
-    let init_temp_ptr_arg = "_asl_temp_ptr"
-    let init_temp_value_arg = "_asl_temp_value"
-    var args_assignment_code: seq[string]
-    var args_def_code: seq[string]
-
-    for arg in fn.def.arg_def_list:
-      args_assignment_code.add(fmt"{init_temp_value_arg}->{arg.name} = {arg.name};")
-      args_def_code.add(fmt"{arg.module} {arg.name}")
-
-    let args_def_code_str = args_def_code.join(", ")
-
-    let init_def_code = fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str});"
-    let init_impl_code = @[
-      fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str})" &
-      "{",
-      fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module.def.name}));",
-      fmt"{module.def.name}* {init_temp_value_arg} = ({module.def.name}*){init_temp_ptr_arg};",
-      args_assignment_code.join("\n"),
-      fmt"return {init_temp_value_arg};",
-      "}"
-    ].join("\n")
-
-    return ok((init_def_code, init_impl_code))
+    return module.resolve_struct_init()
   # union initialization
   else:
-    let init_temp_ptr_arg = "_asl_temp_ptr"
-    let init_temp_value_arg = "_asl_temp_value"
-    var args_assignment_code: seq[string]
-    var args_def_code: seq[string]
-
-    for arg in fn.def.arg_def_list:
-      args_assignment_code.add(fmt"{init_temp_value_arg}->{arg.name} = {arg.name};")
-      args_def_code.add(fmt"{arg.module} {arg.name}")
-
-    let args_def_code_str = args_def_code.join(", ")
-
-    let init_def_code = fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str});"
-    let init_impl_code = @[
-      fmt"{module.def.name}* {module.def.name}_{fn.def.name}({args_def_code_str})" &
-      "{",
-      fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module.def.name}));",
-      fmt"{module.def.name}* {init_temp_value_arg} = ({module.def.name}*){init_temp_ptr_arg};",
-      args_assignment_code.join("\n"),
-      fmt"return {init_temp_value_arg};",
-      "}"
-    ].join("\n")
-
-    return ok((init_def_code, init_impl_code))
+    return module.resolve_union_init()
 
 proc resolve_step(scope: Scope, fn_scope: FunctionScope, step: FunctionStep,
     queue: ResolutionQueue): Result[(ArgumentDefinition, string), string] =
@@ -560,6 +514,9 @@ proc resolve_app(scope: Scope, app_module: Module,
   queue.add(app_module, start_fn)
   var resolved_structs: HashSet[string]
   var resolved_unions: HashSet[string]
+  var resolved_structs_init: HashSet[string]
+  var resolved_unions_init: HashSet[string]
+
   var app_impl_code: seq[string]
   var app_fn_def_code: seq[string]
   var app_struct_def_code: seq[string]
@@ -579,26 +536,35 @@ proc resolve_app(scope: Scope, app_module: Module,
         if maybe_struct_def_code.is_ok:
           app_struct_def_code.add(maybe_struct_def_code.get)
           resolved_structs.incl($(module.def.name))
+
+      if not resolved_structs_init.contains($(module.def.name)):
+        let maybe_native_init = module.resolve_struct_init()
+        if maybe_native_init.is_ok:
+          let (init_def_code, init_impl_code) = maybe_native_init.get
+          app_fn_def_code.add(init_def_code)
+          app_impl_code.add(init_impl_code)
+          resolved_structs_init.incl($(module.def.name))
     of MDK_UNION:
       if not resolved_unions.contains($(module.def.name)):
         let maybe_union_def_code = module.resolve_union_definition()
         if maybe_union_def_code.is_ok:
           app_struct_def_code.add(maybe_union_def_code.get)
           resolved_unions.incl($(module.def.name))
+
+      if not resolved_unions_init.contains($(module.def.name)):
+        let maybe_native_init = module.resolve_union_init()
+        if maybe_native_init.is_ok:
+          let (init_def_code, init_impl_code) = maybe_native_init.get
+          app_fn_def_code.add(init_def_code)
+          app_impl_code.add(init_impl_code)
+          resolved_unions_init.incl($(module.def.name))
     else: discard
 
     # resolve auto generated init functions for struct
     # since they are marked as native at the time of resolution
     case fn.kind:
     of FK_USER: discard
-    of FK_NATIVE:
-      let maybe_native_init = module.resolve_native_init_function(fn)
-      if maybe_native_init.is_ok:
-        let (init_def_code, init_impl_code) = maybe_native_init.get
-        # app_struct_def_code.add(struct_def_code)
-        app_fn_def_code.add(init_def_code)
-        app_impl_code.add(init_impl_code)
-        continue
+    of FK_NATIVE: continue
 
     # only user functions will reach here
     var fn_scope = FunctionScope()
