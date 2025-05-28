@@ -114,22 +114,39 @@ proc `$`*(literal: Literal): string =
   of LTK_NATIVE_NUMERIC: $(literal.integer)
   of LTK_STRUCT: $(literal.struct)
 
+type ModuleRef* = ref object of RootObj
+  refs: seq[Identifier]
+  location: Location
+
+proc refs*(module_ref: ModuleRef): seq[Identifier] = module_ref.refs
+proc location*(module_ref: ModuleRef): Location = module_ref.location
+
+proc `$`*(module_ref: ModuleRef): string =
+  module_ref.refs.map(proc(x: Identifier): string = $(x)).join(".")
+
+proc new_module_ref*(refs: seq[Identifier], location: Location): ModuleRef =
+  ModuleRef(refs: refs, location: location)
+
 # init.nim
 type Initializer* = ref object of RootObj
-  module_name: Identifier
+  module_ref: ModuleRef
   literal: Literal
   location: Location
 
-proc module_name*(init: Initializer): Identifier = init.module_name
+proc module_ref*(init: Initializer): ModuleRef = init.module_ref
 proc literal*(init: Initializer): Literal = init.literal
 proc location*(init: Initializer): Location = init.location
 
 proc `$`*(init: Initializer): string =
-  fmt"{init.module_name} {init.literal}"
+  fmt"{init.module_ref} {init.literal}"
 
-proc new_init*(mod_name: Identifier, literal: Literal,
+proc new_init*(module_ref: ModuleRef, literal: Literal,
     location: Location): Initializer =
-  Initializer(module_name: mod_name, literal: literal, location: location)
+  Initializer(
+    module_ref: module_ref,
+    literal: literal,
+    location: location
+  )
 
 # struct.nim
 type
@@ -629,11 +646,14 @@ proc hacky_union_def*(line: Line): Result[UnionDef, string] =
   else: return err(fmt"Expected an initializer")
 
   let init = line.statement.expression.init
+  if init.module_ref.refs.len != 1:
+    return err(fmt"Union def must have only 1 identifier")
+
   case init.literal.kind:
   of LTK_STRUCT: discard
   else: return err(fmt"Expected a struct")
 
-  let union_name = init.module_name
+  let union_name = new_identifier($(init.module_ref))
   var arg_def_list: seq[ArgumentDefinition]
   for kwarg in init.literal.struct.kwargs:
     case kwarg.value.kind:
@@ -689,6 +709,7 @@ type
     PRK_KEYWORD_ARG,
     PRK_STRUCT,
     PRK_LITERAL,
+    PRK_MODULE_REF,
     PRK_INIT,
     # PRK_STRUCT_GETTER,
     PRK_ARG,
@@ -719,6 +740,7 @@ type
     of PRK_KEYWORD_ARG: kwarg*: KeywordArg
     of PRK_STRUCT: struct*: Struct
     of PRK_LITERAL: literal*: Literal
+    of PRK_MODULE_REF: module_ref*: ModuleRef
     of PRK_INIT: init*: Initializer
     of PRK_ARG: arg*: Argument
     of PRK_ARGLIST: arglist*: seq[Argument]
@@ -749,6 +771,7 @@ proc `$`*(pr: ParseResult): string =
   of PRK_KEYWORD_ARG: $(pr.kwarg)
   of PRK_STRUCT: $(pr.struct)
   of PRK_LITERAL: $(pr.literal)
+  of PRK_MODULE_REF: $(pr.module_ref)
   of PRK_INIT: $(pr.init)
   of PRK_ARG: $(pr.arg)
   of PRK_ARGLIST: $(pr.arglist)
@@ -791,6 +814,9 @@ proc to_parse_result*(literal: Literal): ParseResult =
 
 proc to_parse_result*(init: Initializer): ParseResult =
   ParseResult(kind: PRK_INIT, init: init)
+
+proc to_parse_result*(module_ref: ModuleRef): ParseResult =
+  ParseResult(kind: PRK_MODULE_REF, module_ref: module_ref)
 
 proc to_parse_result*(arg: Argument): ParseResult =
   ParseResult(kind: PRK_ARG, arg: arg)

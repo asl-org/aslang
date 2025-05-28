@@ -163,10 +163,25 @@ let literal_rule* = non_terminal_rule("literal", @[
   new_production(@[struct_rule.exact_one])
 ], literal_reducer)
 
-# init.nim
-let init_rule* = non_terminal_rule("init", @[
+let leading_module_ref_rule* = non_terminal_rule("leading_module_ref", @[
   new_production(@[
     identifier_rule.exact_one,
+    period.exact_one,
+  ]),
+], leading_module_ref_reducer)
+
+let module_ref_rule* = non_terminal_rule("module_ref", @[
+  new_production(@[
+    leading_module_ref_rule.any,
+    identifier_rule.exact_one,
+  ]),
+], module_ref_reducer)
+
+# init.nim
+# TODO: replace identifier with module_ref in backward compatible manner
+let init_rule* = non_terminal_rule("init", @[
+  new_production(@[
+    module_ref_rule.exact_one,
     space.any,
     literal_rule.exact_one
   ])

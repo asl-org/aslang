@@ -85,12 +85,22 @@ proc literal_reducer*(location: Location, parts: seq[seq[seq[
   if parts[1].len > 0:
     return parts[1][0][0].struct.new_literal().to_parse_result
 
+proc leading_module_ref_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  parts[0][0][0].identifier.to_parse_result()
+
+proc module_ref_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  let refs = (parts[0][0] & parts[0][1]).map(proc(
+      x: ParseResult): Identifier = x.identifier)
+  refs.new_module_ref(location).to_parse_result()
+
 # init.nim
 proc init_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
-  let module_name = parts[0][0][0].identifier
+  let module_ref = parts[0][0][0].module_ref
   let literal = parts[0][2][0].literal
-  new_init(module_name, literal, location).to_parse_result()
+  new_init(module_ref, literal, location).to_parse_result()
 
 # argument.nim
 proc arg_reducer*(location: Location, parts: seq[seq[seq[
