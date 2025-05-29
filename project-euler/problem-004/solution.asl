@@ -66,6 +66,6 @@ app Example:
   fn start(U8 seed) returns U8:
     exit_success = U8 0
     ans = Example.loop_outer(100, 100, 0, 1000)
-    U64.print(ans)
+    System.print(ans)
     exit_success
 

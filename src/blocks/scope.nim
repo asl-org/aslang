@@ -31,6 +31,7 @@ type Scope* = ref object of RootObj
   modules: seq[Module]
   native_modules: seq[Module]
 
+proc modules*(scope: Scope): seq[Module] = scope.modules
 proc spaces*(scope: Scope): int = scope.spaces
 
 proc `$`*(scope: Scope): string =
@@ -485,20 +486,6 @@ proc resolve_match_block(
   let return_type_code = ? scope.resolve_return_type(block_return_module[0])
   match_block_code.insert(fmt"{return_type_code} {match_block_result_var};", 0)
   return ok((return_arg_def, match_block_code.join("\n")))
-
-proc resolve_native_init_function(
-  module: Module,
-  fn: Function
-): Result[(string, string), string] =
-  if not (($(fn.def.name)).startsWith("init")):
-    return err(fmt"Expected a native init function")
-
-  # struct initialization
-  if $(fn.def.name) == "init":
-    return module.resolve_struct_init()
-  # union initialization
-  else:
-    return module.resolve_union_init()
 
 proc resolve_step(scope: Scope, fn_scope: FunctionScope, step: FunctionStep,
     queue: ResolutionQueue): Result[(ArgumentDefinition, string), string] =

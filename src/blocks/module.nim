@@ -58,6 +58,7 @@ proc `$`*(module: Module): string =
 
   case module.def.kind:
   of MDK_STRUCT: content.add($(module.struct.get))
+  of MDK_UNION: content.add($(module.union.get))
   else: discard
 
   for fn in module.fns:

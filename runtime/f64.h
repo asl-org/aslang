@@ -13,7 +13,6 @@ F64 F64_divide(F64 a, F64 b) { return a / b; }
 
 // safe
 S64 F64_compare(F64 a, F64 b) { return a > b ? 1 : (a == b ? 0 : -1); }
-U64 F64_print(F64 value) { return (U64)printf("%lf\n", value); }
 
 // safe
 F64 F64_from_S8(S8 value) { return (F64)value; }
@@ -27,5 +26,6 @@ F64 F64_from_U32(U32 value) { return (F64)value; }
 F64 F64_from_S64(S64 value) { return (F64)value; }
 F64 F64_from_U64(U64 value) { return (F64)value; }
 F64 F64_from_F32(F32 value) { return (F64)value; }
+F64 F64_from_Pointer(Pointer ptr) { return (*((F64 *)ptr)); }
 
 #endif // ASL_F64_H

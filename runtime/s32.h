@@ -22,7 +22,6 @@ S32 S32_remainder(S32 a, S32 b) { return a % b; }
 
 // safe
 S64 S32_compare(S32 a, S32 b) { return a > b ? 1 : (a == b ? 0 : -1); }
-U64 S32_print(S32 value) { return (U64)printf("%d\n", value); }
 
 // safe
 S32 S32_from_S8(S8 value) { return (S32)value; }
@@ -34,5 +33,6 @@ S32 S32_from_U16(U16 value) { return (S32)value; }
 S32 S32_from_S64(S64 value) { return (S32)value; }
 S32 S32_from_U32(U32 value) { return (S32)value; }
 S32 S32_from_U64(U64 value) { return (S32)value; }
+S32 S32_from_Pointer(Pointer ptr) { return (*((S32 *)ptr)); }
 
 #endif // ASL_S32_H

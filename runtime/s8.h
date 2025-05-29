@@ -22,7 +22,6 @@ S8 S8_remainder(S8 a, S8 b) { return a % b; }
 
 // safe
 S64 S8_compare(S8 a, S8 b) { return a > b ? 1 : (a == b ? 0 : -1); }
-U64 S8_print(S8 value) { return (U64)printf("%d\n", value); }
 
 // unsafe
 S8 S8_from_S16(S16 value) { return (S8)value; }
@@ -32,5 +31,7 @@ S8 S8_from_U8(U8 value) { return (S8)value; }
 S8 S8_from_U16(U16 value) { return (S8)value; }
 S8 S8_from_U32(U32 value) { return (S8)value; }
 S8 S8_from_U64(U64 value) { return (S8)value; }
+
+S8 S8_from_Pointer(Pointer ptr) { return (*((S8 *)ptr)); }
 
 #endif // ASL_S8_H

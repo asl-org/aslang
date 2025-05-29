@@ -696,8 +696,8 @@ proc new_program*(lines: seq[Line]): Program =
 proc lines*(program: Program): seq[Line] = program.lines
 
 proc only_statements*(program: Program): Program =
-  program.lines = program.lines.filter(proc(l: Line): bool = l.kind in @[
-      LK_STATEMENT, LK_MACRO_CALL, LK_STRUCT_FIELD_DEF, LK_UNION_DEF])
+  program.lines = program.lines.filter(proc(l: Line): bool = l.kind notin @[
+      LK_COMMENT, LK_EMPTY])
   return program
 
 # parse_result.nim

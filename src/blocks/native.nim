@@ -1,6 +1,6 @@
 
 let u8_module = ("U8", @[
-    # binary
+  # binary
   ("U8_and", "U8", "and", @[("U8", "a"), ("U8", "b")]),
   ("U8_or", "U8", "or", @[("U8", "a"), ("U8", "b")]),
   ("U8_xor", "U8", "xor", @[("U8", "a"), ("U8", "b")]),
@@ -15,8 +15,6 @@ let u8_module = ("U8", @[
   ("U8_remainder", "U8", "remainder", @[("U8", "a"), ("U8", "b")]),
   # branch
   ("U8_compare", "S64", "compare", @[("U8", "a"), ("U8", "b")]),
-  # debug
-  ("U8_print", "U64", "print", @[("U8", "value")]),
   # cast
   ("U8_from_S8", "U8", "from", @[("S8", "value")]),
   ("U8_from_S16", "U8", "from", @[("S16", "value")]),
@@ -25,6 +23,7 @@ let u8_module = ("U8", @[
   ("U8_from_U16", "U8", "from", @[("U16", "value")]),
   ("U8_from_U32", "U8", "from", @[("U32", "value")]),
   ("U8_from_U64", "U8", "from", @[("U64", "value")]),
+  ("U8_from_Pointer", "U8", "from", @[("Pointer", "ptr")]),
 ])
 
 # U16 module
@@ -44,8 +43,6 @@ let u16_module = ("U16", @[
   ("U16_remainder", "U16", "remainder", @[("U16", "a"), ("U16", "b")]),
   # branch
   ("U16_compare", "S64", "compare", @[("U16", "a"), ("U16", "b")]),
-  # debug
-  ("U16_print", "U64", "print", @[("U16", "value")]),
   # cast
   ("U16_from_S8", "U16", "from", @[("S8", "value")]),
   ("U16_from_S16", "U16", "from", @[("S16", "value")]),
@@ -54,6 +51,7 @@ let u16_module = ("U16", @[
   ("U16_from_U8", "U16", "from", @[("U8", "value")]),
   ("U16_from_U32", "U16", "from", @[("U32", "value")]),
   ("U16_from_U64", "U16", "from", @[("U64", "value")]),
+  ("U16_from_Pointer", "U16", "from", @[("Pointer", "ptr")]),
 ])
 
 # U32 module
@@ -73,8 +71,6 @@ let u32_module = ("U32", @[
   ("U32_remainder", "U32", "remainder", @[("U32", "a"), ("U32", "b")]),
   # branch
   ("U32_compare", "S64", "compare", @[("U32", "a"), ("U32", "b")]),
-  # debug
-  ("U32_print", "U64", "print", @[("U32", "value")]),
   # cast
   ("U32_from_S8", "U32", "from", @[("S8", "value")]),
   ("U32_from_S16", "U32", "from", @[("S16", "value")]),
@@ -83,6 +79,7 @@ let u32_module = ("U32", @[
   ("U32_from_U8", "U32", "from", @[("U8", "value")]),
   ("U32_from_U16", "U32", "from", @[("U16", "value")]),
   ("U32_from_U64", "U32", "from", @[("U64", "value")]),
+  ("U32_from_Pointer", "U32", "from", @[("Pointer", "ptr")]),
 ])
 
 
@@ -103,8 +100,6 @@ let u64_module = ("U64", @[
   ("U64_remainder", "U64", "remainder", @[("U64", "a"), ("U64", "b")]),
   # branch
   ("U64_compare", "S64", "compare", @[("U64", "a"), ("U64", "b")]),
-  # debug
-  ("U64_print", "U64", "print", @[("U64", "value")]),
   # cast
   ("U64_from_S8", "U64", "from", @[("S8", "value")]),
   ("U64_from_S16", "U64", "from", @[("S16", "value")]),
@@ -113,6 +108,7 @@ let u64_module = ("U64", @[
   ("U64_from_U8", "U64", "from", @[("U8", "value")]),
   ("U64_from_U16", "U64", "from", @[("U16", "value")]),
   ("U64_from_U32", "U64", "from", @[("U32", "value")]),
+  ("U64_from_Pointer", "U64", "from", @[("Pointer", "ptr")]),
 ])
 
 
@@ -133,8 +129,6 @@ let s8_module = ("S8", @[
   ("S8_remainder", "S8", "remainder", @[("S8", "a"), ("S8", "b")]),
   # branch
   ("S8_compare", "S64", "compare", @[("S8", "a"), ("S8", "b")]),
-  # debug
-  ("S8_print", "U64", "print", @[("S8", "value")]),
   # cast
   ("S8_from_S16", "S8", "from", @[("S16", "value")]),
   ("S8_from_S32", "S8", "from", @[("S32", "value")]),
@@ -143,6 +137,7 @@ let s8_module = ("S8", @[
   ("S8_from_U16", "S8", "from", @[("U16", "value")]),
   ("S8_from_U32", "S8", "from", @[("U32", "value")]),
   ("S8_from_U64", "S8", "from", @[("U64", "value")]),
+  ("S8_from_Pointer", "S8", "from", @[("Pointer", "ptr")]),
 ])
 
 # S16 module
@@ -162,8 +157,6 @@ let s16_module = ("S16", @[
   ("S16_remainder", "S16", "remainder", @[("S16", "a"), ("S16", "b")]),
   # branch
   ("S16_compare", "S64", "compare", @[("S16", "a"), ("S16", "b")]),
-  # debug
-  ("S16_print", "U64", "print", @[("S16", "value")]),
   # cast
   ("S16_from_S8", "S16", "from", @[("S8", "value")]),
   ("S16_from_S32", "S16", "from", @[("S32", "value")]),
@@ -172,6 +165,7 @@ let s16_module = ("S16", @[
   ("S16_from_U16", "S16", "from", @[("U16", "value")]),
   ("S16_from_U32", "S16", "from", @[("U32", "value")]),
   ("S16_from_U64", "S16", "from", @[("U64", "value")]),
+  ("S16_from_Pointer", "S16", "from", @[("Pointer", "ptr")]),
 ])
 
 # S32 module
@@ -191,8 +185,6 @@ let s32_module = ("S32", @[
   ("S32_remainder", "S32", "remainder", @[("S32", "a"), ("S32", "b")]),
   # branch
   ("S32_compare", "S64", "compare", @[("S32", "a"), ("S32", "b")]),
-  # debug
-  ("S32_print", "U64", "print", @[("S32", "value")]),
   # cast
   ("S32_from_S8", "S32", "from", @[("S8", "value")]),
   ("S32_from_S16", "S32", "from", @[("S16", "value")]),
@@ -201,6 +193,7 @@ let s32_module = ("S32", @[
   ("S32_from_U16", "S32", "from", @[("U16", "value")]),
   ("S32_from_U32", "S32", "from", @[("U32", "value")]),
   ("S32_from_U64", "S32", "from", @[("U64", "value")]),
+  ("S32_from_Pointer", "S32", "from", @[("Pointer", "ptr")]),
 ])
 
 
@@ -221,8 +214,6 @@ let s64_module = ("S64", @[
   ("S64_remainder", "S64", "remainder", @[("S64", "a"), ("S64", "b")]),
   # branch
   ("S64_compare", "S64", "compare", @[("S64", "a"), ("S64", "b")]),
-  # debug
-  ("S64_print", "U64", "print", @[("S64", "value")]),
   # cast
   ("S64_from_S8", "S64", "from", @[("S8", "value")]),
   ("S64_from_S16", "S64", "from", @[("S16", "value")]),
@@ -231,6 +222,7 @@ let s64_module = ("S64", @[
   ("S64_from_U16", "S64", "from", @[("U16", "value")]),
   ("S64_from_U32", "S64", "from", @[("U32", "value")]),
   ("S64_from_U64", "S64", "from", @[("U64", "value")]),
+  ("S64_from_Pointer", "S64", "from", @[("Pointer", "ptr")]),
 ])
 
 # F32 module
@@ -242,8 +234,6 @@ let f32_module = ("F32", @[
   ("F32_divide", "F32", "divide", @[("F32", "a"), ("F32", "b")]),
   # branch
   ("F32_compare", "S64", "compare", @[("F32", "a"), ("F32", "b")]),
-  # debug
-  ("F32_print", "U64", "print", @[("F32", "value")]),
   # cast
   ("F32_from_S8", "F32", "from", @[("S8", "value")]),
   ("F32_from_S16", "F32", "from", @[("S16", "value")]),
@@ -254,6 +244,7 @@ let f32_module = ("F32", @[
   ("F32_from_U32", "F32", "from", @[("U32", "value")]),
   ("F32_from_U64", "F32", "from", @[("U64", "value")]),
   ("F32_from_F64", "F32", "from", @[("F64", "value")]),
+  ("F32_from_Pointer", "F32", "from", @[("Pointer", "ptr")]),
 ])
 
 # F64 module
@@ -265,8 +256,6 @@ let f64_module = ("F64", @[
   ("F64_divide", "F64", "divide", @[("F64", "a"), ("F64", "b")]),
   # branch
   ("F64_compare", "S64", "compare", @[("F64", "a"), ("F64", "b")]),
-  # debug
-  ("F64_print", "U64", "print", @[("F64", "value")]),
   # cast
   ("F64_from_S8", "F64", "from", @[("S8", "value")]),
   ("F64_from_S16", "F64", "from", @[("S16", "value")]),
@@ -277,23 +266,13 @@ let f64_module = ("F64", @[
   ("F64_from_U32", "F64", "from", @[("U32", "value")]),
   ("F64_from_U64", "F64", "from", @[("U64", "value")]),
   ("F64_from_F32", "F64", "from", @[("F32", "value")]),
+  ("F64_from_Pointer", "F64", "from", @[("Pointer", "ptr")]),
 ])
 
 
 let ptr_module = ("Pointer", @[
   ("Pointer_shift", "Pointer", "shift", @[("Pointer", "ptr"), ("U64",
       "offset")]),
-  ("Pointer_print", "U64", "print", @[("Pointer", "ptr")]),
-  ("Pointer_read_U8", "U8", "read_U8", @[("Pointer", "ptr")]),
-  ("Pointer_read_U16", "U16", "read_U16", @[("Pointer", "ptr")]),
-  ("Pointer_read_U32", "U32", "read_U32", @[("Pointer", "ptr")]),
-  ("Pointer_read_U64", "U64", "read_U64", @[("Pointer", "ptr")]),
-  ("Pointer_read_S8", "S8", "read_S8", @[("Pointer", "ptr")]),
-  ("Pointer_read_S16", "S16", "read_S16", @[("Pointer", "ptr")]),
-  ("Pointer_read_S32", "S32", "read_S32", @[("Pointer", "ptr")]),
-  ("Pointer_read_S64", "S64", "read_S64", @[("Pointer", "ptr")]),
-  ("Pointer_read_F32", "F32", "read_F32", @[("Pointer", "ptr")]),
-  ("Pointer_read_F64", "F64", "read_F64", @[("Pointer", "ptr")]),
   ("Pointer_read_Pointer", "Pointer", "read_Pointer", @[("Pointer", "ptr")]),
   ("Pointer_write_U8", "Pointer", "write", @[("Pointer", "ptr"), ("U8",
       "value")]),
@@ -323,6 +302,17 @@ let ptr_module = ("Pointer", @[
 let sys_module = ("System", @[
   ("System_allocate", "Pointer", "allocate", @[("U64", "bytes")]),
   ("System_free", "U8", "free", @[("Pointer", "ptr")]),
+  ("System_print_U8", "U64", "print", @[("U8", "value")]),
+  ("System_print_U16", "U64", "print", @[("U16", "value")]),
+  ("System_print_U32", "U64", "print", @[("U32", "value")]),
+  ("System_print_U64", "U64", "print", @[("U64", "value")]),
+  ("System_print_S8", "U64", "print", @[("S8", "value")]),
+  ("System_print_S16", "U64", "print", @[("S16", "value")]),
+  ("System_print_S32", "U64", "print", @[("S32", "value")]),
+  ("System_print_S64", "U64", "print", @[("S64", "value")]),
+  ("System_print_F32", "U64", "print", @[("F32", "value")]),
+  ("System_print_F64", "U64", "print", @[("F64", "value")]),
+  ("System_print_Pointer", "U64", "print", @[("Pointer", "ptr")]),
 ])
 
 
