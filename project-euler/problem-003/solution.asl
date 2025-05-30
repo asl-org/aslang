@@ -12,7 +12,7 @@ module Bitset:
         offset = U64.remainder(bit, 8)
 
         bptr = Pointer.shift(bitset.ptr, byte)
-        data = Pointer.read_U8(bptr)
+        data = U8.from(bptr)
 
         bdata = U8.rshift(data, offset)
         res = U8.and(bdata, 1)
@@ -29,7 +29,7 @@ module Bitset:
         offset = U64.remainder(bit, 8)
 
         bptr = Pointer.shift(bitset.ptr, byte)
-        data = Pointer.read_U8(bptr)
+        data = U8.from(bptr)
 
         mask = U8.lshift(1, offset)
         res = U8.or(data, mask)
@@ -47,7 +47,7 @@ module Bitset:
         offset = U64.remainder(bit, 8)
 
         bptr = Pointer.shift(bitset.ptr, byte)
-        data = Pointer.read_U8(bptr)
+        data = U8.from(bptr)
 
         mask = U8.lshift(1, offset)
         imask = U8.not(mask)
@@ -122,7 +122,7 @@ app Example:
 
     primes = Bitset { ptr: ptr, size: max_primes }
     ans = Example.solve(primes, 2, 0)
-    U64.print(ans)
+    System.print(ans)
 
     System.free(ptr)
     exit_success

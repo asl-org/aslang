@@ -22,7 +22,6 @@ U16 U16_remainder(U16 a, U16 b) { return a % b; }
 
 // safe
 S64 U16_compare(U16 a, U16 b) { return a > b ? 1 : (a == b ? 0 : -1); }
-U64 U16_print(U16 value) { return (U64)printf("%u\n", value); }
 
 // safe
 U16 U16_from_S8(S8 value) { return (U16)value; }
@@ -34,5 +33,6 @@ U16 U16_from_S32(S32 value) { return (U16)value; }
 U16 U16_from_S64(S64 value) { return (U16)value; }
 U16 U16_from_U32(U32 value) { return (U16)value; }
 U16 U16_from_U64(U64 value) { return (U16)value; }
+U16 U16_from_Pointer(Pointer ptr) { return (*((U16 *)ptr)); }
 
 #endif // ASL_U16_H

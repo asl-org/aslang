@@ -21,7 +21,7 @@ module Array:
     match op:
       case -1:
         target = Pointer.shift(arr.ptr, index)
-        value = Pointer.read_U8(target)
+        value = U8.from(target)
         Status.Ok { value: value }
       else:
         Status.Err { code: 1 }
@@ -38,11 +38,11 @@ app Example:
 
     arr = Array.create(10)
     val = Array.get(arr, 0)
-    # U8.print(val)
+    # System.print(val)
 
     # Array.set(arr, 0, 1)
     # val1 = Array.get(arr, 0)
-    # U8.print(val1)
+    # System.print(val1)
 
     Array.destroy(arr)
     exit_success

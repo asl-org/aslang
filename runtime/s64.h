@@ -22,7 +22,6 @@ S64 S64_rshift(S64 a, U64 b) { return a >> b; }
 
 // safe
 S64 S64_compare(S64 a, S64 b) { return a > b ? 1 : (a == b ? 0 : -1); }
-U64 S64_print(S64 value) { return (U64)printf("%lld\n", value); }
 
 // safe
 S64 S64_from_S8(S8 value) { return (S64)value; }
@@ -34,5 +33,6 @@ S64 S64_from_U32(U32 value) { return (S64)value; }
 
 // unsafe
 S64 S64_from_U64(U64 value) { return (S64)value; }
+S64 S64_from_Pointer(Pointer ptr) { return (*((S64 *)ptr)); }
 
 #endif // ASL_S64_H

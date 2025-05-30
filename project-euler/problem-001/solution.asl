@@ -20,6 +20,6 @@ app Example:
     d = S64.add(a, b)
 
     e = S64.subtract(d, c)
-    S64.print(e)
+    System.print(e)
 
     exit_success

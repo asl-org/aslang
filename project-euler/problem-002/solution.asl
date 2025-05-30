@@ -20,6 +20,6 @@ app Example:
   fn start(U8 seed) returns U8:
     exit_success = U8 0
     a = Example.solve(1, 2, 4000000, 0)
-    S64.print(a)
+    System.print(a)
     exit_success
 

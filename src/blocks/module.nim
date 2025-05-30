@@ -58,6 +58,7 @@ proc `$`*(module: Module): string =
 
   case module.def.kind:
   of MDK_STRUCT: content.add($(module.struct.get))
+  of MDK_UNION: content.add($(module.union.get))
   else: discard
 
   for fn in module.fns:
@@ -237,6 +238,41 @@ proc resolve_struct_definition*(module: Module): Result[string, string] =
   ].join("\n")
   ok(struct_def_code)
 
+proc resolve_struct_init*(module: Module): Result[(string, string), string] =
+  case module.kind:
+  of MK_USER: discard
+  else: return err(fmt"{module} must be a user module")
+
+  case module.def.kind:
+  of MDK_STRUCT: discard
+  else: return err(fmt"{module} must be a struct")
+  # Hacky stuff here, need to fix this but prioritizing simplicity for now.
+  # TODO: make sure the allocated memory is free when the function returns
+  let init_temp_ptr_arg = "_asl_temp_ptr"
+  let init_temp_value_arg = "_asl_temp_value"
+  let init_fn_name = "init"
+  var args_assignment_code: seq[string]
+  var args_def_code: seq[string]
+
+  for arg in module.struct.get.field_defs:
+    args_assignment_code.add(fmt"{init_temp_value_arg}->{arg.name} = {arg.name};")
+    args_def_code.add(fmt"{arg.module} {arg.name}")
+
+  let args_def_code_str = args_def_code.join(", ")
+
+  let init_def_code = fmt"{module.def.name}* {module.def.name}_{init_fn_name}({args_def_code_str});"
+  let init_impl_code = @[
+    fmt"{module.def.name}* {module.def.name}_{init_fn_name}({args_def_code_str})" &
+    "{",
+    fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module.def.name}));",
+    fmt"{module.def.name}* {init_temp_value_arg} = ({module.def.name}*){init_temp_ptr_arg};",
+    args_assignment_code.join("\n"),
+    fmt"return {init_temp_value_arg};",
+    "}"
+  ].join("\n")
+
+  return ok((init_def_code, init_impl_code))
+
 proc resolve_union_definition*(module: Module): Result[string, string] =
   case module.kind:
   of MK_USER: discard
@@ -261,7 +297,48 @@ proc resolve_union_definition*(module: Module): Result[string, string] =
     "U64 id;",
     "union {",
     union_kind_def_code.join("\n"),
-    "}",
+    "} data;",
     "}" & fmt"{module.def.name};",
   ].join("\n")
   ok(union_def_code)
+
+proc resolve_union_init*(module: Module): Result[(string, string), string] =
+  case module.kind:
+  of MK_USER: discard
+  else: return err(fmt"{module} must be a user module")
+
+  case module.def.kind:
+  of MDK_UNION: discard
+  else: return err(fmt"{module} must be a union")
+  # Hacky stuff here, need to fix this but prioritizing simplicity for now.
+  # TODO: make sure the allocated memory is free when the function returns
+  let init_temp_ptr_arg = "_asl_temp_ptr"
+  let init_temp_value_arg = "_asl_temp_value"
+  let init_fn_name = "init"
+  var union_init_def_code: seq[string]
+  var union_init_impl_code: seq[string]
+
+  for (index, union_def) in module.union.get.union_defs.pairs:
+    let union_name = union_def.name
+    let module_name = module.def.name
+    let fn_name = fmt"{module_name}_{init_fn_name}_{union_name}";
+    let arg_def_list = union_def.fields.map_it(fmt"{it.module} {it.name}").join("\n")
+
+    let init_def_code = fmt"{module_name}* {fn_name}({arg_def_list});"
+    union_init_def_code.add(init_def_code)
+
+    let arg_copy_list = union_def.fields.map_it(
+        fmt"{init_temp_value_arg}->data.{union_name}.{it.name} = {it.name};").join("\n")
+    let init_impl_code = @[
+      fmt"{module_name}* {fn_name}({arg_def_list})" & "{",
+      fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module_name}));",
+      fmt"{module_name}* {init_temp_value_arg} = ({module_name}*){init_temp_ptr_arg};",
+      fmt"{init_temp_value_arg}->id = {index};",
+      arg_copy_list,
+      fmt"return {init_temp_value_arg};",
+      "}"
+    ].join("\n")
+    union_init_impl_code.add(init_impl_code)
+
+  return ok((union_init_def_code.join("\n"), union_init_impl_code.join("\n")))
+

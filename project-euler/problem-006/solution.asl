@@ -14,6 +14,6 @@ app Example:
     g = U64.multiply(n, f)
 
     h = U64.quotient(g, 12)
-    U64.print(h)
+    System.print(h)
 
     exit_success

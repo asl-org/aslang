@@ -13,7 +13,6 @@ F32 F32_divide(F32 a, F32 b) { return a / b; }
 
 // safe
 S64 F32_compare(F32 a, F32 b) { return a > b ? 1 : (a == b ? 0 : -1); }
-U64 F32_print(F32 value) { return (U64)printf("%f\n", value); }
 
 // safe
 F32 F32_from_S8(S8 value) { return (F32)value; }
@@ -27,5 +26,6 @@ F32 F32_from_S64(S64 value) { return (F32)value; }
 F32 F32_from_U32(U32 value) { return (F32)value; }
 F32 F32_from_U64(U64 value) { return (F32)value; }
 F32 F32_from_F64(F64 value) { return (F32)value; }
+F32 F32_from_Pointer(Pointer ptr) { return (*((F32 *)ptr)); }
 
 #endif // ASL_F32_H
