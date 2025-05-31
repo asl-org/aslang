@@ -65,6 +65,7 @@ proc asl_grammar*(): Result[Grammar[ParseResult], string] =
     app_def_rule,
     module_def_rule,
     match_def_rule,
+    case_pattern_rule,
     case_def_rule,
     else_def_rule,
     struct_macro_rule,

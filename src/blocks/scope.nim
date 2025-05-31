@@ -325,7 +325,7 @@ proc resolve_fncall(
 
       let c_code = fmt"{fn_name}({args_str})"
       return ok((fn, c_code))
-  return err(fmt"Failed to find matching function for {fncall}")
+  return err(fmt"{fncall.location} Failed to find matching function for {fncall}")
 
 proc resolve_expression(
   scope: Scope,
@@ -397,6 +397,7 @@ proc resolve_case_block(
   fn_scope: FunctionScope,
   module: Module,
   case_block: Case,
+  match_arg: ArgumentDefinition,
   target_arg: Identifier,
   queue: ResolutionQueue
 ): Result[(ArgumentDefinition, string), string] =
@@ -404,8 +405,37 @@ proc resolve_case_block(
   # TODO: case macros do yet support pattern matching via
   # structs they only support native numeric. Ensure that
   # it does not occurs unintentionally.
-  let case_value = ? module.resolve_native_numeric(case_block.value)
-  var case_block_code = @[fmt"case {case_value}: " & "{"]
+  var case_value: string
+  var case_block_code: seq[string]
+  case case_block.value.kind:
+  of CPK_ATOM:
+    case_value = ? module.resolve_native_numeric(case_block.value.atom)
+    case_block_code.add(fmt"case {case_value}: " & "{")
+  else:
+    let module_ref = case_block.value.module_ref
+    let arg_def_list = case_block.value.arg_def_list
+    if module_ref.refs.len != 2:
+      return err(fmt"Struct pattern matching is not yet implemented")
+    let union_module = ? scope.find_module(module_ref.refs[0])
+    case union_module.kind:
+    of MK_NATIVE: return err(fmt"{union_module.def.name} is a native module, expected pattern to be a number")
+    of MK_USER: discard
+
+    case union_module.def.kind:
+    of MDK_UNION: discard
+    else: return err(fmt"expected module {union_module.def.name} to be a union, but found {union_module.def.kind}")
+
+    let union_def_index = ? union_module.union.get.get_union_def_index(
+        module_ref.refs[1])
+
+    case_block_code.add(fmt"case {union_def_index}: " & "{")
+    for arg_def in arg_def_list:
+      let union_def_field = ? union_module.union.get.get_union_def_field(
+          module_ref.refs[1], arg_def.name)
+      let new_arg = new_arg_def(union_def_field.module, arg_def.module)
+      ? case_scope.add_arg(new_arg)
+      # echo fmt"{new_arg} = {match_arg.name}->data.{module_ref.refs[1]}.{arg_def.name};"
+      case_block_code.add(fmt"{new_arg} = {match_arg.name}->data.{module_ref.refs[1]}.{arg_def.name};")
 
   for index, statement in case_block.statements:
     let (return_arg_def, statement_code) = ? scope.resolve_statement(case_scope,
@@ -452,8 +482,15 @@ proc resolve_match_block(
 ): Result[(ArgumentDefinition, string), string] =
   let match_arg = ? fn_scope.get_arg(match_block.value)
   let match_arg_module = ? scope.find_module(match_arg.module)
+  var match_block_code: seq[string]
+
+  case match_arg_module.def.kind:
+  of MDK_UNION:
+    match_block_code.add(fmt"switch({match_arg.name}->id) " & "{")
+  else:
+    match_block_code.add(fmt"switch({match_arg.name}) " & "{")
+
   let match_block_result_var = fn_scope.temp_variable()
-  var match_block_code = @[fmt"switch({match_arg.name}) " & "{"]
   var block_return_module: seq[Identifier]
 
   if match_block.cases.len == 0:
@@ -461,7 +498,7 @@ proc resolve_match_block(
 
   for case_block in match_block.cases:
     let (return_arg_def, case_code) = ? scope.resolve_case_block(fn_scope,
-        match_arg_module, case_block, match_block_result_var, queue)
+        match_arg_module, case_block, match_arg, match_block_result_var, queue)
     block_return_module.add(return_arg_def.module)
     match_block_code.add(case_code)
 
@@ -494,6 +531,92 @@ proc resolve_step(scope: Scope, fn_scope: FunctionScope, step: FunctionStep,
     scope.resolve_statement(fn_scope, step.statement, queue)
   of FSK_MATCHER:
     scope.resolve_match_block(fn_scope, step.matcher, queue)
+
+proc resolve_union_definition*(scope: Scope, module: Module): Result[string, string] =
+  case module.kind:
+  of MK_USER: discard
+  else: return err(fmt"{module} must be a user module")
+
+  case module.def.kind:
+  of MDK_UNION: discard
+  else: return err(fmt"{module} must be a union")
+
+  var union_kind_def_code: seq[string]
+  for union_def in module.union.get.union_defs:
+    var fields_code: seq[string]
+    for field in union_def.fields:
+      let field_module = ? scope.find_module(field.module)
+      let field_def_code =
+        case field_module.kind:
+        of MK_USER: fmt"{field.module}* {field.name};"
+        of MK_NATIVE: fmt"{field.module} {field.name};"
+      fields_code.add(field_def_code)
+
+    union_kind_def_code.add(@[
+      "struct {",
+      fields_code.join("\n"),
+      "}" & $(union_def.name) & ";",
+    ].join("\n"))
+
+
+  let union_def_code = @[
+    "typedef struct {",
+    "U64 id;",
+    "union {",
+    union_kind_def_code.join("\n"),
+    "} data;",
+    "}" & fmt"{module.def.name};",
+  ].join("\n")
+  ok(union_def_code)
+
+proc resolve_union_init*(scope: Scope, module: Module): Result[(string, string), string] =
+  case module.kind:
+  of MK_USER: discard
+  else: return err(fmt"{module} must be a user module")
+
+  case module.def.kind:
+  of MDK_UNION: discard
+  else: return err(fmt"{module} must be a union")
+  # Hacky stuff here, need to fix this but prioritizing simplicity for now.
+  # TODO: make sure the allocated memory is free when the function returns
+  let init_temp_ptr_arg = "_asl_temp_ptr"
+  let init_temp_value_arg = "_asl_temp_value"
+  let init_fn_name = "init"
+  var union_init_def_code: seq[string]
+  var union_init_impl_code: seq[string]
+
+  for (index, union_def) in module.union.get.union_defs.pairs:
+    let union_name = union_def.name
+    let module_name = module.def.name
+    let fn_name = fmt"{module_name}_{init_fn_name}_{union_name}";
+
+    var arg_def_list: seq[string]
+    for arg_def in union_def.fields:
+      let arg_def_module = ? scope.find_module(arg_def.module)
+      let arg_def_code =
+        case arg_def_module.kind:
+        of MK_USER: fmt"{arg_def.module}* {arg_def.name}"
+        of MK_NATIVE: fmt"{arg_def.module} {arg_def.name}"
+      arg_def_list.add(arg_def_code)
+
+    let arg_def_list_code = arg_def_list.join(", ")
+    let init_def_code = fmt"{module_name}* {fn_name}({arg_def_list_code});"
+    union_init_def_code.add(init_def_code)
+
+    let arg_copy_list = union_def.fields.map_it(
+        fmt"{init_temp_value_arg}->data.{union_name}.{it.name} = {it.name};").join("\n")
+    let init_impl_code = @[
+      fmt"{module_name}* {fn_name}({arg_def_list_code})" & "{",
+      fmt"Pointer {init_temp_ptr_arg} = System_allocate(sizeof({module_name}));",
+      fmt"{module_name}* {init_temp_value_arg} = ({module_name}*){init_temp_ptr_arg};",
+      fmt"{init_temp_value_arg}->id = {index};",
+      arg_copy_list,
+      fmt"return {init_temp_value_arg};",
+      "}"
+    ].join("\n")
+    union_init_impl_code.add(init_impl_code)
+
+  return ok((union_init_def_code.join("\n"), union_init_impl_code.join("\n")))
 
 proc resolve_app(scope: Scope, app_module: Module,
     start_fn: Function): Result[string, string] =
@@ -533,13 +656,13 @@ proc resolve_app(scope: Scope, app_module: Module,
           resolved_structs_init.incl($(module.def.name))
     of MDK_UNION:
       if not resolved_unions.contains($(module.def.name)):
-        let maybe_union_def_code = module.resolve_union_definition()
+        let maybe_union_def_code = scope.resolve_union_definition(module)
         if maybe_union_def_code.is_ok:
           app_struct_def_code.add(maybe_union_def_code.get)
           resolved_unions.incl($(module.def.name))
 
       if not resolved_unions_init.contains($(module.def.name)):
-        let maybe_native_init = module.resolve_union_init()
+        let maybe_native_init = scope.resolve_union_init(module)
         if maybe_native_init.is_ok:
           let (init_def_code, init_impl_code) = maybe_native_init.get
           app_fn_def_code.add(init_def_code)

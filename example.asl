@@ -1,6 +1,11 @@
-module Status:
+module ValueStatus:
   union:
     Ok { value: U8 }
+    Err { code: U8 }
+
+module ArrayStatus:
+  union:
+    Ok { arr: Array }
     Err { code: U8 }
 
 module Array:
@@ -16,33 +21,43 @@ module Array:
     System.free(arr.ptr)
 
   # unsafe
-  fn get(Array arr, U64 index) returns Status:
+  fn get(Array arr, U64 index) returns ValueStatus:
     op = U64.compare(index, arr.size)
     match op:
       case -1:
         target = Pointer.shift(arr.ptr, index)
         value = U8.from(target)
-        Status.Ok { value: value }
+        ValueStatus.Ok { value: value }
       else:
-        Status.Err { code: 1 }
+        ValueStatus.Err { code: 1 }
 
   # unsafe
-  fn set(Array arr, U64 index, U8 value) returns Array:
-    target = Pointer.shift(arr.ptr, index)
-    Pointer.write(target, value)
-    arr
+  fn set(Array arr, U64 index, U8 value) returns ArrayStatus:
+    op = U64.compare(index, arr.size)
+    match op:
+      case -1:
+        target = Pointer.shift(arr.ptr, index)
+        Pointer.write(target, value)
+        ArrayStatus.Ok { arr: arr }
+      else:
+        ArrayStatus.Err { code: 1 }
 
 app Example:
   fn start(U8 seed) returns U8:
     exit_success = U8 0
+    exit_failure = U8 1
 
     arr = Array.create(10)
-    val = Array.get(arr, 0)
-    # System.print(val)
+    val0 = Array.get(arr, 0)
 
-    # Array.set(arr, 0, 1)
-    # val1 = Array.get(arr, 0)
-    # System.print(val1)
+    Array.set(arr, 0, 1)
+    val1 = Array.get(arr, 0)
 
-    Array.destroy(arr)
-    exit_success
+    match val1:
+      case ValueStatus.Ok { value: value }:
+        System.print(value)
+        Array.destroy(arr)
+        exit_success
+      else:
+        Array.destroy(arr)
+        exit_failure

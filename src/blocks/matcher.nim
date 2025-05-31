@@ -7,7 +7,7 @@ import "../rules/parse_result"
 type Union* = ref object of RootObj
   spaces: int
   union_defs: seq[UnionDef]
-  union_defs_mapping: Table[string, UnionDef]
+  union_defs_mapping: Table[string, int]
   union_def_fields_mapping: Table[string, Table[string, ArgumentDefinition]]
 
 proc spaces*(fields_block: Union): int = fields_block.spaces
@@ -15,7 +15,7 @@ proc union_defs*(fields_block: Union): seq[
     UnionDef] = fields_block.union_defs
 
 proc new_union*(spaces: int): Union =
-  let union_defs_mapping = init_table[string, UnionDef]()
+  let union_defs_mapping = init_table[string, int]()
   let union_def_fields_mapping = init_table[string, Table[string,
       ArgumentDefinition]]()
   Union(
@@ -39,7 +39,7 @@ proc add_union_def*(union_block: Union,
     return err(fmt"{union_def.name} already exists")
 
   # union def mapping
-  union_block.union_defs_mapping[$(union_def.name)] = union_def
+  union_block.union_defs_mapping[$(union_def.name)] = union_block.union_defs.len
 
   # union def field mapping
   union_block.union_def_fields_mapping[$(union_def.name)] = init_table[string,
@@ -51,11 +51,16 @@ proc add_union_def*(union_block: Union,
   union_block.union_defs.add(union_def)
   ok()
 
-proc get_union_def*(union: Union, union_name: Identifier): Result[
-    UnionDef, string] =
+proc get_union_def_index*(union: Union, union_name: Identifier): Result[
+    int, string] =
   if $(union_name) in union.union_defs_mapping:
     return ok(union.union_defs_mapping[$(union_name)])
   return err(fmt"Found unknown union {union_name}")
+
+proc get_union_def*(union: Union, union_name: Identifier): Result[
+    UnionDef, string] =
+  let union_def_index = ? union.get_union_def_index(union_name)
+  return ok(union.union_defs[union_def_index])
 
 proc get_union_def_field*(union: Union, union_name: Identifier,
     field_name: Identifier): Result[ArgumentDefinition, string] =
@@ -141,15 +146,15 @@ proc close*(else_block: Else): Result[void, string] =
   ok()
 
 type Case* = ref object of RootObj
-  value: Atom
+  value: CasePattern
   spaces: int
   statements: seq[Statement]
 
 proc spaces*(case_block: Case): int = case_block.spaces
 proc statements*(case_block: Case): seq[Statement] = case_block.statements
-proc value*(case_block: Case): Atom = case_block.value
+proc value*(case_block: Case): CasePattern = case_block.value
 
-proc new_case*(value: Atom, spaces: int): Case =
+proc new_case*(value: CasePattern, spaces: int): Case =
   Case(value: value, spaces: spaces)
 
 proc `$`*(case_block: Case): string =
