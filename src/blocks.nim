@@ -45,7 +45,7 @@ proc new_block(matcher: MatchDefinition, spaces: int): Result[Block, string] =
   ok(Block(kind: BK_MATCH, match_block: new_matcher(matcher.name, spaces)))
 
 proc new_block(case_def: CaseDefinition, spaces: int): Result[Block, string] =
-  ok(Block(kind: BK_CASE, case_block: new_case(case_def.value, spaces)))
+  ok(Block(kind: BK_CASE, case_block: new_case(case_def.pattern, spaces)))
 
 proc new_else_block(spaces: int): Result[Block, string] =
   ok(Block(kind: BK_ELSE, else_block: new_else(spaces)))

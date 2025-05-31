@@ -192,10 +192,20 @@ proc match_def_reducer*(location: Location, parts: seq[seq[seq[
   let name = parts[0][2][0].identifier
   name.new_match_def().to_parse_result()
 
+proc case_pattern_reducer*(location: Location, parts: seq[seq[seq[
+    ParseResult]]]): ParseResult =
+  if parts[0].len > 0:
+    return parts[0][0][0].atom.new_case_pattern(location).to_parse_result()
+  elif parts[1].len > 0:
+    let module_ref = parts[1][0][0].module_ref
+    let struct_value = parts[1][2][0].arg_def_list
+    return module_ref.new_case_pattern(struct_value,
+        location).to_parse_result()
+
 proc case_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
-  let literal = parts[0][2][0].atom
-  literal.new_case_def().to_parse_result()
+  let case_pattern = parts[0][2][0].case_pattern
+  case_pattern.new_case_def(location).to_parse_result()
 
 proc else_def_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =

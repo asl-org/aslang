@@ -329,11 +329,20 @@ let match_def_rule* = non_terminal_rule("match_def", @[
 ], match_def_reducer)
 
 # case_def.nim
+let case_pattern_rule* = non_terminal_rule("case_pattern", @[
+  new_production(@[integer.exact_one]),
+  new_production(@[
+    module_ref_rule.exact_one,
+    space.any,
+    struct_def_rule.exact_one,
+  ])
+], case_pattern_reducer)
+
 let case_def_rule* = non_terminal_rule("case_def", @[
   new_production(@[
     case_keyword.exact_one,
     space.any,
-    integer.exact_one,
+    case_pattern_rule.exact_one,
     space.any,
     colon.exact_one,
   ])

@@ -375,16 +375,48 @@ proc `$`*(match_def: MatchDefinition): string =
 
 proc new_match_def*(name: Identifier): MatchDefinition = MatchDefinition(name: name)
 
+type
+  CasePatternKind* = enum
+    CPK_ATOM, CPK_UNION
+  CasePattern* = ref object of RootObj
+    location: Location
+    case kind: CasePatternKind
+    of CPK_ATOM: atom: Atom
+    of CPK_UNION:
+      module_ref: ModuleRef
+      arg_def_list: seq[ArgumentDefinition]
+
+proc kind*(case_pattern: CasePattern): CasePatternKind = case_pattern.kind
+proc atom*(case_pattern: CasePattern): Atom = case_pattern.atom
+proc module_ref*(case_pattern: CasePattern): ModuleRef = case_pattern.module_ref
+proc arg_def_list*(case_pattern: CasePattern): seq[
+    ArgumentDefinition] = case_pattern.arg_def_list
+
+proc `$`*(case_pattern: CasePattern): string =
+  case case_pattern.kind:
+  of CPK_ATOM: $(case_pattern.atom)
+  of CPK_UNION: fmt"{case_pattern.module_ref} {case_pattern.arg_def_list}"
+
+proc new_case_pattern*(atom: Atom, location: Location): CasePattern =
+  CasePattern(kind: CPK_ATOM, atom: atom, location: location)
+
+proc new_case_pattern*(module_ref: ModuleRef, arg_def_list: seq[
+    ArgumentDefinition], location: Location): CasePattern =
+  CasePattern(kind: CPK_UNION, module_ref: module_ref,
+      arg_def_list: arg_def_list, location: location)
+
 # case_def.nim
 type CaseDefinition* = ref object of RootObj
-  value: Atom
+  location: Location
+  pattern: CasePattern
 
-proc value*(case_def: CaseDefinition): Atom = case_def.value
+proc pattern*(case_def: CaseDefinition): CasePattern = case_def.pattern
 
 proc `$`*(case_def: CaseDefinition): string =
-  fmt"case {case_def.value}:"
+  fmt"case {case_def.pattern}:"
 
-proc new_case_def*(value: Atom): CaseDefinition = CaseDefinition(value: value)
+proc new_case_def*(pattern: CasePattern, location: Location): CaseDefinition =
+  CaseDefinition(pattern: pattern, location: location)
 
 type ElseDefinition = ref object of RootObj
 
@@ -725,6 +757,7 @@ type
     PRK_STRUCT_MACRO,
     PRK_UNION_MACRO,
     PRK_MATCH_DEF_MACRO,
+    PRK_CASE_PATTERN,
     PRK_CASE_DEF_MACRO,
     PRK_ELSE_DEF_MACRO,
     PRK_MACRO_CALL,
@@ -753,6 +786,7 @@ type
     of PRK_UNION_DEF: union_def*: UnionDef
     of PRK_MODULE_MACRO: module_def*: ModuleDefinition
     of PRK_MATCH_DEF_MACRO: match_def*: MatchDefinition
+    of PRK_CASE_PATTERN: case_pattern*: CasePattern
     of PRK_CASE_DEF_MACRO: case_def*: CaseDefinition
     of PRK_ELSE_DEF_MACRO: else_def*: ElseDefinition
     of PRK_STRUCT_MACRO: struct_macro*: StructMacro
@@ -784,6 +818,7 @@ proc `$`*(pr: ParseResult): string =
   of PRK_UNION_DEF: $(pr.union_def)
   of PRK_MODULE_MACRO: $(pr.module_def)
   of PRK_MATCH_DEF_MACRO: $(pr.match_def)
+  of PRK_CASE_PATTERN: $(pr.case_pattern)
   of PRK_CASE_DEF_MACRO: $(pr.case_def)
   of PRK_ELSE_DEF_MACRO: $(pr.else_def)
   of PRK_STRUCT_MACRO: $(pr.struct_macro)
@@ -850,6 +885,9 @@ proc to_parse_result*(module_def: ModuleDefinition): ParseResult =
 
 proc to_parse_result*(match_def: MatchDefinition): ParseResult =
   ParseResult(kind: PRK_MATCH_DEF_MACRO, match_def: match_def)
+
+proc to_parse_result*(case_pattern: CasePattern): ParseResult =
+  ParseResult(kind: PRK_CASE_PATTERN, case_pattern: case_pattern)
 
 proc to_parse_result*(case_def: CaseDefinition): ParseResult =
   ParseResult(kind: PRK_CASE_DEF_MACRO, case_def: case_def)
