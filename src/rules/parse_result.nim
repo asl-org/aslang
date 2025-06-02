@@ -237,16 +237,6 @@ proc init*(expression: Expression): Initializer = expression.init
 proc fncall*(expression: Expression): FunctionCall = expression.fncall
 proc identifier*(expression: Expression): Identifier = expression.identifier
 
-proc safe_fncall(expression: Expression): Result[FunctionCall, string] =
-  case expression.kind:
-  of EK_FNCALL: return ok(expression.fncall)
-  else: return err(fmt"{expression.kind} is not a function call")
-
-proc safe_identifier(expression: Expression): Result[Identifier, string] =
-  case expression.kind:
-  of EK_IDENTIFIER: return ok(expression.identifier)
-  else: return err(fmt"{expression.kind} is not an identifier")
-
 proc new_value*(init: Initializer): Expression = Expression(kind: EK_INIT, init: init)
 proc new_value*(fncall: FunctionCall): Expression = Expression(kind: EK_FNCALL,
     fncall: fncall)
@@ -551,21 +541,6 @@ proc kind*(statement: Statement): StatementKind = statement.kind
 proc assign*(statement: Statement): Assignment = statement.assign
 proc expression*(statement: Statement): Expression = statement.expression
 
-proc safe_assignment*(statement: Statement): Result[Assignment, string] =
-  case statement.kind:
-  of SK_ASSIGNMENT: ok(statement.assign)
-  else: err(fmt"Statement {statement} is not an assignment")
-
-proc safe_fncall*(statement: Statement): Result[FunctionCall, string] =
-  case statement.kind:
-  of SK_EXPR: statement.expression.safe_fncall
-  else: err(fmt"Statement {statement} is not a function call")
-
-proc safe_identifier*(statement: Statement): Result[Identifier, string] =
-  case statement.kind:
-  of SK_EXPR: statement.expression.safe_identifier
-  else: err(fmt"Statement {statement} is not an identifier")
-
 proc new_statement*(assign: Assignment): Statement =
   Statement(kind: SK_ASSIGNMENT, assign: assign)
 
@@ -614,54 +589,6 @@ proc macro_call*(line: Line): MacroCall = line.macro_call
 proc struct_field_def*(line: Line): ArgumentDefinition = line.struct_field_def
 proc union_def*(line: Line): UnionDef = line.union_def
 proc spaces*(line: Line): int = line.spaces
-
-proc safe_struct_field_def*(line: Line): Result[ArgumentDefinition, string] =
-  case line.kind:
-  of LK_STRUCT_FIELD_DEF: ok(line.struct_field_def)
-  else: err("Line {line} is not a struct field definition")
-
-proc safe_union_def*(line: Line): Result[UnionDef, string] =
-  case line.kind:
-  of LK_UNION_DEF: ok(line.union_def)
-  else: err("Line {line} is not a union field definition")
-
-proc safe_statement*(line: Line): Result[Statement, string] =
-  case line.kind:
-  of LK_STATEMENT: ok(line.statement)
-  else: err("Line {line} is not a statement")
-
-proc safe_macro_call*(line: Line): Result[MacroCall, string] =
-  case line.kind:
-  of LK_MACRO_CALL: ok(line.macro_call)
-  else: err("Line {line} is not a statement")
-
-proc safe_module_def*(line: Line): Result[ModuleDefinition, string] =
-  let macro_call = ? line.safe_macro_call()
-  macro_call.safe_module_def()
-
-proc safe_fn_def*(line: Line): Result[FunctionDefinition, string] =
-  let macro_call = ? line.safe_macro_call()
-  macro_call.safe_fn_def()
-
-proc safe_match_def*(line: Line): Result[MatchDefinition, string] =
-  let macro_call = ? line.safe_macro_call()
-  macro_call.safe_match_def()
-
-proc safe_case_def*(line: Line): Result[CaseDefinition, string] =
-  let macro_call = ? line.safe_macro_call()
-  macro_call.safe_case_def()
-
-proc safe_else_def*(line: Line): Result[ElseDefinition, string] =
-  let macro_call = ? line.safe_macro_call()
-  macro_call.safe_else_def()
-
-proc safe_struct_macro*(line: Line): Result[StructMacro, string] =
-  let macro_call = ? line.safe_macro_call()
-  macro_call.safe_struct_macro()
-
-proc safe_union_macro*(line: Line): Result[UnionMacro, string] =
-  let macro_call = ? line.safe_macro_call()
-  macro_call.safe_union_macro()
 
 # TODO: Hacky stuff
 proc hacky_union_def*(line: Line): Result[UnionDef, string] =

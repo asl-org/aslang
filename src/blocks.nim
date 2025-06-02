@@ -120,10 +120,9 @@ proc close(child_block: Block): Result[Block, string] =
   return ok(child_block)
 
 proc to_blocks(program: Program): Result[Block, string] =
-  let lines = program.only_statements.lines
   var scope = ? new_block()
   var stack = ? @[scope].new_stack()
-  for line in lines:
+  for line in program.only_statements.lines:
     while stack.len > 1:
       var child_block = ? stack.peek()
       if child_block.spaces < line.spaces: break
@@ -132,23 +131,22 @@ proc to_blocks(program: Program): Result[Block, string] =
       child_block = ? child_block.close()
       parent_block = ? parent_block.add_block(child_block)
 
-    # statement
-    let maybe_statement = line.safe_statement()
-    if maybe_statement.is_ok:
+    case line.kind:
+    of LK_STATEMENT:
       var asl_block = ? stack.peek()
       case asl_block.kind:
       of BK_FUNCTION:
         if line.spaces != 4:
           return err(fmt"Expected 4 spaces before the statement but found {line.spaces}")
-        ? asl_block.fn.add_statement(maybe_statement.get)
+        ? asl_block.fn.add_statement(line.statement)
       of BK_CASE:
         if line.spaces != 8:
           return err(fmt"Expected 8 spaces before the statement but found {line.spaces}")
-        ? asl_block.case_block.add_statement(maybe_statement.get)
+        ? asl_block.case_block.add_statement(line.statement)
       of BK_ELSE:
         if line.spaces != 8:
           return err(fmt"Expected 8 spaces before the statement but found {line.spaces}")
-        ? asl_block.else_block.add_statement(maybe_statement.get)
+        ? asl_block.else_block.add_statement(line.statement)
       # TODO: hacky stuff, using Statement for union definition because expr_init and
       # union_def syntax collides so if we encounter union_def with `union` as parent block
       # we convert expr_init to union_def. Need to be cleaned by introducing better syntax
@@ -161,88 +159,44 @@ proc to_blocks(program: Program): Result[Block, string] =
         ? asl_block.union_block.add_union_def(union_def)
       else:
         return err(fmt"Line {line} can not be added to any block")
-
-      continue
-
-    # struct field def
-    let maybe_struct_field_def = line.safe_struct_field_def()
-    if maybe_struct_field_def.is_ok:
+    of LK_MACRO_CALL:
+      case line.macro_call.kind:
+      of MCK_STRUCT_MACRO:
+        ? stack.push( ? new_struct_block(line.spaces))
+      of MCK_UNION_MACRO:
+        ? stack.push( ? new_union_block(line.spaces))
+      of MCK_MATCH_DEF:
+        ? stack.push( ? new_block(line.macro_call.match_def, line.spaces))
+      of MCK_CASE_DEF:
+        ? stack.push( ? new_block(line.macro_call.case_def, line.spaces))
+      of MCK_ELSE_DEF:
+        ? stack.push( ? new_else_block(line.spaces))
+      of MCK_FN:
+        ? stack.push( ? new_block(line.macro_call.fn_def, line.spaces))
+      of MCK_MODULE:
+        ? stack.push( ? new_block(line.macro_call.module_def, line.spaces))
+    of LK_STRUCT_FIELD_DEF:
       var asl_block = ? stack.peek()
-      # echo line
-      # echo asl_block.kind
       case asl_block.kind:
       of BK_STRUCT:
         if line.spaces != 4:
           return err(fmt"Expected 4 spaces before the struct field definition but found {line.spaces}")
-        ? asl_block.struct_block.add_field_def(maybe_struct_field_def.get)
-      else: return err(fmt"Line {line} can not be added to any block")
-
-      continue
-
-    # TODO: Revive this code after fixing the initialzer and union def syntax collision
-    # let maybe_union_def = line.safe_union_def()
-    # if maybe_union_def.is_ok:
-    #   var asl_block = ? stack.peek()
-    #   echo asl_block
-    #   case asl_block.kind:
-    #   of BK_UNION:
-    #     if line.spaces != 4:
-    #       return err(fmt"Expected 4 spaces before the union definition but found {line.spaces}")
-    #     ? asl_block.union_block.add_union_def(maybe_union_def.get)
-    #   else: return err(fmt"Line {line} can not be added to any block")
-
-    #   continue
-
-    # struct macro
-    let maybe_struct_macro = line.safe_struct_macro()
-    if maybe_struct_macro.is_ok:
-      let fields = ? new_struct_block(line.spaces)
-      ? stack.push(fields)
-      continue
-
-    # union macro
-    let maybe_union_macro = line.safe_union_macro()
-    if maybe_union_macro.is_ok:
-      let fields = ? new_union_block(line.spaces)
-      ? stack.push(fields)
-      continue
-
-    # else block
-    let maybe_else_def = line.safe_else_def()
-    if maybe_else_def.is_ok:
-      let fn = ? new_else_block(line.spaces)
-      ? stack.push(fn)
-      continue
-
-    # case block
-    let maybe_case_def = line.safe_case_def()
-    if maybe_case_def.is_ok:
-      let fn = ? new_block(maybe_case_def.get, line.spaces)
-      ? stack.push(fn)
-      continue
-
-    # match block
-    let maybe_match_def = line.safe_match_def()
-    if maybe_match_def.is_ok:
-      let fn = ? new_block(maybe_match_def.get, line.spaces)
-      ? stack.push(fn)
-      continue
-
-    # fn block
-    let maybe_fn_def = line.safe_fn_def()
-    if maybe_fn_def.is_ok:
-      let fn = ? new_block(maybe_fn_def.get, line.spaces)
-      ? stack.push(fn)
-      continue
-
-    # module/app/struct/union block
-    let maybe_app_def = line.safe_module_def()
-    if maybe_app_def.is_ok:
-      let module = ? new_block(maybe_app_def.get, line.spaces)
-      ? stack.push(module)
-      continue
-
-    return err(fmt"Line {line} is invalid for macro processing")
+        ? asl_block.struct_block.add_field_def(line.struct_field_def)
+      else:
+        return err(fmt"Line {line} can not be added to any block")
+    of LK_UNION_DEF, LK_COMMENT, LK_EMPTY:
+      # TODO: Revive this code after fixing the initialzer and union def syntax collision
+      # let maybe_union_def = line.safe_union_def()
+      # if maybe_union_def.is_ok:
+      #   var asl_block = ? stack.peek()
+      #   echo asl_block
+      #   case asl_block.kind:
+      #   of BK_UNION:
+      #     if line.spaces != 4:
+      #       return err(fmt"Expected 4 spaces before the union definition but found {line.spaces}")
+      #     ? asl_block.union_block.add_union_def(maybe_union_def.get)
+      #   else: return err(fmt"Line {line} can not be added to any block")
+      discard
 
   while stack.len > 1:
     var child_block = ? stack.pop()
