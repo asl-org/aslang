@@ -237,10 +237,10 @@ proc init*(expression: Expression): Initializer = expression.init
 proc fncall*(expression: Expression): FunctionCall = expression.fncall
 proc identifier*(expression: Expression): Identifier = expression.identifier
 
-proc new_value*(init: Initializer): Expression = Expression(kind: EK_INIT, init: init)
-proc new_value*(fncall: FunctionCall): Expression = Expression(kind: EK_FNCALL,
-    fncall: fncall)
-proc new_value*(identifier: Identifier): Expression = Expression(
+proc new_expression*(init: Initializer): Expression = Expression(kind: EK_INIT, init: init)
+proc new_expression*(fncall: FunctionCall): Expression = Expression(
+    kind: EK_FNCALL, fncall: fncall)
+proc new_expression*(identifier: Identifier): Expression = Expression(
     kind: EK_IDENTIFIER, identifier: identifier)
 
 proc `$`*(value: Expression): string =
@@ -255,6 +255,7 @@ type Assignment* = ref object of RootObj
   expression: Expression
   location: Location
 
+proc location*(assignment: Assignment): Location = assignment.location
 proc dest*(assignment: Assignment): Identifier = assignment.dest
 proc expression*(assignment: Assignment): Expression = assignment.expression
 
@@ -537,6 +538,7 @@ proc `$`*(statement: Statement): string =
   of SK_ASSIGNMENT: $(statement.assign)
   of SK_EXPR: $(statement.expression)
 
+proc location*(statement: Statement): Location = statement.location
 proc kind*(statement: Statement): StatementKind = statement.kind
 proc assign*(statement: Statement): Assignment = statement.assign
 proc expression*(statement: Statement): Expression = statement.expression

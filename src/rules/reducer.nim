@@ -137,13 +137,13 @@ proc fncall_reducer*(location: Location, parts: seq[seq[seq[
 proc value_reducer*(location: Location, parts: seq[seq[seq[
     ParseResult]]]): ParseResult =
   if parts[0].len > 0:
-    return parts[0][0][0].init.new_value().to_parse_result()
+    return parts[0][0][0].init.new_expression().to_parse_result()
 
   if parts[1].len > 0:
-    return parts[1][0][0].fncall.new_value().to_parse_result()
+    return parts[1][0][0].fncall.new_expression().to_parse_result()
 
   if parts[2].len > 0:
-    return parts[2][0][0].identifier.new_value().to_parse_result()
+    return parts[2][0][0].identifier.new_expression().to_parse_result()
 
 # assignment.nim
 proc assignment_reducer*(location: Location, parts: seq[seq[seq[
