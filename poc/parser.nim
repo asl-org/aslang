@@ -1,4 +1,4 @@
-import results, strformat, strutils, sequtils, sets
+import results, strformat, strutils, sequtils, hashes
 
 import tokenizer
 export tokenizer
@@ -80,12 +80,20 @@ type ArgumentDefinition* = ref object of RootObj
 proc location*(arg_def: ArgumentDefinition): Location =
   arg_def.arg_type.location
 
+proc hash*(arg_def: ArgumentDefinition): Hash = arg_def.arg_type.hash
+
 proc `$`*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.arg_type} {arg_def.arg_name}"
 
 proc new_argument_definition*(arg_type: Token,
     arg_name: Token): ArgumentDefinition =
   ArgumentDefinition(arg_type: arg_type, arg_name: arg_name)
+
+proc new_argument_definition*(arg_type: string,
+    arg_name: string): ArgumentDefinition =
+  let arg_type_token = Token(kind: TK_ID, content: arg_type, location: Location())
+  let arg_name_token = Token(kind: TK_ID, content: arg_name, location: Location())
+  new_argument_definition(arg_type_token, arg_name_token)
 
 proc expect_argument_definition(parser: Parser): Result[ArgumentDefinition, string] =
   let arg_type = ? parser.expect(TK_ID)
@@ -97,17 +105,10 @@ proc expect_argument_definition_list(parser: Parser): Result[seq[
     ArgumentDefinition], string] =
   discard ? parser.expect(TK_OPAREN)
   var arg_def_list: seq[ArgumentDefinition]
-  var arg_name_set = init_hashset[string]()
 
   while true:
     discard parser.expect_any(TK_SPACE)
     let arg_def = ? parser.expect_argument_definition()
-
-    let arg_name = arg_def.arg_name
-    if $(arg_name) in arg_name_set:
-      return err(fmt"{arg_def.location} {arg_name} is defined twice")
-    arg_name_set.incl($(arg_name))
-
     arg_def_list.add(arg_def)
     discard parser.expect_any(TK_SPACE)
 
@@ -124,15 +125,34 @@ type FunctionDefinition* = ref object of RootObj
   return_type*: Token
   location*: Location
 
+proc hash*(func_def: FunctionDefinition): Hash =
+  var essence = func_def.name.hash !& func_def.location.hash
+  for arg_def in func_def.arg_def_list:
+    essence = essence !& arg_def.hash
+  return essence
+
 proc `$`*(func_def: FunctionDefinition): string =
   let arg_def_list_str = func_def.arg_def_list.map_it($(it)).join(", ")
   fmt"fn {func_def.name}({arg_def_list_str}): {func_def.return_type}"
+
+proc c*(func_def: FunctionDefinition): string =
+  let args_def_str = func_def.arg_def_list.map_it($(it.arg_type)).join(", ")
+  fmt"{func_def.return_type} {func_def.name}({args_def_str});"
 
 proc new_function_definition*(name: Token, arg_def_list: seq[
     ArgumentDefinition], return_type: Token,
         location: Location): FunctionDefinition =
   FunctionDefinition(name: name, arg_def_list: arg_def_list,
       return_type: return_type, location: location)
+
+proc new_function_definition*(name: string, arg_def_list: seq[(string, string)],
+    return_type: string): FunctionDefinition =
+  let name_token = Token(kind: TK_ID, content: name, location: Location())
+  let return_type_token = Token(kind: TK_ID, content: return_type,
+      location: Location())
+  let arg_def_list_token = arg_def_list.map_it(new_argument_definition(it[0], it[1]))
+  new_function_definition(name_token, arg_def_list_token, return_type_token,
+      Location())
 
 proc expect_function_definition(parser: Parser): Result[FunctionDefinition, string] =
   let fn = ? parser.expect(TK_FN)
@@ -162,8 +182,8 @@ proc expect_argument_list(parser: Parser): Result[seq[Token], string] =
   ok(arg_list)
 
 type FunctionCall* = ref object of RootObj
-  name: Token
-  arg_list: seq[Token]
+  name*: Token
+  arg_list*: seq[Token]
 
 proc location*(function_call: FunctionCall): Location =
   function_call.name.location

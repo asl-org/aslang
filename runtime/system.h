@@ -17,7 +17,7 @@ U8 System_free(Pointer ptr)
   return 0;
 }
 
-U64 System_print_Pointer(Pointer ptr) { return printf("%llu\n", (U64)ptr); }
+U64 System_print_Pointer(Pointer ptr) { return printf("%p\n", (void *)ptr); }
 U64 System_print_F32(F32 value) { return (U64)printf("%f\n", value); }
 U64 System_print_F64(F64 value) { return (U64)printf("%lf\n", value); }
 U64 System_print_S8(S8 value) { return (U64)printf("%d\n", value); }

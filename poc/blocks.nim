@@ -1,4 +1,4 @@
-import results, strformat, strutils, sequtils
+import results, strformat, strutils, sequtils, hashes, tables
 
 import parser
 export parser
@@ -6,6 +6,7 @@ export parser
 type Function* = ref object of RootObj
   definition*: FunctionDefinition
   statements*: seq[Statement]
+  scope*: Table[string, ArgumentDefinition]
 
 proc location*(function: Function): Location =
   function.definition.location
@@ -22,6 +23,8 @@ proc arity*(function: Function): int =
 proc arg_def_list*(function: Function): seq[ArgumentDefinition] =
   function.definition.arg_def_list
 
+proc hash*(function: Function): Hash = function.definition.hash
+
 proc `$`*(function: Function): string =
   let prefix = " ".repeat(function.definition.location.column - 1)
   let child_prefix = " ".repeat(function.definition.location.column + 1)
@@ -30,12 +33,23 @@ proc `$`*(function: Function): string =
     lines.add(child_prefix & $(statement))
   lines.join("\n")
 
-proc is_main*(function: Function): bool =
+proc c*(function: Function): string =
+  let args_def_str = function.definition.arg_def_list.map_it(
+      fmt"{it.arg_type} {it.arg_name}").join(", ")
+  let signature = fmt"{function.return_type} {function.name}({args_def_str})"
+  var body: seq[string]
+  for statement in function.statements:
+    let arg_type = function.scope[$(statement.destination)].arg_type
+    body.add(fmt"{arg_type} {statement.destination} = {statement.function_call};")
+  body.add(fmt"return {function.statements[^1].destination};")
+  @[signature, "{", body.join("\n"), "}"].join("\n")
+
+proc is_start*(function: Function): bool =
   let name = $(function.definition.name)
   let return_type = $(function.definition.return_type)
   let arity = function.definition.arg_def_list.len
   let first_arg_type = $(function.definition.arg_def_list[0].arg_type)
-  return name == "main" and return_type == "U8" and arity == 1 and
+  return name == "start" and return_type == "U8" and arity == 1 and
       first_arg_type == "U8"
 
 proc new_function*(definition: FunctionDefinition): Function =
@@ -44,21 +58,59 @@ proc new_function*(definition: FunctionDefinition): Function =
 proc add_statement*(function: Function, statement: Statement): void =
   function.statements.add(statement)
 
+type Module* = ref object of RootObj
+  name: string
+
+proc `$`*(module: Module): string = module.name
+
 type File* = ref object of RootObj
   location*: Location
+  modules: seq[Module]
   functions*: seq[Function]
+  builtins*: seq[FunctionDefinition]
 
 proc name*(file: File): string =
   file.location.filename
 
+proc new_file*(filename: string): File =
+  let modules = @["U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "S64",
+      "F32", "F64"].map_it(Module(name: it))
+  let builtins = @[
+    new_function_definition("U8_init", @[("U8", "a")], "U8"),
+    new_function_definition("U16_init", @[("U16", "a")], "U16"),
+    new_function_definition("U32_init", @[("U32", "a")], "U32"),
+    new_function_definition("U64_init", @[("U64", "a")], "U64"),
+    new_function_definition("S8_init", @[("S8", "a")], "S8"),
+    new_function_definition("S16_init", @[("S16", "a")], "S16"),
+    new_function_definition("S32_init", @[("S32", "a")], "S32"),
+    new_function_definition("S64_init", @[("S64", "a")], "S64"),
+    new_function_definition("S64_add", @[("S64", "a"), ("S64", "b")], "S64"),
+    new_function_definition("S64_subtract", @[("S64", "a"), ("S64", "b")],
+        "S64"),
+    new_function_definition("S64_multiply", @[("S64", "a"), ("S64", "b")],
+        "S64"),
+    new_function_definition("S64_quotient", @[("S64", "a"), ("S64", "b")],
+        "S64"),
+    new_function_definition("System_print_S64", @[("S64", "a")], "U64"),
+    new_function_definition("F32_init", @[("F32", "a")], "F32"),
+    new_function_definition("F64_init", @[("F64", "a")], "F64"),
+  ]
+  File(modules: modules, builtins: builtins, location: new_file_location(filename))
+
 proc `$`*(file: File): string =
   file.functions.map_it($(it)).join("\n\n")
 
-proc find_main_function*(file: File): Result[Function, string] =
+proc find_module*(file: File, module_name: Token): Result[Module, string] =
+  for module in file.modules:
+    if $(module) == $(module_name):
+      return ok(module)
+  err(fmt"{module_name} does not exist in the scope")
+
+proc find_start_function*(file: File): Result[Function, string] =
   for function in file.functions:
-    if function.is_main():
+    if function.is_start():
       return ok(function)
-  err(fmt"{file.name} failed to find main function")
+  err(fmt"{file.name} failed to find start function")
 
 proc check_if_duplicate(file: File, fn: Function): Result[void, string] =
   for function in file.functions:
@@ -135,7 +187,7 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
     err(fmt"Statement do not support further nesting")
 
 proc new_block*(filename: string): Block =
-  Block(kind: BK_FILE, file: File(location: new_file_location(filename)))
+  Block(kind: BK_FILE, file: new_file(filename))
 
 proc new_block*(line: Line): Result[Block, string] =
   let prefix = line.location.column - 1

@@ -1,4 +1,4 @@
-import strformat, results
+import strformat, results, hashes
 
 import helpers
 
@@ -52,6 +52,7 @@ type
     kind*: TokenKind
     location*: Location
 
+proc hash*(token: Token): Hash = token.content.hash !& token.location.hash
 proc `$`*(token: Token): string = token.content
 
 type

@@ -5,6 +5,8 @@
 
 // Module: U32
 
+U32 U32_init(U32 a) { return a; }
+
 // safe
 U32 U32_and(U32 a, U32 b) { return a & b; }
 U32 U32_or(U32 a, U32 b) { return a | b; }

@@ -4,6 +4,7 @@
 #include "base.h"
 
 // Module: S8
+S8 S8_init(S8 a) { return a; }
 
 // safe
 S8 S8_and(S8 a, S8 b) { return a & b; }

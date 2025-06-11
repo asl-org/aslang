@@ -8,7 +8,7 @@ fn count(S64 a, S64 b): S64
   d = sum(c)
   _ = S64_multiply(b, d)
 
-fn main(U8 seed): U8
+fn start(U8 seed): U8
   a = count(999, 3)
   b = count(999, 5)
 
@@ -16,6 +16,6 @@ fn main(U8 seed): U8
   d = S64_add(a, b)
 
   e = S64_subtract(d, c)
-  _ = System_print(e)
+  _ = System_print_S64(e)
 
   exit_success = U8_init(0)
