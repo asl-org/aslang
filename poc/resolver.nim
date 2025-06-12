@@ -1,4 +1,4 @@
-import results, tables, strformat, sequtils, parseutils, sets
+import results, tables, strformat, sequtils, parseutils, sets, options
 
 import tokenizer
 import parser
@@ -107,28 +107,129 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
       return err(fmt"{arg.location} {arg.arg_name} is already defined {defined_arg.location}")
     function.scope[$(arg.arg_name)] = arg
 
-  for statement in function.statements:
-    if $(statement.destination) in function.scope:
-      let defined_arg = function.scope[$(statement.destination)]
-      return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+  var sindex = 0 # statement index
+  var mindex = 0 # match block index
+  for step in 0..<function.steps:
+    # handle function call statements
+    if sindex < function.statements.len and function.statements[sindex][0] == step:
+      let (_, statement) = function.statements[sindex]
+      if $(statement.destination) in function.scope:
+        let defined_arg = function.scope[$(statement.destination)]
+        return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
-    # try looking up builtins function call
-    let maybe_builtin = file.resolve_builtin_function_call(function.scope,
-        statement.function_call)
-    if maybe_builtin.is_ok:
+      # try looking up builtins function call
+      let maybe_builtin = file.resolve_builtin_function_call(function.scope,
+          statement.function_call)
+      if maybe_builtin.is_ok:
+        function.scope[$(statement.destination)] = new_argument_definition(
+            maybe_builtin.get.return_type, statement.destination)
+        # increment statement index
+        sindex += 1
+        continue
+
+      # try looking up user function call
+      let fn = ? file.resolve_function_call(function.scope,
+          statement.function_call)
       function.scope[$(statement.destination)] = new_argument_definition(
-          maybe_builtin.get.return_type, statement.destination)
-      continue
+          fn.definition.return_type, statement.destination)
+      function_set.incl(fn)
+      # increment statement index
+      sindex += 1
+    # handle match block statements
+    else:
+      let (_, match) = function.matches[mindex]
+      if $(match.destination) in function.scope:
+        let defined_arg = function.scope[$(match.destination)]
+        return err(fmt"{match.destination.location} {match.destination} is already defined {defined_arg.location}")
 
-    # try looking up user function call
-    let fn = ? file.resolve_function_call(function.scope,
-        statement.function_call)
-    function.scope[$(statement.destination)] = new_argument_definition(
-        fn.definition.return_type, statement.destination)
-    function_set.incl(fn)
+      if $(match.operand) notin function.scope:
+        return err(fmt"{match.operand.location} {match.operand} is not defined in the scope")
 
-  let return_argument = function.statements[^1].destination
-  let actual_return_type = $(function.scope[$(return_argument)].arg_type)
+      for case_block in match.case_blocks:
+        # copy current function scope to the case scope to avoid non local argument name conflicts
+        case_block.scope = deep_copy(function.scope)
+        for statement in case_block.statements:
+          # check if variable is already defined in the local(case) scope
+          if $(statement.destination) in case_block.scope:
+            let defined_arg = case_block.scope[$(statement.destination)]
+            return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+
+          # try looking up builtins function call
+          let maybe_builtin = file.resolve_builtin_function_call(
+              case_block.scope, statement.function_call)
+          if maybe_builtin.is_ok:
+            case_block.scope[$(statement.destination)] = new_argument_definition(
+                maybe_builtin.get.return_type, statement.destination)
+            continue
+
+          # try looking up user function call
+          let fn = ? file.resolve_function_call(case_block.scope,
+              statement.function_call)
+          case_block.scope[$(statement.destination)] = new_argument_definition(
+              fn.definition.return_type, statement.destination)
+          function_set.incl(fn)
+
+
+        let return_argument = case_block.statements[^1].destination
+        let actual_return_type = case_block.scope[$(return_argument)].arg_type
+        if match.return_type.is_none:
+          match.return_type = some(actual_return_type)
+        elif $(match.return_type.get) != $(actual_return_type):
+          return err(fmt"{return_argument.location} `case` block is expected to return {match.return_type.get} but found {actual_return_type}")
+
+      for else_block in match.else_blocks:
+        else_block.scope = deep_copy(function.scope)
+        for statement in else_block.statements:
+          # check if variable is already defined in the local(case) scope
+          if $(statement.destination) in else_block.scope:
+            let defined_arg = else_block.scope[$(statement.destination)]
+            return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+
+          # try looking up builtins function call
+          let maybe_builtin = file.resolve_builtin_function_call(
+              else_block.scope, statement.function_call)
+          if maybe_builtin.is_ok:
+            else_block.scope[$(statement.destination)] = new_argument_definition(
+                maybe_builtin.get.return_type, statement.destination)
+            continue
+
+          # try looking up user function call
+          let fn = ? file.resolve_function_call(else_block.scope,
+              statement.function_call)
+          else_block.scope[$(statement.destination)] = new_argument_definition(
+              fn.definition.return_type, statement.destination)
+          function_set.incl(fn)
+
+        let return_argument = else_block.statements[^1].destination
+        let actual_return_type = else_block.scope[$(return_argument)].arg_type
+        if match.return_type.is_none:
+          match.return_type = some(actual_return_type)
+        elif $(match.return_type.get) != $(actual_return_type):
+          return err(fmt"{return_argument.location} `else` block is expected to return {match.return_type.get} but found {actual_return_type}")
+
+      function.scope[$(match.destination)] = new_argument_definition(
+          match.return_type.get, match.destination)
+      # increment match index
+      mindex += 1
+
+  var actual_return_type: string
+  # handle only match block
+  if function.statements.len == 0:
+    let return_argument = function.matches[^1][1].destination
+    actual_return_type = $(function.scope[$(return_argument)].arg_type)
+  # handle statements only function
+  elif function.matches.len == 0:
+    let return_argument = function.statements[^1][1].destination
+    actual_return_type = $(function.scope[$(return_argument)].arg_type)
+  else: # function contains both statements and match blocks
+    # handle last statement
+    if function.statements[^1][0] > function.matches[^1][0]:
+      let return_argument = function.statements[^1][1].destination
+      actual_return_type = $(function.scope[$(return_argument)].arg_type)
+    # handle last match block
+    else:
+      let return_argument = function.matches[^1][1].destination
+      actual_return_type = $(function.scope[$(return_argument)].arg_type)
 
   if function.return_type != actual_return_type:
     return err(fmt"{function.location} expected {function.name} to return {function.return_type} but found {actual_return_type}")

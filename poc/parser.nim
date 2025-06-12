@@ -222,23 +222,91 @@ proc expect_statement(parser: Parser): Result[Statement, string] =
   let function_call = ? parser.expect_function_call()
   ok(new_statement(destination, function_call))
 
+type MatchDefinition* = ref object of RootObj
+  destination*: Token
+  operand*: Token
+
+proc location*(match_definition: MatchDefinition): Location =
+  match_definition.destination.location
+
+proc `$`*(match_definition: MatchDefinition): string =
+  fmt"{match_definition.destination} = match {match_definition.operand}:"
+
+proc new_match_definition*(destination: Token,
+    operand: Token): MatchDefinition =
+  MatchDefinition(destination: destination, operand: operand)
+
+proc expect_match_definition(parser: Parser): Result[MatchDefinition, string] =
+  let destination = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_EQUAL)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_MATCH)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  let operand = ? parser.expect(TK_ID)
+  discard ? parser.expect(TK_COLON)
+  ok(new_match_definition(destination, operand))
+
+type CaseDefinition* = ref object of RootObj
+  value*: Token
+  location*: Location
+
+proc `$`*(case_definition: CaseDefinition): string =
+  fmt"case {case_definition.value}:"
+
+proc new_case_definition*(value: Token, location: Location): CaseDefinition =
+  CaseDefinition(value: value, location: location)
+
+proc expect_case_definition(parser: Parser): Result[CaseDefinition, string] =
+  let case_token = ? parser.expect(TK_CASE)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  # TODO: Add float/string/struct support later.
+  let value = ? parser.expect_one_of(@[TK_INTEGER])
+  discard ? parser.expect(TK_COLON)
+  ok(new_case_definition(value, case_token.location))
+
+type ElseDefinition* = ref object of RootObj
+  location*: Location
+
+proc `$`*(else_definition: ElseDefinition): string =
+  fmt"else:"
+
+proc new_else_definition*(location: Location): ElseDefinition =
+  ElseDefinition(location: location)
+
+proc expect_else_definition(parser: Parser): Result[ElseDefinition, string] =
+  let else_token = ? parser.expect(TK_ELSE)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_COLON)
+  ok(new_else_definition(else_token.location))
+
 type
   LineKind* = enum
-    LK_FUNCTION_DEFINITION, LK_STATEMENT
+    LK_FUNCTION_DEFINITION, LK_STATEMENT, LK_MATCH_DEFINITION,
+      LK_CASE_DEFINITION, LK_ELSE_DEFINITION
   Line* = ref object of RootObj
     case kind*: LineKind
     of LK_FUNCTION_DEFINITION: func_def*: FunctionDefinition
     of LK_STATEMENT: statement*: Statement
+    of LK_MATCH_DEFINITION: match_def*: MatchDefinition
+    of LK_CASE_DEFINITION: case_def*: CaseDefinition
+    of LK_ELSE_DEFINITION: else_def*: ElseDefinition
 
 proc location*(line: Line): Location =
   case line.kind:
   of LK_FUNCTION_DEFINITION: line.func_def.location
   of LK_STATEMENT: line.statement.location
+  of LK_MATCH_DEFINITION: line.match_def.location
+  of LK_CASE_DEFINITION: line.case_def.location
+  of LK_ELSE_DEFINITION: line.else_def.location
 
 proc `$`*(line: Line): string =
   case line.kind:
   of LK_FUNCTION_DEFINITION: $(line.func_def)
   of LK_STATEMENT: $(line.statement)
+  of LK_MATCH_DEFINITION: $(line.match_def)
+  of LK_CASE_DEFINITION: $(line.case_def)
+  of LK_ELSE_DEFINITION: $(line.else_def)
 
 proc new_line*(func_def: FunctionDefinition): Line =
   Line(kind: LK_FUNCTION_DEFINITION, func_def: func_def)
@@ -246,14 +314,39 @@ proc new_line*(func_def: FunctionDefinition): Line =
 proc new_line*(statement: Statement): Line =
   Line(kind: LK_STATEMENT, statement: statement)
 
+proc new_line*(match_def: MatchDefinition): Line =
+  Line(kind: LK_MATCH_DEFINITION, match_def: match_def)
+
+proc new_line*(case_def: CaseDefinition): Line =
+  Line(kind: LK_CASE_DEFINITION, case_def: case_def)
+
+proc new_line*(else_def: ElseDefinition): Line =
+  Line(kind: LK_ELSE_DEFINITION, else_def: else_def)
+
 proc expect_line(parser: Parser): Result[Line, string] =
+  let start = parser.index
+
   let maybe_func_def = parser.expect_function_definition()
   if maybe_func_def.is_ok: return ok(new_line(maybe_func_def.get))
+  else: parser.index = start
 
   let maybe_statement = parser.expect_statement()
   if maybe_statement.is_ok: return ok(new_line(maybe_statement.get))
+  else: parser.index = start
 
-  err(fmt"{parser.location} expected a function definition or a statement")
+  let maybe_match_def = parser.expect_match_definition()
+  if maybe_match_def.is_ok: return ok(new_line(maybe_match_def.get))
+  else: parser.index = start
+
+  let maybe_case_def = parser.expect_case_definition()
+  if maybe_case_def.is_ok: return ok(new_line(maybe_case_def.get))
+  else: parser.index = start
+
+  let maybe_else_def = parser.expect_else_definition()
+  if maybe_else_def.is_ok: return ok(new_line(maybe_else_def.get))
+  else: parser.index = start
+
+  err(fmt"{parser.location} expected one of the following: statement, function/match/case/else definition")
 
 proc parse*(tokens: seq[Token]): Result[seq[Line], string] =
   var parser = Parser(tokens: tokens)
