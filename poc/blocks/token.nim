@@ -1,68 +1,27 @@
-import strformat, results, hashes
+import hashes
 
-import helpers
+import token/helpers
 
-type Location* = object of RootObj
-  filename*: string
-  line: int = 1
-  column*: int = 1
+import token/spec; export spec
+import token/location; export location
+import token/kind; export kind
 
-proc new_location*(filename: string): Location =
-  Location(filename: filename)
+type Token* = ref object of RootObj
+  content*: string
+  kind*: TokenKind
+  location*: Location
 
-proc new_file_location*(filename: string): Location =
-  Location(filename: filename, line: 0, column: -1)
+proc hash*(token: Token): Hash =
+  token.content.hash !& token.location.hash
 
-proc update*(location: Location, content: string): Location =
-  var updated = location
-  for x in content:
-    if x == '\n':
-      updated.line += 1
-      updated.column = 1
-    else:
-      updated.column += 1
-  return updated
+proc `$`*(token: Token): string =
+  token.content
 
-proc `$`*(location: Location): string =
-  fmt"{location.filename}:{location.line}:{location.column}"
+proc new_id_token*(content: string): Token =
+  Token(kind: TK_ID, content: content)
 
-type
-  TokenKind* = enum
-    # keywords
-    TK_MODULE, TK_FN, TK_MATCH, TK_CASE, TK_ELSE, TK_STRUCT, TK_UNION
-    # values
-    TK_ID, TK_STRING, TK_FLOAT, TK_INTEGER
-    # prefix operators
-    TK_HASHTAG, TK_TILDE, TK_AT_THE_RATE, TK_BACKSLASH
-    # infix operators
-    TK_PLUS, TK_MINUS, TK_ASTERISK, TK_SLASH, TK_DOLLAR, TK_PERCENT, TK_EQUAL
-    TK_AMPERSAND, TK_PIPE, TK_CARET, TK_PERIOD, TK_SEMI_COLON, TK_COLON, TK_COMMA
-    # postfix operators
-    TK_BANG, TK_QUESTION_MARK
-    # grouping operators
-    TK_OPAREN, TK_CPAREN, TK_OCURLY, TK_CCURLY, TK_OSQUARE, TK_CSQUARE
-    TK_OANGLE, TK_CANGLE, TK_SINGLE_QUOTE, TK_DOUBLE_QUOTE, TK_BACKTICK
-    # space characters
-    TK_NEWLINE, TK_SPACE
-    # EOF
-    TK_EOF
-
-  Token* = ref object of RootObj
-    content*: string
-    kind*: TokenKind
-    location*: Location
-
-proc hash*(token: Token): Hash = token.content.hash !& token.location.hash
-proc `$`*(token: Token): string = token.content
-
-type
-  TokenSpecKind* = enum
-    TSK_STATIC, TSK_DYNAMIC
-  TokenSpec* = ref object of RootObj
-    token_kind*: TokenKind
-    case kind*: TokenSpecKind
-    of TSK_STATIC: value*: string
-    of TSK_DYNAMIC: matcher*: proc(content: string, index: int): Result[string, string]
+proc new_int_token*(value: uint): Token =
+  Token(kind: TK_INTEGER, content: $(value))
 
 # NOTE: spec order is important
 let TOKEN_SPECS* = @[

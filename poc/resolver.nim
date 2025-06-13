@@ -1,7 +1,5 @@
 import results, tables, strformat, sequtils, parseutils, sets, options
 
-import tokenizer
-import parser
 import blocks
 
 type File = blocks.File
@@ -68,7 +66,7 @@ proc resolve_function_call(scope: Table[string, ArgumentDefinition],
     function: FunctionDefinition, function_call: FunctionCall): Result[
         FunctionDefinition, string] =
   if $(function.name) != $(function_call.name):
-    return err(fmt"{function_call.location} expected function with name {function.name} but found {function_call.name}")
+    return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function.name}")
   if function.arg_def_list.len != function_call.arg_list.len:
     return err(fmt"{function_call.location} expected {function.arg_def_list.len} but found {function_call.arg_list.len}")
 
@@ -84,7 +82,7 @@ proc resolve_function_call(file: File, scope: Table[string,
     let maybe_resolved = scope.resolve_function_call(function.definition, function_call)
     if maybe_resolved.is_ok:
       return ok(function)
-  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching function in the file {file.name}")
+  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
 
 proc resolve_builtin_function_call(file: File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall): Result[
@@ -93,7 +91,16 @@ proc resolve_builtin_function_call(file: File, scope: Table[string,
     let maybe_resolved = scope.resolve_function_call(function_def, function_call)
     if maybe_resolved.is_ok:
       return ok(function_def)
-  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching function in the file {file.name}")
+  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching builtin function in the file {file.name}")
+
+proc resolve_expanded_function_call(file: File, scope: Table[string,
+    ArgumentDefinition], function_call: FunctionCall): Result[
+        Function, string] =
+  for function in file.expanded:
+    let maybe_resolved = scope.resolve_function_call(function.definition, function_call)
+    if maybe_resolved.is_ok:
+      return ok(function)
+  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching expanded function in the file {file.name}")
 
 proc resolve_function(file: File, function: Function): Result[HashSet[Function], string] =
   var function_set = init_hashset[Function]()
@@ -127,6 +134,16 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
         sindex += 1
         continue
 
+      # try looking up expanded function call
+      let maybe_expanded = file.resolve_expanded_function_call(function.scope,
+          statement.function_call)
+      if maybe_expanded.is_ok:
+        function.scope[$(statement.destination)] = new_argument_definition(
+            maybe_expanded.get.definition.return_type, statement.destination)
+        # increment statement index
+        sindex += 1
+        continue
+
       # try looking up user function call
       let fn = ? file.resolve_function_call(function.scope,
           statement.function_call)
@@ -145,8 +162,9 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
       if $(match.operand) notin function.scope:
         return err(fmt"{match.operand.location} {match.operand} is not defined in the scope")
 
-      # Temporary hack to ensure that the variable that match block value is assigned to
-      # can not be used inside a case/block variable
+      # Temporary hack to ensure that the variable that match block value is assigned to,
+      # can not be used inside a case/block variable. This variable is updated after match
+      # block resolution is complete. Look for `function.scope[$(match.destination)]`
       function.scope[$(match.destination)] = new_argument_definition(Token(
           kind: TK_ID, location: match.destination.location), Token(kind: TK_ID))
 
@@ -165,6 +183,15 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
           if maybe_builtin.is_ok:
             case_block.scope[$(statement.destination)] = new_argument_definition(
                 maybe_builtin.get.return_type, statement.destination)
+            continue
+
+          # try looking up expanded function call
+          let maybe_expanded = file.resolve_expanded_function_call(
+              case_block.scope, statement.function_call)
+          if maybe_expanded.is_ok:
+            case_block.scope[$(statement.destination)] = new_argument_definition(
+                maybe_expanded.get.definition.return_type,
+                statement.destination)
             continue
 
           # try looking up user function call
@@ -196,6 +223,15 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
           if maybe_builtin.is_ok:
             else_block.scope[$(statement.destination)] = new_argument_definition(
                 maybe_builtin.get.return_type, statement.destination)
+            continue
+
+          # try looking up expanded function call
+          let maybe_expanded = file.resolve_expanded_function_call(
+              else_block.scope, statement.function_call)
+          if maybe_expanded.is_ok:
+            else_block.scope[$(statement.destination)] = new_argument_definition(
+                maybe_expanded.get.definition.return_type,
+                statement.destination)
             continue
 
           # try looking up user function call

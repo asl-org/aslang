@@ -8,6 +8,8 @@ Pointer Pointer_init(Pointer ptr) { return ptr; }
 
 Pointer Pointer_shift(Pointer ptr, U64 offset) { return ptr + offset; }
 
+Pointer Pointer_from_Pointer(Pointer ptr) { return (*((Pointer *)ptr)); }
+
 Pointer Pointer_write_U8(Pointer ptr, U8 value)
 {
   (*((U8 *)ptr)) = value;
