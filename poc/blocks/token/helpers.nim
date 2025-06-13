@@ -14,7 +14,8 @@ proc expect_identifier_tail(content: string, start: int): Result[string, string]
     return err(fmt"expected an alphabet, digit or '_' but found {content[start]}")
 
   var index = start
-  while index < content.len and (content[index] == '_' or content[index].is_alpha_numeric):
+  while index < content.len and (content[index] == '_' or content[
+      index].is_alpha_numeric):
     index += 1
   return ok(content.substr(start, index - 1))
 

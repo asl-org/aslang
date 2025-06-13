@@ -6,9 +6,9 @@
 
 Pointer System_allocate(U64 bytes)
 {
-  Pointer ptr = (Pointer)malloc(bytes);
-  memset((void *)ptr, 0, bytes);
-  return ptr;
+  void *ptr = malloc(bytes);
+  memset(ptr, 0, bytes);
+  return (Pointer)ptr;
 }
 
 U8 System_free(Pointer ptr)

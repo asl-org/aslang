@@ -5,6 +5,8 @@ import parser
 import blocks
 import resolver
 
+type File = blocks.File
+
 proc generate(functions: seq[Function]): Result[string, string] =
   let impl_code = @[
     functions.map_it(it.definition.c).join("\n"),
@@ -21,12 +23,18 @@ proc generate(functions: seq[Function]): Result[string, string] =
 
   ok(code)
 
+proc expand(file: File): Result[File, string] =
+  for struct in file.structs:
+    echo struct
+  ok(file)
+
 proc compile(input_file: string, output_file: string): Result[void, string] =
   let content = read_file(input_file)
   let tokens = ? tokenize(input_file, content)
   let lines = ? parse(tokens)
   let file = ? blockify(input_file, lines)
-  let functions = ? resolve(file)
+  let expanded_file = ? expand(file)
+  let functions = ? resolve(expanded_file)
   let code = ? generate(functions)
   write_file(output_file, code)
   let exit_code = exec_cmd(fmt"gcc -O3 -o example {output_file}")

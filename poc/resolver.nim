@@ -1,7 +1,5 @@
 import results, tables, strformat, sequtils, parseutils, sets, options
 
-import tokenizer
-import parser
 import blocks
 
 type File = blocks.File

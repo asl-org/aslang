@@ -1,3 +1,6 @@
+struct Bitset:
+  Pointer ptr
+  U64 size
 
 fn Bitset_get(Pointer ptr, U64 size, U64 bit): S64
   op = U64_compare(bit, size)
