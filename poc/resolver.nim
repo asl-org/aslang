@@ -145,6 +145,11 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
       if $(match.operand) notin function.scope:
         return err(fmt"{match.operand.location} {match.operand} is not defined in the scope")
 
+      # Temporary hack to ensure that the variable that match block value is assigned to
+      # can not be used inside a case/block variable
+      function.scope[$(match.destination)] = new_argument_definition(Token(
+          kind: TK_ID, location: match.destination.location), Token(kind: TK_ID))
+
       for case_block in match.case_blocks:
         # copy current function scope to the case scope to avoid non local argument name conflicts
         case_block.scope = deep_copy(function.scope)

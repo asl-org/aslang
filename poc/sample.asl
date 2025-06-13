@@ -1,128 +1,118 @@
-module Bitset:
-  struct:
-    Pointer ptr
-    U64 size
 
-  fn get(Bitset bitset, U64 bit) returns S64:
-    failed = S64 -1
-    op = U64.compare(bit, bitset.size)
-    match op:
-      case -1:
-        byte = U64.quotient(bit, 8)
-        offset = U64.remainder(bit, 8)
+fn Bitset_get(Pointer ptr, U64 size, U64 bit): S64
+  op = U64_compare(bit, size)
+  _ = match op:
+    case -1:
+      byte = U64_quotient(bit, 8)
+      offset = U64_remainder(bit, 8)
 
-        bptr = Pointer.shift(bitset.ptr, byte)
-        data = U8.from(bptr)
+      bptr = Pointer_shift(ptr, byte)
+      data = U8_from_Pointer(bptr)
 
-        bdata = U8.rshift(data, offset)
-        res = U8.and(bdata, 1)
-        S64.from(res)
-      else:
-        failed
+      bdata = U8_rshift(data, offset)
+      res = U8_and(bdata, 1)
+      ans = S64_from_U8(res)
+    else:
+      failed = S64_init(-1)
 
-  fn set(Bitset bitset, U64 bit) returns S64:
-    failed = S64 -1
-    op = U64.compare(bit, bitset.size)
-    match op:
-      case -1:
-        byte = U64.quotient(bit, 8)
-        offset = U64.remainder(bit, 8)
+fn Bitset_set(Pointer ptr, U64 size, U64 bit): S64
+  op = U64_compare(bit, size)
+  _ = match op:
+    case -1:
+      byte = U64_quotient(bit, 8)
+      offset = U64_remainder(bit, 8)
 
-        bptr = Pointer.shift(bitset.ptr, byte)
-        data = U8.from(bptr)
+      bptr = Pointer_shift(ptr, byte)
+      data = U8_from_Pointer(bptr)
 
-        mask = U8.lshift(1, offset)
-        res = U8.or(data, mask)
-        Pointer.write(bptr, res)
-        S64.from(res)
-      else:
-        failed
+      mask = U8_lshift(1, offset)
+      res = U8_or(data, mask)
+      _x = Pointer_write_U8(bptr, res)
+      ans = S64_from_U8(res)
+    else:
+      failed = S64_init(-1)
 
-  fn clear(Bitset bitset, U64 bit) returns S64:
-    failed = S64 -1
-    op = U64.compare(bit, bitset.size)
-    match op:
-      case -1:
-        byte = U64.quotient(bit, 8)
-        offset = U64.remainder(bit, 8)
+fn Bitset_clear(Pointer ptr, U64 size, U64 bit): S64
+  op = U64_compare(bit, size)
+  _ = match op:
+    case -1:
+      byte = U64_quotient(bit, 8)
+      offset = U64_remainder(bit, 8)
 
-        bptr = Pointer.shift(bitset.ptr, byte)
-        data = U8.from(bptr)
+      bptr = Pointer_shift(ptr, byte)
+      data = U8_from_Pointer(bptr)
 
-        mask = U8.lshift(1, offset)
-        imask = U8.not(mask)
-        res = U8.and(data, imask)
-        Pointer.write(bptr, res)
-        S64.from(res)
-      else:
-        failed
+      mask = U8_lshift(1, offset)
+      imask = U8_not(mask)
+      res = U8_and(data, imask)
+      _ = Pointer_write(bptr, res)
+      ans = S64_from_U8(res)
+    else:
+      failure = S64_init(-1)
 
-  fn toggle(Bitset bitset, U64 bit) returns S64:
-    data = Bitset.get(bitset, bit)
-    match data:
-      case 0:
-        Bitset.set(bitset, bit)
-      case 1:
-        Bitset.clear(bitset, bit)
-      else:
-        data
+fn Bitset_toggle(Pointer ptr, U64 size, U64 bit): S64
+  data = Bitset_get(ptr, size, bit)
+  _ = match data:
+    case 0:
+      ans = Bitset_set(ptr, size, bit)
+    case 1:
+      ans = Bitset_clear(ptr, size, bit)
+    else:
+      failure = S64_init(-1)
 
-app Example:
-  fn max(U64 a, U64 b) returns U64:
-    op = U64.compare(a, b)
-    match op:
-      case 1:
-        a
-      else:
-        b
+fn max(U64 a, U64 b): U64
+  op = U64_compare(a, b)
+  _ = match op:
+    case 1:
+      ans = U64_init(a)
+    else:
+      ans = U64_init(b)
 
-  fn mark_non_prime(Bitset primes, U64 j, U64 i) returns Bitset:
-    op = U64.compare(j, primes.size)
-    match op:
-      case -1:
-        Bitset.set(primes, j)
-        k = U64.add(j, i)
-        Example.mark_non_prime(primes, k, i)
-      else:
-        primes
+fn mark_non_prime(Pointer primes_ptr, U64 primes_size, U64 j, U64 i): Pointer
+  op = U64_compare(j, primes_size)
+  _ = match op:
+    case -1:
+      _x = Bitset_set(primes_ptr, primes_size, j)
+      k = U64_add(j, i)
+      ans = mark_non_prime(primes_ptr, primes_size, k, i)
+    else:
+      # TODO: Fix this hack by allowing identifier assignment
+      ans = Pointer_init(primes_ptr)
 
-  fn update_ans(U64 i, U64 ans) returns U64:
-    r = U64.remainder(600851475143, i)
-    match r:
-      case 0:
-        Example.max(ans, i)
-      else:
-        ans
+fn update_ans(U64 i, U64 ans): U64
+  r = U64_remainder(600851475143, i)
+  _ = match r:
+    case 0:
+      _x = max(ans, i)
+    else:
+      _y = U64_init(ans)
 
-  fn handle_prime(Bitset primes, U64 i, U64 ans) returns U64:
-    op = Bitset.get(primes, i)
-    match op:
-      case 0:
-        j = U64.multiply(i, 2)
-        Example.mark_non_prime(primes, j, i)
-        Example.update_ans(i, ans)
-      case 1:
-        ans
+fn handle_prime(Pointer primes_ptr, U64 primes_size, U64 i, U64 ans): U64
+  op = Bitset_get(primes_ptr, primes_size, i)
+  _ = match op:
+    case 0:
+      j = U64_multiply(i, 2)
+      _x = mark_non_prime(primes_ptr, primes_size, j, i)
+      _y = update_ans(i, ans)
+    case 1:
+      _z = U64_init(ans)
 
-  fn solve(Bitset primes, U64 start, U64 ans) returns U64:
-    op = U64.compare(start, primes.size)
-    match op:
-      case -1:
-        res = Example.handle_prime(primes, start, ans)
-        next_start = U64.add(start, 1)
-        Example.solve(primes, next_start, res)
-      else:
-        ans
+fn solve(Pointer primes_ptr, U64 primes_size, U64 start, U64 ans): U64
+  op = U64_compare(start, primes_size)
+  _ = match op:
+    case -1:
+      res = handle_prime(primes_ptr, primes_size, start, ans)
+      next_start = U64_add(start, 1)
+      _a = solve(primes_ptr, primes_size, next_start, res)
+    else:
+      _b = U64_init(ans)
 
-  fn start(U8 seed) returns U8:
-    exit_success = U8 0
+fn start(U8 seed): U8
+  max_primes = U64_init(1000001)
+  ptr = System_allocate(max_primes)
 
-    max_primes = U64 1000001
-    ptr = System.allocate(max_primes)
+  ans = solve(ptr, max_primes, 2, 0)
+  _a = System_print_U64(ans)
 
-    primes = Bitset { ptr: ptr, size: max_primes }
-    ans = Example.solve(primes, 2, 0)
-    System.print(ans)
-
-    System.free(ptr)
-    exit_success
+  _b = System_free(ptr)
+  exit_success = U8_init(0)
