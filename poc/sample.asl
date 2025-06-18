@@ -3,8 +3,8 @@ struct Bitset:
   U64 size
 
 fn Bitset_get(Bitset bitset, U64 bit): S64
-  ptr = Bitset_get_ptr(bitset)
-  size = Bitset_get_size(bitset)
+  ptr = bitset.ptr
+  size = bitset.size
   op = U64_compare(bit, size)
   _ = match op:
     case -1:
@@ -21,8 +21,8 @@ fn Bitset_get(Bitset bitset, U64 bit): S64
       failed = S64_init(-1)
 
 fn Bitset_set(Bitset bitset, U64 bit): S64
-  ptr = Bitset_get_ptr(bitset)
-  size = Bitset_get_size(bitset)
+  ptr = bitset.ptr
+  size = bitset.size
   op = U64_compare(bit, size)
   _ = match op:
     case -1:
@@ -40,8 +40,8 @@ fn Bitset_set(Bitset bitset, U64 bit): S64
       failed = S64_init(-1)
 
 fn Bitset_clear(Bitset bitset, U64 bit): S64
-  ptr = Bitset_get_ptr(bitset)
-  size = Bitset_get_size(bitset)
+  ptr = bitset.ptr
+  size = bitset.size
   op = U64_compare(bit, size)
   _ = match op:
     case -1:
@@ -78,9 +78,9 @@ fn max(U64 a, U64 b): U64
       ans = U64_init(b)
 
 fn mark_non_prime(Bitset bitset, U64 j, U64 i): Pointer
-  primes_ptr = Bitset_get_ptr(bitset)
-  primes_size = Bitset_get_size(bitset)
-  op = U64_compare(j, primes_size)
+  ptr = bitset.ptr
+  size = bitset.size
+  op = U64_compare(j, size)
   _ = match op:
     case -1:
       _x = Bitset_set(bitset, j)
@@ -88,7 +88,7 @@ fn mark_non_prime(Bitset bitset, U64 j, U64 i): Pointer
       ans = mark_non_prime(bitset, k, i)
     else:
       # TODO: Fix this hack by allowing identifier assignment
-      ans = Pointer_init(primes_ptr)
+      ans = Pointer_init(ptr)
 
 fn update_ans(U64 i, U64 ans): U64
   r = U64_remainder(600851475143, i)
@@ -109,9 +109,8 @@ fn handle_prime(Bitset bitset, U64 i, U64 ans): U64
       _z = U64_init(ans)
 
 fn solve(Bitset bitset, U64 start, U64 ans): U64
-  primes_ptr = Bitset_get_ptr(bitset)
-  primes_size = Bitset_get_size(bitset)
-  op = U64_compare(start, primes_size)
+  size = bitset.size
+  op = U64_compare(start, size)
   _ = match op:
     case -1:
       res = handle_prime(bitset, start, ans)

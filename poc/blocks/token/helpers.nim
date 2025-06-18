@@ -129,6 +129,8 @@ proc expect_period(content: string, start: int): Result[string, string] =
 
 proc expect_float*(content: string, start: int): Result[string, string] =
   var index = start
+  var first_half = false
+  var second_half = false
 
   let maybe_sign = expect_sign(content, index)
   if maybe_sign.is_ok:
@@ -136,6 +138,7 @@ proc expect_float*(content: string, start: int): Result[string, string] =
 
   var maybe_unsigned_integer = expect_unsigned_integer(content, index)
   if maybe_unsigned_integer.is_ok:
+    first_half = true
     index += maybe_unsigned_integer.get.len
 
   let period = ? expect_period(content, index)
@@ -143,6 +146,10 @@ proc expect_float*(content: string, start: int): Result[string, string] =
 
   maybe_unsigned_integer = expect_unsigned_integer(content, index)
   if maybe_unsigned_integer.is_ok:
+    second_half = true
     index += maybe_unsigned_integer.get.len
+
+  if not (first_half and second_half):
+    return err(fmt"expected either first half or second but none were found")
 
   return ok(content.substr(start, index))

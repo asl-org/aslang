@@ -124,34 +124,53 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
         let defined_arg = function.scope[$(statement.destination)]
         return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
-      # try looking up builtins function call
-      let maybe_builtin = file.resolve_builtin_function_call(function.scope,
-          statement.function_call)
-      if maybe_builtin.is_ok:
+      case statement.kind:
+      of SK_STRUCT_GETTER:
+        let struct_var = statement.struct_getter.struct
+        let field_name = statement.struct_getter.field
+
+        if $(struct_var) notin function.scope:
+          return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
+
+        let struct = ? file.find_struct(function.scope[$(struct_var)].arg_type)
+        let field = ? struct.find_field(field_name)
+        # expand struct getter into function call
+        let struct_getter_call = new_function_call(new_id_token(
+            fmt"{struct.name}_get_{field.arg_name}"), @[struct_var])
+        function.statements[sindex][1] = new_statement(statement.destination, struct_getter_call)
         function.scope[$(statement.destination)] = new_argument_definition(
-            maybe_builtin.get.return_type, statement.destination)
+            field.arg_type, statement.destination)
+        sindex += 1
+        # return err("todo: implement struct getter resolution")
+      of SK_FUNCTION_CALL:
+        # try looking up builtins function call
+        let maybe_builtin = file.resolve_builtin_function_call(function.scope,
+            statement.function_call)
+        if maybe_builtin.is_ok:
+          function.scope[$(statement.destination)] = new_argument_definition(
+              maybe_builtin.get.return_type, statement.destination)
+          # increment statement index
+          sindex += 1
+          continue
+
+        # try looking up expanded function call
+        let maybe_expanded = file.resolve_expanded_function_call(function.scope,
+            statement.function_call)
+        if maybe_expanded.is_ok:
+          function.scope[$(statement.destination)] = new_argument_definition(
+              maybe_expanded.get.definition.return_type, statement.destination)
+          # increment statement index
+          sindex += 1
+          continue
+
+        # try looking up user function call
+        let fn = ? file.resolve_function_call(function.scope,
+            statement.function_call)
+        function.scope[$(statement.destination)] = new_argument_definition(
+            fn.definition.return_type, statement.destination)
+        function_set.incl(fn)
         # increment statement index
         sindex += 1
-        continue
-
-      # try looking up expanded function call
-      let maybe_expanded = file.resolve_expanded_function_call(function.scope,
-          statement.function_call)
-      if maybe_expanded.is_ok:
-        function.scope[$(statement.destination)] = new_argument_definition(
-            maybe_expanded.get.definition.return_type, statement.destination)
-        # increment statement index
-        sindex += 1
-        continue
-
-      # try looking up user function call
-      let fn = ? file.resolve_function_call(function.scope,
-          statement.function_call)
-      function.scope[$(statement.destination)] = new_argument_definition(
-          fn.definition.return_type, statement.destination)
-      function_set.incl(fn)
-      # increment statement index
-      sindex += 1
     # handle match block statements
     else:
       let (_, match) = function.matches[mindex]
@@ -171,35 +190,54 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
       for case_block in match.case_blocks:
         # copy current function scope to the case scope to avoid non local argument name conflicts
         case_block.scope = deep_copy(function.scope)
-        for statement in case_block.statements:
+        for (index, statement) in case_block.statements.pairs:
           # check if variable is already defined in the local(case) scope
           if $(statement.destination) in case_block.scope:
             let defined_arg = case_block.scope[$(statement.destination)]
             return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
-          # try looking up builtins function call
-          let maybe_builtin = file.resolve_builtin_function_call(
-              case_block.scope, statement.function_call)
-          if maybe_builtin.is_ok:
-            case_block.scope[$(statement.destination)] = new_argument_definition(
-                maybe_builtin.get.return_type, statement.destination)
-            continue
+          case statement.kind:
+          of SK_STRUCT_GETTER:
+            let struct_var = statement.struct_getter.struct
+            let field_name = statement.struct_getter.field
 
-          # try looking up expanded function call
-          let maybe_expanded = file.resolve_expanded_function_call(
-              case_block.scope, statement.function_call)
-          if maybe_expanded.is_ok:
-            case_block.scope[$(statement.destination)] = new_argument_definition(
-                maybe_expanded.get.definition.return_type,
-                statement.destination)
-            continue
+            if $(struct_var) notin case_block.scope:
+              return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
 
-          # try looking up user function call
-          let fn = ? file.resolve_function_call(case_block.scope,
-              statement.function_call)
-          case_block.scope[$(statement.destination)] = new_argument_definition(
-              fn.definition.return_type, statement.destination)
-          function_set.incl(fn)
+            let struct = ? file.find_struct(case_block.scope[$(
+                struct_var)].arg_type)
+            let field = ? struct.find_field(field_name)
+            # expand struct getter into function call
+            let struct_getter_call = new_function_call(new_id_token(
+                fmt"{struct.name}_get_{field.arg_name}"), @[struct_var])
+            case_block.statements[index] = new_statement(
+                statement.destination, struct_getter_call)
+            case_block.scope[$(statement.destination)] = new_argument_definition(
+                field.arg_type, statement.destination)
+          of SK_FUNCTION_CALL:
+            # try looking up builtins function call
+            let maybe_builtin = file.resolve_builtin_function_call(
+                case_block.scope, statement.function_call)
+            if maybe_builtin.is_ok:
+              case_block.scope[$(statement.destination)] = new_argument_definition(
+                  maybe_builtin.get.return_type, statement.destination)
+              continue
+
+            # try looking up expanded function call
+            let maybe_expanded = file.resolve_expanded_function_call(
+                case_block.scope, statement.function_call)
+            if maybe_expanded.is_ok:
+              case_block.scope[$(statement.destination)] = new_argument_definition(
+                  maybe_expanded.get.definition.return_type,
+                  statement.destination)
+              continue
+
+            # try looking up user function call
+            let fn = ? file.resolve_function_call(case_block.scope,
+                statement.function_call)
+            case_block.scope[$(statement.destination)] = new_argument_definition(
+                fn.definition.return_type, statement.destination)
+            function_set.incl(fn)
 
 
         let return_argument = case_block.statements[^1].destination
@@ -209,7 +247,7 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
         elif $(match.return_type.get) != $(actual_return_type):
           return err(fmt"{return_argument.location} `case` block is expected to return {match.return_type.get} but found {actual_return_type}")
 
-      for else_block in match.else_blocks:
+      for (index, else_block) in match.else_blocks.pairs:
         else_block.scope = deep_copy(function.scope)
         for statement in else_block.statements:
           # check if variable is already defined in the local(case) scope
@@ -217,29 +255,48 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
             let defined_arg = else_block.scope[$(statement.destination)]
             return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
-          # try looking up builtins function call
-          let maybe_builtin = file.resolve_builtin_function_call(
-              else_block.scope, statement.function_call)
-          if maybe_builtin.is_ok:
-            else_block.scope[$(statement.destination)] = new_argument_definition(
-                maybe_builtin.get.return_type, statement.destination)
-            continue
+          case statement.kind:
+          of SK_STRUCT_GETTER:
+            let struct_var = statement.struct_getter.struct
+            let field_name = statement.struct_getter.field
 
-          # try looking up expanded function call
-          let maybe_expanded = file.resolve_expanded_function_call(
-              else_block.scope, statement.function_call)
-          if maybe_expanded.is_ok:
-            else_block.scope[$(statement.destination)] = new_argument_definition(
-                maybe_expanded.get.definition.return_type,
-                statement.destination)
-            continue
+            if $(struct_var) notin else_block.scope:
+              return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
 
-          # try looking up user function call
-          let fn = ? file.resolve_function_call(else_block.scope,
-              statement.function_call)
-          else_block.scope[$(statement.destination)] = new_argument_definition(
-              fn.definition.return_type, statement.destination)
-          function_set.incl(fn)
+            let struct = ? file.find_struct(else_block.scope[$(
+                struct_var)].arg_type)
+            let field = ? struct.find_field(field_name)
+            # expand struct getter into function call
+            let struct_getter_call = new_function_call(new_id_token(
+                fmt"{struct.name}_get_{field.arg_name}"), @[struct_var])
+            else_block.statements[index] = new_statement(
+                statement.destination, struct_getter_call)
+            else_block.scope[$(statement.destination)] = new_argument_definition(
+                field.arg_type, statement.destination)
+          of SK_FUNCTION_CALL:
+            # try looking up builtins function call
+            let maybe_builtin = file.resolve_builtin_function_call(
+                else_block.scope, statement.function_call)
+            if maybe_builtin.is_ok:
+              else_block.scope[$(statement.destination)] = new_argument_definition(
+                  maybe_builtin.get.return_type, statement.destination)
+              continue
+
+            # try looking up expanded function call
+            let maybe_expanded = file.resolve_expanded_function_call(
+                else_block.scope, statement.function_call)
+            if maybe_expanded.is_ok:
+              else_block.scope[$(statement.destination)] = new_argument_definition(
+                  maybe_expanded.get.definition.return_type,
+                  statement.destination)
+              continue
+
+            # try looking up user function call
+            let fn = ? file.resolve_function_call(else_block.scope,
+                statement.function_call)
+            else_block.scope[$(statement.destination)] = new_argument_definition(
+                fn.definition.return_type, statement.destination)
+            function_set.incl(fn)
 
         let return_argument = else_block.statements[^1].destination
         let actual_return_type = else_block.scope[$(return_argument)].arg_type

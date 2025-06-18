@@ -1,4 +1,4 @@
-import strformat, strutils
+import strformat, strutils, results
 
 import arg_def, token
 
@@ -38,3 +38,9 @@ proc add_field*(struct: Struct, field: ArgumentDefinition): void =
 
 proc new_struct*(struct_def: StructDefinition): Struct =
   Struct(struct_def: struct_def)
+
+proc find_field*(struct: Struct, field_name: Token): Result[ArgumentDefinition, string] =
+  for field in struct.fields:
+    if $(field.arg_name) == $(field_name):
+      return ok(field)
+  return err(fmt"{field_name.location} {struct.name} does not have any field named {field_name}")

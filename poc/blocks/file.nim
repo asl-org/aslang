@@ -86,6 +86,12 @@ proc find_module*(file: File, module_name: Token): Result[Module, string] =
       return ok(module)
   err(fmt"{module_name} does not exist in the scope")
 
+proc find_struct*(file: File, struct_name: Token): Result[Struct, string] =
+  for struct in file.structs:
+    if $(struct.name) == $(struct_name):
+      return ok(struct)
+  err(fmt"{struct_name} does not exist in the scope")
+
 proc find_start_function*(file: File): Result[Function, string] =
   for function in file.functions:
     if function.is_start():

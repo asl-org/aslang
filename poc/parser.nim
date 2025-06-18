@@ -129,13 +129,31 @@ proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
   let arg_list = ? parser.expect_argument_list()
   ok(new_function_call(name, arg_list))
 
+proc expect_struct_getter(parser: Parser): Result[StructGetter, string] =
+  let struct = ? parser.expect(TK_ID)
+  discard ? parser.expect(TK_PERIOD)
+  let field = ? parser.expect(TK_ID)
+  ok(new_struct_getter(struct, field))
+
 proc expect_statement(parser: Parser): Result[Statement, string] =
   let destination = ? parser.expect(TK_ID)
   discard parser.expect_any(TK_SPACE)
   discard ? parser.expect(TK_EQUAL)
   discard parser.expect_any(TK_SPACE)
-  let function_call = ? parser.expect_function_call()
-  ok(new_statement(destination, function_call))
+
+  let start = parser.index
+
+  let maybe_function_call = parser.expect_function_call()
+  if maybe_function_call.is_ok:
+    return ok(new_statement(destination, maybe_function_call.get))
+  else: parser.index = start
+
+  let maybe_struct_getter = parser.expect_struct_getter()
+  if maybe_struct_getter.is_ok:
+    return ok(new_statement(destination, maybe_struct_getter.get))
+  else: parser.index = start
+
+  return err(fmt"{parser.location} expected a function call or struct field")
 
 proc expect_match_definition(parser: Parser): Result[MatchDefinition, string] =
   let destination = ? parser.expect(TK_ID)
