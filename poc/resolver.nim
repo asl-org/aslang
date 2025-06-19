@@ -125,6 +125,26 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
         return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
       case statement.kind:
+      of SK_STRUCT_INIT:
+        let struct_var = statement.struct_init.struct
+        let key_value_pairs = statement.struct_init.fields
+
+        let struct = ? file.find_struct(struct_var)
+        var field_name_table: Table[string, Token]
+        for (field_name, field_value) in key_value_pairs:
+          if $(field_name) in field_name_table:
+            return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+          let field = ? struct.find_field(field_name)
+          ? function.scope.resolve_argument(field, field_value)
+          field_name_table[$(field_name)] = field_value
+
+        let init_arg_list = struct.fields.map_it(field_name_table[$(it.arg_name)])
+        let struct_getter_call = new_function_call(new_id_token(
+            fmt"{struct.name}_init"), init_arg_list)
+        function.statements[sindex][1] = new_statement(statement.destination, struct_getter_call)
+        function.scope[$(statement.destination)] = new_argument_definition(
+            struct.name, statement.destination)
+        sindex += 1
       of SK_STRUCT_GETTER:
         let struct_var = statement.struct_getter.struct
         let field_name = statement.struct_getter.field
@@ -141,7 +161,6 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
         function.scope[$(statement.destination)] = new_argument_definition(
             field.arg_type, statement.destination)
         sindex += 1
-        # return err("todo: implement struct getter resolution")
       of SK_FUNCTION_CALL:
         # try looking up builtins function call
         let maybe_builtin = file.resolve_builtin_function_call(function.scope,
@@ -197,6 +216,26 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
             return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
           case statement.kind:
+          of SK_STRUCT_INIT:
+            let struct_var = statement.struct_init.struct
+            let key_value_pairs = statement.struct_init.fields
+
+            let struct = ? file.find_struct(struct_var)
+            var field_name_table: Table[string, Token]
+            for (field_name, field_value) in key_value_pairs:
+              if $(field_name) in field_name_table:
+                return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+              let field = ? struct.find_field(field_name)
+              ? case_block.scope.resolve_argument(field, field_value)
+              field_name_table[$(field_name)] = field_value
+
+            let init_arg_list = struct.fields.map_it(field_name_table[$(it.arg_name)])
+            let struct_getter_call = new_function_call(new_id_token(
+                fmt"{struct.name}_init"), init_arg_list)
+            function.statements[sindex][1] = new_statement(
+                statement.destination, struct_getter_call)
+            case_block.scope[$(statement.destination)] = new_argument_definition(
+                struct.name, statement.destination)
           of SK_STRUCT_GETTER:
             let struct_var = statement.struct_getter.struct
             let field_name = statement.struct_getter.field
@@ -256,6 +295,26 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
             return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
           case statement.kind:
+          of SK_STRUCT_INIT:
+            let struct_var = statement.struct_init.struct
+            let key_value_pairs = statement.struct_init.fields
+
+            let struct = ? file.find_struct(struct_var)
+            var field_name_table: Table[string, Token]
+            for (field_name, field_value) in key_value_pairs:
+              if $(field_name) in field_name_table:
+                return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+              let field = ? struct.find_field(field_name)
+              ? else_block.scope.resolve_argument(field, field_value)
+              field_name_table[$(field_name)] = field_value
+
+            let init_arg_list = struct.fields.map_it(field_name_table[$(it.arg_name)])
+            let struct_getter_call = new_function_call(new_id_token(
+                fmt"{struct.name}_init"), init_arg_list)
+            function.statements[sindex][1] = new_statement(
+                statement.destination, struct_getter_call)
+            else_block.scope[$(statement.destination)] = new_argument_definition(
+                struct.name, statement.destination)
           of SK_STRUCT_GETTER:
             let struct_var = statement.struct_getter.struct
             let field_name = statement.struct_getter.field

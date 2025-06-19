@@ -1,6 +1,20 @@
-import strformat
+import strformat, sequtils, strutils
 
 import token, function_call
+
+type StructInit* = ref object of RootObj
+  struct*: Token
+  fields*: seq[(Token, Token)]
+
+proc location*(struct_init: StructInit): Location =
+  struct_init.struct.location
+
+proc `$`*(struct_init: StructInit): string =
+  let fields = struct_init.fields.map_it(fmt"{it[0]}: {it[1]}").join(", ")
+  $(struct_init.struct) & "{ " & fields & " }"
+
+proc new_struct_init*(struct: Token, fields: seq[(Token, Token)]): StructInit =
+  StructInit(struct: struct, fields: fields)
 
 type StructGetter* = ref object of RootObj
   struct*: Token
@@ -17,12 +31,14 @@ proc new_struct_getter*(struct: Token, field: Token): StructGetter =
 
 type
   StatementKind* = enum
-    SK_FUNCTION_CALL, SK_STRUCT_GETTER
+    SK_FUNCTION_CALL, SK_STRUCT_INIT, SK_STRUCT_GETTER
   Statement* = ref object of RootObj
     destination*: Token
     case kind*: StatementKind
     of SK_FUNCTION_CALL:
       function_call*: FunctionCall
+    of SK_STRUCT_INIT:
+      struct_init*: StructInit
     of SK_STRUCT_GETTER:
       struct_getter*: StructGetter
 
@@ -35,6 +51,10 @@ proc `$`*(statement: Statement): string =
 proc new_statement*(destination: Token, function_call: FunctionCall): Statement =
   Statement(kind: SK_FUNCTION_CALL, destination: destination,
       function_call: function_call)
+
+proc new_statement*(destination: Token, struct_init: StructInit): Statement =
+  Statement(kind: SK_STRUCT_INIT, destination: destination,
+      struct_init: struct_init)
 
 proc new_statement*(destination: Token, struct_getter: StructGetter): Statement =
   Statement(kind: SK_STRUCT_GETTER, destination: destination,

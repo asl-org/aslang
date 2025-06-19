@@ -129,6 +129,32 @@ proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
   let arg_list = ? parser.expect_argument_list()
   ok(new_function_call(name, arg_list))
 
+proc expect_struct_init_fields(parser: Parser): Result[seq[(Token, Token)], string] =
+  var fields: seq[(Token, Token)]
+  while true:
+    let name = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    discard ? parser.expect(TK_COLON)
+    discard parser.expect_any(TK_SPACE)
+    let value = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    fields.add((name, value))
+
+    let maybe_comma = parser.expect(TK_COMMA)
+    if maybe_comma.is_err: break
+    discard parser.expect_any(TK_SPACE)
+  ok(fields)
+
+proc expect_struct_init(parser: Parser): Result[StructInit, string] =
+  let struct = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_OCURLY)
+  discard parser.expect_any(TK_SPACE)
+  let fields = ? parser.expect_struct_init_fields()
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_CCURLY)
+  ok(new_struct_init(struct, fields))
+
 proc expect_struct_getter(parser: Parser): Result[StructGetter, string] =
   let struct = ? parser.expect(TK_ID)
   discard ? parser.expect(TK_PERIOD)
@@ -148,12 +174,17 @@ proc expect_statement(parser: Parser): Result[Statement, string] =
     return ok(new_statement(destination, maybe_function_call.get))
   else: parser.index = start
 
+  let maybe_struct_init = parser.expect_struct_init()
+  if maybe_struct_init.is_ok:
+    return ok(new_statement(destination, maybe_struct_init.get))
+  else: parser.index = start
+
   let maybe_struct_getter = parser.expect_struct_getter()
   if maybe_struct_getter.is_ok:
     return ok(new_statement(destination, maybe_struct_getter.get))
   else: parser.index = start
 
-  return err(fmt"{parser.location} expected a function call or struct field")
+  return err(fmt"{parser.location} expected a function call or struct init/getter")
 
 proc expect_match_definition(parser: Parser): Result[MatchDefinition, string] =
   let destination = ? parser.expect(TK_ID)

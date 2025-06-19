@@ -120,9 +120,9 @@ fn solve(Bitset bitset, U64 start, U64 ans): U64
       _b = U64_init(ans)
 
 fn start(U8 seed): U8
-  max_primes = U64_init(1000001)
-  ptr = System_allocate(max_primes)
-  bitset = Bitset_init(ptr, max_primes)
+  size = U64_init(1000001)
+  ptr = System_allocate(size)
+  bitset = Bitset { ptr: ptr, size: size }
 
   ans = solve(bitset, 2, 0)
   _ = System_print_U64(ans)
