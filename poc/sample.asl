@@ -127,7 +127,7 @@ fn start(U8 seed): U8
   ans = solve(bitset, 2, 0)
   _ = System_print_U64(ans)
 
-  _x = Bitset_free(bitset)
+  # _x = Bitset_free(bitset)
   _y = System_free(ptr)
 
   exit_success = U8_init(0)

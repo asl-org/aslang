@@ -80,7 +80,7 @@ proc `$`*(file: File): string =
     file.functions.map_it($(it)).join("\n\n")
   ].join("\n\n")
 
-proc find_module*(file: File, module_name: Token): Result[Module, string] =
+proc find_native_module*(file: File, module_name: Token): Result[Module, string] =
   for module in file.modules:
     if $(module) == $(module_name):
       return ok(module)
@@ -91,6 +91,13 @@ proc find_struct*(file: File, struct_name: Token): Result[Struct, string] =
     if $(struct.name) == $(struct_name):
       return ok(struct)
   err(fmt"{struct_name} does not exist in the scope")
+
+proc find_module*(file: File, module_name: Token): Result[void, string] =
+  var maybe_found = file.find_native_module(module_name)
+  if maybe_found.is_ok: return ok()
+
+  discard ? file.find_struct(module_name)
+  ok()
 
 proc find_start_function*(file: File): Result[Function, string] =
   for function in file.functions:

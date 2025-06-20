@@ -105,10 +105,10 @@ proc resolve_expanded_function_call(file: File, scope: Table[string,
 proc resolve_function(file: File, function: Function): Result[HashSet[Function], string] =
   var function_set = init_hashset[Function]()
 
-  discard ? file.find_module(function.definition.return_type)
+  ? file.find_module(function.definition.return_type)
   # add function definition args
   for arg in function.arg_def_list:
-    discard ? file.find_module(arg.arg_type)
+    ? file.find_module(arg.arg_type)
     if $(arg.arg_name) in function.scope:
       let defined_arg = function.scope[$(arg.arg_name)]
       return err(fmt"{arg.location} {arg.arg_name} is already defined {defined_arg.location}")
