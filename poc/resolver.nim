@@ -4,6 +4,119 @@ import blocks
 
 type File = blocks.File
 
+type ResolvedArgument = ref object of RootObj
+  kind: Token
+  value: Token
+
+proc new_resolved_argument(kind: Token, value: Token): ResolvedArgument =
+  ResolvedArgument(kind: kind, value: value)
+
+type ResolvedFunctionCallKind = enum
+  RFCK_BUILTIN, RFCK_USER
+
+type ResolvedFunctionCall = ref object of RootObj
+  args: seq[ResolvedArgument]
+  case kind: ResolvedFunctionCallKind
+  of RFCK_BUILTIN:
+    function_def: FunctionDefinition
+  of RFCK_USER:
+    function: Function
+
+proc new_resolved_function_call(function_def: FunctionDefinition, args: seq[
+    ResolvedArgument]): ResolvedFunctionCall =
+  ResolvedFunctionCall(kind: RFCK_BUILTIN, function_def: function_def, args: args)
+
+proc new_resolved_function_call(function: Function, args: seq[
+    ResolvedArgument]): ResolvedFunctionCall =
+  ResolvedFunctionCall(kind: RFCK_USER, function: function, args: args)
+
+proc return_type(resolved_function_call: ResolvedFunctionCall): Token =
+  case resolved_function_call.kind:
+  of RFCK_BUILTIN:
+    resolved_function_call.function_def.return_type
+  of RFCK_USER:
+    resolved_function_call.function.definition.return_type
+
+type ResolvedStructInit = ref object of RootObj
+  struct: Struct
+  fields: seq[ResolvedArgument]
+
+proc new_resolved_struct_init(struct: Struct, fields: seq[
+    ResolvedArgument]): ResolvedStructInit =
+  ResolvedStructInit(struct: struct, fields: fields)
+
+type ResolvedStructGetter = ref object of RootObj
+  struct: Struct
+  field: ArgumentDefinition
+  arg: Token
+
+proc new_resolved_struct_getter(struct: Struct,
+    field: ArgumentDefinition, arg: Token): ResolvedStructGetter =
+  ResolvedStructGetter(struct: struct, field: field, arg: arg)
+
+type
+  ResolvedStatementKind = enum
+    RSK_STRUCT_INIT
+    RSK_STRUCT_GETTER
+    RSK_FUNCTION_CALL
+  ResolvedStatement = ref object of RootObj
+    function_set: Hashset[Function]
+    expanded: Option[Statement]
+    case kind: ResolvedStatementKind
+    of RSK_STRUCT_INIT:
+      struct_init: ResolvedStructInit
+    of RSK_STRUCT_GETTER:
+      struct_getter: ResolvedStructGetter
+    of RSK_FUNCTION_CALL:
+      function_call: ResolvedFunctionCall
+
+proc new_resolved_statement(struct_init: ResolvedStructInit, expanded: Option[
+    Statement]): ResolvedStatement =
+  ResolvedStatement(kind: RSK_STRUCT_INIT, struct_init: struct_init,
+      expanded: expanded)
+
+proc new_resolved_statement(struct_init: ResolvedStructInit,
+    expanded: Statement): ResolvedStatement =
+  new_resolved_statement(struct_init, some(expanded))
+
+proc new_resolved_statement(struct_getter: ResolvedStructGetter,
+    expanded: Option[Statement]): ResolvedStatement =
+  ResolvedStatement(kind: RSK_STRUCT_GETTER, struct_getter: struct_getter,
+      expanded: expanded)
+
+proc new_resolved_statement(struct_getter: ResolvedStructGetter,
+    expanded: Statement): ResolvedStatement =
+  new_resolved_statement(struct_getter, some(expanded))
+
+proc new_resolved_statement(function_call: ResolvedFunctionCall,
+    function_set: Hashset[Function]): ResolvedStatement =
+  ResolvedStatement(kind: RSK_FUNCTION_CALL, function_call: function_call,
+      function_set: function_set)
+
+type ResolvedCase = ref object of RootObj
+  statements: seq[ResolvedStatement]
+  # external function deps
+  function_set: Hashset[Function]
+  return_arg: ArgumentDefinition
+
+proc new_resolved_case(statements: seq[ResolvedStatement],
+    function_set: Hashset[Function],
+    return_arg: ArgumentDefinition): ResolvedCase =
+  ResolvedCase(statements: statements, function_set: function_set,
+      return_arg: return_arg)
+
+type ResolvedElse = ref object of RootObj
+  statements: seq[ResolvedStatement]
+  # external function deps
+  function_set: Hashset[Function]
+  return_arg: ArgumentDefinition
+
+proc new_resolved_else(statements: seq[ResolvedStatement],
+    function_set: Hashset[Function],
+    return_arg: ArgumentDefinition): ResolvedElse =
+  ResolvedElse(statements: statements, function_set: function_set,
+      return_arg: return_arg)
+
 proc safe_parse*[T](input: string): Result[void, string] =
   when T is SomeSignedInt:
     var temp: BiggestInt
@@ -34,7 +147,7 @@ proc safe_parse*[T](input: string): Result[void, string] =
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
 proc resolve_argument(scope: Table[string, ArgumentDefinition],
-    arg_def: ArgumentDefinition, arg_value: Token): Result[void, string] =
+    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedArgument, string] =
   case arg_value.kind:
   of TK_ID:
     if $(arg_value) notin scope:
@@ -59,48 +172,197 @@ proc resolve_argument(scope: Table[string, ArgumentDefinition],
     else: return err(fmt"{arg_value.location} arguments with builting types can be passed as float")
   else: # TODO: Support strings as arguments
     return err(fmt"{arg_value.location} {arg_value} can not be passed to a function as argument")
-  ok()
+
+  ok(new_resolved_argument(arg_def.arg_type, arg_value))
 
 # matches individual function with function call
-proc resolve_function_call(scope: Table[string, ArgumentDefinition],
-    function: FunctionDefinition, function_call: FunctionCall): Result[
-        FunctionDefinition, string] =
-  if $(function.name) != $(function_call.name):
-    return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function.name}")
-  if function.arg_def_list.len != function_call.arg_list.len:
-    return err(fmt"{function_call.location} expected {function.arg_def_list.len} but found {function_call.arg_list.len}")
+proc resolve_function_call_args(scope: Table[string, ArgumentDefinition],
+    function_def: FunctionDefinition, function_call: FunctionCall): Result[
+    seq[ResolvedArgument], string] =
+  if $(function_def.name) != $(function_call.name):
+    return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function_def.name}")
+  if function_def.arg_def_list.len != function_call.arg_list.len:
+    return err(fmt"{function_call.location} expected {function_def.arg_def_list.len} but found {function_call.arg_list.len}")
 
-  for (arg_def, arg_value) in zip(function.arg_def_list,
+  var resolved_args: seq[ResolvedArgument]
+  for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
-    ? scope.resolve_argument(arg_def, arg_value)
-  ok(function)
+    resolved_args.add( ? scope.resolve_argument(arg_def, arg_value))
+  ok(resolved_args)
 
 # matches all functions with function call within a file
 proc resolve_function_call(file: File, scope: Table[string,
-    ArgumentDefinition], function_call: FunctionCall): Result[Function, string] =
+    ArgumentDefinition], function_call: FunctionCall): Result[
+        ResolvedFunctionCall, string] =
   for function in file.functions:
-    let maybe_resolved = scope.resolve_function_call(function.definition, function_call)
-    if maybe_resolved.is_ok:
-      return ok(function)
+    let maybe_resolved_args = scope.resolve_function_call_args(
+        function.definition, function_call)
+    if maybe_resolved_args.is_ok:
+      return ok(new_resolved_function_call(function, maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
 
 proc resolve_builtin_function_call(file: File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall): Result[
-        FunctionDefinition, string] =
+        ResolvedFunctionCall, string] =
   for function_def in file.builtins:
-    let maybe_resolved = scope.resolve_function_call(function_def, function_call)
-    if maybe_resolved.is_ok:
-      return ok(function_def)
+    let maybe_resolved_args = scope.resolve_function_call_args(function_def, function_call)
+    if maybe_resolved_args.is_ok:
+      return ok(new_resolved_function_call(function_def,
+          maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching builtin function in the file {file.name}")
 
 proc resolve_expanded_function_call(file: File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall): Result[
-        Function, string] =
+    ResolvedFunctionCall, string] =
   for function in file.expanded:
-    let maybe_resolved = scope.resolve_function_call(function.definition, function_call)
-    if maybe_resolved.is_ok:
-      return ok(function)
+    let maybe_resolved_args = scope.resolve_function_call_args(
+        function.definition, function_call)
+    if maybe_resolved_args.is_ok:
+      return ok(new_resolved_function_call(function, maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching expanded function in the file {file.name}")
+
+proc resolve_function_call_statement(statement: Statement, file: File,
+    scope: var Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
+  # try looking up builtins function call
+  let maybe_resolved_builtin_function_call = file.resolve_builtin_function_call(
+      scope, statement.function_call)
+  if maybe_resolved_builtin_function_call.is_ok:
+    scope[$(statement.destination)] = new_argument_definition(
+        maybe_resolved_builtin_function_call.get.return_type,
+        statement.destination)
+    return ok(maybe_resolved_builtin_function_call.get)
+
+  # try looking up expanded function call
+  let maybe_resolved_function_call = file.resolve_expanded_function_call(scope,
+      statement.function_call)
+  if maybe_resolved_function_call.is_ok:
+    scope[$(statement.destination)] = new_argument_definition(
+        maybe_resolved_function_call.get.return_type, statement.destination)
+    return ok(maybe_resolved_function_call.get)
+
+  # try looking up user function call
+  let resolved_function_call = ? file.resolve_function_call(scope,
+      statement.function_call)
+  scope[$(statement.destination)] = new_argument_definition(
+      resolved_function_call.return_type, statement.destination)
+  return ok(resolved_function_call)
+
+proc resolve_struct_init_statement(statement: Statement, file: File,
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedStructInit, string] =
+  let struct_var = statement.struct_init.struct
+  let key_value_pairs = statement.struct_init.fields
+
+  let struct = ? file.find_struct(struct_var)
+  var field_name_table: Table[string, ResolvedArgument]
+  for (field_name, field_value) in key_value_pairs:
+    if $(field_name) in field_name_table:
+      return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+    let field = ? struct.find_field(field_name)
+    field_name_table[$(field_name)] = ? scope.resolve_argument(field, field_value)
+
+  let resolved_fields = struct.fields.map_it(field_name_table[$(it.arg_name)])
+  let resolved_struct_init = new_resolved_struct_init(struct, resolved_fields)
+  ok(resolved_struct_init)
+
+proc resolve_struct_getter_statement(statement: Statement, file: File,
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedStructGetter, string] =
+  let struct_var = statement.struct_getter.struct
+  let field_name = statement.struct_getter.field
+
+  if $(struct_var) notin scope:
+    return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
+
+  let struct = ? file.find_struct(scope[$(struct_var)].arg_type)
+  let field = ? struct.find_field(field_name)
+  let resolved_struct_getter = new_resolved_struct_getter(struct, field, struct_var)
+  ok(resolved_struct_getter)
+
+proc resolve_statement(statement: Statement, scope: var Table[string,
+    ArgumentDefinition], file: File, function: Function): Result[
+        ResolvedStatement, string] =
+  # check if variable is already defined in the local(case) scope
+  if $(statement.destination) in scope:
+    let defined_arg = scope[$(statement.destination)]
+    return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+
+  var resolved_statement: ResolvedStatement
+  case statement.kind:
+  of SK_STRUCT_INIT:
+    let resolved_struct_init = ? statement.resolve_struct_init_statement(file,
+        scope)
+    scope[$(statement.destination)] = new_argument_definition(
+        resolved_struct_init.struct.name, statement.destination)
+    # expansion and rewrite statement logic
+    let init_arg_list = resolved_struct_init.fields.map_it(it.value)
+    let struct_init_call = fmt"{resolved_struct_init.struct.name}_init".new_id_token().new_function_call(init_arg_list)
+    let expanded = new_statement(statement.destination, struct_init_call)
+    resolved_statement = new_resolved_statement(resolved_struct_init, expanded)
+  of SK_STRUCT_GETTER:
+    let resolved_struct_getter = ?
+      statement.resolve_struct_getter_statement(
+    file, scope)
+    scope[$(statement.destination)] = new_argument_definition(
+        resolved_struct_getter.field.arg_type, statement.destination)
+    # expand struct getter into function call
+    let struct_getter_call = fmt"{resolved_struct_getter.struct.name}_get_{resolved_struct_getter.field.arg_name}".new_id_token(
+      ).new_function_call(@[resolved_struct_getter.arg])
+    let expanded = new_statement(statement.destination, struct_getter_call)
+    resolved_statement = new_resolved_statement(resolved_struct_getter, expanded)
+  of SK_FUNCTION_CALL:
+    let resolved_function_call = ? statement.resolve_function_call_statement(
+        file, scope)
+    var function_set: Hashset[Function]
+    if resolved_function_call.kind == RFCK_USER:
+      function_set.incl(resolved_function_call.function)
+    resolved_statement = new_resolved_statement(resolved_function_call, function_set)
+
+  return ok(resolved_statement)
+
+proc resolve_case_block(case_block: Case, file: File,
+    function: Function): Result[ResolvedCase, string] =
+  var function_set: Hashset[Function]
+  var resolved_statements: seq[ResolvedStatement]
+  # copy current function scope to the case scope to avoid non local argument name conflicts
+  case_block.scope = deep_copy(function.scope)
+  for (index, statement) in case_block.statements.pairs:
+    let resolved_statement = ? statement.resolve_statement(case_block.scope,
+        file, function)
+    resolved_statements.add(resolved_statement)
+
+    if resolved_statement.expanded.is_some:
+      case_block.statements[index] = resolved_statement.expanded.get
+
+    for ext_function in resolved_statement.function_set:
+      function_set.incl(ext_function)
+
+  let return_argument = case_block.statements[^1].destination
+  let return_arg_def = case_block.scope[$(return_argument)]
+
+  return ok(new_resolved_case(resolved_statements, function_set,
+      return_arg_def))
+
+proc resolve_else_block(else_block: Else, file: File,
+    function: Function): Result[ResolvedElse, string] =
+  var function_set: Hashset[Function]
+  var resolved_statements: seq[ResolvedStatement]
+  # copy current function scope to the else scope to avoid non local argument name conflicts
+  else_block.scope = deep_copy(function.scope)
+  for (index, statement) in else_block.statements.pairs:
+    let resolved_statement = ? statement.resolve_statement(else_block.scope,
+        file, function)
+    resolved_statements.add(resolved_statement)
+
+    if resolved_statement.expanded.is_some:
+      else_block.statements[index] = resolved_statement.expanded.get
+
+    for ext_function in resolved_statement.function_set:
+      function_set.incl(ext_function)
+
+  let return_argument = else_block.statements[^1].destination
+  let return_arg_def = else_block.scope[$(return_argument)]
+
+  return ok(new_resolved_else(resolved_statements, function_set,
+      return_arg_def))
 
 proc resolve_function(file: File, function: Function): Result[HashSet[Function], string] =
   var function_set = init_hashset[Function]()
@@ -120,76 +382,16 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
     # handle function call statements
     if sindex < function.statements.len and function.statements[sindex][0] == step:
       let (_, statement) = function.statements[sindex]
-      if $(statement.destination) in function.scope:
-        let defined_arg = function.scope[$(statement.destination)]
-        return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+      let resolved_statement = ? statement.resolve_statement(function.scope,
+          file, function)
 
-      case statement.kind:
-      of SK_STRUCT_INIT:
-        let struct_var = statement.struct_init.struct
-        let key_value_pairs = statement.struct_init.fields
+      if resolved_statement.expanded.is_some:
+        function.statements[sindex][1] = resolved_statement.expanded.get
 
-        let struct = ? file.find_struct(struct_var)
-        var field_name_table: Table[string, Token]
-        for (field_name, field_value) in key_value_pairs:
-          if $(field_name) in field_name_table:
-            return err(fmt"{field_name.location} {field_name} is already present in the initializer")
-          let field = ? struct.find_field(field_name)
-          ? function.scope.resolve_argument(field, field_value)
-          field_name_table[$(field_name)] = field_value
+      for ext_function in resolved_statement.function_set:
+        function_set.incl(ext_function)
 
-        let init_arg_list = struct.fields.map_it(field_name_table[$(it.arg_name)])
-        let struct_getter_call = new_function_call(new_id_token(
-            fmt"{struct.name}_init"), init_arg_list)
-        function.statements[sindex][1] = new_statement(statement.destination, struct_getter_call)
-        function.scope[$(statement.destination)] = new_argument_definition(
-            struct.name, statement.destination)
-        sindex += 1
-      of SK_STRUCT_GETTER:
-        let struct_var = statement.struct_getter.struct
-        let field_name = statement.struct_getter.field
-
-        if $(struct_var) notin function.scope:
-          return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
-
-        let struct = ? file.find_struct(function.scope[$(struct_var)].arg_type)
-        let field = ? struct.find_field(field_name)
-        # expand struct getter into function call
-        let struct_getter_call = new_function_call(new_id_token(
-            fmt"{struct.name}_get_{field.arg_name}"), @[struct_var])
-        function.statements[sindex][1] = new_statement(statement.destination, struct_getter_call)
-        function.scope[$(statement.destination)] = new_argument_definition(
-            field.arg_type, statement.destination)
-        sindex += 1
-      of SK_FUNCTION_CALL:
-        # try looking up builtins function call
-        let maybe_builtin = file.resolve_builtin_function_call(function.scope,
-            statement.function_call)
-        if maybe_builtin.is_ok:
-          function.scope[$(statement.destination)] = new_argument_definition(
-              maybe_builtin.get.return_type, statement.destination)
-          # increment statement index
-          sindex += 1
-          continue
-
-        # try looking up expanded function call
-        let maybe_expanded = file.resolve_expanded_function_call(function.scope,
-            statement.function_call)
-        if maybe_expanded.is_ok:
-          function.scope[$(statement.destination)] = new_argument_definition(
-              maybe_expanded.get.definition.return_type, statement.destination)
-          # increment statement index
-          sindex += 1
-          continue
-
-        # try looking up user function call
-        let fn = ? file.resolve_function_call(function.scope,
-            statement.function_call)
-        function.scope[$(statement.destination)] = new_argument_definition(
-            fn.definition.return_type, statement.destination)
-        function_set.incl(fn)
-        # increment statement index
-        sindex += 1
+      sindex += 1
     # handle match block statements
     else:
       let (_, match) = function.matches[mindex]
@@ -207,162 +409,30 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
           kind: TK_ID, location: match.destination.location), Token(kind: TK_ID))
 
       for case_block in match.case_blocks:
-        # copy current function scope to the case scope to avoid non local argument name conflicts
-        case_block.scope = deep_copy(function.scope)
-        for (index, statement) in case_block.statements.pairs:
-          # check if variable is already defined in the local(case) scope
-          if $(statement.destination) in case_block.scope:
-            let defined_arg = case_block.scope[$(statement.destination)]
-            return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+        # TODO: Make sure that case_block pattern matches with value passed to match call
+        let resolved_case_block = ? case_block.resolve_case_block(file, function)
+        for ext_function in resolved_case_block.function_set:
+          if ext_function notin function_set:
+            function_set.incl(ext_function)
 
-          case statement.kind:
-          of SK_STRUCT_INIT:
-            let struct_var = statement.struct_init.struct
-            let key_value_pairs = statement.struct_init.fields
-
-            let struct = ? file.find_struct(struct_var)
-            var field_name_table: Table[string, Token]
-            for (field_name, field_value) in key_value_pairs:
-              if $(field_name) in field_name_table:
-                return err(fmt"{field_name.location} {field_name} is already present in the initializer")
-              let field = ? struct.find_field(field_name)
-              ? case_block.scope.resolve_argument(field, field_value)
-              field_name_table[$(field_name)] = field_value
-
-            let init_arg_list = struct.fields.map_it(field_name_table[$(it.arg_name)])
-            let struct_getter_call = new_function_call(new_id_token(
-                fmt"{struct.name}_init"), init_arg_list)
-            function.statements[sindex][1] = new_statement(
-                statement.destination, struct_getter_call)
-            case_block.scope[$(statement.destination)] = new_argument_definition(
-                struct.name, statement.destination)
-          of SK_STRUCT_GETTER:
-            let struct_var = statement.struct_getter.struct
-            let field_name = statement.struct_getter.field
-
-            if $(struct_var) notin case_block.scope:
-              return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
-
-            let struct = ? file.find_struct(case_block.scope[$(
-                struct_var)].arg_type)
-            let field = ? struct.find_field(field_name)
-            # expand struct getter into function call
-            let struct_getter_call = new_function_call(new_id_token(
-                fmt"{struct.name}_get_{field.arg_name}"), @[struct_var])
-            case_block.statements[index] = new_statement(
-                statement.destination, struct_getter_call)
-            case_block.scope[$(statement.destination)] = new_argument_definition(
-                field.arg_type, statement.destination)
-          of SK_FUNCTION_CALL:
-            # try looking up builtins function call
-            let maybe_builtin = file.resolve_builtin_function_call(
-                case_block.scope, statement.function_call)
-            if maybe_builtin.is_ok:
-              case_block.scope[$(statement.destination)] = new_argument_definition(
-                  maybe_builtin.get.return_type, statement.destination)
-              continue
-
-            # try looking up expanded function call
-            let maybe_expanded = file.resolve_expanded_function_call(
-                case_block.scope, statement.function_call)
-            if maybe_expanded.is_ok:
-              case_block.scope[$(statement.destination)] = new_argument_definition(
-                  maybe_expanded.get.definition.return_type,
-                  statement.destination)
-              continue
-
-            # try looking up user function call
-            let fn = ? file.resolve_function_call(case_block.scope,
-                statement.function_call)
-            case_block.scope[$(statement.destination)] = new_argument_definition(
-                fn.definition.return_type, statement.destination)
-            function_set.incl(fn)
-
-
-        let return_argument = case_block.statements[^1].destination
-        let actual_return_type = case_block.scope[$(return_argument)].arg_type
+        let return_arg = resolved_case_block.return_arg
         if match.return_type.is_none:
-          match.return_type = some(actual_return_type)
-        elif $(match.return_type.get) != $(actual_return_type):
-          return err(fmt"{return_argument.location} `case` block is expected to return {match.return_type.get} but found {actual_return_type}")
+          match.return_type = some(return_arg.arg_type)
+        elif $(match.return_type.get) != $(return_arg.arg_type):
+          return err(fmt"{return_arg.location} `case` block is expected to return {match.return_type.get} but found {return_arg.arg_type}")
 
+      # Note: Even though this is a for loop but there can only be at most 1 else block.
       for (index, else_block) in match.else_blocks.pairs:
-        else_block.scope = deep_copy(function.scope)
-        for statement in else_block.statements:
-          # check if variable is already defined in the local(case) scope
-          if $(statement.destination) in else_block.scope:
-            let defined_arg = else_block.scope[$(statement.destination)]
-            return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+        let resolved_else_block = ? else_block.resolve_else_block(file, function)
+        for ext_function in resolved_else_block.function_set:
+          if ext_function notin function_set:
+            function_set.incl(ext_function)
 
-          case statement.kind:
-          of SK_STRUCT_INIT:
-            let struct_var = statement.struct_init.struct
-            let key_value_pairs = statement.struct_init.fields
-
-            let struct = ? file.find_struct(struct_var)
-            var field_name_table: Table[string, Token]
-            for (field_name, field_value) in key_value_pairs:
-              if $(field_name) in field_name_table:
-                return err(fmt"{field_name.location} {field_name} is already present in the initializer")
-              let field = ? struct.find_field(field_name)
-              ? else_block.scope.resolve_argument(field, field_value)
-              field_name_table[$(field_name)] = field_value
-
-            let init_arg_list = struct.fields.map_it(field_name_table[$(it.arg_name)])
-            let struct_getter_call = new_function_call(new_id_token(
-                fmt"{struct.name}_init"), init_arg_list)
-            function.statements[sindex][1] = new_statement(
-                statement.destination, struct_getter_call)
-            else_block.scope[$(statement.destination)] = new_argument_definition(
-                struct.name, statement.destination)
-          of SK_STRUCT_GETTER:
-            let struct_var = statement.struct_getter.struct
-            let field_name = statement.struct_getter.field
-
-            if $(struct_var) notin else_block.scope:
-              return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
-
-            let struct = ? file.find_struct(else_block.scope[$(
-                struct_var)].arg_type)
-            let field = ? struct.find_field(field_name)
-            # expand struct getter into function call
-            let struct_getter_call = new_function_call(new_id_token(
-                fmt"{struct.name}_get_{field.arg_name}"), @[struct_var])
-            else_block.statements[index] = new_statement(
-                statement.destination, struct_getter_call)
-            else_block.scope[$(statement.destination)] = new_argument_definition(
-                field.arg_type, statement.destination)
-          of SK_FUNCTION_CALL:
-            # try looking up builtins function call
-            let maybe_builtin = file.resolve_builtin_function_call(
-                else_block.scope, statement.function_call)
-            if maybe_builtin.is_ok:
-              else_block.scope[$(statement.destination)] = new_argument_definition(
-                  maybe_builtin.get.return_type, statement.destination)
-              continue
-
-            # try looking up expanded function call
-            let maybe_expanded = file.resolve_expanded_function_call(
-                else_block.scope, statement.function_call)
-            if maybe_expanded.is_ok:
-              else_block.scope[$(statement.destination)] = new_argument_definition(
-                  maybe_expanded.get.definition.return_type,
-                  statement.destination)
-              continue
-
-            # try looking up user function call
-            let fn = ? file.resolve_function_call(else_block.scope,
-                statement.function_call)
-            else_block.scope[$(statement.destination)] = new_argument_definition(
-                fn.definition.return_type, statement.destination)
-            function_set.incl(fn)
-
-        let return_argument = else_block.statements[^1].destination
-        let actual_return_type = else_block.scope[$(return_argument)].arg_type
+        let return_arg = resolved_else_block.return_arg
         if match.return_type.is_none:
-          match.return_type = some(actual_return_type)
-        elif $(match.return_type.get) != $(actual_return_type):
-          return err(fmt"{return_argument.location} `else` block is expected to return {match.return_type.get} but found {actual_return_type}")
+          match.return_type = some(return_arg.arg_type)
+        elif $(match.return_type.get) != $(return_arg.arg_type):
+          return err(fmt"{return_arg.location} `else` block is expected to return {match.return_type.get} but found {return_arg.arg_type}")
 
       function.scope[$(match.destination)] = new_argument_definition(
           match.return_type.get, match.destination)
@@ -394,6 +464,7 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
   return ok(function_set)
 
 proc resolve*(file: File): Result[seq[Function], string] =
+  # Trace function call flow from main function
   var stack = @[ ? file.find_start_function()]
   var visited_functions = init_hashset[Function]()
   while stack.len > 0:
@@ -407,4 +478,11 @@ proc resolve*(file: File): Result[seq[Function], string] =
     for new_function in new_functions:
       if new_function notin visited_functions:
         stack.add(new_function)
+
+  # Resolve unused functions
+  # TODO: Raise warnings for unused functions
+  for function in file.functions:
+    if function notin visited_functions:
+      discard ? file.resolve_function(function)
+
   ok(visited_functions.to_seq)

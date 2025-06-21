@@ -28,6 +28,7 @@ proc new_file*(filename: string): File =
     new_function_definition("U8_rshift", @[("U8", "a"), ("U64", "b")], "U8"),
     new_function_definition("U8_and", @[("U8", "a"), ("U8", "b")], "U8"),
     new_function_definition("U8_or", @[("U8", "a"), ("U8", "b")], "U8"),
+    new_function_definition("U8_not", @[("U8", "a")], "U8"),
     new_function_definition("U16_init", @[("U16", "a")], "U16"),
     new_function_definition("U32_init", @[("U32", "a")], "U32"),
     # U64

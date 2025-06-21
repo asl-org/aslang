@@ -54,7 +54,7 @@ fn Bitset_clear(Bitset bitset, U64 bit): S64
       mask = U8_lshift(1, offset)
       imask = U8_not(mask)
       res = U8_and(data, imask)
-      _ = Pointer_write(bptr, res)
+      _x = Pointer_write_U8(bptr, res)
       ans = S64_from_U8(res)
     else:
       failure = S64_init(-1)
