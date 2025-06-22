@@ -42,11 +42,32 @@ proc new_function_definition*(name: string, arg_def_list: seq[(string, string)],
   new_function_definition(name_token, arg_def_list_token, return_type_token,
       Location())
 
+type
+  FunctionStepKind* = enum
+    FSK_STATEMENT, FSK_MATCH
+  FunctionStep* = ref object of RootObj
+    case kind*: FunctionStepKind
+    of FSK_STATEMENT:
+      statement*: Statement
+    of FSK_MATCH:
+      match*: Match
+
+proc `$`*(step: FunctionStep): string =
+  case step.kind:
+  of FSK_STATEMENT: $(step.statement)
+  of FSK_MATCH: $(step.match)
+
+proc new_function_step*(statement: Statement): FunctionStep =
+  FunctionStep(kind: FSK_STATEMENT, statement: statement)
+
+proc new_function_step*(match: Match): FunctionStep =
+  FunctionStep(kind: FSK_MATCH, match: match)
+
 type Function* = ref object of RootObj
-  steps*: uint = 0
   definition*: FunctionDefinition
-  statements*: seq[(uint, Statement)]
-  matches*: seq[(uint, Match)]
+  function_steps*: seq[FunctionStep]
+  # statements*: seq[(uint, Statement)]
+  # matches*: seq[(uint, Match)]
   scope*: Table[string, ArgumentDefinition]
 
 proc location*(function: Function): Location =
@@ -57,6 +78,9 @@ proc name*(function: Function): string =
 
 proc return_type*(function: Function): string =
   $(function.definition.return_type)
+
+proc steps*(function: Function): uint =
+  function.function_steps.len.uint
 
 proc native_return_type*(function: Function): string =
   case $(function.definition.return_type):
@@ -77,17 +101,21 @@ proc `$`*(function: Function): string =
   let child_prefix = " ".repeat(function.definition.location.column + 1)
   var lines = @[prefix & $(function.definition)]
 
-  var sindex = 0
-  var mindex = 0
-  for step in 0..<function.steps:
-    if sindex < function.statements.len and function.statements[sindex][0] == step:
-      let (_, statement) = function.statements[sindex]
-      lines.add(child_prefix & $(statement))
-      sindex += 1
-    else:
-      let (_, match) = function.matches[mindex]
-      lines.add(child_prefix & $(match))
-      mindex += 1
+  # var sindex = 0
+  # var mindex = 0
+  # for step in 0..<function.steps:
+  #   if sindex < function.statements.len and function.statements[sindex][0] == step:
+  #     let (_, statement) = function.statements[sindex]
+  #     lines.add(child_prefix & $(statement))
+  #     sindex += 1
+  #   else:
+  #     let (_, match) = function.matches[mindex]
+  #     lines.add(child_prefix & $(match))
+  #     mindex += 1
+
+  for step in function.function_steps:
+    lines.add(child_prefix & $(step))
+
   lines.join("\n")
 
 proc c*(function: Function): string =
@@ -95,34 +123,22 @@ proc c*(function: Function): string =
       fmt"{it.native_type} {it.arg_name}").join(", ")
   let signature = fmt"{function.native_return_type} {function.name}({args_def_str})"
   var body: seq[string]
-  # TODO: consider match blocks as well
-  var sindex = 0
-  var mindex = 0
-  for step in 0..<function.steps:
-    if sindex < function.statements.len and function.statements[sindex][0] == step:
-      let (_, statement) = function.statements[sindex]
+
+  for step in function.function_steps:
+    case step.kind:
+    of FSK_STATEMENT:
+      let statement = step.statement
       let native_arg_type = function.scope[$(statement.destination)].native_type
       body.add(fmt"{native_arg_type} {statement.destination} = {statement.function_call};")
-      sindex += 1
-    else:
-      let (_, match) = function.matches[mindex]
-      body.add(match.c)
-      mindex += 1
+    of FSK_MATCH:
+      body.add(step.match.c)
 
-  # TODO: consider match blocks as well
-  if function.statements.len == 0:
-    let (_, match) = function.matches[^1]
-    body.add(fmt"return {match.destination};")
-  elif function.matches.len == 0:
-    let (_, statement) = function.statements[^1]
-    body.add(fmt"return {statement.destination};")
-  else:
-    if function.matches[^1][0] > function.statements[^1][0]:
-      let (_, match) = function.matches[^1]
-      body.add(fmt"return {match.destination};")
-    elif function.matches.len == 0:
-      let (_, statement) = function.statements[^1]
-      body.add(fmt"return {statement.destination};")
+  let last_step = function.function_steps[^1]
+  case last_step.kind:
+  of FSK_STATEMENT:
+    body.add(fmt"return {last_step.statement.destination};")
+  of FSK_MATCH:
+    body.add(fmt"return {last_step.match.destination};")
 
   @[signature, "{", body.join("\n"), "}"].join("\n")
 
@@ -138,12 +154,10 @@ proc new_function*(definition: FunctionDefinition): Function =
   Function(definition: definition)
 
 proc add_statement*(function: Function, statement: Statement): void =
-  function.statements.add((function.steps, statement))
-  function.steps += 1
+  function.function_steps.add(new_function_step(statement))
 
 proc add_match*(function: Function, match: Match): void =
-  function.matches.add((function.steps, match))
-  function.steps += 1
+  function.function_steps.add(new_function_step(match))
 
 proc add_arg_to_scope*(function: Function, arg_def: ArgumentDefinition): void =
   function.scope[$(arg_def.arg_name)] = arg_def

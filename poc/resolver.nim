@@ -30,6 +30,11 @@ proc new_resolved_function_call(function: Function, args: seq[
     ResolvedArgument]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_USER, function: function, args: args)
 
+proc user_function(resolved_function_call: ResolvedFunctionCall): Option[Function] =
+  case resolved_function_call.kind:
+  of RFCK_BUILTIN: none(Function)
+  of RFCK_USER: some(resolved_function_call.function)
+
 proc return_type(resolved_function_call: ResolvedFunctionCall): Token =
   case resolved_function_call.kind:
   of RFCK_BUILTIN:
@@ -117,6 +122,46 @@ proc new_resolved_else(statements: seq[ResolvedStatement],
   ResolvedElse(statements: statements, function_set: function_set,
       return_arg: return_arg)
 
+type ResolvedMatch = ref object of RootObj
+  case_blocks: seq[ResolvedCase]
+  # there can only be 1 else block
+  else_blocks: seq[ResolvedElse]
+  return_arg: ArgumentDefinition
+  function_set: HashSet[Function]
+
+proc new_resolved_match(case_blocks: seq[ResolvedCase], else_blocks: seq[
+    ResolvedElse], return_arg: ArgumentDefinition, function_set: HashSet[
+        Function]): ResolvedMatch =
+  ResolvedMatch(case_blocks: case_blocks, else_blocks: else_blocks,
+      return_arg: return_arg, function_set: function_set)
+
+type
+  ResolvedFunctionStepKind = enum
+    RFSK_STATEMENT, RFSK_MATCH
+  ResolvedFunctionStep = ref object of RootObj
+    function_set: Hashset[Function]
+    expanded: Option[FunctionStep]
+    case kind: ResolvedFunctionStepKind
+    of RFSK_STATEMENT:
+      statement: ResolvedStatement
+    of RFSK_MATCH:
+      match: ResolvedMatch
+
+proc new_resolved_function_step(statement: ResolvedStatement,
+    function_set: HashSet[Function], expanded: Statement): ResolvedFunctionStep =
+  ResolvedFunctionStep(kind: RFSK_STATEMENT, statement: statement,
+      function_set: function_set, expanded: some(new_function_step(expanded)))
+
+proc new_resolved_function_step(statement: ResolvedStatement,
+    function_set: HashSet[Function]): ResolvedFunctionStep =
+  ResolvedFunctionStep(kind: RFSK_STATEMENT, statement: statement,
+      function_set: function_set, expanded: none(FunctionStep))
+
+proc new_resolved_function_step(match: ResolvedMatch,
+    function_set: HashSet[Function]): ResolvedFunctionStep =
+  ResolvedFunctionStep(kind: RFSK_MATCH, match: match,
+      function_set: function_set, expanded: none(FunctionStep))
+
 proc safe_parse*[T](input: string): Result[void, string] =
   when T is SomeSignedInt:
     var temp: BiggestInt
@@ -176,9 +221,9 @@ proc resolve_argument(scope: Table[string, ArgumentDefinition],
   ok(new_resolved_argument(arg_def.arg_type, arg_value))
 
 # matches individual function with function call
-proc resolve_function_call_args(scope: Table[string, ArgumentDefinition],
-    function_def: FunctionDefinition, function_call: FunctionCall): Result[
-    seq[ResolvedArgument], string] =
+proc resolve_function_call_args(function_call: FunctionCall,
+    function_def: FunctionDefinition, scope: Table[string,
+    ArgumentDefinition]): Result[seq[ResolvedArgument], string] =
   if $(function_def.name) != $(function_call.name):
     return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function_def.name}")
   if function_def.arg_def_list.len != function_call.arg_list.len:
@@ -195,8 +240,8 @@ proc resolve_function_call(file: File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall): Result[
         ResolvedFunctionCall, string] =
   for function in file.functions:
-    let maybe_resolved_args = scope.resolve_function_call_args(
-        function.definition, function_call)
+    let maybe_resolved_args = function_call.resolve_function_call_args(
+        function.definition, scope)
     if maybe_resolved_args.is_ok:
       return ok(new_resolved_function_call(function, maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
@@ -205,7 +250,8 @@ proc resolve_builtin_function_call(file: File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall): Result[
         ResolvedFunctionCall, string] =
   for function_def in file.builtins:
-    let maybe_resolved_args = scope.resolve_function_call_args(function_def, function_call)
+    let maybe_resolved_args = function_call.resolve_function_call_args(
+        function_def, scope)
     if maybe_resolved_args.is_ok:
       return ok(new_resolved_function_call(function_def,
           maybe_resolved_args.get))
@@ -215,8 +261,8 @@ proc resolve_expanded_function_call(file: File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall): Result[
     ResolvedFunctionCall, string] =
   for function in file.expanded:
-    let maybe_resolved_args = scope.resolve_function_call_args(
-        function.definition, function_call)
+    let maybe_resolved_args = function_call.resolve_function_call_args(
+        function.definition, scope)
     if maybe_resolved_args.is_ok:
       return ok(new_resolved_function_call(function, maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching expanded function in the file {file.name}")
@@ -277,9 +323,8 @@ proc resolve_struct_getter_statement(statement: Statement, file: File,
   let resolved_struct_getter = new_resolved_struct_getter(struct, field, struct_var)
   ok(resolved_struct_getter)
 
-proc resolve_statement(statement: Statement, scope: var Table[string,
-    ArgumentDefinition], file: File, function: Function): Result[
-        ResolvedStatement, string] =
+proc resolve_statement(statement: Statement, file: File, scope: var Table[
+    string, ArgumentDefinition]): Result[ResolvedStatement, string] =
   # check if variable is already defined in the local(case) scope
   if $(statement.destination) in scope:
     let defined_arg = scope[$(statement.destination)]
@@ -312,21 +357,22 @@ proc resolve_statement(statement: Statement, scope: var Table[string,
     let resolved_function_call = ? statement.resolve_function_call_statement(
         file, scope)
     var function_set: Hashset[Function]
-    if resolved_function_call.kind == RFCK_USER:
-      function_set.incl(resolved_function_call.function)
+    let maybe_ext_function = resolved_function_call.user_function
+    if maybe_ext_function.is_some:
+      function_set.incl(maybe_ext_function.get)
     resolved_statement = new_resolved_statement(resolved_function_call, function_set)
 
   return ok(resolved_statement)
 
 proc resolve_case_block(case_block: Case, file: File,
-    function: Function): Result[ResolvedCase, string] =
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedCase, string] =
   var function_set: Hashset[Function]
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
-  case_block.scope = deep_copy(function.scope)
+  case_block.scope = deep_copy(scope)
   for (index, statement) in case_block.statements.pairs:
-    let resolved_statement = ? statement.resolve_statement(case_block.scope,
-        file, function)
+    let resolved_statement = ? statement.resolve_statement(file,
+        case_block.scope)
     resolved_statements.add(resolved_statement)
 
     if resolved_statement.expanded.is_some:
@@ -342,14 +388,14 @@ proc resolve_case_block(case_block: Case, file: File,
       return_arg_def))
 
 proc resolve_else_block(else_block: Else, file: File,
-    function: Function): Result[ResolvedElse, string] =
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedElse, string] =
   var function_set: Hashset[Function]
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the else scope to avoid non local argument name conflicts
-  else_block.scope = deep_copy(function.scope)
+  else_block.scope = deep_copy(scope)
   for (index, statement) in else_block.statements.pairs:
-    let resolved_statement = ? statement.resolve_statement(else_block.scope,
-        file, function)
+    let resolved_statement = ? statement.resolve_statement(file,
+        else_block.scope)
     resolved_statements.add(resolved_statement)
 
     if resolved_statement.expanded.is_some:
@@ -364,7 +410,84 @@ proc resolve_else_block(else_block: Else, file: File,
   return ok(new_resolved_else(resolved_statements, function_set,
       return_arg_def))
 
-proc resolve_function(file: File, function: Function): Result[HashSet[Function], string] =
+proc resolve_match(match: Match, file: File, scope: var Table[string,
+    ArgumentDefinition]): Result[ResolvedMatch, string] =
+  var function_set: HashSet[Function]
+  var resolved_case_blocks: seq[ResolvedCase]
+  var resolved_else_blocks: seq[ResolvedElse]
+  if $(match.destination) in scope:
+    let defined_arg = scope[$(match.destination)]
+    return err(fmt"{match.destination.location} {match.destination} is already defined {defined_arg.location}")
+
+  if $(match.operand) notin scope:
+    return err(fmt"{match.operand.location} {match.operand} is not defined in the scope")
+
+  # Temporary hack to ensure that the variable that match block value is assigned to,
+  # can not be used inside a case/block variable. This variable is updated after match
+  # block resolution is complete. Look for `scope[$(match.destination)]`
+  scope[$(match.destination)] = new_argument_definition(Token(
+      kind: TK_ID, location: match.destination.location), Token(kind: TK_ID))
+
+  for case_block in match.case_blocks:
+    # TODO: Make sure that case_block pattern matches with value passed to match call
+    let resolved_case_block = ? case_block.resolve_case_block(file,
+        scope)
+    resolved_case_blocks.add(resolved_case_block)
+    for ext_function in resolved_case_block.function_set:
+      if ext_function notin function_set:
+        function_set.incl(ext_function)
+
+    let return_arg = resolved_case_block.return_arg
+    if match.return_type.is_none:
+      match.return_type = some(return_arg.arg_type)
+    elif $(match.return_type.get) != $(return_arg.arg_type):
+      return err(fmt"{return_arg.location} `case` block is expected to return {match.return_type.get} but found {return_arg.arg_type}")
+
+  # Note: Even though this is a for loop but there can only be at most 1 else block.
+  for (index, else_block) in match.else_blocks.pairs:
+    let resolved_else_block = ? else_block.resolve_else_block(file, scope)
+    resolved_else_blocks.add(resolved_else_block)
+    for ext_function in resolved_else_block.function_set:
+      if ext_function notin function_set:
+        function_set.incl(ext_function)
+
+    let return_arg = resolved_else_block.return_arg
+    if match.return_type.is_none:
+      match.return_type = some(return_arg.arg_type)
+    elif $(match.return_type.get) != $(return_arg.arg_type):
+      return err(fmt"{return_arg.location} `else` block is expected to return {match.return_type.get} but found {return_arg.arg_type}")
+
+  let return_arg = new_argument_definition(
+      match.return_type.get, match.destination)
+  scope[$(match.destination)] = return_arg
+
+  ok(new_resolved_match(resolved_case_blocks, resolved_else_blocks, return_arg, function_set))
+
+proc resolve_function_step(step: FunctionStep, file: File,
+    scope: var Table[string, ArgumentDefinition]): Result[ResolvedFunctionStep, string] =
+  var function_set: Hashset[Function]
+  case step.kind:
+  of FSK_STATEMENT:
+    let resolved_statement = ? step.statement.resolve_statement(file, scope)
+
+    for ext_function in resolved_statement.function_set:
+      function_set.incl(ext_function)
+
+    let resolved_function_step =
+      if resolved_statement.expanded.is_some:
+        new_resolved_function_step(resolved_statement, function_set,
+        resolved_statement.expanded.get)
+      else:
+        new_resolved_function_step(resolved_statement, function_set)
+
+    return ok(resolved_function_step)
+  of FSK_MATCH:
+    let resolved_match = ? step.match.resolve_match(file, scope)
+    for ext_function in resolved_match.function_set:
+      function_set.incl(ext_function)
+    return ok(new_resolved_function_step(resolved_match, function_set))
+
+proc resolve_function(function: Function, file: File): Result[HashSet[Function], string] =
   var function_set = init_hashset[Function]()
 
   ? file.find_module(function.definition.return_type)
@@ -376,88 +499,22 @@ proc resolve_function(file: File, function: Function): Result[HashSet[Function],
       return err(fmt"{arg.location} {arg.arg_name} is already defined {defined_arg.location}")
     function.scope[$(arg.arg_name)] = arg
 
-  var sindex = 0 # statement index
-  var mindex = 0 # match block index
-  for step in 0..<function.steps:
-    # handle function call statements
-    if sindex < function.statements.len and function.statements[sindex][0] == step:
-      let (_, statement) = function.statements[sindex]
-      let resolved_statement = ? statement.resolve_statement(function.scope,
-          file, function)
+  for (index, step) in function.function_steps.pairs:
+    let resolved_function_step = ? step.resolve_function_step(file,
+        function.scope)
+    if resolved_function_step.expanded.is_some:
+      function.function_steps[index] = resolved_function_step.expanded.get
 
-      if resolved_statement.expanded.is_some:
-        function.statements[sindex][1] = resolved_statement.expanded.get
+    for ext_function in resolved_function_step.function_set:
+      function_set.incl(ext_function)
 
-      for ext_function in resolved_statement.function_set:
-        function_set.incl(ext_function)
+  let last_step = function.function_steps[^1]
+  let return_argument =
+    case last_step.kind:
+    of FSK_STATEMENT: last_step.statement.destination
+    of FSK_MATCH: last_step.match.destination
 
-      sindex += 1
-    # handle match block statements
-    else:
-      let (_, match) = function.matches[mindex]
-      if $(match.destination) in function.scope:
-        let defined_arg = function.scope[$(match.destination)]
-        return err(fmt"{match.destination.location} {match.destination} is already defined {defined_arg.location}")
-
-      if $(match.operand) notin function.scope:
-        return err(fmt"{match.operand.location} {match.operand} is not defined in the scope")
-
-      # Temporary hack to ensure that the variable that match block value is assigned to,
-      # can not be used inside a case/block variable. This variable is updated after match
-      # block resolution is complete. Look for `function.scope[$(match.destination)]`
-      function.scope[$(match.destination)] = new_argument_definition(Token(
-          kind: TK_ID, location: match.destination.location), Token(kind: TK_ID))
-
-      for case_block in match.case_blocks:
-        # TODO: Make sure that case_block pattern matches with value passed to match call
-        let resolved_case_block = ? case_block.resolve_case_block(file, function)
-        for ext_function in resolved_case_block.function_set:
-          if ext_function notin function_set:
-            function_set.incl(ext_function)
-
-        let return_arg = resolved_case_block.return_arg
-        if match.return_type.is_none:
-          match.return_type = some(return_arg.arg_type)
-        elif $(match.return_type.get) != $(return_arg.arg_type):
-          return err(fmt"{return_arg.location} `case` block is expected to return {match.return_type.get} but found {return_arg.arg_type}")
-
-      # Note: Even though this is a for loop but there can only be at most 1 else block.
-      for (index, else_block) in match.else_blocks.pairs:
-        let resolved_else_block = ? else_block.resolve_else_block(file, function)
-        for ext_function in resolved_else_block.function_set:
-          if ext_function notin function_set:
-            function_set.incl(ext_function)
-
-        let return_arg = resolved_else_block.return_arg
-        if match.return_type.is_none:
-          match.return_type = some(return_arg.arg_type)
-        elif $(match.return_type.get) != $(return_arg.arg_type):
-          return err(fmt"{return_arg.location} `else` block is expected to return {match.return_type.get} but found {return_arg.arg_type}")
-
-      function.scope[$(match.destination)] = new_argument_definition(
-          match.return_type.get, match.destination)
-      # increment match index
-      mindex += 1
-
-  var actual_return_type: string
-  # handle only match block
-  if function.statements.len == 0:
-    let return_argument = function.matches[^1][1].destination
-    actual_return_type = $(function.scope[$(return_argument)].arg_type)
-  # handle statements only function
-  elif function.matches.len == 0:
-    let return_argument = function.statements[^1][1].destination
-    actual_return_type = $(function.scope[$(return_argument)].arg_type)
-  else: # function contains both statements and match blocks
-    # handle last statement
-    if function.statements[^1][0] > function.matches[^1][0]:
-      let return_argument = function.statements[^1][1].destination
-      actual_return_type = $(function.scope[$(return_argument)].arg_type)
-    # handle last match block
-    else:
-      let return_argument = function.matches[^1][1].destination
-      actual_return_type = $(function.scope[$(return_argument)].arg_type)
-
+  let actual_return_type = $(function.scope[$(return_argument)].arg_type)
   if function.return_type != actual_return_type:
     return err(fmt"{function.location} expected {function.name} to return {function.return_type} but found {actual_return_type}")
 
@@ -472,7 +529,7 @@ proc resolve*(file: File): Result[seq[Function], string] =
     stack.set_len(stack.len - 1)
     if function in visited_functions: continue
 
-    let new_functions = ? file.resolve_function(function)
+    let new_functions = ? function.resolve_function(file)
     visited_functions.incl(function)
 
     for new_function in new_functions:
@@ -483,6 +540,6 @@ proc resolve*(file: File): Result[seq[Function], string] =
   # TODO: Raise warnings for unused functions
   for function in file.functions:
     if function notin visited_functions:
-      discard ? file.resolve_function(function)
+      discard ? function.resolve_function(file)
 
   ok(visited_functions.to_seq)
