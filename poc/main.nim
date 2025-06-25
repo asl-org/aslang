@@ -5,12 +5,12 @@ import parser
 import blocks
 import resolver
 
-proc generate(file: blocks.File, functions: seq[Function]): Result[
+proc generate(file: blocks.File, functions: seq[ResolvedFunction]): Result[
     string, string] =
   let impl_code = @[
     file.expanded.map_it(it.definition.c).join("\n"),
     file.expanded.map_it(it.c).join("\n\n"),
-    functions.map_it(it.definition.c).join("\n"),
+    functions.map_it(it.h).join("\n"),
     functions.map_it(it.c).join("\n\n"),
   ].join("\n")
 
@@ -30,8 +30,7 @@ proc compile(input_file: string, output_file: string): Result[void, string] =
   let lines = ? parse(tokens)
   let file = ? blockify(input_file, lines)
   let functions = ? resolve(file)
-  let expanded_file = ? expand(file)
-  let code = ? generate(expanded_file, functions)
+  let code = ? generate(file, functions)
   write_file(output_file, code)
   let exit_code = exec_cmd(fmt"gcc -O3 -o example {output_file}")
   if exit_code != 0: err("GCC Compilation failed.") else: ok()

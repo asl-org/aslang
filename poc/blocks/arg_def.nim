@@ -37,3 +37,6 @@ proc native_type*(arg_def: ArgumentDefinition): string =
   of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "F32", "F64",
       "Pointer": $(arg_def.arg_type)
   else: "Pointer"
+
+proc c*(arg_def: ArgumentDefinition): string =
+  fmt"{arg_def.native_type} {arg_def.arg_name}"

@@ -46,7 +46,13 @@ proc location*(statement: Statement): Location =
   statement.destination.location
 
 proc `$`*(statement: Statement): string =
-  fmt"{statement.destination} = {statement.function_call}"
+  case statement.kind:
+  of SK_FUNCTION_CALL:
+    fmt"{statement.destination} = {statement.function_call}"
+  of SK_STRUCT_GETTER:
+    fmt"{statement.destination} = {statement.struct_getter}"
+  of SK_STRUCT_INIT:
+    fmt"{statement.destination} = {statement.struct_init}"
 
 proc new_statement*(destination: Token, function_call: FunctionCall): Statement =
   Statement(kind: SK_FUNCTION_CALL, destination: destination,

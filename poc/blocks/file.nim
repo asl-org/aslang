@@ -34,7 +34,7 @@ proc new_file*(filename: string): File =
     # U64
     new_function_definition("U64_init", @[("U64", "a")], "U64"),
     new_function_definition("U64_compare", @[("U64", "a"), ("U64", "b")],
-        "U64"),
+        "S64"),
     new_function_definition("U64_add", @[("U64", "a"), ("U64", "b")], "U64"),
     new_function_definition("U64_subtract", @[("U64", "a"), ("U64", "b")],
         "U64"),
