@@ -5,6 +5,8 @@
 
 // Module: U8
 
+U8 U8_init(U8 a) { return a; }
+
 // safe
 U8 U8_and(U8 a, U8 b) { return a & b; }
 U8 U8_or(U8 a, U8 b) { return a | b; }

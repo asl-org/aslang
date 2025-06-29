@@ -4,6 +4,7 @@
 #include "base.h"
 
 // Module: S32
+S32 S32_init(S32 a) { return a; }
 
 // safe
 S32 S32_and(S32 a, S32 b) { return a & b; }

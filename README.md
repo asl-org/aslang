@@ -19,7 +19,7 @@ The language is still under active development and is **not stable** yet — fee
 
 ## 🛠️ About the Compiler: `asl`
 
-The `asl` compiler is written in [Nim](https://nim-lang.org/) and follows a traditional 3-phase compilation pipeline:
+The `asl` compiler is written in [Nim](https://nim-lang.org/) and follows a traditional 4-phase compilation pipeline:
 
 ### 🔧 Compilation Phases
 
@@ -29,8 +29,11 @@ The `asl` compiler is written in [Nim](https://nim-lang.org/) and follows a trad
 2. **Parsing**
    Builds an abstract syntax tree (AST) from tokens using ASLang grammar.
 
-3. **Code Generation**
-   Translates the AST into target code (planned: Nim or C backend, possibly WASM in the future).
+3. **Resolution**
+   Builds an type resolved abstract syntax tree (AST) from raw AST.
+
+4. **Code Generation**
+   Translates the Resolved AST into target code (planned: Nim or C backend, possibly WASM in the future).
 
 ---
 
@@ -49,6 +52,11 @@ cd aslang
 # Bootstrap
 chmod +x bootstrap.sh
 ./bootstrap.sh
+
+# Memory leak detection, see script content for usage instructions.
+cript contains detailed usage instrutions
+chmod +x memcheck.sh
+./memcheck.sh
 
 # Run tests
 chmod +x test.sh

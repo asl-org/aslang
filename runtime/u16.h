@@ -5,6 +5,8 @@
 
 // Module: U16
 
+U16 U16_init(U16 a) { return a; }
+
 // safe
 U16 U16_and(U16 a, U16 b) { return a & b; }
 U16 U16_or(U16 a, U16 b) { return a | b; }

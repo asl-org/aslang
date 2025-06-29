@@ -4,6 +4,7 @@
 #include "base.h"
 
 // Module: F64
+F64 F64_init(F64 a) { return a; }
 
 // unsafe
 F64 F64_add(F64 a, F64 b) { return a + b; }

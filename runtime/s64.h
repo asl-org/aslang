@@ -4,6 +4,7 @@
 #include "base.h"
 
 // Module: S64
+S64 S64_init(S64 a) { return a; }
 
 // safe
 S64 S64_and(S64 a, S64 b) { return a & b; }

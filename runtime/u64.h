@@ -4,6 +4,7 @@
 #include "base.h"
 
 // Module: U64
+U64 U64_init(U64 a) { return a; }
 
 // safe
 U64 U64_and(U64 a, U64 b) { return a & b; }

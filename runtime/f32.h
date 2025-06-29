@@ -4,6 +4,7 @@
 #include "base.h"
 
 // Module: F32
+F32 F32_init(F32 a) { return a; }
 
 // unsafe
 F32 F32_add(F32 a, F32 b) { return a + b; }
