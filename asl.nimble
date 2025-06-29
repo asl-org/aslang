@@ -16,4 +16,5 @@ requires "results >= 0.5.0"
 switch("experimental", "dotOperators")
 switch("deadCodeElim", "on")
 switch("opt", "speed")
-switch("deepcopy", "on")
+switch("--threads", "on")
+switch("--checks", "on")

@@ -1,128 +1,163 @@
-import results, strformat, strutils, sets, sequtils
-import "../rules"
+import tables, strutils, strformat, hashes, sequtils
 
-import common
-import matcher
+import token, statement, match, arg_def
+
+type FunctionDefinition* = ref object of RootObj
+  name*: Token
+  arg_def_list*: seq[ArgumentDefinition]
+  return_type*: Token
+  location*: Location
+
+proc native_return_type*(function_def: FunctionDefinition): string =
+  case $(function_def.return_type):
+  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64", "F32", "F64",
+      "Pointer": $(function_def.return_type)
+  else: "Pointer"
+
+proc hash*(func_def: FunctionDefinition): Hash =
+  var essence = func_def.name.hash !& func_def.location.hash
+  for arg_def in func_def.arg_def_list:
+    essence = essence !& arg_def.hash
+  return essence
+
+proc `$`*(func_def: FunctionDefinition): string =
+  let arg_def_list_str = func_def.arg_def_list.map_it($(it)).join(", ")
+  fmt"fn {func_def.name}({arg_def_list_str}): {func_def.return_type}"
+
+proc c*(func_def: FunctionDefinition): string =
+  let args_def_str = func_def.arg_def_list.map_it($(it.native_type)).join(", ")
+  fmt"{func_def.native_return_type} {func_def.name}({args_def_str});"
+
+proc new_function_definition*(name: Token, arg_def_list: seq[
+    ArgumentDefinition], return_type: Token,
+        location: Location = Location()): FunctionDefinition =
+  FunctionDefinition(name: name, arg_def_list: arg_def_list,
+      return_type: return_type, location: location)
+
+proc new_function_definition*(name: string, arg_def_list: seq[(string, string)],
+    return_type: string): FunctionDefinition =
+  let name_token = new_id_token(name)
+  let return_type_token = new_id_token(return_type)
+  let arg_def_list_token = arg_def_list.map_it(new_argument_definition(it[0], it[1]))
+  new_function_definition(name_token, arg_def_list_token, return_type_token,
+      Location())
 
 type
   FunctionStepKind* = enum
-    FSK_STATEMENT, FSK_MATCHER
+    FSK_STATEMENT, FSK_MATCH
   FunctionStep* = ref object of RootObj
-    case kind: FunctionStepKind
-    of FSK_STATEMENT: statement: Statement
-    of FSK_MATCHER: matcher: Match
-
-proc new_function_step(matcher: Match): FunctionStep =
-  FunctionStep(kind: FSK_MATCHER, matcher: matcher)
-
-proc new_function_step(statement: Statement): FunctionStep =
-  FunctionStep(kind: FSK_STATEMENT, statement: statement)
-
-proc kind*(step: FunctionStep): FunctionStepKind = step.kind
-proc statement*(step: FunctionStep): Statement = step.statement
-proc matcher*(step: FunctionStep): Match = step.matcher
+    case kind*: FunctionStepKind
+    of FSK_STATEMENT:
+      statement*: Statement
+    of FSK_MATCH:
+      match*: Match
 
 proc `$`*(step: FunctionStep): string =
   case step.kind:
-  of FSK_MATCHER: $(step.matcher)
   of FSK_STATEMENT: $(step.statement)
+  of FSK_MATCH: $(step.match)
 
-type
-  FunctionKind* = enum
-    FK_USER, FK_NATIVE
-  Function* = ref object of RootObj
-    def: FunctionDefinition
-    spaces: int
-    case kind: FunctionKind
-    of FK_USER:
-      steps: seq[FunctionStep]
-    of FK_NATIVE:
-      native_fn_name: string
+proc new_function_step*(statement: Statement): FunctionStep =
+  FunctionStep(kind: FSK_STATEMENT, statement: statement)
 
-proc kind*(fn: Function): FunctionKind = fn.kind
-proc def*(fn: Function): FunctionDefinition = fn.def
-proc spaces*(fn: Function): int = fn.spaces
-proc native_fn_name*(fn: Function): string = fn.native_fn_name
-proc steps*(fn: Function): seq[FunctionStep] = fn.steps
+proc new_function_step*(match: Match): FunctionStep =
+  FunctionStep(kind: FSK_MATCH, match: match)
 
-proc match_block*(fn: Function): Result[Match, string] =
-  case fn.kind:
-  of FK_USER:
-    case fn.steps[^1].kind:
-    of FSK_MATCHER: ok(fn.steps[^1].matcher)
-    of FSK_STATEMENT: return err(fmt"No match block found")
-  of FK_NATIVE: err(fmt"Native functions do not have statements")
+type Function* = ref object of RootObj
+  definition*: FunctionDefinition
+  function_steps*: seq[FunctionStep]
+  # statements*: seq[(uint, Statement)]
+  # matches*: seq[(uint, Match)]
+  scope*: Table[string, ArgumentDefinition]
 
-proc `$`*(fn: Function): string =
-  let prefix = prefix(fn.spaces)
-  let child_prefix = child_prefix(fn.spaces)
-  var content: seq[string] = @[prefix & $(fn.def)]
-  if fn.kind == FK_USER:
-    for step in fn.steps:
-      content.add((child_prefix & $(step)))
-  return content.join("\n")
+proc location*(function: Function): Location =
+  function.definition.location
 
-proc new_user_function*(def: FunctionDefinition,
-    spaces: int): Function =
-  Function(kind: FK_USER, def: def, spaces: spaces)
+proc name*(function: Function): string =
+  $(function.definition.name)
 
-proc new_native_function*(def: FunctionDefinition,
-    native_fn_name: string): Function =
-  Function(kind: FK_NATIVE, def: def, native_fn_name: native_fn_name, spaces: 4)
+proc return_type*(function: Function): string =
+  $(function.definition.return_type)
 
-# TODO: add duplicate block validation
-proc add_step*(fn: Function, step: FunctionStep): Result[void, string] =
-  case fn.kind:
-  of FK_NATIVE: err(fmt"Native functions do not support steps")
-  of FK_USER:
-    if fn.steps.len == 0:
-      fn.steps.add(step)
-      return ok()
+proc steps*(function: Function): uint =
+  function.function_steps.len.uint
 
-    case fn.steps[^1].kind:
-    of FSK_MATCHER:
-      return err(fmt"Match block must be the last step of a function")
+proc native_return_type*(function: Function): string =
+  case $(function.definition.return_type):
+  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64", "F32", "F64",
+      "Pointer": $(function.definition.return_type)
+  else: "Pointer"
+
+proc arity*(function: Function): int =
+  function.definition.arg_def_list.len
+
+proc arg_def_list*(function: Function): seq[ArgumentDefinition] =
+  function.definition.arg_def_list
+
+proc hash*(function: Function): Hash = function.definition.hash
+
+proc `$`*(function: Function): string =
+  let prefix = " ".repeat(function.definition.location.column - 1)
+  let child_prefix = " ".repeat(function.definition.location.column + 1)
+  var lines = @[prefix & $(function.definition)]
+
+  # var sindex = 0
+  # var mindex = 0
+  # for step in 0..<function.steps:
+  #   if sindex < function.statements.len and function.statements[sindex][0] == step:
+  #     let (_, statement) = function.statements[sindex]
+  #     lines.add(child_prefix & $(statement))
+  #     sindex += 1
+  #   else:
+  #     let (_, match) = function.matches[mindex]
+  #     lines.add(child_prefix & $(match))
+  #     mindex += 1
+
+  for step in function.function_steps:
+    lines.add(child_prefix & $(step))
+
+  lines.join("\n")
+
+proc c*(function: Function): string =
+  let args_def_str = function.definition.arg_def_list.map_it(
+      fmt"{it.native_type} {it.arg_name}").join(", ")
+  let signature = fmt"{function.native_return_type} {function.name}({args_def_str})"
+  var body: seq[string]
+
+  for step in function.function_steps:
+    case step.kind:
     of FSK_STATEMENT:
-      fn.steps.add(step)
-      return ok()
+      let statement = step.statement
+      let native_arg_type = function.scope[$(statement.destination)].native_type
+      body.add(fmt"{native_arg_type} {statement.destination} = {statement.function_call};")
+    of FSK_MATCH:
+      body.add(step.match.c)
 
-proc add_statement*(fn: Function, statement: Statement): Result[void, string] =
-  fn.add_step(new_function_step(statement))
+  let last_step = function.function_steps[^1]
+  case last_step.kind:
+  of FSK_STATEMENT:
+    body.add(fmt"return {last_step.statement.destination};")
+  of FSK_MATCH:
+    body.add(fmt"return {last_step.match.destination};")
 
-proc add_match_block*(fn: Function, matcher: Match): Result[void, string] =
-  fn.add_step(new_function_step(matcher))
+  @[signature, "{", body.join("\n"), "}"].join("\n")
 
-# TODO: perform final validation
-proc close*(fn: Function): Result[void, string] =
-  case fn.kind:
-  of FK_NATIVE:
-    return err(fmt"Native function can not have statements")
-  of FK_USER:
-    if fn.steps.len == 0:
-      return err(fmt"function block must have at least one statement or match block")
+proc is_start*(function: Function): bool =
+  let name = $(function.definition.name)
+  let return_type = $(function.definition.return_type)
+  let arity = function.definition.arg_def_list.len
+  let first_arg_type = $(function.definition.arg_def_list[0].arg_type)
+  return name == "start" and return_type == "U8" and arity == 1 and
+      first_arg_type == "U8"
 
-    var arg_name_set: HashSet[string]
-    for arg_def in fn.def.arg_def_list:
-      let name = $(arg_def.name)
-      if name in arg_name_set:
-        return err(fmt"Parameter {name} is used twice in the function definition")
-      arg_name_set.incl(name)
-  ok()
+proc new_function*(definition: FunctionDefinition): Function =
+  Function(definition: definition)
 
-proc `==`*(self: Function, other: Function): bool =
-  # same name
-  if $(self.def.name) != $(other.def.name):
-    return false
+proc add_statement*(function: Function, statement: Statement): void =
+  function.function_steps.add(new_function_step(statement))
 
-  # same arity (arg count)
-  if self.def.arg_def_list.len != other.def.arg_def_list.len:
-    return false
+proc add_match*(function: Function, match: Match): void =
+  function.function_steps.add(new_function_step(match))
 
-  # same arg types
-  for (self_arg_def, other_arg_def) in zip(self.def.arg_def_list,
-      other.def.arg_def_list):
-    if $(self_arg_def.module) != $(other_arg_def.module):
-      return false
-
-  return true
-
+proc add_arg_to_scope*(function: Function, arg_def: ArgumentDefinition): void =
+  function.scope[$(arg_def.arg_name)] = arg_def

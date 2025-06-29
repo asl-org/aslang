@@ -1,152 +1,273 @@
-import strformat, results, strutils
+import results, strformat
 
-import parser/grammar
-export grammar
+import blocks
 
-type ParseError* = ref object of RootObj
-  stack: seq[(Location, string)]
+type Parser = ref object of RootObj
+  tokens: seq[Token]
+  index: int = 0
 
-proc push(parse_error: ParseError, location: Location,
-    message: string): ParseError =
-  parse_error.stack.add((location, message))
-  parse_error
+proc location(parser: Parser): Location =
+  if parser.index < parser.tokens.len:
+    parser.tokens[parser.index].location
+  else:
+    parser.tokens[^1].location
 
-proc new_parse_error(): ParseError = ParseError()
+proc expect(parser: Parser, kind: TokenKind): Result[Token, string] =
+  if parser.index >= parser.tokens.len:
+    return err(fmt"expected a {kind} but reached end of file")
+  if parser.tokens[parser.index].kind != kind:
+    return err(fmt"{parser.tokens[parser.index].location} expected a {kind} but found {parser.tokens[parser.index].kind}")
 
-proc new_parse_error(location: Location, message: string): ParseError =
-  new_parse_error().push(location, message)
+  let token = parser.tokens[parser.index]
+  parser.index += 1
+  return ok(token)
 
-proc location(parse_error: ParseError): Location =
-  if parse_error.stack.len == 0: Location()
-  else: parse_error.stack[0][0]
+proc expect_any(parser: Parser, kind: TokenKind): seq[Token] =
+  var tokens: seq[Token]
+  var maybe_match = parser.expect(kind)
+  while maybe_match.is_ok:
+    tokens.add(maybe_match.get)
+    maybe_match = parser.expect(kind)
+  return tokens
 
-proc `$`*(parse_error: ParseError): string =
-  var content: seq[string]
-  for (location, message) in parse_error.stack:
-    content.add(fmt"{location} {message}")
-  return content.join("\n")
+proc expect_at_least_one(parser: Parser, kind: TokenKind): Result[seq[Token], string] =
+  var tokens = @[ ? parser.expect(kind)]
+  tokens.add(parser.expect_any(kind))
+  return ok(tokens)
 
-type
-  Parser[Output] = ref object of RootObj
-    grammar: Grammar[Output]
-    content: string
-    location: Location
+proc expect_one_of(parser: Parser, specs: seq[TokenKind]): Result[
+    Token, string] =
+  for kind in specs:
+    let maybe_match = parser.expect(kind)
+    if maybe_match.is_ok: return maybe_match
+  return err(fmt"{parser.location} failed to match parse specs")
 
-proc look_ahead(parser: Parser, count: int): Result[string, ParseError] =
-  let head = parser.location.index
-  let tail = head + count
-  if tail > parser.content.len:
-    return err(new_parse_error(parser.location,
-        fmt"Expected {count} more characters but reached end of input"))
-  return ok(parser.content[head..<tail])
+# parser specific utils
+proc expect_line_end(parser: Parser): Result[void, string] =
+  discard ? parser.expect_one_of(@[TK_NEWLINE, TK_EOF])
+  ok()
 
-proc update_location(content: string, location: Location): Location =
-  var updated = location
-  for ch in content:
-    if ch == '\n':
-      updated.line += 1
-      updated.col = 1
-    else: updated.col += 1
-    updated.index += 1
-  return updated
+proc expect_empty_line(parser: Parser): Result[void, string] =
+  discard parser.expect_any(TK_SPACE)
+  ? parser.expect_line_end()
+  ok()
 
-proc parse_static_rule[Output](parser: Parser[Output], rule: Rule[
-    Output]): Result[Output, ParseError] =
-  var segment = ? parser.look_ahead(rule.value.len)
-  if segment != rule.value:
-    let value_str = rule.value
-    return err(new_parse_error(parser.location,
-        fmt"Expected '{value_str}', got '{segment}'"))
+proc expect_comment(parser: Parser): Result[void, string] =
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_HASHTAG)
 
-  parser.location = update_location(segment, parser.location)
-  let output = rule.reduce_static(parser.location, segment)
-  return ok(output)
+  while true:
+    let maybe_line_end = parser.expect_line_end()
+    if maybe_line_end.is_ok: break
+    parser.index += 1
 
-proc parse_matcher_rule[Output](parser: Parser[Output],
-    rule: Rule[Output]): Result[Output, ParseError] =
-  var segment = ? parser.look_ahead(1)
-  if not rule.matcher()(segment[0]):
-    let rule_name = rule.name
-    return err(new_parse_error(parser.location,
-        fmt"{rule_name} Regex matcher failed for char '{segment}'"))
+  ok()
 
-  parser.location = update_location(segment, parser.location)
-  let output = rule.reduce_match(parser.location, segment)
-  return ok(output)
+proc expect_ignorable_line(parser: Parser): Result[void, string] =
+  var maybe_empty_line = parser.expect_empty_line()
+  if maybe_empty_line.is_ok: return ok()
 
-# forward declaration for cyclic dependency of parse_production & parse
-proc parse[Output](parser: Parser[Output], rule_name: string,
-    depth: int = 0): Result[Output, ParseError]
+  var maybe_comment = parser.expect_comment()
+  if maybe_comment.is_ok: return ok()
 
-proc parse_production[Output](parser: Parser[Output],
-    prod: Production, depth: int): Result[seq[seq[Output]], ParseError] =
-  var failed_symbol_index = -1
-  var parts: seq[seq[Output]]
-  var matched: Result[Output, ParseError]
-  for index, sym in prod.symbols:
-    var collected_parts: seq[Output]
-    matched = parser.parse(sym.name, depth + 1)
+  return err(fmt"{parser.location} failed to match empty line or comment")
 
-    case sym.kind:
-    of SK_AT_MOST_ONE:
-      if matched.is_err: continue
-      collected_parts.add(matched.get)
-    of SK_EXACT_ONE:
-      if matched.is_err: failed_symbol_index = index; break
-      collected_parts.add(matched.get)
-    of SK_AT_LEAST_ONE:
-      if matched.is_err: failed_symbol_index = index; break
-      while matched.is_ok:
-        collected_parts.add(matched.get)
-        matched = parser.parse(sym.name, depth + 1)
-    of SK_ANY:
-      while matched.is_ok:
-        collected_parts.add(matched.get)
-        matched = parser.parse(sym.name, depth + 1)
+proc expect_argument_definition(parser: Parser): Result[ArgumentDefinition, string] =
+  let arg_type = ? parser.expect(TK_ID)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  let arg_name = ? parser.expect(TK_ID)
+  ok(new_argument_definition(arg_type, arg_name))
 
-    parts.add(collected_parts)
+proc expect_argument_definition_list(parser: Parser): Result[seq[
+    ArgumentDefinition], string] =
+  discard ? parser.expect(TK_OPAREN)
+  var arg_def_list: seq[ArgumentDefinition]
 
-  if failed_symbol_index != -1:
-    let symbol = $(prod.symbols[failed_symbol_index])
-    return err(matched.error.push(parser.location,
-        fmt"Failed to match symbol {symbol}"))
+  while true:
+    discard parser.expect_any(TK_SPACE)
+    let arg_def = ? parser.expect_argument_definition()
+    arg_def_list.add(arg_def)
+    discard parser.expect_any(TK_SPACE)
 
-  ok(parts)
+    let maybe_comma = parser.expect(TK_COMMA)
+    if maybe_comma.is_err: break
 
-proc parse[Output](parser: Parser[Output], rule_name: string,
-    depth: int): Result[Output, ParseError] =
-  let maybe_rule = parser.grammar.find_rule(rule_name)
-  if maybe_rule.is_err:
-    return err(new_parse_error(parser.location, maybe_rule.error))
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_CPAREN)
+  ok(arg_def_list)
 
-  let rule = maybe_rule.get
-  var initial_location = parser.location
+proc expect_function_definition(parser: Parser): Result[FunctionDefinition, string] =
+  let fn = ? parser.expect(TK_FN)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  let function_name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  let arg_def_list = ? parser.expect_argument_definition_list()
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_COLON)
+  discard parser.expect_any(TK_SPACE)
+  let return_type = ? parser.expect(TK_ID)
+  ok(new_function_definition(function_name, arg_def_list, return_type, fn.location))
 
-  case rule.kind:
-  of RK_STATIC: return parser.parse_static_rule(rule)
-  of RK_MATCHER: return parser.parse_matcher_rule(rule)
-  of RK_RECURSIVE:
-    let productions = rule.productions
-    var prod_err = new_parse_error()
-    var acc = new_seq[seq[seq[Output]]](productions.len)
-    for index, prod in productions:
-      let maybe_parsed = parser.parse_production(prod, depth)
-      if maybe_parsed.is_ok:
-        acc[index] = maybe_parsed.get
-        let output = rule.reduce_recursive(initial_location, acc)
-        return ok(output)
-      else:
-        if prod_err.location < maybe_parsed.error.location:
-          prod_err = maybe_parsed.error
-        parser.location = initial_location
-    err(prod_err.push(initial_location, fmt"Failed to match rule {rule_name}"))
+proc expect_argument_list(parser: Parser): Result[seq[Token], string] =
+  discard ? parser.expect(TK_OPAREN)
+  var arg_list: seq[Token]
 
-proc parse*[Output](parser: Parser[Output],
-    rule_name: string): Result[Output, ParseError] =
-  parser.parse(rule_name, 0)
+  while true:
+    discard parser.expect_any(TK_SPACE)
+    arg_list.add( ? parser.expect_one_of(@[TK_ID, TK_STRING, TK_FLOAT, TK_INTEGER]))
+    discard parser.expect_any(TK_SPACE)
+    let maybe_comma = parser.expect(TK_COMMA)
+    if maybe_comma.is_err: break
 
-proc new_parser*[Output](grammar: Grammar[Output],
-    filename: string, content: string): Parser[Output] =
-  let content_with_eof = content & '\0'
-  Parser[Output](grammar: grammar, content: content_with_eof,
-      location: new_location(filename))
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_CPAREN)
+  ok(arg_list)
+
+proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
+  let name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  let arg_list = ? parser.expect_argument_list()
+  ok(new_function_call(name, arg_list))
+
+proc expect_struct_init_fields(parser: Parser): Result[seq[(Token, Token)], string] =
+  var fields: seq[(Token, Token)]
+  while true:
+    let name = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    discard ? parser.expect(TK_COLON)
+    discard parser.expect_any(TK_SPACE)
+    let value = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    fields.add((name, value))
+
+    let maybe_comma = parser.expect(TK_COMMA)
+    if maybe_comma.is_err: break
+    discard parser.expect_any(TK_SPACE)
+  ok(fields)
+
+proc expect_struct_init(parser: Parser): Result[StructInit, string] =
+  let struct = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_OCURLY)
+  discard parser.expect_any(TK_SPACE)
+  let fields = ? parser.expect_struct_init_fields()
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_CCURLY)
+  ok(new_struct_init(struct, fields))
+
+proc expect_struct_getter(parser: Parser): Result[StructGetter, string] =
+  let struct = ? parser.expect(TK_ID)
+  discard ? parser.expect(TK_PERIOD)
+  let field = ? parser.expect(TK_ID)
+  ok(new_struct_getter(struct, field))
+
+proc expect_statement(parser: Parser): Result[Statement, string] =
+  let destination = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_EQUAL)
+  discard parser.expect_any(TK_SPACE)
+
+  let start = parser.index
+
+  let maybe_function_call = parser.expect_function_call()
+  if maybe_function_call.is_ok:
+    return ok(new_statement(destination, maybe_function_call.get))
+  else: parser.index = start
+
+  let maybe_struct_init = parser.expect_struct_init()
+  if maybe_struct_init.is_ok:
+    return ok(new_statement(destination, maybe_struct_init.get))
+  else: parser.index = start
+
+  let maybe_struct_getter = parser.expect_struct_getter()
+  if maybe_struct_getter.is_ok:
+    return ok(new_statement(destination, maybe_struct_getter.get))
+  else: parser.index = start
+
+  return err(fmt"{parser.location} expected a function call or struct init/getter")
+
+proc expect_match_definition(parser: Parser): Result[MatchDefinition, string] =
+  let destination = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_EQUAL)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_MATCH)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  let operand = ? parser.expect(TK_ID)
+  discard ? parser.expect(TK_COLON)
+  ok(new_match_definition(destination, operand))
+
+proc expect_case_definition(parser: Parser): Result[CaseDefinition, string] =
+  let case_token = ? parser.expect(TK_CASE)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  # TODO: Add float/string/struct support later.
+  let value = ? parser.expect_one_of(@[TK_INTEGER])
+  discard ? parser.expect(TK_COLON)
+  ok(new_case_definition(value, case_token.location))
+
+proc expect_else_definition(parser: Parser): Result[ElseDefinition, string] =
+  let else_token = ? parser.expect(TK_ELSE)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_COLON)
+  ok(new_else_definition(else_token.location))
+
+proc expect_struct_definition(parser: Parser): Result[StructDefinition, string] =
+  let struct_token = ? parser.expect(TK_STRUCT)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  let name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_COLON)
+  ok(new_struct_definition(name, struct_token.location))
+
+proc expect_struct_field_definition(parser: Parser): Result[ArgumentDefinition, string] =
+  parser.expect_argument_definition()
+
+proc expect_line(parser: Parser): Result[Line, string] =
+  let start = parser.index
+
+  let maybe_func_def = parser.expect_function_definition()
+  if maybe_func_def.is_ok: return ok(new_line(maybe_func_def.get))
+  else: parser.index = start
+
+  let maybe_statement = parser.expect_statement()
+  if maybe_statement.is_ok: return ok(new_line(maybe_statement.get))
+  else: parser.index = start
+
+  let maybe_match_def = parser.expect_match_definition()
+  if maybe_match_def.is_ok: return ok(new_line(maybe_match_def.get))
+  else: parser.index = start
+
+  let maybe_case_def = parser.expect_case_definition()
+  if maybe_case_def.is_ok: return ok(new_line(maybe_case_def.get))
+  else: parser.index = start
+
+  let maybe_else_def = parser.expect_else_definition()
+  if maybe_else_def.is_ok: return ok(new_line(maybe_else_def.get))
+  else: parser.index = start
+
+  let maybe_struct_def = parser.expect_struct_definition()
+  if maybe_struct_def.is_ok: return ok(new_line(maybe_struct_def.get))
+  else: parser.index = start
+
+  let maybe_struct_field_def = parser.expect_struct_field_definition()
+  if maybe_struct_field_def.is_ok: return ok(new_line(
+      maybe_struct_field_def.get))
+  else: parser.index = start
+
+  err(fmt"{parser.location} expected one of the following: statement, function/match/case/else/struct definition")
+
+proc parse*(tokens: seq[Token]): Result[seq[Line], string] =
+  var parser = Parser(tokens: tokens)
+  var lines: seq[Line]
+  while parser.index < parser.tokens.len:
+    # ignore empty lines/comments
+    var maybe_ignorable_line = parser.expect_ignorable_line()
+    while maybe_ignorable_line.is_ok:
+      maybe_ignorable_line = parser.expect_ignorable_line()
+
+    if parser.index >= parser.tokens.len: break
+
+    # parse main line content
+    discard parser.expect_any(TK_SPACE)
+    lines.add( ? parser.expect_line())
+  ok(lines)

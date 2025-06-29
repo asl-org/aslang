@@ -463,10 +463,10 @@ proc resolve_statement(statement: Statement, file: File, scope: Table[string,
     ok(new_resolved_statement(resolved_function_call, statement.destination))
 
 proc resolve_case_block(case_block: Case, file: File,
-    scope: Table[string, ArgumentDefinition]): Result[ResolvedCase, string] =
+    parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
-  var scope = deep_copy(scope)
+  var scope = parent_scope
   for (index, statement) in case_block.statements.pairs:
     let resolved_statement = ? statement.resolve_statement(file, scope)
     resolved_statements.add(resolved_statement)
@@ -475,10 +475,10 @@ proc resolve_case_block(case_block: Case, file: File,
   return ok(new_resolved_case(case_block, resolved_statements))
 
 proc resolve_else_block(else_block: Else, file: File,
-    scope: Table[string, ArgumentDefinition]): Result[ResolvedElse, string] =
+    parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedElse, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the else scope to avoid non local argument name conflicts
-  var scope = deep_copy(scope)
+  var scope = parent_scope
   for (index, statement) in else_block.statements.pairs:
     let resolved_statement = ? statement.resolve_statement(file, scope)
     resolved_statements.add(resolved_statement)
