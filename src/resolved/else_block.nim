@@ -1,0 +1,32 @@
+import strformat, sets, strutils
+
+import "../blocks"
+import statement
+
+type ResolvedElse* = ref object of RootObj
+  parsed_else_block: Else
+  statements: seq[ResolvedStatement]
+
+proc return_argument*(else_block: ResolvedElse): ArgumentDefinition =
+  else_block.statements[^1].return_argument
+
+proc function_set*(else_block: ResolvedElse): Hashset[Function] =
+  var function_set: Hashset[Function]
+  for statement in else_block.statements:
+    function_set.incl(statement.function_set)
+  function_set
+
+proc c*(resolved_else_block: ResolvedElse, result_var: Token): string =
+  var lines = @["default: {"]
+  for statement in resolved_else_block.statements:
+    lines.add(statement.c)
+
+  let return_arg = resolved_else_block.return_argument.arg_name
+  lines.add(fmt"{result_var} = {return_arg};")
+  lines.add("break;")
+  lines.add("}")
+  return lines.join("\n")
+
+proc new_resolved_else*(parsed_else_block: Else, statements: seq[
+    ResolvedStatement]): ResolvedElse =
+  ResolvedElse(parsed_else_block: parsed_else_block, statements: statements)
