@@ -2,310 +2,35 @@ import results, tables, strformat, sequtils, parseutils, sets, options, strutils
 
 import blocks
 
-type File = blocks.File
+import resolved/argument
+export argument
 
-type ResolvedArgument = ref object of RootObj
-  kind: Token
-  value: Token
+import resolved/function_call
+export function_call
 
-proc new_resolved_argument(kind: Token, value: Token): ResolvedArgument =
-  ResolvedArgument(kind: kind, value: value)
+import resolved/struct_init
+export struct_init
 
-type ResolvedFunctionCallKind = enum
-  RFCK_BUILTIN, RFCK_USER
+import resolved/struct_getter
+export struct_getter
 
-type ResolvedFunctionCall = ref object of RootObj
-  args: seq[ResolvedArgument]
-  case kind: ResolvedFunctionCallKind
-  of RFCK_BUILTIN:
-    function_def: FunctionDefinition
-  of RFCK_USER:
-    function: Function
+import resolved/statement
+export statement
 
-proc new_resolved_function_call(function_def: FunctionDefinition, args: seq[
-    ResolvedArgument]): ResolvedFunctionCall =
-  ResolvedFunctionCall(kind: RFCK_BUILTIN, function_def: function_def, args: args)
+import resolved/case_block
+export case_block
 
-proc new_resolved_function_call(function: Function, args: seq[
-    ResolvedArgument]): ResolvedFunctionCall =
-  ResolvedFunctionCall(kind: RFCK_USER, function: function, args: args)
+import resolved/else_block
+export else_block
 
-proc user_function(resolved_function_call: ResolvedFunctionCall): Option[Function] =
-  case resolved_function_call.kind:
-  of RFCK_BUILTIN: none(Function)
-  of RFCK_USER: some(resolved_function_call.function)
+import resolved/match
+export match
 
-proc return_type(resolved_function_call: ResolvedFunctionCall): Token =
-  case resolved_function_call.kind:
-  of RFCK_BUILTIN:
-    resolved_function_call.function_def.return_type
-  of RFCK_USER:
-    resolved_function_call.function.definition.return_type
+import resolved/function_step
+export function_step
 
-proc c(fncall: ResolvedFunctionCall): string =
-  let args_str = fncall.args.map_it($(it.value)).join(", ")
-  case fncall.kind:
-  of RFCK_BUILTIN:
-    fmt"{fncall.function_def.name}({args_str})"
-  of RFCK_USER:
-    fmt"{fncall.function.name}({args_str})"
-
-type ResolvedStructInit = ref object of RootObj
-  struct: Struct
-  fields: seq[ResolvedArgument]
-
-proc new_resolved_struct_init(struct: Struct, fields: seq[
-    ResolvedArgument]): ResolvedStructInit =
-  ResolvedStructInit(struct: struct, fields: fields)
-
-proc c(init: ResolvedStructInit): string =
-  let fields = init.fields.map_it($(it.value)).join(", ")
-  fmt"{init.struct.name}_init({fields})"
-
-type ResolvedStructGetter = ref object of RootObj
-  struct: Struct
-  field: ArgumentDefinition
-  arg: Token
-
-proc new_resolved_struct_getter(struct: Struct,
-    field: ArgumentDefinition, arg: Token): ResolvedStructGetter =
-  ResolvedStructGetter(struct: struct, field: field, arg: arg)
-
-proc c(getter: ResolvedStructGetter): string =
-  fmt"{getter.struct.name}_get_{getter.field.arg_name}({getter.arg})"
-
-type
-  ResolvedStatementKind = enum
-    RSK_STRUCT_INIT
-    RSK_STRUCT_GETTER
-    RSK_FUNCTION_CALL
-  ResolvedStatement = ref object of RootObj
-    destination: Token
-    case kind: ResolvedStatementKind
-    of RSK_STRUCT_INIT:
-      struct_init: ResolvedStructInit
-    of RSK_STRUCT_GETTER:
-      struct_getter: ResolvedStructGetter
-    of RSK_FUNCTION_CALL:
-      function_call: ResolvedFunctionCall
-
-proc function_set(statement: ResolvedStatement): Hashset[Function] =
-  case statement.kind:
-  of RSK_FUNCTION_CALL:
-    var function_set: Hashset[Function]
-    let maybe_ext_function = statement.function_call.user_function
-    if maybe_ext_function.is_some:
-      function_set.incl(maybe_ext_function.get)
-    function_set
-  else:
-    init_hashset[Function]()
-
-proc return_argument(statement: ResolvedStatement): ArgumentDefinition =
-  case statement.kind:
-  of RSK_STRUCT_INIT:
-    new_argument_definition(statement.struct_init.struct.name,
-        statement.destination)
-  of RSK_STRUCT_GETTER:
-    new_argument_definition(statement.struct_getter.field.arg_type,
-        statement.destination)
-  of RSK_FUNCTION_CALL:
-    new_argument_definition(statement.function_call.return_type,
-        statement.destination)
-
-proc c(statement: ResolvedStatement): string =
-  let rhs =
-    case statement.kind:
-    of RSK_STRUCT_INIT: statement.struct_init.c
-    of RSK_STRUCT_GETTER: statement.struct_getter.c
-    of RSK_FUNCTION_CALL: statement.function_call.c
-
-  fmt"{statement.return_argument.c} = {rhs};"
-
-proc new_resolved_statement(struct_init: ResolvedStructInit,
-    destination: Token): ResolvedStatement =
-  ResolvedStatement(kind: RSK_STRUCT_INIT, struct_init: struct_init,
-      destination: destination)
-
-proc new_resolved_statement(struct_getter: ResolvedStructGetter,
-    destination: Token): ResolvedStatement =
-  ResolvedStatement(kind: RSK_STRUCT_GETTER, struct_getter: struct_getter,
-      destination: destination)
-
-proc new_resolved_statement(function_call: ResolvedFunctionCall,
-    destination: Token): ResolvedStatement =
-  ResolvedStatement(kind: RSK_FUNCTION_CALL, function_call: function_call,
-      destination: destination)
-
-type ResolvedCase = ref object of RootObj
-  parsed_case_block: Case
-  statements: seq[ResolvedStatement]
-
-proc return_argument(case_block: ResolvedCase): ArgumentDefinition =
-  case_block.statements[^1].return_argument
-
-proc function_set(case_block: ResolvedCase): Hashset[Function] =
-  var function_set: Hashset[Function]
-  for statement in case_block.statements:
-    function_set.incl(statement.function_set)
-  function_set
-
-proc c(resolved_case: ResolvedCase, result_var: Token): string =
-  let case_block = resolved_case.parsed_case_block
-  var lines = @[fmt"case {case_block.value}: " & "{"]
-  for statement in resolved_case.statements:
-    lines.add(statement.c)
-
-  let return_arg = resolved_case.return_argument.arg_name
-  lines.add(fmt"{result_var} = {return_arg};")
-  lines.add("break;")
-  lines.add("}")
-  return lines.join("\n")
-
-proc new_resolved_case(parsed_case_block: Case, statements: seq[
-    ResolvedStatement]): ResolvedCase =
-  ResolvedCase(parsed_case_block: parsed_case_block, statements: statements)
-
-type ResolvedElse = ref object of RootObj
-  parsed_else_block: Else
-  statements: seq[ResolvedStatement]
-
-proc return_argument(else_block: ResolvedElse): ArgumentDefinition =
-  else_block.statements[^1].return_argument
-
-proc function_set(else_block: ResolvedElse): Hashset[Function] =
-  var function_set: Hashset[Function]
-  for statement in else_block.statements:
-    function_set.incl(statement.function_set)
-  function_set
-
-proc c(resolved_else_block: ResolvedElse, result_var: Token): string =
-  var lines = @["default: {"]
-  for statement in resolved_else_block.statements:
-    lines.add(statement.c)
-
-  let return_arg = resolved_else_block.return_argument.arg_name
-  lines.add(fmt"{result_var} = {return_arg};")
-  lines.add("break;")
-  lines.add("}")
-  return lines.join("\n")
-
-proc new_resolved_else(parsed_else_block: Else, statements: seq[
-    ResolvedStatement]): ResolvedElse =
-  ResolvedElse(parsed_else_block: parsed_else_block, statements: statements)
-
-type ResolvedMatch = ref object of RootObj
-  parsed_match_block: Match
-  destination: Token
-  operand: Token
-  case_blocks: seq[ResolvedCase]
-  # there can only be 1 else block
-  else_blocks: seq[ResolvedElse]
-  return_argument: ArgumentDefinition
-
-proc function_set(match: ResolvedMatch): HashSet[Function] =
-  var function_set: Hashset[Function]
-  for case_block in match.case_blocks:
-    function_set.incl(case_block.function_set)
-  for else_block in match.else_blocks:
-    function_set.incl(else_block.function_set)
-  return function_set
-
-proc c*(resolved_match: ResolvedMatch): string =
-  let match = resolved_match.parsed_match_block
-  var lines = @[
-    fmt"{resolved_match.return_argument};",
-    fmt"switch({match.operand}) " & "{",
-  ]
-  for case_block in resolved_match.case_blocks:
-    lines.add(case_block.c(match.destination))
-  for else_block in resolved_match.else_blocks:
-    lines.add(else_block.c(match.destination))
-  lines.add("}")
-  return lines.join("\n")
-
-proc new_resolved_match(parsed_match_block: Match, destination: Token,
-    operand: Token, case_blocks: seq[ResolvedCase], else_blocks: seq[
-        ResolvedElse]): Result[ResolvedMatch, string] =
-  let return_type = case_blocks[0].return_argument.arg_type
-  let case_return_args = case_blocks.map_it(it.return_argument)
-  let else_return_args = else_blocks.map_it(it.return_argument)
-  for return_arg in (case_return_args & else_return_args):
-    if $(return_type) != $(return_arg.arg_type):
-      return err(fmt"{return_arg.location} block is expected to return {return_type} but found {return_arg.arg_type}")
-
-  let return_argument = new_argument_definition(return_type, destination)
-  ok(ResolvedMatch(parsed_match_block: parsed_match_block,
-      destination: destination, operand: operand, case_blocks: case_blocks,
-      else_blocks: else_blocks, return_argument: return_argument))
-
-type
-  ResolvedFunctionStepKind = enum
-    RFSK_STATEMENT, RFSK_MATCH
-  ResolvedFunctionStep = ref object of RootObj
-    case kind: ResolvedFunctionStepKind
-    of RFSK_STATEMENT:
-      statement: ResolvedStatement
-    of RFSK_MATCH:
-      match: ResolvedMatch
-
-proc function_set(function_step: ResolvedFunctionStep): Hashset[Function] =
-  case function_step.kind:
-  of RFSK_STATEMENT: function_step.statement.function_set
-  of RFSK_MATCH: function_step.match.function_set
-
-proc destination(function_step: ResolvedFunctionStep): Token =
-  case function_step.kind:
-  of RFSK_STATEMENT: function_step.statement.destination
-  of RFSK_MATCH: function_step.match.destination
-
-proc return_argument(function_step: ResolvedFunctionStep): ArgumentDefinition =
-  case function_step.kind:
-  of RFSK_STATEMENT: function_step.statement.return_argument
-  of RFSK_MATCH: function_step.match.return_argument
-
-proc c(function_step: ResolvedFunctionStep): string =
-  case function_step.kind:
-  of RFSK_STATEMENT: function_step.statement.c
-  of RFSK_MATCH: function_step.match.c
-
-proc new_resolved_function_step(statement: ResolvedStatement): ResolvedFunctionStep =
-  ResolvedFunctionStep(kind: RFSK_STATEMENT, statement: statement)
-
-proc new_resolved_function_step(match: ResolvedMatch): ResolvedFunctionStep =
-  ResolvedFunctionStep(kind: RFSK_MATCH, match: match)
-
-type ResolvedFunction* = ref object of RootObj
-  function: Function
-  steps: seq[ResolvedFunctionStep]
-
-proc function_set(function: ResolvedFunction): Hashset[Function] =
-  var function_set: Hashset[Function]
-  for step in function.steps:
-    function_set.incl(step.function_set)
-  function_set
-
-proc h*(resolved_function: ResolvedFunction): string =
-  let function = resolved_function.function
-  let args_def_str = function.definition.arg_def_list.map_it(it.c).join(", ")
-  fmt"{function.native_return_type} {function.name}({args_def_str});"
-
-proc c*(resolved_function: ResolvedFunction): string =
-  let function = resolved_function.function
-  let args_def_str = function.definition.arg_def_list.map_it(it.c).join(", ")
-  let signature = fmt"{function.native_return_type} {function.name}({args_def_str})"
-
-  var body = resolved_function.steps.map_it(it.c)
-  let return_arg_name = resolved_function.steps[^1].return_argument.arg_name
-  body.add(fmt"return {return_arg_name};")
-
-  @[signature, "{", body.join("\n"), "}"].join("\n")
-
-proc new_resolved_function(function: Function, steps: seq[
-    ResolvedFunctionStep]): Result[ResolvedFunction, string] =
-  let actual_return_type = steps[^1].return_argument.arg_type
-  if $(function.return_type) != $(actual_return_type):
-    return err(fmt"{function.location} expected {function.name} to return {function.return_type} but found {actual_return_type}")
-  ok(ResolvedFunction(function: function, steps: steps))
+import resolved/function
+export function
 
 proc safe_parse*[T](input: string): Result[void, string] =
   when T is SomeSignedInt:
@@ -380,8 +105,9 @@ proc resolve_function_call_args(function_call: FunctionCall,
     resolved_args.add( ? scope.resolve_argument(arg_def, arg_value))
   ok(resolved_args)
 
-proc resolve_builtin_function_call(function_call: FunctionCall, file: File,
-    scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
+proc resolve_builtin_function_call(function_call: FunctionCall,
+    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
+        ResolvedFunctionCall, string] =
   for function_def in file.builtins:
     let maybe_resolved_args = function_call.resolve_function_call_args(
         function_def, scope)
@@ -391,7 +117,7 @@ proc resolve_builtin_function_call(function_call: FunctionCall, file: File,
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching builtin function in the file {file.name}")
 
 # matches all functions with function call within a file
-proc resolve_user_function_call(function_call: FunctionCall, file: File,
+proc resolve_user_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
   for function in file.functions:
     let maybe_resolved_args = function_call.resolve_function_call_args(
@@ -400,7 +126,7 @@ proc resolve_user_function_call(function_call: FunctionCall, file: File,
       return ok(new_resolved_function_call(function, maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
 
-proc resolve_function_call(function_call: FunctionCall, file: File,
+proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
   # try looking up builtins function call
   let maybe_resolved_builtin_function_call = function_call.resolve_builtin_function_call(
@@ -411,7 +137,7 @@ proc resolve_function_call(function_call: FunctionCall, file: File,
   # try looking up user function call
   return function_call.resolve_user_function_call(file, scope)
 
-proc resolve_struct_init(struct_init: StructInit, file: File,
+proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructInit, string] =
   let struct_var = struct_init.struct
   let key_value_pairs = struct_init.fields
@@ -428,7 +154,7 @@ proc resolve_struct_init(struct_init: StructInit, file: File,
   let resolved_struct_init = new_resolved_struct_init(struct, resolved_fields)
   ok(resolved_struct_init)
 
-proc resolve_struct_getter(struct_getter: StructGetter, file: File,
+proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructGetter, string] =
   let struct_var = struct_getter.struct
   let field_name = struct_getter.field
@@ -441,8 +167,8 @@ proc resolve_struct_getter(struct_getter: StructGetter, file: File,
   let resolved_struct_getter = new_resolved_struct_getter(struct, field, struct_var)
   ok(resolved_struct_getter)
 
-proc resolve_statement(statement: Statement, file: File, scope: Table[string,
-    ArgumentDefinition]): Result[ResolvedStatement, string] =
+proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
+    string, ArgumentDefinition]): Result[ResolvedStatement, string] =
   # check if variable is already defined in the local(case) scope
   if $(statement.destination) in scope:
     let defined_arg = scope[$(statement.destination)]
@@ -462,7 +188,7 @@ proc resolve_statement(statement: Statement, file: File, scope: Table[string,
         file, scope)
     ok(new_resolved_statement(resolved_function_call, statement.destination))
 
-proc resolve_case_block(case_block: Case, file: File,
+proc resolve_case_block(case_block: Case, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
@@ -474,7 +200,7 @@ proc resolve_case_block(case_block: Case, file: File,
 
   return ok(new_resolved_case(case_block, resolved_statements))
 
-proc resolve_else_block(else_block: Else, file: File,
+proc resolve_else_block(else_block: Else, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedElse, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the else scope to avoid non local argument name conflicts
@@ -486,7 +212,7 @@ proc resolve_else_block(else_block: Else, file: File,
 
   return ok(new_resolved_else(else_block, resolved_statements))
 
-proc resolve_match(match: Match, file: File, scope: Table[string,
+proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
     ArgumentDefinition]): Result[ResolvedMatch, string] =
   var resolved_case_blocks: seq[ResolvedCase]
   var resolved_else_blocks: seq[ResolvedElse]
@@ -511,7 +237,7 @@ proc resolve_match(match: Match, file: File, scope: Table[string,
   new_resolved_match(match, match.destination, match.operand,
       resolved_case_blocks, resolved_else_blocks)
 
-proc resolve_function_step(step: FunctionStep, file: File,
+proc resolve_function_step(step: FunctionStep, file: blocks.File,
     scope: var Table[string, ArgumentDefinition]): Result[ResolvedFunctionStep, string] =
   case step.kind:
   of FSK_STATEMENT:
@@ -521,7 +247,8 @@ proc resolve_function_step(step: FunctionStep, file: File,
     let resolved_match = ? step.match.resolve_match(file, scope)
     return ok(new_resolved_function_step(resolved_match))
 
-proc resolve_function(function: Function, file: File): Result[ResolvedFunction, string] =
+proc resolve_function(function: Function, file: blocks.File): Result[
+    ResolvedFunction, string] =
   var
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
@@ -541,7 +268,7 @@ proc resolve_function(function: Function, file: File): Result[ResolvedFunction, 
 
   new_resolved_function(function, resolved_function_steps)
 
-proc resolve*(file: File): Result[seq[ResolvedFunction], string] =
+proc resolve*(file: blocks.File): Result[seq[ResolvedFunction], string] =
   # TODO: Resolve structs/unions as well.
   # Trace function call flow from main function
   var stack = @[ ? file.find_start_function()]
