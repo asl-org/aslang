@@ -2,35 +2,18 @@ import results, tables, strformat, sequtils, parseutils, sets, options, strutils
 
 import blocks
 
-import resolved/argument
-export argument
-
-import resolved/function_call
-export function_call
-
-import resolved/struct_init
-export struct_init
-
-import resolved/struct_getter
-export struct_getter
-
-import resolved/statement
-export statement
-
-import resolved/case_block
-export case_block
-
-import resolved/else_block
-export else_block
-
-import resolved/match
-export match
-
-import resolved/function_step
-export function_step
-
-import resolved/function
-export function
+import resolved/argument; export argument
+import resolved/function_call; export function_call
+import resolved/struct_init; export struct_init
+import resolved/struct_getter; export struct_getter
+import resolved/statement; export statement
+import resolved/case_block; export case_block
+import resolved/else_block; export else_block
+import resolved/match; export match
+import resolved/function_step; export function_step
+import resolved/function; export function
+import resolved/struct; export struct
+import resolved/file; export file
 
 proc safe_parse*[T](input: string): Result[void, string] =
   when T is SomeSignedInt:
@@ -268,9 +251,7 @@ proc resolve_function(function: Function, file: blocks.File): Result[
 
   new_resolved_function(function, resolved_function_steps)
 
-proc resolve*(file: blocks.File): Result[seq[ResolvedFunction], string] =
-  # TODO: Resolve structs/unions as well.
-  # Trace function call flow from main function
+proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string] =
   var stack = @[ ? file.find_start_function()]
   var visited_functions = init_hashset[Function]()
   var resolved_functions: seq[ResolvedFunction]
@@ -285,13 +266,54 @@ proc resolve*(file: blocks.File): Result[seq[ResolvedFunction], string] =
     let new_functions = resolved_function.function_set.difference(visited_functions)
     stack.add(new_functions.to_seq)
 
-  # Resolve unused functions
-  # TODO: Raise warnings for unused functions
   for function in file.functions:
     if function notin visited_functions:
       echo fmt"Unused function: {function.location} {function.name}"
       discard ? function.resolve_function(file)
-
-  discard ? expand(file)
-
   ok(resolved_functions)
+
+proc resolve_struct(struct: Struct, scope: Table[string, Struct],
+    filename: string): Result[ResolvedStruct, string] =
+  var field_map: Table[string, int]
+  var field_offset: Table[string, uint]
+  var offset: uint = 0
+
+  for (index, field) in struct.fields.pairs:
+    if $(field.arg_name) in field_map:
+      let defined_field = struct.fields[field_map[$(field.arg_name)]]
+      return err(fmt"{field.location} `{field.arg_name}` is already defined at {defined_field.location}")
+
+    case $(field.arg_type):
+    of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "F32", "F64", "Pointer":
+      discard
+    else:
+      if $(field.arg_type) notin scope:
+        return err(fmt"{field.location} `{field.arg_type}` not defined in the {filename}")
+
+    field_map[$(field.arg_name)] = index
+    field_offset[$(field.arg_name)] = offset
+    offset += field.byte_size()
+
+  ok(new_resolved_struct(struct, offset, field_map, field_offset))
+
+proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
+  var scope: Table[string, Struct]
+  for struct in file.structs:
+    case $(struct.name):
+      of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "F32", "F64", "Pointer":
+        return err(fmt"{struct.location} `{struct.name}` is already defined as a native data type.")
+      else:
+        if $(struct.name) in scope:
+          let defined_struct = scope[$(struct.name)]
+          return err(fmt"{struct.location} `{struct.name}` is already defined at {defined_struct.location}")
+    scope[$(struct.name)] = struct
+
+  var resolved_structs: seq[ResolvedStruct]
+  for struct in file.structs:
+    resolved_structs.add( ? struct.resolve_struct(scope, file.name))
+  return ok(resolved_structs)
+
+proc resolve*(file: blocks.File): Result[ResolvedFile, string] =
+  let resolved_structs = ? file.resolve_structs()
+  let resolved_functions = ? file.resolve_functions()
+  ok(new_resolved_file(resolved_structs, resolved_functions))
