@@ -31,12 +31,6 @@ proc destination*(match: Match): Token =
 proc operand*(match: Match): Token =
   match.match_def.operand
 
-proc native_return_type*(match: Match): string =
-  case $(match.return_type.get):
-  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64", "F32", "F64",
-      "Pointer": $(match.return_type.get)
-  else: "Pointer"
-
 proc `$`*(match: Match): string =
   let prefix = " ".repeat(match.match_def.location.column - 3)
   let child_prefix = prefix
@@ -45,18 +39,6 @@ proc `$`*(match: Match): string =
     lines.add(child_prefix & $(case_block))
   if match.else_blocks.len > 0:
     lines.add(child_prefix & $(match.else_blocks[0]))
-  return lines.join("\n")
-
-proc c*(match: Match): string =
-  var lines = @[
-    fmt"{match.native_return_type} {match.destination};",
-    fmt"switch({match.operand}) " & "{",
-  ]
-  for case_block in match.case_blocks:
-    lines.add(case_block.c(match.destination))
-  for else_block in match.else_blocks:
-    lines.add(else_block.c(match.destination))
-  lines.add("}")
   return lines.join("\n")
 
 proc add_case*(match: Match, case_block: Case): void =

@@ -13,7 +13,6 @@ type File* = ref object of RootObj
   functions*: seq[Function]
   structs*: seq[Struct]
   builtins*: seq[FunctionDefinition]
-  expanded*: seq[Function]
 
 proc name*(file: File): string =
   file.location.filename
@@ -63,6 +62,7 @@ proc new_file*(filename: string): File =
     new_function_definition("S64_compare", @[("S64", "a"), ("S64", "b")],
         "S64"),
     new_function_definition("System_print_S64", @[("S64", "a")], "U64"),
+    new_function_definition("System_print_U64", @[("U64", "a")], "U64"),
     new_function_definition("F32_init", @[("F32", "a")], "F32"),
     new_function_definition("F64_init", @[("F64", "a")], "F64"),
     new_function_definition("Pointer_init", @[("Pointer", "a")], "Pointer"),
@@ -134,19 +134,3 @@ proc add_struct*(file: File, struct: Struct): Result[void, string] =
   ? file.check_if_duplicate(struct)
   file.structs.add(struct)
   ok()
-
-proc expand*(file: File): Result[File, string] =
-  for struct in file.structs:
-    var offset: uint = 0
-    for field in struct.fields:
-      let (getter, setter) = struct.expand(field, offset)
-      file.expanded.add(setter)
-      file.expanded.add(getter)
-      offset += field.byte_size
-
-    let init_function = struct.expand_init(offset)
-    file.expanded.add(init_function)
-
-    let free_function = struct.expand_free()
-    file.expanded.add(free_function)
-  ok(file)
