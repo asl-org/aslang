@@ -13,7 +13,6 @@ type File* = ref object of RootObj
   functions*: seq[Function]
   structs*: seq[Struct]
   builtins*: seq[FunctionDefinition]
-  expanded*: seq[Function]
 
 proc name*(file: File): string =
   file.location.filename
@@ -134,19 +133,3 @@ proc add_struct*(file: File, struct: Struct): Result[void, string] =
   ? file.check_if_duplicate(struct)
   file.structs.add(struct)
   ok()
-
-proc expand*(file: File): Result[File, string] =
-  for struct in file.structs:
-    var offset: uint = 0
-    for field in struct.fields:
-      let (getter, setter) = struct.expand(field, offset)
-      file.expanded.add(setter)
-      file.expanded.add(getter)
-      offset += field.byte_size
-
-    let init_function = struct.expand_init(offset)
-    file.expanded.add(init_function)
-
-    let free_function = struct.expand_free()
-    file.expanded.add(free_function)
-  ok(file)

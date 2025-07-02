@@ -1,4 +1,4 @@
-import tables, strutils, strformat, hashes, sequtils
+import strutils, strformat, hashes, sequtils
 
 import token, statement, match, arg_def
 
@@ -7,12 +7,6 @@ type FunctionDefinition* = ref object of RootObj
   arg_def_list*: seq[ArgumentDefinition]
   return_type*: Token
   location*: Location
-
-proc native_return_type*(function_def: FunctionDefinition): string =
-  case $(function_def.return_type):
-  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64", "F32", "F64",
-      "Pointer": $(function_def.return_type)
-  else: "Pointer"
 
 proc hash*(func_def: FunctionDefinition): Hash =
   var essence = func_def.name.hash !& func_def.location.hash
@@ -23,10 +17,6 @@ proc hash*(func_def: FunctionDefinition): Hash =
 proc `$`*(func_def: FunctionDefinition): string =
   let arg_def_list_str = func_def.arg_def_list.map_it($(it)).join(", ")
   fmt"fn {func_def.name}({arg_def_list_str}): {func_def.return_type}"
-
-proc c*(func_def: FunctionDefinition): string =
-  let args_def_str = func_def.arg_def_list.map_it($(it.native_type)).join(", ")
-  fmt"{func_def.native_return_type} {func_def.name}({args_def_str});"
 
 proc new_function_definition*(name: Token, arg_def_list: seq[
     ArgumentDefinition], return_type: Token,
@@ -66,9 +56,6 @@ proc new_function_step*(match: Match): FunctionStep =
 type Function* = ref object of RootObj
   definition*: FunctionDefinition
   function_steps*: seq[FunctionStep]
-  # statements*: seq[(uint, Statement)]
-  # matches*: seq[(uint, Match)]
-  scope*: Table[string, ArgumentDefinition]
 
 proc location*(function: Function): Location =
   function.definition.location
@@ -99,48 +86,11 @@ proc hash*(function: Function): Hash = function.definition.hash
 proc `$`*(function: Function): string =
   let prefix = " ".repeat(function.definition.location.column - 1)
   let child_prefix = " ".repeat(function.definition.location.column + 1)
+
   var lines = @[prefix & $(function.definition)]
-
-  # var sindex = 0
-  # var mindex = 0
-  # for step in 0..<function.steps:
-  #   if sindex < function.statements.len and function.statements[sindex][0] == step:
-  #     let (_, statement) = function.statements[sindex]
-  #     lines.add(child_prefix & $(statement))
-  #     sindex += 1
-  #   else:
-  #     let (_, match) = function.matches[mindex]
-  #     lines.add(child_prefix & $(match))
-  #     mindex += 1
-
   for step in function.function_steps:
     lines.add(child_prefix & $(step))
-
   lines.join("\n")
-
-proc c*(function: Function): string =
-  let args_def_str = function.definition.arg_def_list.map_it(
-      fmt"{it.native_type} {it.arg_name}").join(", ")
-  let signature = fmt"{function.native_return_type} {function.name}({args_def_str})"
-  var body: seq[string]
-
-  for step in function.function_steps:
-    case step.kind:
-    of FSK_STATEMENT:
-      let statement = step.statement
-      let native_arg_type = function.scope[$(statement.destination)].native_type
-      body.add(fmt"{native_arg_type} {statement.destination} = {statement.function_call};")
-    of FSK_MATCH:
-      body.add(step.match.c)
-
-  let last_step = function.function_steps[^1]
-  case last_step.kind:
-  of FSK_STATEMENT:
-    body.add(fmt"return {last_step.statement.destination};")
-  of FSK_MATCH:
-    body.add(fmt"return {last_step.match.destination};")
-
-  @[signature, "{", body.join("\n"), "}"].join("\n")
 
 proc is_start*(function: Function): bool =
   let name = $(function.definition.name)
@@ -158,6 +108,3 @@ proc add_statement*(function: Function, statement: Statement): void =
 
 proc add_match*(function: Function, match: Match): void =
   function.function_steps.add(new_function_step(match))
-
-proc add_arg_to_scope*(function: Function, arg_def: ArgumentDefinition): void =
-  function.scope[$(arg_def.arg_name)] = arg_def
