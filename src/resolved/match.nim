@@ -23,6 +23,8 @@ proc function_set*(match: ResolvedMatch): HashSet[Function] =
 
 proc c*(resolved_match: ResolvedMatch): string =
   let match = resolved_match.parsed_match_block
+  # TODO: Fix garbage value errors if the return argument is defined
+  # within one of the blocks C compiler shows undefined behavior.
   var lines = @[
     fmt"{resolved_match.return_argument};",
     fmt"switch({match.operand}) " & "{",
