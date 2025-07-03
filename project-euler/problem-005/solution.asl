@@ -1,30 +1,29 @@
-app Example:
-  fn gcd(U64 a, U64 b) returns U64:
-    op = U64.compare(b, 0)
-    match op:
+module Example:
+  fn gcd(U64 a, U64 b): U64
+    op = U64_compare(b, 0)
+    _ = match op:
       case 0:
-        a
+        _a = U64_init(a)
       else:
-        c = U64.remainder(a, b)
-        Example.gcd(b, c)
+        c = U64_remainder(a, b)
+        _d = Example.gcd(b, c)
 
-  fn lcm(U64 a, U64 b) returns U64:
-    c = U64.multiply(a, b)
+  fn lcm(U64 a, U64 b): U64
+    c = U64_multiply(a, b)
     d = Example.gcd(a, b)
-    U64.quotient(c, d)
+    _ = U64_quotient(c, d)
 
-  fn solve(U64 i, U64 n, U64 j) returns U64:
-    op = U64.compare(i, n)
-    match op:
+  fn solve(U64 i, U64 n, U64 j): U64
+    op = U64_compare(i, n)
+    _a = match op:
       case -1:
-        next_i = U64.add(i, 1)
+        next_i = U64_add(i, 1)
         next_j = Example.lcm(i, j)
-        Example.solve(next_i, n, next_j)
+        _b = Example.solve(next_i, n, next_j)
       else:
-        j
+        c = U64_init(j)
 
-  fn start(U8 seed) returns U8:
-    exit_success = U8 0
-    ans = Example.solve(2, 20, 1)
-    System.print(ans)
-    exit_success
+fn start(U8 seed): U8
+  ans = Example.solve(2, 20, 1)
+  _ = System_print_U64(ans)
+  exit_success = U8_init(0)

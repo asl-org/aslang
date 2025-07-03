@@ -198,28 +198,28 @@ proc new_block*(line: Line): Result[Block, string] =
       return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
     return ok(Block(kind: BK_FUNCTION, function: new_function(line.func_def)))
   of LK_STATEMENT:
-    if prefix notin {2, 4, 6}: # inside/outside function along with case/else blocks
-      return err(fmt"{line.location} indentation error expected 2/4/6 spaces but found {prefix}")
+    if prefix notin {2, 4, 6, 8}: # inside/outside function along with case/else blocks
+      return err(fmt"{line.location} indentation error expected 2/4/6/8 spaces but found {prefix}")
     return ok(Block(kind: BK_STATEMENT, statement: line.statement))
   of LK_MATCH_DEFINITION:
-    if prefix != 2:
-      return err(fmt"{line.location} indentation error expected 2 spaces but found {prefix}")
+    if prefix notin {2, 4}:
+      return err(fmt"{line.location} indentation error expected 2/4 spaces but found {prefix}")
     return ok(Block(kind: BK_MATCH, match_block: new_match(line.match_def)))
   of LK_CASE_DEFINITION:
-    if prefix != 4:
-      return err(fmt"{line.location} indentation error expected 4 spaces but found {prefix}")
+    if prefix notin {4, 6}:
+      return err(fmt"{line.location} indentation error expected 4/6 spaces but found {prefix}")
     return ok(Block(kind: BK_CASE, case_block: new_case(line.case_def)))
   of LK_ELSE_DEFINITION:
-    if prefix != 4:
-      return err(fmt"{line.location} indentation error expected 4 spaces but found {prefix}")
+    if prefix notin {4, 6}:
+      return err(fmt"{line.location} indentation error expected 4/6 spaces but found {prefix}")
     return ok(Block(kind: BK_ELSE, else_block: new_else(line.else_def)))
   of LK_STRUCT_DEFINITION:
     if prefix != 0:
       return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
     return ok(Block(kind: BK_STRUCT, struct: new_struct(line.struct_def)))
   of LK_STRUCT_FIELD_DEFINITION:
-    if prefix != 2:
-      return err(fmt"{line.location} indentation error expected 2 spaces but found {prefix}")
+    if prefix notin {2, 4}:
+      return err(fmt"{line.location} indentation error expected 2/4 spaces but found {prefix}")
     return ok(Block(kind: BK_STRUCT_FIELD,
         struct_field_def: line.struct_field_def))
   of LK_MODULE_DEFINITION:
