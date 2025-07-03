@@ -1,10 +1,14 @@
-import token, function, case_block, else_block, match, struct, arg_def, statement
+import token, arg_def, statement
+import case_block, else_block, match
+import struct, function
+import module_def
 
 type
   LineKind* = enum
     LK_FUNCTION_DEFINITION, LK_STATEMENT,
     LK_MATCH_DEFINITION, LK_CASE_DEFINITION, LK_ELSE_DEFINITION
     LK_STRUCT_DEFINITION, LK_STRUCT_FIELD_DEFINITION
+    LK_MODULE_DEFINITION
   Line* = ref object of RootObj
     case kind*: LineKind
     of LK_FUNCTION_DEFINITION: func_def*: FunctionDefinition
@@ -14,6 +18,7 @@ type
     of LK_ELSE_DEFINITION: else_def*: ElseDefinition
     of LK_STRUCT_DEFINITION: struct_def*: StructDefinition
     of LK_STRUCT_FIELD_DEFINITION: struct_field_def*: ArgumentDefinition
+    of LK_MODULE_DEFINITION: module_def*: ModuleDefinition
 
 proc location*(line: Line): Location =
   case line.kind:
@@ -24,6 +29,7 @@ proc location*(line: Line): Location =
   of LK_ELSE_DEFINITION: line.else_def.location
   of LK_STRUCT_DEFINITION: line.struct_def.location
   of LK_STRUCT_FIELD_DEFINITION: line.struct_field_def.location
+  of LK_MODULE_DEFINITION: line.module_def.location
 
 proc `$`*(line: Line): string =
   case line.kind:
@@ -34,6 +40,7 @@ proc `$`*(line: Line): string =
   of LK_ELSE_DEFINITION: $(line.else_def)
   of LK_STRUCT_DEFINITION: $(line.struct_def)
   of LK_STRUCT_FIELD_DEFINITION: $(line.struct_field_def)
+  of LK_MODULE_DEFINITION: $(line.module_def)
 
 proc new_line*(func_def: FunctionDefinition): Line =
   Line(kind: LK_FUNCTION_DEFINITION, func_def: func_def)
@@ -55,3 +62,6 @@ proc new_line*(struct_def: StructDefinition): Line =
 
 proc new_line*(struct_field_def: ArgumentDefinition): Line =
   Line(kind: LK_STRUCT_FIELD_DEFINITION, struct_field_def: struct_field_def)
+
+proc new_line*(module_def: ModuleDefinition): Line =
+  Line(kind: LK_MODULE_DEFINITION, module_def: module_def)

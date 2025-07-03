@@ -125,9 +125,17 @@ proc expect_argument_list(parser: Parser): Result[seq[Token], string] =
 
 proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
   let name = ? parser.expect(TK_ID)
+  let maybe_period = parser.expect(TK_PERIOD)
+  # MODULE function call
+  if maybe_period.is_ok:
+    let function_name = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    let arg_list = ? parser.expect_argument_list()
+    return ok(new_function_call(name, function_name, arg_list))
+  # RAW function call
   discard parser.expect_any(TK_SPACE)
   let arg_list = ? parser.expect_argument_list()
-  ok(new_function_call(name, arg_list))
+  return ok(new_function_call(name, arg_list))
 
 proc expect_struct_init_fields(parser: Parser): Result[seq[(Token, Token)], string] =
   var fields: seq[(Token, Token)]
@@ -222,6 +230,14 @@ proc expect_struct_definition(parser: Parser): Result[StructDefinition, string] 
 proc expect_struct_field_definition(parser: Parser): Result[ArgumentDefinition, string] =
   parser.expect_argument_definition()
 
+proc expect_module_definition(parser: Parser): Result[ModuleDefinition, string] =
+  let module_token = ? parser.expect(TK_MODULE)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  let name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_COLON)
+  ok(new_module_definition(name, module_token.location))
+
 proc expect_line(parser: Parser): Result[Line, string] =
   let start = parser.index
 
@@ -252,6 +268,10 @@ proc expect_line(parser: Parser): Result[Line, string] =
   let maybe_struct_field_def = parser.expect_struct_field_definition()
   if maybe_struct_field_def.is_ok: return ok(new_line(
       maybe_struct_field_def.get))
+  else: parser.index = start
+
+  let maybe_module_def = parser.expect_module_definition()
+  if maybe_module_def.is_ok: return ok(new_line(maybe_module_def.get))
   else: parser.index = start
 
   err(fmt"{parser.location} expected one of the following: statement, function/match/case/else/struct definition")
