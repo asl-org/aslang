@@ -8,6 +8,7 @@ type
     RFCK_BUILTIN, RFCK_USER
   ResolvedFunctionCall* = ref object of RootObj
     args: seq[ResolvedArgument]
+    module: Option[Module]
     case kind: ResolvedFunctionCallKind
     of RFCK_BUILTIN:
       function_def: FunctionDefinition
@@ -21,6 +22,11 @@ proc new_resolved_function_call*(function_def: FunctionDefinition, args: seq[
 proc new_resolved_function_call*(function: Function, args: seq[
     ResolvedArgument]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_USER, function: function, args: args)
+
+proc new_resolved_function_call*(module: Module, function: Function, args: seq[
+    ResolvedArgument]): ResolvedFunctionCall =
+  ResolvedFunctionCall(kind: RFCK_USER, module: some(module),
+      function: function, args: args)
 
 proc user_function*(resolved_function_call: ResolvedFunctionCall): Option[Function] =
   case resolved_function_call.kind:

@@ -1,14 +1,15 @@
 import sequtils, strutils, results, strformat
 
-import token, function, struct, arg_def
+import token, function, struct, arg_def, module
 
-type Module* = ref object of RootObj
+type BuiltinModule* = ref object of RootObj
   name*: string
 
-proc `$`*(module: Module): string = module.name
+proc `$`*(module: BuiltinModule): string = module.name
 
 type File* = ref object of RootObj
   location*: Location
+  builtin_modules*: seq[BuiltinModule]
   modules*: seq[Module]
   functions*: seq[Function]
   structs*: seq[Struct]
@@ -19,7 +20,7 @@ proc name*(file: File): string =
 
 proc new_file*(filename: string): File =
   let modules = @["U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "S64",
-      "F32", "F64", "Pointer"].map_it(Module(name: it))
+      "F32", "F64", "Pointer"].map_it(BuiltinModule(name: it))
   let builtins = @[
     new_function_definition("U8_init", @[("U8", "a")], "U8"),
     new_function_definition("U8_from_Pointer", @[("Pointer", "p")], "U8"),
@@ -73,7 +74,8 @@ proc new_file*(filename: string): File =
     new_function_definition("System_allocate", @[("U64", "size")], "Pointer"),
     new_function_definition("System_free", @[("Pointer", "ptr")], "U64"),
   ]
-  File(modules: modules, builtins: builtins, location: new_file_location(filename))
+  File(builtin_modules: modules, builtins: builtins,
+      location: new_file_location(filename))
 
 proc `$`*(file: File): string =
   @[
@@ -81,8 +83,8 @@ proc `$`*(file: File): string =
     file.functions.map_it($(it)).join("\n\n")
   ].join("\n\n")
 
-proc find_native_module*(file: File, module_name: Token): Result[Module, string] =
-  for module in file.modules:
+proc find_builtin_module*(file: File, module_name: Token): Result[BuiltinModule, string] =
+  for module in file.builtin_modules:
     if $(module) == $(module_name):
       return ok(module)
   err(fmt"{module_name} does not exist in the scope")
@@ -94,7 +96,7 @@ proc find_struct*(file: File, struct_name: Token): Result[Struct, string] =
   err(fmt"{struct_name} does not exist in the scope")
 
 proc find_module*(file: File, module_name: Token): Result[void, string] =
-  var maybe_found = file.find_native_module(module_name)
+  var maybe_found = file.find_builtin_module(module_name)
   if maybe_found.is_ok: return ok()
 
   discard ? file.find_struct(module_name)
@@ -119,10 +121,21 @@ proc check_if_duplicate(file: File, fn: Function): Result[void, string] =
       return err(fmt"{fn.location} {fn.name} is already defined in {function.location}")
   ok()
 
+proc check_if_duplicate(file: File, module: Module): Result[void, string] =
+  for pre_defined_module in file.modules:
+    if $(pre_defined_module.name) == $(module.name):
+      return err(fmt"{module.location} {module.name} is already defined in {pre_defined_module.location}")
+  ok()
+
 proc check_if_duplicate(file: File, struct: Struct): Result[void, string] =
   for pre_defined_struct in file.structs:
-    if pre_defined_struct.name == struct.name:
+    if $(pre_defined_struct.name) == $(struct.name):
       return err(fmt"{struct.location} {struct.name} is already defined in {pre_defined_struct.location}")
+  ok()
+
+proc add_module*(file: File, module: Module): Result[void, string] =
+  ? file.check_if_duplicate(module)
+  file.modules.add(module)
   ok()
 
 proc add_function*(file: File, function: Function): Result[void, string] =

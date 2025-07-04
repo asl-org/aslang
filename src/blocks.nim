@@ -30,16 +30,24 @@ export function
 import blocks/struct
 export struct
 
+import blocks/module
+export module
+
 import blocks/file
 export file
 
 # Needed since nim also has a builtin `File` type
 type File = file.File
+const INDENT_SIZE = 2 # spaces
 
 type
   BlockKind* = enum
-    BK_FILE, BK_FUNCTION, BK_STATEMENT, BK_MATCH, BK_CASE, BK_ELSE, BK_STRUCT, BK_STRUCT_FIELD
+    BK_STATEMENT, BK_MATCH, BK_CASE, BK_ELSE
+    BK_STRUCT_FIELD, BK_STRUCT, BK_FUNCTION
+    BK_MODULE, BK_FILE
+
   Block* = ref object of RootObj
+    indent: int
     case kind*: BlockKind
     of BK_FILE: file*: File
     of BK_FUNCTION: function*: Function
@@ -49,6 +57,7 @@ type
     of BK_ELSE: else_block*: Else
     of BK_STRUCT: struct: Struct
     of BK_STRUCT_FIELD: struct_field_def: ArgumentDefinition
+    of BK_MODULE: module: Module
 
 proc location*(asl_block: Block): Location =
   case asl_block.kind:
@@ -60,6 +69,7 @@ proc location*(asl_block: Block): Location =
   of BK_ELSE: asl_block.else_block.location
   of BK_STRUCT: asl_block.struct.location
   of BK_STRUCT_FIELD: asl_block.struct_field_def.location
+  of BK_MODULE: asl_block.module.location
 
 proc indent*(asl_block: Block): int =
   (asl_block.location.column - 1) div 2
@@ -74,6 +84,7 @@ proc `$`*(asl_block: Block): string =
   of BK_ELSE: $(asl_block.else_block)
   of BK_STRUCT: $(asl_block.struct)
   of BK_STRUCT_FIELD: $(asl_block.struct_field_def)
+  of BK_MODULE: $(asl_block.module)
 
 # TODO: implement block closing logic
 proc close*(asl_block: Block): Result[void, string] =
@@ -104,12 +115,21 @@ proc close*(asl_block: Block): Result[void, string] =
       return err(fmt"{asl_block.location} `struct` must contain at least one field")
   of BK_STRUCT_FIELD:
     discard
+  of BK_MODULE:
+    if asl_block.module.functions.len == 0:
+      return err(fmt"{asl_block.location} `module` must contain at least one function")
   ok()
 
 proc add_child*(parent: Block, child: Block): Result[void, string] =
+  if parent.indent + 1 != child.indent:
+    return err(fmt"Indentation error child block {child.kind} must be nested with {INDENT_SIZE} spaces inside parent block {parent.kind}")
+
   case parent.kind:
   of BK_FILE:
     case child.kind:
+    of BK_MODULE:
+      ? parent.file.add_module(child.module)
+      ok()
     of BK_FUNCTION:
       ? parent.file.add_function(child.function)
       ok()
@@ -163,42 +183,48 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
       err(fmt"{parent.location} `struct` can only contain field definitions")
   of BK_STRUCT_FIELD:
     err(fmt"{parent.location} struct field definition does not support further nesting.")
+  of BK_MODULE:
+    case child.kind:
+    of BK_FUNCTION:
+      # TODO: Duplicate function/module name error handling
+      parent.module.add_function(child.function)
+      ok()
+    else:
+      err(fmt"{parent.module.name} Module can only contain functions")
 
 proc new_block*(filename: string): Block =
-  Block(kind: BK_FILE, file: new_file(filename))
+  # file is the invisible parent block therefore -1 indent
+  Block(indent: -1, kind: BK_FILE, file: new_file(filename))
 
 proc new_block*(line: Line): Result[Block, string] =
-  let prefix = line.location.column - 1
-  case line.kind:
-  of LK_FUNCTION_DEFINITION:
-    if prefix != 0:
-      return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
-    return ok(Block(kind: BK_FUNCTION, function: new_function(line.func_def)))
-  of LK_STATEMENT:
-    if prefix notin {2, 6}: # handle case/else blocks as well
-      return err(fmt"{line.location} indentation error expected 2/6 spaces but found {prefix}")
-    return ok(Block(kind: BK_STATEMENT, statement: line.statement))
-  of LK_MATCH_DEFINITION:
-    if prefix != 2:
-      return err(fmt"{line.location} indentation error expected 2 spaces but found {prefix}")
-    return ok(Block(kind: BK_MATCH, match_block: new_match(line.match_def)))
-  of LK_CASE_DEFINITION:
-    if prefix != 4:
-      return err(fmt"{line.location} indentation error expected 4 spaces but found {prefix}")
-    return ok(Block(kind: BK_CASE, case_block: new_case(line.case_def)))
-  of LK_ELSE_DEFINITION:
-    if prefix != 4:
-      return err(fmt"{line.location} indentation error expected 4 spaces but found {prefix}")
-    return ok(Block(kind: BK_ELSE, else_block: new_else(line.else_def)))
-  of LK_STRUCT_DEFINITION:
-    if prefix != 0:
-      return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
-    return ok(Block(kind: BK_STRUCT, struct: new_struct(line.struct_def)))
-  of LK_STRUCT_FIELD_DEFINITION:
-    if prefix != 2:
-      return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
-    return ok(Block(kind: BK_STRUCT_FIELD,
-        struct_field_def: line.struct_field_def))
+  let spaces = line.location.column - 1
+  if (spaces mod INDENT_SIZE) != 0:
+    return err(fmt"Indentation error expected prefix spaces as multiple of {INDENT_SIZE} but found {spaces}")
+  let indent = spaces div INDENT_SIZE
+
+  let asl_block =
+    case line.kind:
+    of LK_FUNCTION_DEFINITION:
+      Block(kind: BK_FUNCTION, indent: indent, function: new_function(line.func_def))
+    of LK_STATEMENT:
+      Block(kind: BK_STATEMENT, indent: indent, statement: line.statement)
+    of LK_MATCH_DEFINITION:
+      Block(kind: BK_MATCH, indent: indent, match_block: new_match(
+          line.match_def))
+    of LK_CASE_DEFINITION:
+      Block(kind: BK_CASE, indent: indent, case_block: new_case(line.case_def))
+    of LK_ELSE_DEFINITION:
+      Block(kind: BK_ELSE, indent: indent, else_block: new_else(line.else_def))
+    of LK_STRUCT_DEFINITION:
+      Block(kind: BK_STRUCT, indent: indent, struct: new_struct(
+          line.struct_def))
+    of LK_STRUCT_FIELD_DEFINITION:
+      Block(kind: BK_STRUCT_FIELD, indent: indent,
+          struct_field_def: line.struct_field_def)
+    of LK_MODULE_DEFINITION:
+      Block(kind: BK_MODULE, indent: indent, module: new_module(
+          line.module_def))
+  ok(asl_block)
 
 proc blockify*(filename: string, lines: seq[Line]): Result[File, string] =
   var stack = @[new_block(filename)]

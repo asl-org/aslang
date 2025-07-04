@@ -1,19 +1,17 @@
-app Example:
-  fn start(U8 seed) returns U8:
-    exit_success = U8 0
-    n = U64 100
+fn start(U8 seed): U8
+  n = U64_init(100)
 
-    a = U64.subtract(n, 1)
-    b = U64.add(n, 1)
+  a = U64_subtract(n, 1)
+  b = U64_add(n, 1)
 
-    c = U64.multiply(n, 3)
-    d = U64.add(c, 2)
+  c = U64_multiply(n, 3)
+  d = U64_add(c, 2)
 
-    e = U64.multiply(a, b)
-    f = U64.multiply(e, d)
-    g = U64.multiply(n, f)
+  e = U64_multiply(a, b)
+  f = U64_multiply(e, d)
+  g = U64_multiply(n, f)
 
-    h = U64.quotient(g, 12)
-    System.print(h)
+  h = U64_quotient(g, 12)
+  _ = System_print_U64(h)
 
-    exit_success
+  exit_success = U8_init(0)

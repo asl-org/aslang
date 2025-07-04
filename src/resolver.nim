@@ -102,12 +102,24 @@ proc resolve_builtin_function_call(function_call: FunctionCall,
 # matches all functions with function call within a file
 proc resolve_user_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
-  for function in file.functions:
-    let maybe_resolved_args = function_call.resolve_function_call_args(
-        function.definition, scope)
-    if maybe_resolved_args.is_ok:
-      return ok(new_resolved_function_call(function, maybe_resolved_args.get))
-  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
+  case function_call.kind:
+  of FCK_RAW:
+    for function in file.functions:
+      let maybe_resolved_args = function_call.resolve_function_call_args(
+          function.definition, scope)
+      if maybe_resolved_args.is_ok:
+        return ok(new_resolved_function_call(function, maybe_resolved_args.get))
+    return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
+  of FCK_MODULE:
+    for module in file.modules:
+      if $(module.name) == $(function_call.module):
+        for function in module.functions:
+          let maybe_resolved_args = function_call.resolve_function_call_args(
+              function.definition, scope)
+          if maybe_resolved_args.is_ok:
+            return ok(new_resolved_function_call(module, function,
+                maybe_resolved_args.get))
+    return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
 
 proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
@@ -314,6 +326,7 @@ proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
   return ok(resolved_structs)
 
 proc resolve*(file: blocks.File): Result[ResolvedFile, string] =
+  # TODO: Resolve modules
   let resolved_structs = ? file.resolve_structs()
   let resolved_functions = ? file.resolve_functions()
   ok(new_resolved_file(resolved_structs, resolved_functions))
