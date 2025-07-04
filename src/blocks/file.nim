@@ -1,6 +1,6 @@
 import sequtils, strutils, results, strformat
 
-import token, function, struct, arg_def, module_def
+import token, function, struct, arg_def, module
 
 type BuiltinModule* = ref object of RootObj
   name*: string

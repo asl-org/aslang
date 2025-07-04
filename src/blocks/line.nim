@@ -1,7 +1,7 @@
 import token, arg_def, statement
 import case_block, else_block, match
 import struct, function
-import module_def
+import module
 
 type
   LineKind* = enum

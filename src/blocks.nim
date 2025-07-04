@@ -30,8 +30,8 @@ export function
 import blocks/struct
 export struct
 
-import blocks/module_def
-export module_def
+import blocks/module
+export module
 
 import blocks/file
 export file
