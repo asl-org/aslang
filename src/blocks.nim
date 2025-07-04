@@ -38,6 +38,7 @@ export file
 
 # Needed since nim also has a builtin `File` type
 type File = file.File
+const INDENT_SIZE = 2 # spaces
 
 type
   BlockKind* = enum
@@ -46,6 +47,7 @@ type
     BK_MODULE, BK_FILE
 
   Block* = ref object of RootObj
+    indent: int
     case kind*: BlockKind
     of BK_FILE: file*: File
     of BK_FUNCTION: function*: Function
@@ -119,6 +121,9 @@ proc close*(asl_block: Block): Result[void, string] =
   ok()
 
 proc add_child*(parent: Block, child: Block): Result[void, string] =
+  if parent.indent + 1 != child.indent:
+    return err(fmt"Indentation error child block {child.kind} must be nested with {INDENT_SIZE} spaces inside parent block {parent.kind}")
+
   case parent.kind:
   of BK_FILE:
     case child.kind:
@@ -188,44 +193,38 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
       err(fmt"{parent.module.name} Module can only contain functions")
 
 proc new_block*(filename: string): Block =
-  Block(kind: BK_FILE, file: new_file(filename))
+  # file is the invisible parent block therefore -1 indent
+  Block(indent: -1, kind: BK_FILE, file: new_file(filename))
 
 proc new_block*(line: Line): Result[Block, string] =
-  let prefix = line.location.column - 1
-  case line.kind:
-  of LK_FUNCTION_DEFINITION:
-    if prefix notin {0, 2}: # outside and inside module
-      return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
-    return ok(Block(kind: BK_FUNCTION, function: new_function(line.func_def)))
-  of LK_STATEMENT:
-    if prefix notin {2, 4, 6, 8}: # inside/outside function along with case/else blocks
-      return err(fmt"{line.location} indentation error expected 2/4/6/8 spaces but found {prefix}")
-    return ok(Block(kind: BK_STATEMENT, statement: line.statement))
-  of LK_MATCH_DEFINITION:
-    if prefix notin {2, 4}:
-      return err(fmt"{line.location} indentation error expected 2/4 spaces but found {prefix}")
-    return ok(Block(kind: BK_MATCH, match_block: new_match(line.match_def)))
-  of LK_CASE_DEFINITION:
-    if prefix notin {4, 6}:
-      return err(fmt"{line.location} indentation error expected 4/6 spaces but found {prefix}")
-    return ok(Block(kind: BK_CASE, case_block: new_case(line.case_def)))
-  of LK_ELSE_DEFINITION:
-    if prefix notin {4, 6}:
-      return err(fmt"{line.location} indentation error expected 4/6 spaces but found {prefix}")
-    return ok(Block(kind: BK_ELSE, else_block: new_else(line.else_def)))
-  of LK_STRUCT_DEFINITION:
-    if prefix != 0:
-      return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
-    return ok(Block(kind: BK_STRUCT, struct: new_struct(line.struct_def)))
-  of LK_STRUCT_FIELD_DEFINITION:
-    if prefix notin {2, 4}:
-      return err(fmt"{line.location} indentation error expected 2/4 spaces but found {prefix}")
-    return ok(Block(kind: BK_STRUCT_FIELD,
-        struct_field_def: line.struct_field_def))
-  of LK_MODULE_DEFINITION:
-    if prefix != 0:
-      return err(fmt"{line.location} indentation error expected 0 spaces but found {prefix}")
-    return ok(Block(kind: BK_MODULE, module: new_module(line.module_def)))
+  let spaces = line.location.column - 1
+  if (spaces mod INDENT_SIZE) != 0:
+    return err(fmt"Indentation error expected prefix spaces as multiple of {INDENT_SIZE} but found {spaces}")
+  let indent = spaces div INDENT_SIZE
+
+  let asl_block =
+    case line.kind:
+    of LK_FUNCTION_DEFINITION:
+      Block(kind: BK_FUNCTION, indent: indent, function: new_function(line.func_def))
+    of LK_STATEMENT:
+      Block(kind: BK_STATEMENT, indent: indent, statement: line.statement)
+    of LK_MATCH_DEFINITION:
+      Block(kind: BK_MATCH, indent: indent, match_block: new_match(
+          line.match_def))
+    of LK_CASE_DEFINITION:
+      Block(kind: BK_CASE, indent: indent, case_block: new_case(line.case_def))
+    of LK_ELSE_DEFINITION:
+      Block(kind: BK_ELSE, indent: indent, else_block: new_else(line.else_def))
+    of LK_STRUCT_DEFINITION:
+      Block(kind: BK_STRUCT, indent: indent, struct: new_struct(
+          line.struct_def))
+    of LK_STRUCT_FIELD_DEFINITION:
+      Block(kind: BK_STRUCT_FIELD, indent: indent,
+          struct_field_def: line.struct_field_def)
+    of LK_MODULE_DEFINITION:
+      Block(kind: BK_MODULE, indent: indent, module: new_module(
+          line.module_def))
+  ok(asl_block)
 
 proc blockify*(filename: string, lines: seq[Line]): Result[File, string] =
   var stack = @[new_block(filename)]
