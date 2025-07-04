@@ -4,6 +4,8 @@ import "../blocks"
 import case_block
 import else_block
 
+import function_call
+
 type ResolvedMatch* = ref object of RootObj
   parsed_match_block: Match
   destination*: Token
@@ -13,8 +15,8 @@ type ResolvedMatch* = ref object of RootObj
   else_blocks: seq[ResolvedElse]
   return_argument*: ArgumentDefinition
 
-proc function_set*(match: ResolvedMatch): HashSet[Function] =
-  var function_set: Hashset[Function]
+proc function_set*(match: ResolvedMatch): HashSet[ExternalFunction] =
+  var function_set: Hashset[ExternalFunction]
   for case_block in match.case_blocks:
     function_set.incl(case_block.function_set)
   for else_block in match.else_blocks:

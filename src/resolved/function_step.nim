@@ -1,6 +1,7 @@
 import sets
 
 import "../blocks"
+import function_call
 import statement
 import match
 
@@ -15,7 +16,8 @@ type
     of RFSK_MATCH:
       match: ResolvedMatch
 
-proc function_set*(function_step: ResolvedFunctionStep): Hashset[Function] =
+proc function_set*(function_step: ResolvedFunctionStep): Hashset[
+    ExternalFunction] =
   case function_step.kind:
   of RFSK_STATEMENT: function_step.statement.function_set
   of RFSK_MATCH: function_step.match.function_set

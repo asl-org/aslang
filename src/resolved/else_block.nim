@@ -1,7 +1,7 @@
 import strformat, sets, strutils
 
 import "../blocks"
-import statement
+import statement, function_call
 
 type ResolvedElse* = ref object of RootObj
   parsed_else_block: Else
@@ -10,8 +10,8 @@ type ResolvedElse* = ref object of RootObj
 proc return_argument*(else_block: ResolvedElse): ArgumentDefinition =
   else_block.statements[^1].return_argument
 
-proc function_set*(else_block: ResolvedElse): Hashset[Function] =
-  var function_set: Hashset[Function]
+proc function_set*(else_block: ResolvedElse): Hashset[ExternalFunction] =
+  var function_set: Hashset[ExternalFunction]
   for statement in else_block.statements:
     function_set.incl(statement.function_set)
   function_set

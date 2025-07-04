@@ -20,16 +20,16 @@ type
     of RSK_FUNCTION_CALL:
       function_call: ResolvedFunctionCall
 
-proc function_set*(statement: ResolvedStatement): Hashset[Function] =
+proc function_set*(statement: ResolvedStatement): Hashset[ExternalFunction] =
   case statement.kind:
   of RSK_FUNCTION_CALL:
-    var function_set: Hashset[Function]
+    var function_set: Hashset[ExternalFunction]
     let maybe_ext_function = statement.function_call.user_function
     if maybe_ext_function.is_some:
       function_set.incl(maybe_ext_function.get)
     function_set
   else:
-    init_hashset[Function]()
+    init_hashset[ExternalFunction]()
 
 proc return_argument*(statement: ResolvedStatement): ArgumentDefinition =
   case statement.kind:
