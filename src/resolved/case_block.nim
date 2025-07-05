@@ -1,7 +1,7 @@
 import strformat, sets, strutils
 
 import "../blocks"
-import statement
+import function_call, statement
 
 type ResolvedCase* = ref object of RootObj
   parsed_case_block: Case
@@ -10,8 +10,8 @@ type ResolvedCase* = ref object of RootObj
 proc return_argument*(case_block: ResolvedCase): ArgumentDefinition =
   case_block.statements[^1].return_argument
 
-proc function_set*(case_block: ResolvedCase): Hashset[Function] =
-  var function_set: Hashset[Function]
+proc function_set*(case_block: ResolvedCase): Hashset[ExternalFunction] =
+  var function_set: Hashset[ExternalFunction]
   for statement in case_block.statements:
     function_set.incl(statement.function_set)
   function_set

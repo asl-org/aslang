@@ -91,12 +91,23 @@ proc resolve_function_call_args(function_call: FunctionCall,
 proc resolve_builtin_function_call(function_call: FunctionCall,
     file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
         ResolvedFunctionCall, string] =
-  for function_def in file.builtins:
-    let maybe_resolved_args = function_call.resolve_function_call_args(
-        function_def, scope)
-    if maybe_resolved_args.is_ok:
-      return ok(new_resolved_function_call(function_def,
-          maybe_resolved_args.get))
+  case function_call.kind:
+  of FCK_RAW:
+    for function_def in file.builtins:
+      let maybe_resolved_args = function_call.resolve_function_call_args(
+          function_def, scope)
+      if maybe_resolved_args.is_ok:
+        return ok(new_resolved_function_call(function_def,
+            maybe_resolved_args.get))
+  of FCK_MODULE:
+    for module in file.builtin_modules:
+      if $(module.name) == $(function_call.module):
+        for function_def in module.functions:
+          let maybe_resolved_args = function_call.resolve_function_call_args(
+              function_def, scope)
+          if maybe_resolved_args.is_ok:
+            return ok(new_resolved_function_call(module, function_def,
+                maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching builtin function in the file {file.name}")
 
 # matches all functions with function call within a file
@@ -242,8 +253,8 @@ proc resolve_function_step(step: FunctionStep, file: blocks.File,
     let resolved_match = ? step.match.resolve_match(file, scope)
     return ok(new_resolved_function_step(resolved_match))
 
-proc resolve_function(function: Function, file: blocks.File): Result[
-    ResolvedFunction, string] =
+proc resolve_function(module: Option[Module], function: Function,
+    file: blocks.File): Result[ResolvedFunction, string] =
   var
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
@@ -261,27 +272,36 @@ proc resolve_function(function: Function, file: blocks.File): Result[
     resolved_function_steps.add(resolved_function_step)
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 
-  new_resolved_function(function, resolved_function_steps)
+  new_resolved_function(module, function, resolved_function_steps)
 
 proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string] =
-  var stack = @[ ? file.find_start_function()]
-  var visited_functions = init_hashset[Function]()
+  var stack = @[new_external_function(none(Module), ? file.find_start_function())]
+  var visited_functions = init_hashset[ExternalFunction]()
   var resolved_functions: seq[ResolvedFunction]
   while stack.len > 0:
     let function = stack[^1]
     visited_functions.incl(function)
     stack.set_len(stack.len - 1)
 
-    let resolved_function = ? function.resolve_function(file)
+    let resolved_function = ? resolve_function(function.module,
+        function.function, file)
     resolved_functions.add(resolved_function)
 
     let new_functions = resolved_function.function_set.difference(visited_functions)
     stack.add(new_functions.to_seq)
 
   for function in file.functions:
-    if function notin visited_functions:
+    let ext_fn = new_external_function(none(Module), function)
+    if ext_fn notin visited_functions:
       echo fmt"Unused function: {function.location} {function.name}"
-      discard ? function.resolve_function(file)
+      discard ? resolve_function(none(Module), function, file)
+
+  for module in file.modules:
+    for function in module.functions:
+      let ext_fn = new_external_function(some(module), function)
+      if ext_fn notin visited_functions:
+        echo fmt"Unused function: {function.location} {module.name}.{function.name}"
+        discard ? resolve_function(some(module), function, file)
   ok(resolved_functions)
 
 proc resolve_struct(struct: Struct, scope: Table[string, Struct],
