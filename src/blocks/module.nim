@@ -15,7 +15,7 @@ proc `$`*(module_def: ModuleDefinition): string =
 type Module* = ref object of RootObj
   module_def*: ModuleDefinition
   functions*: seq[Function]
-  struct: Option[Struct]
+  struct*: Option[Struct]
 
 proc location*(module: Module): Location =
   module.module_def.location
@@ -39,3 +39,11 @@ proc add_struct*(module: Module, struct: Struct): void =
 
 proc new_module*(module_def: ModuleDefinition): Module =
   Module(module_def: module_def)
+
+proc to_named_struct*(module: Module): NamedStruct =
+  let struct = module.struct.get
+  let struct_def = new_named_struct_definition(module.name, struct.location)
+  let named_struct = new_named_struct(struct_def)
+  for field in struct.fields:
+    named_struct.add_field(field)
+  named_struct

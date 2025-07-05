@@ -1,4 +1,4 @@
-import sequtils, strutils, results, strformat
+import sequtils, strutils, results, strformat, options
 
 import token, function, struct, arg_def, module, builtin_module
 
@@ -25,13 +25,13 @@ proc find_builtin_module*(file: File, module_name: Token): Result[BuiltinModule,
   for module in file.builtin_modules:
     if $(module) == $(module_name):
       return ok(module)
-  err(fmt"{module_name} does not exist in the scope")
+  err(fmt"Module `{module_name}` does not exist in the scope")
 
 proc find_struct*(file: File, struct_name: Token): Result[NamedStruct, string] =
-  for struct in file.structs:
-    if $(struct.name) == $(struct_name):
-      return ok(struct)
-  err(fmt"{struct_name} does not exist in the scope")
+  for module in file.modules:
+    if $(module.name) == $(struct_name) and module.struct.is_some:
+      return ok(module.to_named_struct())
+  err(fmt"Module `{struct_name}` does not exist in the scope")
 
 proc find_module*(file: File, module_name: Token): Result[void, string] =
   var maybe_found = file.find_builtin_module(module_name)
