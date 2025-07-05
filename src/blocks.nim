@@ -30,6 +30,9 @@ export function
 import blocks/struct
 export struct
 
+import blocks/builtin_module
+export builtin_module
+
 import blocks/module
 export module
 

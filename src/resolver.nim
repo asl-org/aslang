@@ -93,12 +93,7 @@ proc resolve_builtin_function_call(function_call: FunctionCall,
         ResolvedFunctionCall, string] =
   case function_call.kind:
   of FCK_RAW:
-    for function_def in file.builtins:
-      let maybe_resolved_args = function_call.resolve_function_call_args(
-          function_def, scope)
-      if maybe_resolved_args.is_ok:
-        return ok(new_resolved_function_call(function_def,
-            maybe_resolved_args.get))
+    return err(fmt"Builtin function calls are not supported.")
   of FCK_MODULE:
     for module in file.builtin_modules:
       if $(module.name) == $(function_call.module):
