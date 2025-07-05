@@ -4,10 +4,10 @@ import "../blocks"
 import argument
 
 type ResolvedStructInit* = ref object of RootObj
-  struct*: Struct
+  struct*: NamedStruct
   fields: seq[ResolvedArgument]
 
-proc new_resolved_struct_init*(struct: Struct, fields: seq[
+proc new_resolved_struct_init*(struct: NamedStruct, fields: seq[
     ResolvedArgument]): ResolvedStructInit =
   ResolvedStructInit(struct: struct, fields: fields)
 

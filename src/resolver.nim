@@ -92,7 +92,7 @@ proc resolve_builtin_function_call(function_call: FunctionCall,
     file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
         ResolvedFunctionCall, string] =
   case function_call.kind:
-  of FCK_RAW:
+  of FCK_LOCAL:
     return err(fmt"Builtin function calls are not supported.")
   of FCK_MODULE:
     for module in file.builtin_modules:
@@ -109,7 +109,7 @@ proc resolve_builtin_function_call(function_call: FunctionCall,
 proc resolve_user_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
   case function_call.kind:
-  of FCK_RAW:
+  of FCK_LOCAL:
     for function in file.functions:
       let maybe_resolved_args = function_call.resolve_function_call_args(
           function.definition, scope)
@@ -299,7 +299,7 @@ proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string]
         discard ? resolve_function(some(module), function, file)
   ok(resolved_functions)
 
-proc resolve_struct(struct: Struct, scope: Table[string, Struct],
+proc resolve_struct(struct: NamedStruct, scope: Table[string, NamedStruct],
     filename: string): Result[ResolvedStruct, string] =
   var field_map: Table[string, int]
   var field_offset: Table[string, uint]
@@ -324,7 +324,7 @@ proc resolve_struct(struct: Struct, scope: Table[string, Struct],
   ok(new_resolved_struct(struct, offset, field_map, field_offset))
 
 proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
-  var scope: Table[string, Struct]
+  var scope: Table[string, NamedStruct]
   for struct in file.structs:
     case $(struct.name):
       of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "F32", "F64", "Pointer":

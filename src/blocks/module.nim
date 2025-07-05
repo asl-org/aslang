@@ -1,6 +1,6 @@
-import strformat, strutils
+import strformat, strutils, options
 
-import token, function
+import token, function, struct
 
 type ModuleDefinition* = ref object of RootObj
   name*: Token
@@ -15,6 +15,7 @@ proc `$`*(module_def: ModuleDefinition): string =
 type Module* = ref object of RootObj
   module_def*: ModuleDefinition
   functions*: seq[Function]
+  struct: Option[Struct]
 
 proc location*(module: Module): Location =
   module.module_def.location
@@ -32,6 +33,9 @@ proc `$`*(module: Module): string =
 
 proc add_function*(module: Module, function: Function): void =
   module.functions.add(function)
+
+proc add_struct*(module: Module, struct: Struct): void =
+  module.struct = some(struct)
 
 proc new_module*(module_def: ModuleDefinition): Module =
   Module(module_def: module_def)

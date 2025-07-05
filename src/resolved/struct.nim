@@ -5,7 +5,7 @@ import "../blocks"
 const ASL_PREFIX = "__asl__"
 
 type ResolvedStruct* = ref object of RootObj
-  struct: Struct
+  struct: NamedStruct
   byte_size: uint
   field_map: Table[string, int]
   field_offset: Table[string, uint]
@@ -99,7 +99,8 @@ proc c*(resolved_struct: ResolvedStruct): string =
   code.add(resolved_struct.free())
   return code.join("\n\n")
 
-proc new_resolved_struct*(struct: Struct, byte_size: uint, field_map: Table[
-    string, int], field_offset: Table[string, uint]): ResolvedStruct =
+proc new_resolved_struct*(struct: NamedStruct, byte_size: uint,
+    field_map: Table[string, int], field_offset: Table[string,
+        uint]): ResolvedStruct =
   ResolvedStruct(struct: struct, byte_size: byte_size, field_map: field_map,
       field_offset: field_offset)

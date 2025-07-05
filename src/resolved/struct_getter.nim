@@ -3,11 +3,11 @@ import strformat
 import "../blocks"
 
 type ResolvedStructGetter* = ref object of RootObj
-  struct*: Struct
+  struct*: NamedStruct
   field*: ArgumentDefinition
   arg: Token
 
-proc new_resolved_struct_getter*(struct: Struct,
+proc new_resolved_struct_getter*(struct: NamedStruct,
     field: ArgumentDefinition, arg: Token): ResolvedStructGetter =
   ResolvedStructGetter(struct: struct, field: field, arg: arg)
 

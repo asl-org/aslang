@@ -7,7 +7,7 @@ type File* = ref object of RootObj
   builtin_modules*: seq[BuiltinModule]
   modules*: seq[Module]
   functions*: seq[Function]
-  structs*: seq[Struct]
+  structs*: seq[NamedStruct]
 
 proc name*(file: File): string =
   file.location.filename
@@ -27,7 +27,7 @@ proc find_builtin_module*(file: File, module_name: Token): Result[BuiltinModule,
       return ok(module)
   err(fmt"{module_name} does not exist in the scope")
 
-proc find_struct*(file: File, struct_name: Token): Result[Struct, string] =
+proc find_struct*(file: File, struct_name: Token): Result[NamedStruct, string] =
   for struct in file.structs:
     if $(struct.name) == $(struct_name):
       return ok(struct)
@@ -65,7 +65,7 @@ proc check_if_duplicate(file: File, module: Module): Result[void, string] =
       return err(fmt"{module.location} {module.name} is already defined in {pre_defined_module.location}")
   ok()
 
-proc check_if_duplicate(file: File, struct: Struct): Result[void, string] =
+proc check_if_duplicate(file: File, struct: NamedStruct): Result[void, string] =
   for pre_defined_struct in file.structs:
     if $(pre_defined_struct.name) == $(struct.name):
       return err(fmt"{struct.location} {struct.name} is already defined in {pre_defined_struct.location}")
@@ -81,7 +81,7 @@ proc add_function*(file: File, function: Function): Result[void, string] =
   file.functions.add(function)
   ok()
 
-proc add_struct*(file: File, struct: Struct): Result[void, string] =
+proc add_struct*(file: File, struct: NamedStruct): Result[void, string] =
   ? file.check_if_duplicate(struct)
   file.structs.add(struct)
   ok()

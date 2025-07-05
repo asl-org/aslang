@@ -4,12 +4,12 @@ import token
 
 type
   FunctionCallKind* = enum
-    FCK_RAW, FCK_MODULE
+    FCK_LOCAL, FCK_MODULE
   FunctionCall* = ref object of RootObj
     name*: Token
     arg_list*: seq[Token]
     case kind*: FunctionCallKind
-    of FCK_RAW: discard
+    of FCK_LOCAL: discard
     of FCK_MODULE: module*: Token
 
 proc location*(function_call: FunctionCall): Location =
@@ -20,7 +20,7 @@ proc `$`*(function_call: FunctionCall): string =
   fmt"{function_call.name}({arg_list_str})"
 
 proc new_function_call*(name: Token, arg_list: seq[Token]): FunctionCall =
-  FunctionCall(kind: FCK_RAW, name: name, arg_list: arg_list)
+  FunctionCall(kind: FCK_LOCAL, name: name, arg_list: arg_list)
 
 proc new_function_call*(name: string, arg_list: seq[string]): FunctionCall =
   let name_token = new_id_token(name)

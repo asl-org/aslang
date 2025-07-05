@@ -7,7 +7,7 @@ type
   LineKind* = enum
     LK_FUNCTION_DEFINITION, LK_STATEMENT,
     LK_MATCH_DEFINITION, LK_CASE_DEFINITION, LK_ELSE_DEFINITION
-    LK_STRUCT_DEFINITION, LK_STRUCT_FIELD_DEFINITION
+    LK_NAMED_STRUCT_DEFINITION, LK_STRUCT_DEFINITION, LK_STRUCT_FIELD_DEFINITION
     LK_MODULE_DEFINITION
   Line* = ref object of RootObj
     case kind*: LineKind
@@ -16,6 +16,7 @@ type
     of LK_MATCH_DEFINITION: match_def*: MatchDefinition
     of LK_CASE_DEFINITION: case_def*: CaseDefinition
     of LK_ELSE_DEFINITION: else_def*: ElseDefinition
+    of LK_NAMED_STRUCT_DEFINITION: named_struct_def*: NamedStructDefinition
     of LK_STRUCT_DEFINITION: struct_def*: StructDefinition
     of LK_STRUCT_FIELD_DEFINITION: struct_field_def*: ArgumentDefinition
     of LK_MODULE_DEFINITION: module_def*: ModuleDefinition
@@ -27,6 +28,7 @@ proc location*(line: Line): Location =
   of LK_MATCH_DEFINITION: line.match_def.location
   of LK_CASE_DEFINITION: line.case_def.location
   of LK_ELSE_DEFINITION: line.else_def.location
+  of LK_NAMED_STRUCT_DEFINITION: line.named_struct_def.location
   of LK_STRUCT_DEFINITION: line.struct_def.location
   of LK_STRUCT_FIELD_DEFINITION: line.struct_field_def.location
   of LK_MODULE_DEFINITION: line.module_def.location
@@ -38,6 +40,7 @@ proc `$`*(line: Line): string =
   of LK_MATCH_DEFINITION: $(line.match_def)
   of LK_CASE_DEFINITION: $(line.case_def)
   of LK_ELSE_DEFINITION: $(line.else_def)
+  of LK_NAMED_STRUCT_DEFINITION: $(line.named_struct_def)
   of LK_STRUCT_DEFINITION: $(line.struct_def)
   of LK_STRUCT_FIELD_DEFINITION: $(line.struct_field_def)
   of LK_MODULE_DEFINITION: $(line.module_def)
@@ -56,6 +59,9 @@ proc new_line*(case_def: CaseDefinition): Line =
 
 proc new_line*(else_def: ElseDefinition): Line =
   Line(kind: LK_ELSE_DEFINITION, else_def: else_def)
+
+proc new_line*(named_struct_def: NamedStructDefinition): Line =
+  Line(kind: LK_NAMED_STRUCT_DEFINITION, named_struct_def: named_struct_def)
 
 proc new_line*(struct_def: StructDefinition): Line =
   Line(kind: LK_STRUCT_DEFINITION, struct_def: struct_def)
