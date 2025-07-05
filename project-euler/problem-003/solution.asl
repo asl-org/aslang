@@ -1,8 +1,8 @@
-struct Bitset:
-  Pointer ptr
-  U64 size
-
 module Bitset:
+  struct:
+    Pointer ptr
+    U64 size
+
   fn get(Bitset bitset, U64 bit): S64
     ptr = bitset.ptr
     size = bitset.size

@@ -325,18 +325,18 @@ proc resolve_struct(struct: NamedStruct, scope: Table[string, NamedStruct],
 
 proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
   var scope: Table[string, NamedStruct]
-  for struct in file.structs:
-    case $(struct.name):
-      of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "F32", "F64", "Pointer":
-        return err(fmt"{struct.location} `{struct.name}` is already defined as a native data type.")
-      else:
-        if $(struct.name) in scope:
-          let defined_struct = scope[$(struct.name)]
-          return err(fmt"{struct.location} `{struct.name}` is already defined at {defined_struct.location}")
+  var struct_list: seq[NamedStruct]
+  for module in file.modules:
+    if module.struct.is_none: continue
+    let struct = module.to_named_struct()
+    if $(struct.name) in scope:
+      let defined_struct = scope[$(struct.name)]
+      return err(fmt"{struct.location} `{struct.name}` is already defined at {defined_struct.location}")
     scope[$(struct.name)] = struct
+    struct_list.add(struct)
 
   var resolved_structs: seq[ResolvedStruct]
-  for struct in file.structs:
+  for struct in struct_list:
     resolved_structs.add( ? struct.resolve_struct(scope, file.name))
   return ok(resolved_structs)
 
