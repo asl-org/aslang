@@ -1,13 +1,12 @@
 import sequtils, strutils, results, strformat, options
 
-import token, function, struct, arg_def, module, builtin_module
+import token, function, struct, arg_def, module, builtins
 
 type File* = ref object of RootObj
   location*: Location
   builtin_modules*: seq[BuiltinModule]
   modules*: seq[Module]
   functions*: seq[Function]
-  structs*: seq[NamedStruct]
 
 proc name*(file: File): string =
   file.location.filename
@@ -15,11 +14,7 @@ proc name*(file: File): string =
 proc new_file*(filename: string): File =
   File(builtin_modules: builtins(), location: new_file_location(filename))
 
-proc `$`*(file: File): string =
-  @[
-    file.structs.map_it($(it)).join("\n\n"),
-    file.functions.map_it($(it)).join("\n\n")
-  ].join("\n\n")
+proc `$`*(file: File): string = file.functions.map_it($(it)).join("\n\n")
 
 proc find_builtin_module*(file: File, module_name: Token): Result[BuiltinModule, string] =
   for module in file.builtin_modules:
@@ -65,12 +60,6 @@ proc check_if_duplicate(file: File, module: Module): Result[void, string] =
       return err(fmt"{module.location} {module.name} is already defined in {pre_defined_module.location}")
   ok()
 
-proc check_if_duplicate(file: File, struct: NamedStruct): Result[void, string] =
-  for pre_defined_struct in file.structs:
-    if $(pre_defined_struct.name) == $(struct.name):
-      return err(fmt"{struct.location} {struct.name} is already defined in {pre_defined_struct.location}")
-  ok()
-
 proc add_module*(file: File, module: Module): Result[void, string] =
   ? file.check_if_duplicate(module)
   file.modules.add(module)
@@ -79,9 +68,4 @@ proc add_module*(file: File, module: Module): Result[void, string] =
 proc add_function*(file: File, function: Function): Result[void, string] =
   ? file.check_if_duplicate(function)
   file.functions.add(function)
-  ok()
-
-proc add_struct*(file: File, struct: NamedStruct): Result[void, string] =
-  ? file.check_if_duplicate(struct)
-  file.structs.add(struct)
   ok()

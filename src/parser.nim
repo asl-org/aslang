@@ -132,7 +132,7 @@ proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
     discard parser.expect_any(TK_SPACE)
     let arg_list = ? parser.expect_argument_list()
     return ok(new_function_call(name, function_name, arg_list))
-  # RAW function call
+  # LOCAL function call
   discard parser.expect_any(TK_SPACE)
   let arg_list = ? parser.expect_argument_list()
   return ok(new_function_call(name, arg_list))

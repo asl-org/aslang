@@ -13,8 +13,8 @@ proc new_builtin_module(name: string, defs: seq[(string, string, seq[(string,
 
 proc `$`*(module: BuiltinModule): string = module.name
 
-proc builtins*(): seq[BuiltinModule] =
-  let u8_module = new_builtin_module("U8", @[
+proc u8_module(): BuiltinModule =
+  new_builtin_module("U8", @[
     ("U8", "init", @[("U8", "a")]),
     ("U8", "from_Pointer", @[("Pointer", "p")]),
     ("U8", "lshift", @[("U8", "a"), ("U64", "b")]),
@@ -24,15 +24,18 @@ proc builtins*(): seq[BuiltinModule] =
     ("U8", "not", @[("U8", "a")]),
   ])
 
-  let u16_module = new_builtin_module("U16", @[
+proc u16_module(): BuiltinModule =
+  new_builtin_module("U16", @[
     ("U16", "init", @[("U16", "a")]),
   ])
 
-  let u32_module = new_builtin_module("U32", @[
+proc u32_module(): BuiltinModule =
+  new_builtin_module("U32", @[
     ("U32", "init", @[("U32", "a")]),
   ])
 
-  let u64_module = new_builtin_module("U64", @[
+proc u64_module(): BuiltinModule =
+  new_builtin_module("U64", @[
     ("U64", "init", @[("U64", "a")]),
     ("S64", "compare", @[("U64", "a"), ("U64", "b")]),
     ("U64", "add", @[("U64", "a"), ("U64", "b")]),
@@ -42,19 +45,23 @@ proc builtins*(): seq[BuiltinModule] =
     ("U64", "remainder", @[("U64", "a"), ("U64", "b")]),
   ])
 
-  let s8_module = new_builtin_module("S8", @[
+proc s8_module(): BuiltinModule =
+  new_builtin_module("S8", @[
     ("S8", "init", @[("S8", "a")]),
   ])
 
-  let s16_module = new_builtin_module("S16", @[
+proc s16_module(): BuiltinModule =
+  new_builtin_module("S16", @[
     ("S16", "init", @[("S16", "a")]),
   ])
 
-  let s32_module = new_builtin_module("S32", @[
+proc s32_module(): BuiltinModule =
+  new_builtin_module("S32", @[
     ("S32", "init", @[("S32", "a")]),
   ])
 
-  let s64_module = new_builtin_module("S64", @[
+proc s64_module(): BuiltinModule =
+  new_builtin_module("S64", @[
     ("S64", "init", @[("S64", "a")]),
     ("S64", "from_U8", @[("U8", "a")]),
     ("S64", "add", @[("S64", "a"), ("S64", "b")]),
@@ -65,32 +72,43 @@ proc builtins*(): seq[BuiltinModule] =
     ("S64", "compare", @[("S64", "a"), ("S64", "b")]),
   ])
 
-
-  let f32_module = new_builtin_module("F32", @[
+proc f32_module(): BuiltinModule =
+  new_builtin_module("F32", @[
     ("F32", "init", @[("F32", "a")]),
   ])
 
-  let f64_module = new_builtin_module("F64", @[
+proc f64_module(): BuiltinModule =
+  new_builtin_module("F64", @[
     ("F64", "init", @[("F64", "a")]),
   ])
 
-  let pointer_module = new_builtin_module("Pointer", @[
+proc pointer_module(): BuiltinModule =
+  new_builtin_module("Pointer", @[
     ("Pointer", "init", @[("Pointer", "a")]),
     ("Pointer", "shift", @[("Pointer", "a"), ("U64", "b")]),
     ("Pointer", "write_U8", @[("Pointer", "a"), ("U8", "b")]),
   ])
 
-  let system_module = new_builtin_module("System", @[
+proc system_module(): BuiltinModule =
+  new_builtin_module("System", @[
     ("U64", "print_S64", @[("S64", "a")]),
     ("U64", "print_U64", @[("U64", "a")]),
     ("Pointer", "allocate", @[("U64", "size")]),
     ("U64", "free", @[("Pointer", "ptr")]),
   ])
 
-  return @[
-    s8_module, s16_module, s32_module, s64_module,
-    u8_module, u16_module, u32_module, u64_module,
-    f32_module, f64_module,
-    pointer_module,
-    system_module,
+proc builtins*(): seq[BuiltinModule] =
+  @[
+    u8_module(),
+    u16_module(),
+    u32_module(),
+    u64_module(),
+    s8_module(),
+    s16_module(),
+    s32_module(),
+    s64_module(),
+    f32_module(),
+    f64_module(),
+    pointer_module(),
+    system_module(),
   ]

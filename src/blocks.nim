@@ -30,8 +30,8 @@ export function
 import blocks/struct
 export struct
 
-import blocks/builtin_module
-export builtin_module
+import blocks/builtins
+export builtins
 
 import blocks/module
 export module
@@ -141,9 +141,6 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
       ok()
     of BK_FUNCTION:
       ? parent.file.add_function(child.function)
-      ok()
-    of BK_NAMED_STRUCT:
-      ? parent.file.add_struct(child.named_struct)
       ok()
     else:
       err(fmt"{parent.file.name} File can only contain functions")

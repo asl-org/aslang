@@ -44,7 +44,7 @@ proc safe_parse*[T](input: string): Result[void, string] =
   else:
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
-proc resolve_argument(scope: Table[string, ArgumentDefinition],
+proc resolve_expression(scope: Table[string, ArgumentDefinition],
     arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedArgument, string] =
   case arg_value.kind:
   of TK_ID:
@@ -85,7 +85,7 @@ proc resolve_function_call_args(function_call: FunctionCall,
   var resolved_args: seq[ResolvedArgument]
   for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
-    resolved_args.add( ? scope.resolve_argument(arg_def, arg_value))
+    resolved_args.add( ? scope.resolve_expression(arg_def, arg_value))
   ok(resolved_args)
 
 proc resolve_builtin_function_call(function_call: FunctionCall,
@@ -149,7 +149,7 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     if $(field_name) in field_name_table:
       return err(fmt"{field_name.location} {field_name} is already present in the initializer")
     let field = ? struct.find_field(field_name)
-    field_name_table[$(field_name)] = ? scope.resolve_argument(field, field_value)
+    field_name_table[$(field_name)] = ? scope.resolve_expression(field, field_value)
 
   let resolved_fields = struct.fields.map_it(field_name_table[$(it.arg_name)])
   let resolved_struct_init = new_resolved_struct_init(struct, resolved_fields)
@@ -226,7 +226,7 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
 
   let match_operand_def = scope[$(match.operand)]
   for case_block in match.case_blocks:
-    discard ? scope.resolve_argument(match_operand_def, case_block.value)
+    discard ? scope.resolve_expression(match_operand_def, case_block.value)
     let resolved_case_block = ? case_block.resolve_case_block(file, scope)
     resolved_case_blocks.add(resolved_case_block)
 
