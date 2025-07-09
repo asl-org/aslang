@@ -1,17 +1,27 @@
 import sequtils
 
-import function
+import "../token"
+import "../function"
+
+import module_def
 
 type BuiltinModule* = ref object of RootObj
-  name*: string
+  module_def*: ModuleDefinition
   functions*: seq[FunctionDefinition]
 
-proc new_builtin_module(name: string, defs: seq[(string, string, seq[(string,
-    string)])]): BuiltinModule =
-  let functions = defs.map_it(new_function_definition(it[1], it[2], it[0]))
-  BuiltinModule(name: name, functions: functions)
+proc location*(builtin_module: BuiltinModule): Location =
+  builtin_module.module_def.location
 
-proc `$`*(module: BuiltinModule): string = module.name
+proc name*(builtin_module: BuiltinModule): Token =
+  builtin_module.module_def.name
+
+proc new_builtin_module*(name: string, defs: seq[(string, string, seq[(string,
+    string)])]): BuiltinModule =
+  let module_def = new_module_definition(name)
+  let functions = defs.map_it(new_function_definition(it[1], it[2], it[0]))
+  BuiltinModule(module_def: module_def, functions: functions)
+
+proc `$`*(module: BuiltinModule): string = $(module.module_def.name)
 
 proc u8_module(): BuiltinModule =
   new_builtin_module("U8", @[

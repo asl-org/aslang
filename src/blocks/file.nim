@@ -1,10 +1,9 @@
 import sequtils, strutils, results, strformat, options
 
-import token, function, struct, arg_def, module, builtins
+import token, function, struct, arg_def, module
 
 type File* = ref object of RootObj
   location*: Location
-  builtin_modules*: seq[BuiltinModule]
   modules*: seq[Module]
   functions*: seq[Function]
 
@@ -12,28 +11,25 @@ proc name*(file: File): string =
   file.location.filename
 
 proc new_file*(filename: string): File =
-  File(builtin_modules: builtins(), location: new_file_location(filename))
+  let modules = builtins().map_it(new_module(it))
+  File(modules: modules, location: new_file_location(filename))
 
 proc `$`*(file: File): string = file.functions.map_it($(it)).join("\n\n")
 
-proc find_builtin_module*(file: File, module_name: Token): Result[BuiltinModule, string] =
-  for module in file.builtin_modules:
-    if $(module) == $(module_name):
+proc find_module*(file: File, module_name: Token): Result[Module, string] =
+  for module in file.modules:
+    if $(module.name) == $(module_name):
       return ok(module)
   err(fmt"Module `{module_name}` does not exist in the scope")
 
 proc find_struct*(file: File, struct_name: Token): Result[NamedStruct, string] =
   for module in file.modules:
-    if $(module.name) == $(struct_name) and module.struct.is_some:
-      return ok(module.to_named_struct())
-  err(fmt"Module `{struct_name}` does not exist in the scope")
+    let maybe_named_struct = module.named_struct()
+    if maybe_named_struct.is_err: continue
 
-proc find_module*(file: File, module_name: Token): Result[void, string] =
-  var maybe_found = file.find_builtin_module(module_name)
-  if maybe_found.is_ok: return ok()
-
-  discard ? file.find_struct(module_name)
-  ok()
+    let named_struct = maybe_named_struct.get
+    if $(named_struct.name) == $(struct_name): return ok(named_struct)
+  err(fmt"Struct `{struct_name}` does not exist in the scope")
 
 proc find_start_function*(file: File): Result[Function, string] =
   for function in file.functions:

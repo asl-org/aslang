@@ -30,9 +30,6 @@ export function
 import blocks/struct
 export struct
 
-import blocks/builtins
-export builtins
-
 import blocks/module
 export module
 
@@ -46,7 +43,7 @@ const INDENT_SIZE = 2 # spaces
 type
   BlockKind* = enum
     BK_STATEMENT, BK_MATCH, BK_CASE, BK_ELSE
-    BK_STRUCT_FIELD, BK_NAMED_STRUCT, BK_STRUCT
+    BK_STRUCT_FIELD, BK_STRUCT
     BK_FUNCTION, BK_MODULE, BK_FILE
 
   Block* = ref object of RootObj
@@ -58,7 +55,6 @@ type
     of BK_MATCH: match_block*: Match
     of BK_CASE: case_block*: Case
     of BK_ELSE: else_block*: Else
-    of BK_NAMED_STRUCT: named_struct: NamedStruct
     of BK_STRUCT: struct: Struct
     of BK_STRUCT_FIELD: struct_field_def: ArgumentDefinition
     of BK_MODULE: module: Module
@@ -71,7 +67,6 @@ proc location*(asl_block: Block): Location =
   of BK_MATCH: asl_block.match_block.location
   of BK_CASE: asl_block.case_block.location
   of BK_ELSE: asl_block.else_block.location
-  of BK_NAMED_STRUCT: asl_block.named_struct.location
   of BK_STRUCT: asl_block.struct.location
   of BK_STRUCT_FIELD: asl_block.struct_field_def.location
   of BK_MODULE: asl_block.module.location
@@ -87,7 +82,6 @@ proc `$`*(asl_block: Block): string =
   of BK_MATCH: $(asl_block.match_block)
   of BK_CASE: $(asl_block.case_block)
   of BK_ELSE: $(asl_block.else_block)
-  of BK_NAMED_STRUCT: $(asl_block.named_struct)
   of BK_STRUCT: $(asl_block.struct)
   of BK_STRUCT_FIELD: $(asl_block.struct_field_def)
   of BK_MODULE: $(asl_block.module)
@@ -116,17 +110,13 @@ proc close*(asl_block: Block): Result[void, string] =
   of BK_ELSE:
     if asl_block.else_block.statements.len == 0:
       return err(fmt"{asl_block.location} `else` must contain at least one statement")
-  of BK_NAMED_STRUCT:
-    if asl_block.named_struct.fields.len == 0:
-      return err(fmt"{asl_block.location} `struct` must contain at least one field")
   of BK_STRUCT:
     if asl_block.struct.fields.len == 0:
       return err(fmt"{asl_block.location} `struct` must contain at least one field")
   of BK_STRUCT_FIELD:
     discard
   of BK_MODULE:
-    if asl_block.module.functions.len == 0:
-      return err(fmt"{asl_block.location} `module` must contain at least one function")
+    ? asl_block.module.close()
   ok()
 
 proc add_child*(parent: Block, child: Block): Result[void, string] =
@@ -180,13 +170,6 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
       ok()
     else:
       err(fmt"{parent.location} `else` can only contain statements")
-  of BK_NAMED_STRUCT:
-    case child.kind:
-    of BK_STRUCT_FIELD:
-      parent.named_struct.add_field(child.struct_field_def)
-      ok()
-    else:
-      err(fmt"{parent.location} `struct` can only contain field definitions")
   of BK_STRUCT:
     case child.kind:
     of BK_STRUCT_FIELD:
@@ -199,12 +182,10 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   of BK_MODULE:
     case child.kind:
     of BK_FUNCTION:
-      # TODO: Duplicate function/module name error handling
-      parent.module.add_function(child.function)
+      ? parent.module.add_function(child.function)
       ok()
     of BK_STRUCT:
-      # TODO: Duplicate struct/module name error handling
-      parent.module.add_struct(child.struct)
+      ? parent.module.add_struct(child.struct)
       ok()
     else:
       err(fmt"{parent.module.name} Module can only contain functions")
@@ -232,9 +213,6 @@ proc new_block*(line: Line): Result[Block, string] =
       Block(kind: BK_CASE, indent: indent, case_block: new_case(line.case_def))
     of LK_ELSE_DEFINITION:
       Block(kind: BK_ELSE, indent: indent, else_block: new_else(line.else_def))
-    of LK_NAMED_STRUCT_DEFINITION:
-      Block(kind: BK_NAMED_STRUCT, indent: indent,
-          named_struct: new_named_struct(line.named_struct_def))
     of LK_STRUCT_DEFINITION:
       Block(kind: BK_STRUCT, indent: indent, struct: new_struct(
           line.struct_def))

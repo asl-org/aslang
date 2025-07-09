@@ -95,9 +95,10 @@ proc resolve_builtin_function_call(function_call: FunctionCall,
   of FCK_LOCAL:
     return err(fmt"Builtin function calls are not supported.")
   of FCK_MODULE:
-    for module in file.builtin_modules:
+    for module in file.modules:
+      if module.kind != MK_BUILTIN: continue
       if $(module.name) == $(function_call.module):
-        for function_def in module.functions:
+        for function_def in module.function_defs:
           let maybe_resolved_args = function_call.resolve_function_call_args(
               function_def, scope)
           if maybe_resolved_args.is_ok:
@@ -119,7 +120,10 @@ proc resolve_user_function_call(function_call: FunctionCall, file: blocks.File,
   of FCK_MODULE:
     for module in file.modules:
       if $(module.name) == $(function_call.module):
-        for function in module.functions:
+        if module.kind != MK_USER: continue
+        let maybe_functions = module.functions
+        if maybe_functions.is_err: continue
+        for function in maybe_functions.get:
           let maybe_resolved_args = function_call.resolve_function_call_args(
               function.definition, scope)
           if maybe_resolved_args.is_ok:
@@ -254,9 +258,9 @@ proc resolve_function(module: Option[Module], function: Function,
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
 
-  ? file.find_module(function.definition.return_type)
+  discard ? file.find_module(function.definition.return_type)
   for arg in function.arg_def_list:
-    ? file.find_module(arg.arg_type)
+    discard ? file.find_module(arg.arg_type)
     if $(arg.arg_name) in scope:
       let defined_arg = scope[$(arg.arg_name)]
       return err(fmt"{arg.location} {arg.arg_name} is already defined {defined_arg.location}")
@@ -270,7 +274,7 @@ proc resolve_function(module: Option[Module], function: Function,
   new_resolved_function(module, function, resolved_function_steps)
 
 proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string] =
-  var stack = @[new_external_function(none(Module), ? file.find_start_function())]
+  var stack = @[new_external_function( ? file.find_start_function())]
   var visited_functions = init_hashset[ExternalFunction]()
   var resolved_functions: seq[ResolvedFunction]
   while stack.len > 0:
@@ -286,14 +290,16 @@ proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string]
     stack.add(new_functions.to_seq)
 
   for function in file.functions:
-    let ext_fn = new_external_function(none(Module), function)
+    let ext_fn = new_external_function(function)
     if ext_fn notin visited_functions:
       echo fmt"Unused function: {function.location} {function.name}"
       discard ? resolve_function(none(Module), function, file)
 
   for module in file.modules:
-    for function in module.functions:
-      let ext_fn = new_external_function(some(module), function)
+    let maybe_functions = module.functions
+    if maybe_functions.is_err: continue
+    for function in maybe_functions.get:
+      let ext_fn = new_external_function(module, function)
       if ext_fn notin visited_functions:
         echo fmt"Unused function: {function.location} {module.name}.{function.name}"
         discard ? resolve_function(some(module), function, file)
@@ -327,8 +333,10 @@ proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
   var scope: Table[string, NamedStruct]
   var struct_list: seq[NamedStruct]
   for module in file.modules:
-    if module.struct.is_none: continue
-    let struct = module.to_named_struct()
+    let maybe_struct = module.named_struct()
+    if maybe_struct.is_err: continue
+
+    let struct = maybe_struct.get
     if $(struct.name) in scope:
       let defined_struct = scope[$(struct.name)]
       return err(fmt"{struct.location} `{struct.name}` is already defined at {defined_struct.location}")

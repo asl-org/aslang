@@ -219,15 +219,6 @@ proc expect_else_definition(parser: Parser): Result[ElseDefinition, string] =
   discard ? parser.expect(TK_COLON)
   ok(new_else_definition(else_token.location))
 
-proc expect_named_struct_definition(parser: Parser): Result[
-    NamedStructDefinition, string] =
-  let struct_token = ? parser.expect(TK_STRUCT)
-  discard ? parser.expect_at_least_one(TK_SPACE)
-  let name = ? parser.expect(TK_ID)
-  discard parser.expect_any(TK_SPACE)
-  discard ? parser.expect(TK_COLON)
-  ok(new_named_struct_definition(name, struct_token.location))
-
 proc expect_struct_definition(parser: Parser): Result[StructDefinition, string] =
   let struct_token = ? parser.expect(TK_STRUCT)
   discard parser.expect_any(TK_SPACE)
@@ -266,12 +257,6 @@ proc expect_line(parser: Parser): Result[Line, string] =
 
   let maybe_else_def = parser.expect_else_definition()
   if maybe_else_def.is_ok: return ok(new_line(maybe_else_def.get))
-  else: parser.index = start
-
-  # file level named struct block
-  let maybe_named_struct_def = parser.expect_named_struct_definition()
-  if maybe_named_struct_def.is_ok: return ok(new_line(
-      maybe_named_struct_def.get))
   else: parser.index = start
 
   # module level struct block

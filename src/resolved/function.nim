@@ -5,9 +5,9 @@ import function_call
 import function_step
 
 type ResolvedFunction* = ref object of RootObj
-  module: Option[Module]
-  function: Function
-  steps: seq[ResolvedFunctionStep]
+  module*: Option[Module]
+  function*: Function
+  steps*: seq[ResolvedFunctionStep]
 
 proc function_set*(function: ResolvedFunction): Hashset[ExternalFunction] =
   var function_set: Hashset[ExternalFunction]
