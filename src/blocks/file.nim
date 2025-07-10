@@ -23,13 +23,8 @@ proc find_module*(file: File, module_name: Token): Result[Module, string] =
   err(fmt"Module `{module_name}` does not exist in the scope")
 
 proc find_struct*(file: File, struct_name: Token): Result[NamedStruct, string] =
-  for module in file.modules:
-    let maybe_named_struct = module.named_struct()
-    if maybe_named_struct.is_err: continue
-
-    let named_struct = maybe_named_struct.get
-    if $(named_struct.name) == $(struct_name): return ok(named_struct)
-  err(fmt"Struct `{struct_name}` does not exist in the scope")
+  let module = ? file.find_module(struct_name)
+  return module.named_struct()
 
 proc find_start_function*(file: File): Result[Function, string] =
   for function in file.functions:

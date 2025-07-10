@@ -88,59 +88,33 @@ proc resolve_function_call_args(function_call: FunctionCall,
     resolved_args.add( ? scope.resolve_expression(arg_def, arg_value))
   ok(resolved_args)
 
-proc resolve_builtin_function_call(function_call: FunctionCall,
-    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
-        ResolvedFunctionCall, string] =
-  case function_call.kind:
-  of FCK_LOCAL:
-    return err(fmt"Builtin function calls are not supported.")
-  of FCK_MODULE:
-    for module in file.modules:
-      if module.kind != MK_BUILTIN: continue
-      if $(module.name) == $(function_call.module):
-        for function_def in module.function_defs:
-          let maybe_resolved_args = function_call.resolve_function_call_args(
-              function_def, scope)
-          if maybe_resolved_args.is_ok:
-            return ok(new_resolved_function_call(module, function_def,
-                maybe_resolved_args.get))
-  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching builtin function in the file {file.name}")
-
-# matches all functions with function call within a file
-proc resolve_user_function_call(function_call: FunctionCall, file: blocks.File,
+proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
-  case function_call.kind:
-  of FCK_LOCAL:
+  case function_call.func_ref.kind:
+  of FRK_LOCAL:
     for function in file.functions:
       let maybe_resolved_args = function_call.resolve_function_call_args(
           function.definition, scope)
       if maybe_resolved_args.is_ok:
         return ok(new_resolved_function_call(function, maybe_resolved_args.get))
-    return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
-  of FCK_MODULE:
-    for module in file.modules:
-      if $(module.name) == $(function_call.module):
-        if module.kind != MK_USER: continue
-        let maybe_functions = module.functions
-        if maybe_functions.is_err: continue
-        for function in maybe_functions.get:
-          let maybe_resolved_args = function_call.resolve_function_call_args(
-              function.definition, scope)
-          if maybe_resolved_args.is_ok:
-            return ok(new_resolved_function_call(module, function,
-                maybe_resolved_args.get))
-    return err(fmt"{function_call.location} `{function_call.name}` failed to find matching user function in the file {file.name}")
-
-proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
-    scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
-  # try looking up builtins function call
-  let maybe_resolved_builtin_function_call = function_call.resolve_builtin_function_call(
-      file, scope)
-  if maybe_resolved_builtin_function_call.is_ok:
-    return ok(maybe_resolved_builtin_function_call.get)
-
-  # try looking up user function call
-  return function_call.resolve_user_function_call(file, scope)
+  of FRK_MODULE:
+    let module = ? file.find_module(function_call.func_ref.module)
+    case module.kind:
+    of MK_BUILTIN:
+      for function_def in module.function_defs:
+        let maybe_resolved_args = function_call.resolve_function_call_args(
+            function_def, scope)
+        if maybe_resolved_args.is_ok:
+          return ok(new_resolved_function_call(module, function_def,
+              maybe_resolved_args.get))
+    of MK_USER:
+      for function in ( ? module.functions):
+        let maybe_resolved_args = function_call.resolve_function_call_args(
+            function.definition, scope)
+        if maybe_resolved_args.is_ok:
+          return ok(new_resolved_function_call(module, function,
+              maybe_resolved_args.get))
+  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching function in the file {file.name}")
 
 proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructInit, string] =
@@ -296,13 +270,14 @@ proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string]
       discard ? resolve_function(none(Module), function, file)
 
   for module in file.modules:
-    let maybe_functions = module.functions
-    if maybe_functions.is_err: continue
-    for function in maybe_functions.get:
-      let ext_fn = new_external_function(module, function)
-      if ext_fn notin visited_functions:
-        echo fmt"Unused function: {function.location} {module.name}.{function.name}"
-        discard ? resolve_function(some(module), function, file)
+    case module.kind:
+    of MK_BUILTIN: discard
+    of MK_USER:
+      for function in ( ? module.functions):
+        let ext_fn = new_external_function(module, function)
+        if ext_fn notin visited_functions:
+          echo fmt"Unused function: {function.location} {module.name}.{function.name}"
+          discard ? resolve_function(some(module), function, file)
   ok(resolved_functions)
 
 proc resolve_struct(struct: NamedStruct, scope: Table[string, NamedStruct],

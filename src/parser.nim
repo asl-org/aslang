@@ -123,19 +123,21 @@ proc expect_argument_list(parser: Parser): Result[seq[Token], string] =
   discard ? parser.expect(TK_CPAREN)
   ok(arg_list)
 
-proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
-  let name = ? parser.expect(TK_ID)
+proc expect_function_ref(parser: Parser): Result[FunctionRef, string] =
+  var name = ? parser.expect(TK_ID)
   let maybe_period = parser.expect(TK_PERIOD)
-  # MODULE function call
-  if maybe_period.is_ok:
-    let function_name = ? parser.expect(TK_ID)
-    discard parser.expect_any(TK_SPACE)
-    let arg_list = ? parser.expect_argument_list()
-    return ok(new_function_call(name, function_name, arg_list))
-  # LOCAL function call
+  if maybe_period.is_err:
+    return ok(new_function_ref(name))
+
+  let module = name
+  name = ? parser.expect(TK_ID)
+  ok(new_function_ref(module, name))
+
+proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
+  let function_ref = ? parser.expect_function_ref()
   discard parser.expect_any(TK_SPACE)
   let arg_list = ? parser.expect_argument_list()
-  return ok(new_function_call(name, arg_list))
+  return ok(new_function_call(function_ref, arg_list))
 
 proc expect_struct_init_fields(parser: Parser): Result[seq[(Token, Token)], string] =
   var fields: seq[(Token, Token)]

@@ -3,30 +3,48 @@ import strutils, sequtils, strformat
 import token
 
 type
-  FunctionCallKind* = enum
-    FCK_LOCAL, FCK_MODULE
-  FunctionCall* = ref object of RootObj
+  FunctionRefKind* = enum
+    FRK_LOCAL, FRK_MODULE
+  FunctionRef* = ref object of RootObj
     name*: Token
+    case kind*: FunctionRefKind
+    of FRK_LOCAL: discard
+    of FRK_MODULE: module*: Token
+
+proc location*(func_ref: FunctionRef): Location =
+  case func_ref.kind:
+  of FRK_LOCAL: func_ref.name.location
+  of FRK_MODULE: func_ref.module.location
+
+proc `$`*(func_ref: FunctionRef): string =
+  case func_ref.kind:
+  of FRK_LOCAL: $(func_ref.name)
+  of FRK_MODULE: fmt"{func_ref.module}.{func_ref.name}"
+
+proc new_function_ref*(name: Token): FunctionRef =
+  FunctionRef(kind: FRK_LOCAL, name: name)
+
+proc new_function_ref*(module: Token, name: Token): FunctionRef =
+  FunctionRef(kind: FRK_MODULE, module: module, name: name)
+
+type
+  FunctionCall* = ref object of RootObj
+    func_ref*: FunctionRef
     arg_list*: seq[Token]
-    case kind*: FunctionCallKind
-    of FCK_LOCAL: discard
-    of FCK_MODULE: module*: Token
 
 proc location*(function_call: FunctionCall): Location =
-  function_call.name.location
+  function_call.func_ref.location
+
+proc name*(function_call: FunctionCall): Token =
+  function_call.func_ref.name
+
+proc module*(function_call: FunctionCall): Token =
+  function_call.func_ref.module
 
 proc `$`*(function_call: FunctionCall): string =
   let arg_list_str = function_call.arg_list.map_it($(it)).join(", ")
-  fmt"{function_call.name}({arg_list_str})"
+  fmt"{function_call.func_ref}({arg_list_str})"
 
-proc new_function_call*(name: Token, arg_list: seq[Token]): FunctionCall =
-  FunctionCall(kind: FCK_LOCAL, name: name, arg_list: arg_list)
-
-proc new_function_call*(name: string, arg_list: seq[string]): FunctionCall =
-  let name_token = new_id_token(name)
-  let token_arg_list = arg_list.map(new_id_token)
-  new_function_call(name_token, token_arg_list)
-
-proc new_function_call*(module: Token, name: Token, arg_list: seq[
+proc new_function_call*(func_ref: FunctionRef, arg_list: seq[
     Token]): FunctionCall =
-  FunctionCall(kind: FCK_MODULE, module: module, name: name, arg_list: arg_list)
+  FunctionCall(func_ref: func_ref, arg_list: arg_list)
