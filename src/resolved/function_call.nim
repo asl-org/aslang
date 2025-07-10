@@ -1,7 +1,7 @@
 import sequtils, strutils, strformat, options, hashes
 
 import "../blocks"
-import argument
+import expression
 
 type ExternalFunction* = ref object of RootObj
   module*: Option[Module]
@@ -30,7 +30,7 @@ type
   ResolvedFunctionCallKind* = enum
     RFCK_BUILTIN, RFCK_MODULE, RFCK_LOCAL
   ResolvedFunctionCall* = ref object of RootObj
-    args: seq[ResolvedArgument]
+    args: seq[ResolvedExpression]
     case kind: ResolvedFunctionCallKind
     of RFCK_BUILTIN:
       builtin_module: Module
@@ -42,17 +42,17 @@ type
       function: Function
 
 proc new_resolved_function_call*(function: Function, args: seq[
-    ResolvedArgument]): ResolvedFunctionCall =
+    ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_LOCAL, local_function: function, args: args)
 
 proc new_resolved_function_call*(module: Module,
     function_def: FunctionDefinition, args: seq[
-    ResolvedArgument]): ResolvedFunctionCall =
+    ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_BUILTIN, builtin_module: module,
       function_def: function_def, args: args)
 
 proc new_resolved_function_call*(module: Module, function: Function, args: seq[
-    ResolvedArgument]): ResolvedFunctionCall =
+    ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_MODULE, module: module, function: function, args: args)
 
 proc user_function*(resolved_function_call: ResolvedFunctionCall): Option[

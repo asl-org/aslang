@@ -1,4 +1,4 @@
-import sequtils, strutils, results, strformat, options
+import sequtils, strutils, results, strformat
 
 import token, function, struct, arg_def, module
 
@@ -9,6 +9,9 @@ type File* = ref object of RootObj
 
 proc name*(file: File): string =
   file.location.filename
+
+proc user_modules*(file: File): seq[Module] =
+  file.modules.filter_it(it.kind == MK_USER)
 
 proc new_file*(filename: string): File =
   let modules = builtins().map_it(new_module(it))

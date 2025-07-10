@@ -2,7 +2,7 @@ import results, tables, strformat, sequtils, parseutils, sets, options, strutils
 
 import blocks
 
-import resolved/argument; export argument
+import resolved/expression; export expression
 import resolved/function_call; export function_call
 import resolved/struct_init; export struct_init
 import resolved/struct_getter; export struct_getter
@@ -45,7 +45,7 @@ proc safe_parse*[T](input: string): Result[void, string] =
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
 proc resolve_expression(scope: Table[string, ArgumentDefinition],
-    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedArgument, string] =
+    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedExpression, string] =
   case arg_value.kind:
   of TK_ID:
     if $(arg_value) notin scope:
@@ -71,18 +71,18 @@ proc resolve_expression(scope: Table[string, ArgumentDefinition],
   else: # TODO: Support strings as arguments
     return err(fmt"{arg_value.location} {arg_value} can not be passed to a function as argument")
 
-  ok(new_resolved_argument(arg_def.arg_type, arg_value))
+  ok(new_resolved_expression(arg_def.arg_type, arg_value))
 
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
     function_def: FunctionDefinition, scope: Table[string,
-    ArgumentDefinition]): Result[seq[ResolvedArgument], string] =
+    ArgumentDefinition]): Result[seq[ResolvedExpression], string] =
   if $(function_def.name) != $(function_call.name):
     return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function_def.name}")
   if function_def.arg_def_list.len != function_call.arg_list.len:
     return err(fmt"{function_call.location} expected {function_def.arg_def_list.len} but found {function_call.arg_list.len}")
 
-  var resolved_args: seq[ResolvedArgument]
+  var resolved_args: seq[ResolvedExpression]
   for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
     resolved_args.add( ? scope.resolve_expression(arg_def, arg_value))
@@ -122,7 +122,7 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
   let key_value_pairs = struct_init.fields
 
   let struct = ? file.find_struct(struct_var)
-  var field_name_table: Table[string, ResolvedArgument]
+  var field_name_table: Table[string, ResolvedExpression]
   for (field_name, field_value) in key_value_pairs:
     if $(field_name) in field_name_table:
       return err(fmt"{field_name.location} {field_name} is already present in the initializer")
@@ -269,15 +269,12 @@ proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string]
       echo fmt"Unused function: {function.location} {function.name}"
       discard ? resolve_function(none(Module), function, file)
 
-  for module in file.modules:
-    case module.kind:
-    of MK_BUILTIN: discard
-    of MK_USER:
-      for function in ( ? module.functions):
-        let ext_fn = new_external_function(module, function)
-        if ext_fn notin visited_functions:
-          echo fmt"Unused function: {function.location} {module.name}.{function.name}"
-          discard ? resolve_function(some(module), function, file)
+  for module in file.user_modules:
+    for function in ( ? module.functions):
+      let ext_fn = new_external_function(module, function)
+      if ext_fn notin visited_functions:
+        echo fmt"Unused function: {function.location} {module.name}.{function.name}"
+        discard ? resolve_function(some(module), function, file)
   ok(resolved_functions)
 
 proc resolve_struct(struct: NamedStruct, scope: Table[string, NamedStruct],
