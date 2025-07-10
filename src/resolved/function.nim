@@ -9,11 +9,11 @@ type ResolvedFunction* = ref object of RootObj
   function*: Function
   steps*: seq[ResolvedFunctionStep]
 
-proc function_set*(function: ResolvedFunction): Hashset[ExternalFunction] =
-  var function_set: Hashset[ExternalFunction]
+proc function_refs*(function: ResolvedFunction): Hashset[ResolvedFunctionRef] =
+  var function_ref_set: Hashset[ResolvedFunctionRef]
   for step in function.steps:
-    function_set.incl(step.function_set)
-  function_set
+    function_ref_set.incl(step.function_refs)
+  function_ref_set
 
 proc h*(resolved_function: ResolvedFunction): string =
   let prefix =

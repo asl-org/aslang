@@ -10,11 +10,11 @@ type ResolvedCase* = ref object of RootObj
 proc return_argument*(case_block: ResolvedCase): ArgumentDefinition =
   case_block.statements[^1].return_argument
 
-proc function_set*(case_block: ResolvedCase): Hashset[ExternalFunction] =
-  var function_set: Hashset[ExternalFunction]
+proc function_refs*(case_block: ResolvedCase): Hashset[ResolvedFunctionRef] =
+  var function_ref_set: Hashset[ResolvedFunctionRef]
   for statement in case_block.statements:
-    function_set.incl(statement.function_set)
-  function_set
+    function_ref_set.incl(statement.function_refs)
+  function_ref_set
 
 proc c*(resolved_case: ResolvedCase, result_var: Token): string =
   let case_block = resolved_case.parsed_case_block

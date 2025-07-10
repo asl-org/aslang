@@ -10,11 +10,11 @@ type ResolvedElse* = ref object of RootObj
 proc return_argument*(else_block: ResolvedElse): ArgumentDefinition =
   else_block.statements[^1].return_argument
 
-proc function_set*(else_block: ResolvedElse): Hashset[ExternalFunction] =
-  var function_set: Hashset[ExternalFunction]
+proc function_refs*(else_block: ResolvedElse): Hashset[ResolvedFunctionRef] =
+  var function_ref_set: Hashset[ResolvedFunctionRef]
   for statement in else_block.statements:
-    function_set.incl(statement.function_set)
-  function_set
+    function_ref_set.incl(statement.function_refs)
+  function_ref_set
 
 proc c*(resolved_else_block: ResolvedElse, result_var: Token): string =
   var lines = @["default: {"]

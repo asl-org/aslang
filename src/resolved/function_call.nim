@@ -3,28 +3,28 @@ import sequtils, strutils, strformat, options, hashes
 import "../blocks"
 import expression
 
-type ExternalFunction* = ref object of RootObj
+type ResolvedFunctionRef* = ref object of RootObj
   module*: Option[Module]
-  function*: Function
+  function_def*: FunctionDefinition
 
-proc new_external_function*(module: Module,
-    function: Function): ExternalFunction =
-  ExternalFunction(module: some(module), function: function)
+proc new_resolved_function_ref*(module: Module,
+    function_def: FunctionDefinition): ResolvedFunctionRef =
+  ResolvedFunctionRef(module: some(module), function_def: function_def)
 
-proc new_external_function*(function: Function): ExternalFunction =
-  ExternalFunction(module: none(Module), function: function)
+proc new_resolved_function_ref*(function_def: FunctionDefinition): ResolvedFunctionRef =
+  ResolvedFunctionRef(module: none(Module), function_def: function_def)
 
-proc hash*(ext_fn: ExternalFunction): Hash =
-  if ext_fn.module.is_some:
-    hash(ext_fn.module.get.name) !& hash(ext_fn.function)
+proc hash*(func_ref: ResolvedFunctionRef): Hash =
+  if func_ref.module.is_some:
+    hash(func_ref.module.get.name) !& hash(func_ref.function_def)
   else:
-    hash(ext_fn.function)
+    hash(func_ref.function_def)
 
-proc `==`*(ext_fn: ExternalFunction, other: ExternalFunction): bool =
-  hash(ext_fn) == hash(other)
+proc `==`*(func_ref: ResolvedFunctionRef, other: ResolvedFunctionRef): bool =
+  hash(func_ref) == hash(other)
 
-proc `$`*(ext_fn: ExternalFunction): string =
-  fmt"{ext_fn.module}.{ext_fn.function.name}"
+proc `$`*(func_ref: ResolvedFunctionRef): string =
+  fmt"{func_ref.module}.{func_ref.function_def.name}"
 
 type
   ResolvedFunctionCallKind* = enum
@@ -56,12 +56,13 @@ proc new_resolved_function_call*(module: Module, function: Function, args: seq[
   ResolvedFunctionCall(kind: RFCK_MODULE, module: module, function: function, args: args)
 
 proc user_function*(resolved_function_call: ResolvedFunctionCall): Option[
-    ExternalFunction] =
+    ResolvedFunctionRef] =
   case resolved_function_call.kind:
-  of RFCK_BUILTIN: none(ExternalFunction)
-  of RFCK_LOCAL: some(new_external_function(resolved_function_call.function))
-  of RFCK_MODULE: some(new_external_function(resolved_function_call.module,
-      resolved_function_call.function))
+  of RFCK_BUILTIN: none(ResolvedFunctionRef)
+  of RFCK_LOCAL: some(new_resolved_function_ref(
+      resolved_function_call.function.definition))
+  of RFCK_MODULE: some(new_resolved_function_ref(resolved_function_call.module,
+      resolved_function_call.function.definition))
 
 proc return_type*(resolved_function_call: ResolvedFunctionCall): Token =
   case resolved_function_call.kind:

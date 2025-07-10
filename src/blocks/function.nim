@@ -1,4 +1,4 @@
-import strutils, strformat, hashes, sequtils
+import strutils, strformat, hashes, sequtils, results
 
 import token, statement, match, arg_def
 
@@ -7,6 +7,9 @@ type FunctionDefinition* = ref object of RootObj
   arg_def_list*: seq[ArgumentDefinition]
   return_type*: Token
   location*: Location
+
+proc arity*(function_def: FunctionDefinition): int =
+  function_def.arg_def_list.len
 
 proc hash*(func_def: FunctionDefinition): Hash =
   var essence = func_def.name.hash !& func_def.location.hash
@@ -17,6 +20,16 @@ proc hash*(func_def: FunctionDefinition): Hash =
 proc `$`*(func_def: FunctionDefinition): string =
   let arg_def_list_str = func_def.arg_def_list.map_it($(it)).join(", ")
   fmt"fn {func_def.name}({arg_def_list_str}): {func_def.return_type}"
+
+proc `==`*(func_def: FunctionDefinition, other: FunctionDefinition): bool =
+  if $(func_def.name) != $(other.name): return false
+  if $(func_def.arity) != $(other.arity): return false
+
+  var same = true
+  for (self_arg, other_arg) in zip(func_def.arg_def_list,
+      other.arg_def_list):
+    same = same and ($(self_arg.arg_type) == $(other_arg.arg_type))
+  return same
 
 proc new_function_definition*(name: Token, arg_def_list: seq[
     ArgumentDefinition], return_type: Token,
@@ -76,7 +89,7 @@ proc native_return_type*(function: Function): string =
   else: "Pointer"
 
 proc arity*(function: Function): int =
-  function.definition.arg_def_list.len
+  function.definition.arity
 
 proc arg_def_list*(function: Function): seq[ArgumentDefinition] =
   function.definition.arg_def_list
@@ -103,8 +116,15 @@ proc is_start*(function: Function): bool =
 proc new_function*(definition: FunctionDefinition): Function =
   Function(definition: definition)
 
-proc add_statement*(function: Function, statement: Statement): void =
+proc add_statement*(function: Function, statement: Statement): Result[void, string] =
   function.function_steps.add(new_function_step(statement))
+  ok()
 
-proc add_match*(function: Function, match: Match): void =
+proc add_match*(function: Function, match: Match): Result[void, string] =
   function.function_steps.add(new_function_step(match))
+  ok()
+
+proc close*(function: Function): Result[void, string] =
+  if function.steps == 0:
+    return err(fmt"{function.location} `fn` must contain at least one statement/match block")
+  ok()

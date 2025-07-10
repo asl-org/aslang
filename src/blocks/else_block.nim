@@ -1,4 +1,4 @@
-import strformat, strutils
+import strformat, strutils, results
 
 import token, statement
 
@@ -26,8 +26,14 @@ proc `$`*(else_block: Else): string =
     lines.add(child_prefix & $(statement))
   return lines.join("\n")
 
-proc add_statement*(else_block: Else, statement: Statement): void =
+proc add_statement*(else_block: Else, statement: Statement): Result[void, string] =
   else_block.statements.add(statement)
+  ok()
 
 proc new_else*(else_def: ElseDefinition): Else =
   Else(else_def: else_def)
+
+proc close*(else_block: Else): Result[void, string] =
+  if else_block.statements.len == 0:
+    return err(fmt"{else_block.location} `else` must contain at least one statement")
+  ok()
