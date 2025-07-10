@@ -1,4 +1,4 @@
-import strutils, strformat
+import strutils, strformat, results
 
 import token, statement
 
@@ -30,8 +30,14 @@ proc `$`*(case_block: Case): string =
     lines.add(child_prefix & $(statement))
   return lines.join("\n")
 
-proc add_statement*(case_block: Case, statement: Statement): void =
+proc add_statement*(case_block: Case, statement: Statement): Result[void, string] =
   case_block.statements.add(statement)
+  ok()
 
 proc new_case*(case_def: CaseDefinition): Case =
   Case(case_def: case_def)
+
+proc close*(case_block: Case): Result[void, string] =
+  if case_block.statements.len == 0:
+    return err(fmt"{case_block.location} `case` must contain at least one statement")
+  ok()

@@ -3,13 +3,13 @@ import strformat
 import "../blocks"
 
 type ResolvedStructGetter* = ref object of RootObj
-  struct*: NamedStruct
+  module*: Module
   field*: ArgumentDefinition
   arg: Token
 
-proc new_resolved_struct_getter*(struct: NamedStruct,
+proc new_resolved_struct_getter*(module: Module,
     field: ArgumentDefinition, arg: Token): ResolvedStructGetter =
-  ResolvedStructGetter(struct: struct, field: field, arg: arg)
+  ResolvedStructGetter(module: module, field: field, arg: arg)
 
 proc c*(getter: ResolvedStructGetter): string =
-  fmt"{getter.struct.name}_get_{getter.field.arg_name}({getter.arg})"
+  fmt"{getter.module.name}_get_{getter.field.arg_name}({getter.arg})"

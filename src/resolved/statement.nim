@@ -20,21 +20,22 @@ type
     of RSK_FUNCTION_CALL:
       function_call: ResolvedFunctionCall
 
-proc function_set*(statement: ResolvedStatement): Hashset[ExternalFunction] =
+proc function_refs*(statement: ResolvedStatement): Hashset[
+    ResolvedFunctionRef] =
   case statement.kind:
   of RSK_FUNCTION_CALL:
-    var function_set: Hashset[ExternalFunction]
-    let maybe_ext_function = statement.function_call.user_function
-    if maybe_ext_function.is_some:
-      function_set.incl(maybe_ext_function.get)
+    var function_set: Hashset[ResolvedFunctionRef]
+    let maybe_func_ref = statement.function_call.user_function
+    if maybe_func_ref.is_some:
+      function_set.incl(maybe_func_ref.get)
     function_set
   else:
-    init_hashset[ExternalFunction]()
+    init_hashset[ResolvedFunctionRef]()
 
 proc return_argument*(statement: ResolvedStatement): ArgumentDefinition =
   case statement.kind:
   of RSK_STRUCT_INIT:
-    new_argument_definition(statement.struct_init.struct.name,
+    new_argument_definition(statement.struct_init.module.name,
         statement.destination)
   of RSK_STRUCT_GETTER:
     new_argument_definition(statement.struct_getter.field.arg_type,

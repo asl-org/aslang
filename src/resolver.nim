@@ -96,7 +96,8 @@ proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
       let maybe_resolved_args = function_call.resolve_function_call_args(
           function.definition, scope)
       if maybe_resolved_args.is_ok:
-        return ok(new_resolved_function_call(function, maybe_resolved_args.get))
+        return ok(new_resolved_function_call(function.definition,
+            maybe_resolved_args.get))
   of FRK_MODULE:
     let module = ? file.find_module(function_call.func_ref.module)
     case module.kind:
@@ -108,11 +109,11 @@ proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
           return ok(new_resolved_function_call(module, function_def,
               maybe_resolved_args.get))
     of MK_USER:
-      for function in ( ? module.functions):
+      for function in module.function_defs:
         let maybe_resolved_args = function_call.resolve_function_call_args(
-            function.definition, scope)
+            function, scope)
         if maybe_resolved_args.is_ok:
-          return ok(new_resolved_function_call(module, function,
+          return ok(new_resolved_user_function_call(module, function,
               maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching function in the file {file.name}")
 
@@ -121,7 +122,11 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
   let struct_var = struct_init.struct
   let key_value_pairs = struct_init.fields
 
-  let struct = ? file.find_struct(struct_var)
+  let module = ? file.find_module(struct_var)
+  if not module.is_struct:
+    return err(fmt"{module.location} Module `{module.name}` is not a struct")
+
+  let struct = module.struct
   var field_name_table: Table[string, ResolvedExpression]
   for (field_name, field_value) in key_value_pairs:
     if $(field_name) in field_name_table:
@@ -129,8 +134,8 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     let field = ? struct.find_field(field_name)
     field_name_table[$(field_name)] = ? scope.resolve_expression(field, field_value)
 
-  let resolved_fields = struct.fields.map_it(field_name_table[$(it.arg_name)])
-  let resolved_struct_init = new_resolved_struct_init(struct, resolved_fields)
+  let resolved_fields = struct.fields.values.to_seq.map_it(field_name_table[$(it.arg_name)])
+  let resolved_struct_init = new_resolved_struct_init(module, resolved_fields)
   ok(resolved_struct_init)
 
 proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
@@ -141,9 +146,13 @@ proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
   if $(struct_var) notin scope:
     return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
 
-  let struct = ? file.find_struct(scope[$(struct_var)].arg_type)
+  let module = ? file.find_module(scope[$(struct_var)].arg_type)
+  if not module.is_struct:
+    return err(fmt"{module.location} Module `{module.name}` is not a struct")
+
+  let struct = module.struct
   let field = ? struct.find_field(field_name)
-  let resolved_struct_getter = new_resolved_struct_getter(struct, field, struct_var)
+  let resolved_struct_getter = new_resolved_struct_getter(module, field, struct_var)
   ok(resolved_struct_getter)
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
@@ -226,9 +235,24 @@ proc resolve_function_step(step: FunctionStep, file: blocks.File,
     let resolved_match = ? step.match.resolve_match(file, scope)
     return ok(new_resolved_function_step(resolved_match))
 
-proc resolve_function(module: Option[Module], function: Function,
+proc resolve_function(function_ref: ResolvedFunctionRef,
     file: blocks.File): Result[ResolvedFunction, string] =
+  var maybe_function: Option[Function]
+  if function_ref.module.is_some:
+    let module = function_ref.module.get
+    for mod_function in module.functions:
+      if mod_function.definition == function_ref.function_def:
+        maybe_function = some(mod_function)
+  else:
+    for file_function in file.functions:
+      if file_function.definition == function_ref.function_def:
+        maybe_function = some(file_function)
+
+  if maybe_function.is_none:
+    return err(fmt"Failed to find matching function for function ref")
+
   var
+    function = maybe_function.get
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
 
@@ -245,83 +269,71 @@ proc resolve_function(module: Option[Module], function: Function,
     resolved_function_steps.add(resolved_function_step)
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 
-  new_resolved_function(module, function, resolved_function_steps)
+  new_resolved_function(function_ref.module, function, resolved_function_steps)
 
 proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string] =
-  var stack = @[new_external_function( ? file.find_start_function())]
-  var visited_functions = init_hashset[ExternalFunction]()
+  let main_function = ? file.find_start_function()
+  var stack = @[new_resolved_function_ref(main_function.definition)]
+  var visited_functions = init_hashset[ResolvedFunctionRef]()
   var resolved_functions: seq[ResolvedFunction]
   while stack.len > 0:
     let function = stack[^1]
     visited_functions.incl(function)
     stack.set_len(stack.len - 1)
 
-    let resolved_function = ? resolve_function(function.module,
-        function.function, file)
+    let resolved_function = ? resolve_function(function, file)
     resolved_functions.add(resolved_function)
 
-    let new_functions = resolved_function.function_set.difference(visited_functions)
+    let new_functions = resolved_function.function_refs.difference(visited_functions)
     stack.add(new_functions.to_seq)
 
   for function in file.functions:
-    let ext_fn = new_external_function(function)
-    if ext_fn notin visited_functions:
+    let func_ref = new_resolved_function_ref(function.definition)
+    if func_ref notin visited_functions:
       echo fmt"Unused function: {function.location} {function.name}"
-      discard ? resolve_function(none(Module), function, file)
+      discard ? resolve_function(func_ref, file)
 
   for module in file.user_modules:
-    for function in ( ? module.functions):
-      let ext_fn = new_external_function(module, function)
-      if ext_fn notin visited_functions:
+    for function in module.functions:
+      let func_ref = new_resolved_function_ref(module, function.definition)
+      if func_ref notin visited_functions:
         echo fmt"Unused function: {function.location} {module.name}.{function.name}"
-        discard ? resolve_function(some(module), function, file)
+        discard ? resolve_function(func_ref, file)
   ok(resolved_functions)
 
-proc resolve_struct(struct: NamedStruct, scope: Table[string, NamedStruct],
-    filename: string): Result[ResolvedStruct, string] =
-  var field_map: Table[string, int]
+proc resolve_struct(module: Module, scope: Table[string,
+    Module], filename: string): Result[ResolvedStruct, string] =
   var field_offset: Table[string, uint]
   var offset: uint = 0
 
-  for (index, field) in struct.fields.pairs:
-    if $(field.arg_name) in field_map:
-      let defined_field = struct.fields[field_map[$(field.arg_name)]]
-      return err(fmt"{field.location} `{field.arg_name}` is already defined at {defined_field.location}")
-
+  for field in module.struct.fields.values:
     case $(field.arg_type):
     of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "F32", "F64", "Pointer":
       discard
     else:
       if $(field.arg_type) notin scope:
         return err(fmt"{field.location} `{field.arg_type}` not defined in the {filename}")
-
-    field_map[$(field.arg_name)] = index
     field_offset[$(field.arg_name)] = offset
     offset += field.byte_size()
 
-  ok(new_resolved_struct(struct, offset, field_map, field_offset))
+  ok(new_resolved_struct(module, offset, field_offset))
 
 proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
-  var scope: Table[string, NamedStruct]
-  var struct_list: seq[NamedStruct]
-  for module in file.modules:
-    let maybe_struct = module.named_struct()
-    if maybe_struct.is_err: continue
-
-    let struct = maybe_struct.get
-    if $(struct.name) in scope:
-      let defined_struct = scope[$(struct.name)]
-      return err(fmt"{struct.location} `{struct.name}` is already defined at {defined_struct.location}")
-    scope[$(struct.name)] = struct
-    struct_list.add(struct)
+  var scope: Table[string, Module]
+  var module_list: seq[Module]
+  for module in file.struct_modules:
+    if $(module.name) in scope:
+      let defined_struct = scope[$(module.name)]
+      return err(fmt"{module.location} `{module.name}` is already defined at {defined_struct.location}")
+    scope[$(module.name)] = module
+    module_list.add(module)
 
   var resolved_structs: seq[ResolvedStruct]
-  for struct in struct_list:
-    resolved_structs.add( ? struct.resolve_struct(scope, file.name))
+  for module in module_list:
+    resolved_structs.add( ? module.resolve_struct(scope, file.name))
   return ok(resolved_structs)
 
 proc resolve*(file: blocks.File): Result[ResolvedFile, string] =
-  # TODO: Resolve modules
   let resolved_structs = ? file.resolve_structs()
   let resolved_functions = ? file.resolve_functions()
   ok(new_resolved_file(resolved_structs, resolved_functions))

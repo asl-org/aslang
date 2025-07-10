@@ -15,6 +15,13 @@ proc location*(module: UserModule): Location = module.module_def.location
 proc name*(module: UserModule): Token = module.module_def.name
 proc is_struct*(module: UserModule): bool = module.struct.is_some
 
+proc find_function*(module: UserModule, func_def: FunctionDefinition): Result[
+    Function, string] =
+  for function in module.functions:
+    if function.definition == func_def:
+      return ok(function)
+  return err(fmt"Function `{func_def.name}` is not defined in the module `{module.name}`")
+
 proc `$`*(module: UserModule): string =
   let prefix = " ".repeat(module.module_def.location.column - 1)
   let child_prefix = " ".repeat(module.module_def.location.column + 1)
@@ -23,22 +30,22 @@ proc `$`*(module: UserModule): string =
     lines.add(child_prefix & $(function))
   return lines.join("\n")
 
-proc add_function*(module: UserModule, function: Function): void =
-  module.functions.add(function)
+proc add_function*(module: UserModule, function: Function): Result[void, string] =
+  let maybe_found = module.find_function(function.definition)
+  if maybe_found.is_ok:
+    let predefined_location = maybe_found.get.location
+    return err(fmt"{function.location} Function `{function.name}` is already defined in module `{module.name}` at {predefined_location}")
 
-proc add_struct*(module: UserModule, struct: Struct): void =
+  module.functions.add(function)
+  ok()
+
+proc add_struct*(module: UserModule, struct: Struct): Result[void, string] =
+  if module.struct.is_some:
+    let predefined_location = module.struct.get.location
+    return err(fmt"{struct.location} Module `{module.name}` already contains a struct block at {predefined_location}")
+
   module.struct = some(struct)
+  ok()
 
 proc new_user_module*(module_def: ModuleDefinition): UserModule =
   UserModule(module_def: module_def)
-
-proc to_named_struct*(module: UserModule): Result[NamedStruct, string] =
-  if module.struct.is_none:
-    return err(fmt"Module `{module.name}` is not a struct.")
-
-  let struct = module.struct.get
-  let struct_def = new_named_struct_definition(module.name, struct.location)
-  let named_struct = new_named_struct(struct_def)
-  for field in struct.fields: named_struct.add_field(field)
-
-  ok(named_struct)

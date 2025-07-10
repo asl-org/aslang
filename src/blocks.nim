@@ -86,38 +86,19 @@ proc `$`*(asl_block: Block): string =
   of BK_STRUCT_FIELD: $(asl_block.struct_field_def)
   of BK_MODULE: $(asl_block.module)
 
-# TODO: implement block closing logic
 proc close*(asl_block: Block): Result[void, string] =
   case asl_block.kind:
-  of BK_FILE:
-    if asl_block.file.functions.len == 0:
-      return err(fmt"File must contain at least one function")
-  of BK_FUNCTION:
-    if asl_block.function.steps == 0:
-      return err(fmt"{asl_block.location} `fn` must contain at least one statement/match block")
-  of BK_STATEMENT:
-    discard
-  of BK_MATCH:
-    let case_count = asl_block.match_block.case_blocks.len
-    let else_count = asl_block.match_block.else_blocks.len
-    if case_count + else_count < 2:
-      return err(fmt"{asl_block.location} `match` block must contain at least 2 case or else blocks")
-    if else_count > 1:
-      return err(fmt"{asl_block.location} `match` block cannot contain 2 else blocks")
-  of BK_CASE:
-    if asl_block.case_block.statements.len == 0:
-      return err(fmt"{asl_block.location} `case` must contain at least one statement")
-  of BK_ELSE:
-    if asl_block.else_block.statements.len == 0:
-      return err(fmt"{asl_block.location} `else` must contain at least one statement")
-  of BK_STRUCT:
-    if asl_block.struct.fields.len == 0:
-      return err(fmt"{asl_block.location} `struct` must contain at least one field")
-  of BK_STRUCT_FIELD:
-    discard
-  of BK_MODULE:
-    ? asl_block.module.close()
-  ok()
+  # non-leaf blocks
+  of BK_FILE: asl_block.file.close()
+  of BK_FUNCTION: asl_block.function.close()
+  of BK_MATCH: asl_block.match_block.close()
+  of BK_CASE: asl_block.case_block.close()
+  of BK_ELSE: asl_block.else_block.close()
+  of BK_STRUCT: asl_block.struct.close()
+  of BK_MODULE: asl_block.module.close()
+  # leaf blocks
+  of BK_STRUCT_FIELD: ok()
+  of BK_STATEMENT: ok()
 
 proc add_child*(parent: Block, child: Block): Result[void, string] =
   if parent.indent + 1 != child.indent:
@@ -126,69 +107,38 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   case parent.kind:
   of BK_FILE:
     case child.kind:
-    of BK_MODULE:
-      ? parent.file.add_module(child.module)
-      ok()
-    of BK_FUNCTION:
-      ? parent.file.add_function(child.function)
-      ok()
-    else:
-      err(fmt"{parent.file.name} File can only contain functions")
+    of BK_MODULE: parent.file.add_module(child.module)
+    of BK_FUNCTION: parent.file.add_function(child.function)
+    else: err(fmt"{parent.file.name} File can only contain functions or modules")
   of BK_FUNCTION:
     case child.kind:
-    of BK_STATEMENT:
-      parent.function.add_statement(child.statement)
-      ok()
-    of BK_MATCH:
-      parent.function.add_match(child.match_block)
-      ok()
-    else:
-      err(fmt"{parent.location} `fn` can only contain statements")
-  of BK_STATEMENT:
-    err(fmt"{parent.location} statement does not support further nesting")
+    of BK_STATEMENT: parent.function.add_statement(child.statement)
+    of BK_MATCH: parent.function.add_match(child.match_block)
+    else: err(fmt"{parent.location} `fn` can only contain match blocks or statements")
   of BK_MATCH:
     case child.kind:
-    of BK_CASE:
-      parent.match_block.add_case(child.case_block)
-      ok()
-    of BK_ELSE:
-      parent.match_block.add_else(child.else_block)
-      ok()
-    else:
-      err(fmt"{parent.location} `match` do not support further nesting")
+    of BK_CASE: parent.match_block.add_case(child.case_block)
+    of BK_ELSE: parent.match_block.add_else(child.else_block)
+    else: err(fmt"{parent.location} `match` do not support further nesting")
   of BK_CASE:
     case child.kind:
-    of BK_STATEMENT:
-      parent.case_block.add_statement(child.statement)
-      ok()
-    else:
-      err(fmt"{parent.location} `case` can only contain statements")
+    of BK_STATEMENT: parent.case_block.add_statement(child.statement)
+    else: err(fmt"{parent.location} `case` can only contain statements")
   of BK_ELSE:
     case child.kind:
-    of BK_STATEMENT:
-      parent.else_block.add_statement(child.statement)
-      ok()
-    else:
-      err(fmt"{parent.location} `else` can only contain statements")
+    of BK_STATEMENT: parent.else_block.add_statement(child.statement)
+    else: err(fmt"{parent.location} `else` can only contain statements")
   of BK_STRUCT:
     case child.kind:
-    of BK_STRUCT_FIELD:
-      parent.struct.add_field(child.struct_field_def)
-      ok()
-    else:
-      err(fmt"{parent.location} `struct` can only contain field definitions")
-  of BK_STRUCT_FIELD:
-    err(fmt"{parent.location} struct field definition does not support further nesting.")
+    of BK_STRUCT_FIELD: parent.struct.add_field(child.struct_field_def)
+    else: err(fmt"{parent.location} `struct` can only contain field definitions")
   of BK_MODULE:
     case child.kind:
-    of BK_FUNCTION:
-      ? parent.module.add_function(child.function)
-      ok()
-    of BK_STRUCT:
-      ? parent.module.add_struct(child.struct)
-      ok()
-    else:
-      err(fmt"{parent.module.name} Module can only contain functions")
+    of BK_FUNCTION: parent.module.add_function(child.function)
+    of BK_STRUCT: parent.module.add_struct(child.struct)
+    else: err(fmt"{parent.module.name} Module can only contain functions")
+  of BK_STATEMENT: err(fmt"{parent.location} statement does not support further nesting")
+  of BK_STRUCT_FIELD: err(fmt"{parent.location} struct field definition does not support further nesting.")
 
 proc new_block*(filename: string): Block =
   # file is the invisible parent block therefore -1 indent

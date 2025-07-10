@@ -15,13 +15,13 @@ type ResolvedMatch* = ref object of RootObj
   else_blocks: seq[ResolvedElse]
   return_argument*: ArgumentDefinition
 
-proc function_set*(match: ResolvedMatch): HashSet[ExternalFunction] =
-  var function_set: Hashset[ExternalFunction]
+proc function_refs*(match: ResolvedMatch): HashSet[ResolvedFunctionRef] =
+  var function_ref_set: Hashset[ResolvedFunctionRef]
   for case_block in match.case_blocks:
-    function_set.incl(case_block.function_set)
+    function_ref_set.incl(case_block.function_refs)
   for else_block in match.else_blocks:
-    function_set.incl(else_block.function_set)
-  return function_set
+    function_ref_set.incl(else_block.function_refs)
+  return function_ref_set
 
 proc c*(resolved_match: ResolvedMatch): string =
   let match = resolved_match.parsed_match_block

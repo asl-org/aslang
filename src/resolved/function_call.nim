@@ -3,47 +3,43 @@ import sequtils, strutils, strformat, options, hashes
 import "../blocks"
 import expression
 
-type ExternalFunction* = ref object of RootObj
+type ResolvedFunctionRef* = ref object of RootObj
   module*: Option[Module]
-  function*: Function
+  function_def*: FunctionDefinition
 
-proc new_external_function*(module: Module,
-    function: Function): ExternalFunction =
-  ExternalFunction(module: some(module), function: function)
+proc new_resolved_function_ref*(module: Module,
+    function_def: FunctionDefinition): ResolvedFunctionRef =
+  ResolvedFunctionRef(module: some(module), function_def: function_def)
 
-proc new_external_function*(function: Function): ExternalFunction =
-  ExternalFunction(module: none(Module), function: function)
+proc new_resolved_function_ref*(function_def: FunctionDefinition): ResolvedFunctionRef =
+  ResolvedFunctionRef(module: none(Module), function_def: function_def)
 
-proc hash*(ext_fn: ExternalFunction): Hash =
-  if ext_fn.module.is_some:
-    hash(ext_fn.module.get.name) !& hash(ext_fn.function)
+proc hash*(func_ref: ResolvedFunctionRef): Hash =
+  if func_ref.module.is_some:
+    hash(func_ref.module.get.name) !& hash(func_ref.function_def)
   else:
-    hash(ext_fn.function)
+    hash(func_ref.function_def)
 
-proc `==`*(ext_fn: ExternalFunction, other: ExternalFunction): bool =
-  hash(ext_fn) == hash(other)
+proc `==`*(func_ref: ResolvedFunctionRef, other: ResolvedFunctionRef): bool =
+  hash(func_ref) == hash(other)
 
-proc `$`*(ext_fn: ExternalFunction): string =
-  fmt"{ext_fn.module}.{ext_fn.function.name}"
+proc `$`*(func_ref: ResolvedFunctionRef): string =
+  fmt"{func_ref.module}.{func_ref.function_def.name}"
 
 type
   ResolvedFunctionCallKind* = enum
     RFCK_BUILTIN, RFCK_MODULE, RFCK_LOCAL
   ResolvedFunctionCall* = ref object of RootObj
     args: seq[ResolvedExpression]
+    function_def: FunctionDefinition
     case kind: ResolvedFunctionCallKind
-    of RFCK_BUILTIN:
-      builtin_module: Module
-      function_def: FunctionDefinition
-    of RFCK_LOCAL:
-      local_function: Function
-    of RFCK_MODULE:
-      module: Module
-      function: Function
+    of RFCK_LOCAL: discard
+    of RFCK_BUILTIN: builtin_module: Module
+    of RFCK_MODULE: module: Module
 
-proc new_resolved_function_call*(function: Function, args: seq[
+proc new_resolved_function_call*(function_def: FunctionDefinition, args: seq[
     ResolvedExpression]): ResolvedFunctionCall =
-  ResolvedFunctionCall(kind: RFCK_LOCAL, local_function: function, args: args)
+  ResolvedFunctionCall(kind: RFCK_LOCAL, function_def: function_def, args: args)
 
 proc new_resolved_function_call*(module: Module,
     function_def: FunctionDefinition, args: seq[
@@ -51,26 +47,23 @@ proc new_resolved_function_call*(module: Module,
   ResolvedFunctionCall(kind: RFCK_BUILTIN, builtin_module: module,
       function_def: function_def, args: args)
 
-proc new_resolved_function_call*(module: Module, function: Function, args: seq[
-    ResolvedExpression]): ResolvedFunctionCall =
-  ResolvedFunctionCall(kind: RFCK_MODULE, module: module, function: function, args: args)
+proc new_resolved_user_function_call*(module: Module,
+    function_def: FunctionDefinition, args: seq[
+        ResolvedExpression]): ResolvedFunctionCall =
+  ResolvedFunctionCall(kind: RFCK_MODULE, module: module,
+      function_def: function_def, args: args)
 
 proc user_function*(resolved_function_call: ResolvedFunctionCall): Option[
-    ExternalFunction] =
+    ResolvedFunctionRef] =
   case resolved_function_call.kind:
-  of RFCK_BUILTIN: none(ExternalFunction)
-  of RFCK_LOCAL: some(new_external_function(resolved_function_call.function))
-  of RFCK_MODULE: some(new_external_function(resolved_function_call.module,
-      resolved_function_call.function))
+  of RFCK_BUILTIN: none(ResolvedFunctionRef)
+  of RFCK_LOCAL: some(new_resolved_function_ref(
+      resolved_function_call.function_def))
+  of RFCK_MODULE: some(new_resolved_function_ref(resolved_function_call.module,
+      resolved_function_call.function_def))
 
 proc return_type*(resolved_function_call: ResolvedFunctionCall): Token =
-  case resolved_function_call.kind:
-  of RFCK_BUILTIN:
-    resolved_function_call.function_def.return_type
-  of RFCK_LOCAL:
-    resolved_function_call.local_function.definition.return_type
-  of RFCK_MODULE:
-    resolved_function_call.function.definition.return_type
+  resolved_function_call.function_def.return_type
 
 proc c*(fncall: ResolvedFunctionCall): string =
   let args_str = fncall.args.map_it($(it.value)).join(", ")
@@ -78,6 +71,6 @@ proc c*(fncall: ResolvedFunctionCall): string =
   of RFCK_BUILTIN:
     fmt"{fncall.builtin_module.name}_{fncall.function_def.name}({args_str})"
   of RFCK_LOCAL:
-    fmt"{fncall.function.name}({args_str})"
+    fmt"{fncall.function_def.name}({args_str})"
   of RFCK_MODULE:
-    fmt"{fncall.module.name}_{fncall.function.name}({args_str})"
+    fmt"{fncall.module.name}_{fncall.function_def.name}({args_str})"

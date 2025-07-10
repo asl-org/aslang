@@ -16,11 +16,11 @@ type
     of RFSK_MATCH:
       match: ResolvedMatch
 
-proc function_set*(function_step: ResolvedFunctionStep): Hashset[
-    ExternalFunction] =
+proc function_refs*(function_step: ResolvedFunctionStep): Hashset[
+    ResolvedFunctionRef] =
   case function_step.kind:
-  of RFSK_STATEMENT: function_step.statement.function_set
-  of RFSK_MATCH: function_step.match.function_set
+  of RFSK_STATEMENT: function_step.statement.function_refs
+  of RFSK_MATCH: function_step.match.function_refs
 
 proc destination*(function_step: ResolvedFunctionStep): Token =
   case function_step.kind:
