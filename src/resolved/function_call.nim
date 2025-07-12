@@ -34,14 +34,14 @@ type
     function_def: FunctionDefinition
     case kind: ResolvedFunctionCallKind
     of RFCK_LOCAL: discard
-    of RFCK_BUILTIN: builtin_module: Module
+    of RFCK_BUILTIN: builtin_module: BuiltinModule
     of RFCK_MODULE: module: UserModule
 
 proc new_resolved_function_call*(function_def: FunctionDefinition, args: seq[
     ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_LOCAL, function_def: function_def, args: args)
 
-proc new_resolved_function_call*(module: Module,
+proc new_resolved_function_call*(module: BuiltinModule,
     function_def: FunctionDefinition, args: seq[
     ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_BUILTIN, builtin_module: module,

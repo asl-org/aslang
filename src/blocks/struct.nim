@@ -15,6 +15,9 @@ type Struct* = ref object of RootObj
   struct_def*: StructDefinition
   fields*: Table[string, ArgumentDefinition]
 
+proc new_struct*(struct_def: StructDefinition): Struct =
+  Struct(struct_def: struct_def)
+
 proc location*(struct: Struct): Location =
   struct.struct_def.location
 
@@ -41,9 +44,6 @@ proc find_field*(struct: Struct, field_name: Token): Result[
     if $(field.arg_name) == $(field_name):
       return ok(field)
   return err(fmt"{field_name.location} does not have any field named {field_name} at {struct.struct_def.location}")
-
-proc new_struct*(struct_def: StructDefinition): Struct =
-  Struct(struct_def: struct_def)
 
 proc close*(struct: Struct): Result[void, string] =
   if struct.fields.len == 0:

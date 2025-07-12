@@ -20,28 +20,6 @@ type
     of LK_STRUCT_FIELD_DEFINITION: struct_field_def*: ArgumentDefinition
     of LK_MODULE_DEFINITION: module_def*: ModuleDefinition
 
-proc location*(line: Line): Location =
-  case line.kind:
-  of LK_FUNCTION_DEFINITION: line.func_def.location
-  of LK_STATEMENT: line.statement.location
-  of LK_MATCH_DEFINITION: line.match_def.location
-  of LK_CASE_DEFINITION: line.case_def.location
-  of LK_ELSE_DEFINITION: line.else_def.location
-  of LK_STRUCT_DEFINITION: line.struct_def.location
-  of LK_STRUCT_FIELD_DEFINITION: line.struct_field_def.location
-  of LK_MODULE_DEFINITION: line.module_def.location
-
-proc `$`*(line: Line): string =
-  case line.kind:
-  of LK_FUNCTION_DEFINITION: $(line.func_def)
-  of LK_STATEMENT: $(line.statement)
-  of LK_MATCH_DEFINITION: $(line.match_def)
-  of LK_CASE_DEFINITION: $(line.case_def)
-  of LK_ELSE_DEFINITION: $(line.else_def)
-  of LK_STRUCT_DEFINITION: $(line.struct_def)
-  of LK_STRUCT_FIELD_DEFINITION: $(line.struct_field_def)
-  of LK_MODULE_DEFINITION: $(line.module_def)
-
 proc new_line*(func_def: FunctionDefinition): Line =
   Line(kind: LK_FUNCTION_DEFINITION, func_def: func_def)
 
@@ -65,3 +43,25 @@ proc new_line*(struct_field_def: ArgumentDefinition): Line =
 
 proc new_line*(module_def: ModuleDefinition): Line =
   Line(kind: LK_MODULE_DEFINITION, module_def: module_def)
+
+proc location*(line: Line): Location =
+  case line.kind:
+  of LK_FUNCTION_DEFINITION: line.func_def.location
+  of LK_STATEMENT: line.statement.location
+  of LK_MATCH_DEFINITION: line.match_def.location
+  of LK_CASE_DEFINITION: line.case_def.location
+  of LK_ELSE_DEFINITION: line.else_def.location
+  of LK_STRUCT_DEFINITION: line.struct_def.location
+  of LK_STRUCT_FIELD_DEFINITION: line.struct_field_def.location
+  of LK_MODULE_DEFINITION: line.module_def.location
+
+proc `$`*(line: Line): string =
+  case line.kind:
+  of LK_FUNCTION_DEFINITION: $(line.func_def)
+  of LK_STATEMENT: $(line.statement)
+  of LK_MATCH_DEFINITION: $(line.match_def)
+  of LK_CASE_DEFINITION: $(line.case_def)
+  of LK_ELSE_DEFINITION: $(line.else_def)
+  of LK_STRUCT_DEFINITION: $(line.struct_def)
+  of LK_STRUCT_FIELD_DEFINITION: $(line.struct_field_def)
+  of LK_MODULE_DEFINITION: $(line.module_def)

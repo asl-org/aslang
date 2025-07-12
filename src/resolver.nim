@@ -99,21 +99,27 @@ proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
         return ok(new_resolved_function_call(function.definition,
             maybe_resolved_args.get))
   of FRK_MODULE:
-    let module = ? file.find_module(function_call.func_ref.module)
-    case module.kind:
-    of MK_BUILTIN:
-      for function_def in module.function_defs:
+    let maybe_builtin_module = file.find_builtin_module(
+        function_call.func_ref.module)
+
+    if maybe_builtin_module.is_ok:
+      let module = maybe_builtin_module.get
+      for function_def in module.functions:
         let maybe_resolved_args = function_call.resolve_function_call_args(
             function_def, scope)
         if maybe_resolved_args.is_ok:
           return ok(new_resolved_function_call(module, function_def,
               maybe_resolved_args.get))
-    of MK_USER:
-      for function in module.function_defs:
+
+    let maybe_user_module = file.find_user_module(
+        function_call.func_ref.module)
+    if maybe_user_module.is_ok:
+      let module = maybe_user_module.get
+      for function in module.functions:
         let maybe_resolved_args = function_call.resolve_function_call_args(
-            function, scope)
+            function.definition, scope)
         if maybe_resolved_args.is_ok:
-          return ok(new_resolved_user_function_call(module.user_mod, function,
+          return ok(new_resolved_user_function_call(module, function.definition,
               maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching function in the file {file.name}")
 
@@ -122,11 +128,11 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
   let struct_var = struct_init.struct
   let key_value_pairs = struct_init.fields
 
-  let module = ? file.find_module(struct_var)
+  let module = ? file.find_user_module(struct_var)
   if not module.is_struct:
     return err(fmt"{module.location} Module `{module.name}` is not a struct")
 
-  let struct = module.struct
+  let struct = module.struct.get
   var field_name_table: Table[string, ResolvedExpression]
   for (field_name, field_value) in key_value_pairs:
     if $(field_name) in field_name_table:
@@ -146,11 +152,11 @@ proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
   if $(struct_var) notin scope:
     return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
 
-  let module = ? file.find_module(scope[$(struct_var)].arg_type)
+  let module = ? file.find_user_module(scope[$(struct_var)].arg_type)
   if not module.is_struct:
     return err(fmt"{module.location} Module `{module.name}` is not a struct")
 
-  let struct = module.struct
+  let struct = module.struct.get
   let field = ? struct.find_field(field_name)
   let resolved_struct_getter = new_resolved_struct_getter(module, field, struct_var)
   ok(resolved_struct_getter)

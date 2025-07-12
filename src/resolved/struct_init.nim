@@ -4,10 +4,10 @@ import "../blocks"
 import expression
 
 type ResolvedStructInit* = ref object of RootObj
-  module*: Module
+  module*: UserModule
   fields: seq[ResolvedExpression]
 
-proc new_resolved_struct_init*(module: Module, fields: seq[
+proc new_resolved_struct_init*(module: UserModule, fields: seq[
     ResolvedExpression]): ResolvedStructInit =
   ResolvedStructInit(module: module, fields: fields)
 

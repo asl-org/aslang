@@ -57,7 +57,7 @@ type
     of BK_ELSE: else_block*: Else
     of BK_STRUCT: struct: Struct
     of BK_STRUCT_FIELD: struct_field_def: ArgumentDefinition
-    of BK_MODULE: module: Module
+    of BK_MODULE: module: UserModule
 
 proc location*(asl_block: Block): Location =
   case asl_block.kind:
@@ -107,7 +107,7 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   case parent.kind:
   of BK_FILE:
     case child.kind:
-    of BK_MODULE: parent.file.add_module(child.module.user_mod)
+    of BK_MODULE: parent.file.add_module(child.module)
     of BK_FUNCTION: parent.file.add_function(child.function)
     else: err(fmt"{parent.file.name} File can only contain functions or modules")
   of BK_FUNCTION:
@@ -134,8 +134,8 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
     else: err(fmt"{parent.location} `struct` can only contain field definitions")
   of BK_MODULE:
     case child.kind:
-    of BK_FUNCTION: parent.module.user_mod.add_function(child.function)
-    of BK_STRUCT: parent.module.user_mod.add_struct(child.struct)
+    of BK_FUNCTION: parent.module.add_function(child.function)
+    of BK_STRUCT: parent.module.add_struct(child.struct)
     else: err(fmt"{parent.module.name} Module can only contain functions")
   of BK_STATEMENT: err(fmt"{parent.location} statement does not support further nesting")
   of BK_STRUCT_FIELD: err(fmt"{parent.location} struct field definition does not support further nesting.")
@@ -170,7 +170,7 @@ proc new_block*(line: Line): Result[Block, string] =
       Block(kind: BK_STRUCT_FIELD, indent: indent,
           struct_field_def: line.struct_field_def)
     of LK_MODULE_DEFINITION:
-      Block(kind: BK_MODULE, indent: indent, module: new_module(
+      Block(kind: BK_MODULE, indent: indent, module: new_user_module(
           line.module_def))
   ok(asl_block)
 
