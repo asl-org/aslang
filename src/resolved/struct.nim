@@ -1,11 +1,11 @@
-import tables, strutils, strformat, sequtils
+import tables, strutils, strformat, sequtils, options
 
 import "../blocks"
 
 const ASL_PREFIX = "__asl__"
 
 type ResolvedStruct* = ref object of RootObj
-  module: Module
+  module: UserModule
   byte_size: uint
   field_offset: Table[string, uint]
 
@@ -42,7 +42,7 @@ proc setter(resolved_struct: ResolvedStruct,
 
 proc init(resolved_struct: ResolvedStruct): string =
   let module = resolved_struct.module
-  let struct = module.struct
+  let struct = module.struct.get
   let byte_size = resolved_struct.byte_size
   let fields_def = struct.fields.values.to_seq.map_it($(it)).join(", ")
   let setter_calls = struct.fields.values.to_seq.map_it(
@@ -70,7 +70,7 @@ proc free(resolved_struct: ResolvedStruct): string =
 
 proc h*(resolved_struct: ResolvedStruct): string =
   let module = resolved_struct.module
-  let struct = module.struct
+  let struct = module.struct.get
 
   let args_str = struct.fields.values.to_seq.map_it($(it)).join(", ")
   let init = fmt"Pointer {module.name}_init({args_str});"
@@ -94,13 +94,13 @@ proc h*(resolved_struct: ResolvedStruct): string =
 proc c*(resolved_struct: ResolvedStruct): string =
   var code: seq[string]
   code.add(resolved_struct.init())
-  for field in resolved_struct.module.struct.fields.values:
+  for field in resolved_struct.module.struct.get.fields.values:
     code.add(resolved_struct.getter(field))
     code.add(resolved_struct.setter(field))
   code.add(resolved_struct.free())
   return code.join("\n\n")
 
-proc new_resolved_struct*(module: Module, byte_size: uint, field_offset: Table[
-    string, uint]): ResolvedStruct =
+proc new_resolved_struct*(module: UserModule, byte_size: uint,
+    field_offset: Table[string, uint]): ResolvedStruct =
   ResolvedStruct(module: module, byte_size: byte_size,
       field_offset: field_offset)

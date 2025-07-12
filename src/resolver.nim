@@ -92,7 +92,7 @@ proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
   case function_call.func_ref.kind:
   of FRK_LOCAL:
-    for function in file.functions:
+    for function in file.functions.values:
       let maybe_resolved_args = function_call.resolve_function_call_args(
           function.definition, scope)
       if maybe_resolved_args.is_ok:
@@ -113,7 +113,7 @@ proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
         let maybe_resolved_args = function_call.resolve_function_call_args(
             function, scope)
         if maybe_resolved_args.is_ok:
-          return ok(new_resolved_user_function_call(module, function,
+          return ok(new_resolved_user_function_call(module.user_mod, function,
               maybe_resolved_args.get))
   return err(fmt"{function_call.location} `{function_call.name}` failed to find matching function in the file {file.name}")
 
@@ -244,7 +244,7 @@ proc resolve_function(function_ref: ResolvedFunctionRef,
       if mod_function.definition == function_ref.function_def:
         maybe_function = some(mod_function)
   else:
-    for file_function in file.functions:
+    for file_function in file.functions.values:
       if file_function.definition == function_ref.function_def:
         maybe_function = some(file_function)
 
@@ -287,26 +287,27 @@ proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string]
     let new_functions = resolved_function.function_refs.difference(visited_functions)
     stack.add(new_functions.to_seq)
 
-  for function in file.functions:
+  for function in file.functions.values:
     let func_ref = new_resolved_function_ref(function.definition)
     if func_ref notin visited_functions:
       echo fmt"Unused function: {function.location} {function.name}"
       discard ? resolve_function(func_ref, file)
 
-  for module in file.user_modules:
+  for module in file.user_modules.values:
     for function in module.functions:
-      let func_ref = new_resolved_function_ref(module, function.definition)
+      let func_ref = new_resolved_function_ref(module,
+          function.definition)
       if func_ref notin visited_functions:
         echo fmt"Unused function: {function.location} {module.name}.{function.name}"
         discard ? resolve_function(func_ref, file)
   ok(resolved_functions)
 
-proc resolve_struct(module: Module, scope: Table[string,
-    Module], filename: string): Result[ResolvedStruct, string] =
+proc resolve_struct(module: UserModule, scope: Table[string,
+    UserModule], filename: string): Result[ResolvedStruct, string] =
   var field_offset: Table[string, uint]
   var offset: uint = 0
 
-  for field in module.struct.fields.values:
+  for field in module.struct.get.fields.values:
     case $(field.arg_type):
     of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64", "F32", "F64", "Pointer":
       discard
@@ -319,8 +320,8 @@ proc resolve_struct(module: Module, scope: Table[string,
   ok(new_resolved_struct(module, offset, field_offset))
 
 proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
-  var scope: Table[string, Module]
-  var module_list: seq[Module]
+  var scope: Table[string, UserModule]
+  var module_list: seq[UserModule]
   for module in file.struct_modules:
     if $(module.name) in scope:
       let defined_struct = scope[$(module.name)]

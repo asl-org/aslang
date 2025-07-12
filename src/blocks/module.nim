@@ -48,28 +48,11 @@ proc `$`*(module: Module): string =
 proc new_module*(builtin_mod: BuiltinModule): Module =
   Module(kind: MK_BUILTIN, builtin_mod: builtin_mod)
 
+proc new_module*(user_mod: UserModule): Module =
+  Module(kind: MK_USER, user_mod: user_mod)
+
 proc new_module*(module_def: ModuleDefinition): Module =
   Module(kind: MK_USER, user_mod: new_user_module(module_def))
-
-proc add_function*(module: Module, function: Function): Result[void, string] =
-  case module.kind:
-  of MK_BUILTIN:
-    # NOTE: This error indicates that there is an error in blockification logic
-    err(fmt"Module `{module.name}` is a builtin module therefore function can not be added.")
-  of MK_USER:
-    # TODO: Check for duplicate function signature
-    ? module.user_mod.add_function(function)
-    ok()
-
-proc add_struct*(module: Module, struct: Struct): Result[void, string] =
-  case module.kind:
-  of MK_BUILTIN:
-    # NOTE: This error indicates that there is an error in blockification logic
-    err(fmt"Module `{module.name}` is a builtin module therefore struct can not be added.")
-  of MK_USER:
-    # TODO: Check for multiple struct blocks
-    ? module.user_mod.add_struct(struct)
-    ok()
 
 proc close*(module: Module): Result[void, string] =
   case module.kind:

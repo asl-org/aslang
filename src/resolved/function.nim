@@ -5,7 +5,7 @@ import function_call
 import function_step
 
 type ResolvedFunction* = ref object of RootObj
-  module*: Option[Module]
+  module*: Option[UserModule]
   function*: Function
   steps*: seq[ResolvedFunctionStep]
 
@@ -43,7 +43,7 @@ proc c*(resolved_function: ResolvedFunction): string =
 
   @[signature, "{", body.join("\n"), "}"].join("\n")
 
-proc new_resolved_function*(module: Option[Module], function: Function,
+proc new_resolved_function*(module: Option[UserModule], function: Function,
     steps: seq[ResolvedFunctionStep]): Result[ResolvedFunction, string] =
   let actual_return_type = steps[^1].return_argument.arg_type
   if $(function.return_type) != $(actual_return_type):

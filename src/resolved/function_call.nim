@@ -4,15 +4,15 @@ import "../blocks"
 import expression
 
 type ResolvedFunctionRef* = ref object of RootObj
-  module*: Option[Module]
+  module*: Option[UserModule]
   function_def*: FunctionDefinition
 
-proc new_resolved_function_ref*(module: Module,
+proc new_resolved_function_ref*(module: UserModule,
     function_def: FunctionDefinition): ResolvedFunctionRef =
   ResolvedFunctionRef(module: some(module), function_def: function_def)
 
 proc new_resolved_function_ref*(function_def: FunctionDefinition): ResolvedFunctionRef =
-  ResolvedFunctionRef(module: none(Module), function_def: function_def)
+  ResolvedFunctionRef(function_def: function_def)
 
 proc hash*(func_ref: ResolvedFunctionRef): Hash =
   if func_ref.module.is_some:
@@ -35,7 +35,7 @@ type
     case kind: ResolvedFunctionCallKind
     of RFCK_LOCAL: discard
     of RFCK_BUILTIN: builtin_module: Module
-    of RFCK_MODULE: module: Module
+    of RFCK_MODULE: module: UserModule
 
 proc new_resolved_function_call*(function_def: FunctionDefinition, args: seq[
     ResolvedExpression]): ResolvedFunctionCall =
@@ -47,7 +47,7 @@ proc new_resolved_function_call*(module: Module,
   ResolvedFunctionCall(kind: RFCK_BUILTIN, builtin_module: module,
       function_def: function_def, args: args)
 
-proc new_resolved_user_function_call*(module: Module,
+proc new_resolved_user_function_call*(module: UserModule,
     function_def: FunctionDefinition, args: seq[
         ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_MODULE, module: module,
