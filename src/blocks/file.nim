@@ -41,16 +41,16 @@ proc find_module*(file: File, module_name: Token): Result[Location, string] =
 
   return err(fmt"Module `{module_name}` does not exist in the scope")
 
+proc find_function*(file: File, func_def: FunctionDefinition): Result[Function, string] =
+  if $(func_def.name) notin file.functions:
+    return err(fmt"Function `{func_def.name}` is not defined in the scope")
+  ok(file.functions[$(func_def.name)])
+
 proc find_start_function*(file: File): Result[Function, string] =
   for function in file.functions.values:
     if function.is_start():
       return ok(function)
   err(fmt"{file.name} failed to find start function")
-
-proc find_function(file: File, func_def: FunctionDefinition): Result[Function, string] =
-  if $(func_def.name) notin file.functions:
-    return err(fmt"Function `{func_def.name}` is not defined in the scope")
-  ok(file.functions[$(func_def.name)])
 
 proc add_module*(file: File, module: UserModule): Result[void, string] =
   let maybe_found = file.find_module(module.name)
