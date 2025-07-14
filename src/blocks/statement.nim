@@ -60,12 +60,30 @@ proc `$`*(expression: Expression): string =
   of EK_STRUCT_INIT: $(expression.struct_init)
 
 type
+  StatementKind* = enum
+    SK_ASSIGNMENT, SK_EXPRESSION
   Statement* = ref object of RootObj
-    destination*: Token
     expression*: Expression
+    case kind*: StatementKind
+    of SK_ASSIGNMENT: destination*: Token
+    of SK_EXPRESSION: discard
 
 proc new_statement*(destination: Token, expression: Expression): Statement =
-  Statement(destination: destination, expression: expression)
+  Statement(kind: SK_ASSIGNMENT, expression: expression,
+      destination: destination)
 
-proc location*(statement: Statement): Location = statement.destination.location
-proc `$`*(statement: Statement): string = fmt"{statement.destination} = {statement.expression}"
+proc new_statement*(expression: Expression): Statement =
+  Statement(kind: SK_EXPRESSION, expression: expression)
+
+proc set_destination*(statement: Statement, temp_var_name: string): Statement =
+  temp_var_name.new_id_token().new_statement(statement.expression)
+
+proc location*(statement: Statement): Location =
+  case statement.kind:
+  of SK_ASSIGNMENT: statement.destination.location
+  of SK_EXPRESSION: statement.expression.location
+
+proc `$`*(statement: Statement): string =
+  case statement.kind:
+  of SK_ASSIGNMENT: fmt"{statement.destination} = {statement.expression}"
+  of SK_EXPRESSION: fmt"{statement.expression}"

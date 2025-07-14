@@ -12,6 +12,6 @@ fn start(U8 seed): U8
   g = U64.multiply(n, f)
 
   h = U64.quotient(g, 12)
-  _ = System.print_U64(h)
+  System.print_U64(h)
 
   exit_success = U8.init(0)

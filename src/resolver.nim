@@ -195,41 +195,51 @@ proc resolved_expression(expression: Expression, file: blocks.File,
     ok(new_resolved_expression(resolved_function_call))
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
-    string, ArgumentDefinition]): Result[ResolvedStatement, string] =
-  # check if variable is already defined in the local(case) scope
-  if $(statement.destination) in scope:
-    let defined_arg = scope[$(statement.destination)]
-    return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+    string, ArgumentDefinition], temp_var_count: var uint): Result[
+        ResolvedStatement, string] =
+  case statement.kind:
+  of SK_ASSIGNMENT:
+    if $(statement.destination) in scope:
+      let defined_arg = scope[$(statement.destination)]
+      return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
-  let resolved_expression = ? statement.expression.resolved_expression(file, scope)
-  ok(new_resolved_statement(statement.destination, resolved_expression))
+    let resolved_expression = ? statement.expression.resolved_expression(file, scope)
+    ok(new_resolved_statement(statement.destination, resolved_expression))
+  of SK_EXPRESSION:
+    # assign the expresssion value to a temporary variable injected by the compiler
+    let assignment = statement.set_destination(fmt"__asl_temp_var_{temp_var_count}__")
+    temp_var_count += 1
+    let resolved_expression = ? assignment.expression.resolved_expression(file, scope)
+    ok(new_resolved_statement(assignment.destination, resolved_expression))
 
 proc resolve_case_block(case_block: Case, file: blocks.File,
-    parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedCase, string] =
+    parent_scope: Table[string, ArgumentDefinition],
+        temp_var_count: var uint): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
   var scope = parent_scope
   for (index, statement) in case_block.statements.pairs:
-    let resolved_statement = ? statement.resolve_statement(file, scope)
+    let resolved_statement = ? statement.resolve_statement(file, scope, temp_var_count)
     resolved_statements.add(resolved_statement)
-    scope[$(statement.destination)] = resolved_statement.return_argument
+    scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
   return ok(new_resolved_case(case_block.value, resolved_statements))
 
 proc resolve_else_block(else_block: Else, file: blocks.File,
-    parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedElse, string] =
+    parent_scope: Table[string, ArgumentDefinition],
+        temp_var_count: var uint): Result[ResolvedElse, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the else scope to avoid non local argument name conflicts
   var scope = parent_scope
   for (index, statement) in else_block.statements.pairs:
-    let resolved_statement = ? statement.resolve_statement(file, scope)
+    let resolved_statement = ? statement.resolve_statement(file, scope, temp_var_count)
     resolved_statements.add(resolved_statement)
-    scope[$(statement.destination)] = resolved_statement.return_argument
+    scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
   return ok(new_resolved_else(resolved_statements))
 
 proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
-    ArgumentDefinition]): Result[ResolvedMatch, string] =
+    ArgumentDefinition], temp_var_count: var uint): Result[ResolvedMatch, string] =
   var resolved_case_blocks: seq[ResolvedCase]
   var resolved_else_blocks: seq[ResolvedElse]
   if $(match.destination) in scope:
@@ -242,27 +252,26 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
   let match_operand_def = scope[$(match.operand)]
   for case_block in match.case_blocks:
     discard ? scope.resolve_argument(match_operand_def, case_block.value)
-    let resolved_case_block = ? case_block.resolve_case_block(file, scope)
+    let resolved_case_block = ? case_block.resolve_case_block(file, scope, temp_var_count)
     resolved_case_blocks.add(resolved_case_block)
 
   # Note: Even though this is a for loop but there can only be at most 1 else block.
   for (index, else_block) in match.else_blocks.pairs:
-    let resolved_else_block = ? else_block.resolve_else_block(file, scope)
+    let resolved_else_block = ? else_block.resolve_else_block(file, scope, temp_var_count)
     resolved_else_blocks.add(resolved_else_block)
 
   new_resolved_match(match, match.destination, match.operand,
       resolved_case_blocks, resolved_else_blocks)
 
 proc resolve_function_step(step: FunctionStep, file: blocks.File,
-    scope: var Table[string, ArgumentDefinition]): Result[ResolvedFunctionStep, string] =
+    scope: var Table[string, ArgumentDefinition],
+        temp_var_count: var uint): Result[ResolvedFunctionStep, string] =
   case step.kind:
   of FSK_STATEMENT:
-    let resolved_statement = ? step.statement.resolve_statement(file, scope)
+    let resolved_statement = ? step.statement.resolve_statement(file, scope, temp_var_count)
     ok(new_resolved_function_step(resolved_statement))
-  of FSK_EXPRESSION:
-    err(fmt"TODO: Enable support for resolving expressions")
   of FSK_MATCH:
-    let resolved_match = ? step.match.resolve_match(file, scope)
+    let resolved_match = ? step.match.resolve_match(file, scope, temp_var_count)
     ok(new_resolved_function_step(resolved_match))
 
 proc resolve_function(function_ref: ResolvedFunctionRef,
@@ -276,6 +285,7 @@ proc resolve_function(function_ref: ResolvedFunctionRef,
       ? file.find_function(function_ref.function_def)
 
   var
+    temp_var_count: uint = 0
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
 
@@ -288,7 +298,7 @@ proc resolve_function(function_ref: ResolvedFunctionRef,
     scope[$(arg.arg_name)] = arg
 
   for (index, step) in function.function_steps.pairs:
-    let resolved_function_step = ? step.resolve_function_step(file, scope)
+    let resolved_function_step = ? step.resolve_function_step(file, scope, temp_var_count)
     resolved_function_steps.add(resolved_function_step)
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 

@@ -190,13 +190,26 @@ proc expect_expression(parser: Parser): Result[Expression, string] =
 
   return err(fmt"{parser.location} expected a function call or struct init/getter")
 
-proc expect_statement(parser: Parser): Result[Statement, string] =
+proc expect_assignment_statement(parser: Parser): Result[Statement, string] =
   let destination = ? parser.expect(TK_ID)
   discard parser.expect_any(TK_SPACE)
   discard ? parser.expect(TK_EQUAL)
   discard parser.expect_any(TK_SPACE)
   let expression = ? parser.expect_expression()
   ok(new_statement(destination, expression))
+
+proc expect_statement(parser: Parser): Result[Statement, string] =
+  let start = parser.index
+
+  let maybe_assignment = parser.expect_assignment_statement()
+  if maybe_assignment.is_ok: return maybe_assignment
+  else: parser.index = start
+
+  let maybe_expression = parser.expect_expression()
+  if maybe_expression.is_ok: return ok(new_statement(maybe_expression.get))
+  else: parser.index = start
+
+  err(fmt"{parser.location} expected a statement or expression")
 
 proc expect_match_definition(parser: Parser): Result[MatchDefinition, string] =
   let destination = ? parser.expect(TK_ID)

@@ -118,7 +118,6 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   of BK_FUNCTION:
     case child.kind:
     of BK_STATEMENT: parent.function.add_statement(child.statement)
-    of BK_EXPRESSION: parent.function.add_expression(child.expression)
     of BK_MATCH: parent.function.add_match(child.match_block)
     else: err(fmt"{parent.location} `fn` can only contain match blocks or statements")
   of BK_MATCH:

@@ -40,21 +40,16 @@ proc `==`*(func_def: FunctionDefinition, other: FunctionDefinition): bool =
 
 type
   FunctionStepKind* = enum
-    FSK_STATEMENT, FSK_MATCH, FSK_EXPRESSION
+    FSK_STATEMENT, FSK_MATCH
   FunctionStep* = ref object of RootObj
     case kind*: FunctionStepKind
     of FSK_STATEMENT:
       statement*: Statement
-    of FSK_EXPRESSION:
-      expression*: Expression
     of FSK_MATCH:
       match*: Match
 
 proc new_function_step*(statement: Statement): FunctionStep =
   FunctionStep(kind: FSK_STATEMENT, statement: statement)
-
-proc new_function_step*(expression: Expression): FunctionStep =
-  FunctionStep(kind: FSK_EXPRESSION, expression: expression)
 
 proc new_function_step*(match: Match): FunctionStep =
   FunctionStep(kind: FSK_MATCH, match: match)
@@ -62,7 +57,6 @@ proc new_function_step*(match: Match): FunctionStep =
 proc `$`*(step: FunctionStep): string =
   case step.kind:
   of FSK_STATEMENT: $(step.statement)
-  of FSK_EXPRESSION: $(step.expression)
   of FSK_MATCH: $(step.match)
 
 type Function* = ref object of RootObj
@@ -117,10 +111,6 @@ proc is_start*(function: Function): bool =
 
 proc add_statement*(function: Function, statement: Statement): Result[void, string] =
   function.function_steps.add(new_function_step(statement))
-  ok()
-
-proc add_expression*(function: Function, expression: Expression): Result[void, string] =
-  function.function_steps.add(new_function_step(expression))
   ok()
 
 proc add_match*(function: Function, match: Match): Result[void, string] =
