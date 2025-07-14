@@ -260,10 +260,6 @@ proc expect_line(parser: Parser): Result[Line, string] =
   if maybe_statement.is_ok: return ok(new_line(maybe_statement.get))
   else: parser.index = start
 
-  let maybe_expression = parser.expect_expression()
-  if maybe_expression.is_ok: return ok(new_line(maybe_expression.get))
-  else: parser.index = start
-
   let maybe_func_def = parser.expect_function_definition()
   if maybe_func_def.is_ok: return ok(new_line(maybe_func_def.get))
   else: parser.index = start
