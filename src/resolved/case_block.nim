@@ -4,7 +4,7 @@ import "../blocks"
 import function_call, statement
 
 type ResolvedCase* = ref object of RootObj
-  parsed_case_block: Case
+  value: Token
   statements: seq[ResolvedStatement]
 
 proc return_argument*(case_block: ResolvedCase): ArgumentDefinition =
@@ -17,8 +17,7 @@ proc function_refs*(case_block: ResolvedCase): Hashset[ResolvedFunctionRef] =
   function_ref_set
 
 proc c*(resolved_case: ResolvedCase, result_var: Token): string =
-  let case_block = resolved_case.parsed_case_block
-  var lines = @[fmt"case {case_block.value}: " & "{"]
+  var lines = @[fmt"case {resolved_case.value}: " & "{"]
   for statement in resolved_case.statements:
     lines.add(statement.c)
 
@@ -28,6 +27,6 @@ proc c*(resolved_case: ResolvedCase, result_var: Token): string =
   lines.add("}")
   return lines.join("\n")
 
-proc new_resolved_case*(parsed_case_block: Case, statements: seq[
+proc new_resolved_case*(value: Token, statements: seq[
     ResolvedStatement]): ResolvedCase =
-  ResolvedCase(parsed_case_block: parsed_case_block, statements: statements)
+  ResolvedCase(value: value, statements: statements)

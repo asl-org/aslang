@@ -6,21 +6,24 @@ type MatchDefinition* = ref object of RootObj
   destination*: Token
   operand*: Token
 
+proc new_match_definition*(destination: Token,
+    operand: Token): MatchDefinition =
+  MatchDefinition(destination: destination, operand: operand)
+
 proc location*(match_definition: MatchDefinition): Location =
   match_definition.destination.location
 
 proc `$`*(match_definition: MatchDefinition): string =
   fmt"{match_definition.destination} = match {match_definition.operand}:"
 
-proc new_match_definition*(destination: Token,
-    operand: Token): MatchDefinition =
-  MatchDefinition(destination: destination, operand: operand)
-
 type Match* = ref object of RootObj
   match_def*: MatchDefinition
   case_blocks*: seq[Case]
   else_blocks*: seq[Else]
   return_type*: Option[Token]
+
+proc new_match*(match_def: MatchDefinition): Match =
+  Match(match_def: match_def)
 
 proc location*(match: Match): Location =
   match.match_def.location
@@ -50,9 +53,6 @@ proc add_else*(match: Match, else_block: Else): Result[void, string] =
     return err(fmt"{else_block.location} `match` block can only have 1 else block")
   match.else_blocks.add(else_block)
   ok()
-
-proc new_match*(match_def: MatchDefinition): Match =
-  Match(match_def: match_def)
 
 proc close*(match: Match): Result[void, string] =
   let case_count = match.case_blocks.len
