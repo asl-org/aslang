@@ -8,29 +8,6 @@ type FunctionDefinition* = ref object of RootObj
   return_type*: Token
   location*: Location
 
-proc arity*(function_def: FunctionDefinition): int =
-  function_def.arg_def_list.len
-
-proc hash*(func_def: FunctionDefinition): Hash =
-  var essence = func_def.name.hash !& func_def.location.hash
-  for arg_def in func_def.arg_def_list:
-    essence = essence !& arg_def.hash
-  return essence
-
-proc `$`*(func_def: FunctionDefinition): string =
-  let arg_def_list_str = func_def.arg_def_list.map_it($(it)).join(", ")
-  fmt"fn {func_def.name}({arg_def_list_str}): {func_def.return_type}"
-
-proc `==`*(func_def: FunctionDefinition, other: FunctionDefinition): bool =
-  if $(func_def.name) != $(other.name): return false
-  if $(func_def.arity) != $(other.arity): return false
-
-  var same = true
-  for (self_arg, other_arg) in zip(func_def.arg_def_list,
-      other.arg_def_list):
-    same = same and ($(self_arg.arg_type) == $(other_arg.arg_type))
-  return same
-
 proc new_function_definition*(name: Token, arg_def_list: seq[
     ArgumentDefinition], return_type: Token,
         location: Location = Location()): FunctionDefinition =
@@ -45,30 +22,55 @@ proc new_function_definition*(name: string, arg_def_list: seq[(string, string)],
   new_function_definition(name_token, arg_def_list_token, return_type_token,
       Location())
 
+proc arity*(function_def: FunctionDefinition): int =
+  function_def.arg_def_list.len
+
+proc hash*(func_def: FunctionDefinition): Hash =
+  var checksum = func_def.name.hash !& func_def.location.hash
+  for arg_def in func_def.arg_def_list:
+    checksum = checksum !& arg_def.hash
+  return checksum
+
+proc `$`*(func_def: FunctionDefinition): string =
+  let arg_def_list_str = func_def.arg_def_list.map_it($(it)).join(", ")
+  fmt"fn {func_def.name}({arg_def_list_str}): {func_def.return_type}"
+
+proc `==`*(func_def: FunctionDefinition, other: FunctionDefinition): bool =
+  hash(func_def) == hash(other)
+
 type
   FunctionStepKind* = enum
-    FSK_STATEMENT, FSK_MATCH
+    FSK_STATEMENT, FSK_MATCH, FSK_EXPRESSION
   FunctionStep* = ref object of RootObj
     case kind*: FunctionStepKind
     of FSK_STATEMENT:
       statement*: Statement
+    of FSK_EXPRESSION:
+      expression*: Expression
     of FSK_MATCH:
       match*: Match
-
-proc `$`*(step: FunctionStep): string =
-  case step.kind:
-  of FSK_STATEMENT: $(step.statement)
-  of FSK_MATCH: $(step.match)
 
 proc new_function_step*(statement: Statement): FunctionStep =
   FunctionStep(kind: FSK_STATEMENT, statement: statement)
 
+proc new_function_step*(expression: Expression): FunctionStep =
+  FunctionStep(kind: FSK_EXPRESSION, expression: expression)
+
 proc new_function_step*(match: Match): FunctionStep =
   FunctionStep(kind: FSK_MATCH, match: match)
+
+proc `$`*(step: FunctionStep): string =
+  case step.kind:
+  of FSK_STATEMENT: $(step.statement)
+  of FSK_EXPRESSION: $(step.expression)
+  of FSK_MATCH: $(step.match)
 
 type Function* = ref object of RootObj
   definition*: FunctionDefinition
   function_steps*: seq[FunctionStep]
+
+proc new_function*(definition: FunctionDefinition): Function =
+  Function(definition: definition)
 
 proc location*(function: Function): Location =
   function.definition.location
@@ -113,11 +115,12 @@ proc is_start*(function: Function): bool =
   return name == "start" and return_type == "U8" and arity == 1 and
       first_arg_type == "U8"
 
-proc new_function*(definition: FunctionDefinition): Function =
-  Function(definition: definition)
-
 proc add_statement*(function: Function, statement: Statement): Result[void, string] =
   function.function_steps.add(new_function_step(statement))
+  ok()
+
+proc add_expression*(function: Function, expression: Expression): Result[void, string] =
+  function.function_steps.add(new_function_step(expression))
   ok()
 
 proc add_match*(function: Function, match: Match): Result[void, string] =

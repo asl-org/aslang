@@ -4,7 +4,6 @@ import "../blocks"
 import statement, function_call
 
 type ResolvedElse* = ref object of RootObj
-  parsed_else_block: Else
   statements: seq[ResolvedStatement]
 
 proc return_argument*(else_block: ResolvedElse): ArgumentDefinition =
@@ -27,6 +26,6 @@ proc c*(resolved_else_block: ResolvedElse, result_var: Token): string =
   lines.add("}")
   return lines.join("\n")
 
-proc new_resolved_else*(parsed_else_block: Else, statements: seq[
+proc new_resolved_else*(statements: seq[
     ResolvedStatement]): ResolvedElse =
-  ResolvedElse(parsed_else_block: parsed_else_block, statements: statements)
+  ResolvedElse(statements: statements)

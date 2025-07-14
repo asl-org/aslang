@@ -2,7 +2,7 @@ import results, tables, strformat, sequtils, parseutils, sets, options, strutils
 
 import blocks
 
-import resolved/expression; export expression
+import resolved/arg; export arg
 import resolved/function_call; export function_call
 import resolved/struct_init; export struct_init
 import resolved/struct_getter; export struct_getter
@@ -44,8 +44,8 @@ proc safe_parse*[T](input: string): Result[void, string] =
   else:
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
-proc resolve_expression(scope: Table[string, ArgumentDefinition],
-    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedExpression, string] =
+proc resolve_argument(scope: Table[string, ArgumentDefinition],
+    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedArgument, string] =
   case arg_value.kind:
   of TK_ID:
     if $(arg_value) notin scope:
@@ -62,12 +62,12 @@ proc resolve_expression(scope: Table[string, ArgumentDefinition],
     of "S16": ? safe_parse[int16]($(arg_value))
     of "S32": ? safe_parse[int32]($(arg_value))
     of "S64": ? safe_parse[int64]($(arg_value))
-    else: return err(fmt"{arg_value.location} arguments with builting types can be passed as integer")
+    else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as integer")
   of TK_FLOAT:
     case $(arg_def.arg_type):
     of "F32": ? safe_parse[float32]($(arg_value))
     of "F64": ? safe_parse[float64]($(arg_value))
-    else: return err(fmt"{arg_value.location} arguments with builting types can be passed as float")
+    else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as float")
   else: # TODO: Support strings as arguments
     return err(fmt"{arg_value.location} {arg_value} can not be passed to a function as argument")
 
@@ -76,63 +76,87 @@ proc resolve_expression(scope: Table[string, ArgumentDefinition],
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
     function_def: FunctionDefinition, scope: Table[string,
-    ArgumentDefinition]): Result[seq[ResolvedExpression], string] =
+    ArgumentDefinition]): Result[seq[ResolvedArgument], string] =
   if $(function_def.name) != $(function_call.name):
     return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function_def.name}")
   if function_def.arg_def_list.len != function_call.arg_list.len:
     return err(fmt"{function_call.location} expected {function_def.arg_def_list.len} but found {function_call.arg_list.len}")
 
-  var resolved_args: seq[ResolvedExpression]
+  var resolved_args: seq[ResolvedArgument]
   for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
-    resolved_args.add( ? scope.resolve_expression(arg_def, arg_value))
+    resolved_args.add( ? scope.resolve_argument(arg_def, arg_value))
   ok(resolved_args)
+
+proc resolve_function_call_args(function_call: FunctionCall, function_defs: seq[
+    FunctionDefinition], scope: Table[string, ArgumentDefinition]): Result[(
+        FunctionDefinition, seq[
+    ResolvedArgument]), string] =
+  for function_def in function_defs:
+    let maybe_resolved_args = function_call.resolve_function_call_args(
+        function_def, scope)
+    if maybe_resolved_args.is_ok:
+      return ok((function_def, maybe_resolved_args.get))
+
+  return err(fmt"{function_call.location} Failed to find match function for function call {function_call.func_ref}")
+
+proc resolve_local_function_call(function_call: FunctionCall,
+    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
+        ResolvedFunctionCall, string] =
+  let function_defs = file.functions.values.to_seq.map_it(it.definition)
+  let (func_def, resolved_args) = ? function_call.resolve_function_call_args(
+      function_defs, scope)
+  ok(new_resolved_function_call(func_def, resolved_args))
+
+proc resolve_builtin_function_call(function_call: FunctionCall,
+    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
+        ResolvedFunctionCall, string] =
+  let module = ? file.find_builtin_module(function_call.func_ref.module)
+  let (func_def, resolved_args) = ? function_call.resolve_function_call_args(
+      module.functions, scope)
+  ok(new_resolved_function_call(module, func_def, resolved_args))
+
+proc resolve_user_function_call(function_call: FunctionCall,
+    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
+        ResolvedFunctionCall, string] =
+  let module = ? file.find_user_module(function_call.func_ref.module)
+  let function_defs = module.functions.map_it(it.definition)
+  let (func_def, resolved_args) = ? function_call.resolve_function_call_args(
+      function_defs, scope)
+  ok(new_resolved_user_function_call(module, func_def, resolved_args))
+
+proc resolve_module_function_call(function_call: FunctionCall,
+    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
+        ResolvedFunctionCall, string] =
+  let maybe_builtin_function_call = function_call.resolve_builtin_function_call(
+        file, scope)
+  if maybe_builtin_function_call.is_ok: return maybe_builtin_function_call
+
+  let maybe_user_function_call = function_call.resolve_user_function_call(
+      file, scope)
+  if maybe_user_function_call.is_ok: return maybe_user_function_call
+
+  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching module function in the file {file.name}")
 
 proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
   case function_call.func_ref.kind:
-  of FRK_LOCAL:
-    for function in file.functions.values:
-      let maybe_resolved_args = function_call.resolve_function_call_args(
-          function.definition, scope)
-      if maybe_resolved_args.is_ok:
-        return ok(new_resolved_function_call(function.definition,
-            maybe_resolved_args.get))
-  of FRK_MODULE:
-    let module = ? file.find_module(function_call.func_ref.module)
-    case module.kind:
-    of MK_BUILTIN:
-      for function_def in module.function_defs:
-        let maybe_resolved_args = function_call.resolve_function_call_args(
-            function_def, scope)
-        if maybe_resolved_args.is_ok:
-          return ok(new_resolved_function_call(module, function_def,
-              maybe_resolved_args.get))
-    of MK_USER:
-      for function in module.function_defs:
-        let maybe_resolved_args = function_call.resolve_function_call_args(
-            function, scope)
-        if maybe_resolved_args.is_ok:
-          return ok(new_resolved_user_function_call(module.user_mod, function,
-              maybe_resolved_args.get))
-  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching function in the file {file.name}")
+  of FRK_LOCAL: function_call.resolve_local_function_call(file, scope)
+  of FRK_MODULE: function_call.resolve_module_function_call(file, scope)
 
 proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructInit, string] =
-  let struct_var = struct_init.struct
-  let key_value_pairs = struct_init.fields
-
-  let module = ? file.find_module(struct_var)
+  let module = ? file.find_user_module(struct_init.struct)
   if not module.is_struct:
     return err(fmt"{module.location} Module `{module.name}` is not a struct")
 
-  let struct = module.struct
-  var field_name_table: Table[string, ResolvedExpression]
-  for (field_name, field_value) in key_value_pairs:
+  let struct = module.struct.get
+  var field_name_table: Table[string, ResolvedArgument]
+  for (field_name, field_value) in struct_init.fields:
     if $(field_name) in field_name_table:
       return err(fmt"{field_name.location} {field_name} is already present in the initializer")
     let field = ? struct.find_field(field_name)
-    field_name_table[$(field_name)] = ? scope.resolve_expression(field, field_value)
+    field_name_table[$(field_name)] = ? scope.resolve_argument(field, field_value)
 
   let resolved_fields = struct.fields.values.to_seq.map_it(field_name_table[$(it.arg_name)])
   let resolved_struct_init = new_resolved_struct_init(module, resolved_fields)
@@ -141,19 +165,34 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
 proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructGetter, string] =
   let struct_var = struct_getter.struct
-  let field_name = struct_getter.field
 
   if $(struct_var) notin scope:
     return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
 
-  let module = ? file.find_module(scope[$(struct_var)].arg_type)
+  let module = ? file.find_user_module(scope[$(struct_var)].arg_type)
   if not module.is_struct:
     return err(fmt"{module.location} Module `{module.name}` is not a struct")
 
-  let struct = module.struct
-  let field = ? struct.find_field(field_name)
+  let struct = module.struct.get
+  let field = ? struct.find_field(struct_getter.field)
   let resolved_struct_getter = new_resolved_struct_getter(module, field, struct_var)
   ok(resolved_struct_getter)
+
+proc resolved_expression(expression: Expression, file: blocks.File,
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedExpression, string] =
+  case expression.kind:
+  of EK_STRUCT_INIT:
+    let resolved_struct_init = ? expression.struct_init.resolve_struct_init(
+        file, scope)
+    ok(new_resolved_expression(resolved_struct_init))
+  of EK_STRUCT_GETTER:
+    let resolved_struct_getter = ? expression.struct_getter.resolve_struct_getter(
+        file, scope)
+    ok(new_resolved_expression(resolved_struct_getter))
+  of EK_FUNCTION_CALL:
+    let resolved_function_call = ? expression.function_call.resolve_function_call(
+        file, scope)
+    ok(new_resolved_expression(resolved_function_call))
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     string, ArgumentDefinition]): Result[ResolvedStatement, string] =
@@ -162,19 +201,8 @@ proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     let defined_arg = scope[$(statement.destination)]
     return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
 
-  case statement.kind:
-  of SK_STRUCT_INIT:
-    let resolved_struct_init = ? statement.struct_init.resolve_struct_init(file,
-        scope)
-    ok(new_resolved_statement(resolved_struct_init, statement.destination))
-  of SK_STRUCT_GETTER:
-    let resolved_struct_getter = ? statement.struct_getter.resolve_struct_getter(
-        file, scope)
-    ok(new_resolved_statement(resolved_struct_getter, statement.destination))
-  of SK_FUNCTION_CALL:
-    let resolved_function_call = ? statement.function_call.resolve_function_call(
-        file, scope)
-    ok(new_resolved_statement(resolved_function_call, statement.destination))
+  let resolved_expression = ? statement.expression.resolved_expression(file, scope)
+  ok(new_resolved_statement(statement.destination, resolved_expression))
 
 proc resolve_case_block(case_block: Case, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedCase, string] =
@@ -186,7 +214,7 @@ proc resolve_case_block(case_block: Case, file: blocks.File,
     resolved_statements.add(resolved_statement)
     scope[$(statement.destination)] = resolved_statement.return_argument
 
-  return ok(new_resolved_case(case_block, resolved_statements))
+  return ok(new_resolved_case(case_block.value, resolved_statements))
 
 proc resolve_else_block(else_block: Else, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedElse, string] =
@@ -198,7 +226,7 @@ proc resolve_else_block(else_block: Else, file: blocks.File,
     resolved_statements.add(resolved_statement)
     scope[$(statement.destination)] = resolved_statement.return_argument
 
-  return ok(new_resolved_else(else_block, resolved_statements))
+  return ok(new_resolved_else(resolved_statements))
 
 proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
     ArgumentDefinition]): Result[ResolvedMatch, string] =
@@ -213,7 +241,7 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
 
   let match_operand_def = scope[$(match.operand)]
   for case_block in match.case_blocks:
-    discard ? scope.resolve_expression(match_operand_def, case_block.value)
+    discard ? scope.resolve_argument(match_operand_def, case_block.value)
     let resolved_case_block = ? case_block.resolve_case_block(file, scope)
     resolved_case_blocks.add(resolved_case_block)
 
@@ -230,29 +258,24 @@ proc resolve_function_step(step: FunctionStep, file: blocks.File,
   case step.kind:
   of FSK_STATEMENT:
     let resolved_statement = ? step.statement.resolve_statement(file, scope)
-    return ok(new_resolved_function_step(resolved_statement))
+    ok(new_resolved_function_step(resolved_statement))
+  of FSK_EXPRESSION:
+    err(fmt"TODO: Enable support for resolving expressions")
   of FSK_MATCH:
     let resolved_match = ? step.match.resolve_match(file, scope)
-    return ok(new_resolved_function_step(resolved_match))
+    ok(new_resolved_function_step(resolved_match))
 
 proc resolve_function(function_ref: ResolvedFunctionRef,
     file: blocks.File): Result[ResolvedFunction, string] =
-  var maybe_function: Option[Function]
-  if function_ref.module.is_some:
-    let module = function_ref.module.get
-    for mod_function in module.functions:
-      if mod_function.definition == function_ref.function_def:
-        maybe_function = some(mod_function)
-  else:
-    for file_function in file.functions.values:
-      if file_function.definition == function_ref.function_def:
-        maybe_function = some(file_function)
-
-  if maybe_function.is_none:
-    return err(fmt"Failed to find matching function for function ref")
+  let function =
+    case function_ref.kind:
+    of RFRK_MODULE:
+      let module = ? file.find_user_module(function_ref.module_name)
+      ? module.find_function(function_ref.function_def)
+    of RFRK_FUNCTION:
+      ? file.find_function(function_ref.function_def)
 
   var
-    function = maybe_function.get
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
 
@@ -269,7 +292,7 @@ proc resolve_function(function_ref: ResolvedFunctionRef,
     resolved_function_steps.add(resolved_function_step)
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 
-  new_resolved_function(function_ref.module, function, resolved_function_steps)
+  new_resolved_function(function_ref, function, resolved_function_steps)
 
 proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string] =
   let main_function = ? file.find_start_function()

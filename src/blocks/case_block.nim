@@ -6,15 +6,18 @@ type CaseDefinition* = ref object of RootObj
   value*: Token
   location*: Location
 
-proc `$`*(case_definition: CaseDefinition): string =
-  fmt"case {case_definition.value}:"
-
 proc new_case_definition*(value: Token, location: Location): CaseDefinition =
   CaseDefinition(value: value, location: location)
+
+proc `$`*(case_definition: CaseDefinition): string =
+  fmt"case {case_definition.value}:"
 
 type Case* = ref object of RootObj
   case_def: CaseDefinition
   statements*: seq[Statement]
+
+proc new_case*(case_def: CaseDefinition): Case =
+  Case(case_def: case_def)
 
 proc location*(case_block: Case): Location =
   case_block.case_def.location
@@ -33,9 +36,6 @@ proc `$`*(case_block: Case): string =
 proc add_statement*(case_block: Case, statement: Statement): Result[void, string] =
   case_block.statements.add(statement)
   ok()
-
-proc new_case*(case_def: CaseDefinition): Case =
-  Case(case_def: case_def)
 
 proc close*(case_block: Case): Result[void, string] =
   if case_block.statements.len == 0:

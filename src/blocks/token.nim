@@ -11,17 +11,17 @@ type Token* = ref object of RootObj
   kind*: TokenKind
   location*: Location
 
-proc hash*(token: Token): Hash =
-  token.content.hash !& token.location.hash
-
-proc `$`*(token: Token): string =
-  token.content
-
 proc new_id_token*(content: string): Token =
   Token(kind: TK_ID, content: content)
 
 proc new_int_token*(value: uint): Token =
   Token(kind: TK_INTEGER, content: $(value))
+
+proc hash*(token: Token): Hash =
+  token.content.hash !& token.location.hash
+
+proc `$`*(token: Token): string =
+  token.content
 
 # NOTE: spec order is important
 let TOKEN_SPECS* = @[

@@ -42,7 +42,8 @@ const INDENT_SIZE = 2 # spaces
 
 type
   BlockKind* = enum
-    BK_STATEMENT, BK_MATCH, BK_CASE, BK_ELSE
+    BK_STATEMENT, BK_EXPRESSION
+    BK_MATCH, BK_CASE, BK_ELSE
     BK_STRUCT_FIELD, BK_STRUCT
     BK_FUNCTION, BK_MODULE, BK_FILE
 
@@ -52,18 +53,20 @@ type
     of BK_FILE: file*: File
     of BK_FUNCTION: function*: Function
     of BK_STATEMENT: statement*: Statement
+    of BK_EXPRESSION: expression*: Expression
     of BK_MATCH: match_block*: Match
     of BK_CASE: case_block*: Case
     of BK_ELSE: else_block*: Else
     of BK_STRUCT: struct: Struct
     of BK_STRUCT_FIELD: struct_field_def: ArgumentDefinition
-    of BK_MODULE: module: Module
+    of BK_MODULE: module: UserModule
 
 proc location*(asl_block: Block): Location =
   case asl_block.kind:
   of BK_FILE: asl_block.file.location
   of BK_FUNCTION: asl_block.function.location
   of BK_STATEMENT: asl_block.statement.location
+  of BK_EXPRESSION: asl_block.expression.location
   of BK_MATCH: asl_block.match_block.location
   of BK_CASE: asl_block.case_block.location
   of BK_ELSE: asl_block.else_block.location
@@ -79,6 +82,7 @@ proc `$`*(asl_block: Block): string =
   of BK_FILE: $(asl_block.file)
   of BK_FUNCTION: $(asl_block.function)
   of BK_STATEMENT: $(asl_block.statement)
+  of BK_EXPRESSION: $(asl_block.expression)
   of BK_MATCH: $(asl_block.match_block)
   of BK_CASE: $(asl_block.case_block)
   of BK_ELSE: $(asl_block.else_block)
@@ -99,6 +103,7 @@ proc close*(asl_block: Block): Result[void, string] =
   # leaf blocks
   of BK_STRUCT_FIELD: ok()
   of BK_STATEMENT: ok()
+  of BK_EXPRESSION: ok()
 
 proc add_child*(parent: Block, child: Block): Result[void, string] =
   if parent.indent + 1 != child.indent:
@@ -107,12 +112,13 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   case parent.kind:
   of BK_FILE:
     case child.kind:
-    of BK_MODULE: parent.file.add_module(child.module.user_mod)
+    of BK_MODULE: parent.file.add_module(child.module)
     of BK_FUNCTION: parent.file.add_function(child.function)
     else: err(fmt"{parent.file.name} File can only contain functions or modules")
   of BK_FUNCTION:
     case child.kind:
     of BK_STATEMENT: parent.function.add_statement(child.statement)
+    of BK_EXPRESSION: parent.function.add_expression(child.expression)
     of BK_MATCH: parent.function.add_match(child.match_block)
     else: err(fmt"{parent.location} `fn` can only contain match blocks or statements")
   of BK_MATCH:
@@ -123,10 +129,14 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   of BK_CASE:
     case child.kind:
     of BK_STATEMENT: parent.case_block.add_statement(child.statement)
+    # TODO: Add support for expressions inside case block
+    of BK_EXPRESSION: err(fmt"{parent.location} expression support in `case` block is to be implemented")
     else: err(fmt"{parent.location} `case` can only contain statements")
   of BK_ELSE:
     case child.kind:
     of BK_STATEMENT: parent.else_block.add_statement(child.statement)
+    # TODO: Add support for expressions inside else block
+    of BK_EXPRESSION: err(fmt"{parent.location} expression support in `else` block is to be implemented")
     else: err(fmt"{parent.location} `else` can only contain statements")
   of BK_STRUCT:
     case child.kind:
@@ -134,10 +144,11 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
     else: err(fmt"{parent.location} `struct` can only contain field definitions")
   of BK_MODULE:
     case child.kind:
-    of BK_FUNCTION: parent.module.user_mod.add_function(child.function)
-    of BK_STRUCT: parent.module.user_mod.add_struct(child.struct)
+    of BK_FUNCTION: parent.module.add_function(child.function)
+    of BK_STRUCT: parent.module.add_struct(child.struct)
     else: err(fmt"{parent.module.name} Module can only contain functions")
   of BK_STATEMENT: err(fmt"{parent.location} statement does not support further nesting")
+  of BK_EXPRESSION: err(fmt"{parent.location} expression does not support further nesting.")
   of BK_STRUCT_FIELD: err(fmt"{parent.location} struct field definition does not support further nesting.")
 
 proc new_block*(filename: string): Block =
@@ -156,6 +167,8 @@ proc new_block*(line: Line): Result[Block, string] =
       Block(kind: BK_FUNCTION, indent: indent, function: new_function(line.func_def))
     of LK_STATEMENT:
       Block(kind: BK_STATEMENT, indent: indent, statement: line.statement)
+    of LK_EXPRESSION:
+      Block(kind: BK_EXPRESSION, indent: indent, expression: line.expression)
     of LK_MATCH_DEFINITION:
       Block(kind: BK_MATCH, indent: indent, match_block: new_match(
           line.match_def))
@@ -170,7 +183,7 @@ proc new_block*(line: Line): Result[Block, string] =
       Block(kind: BK_STRUCT_FIELD, indent: indent,
           struct_field_def: line.struct_field_def)
     of LK_MODULE_DEFINITION:
-      Block(kind: BK_MODULE, indent: indent, module: new_module(
+      Block(kind: BK_MODULE, indent: indent, module: new_user_module(
           line.module_def))
   ok(asl_block)
 
