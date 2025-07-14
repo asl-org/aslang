@@ -3,9 +3,9 @@ module Example:
     op = U64.compare(a, b)
     _a = match op:
       case 1:
-        U64.init(a)
+        a
       else:
-        U64.init(b)
+        b
 
   fn eq(U64 a, U64 b): U8
     op = U64.compare(a, b)
@@ -35,7 +35,7 @@ module Example:
     op = Example.is_palindrome(a)
     _a = match op:
       case 0:
-        U64.init(k)
+        k
       case 1:
         Example.max(a, k)
 
@@ -48,7 +48,7 @@ module Example:
         next_j = U64.add(j, 1)
         Example.loop_inner(i, next_j, next_k, l)
       else:
-        U64.init(k)
+        k
 
   fn loop_outer(U64 i, U64 j, U64 k, U64 l): U64
     op = U64.compare(i, l)
@@ -58,10 +58,12 @@ module Example:
         next_i = U64.add(i, 1)
         Example.loop_outer(next_i, j, next_k, l)
       else:
-        U64.init(k)
+        k
 
 fn start(U8 seed): U8
+  exit_success = U8.init(0)
   ans = Example.loop_outer(100, 100, 0, 1000)
   System.print_U64(ans)
-  exit_success = U8.init(0)
+
+  exit_success
 

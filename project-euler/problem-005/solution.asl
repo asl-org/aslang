@@ -3,7 +3,7 @@ module Example:
     op = U64.compare(b, 0)
     _ = match op:
       case 0:
-        U64.init(a)
+        a
       else:
         c = U64.remainder(a, b)
         Example.gcd(b, c)
@@ -21,9 +21,10 @@ module Example:
         next_j = Example.lcm(i, j)
         Example.solve(next_i, n, next_j)
       else:
-        U64.init(j)
+        j
 
 fn start(U8 seed): U8
+  exit_success = U8.init(0)
   ans = Example.solve(2, 20, 1)
   System.print_U64(ans)
-  exit_success = U8.init(0)
+  exit_success

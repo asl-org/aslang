@@ -31,12 +31,17 @@ proc `$`*(struct_getter: StructGetter): string =
 
 type
   ExpressionKind* = enum
-    EK_FUNCTION_CALL, EK_STRUCT_INIT, EK_STRUCT_GETTER
+    EK_VARIABLE, EK_FUNCTION_CALL,
+    EK_STRUCT_INIT, EK_STRUCT_GETTER
   Expression* = ref object of RootObj
     case kind*: ExpressionKind
+    of EK_VARIABLE: variable*: Token
     of EK_FUNCTION_CALL: function_call*: FunctionCall
     of EK_STRUCT_INIT: struct_init*: StructInit
     of EK_STRUCT_GETTER: struct_getter*: StructGetter
+
+proc new_expression*(variable: Token): Expression =
+  Expression(kind: EK_VARIABLE, variable: variable)
 
 proc new_expression*(function_call: FunctionCall): Expression =
   Expression(kind: EK_FUNCTION_CALL, function_call: function_call)
@@ -49,12 +54,14 @@ proc new_expression*(struct_getter: StructGetter): Expression =
 
 proc location*(expression: Expression): Location =
   case expression.kind:
+  of EK_VARIABLE: expression.variable.location
   of EK_FUNCTION_CALL: expression.function_call.location
   of EK_STRUCT_INIT: expression.struct_init.location
   of EK_STRUCT_GETTER: expression.struct_getter.location
 
 proc `$`*(expression: Expression): string =
   case expression.kind:
+  of EK_VARIABLE: $(expression.variable)
   of EK_FUNCTION_CALL: $(expression.function_call)
   of EK_STRUCT_GETTER: $(expression.struct_getter)
   of EK_STRUCT_INIT: $(expression.struct_init)

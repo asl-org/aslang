@@ -74,9 +74,9 @@ module Bitset:
     op = U64.compare(a, b)
     _ = match op:
       case 1:
-        U64.init(a)
+        a
       else:
-        U64.init(b)
+        b
 
   fn mark_non_prime(Bitset bitset, U64 j, U64 i): Pointer
     ptr = bitset.ptr
@@ -88,8 +88,7 @@ module Bitset:
         k = U64.add(j, i)
         Bitset.mark_non_prime(bitset, k, i)
       else:
-        # TODO: Fix this hack by allowing identifier assignment
-        Pointer.init(ptr)
+        ptr
 
   fn update_ans(U64 i, U64 ans): U64
     r = U64.remainder(600851475143, i)
@@ -97,7 +96,7 @@ module Bitset:
       case 0:
         Bitset.max(ans, i)
       else:
-        U64.init(ans)
+        ans
 
   fn handle_prime(Bitset bitset, U64 i, U64 ans): U64
     op = Bitset.get(bitset, i)
@@ -107,7 +106,7 @@ module Bitset:
         Bitset.mark_non_prime(bitset, j, i)
         Bitset.update_ans(i, ans)
       case 1:
-        U64.init(ans)
+        ans
 
   fn solve(Bitset bitset, U64 start, U64 ans): U64
     size = bitset.size
@@ -118,9 +117,10 @@ module Bitset:
         next_start = U64.add(start, 1)
         Bitset.solve(bitset, next_start, res)
       else:
-        U64.init(ans)
+        ans
 
 fn start(U8 seed): U8
+  exit_success = U8.init(0)
   size = U64.init(1000001)
   ptr = System.allocate(size)
   bitset = Bitset { ptr: ptr, size: size }
@@ -130,5 +130,4 @@ fn start(U8 seed): U8
 
   # _x = Bitset_free(bitset)
   System.free(ptr)
-
-  exit_success = U8.init(0)
+  exit_success

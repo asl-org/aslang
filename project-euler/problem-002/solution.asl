@@ -18,6 +18,9 @@ module Solver:
         Solver.solve(b, g, c, f)
 
 fn start(U8 seed): U8
+  exit_success = U8.init(0)
+
   a = Solver.solve(1, 2, 4000000, 0)
   System.print_S64(a)
-  exit_success = U8.init(0)
+
+  exit_success

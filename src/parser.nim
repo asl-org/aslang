@@ -188,6 +188,11 @@ proc expect_expression(parser: Parser): Result[Expression, string] =
     return ok(new_expression(maybe_struct_getter.get))
   else: parser.index = start
 
+  let maybe_variable = parser.expect(TK_ID)
+  if maybe_variable.is_ok:
+    return ok(new_expression(maybe_variable.get))
+  else: parser.index = start
+
   return err(fmt"{parser.location} expected a function call or struct init/getter")
 
 proc expect_assignment_statement(parser: Parser): Result[Statement, string] =
@@ -256,10 +261,6 @@ proc expect_module_definition(parser: Parser): Result[ModuleDefinition, string] 
 proc expect_line(parser: Parser): Result[Line, string] =
   let start = parser.index
 
-  let maybe_statement = parser.expect_statement()
-  if maybe_statement.is_ok: return ok(new_line(maybe_statement.get))
-  else: parser.index = start
-
   let maybe_func_def = parser.expect_function_definition()
   if maybe_func_def.is_ok: return ok(new_line(maybe_func_def.get))
   else: parser.index = start
@@ -288,6 +289,10 @@ proc expect_line(parser: Parser): Result[Line, string] =
 
   let maybe_module_def = parser.expect_module_definition()
   if maybe_module_def.is_ok: return ok(new_line(maybe_module_def.get))
+  else: parser.index = start
+
+  let maybe_statement = parser.expect_statement()
+  if maybe_statement.is_ok: return ok(new_line(maybe_statement.get))
   else: parser.index = start
 
   err(fmt"{parser.location} expected one of the following: statement, function/match/case/else/struct definition")

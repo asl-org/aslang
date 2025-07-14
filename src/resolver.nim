@@ -181,6 +181,10 @@ proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
 proc resolved_expression(expression: Expression, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedExpression, string] =
   case expression.kind:
+  of EK_VARIABLE:
+    if $(expression.variable) notin scope:
+      return err(fmt"{expression.variable.location} {expression.variable} is not defined in the scope")
+    ok(new_resolved_expression(scope[$(expression.variable)]))
   of EK_STRUCT_INIT:
     let resolved_struct_init = ? expression.struct_init.resolve_struct_init(
         file, scope)

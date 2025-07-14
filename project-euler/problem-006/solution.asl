@@ -1,4 +1,5 @@
 fn start(U8 seed): U8
+  exit_success = U8.init(0)
   n = U64.init(100)
 
   a = U64.subtract(n, 1)
@@ -14,4 +15,4 @@ fn start(U8 seed): U8
   h = U64.quotient(g, 12)
   System.print_U64(h)
 
-  exit_success = U8.init(0)
+  exit_success

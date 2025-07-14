@@ -7,11 +7,13 @@ import struct_getter
 
 type
   ResolvedExpressionKind* = enum
+    REK_VARIABLE
     REK_STRUCT_INIT
     REK_STRUCT_GETTER
     REK_FUNCTION_CALL
   ResolvedExpression* = ref object of RootObj
     case kind*: ResolvedExpressionKind
+    of REK_VARIABLE: variable*: ArgumentDefinition
     of REK_STRUCT_INIT: struct_init: ResolvedStructInit
     of REK_STRUCT_GETTER: struct_getter: ResolvedStructGetter
     of REK_FUNCTION_CALL: function_call: ResolvedFunctionCall
@@ -28,6 +30,7 @@ proc function_refs*(expression: ResolvedExpression): Hashset[
 
 proc return_type*(expression: ResolvedExpression): Token =
   case expression.kind:
+  of REK_VARIABLE: expression.variable.arg_type
   of REK_STRUCT_INIT: expression.struct_init.module.name
   of REK_STRUCT_GETTER: expression.struct_getter.field.arg_type
   of REK_FUNCTION_CALL: expression.function_call.return_type
@@ -35,10 +38,14 @@ proc return_type*(expression: ResolvedExpression): Token =
 proc c*(expression: ResolvedExpression): string =
   let native_code =
     case expression.kind:
+    of REK_VARIABLE: $(expression.variable.arg_name)
     of REK_STRUCT_INIT: expression.struct_init.c
     of REK_STRUCT_GETTER: expression.struct_getter.c
     of REK_FUNCTION_CALL: expression.function_call.c
   fmt"{native_code};"
+
+proc new_resolved_expression*(variable: ArgumentDefinition): ResolvedExpression =
+  ResolvedExpression(kind: REK_VARIABLE, variable: variable)
 
 proc new_resolved_expression*(struct_init: ResolvedStructInit): ResolvedExpression =
   ResolvedExpression(kind: REK_STRUCT_INIT, struct_init: struct_init)

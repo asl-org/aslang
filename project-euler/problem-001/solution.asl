@@ -10,6 +10,8 @@ module Solver:
     S64.multiply(b, d)
 
 fn start(U8 seed): U8
+  exit_success = U8.init(0)
+
   a = Solver.count(999, 3)
   b = Solver.count(999, 5)
 
@@ -19,4 +21,4 @@ fn start(U8 seed): U8
   e = S64.subtract(d, c)
   System.print_S64(e)
 
-  exit_success = U8.init(0)
+  exit_success
