@@ -1,14 +1,14 @@
 import sequtils, strutils, strformat
 
 import "../blocks"
-import expression
+import arg
 
 type ResolvedStructInit* = ref object of RootObj
   module*: UserModule
-  fields: seq[ResolvedExpression]
+  fields: seq[ResolvedArgument]
 
 proc new_resolved_struct_init*(module: UserModule, fields: seq[
-    ResolvedExpression]): ResolvedStructInit =
+    ResolvedArgument]): ResolvedStructInit =
   ResolvedStructInit(module: module, fields: fields)
 
 proc c*(init: ResolvedStructInit): string =

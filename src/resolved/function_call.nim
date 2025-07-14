@@ -1,7 +1,7 @@
 import sequtils, strutils, strformat, options, hashes
 
 import "../blocks"
-import expression
+import arg
 
 type
   ResolvedFunctionRefKind* = enum
@@ -40,7 +40,7 @@ type
   ResolvedFunctionCallKind* = enum
     RFCK_BUILTIN, RFCK_MODULE, RFCK_LOCAL
   ResolvedFunctionCall* = ref object of RootObj
-    args: seq[ResolvedExpression]
+    args: seq[ResolvedArgument]
     function_def: FunctionDefinition
     case kind: ResolvedFunctionCallKind
     of RFCK_LOCAL: discard
@@ -48,18 +48,18 @@ type
     of RFCK_MODULE: module: UserModule
 
 proc new_resolved_function_call*(function_def: FunctionDefinition, args: seq[
-        ResolvedExpression]): ResolvedFunctionCall =
+        ResolvedArgument]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_LOCAL,
       function_def: function_def, args: args)
 
 proc new_resolved_function_call*(module: BuiltinModule,
     function_def: FunctionDefinition, args: seq[
-        ResolvedExpression]): ResolvedFunctionCall =
+        ResolvedArgument]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_BUILTIN,
       builtin_module: module, function_def: function_def, args: args)
 
 proc new_resolved_user_function_call*(module: UserModule, function_def: FunctionDefinition, args: seq[
-        ResolvedExpression]): ResolvedFunctionCall =
+        ResolvedArgument]): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_MODULE,
       module: module, function_def: function_def, args: args)
 

@@ -30,38 +30,67 @@ proc `$`*(struct_getter: StructGetter): string =
   fmt"{struct_getter.struct}.{struct_getter.field}"
 
 type
+  ExpressionKind* = enum
+    EK_VARIABLE, EK_FUNCTION_CALL,
+    EK_STRUCT_INIT, EK_STRUCT_GETTER
+  Expression* = ref object of RootObj
+    case kind*: ExpressionKind
+    of EK_VARIABLE: variable*: Token
+    of EK_FUNCTION_CALL: function_call*: FunctionCall
+    of EK_STRUCT_INIT: struct_init*: StructInit
+    of EK_STRUCT_GETTER: struct_getter*: StructGetter
+
+proc new_expression*(variable: Token): Expression =
+  Expression(kind: EK_VARIABLE, variable: variable)
+
+proc new_expression*(function_call: FunctionCall): Expression =
+  Expression(kind: EK_FUNCTION_CALL, function_call: function_call)
+
+proc new_expression*(struct_init: StructInit): Expression =
+  Expression(kind: EK_STRUCT_INIT, struct_init: struct_init)
+
+proc new_expression*(struct_getter: StructGetter): Expression =
+  Expression(kind: EK_STRUCT_GETTER, struct_getter: struct_getter)
+
+proc location*(expression: Expression): Location =
+  case expression.kind:
+  of EK_VARIABLE: expression.variable.location
+  of EK_FUNCTION_CALL: expression.function_call.location
+  of EK_STRUCT_INIT: expression.struct_init.location
+  of EK_STRUCT_GETTER: expression.struct_getter.location
+
+proc `$`*(expression: Expression): string =
+  case expression.kind:
+  of EK_VARIABLE: $(expression.variable)
+  of EK_FUNCTION_CALL: $(expression.function_call)
+  of EK_STRUCT_GETTER: $(expression.struct_getter)
+  of EK_STRUCT_INIT: $(expression.struct_init)
+
+type
   StatementKind* = enum
-    SK_FUNCTION_CALL, SK_STRUCT_INIT, SK_STRUCT_GETTER
+    SK_ASSIGNMENT, SK_EXPRESSION
   Statement* = ref object of RootObj
-    destination*: Token
+    expression*: Expression
     case kind*: StatementKind
-    of SK_FUNCTION_CALL:
-      function_call*: FunctionCall
-    of SK_STRUCT_INIT:
-      struct_init*: StructInit
-    of SK_STRUCT_GETTER:
-      struct_getter*: StructGetter
+    of SK_ASSIGNMENT: destination*: Token
+    of SK_EXPRESSION: discard
 
-proc new_statement*(destination: Token, function_call: FunctionCall): Statement =
-  Statement(kind: SK_FUNCTION_CALL, destination: destination,
-      function_call: function_call)
+proc new_statement*(destination: Token, expression: Expression): Statement =
+  Statement(kind: SK_ASSIGNMENT, expression: expression,
+      destination: destination)
 
-proc new_statement*(destination: Token, struct_init: StructInit): Statement =
-  Statement(kind: SK_STRUCT_INIT, destination: destination,
-      struct_init: struct_init)
+proc new_statement*(expression: Expression): Statement =
+  Statement(kind: SK_EXPRESSION, expression: expression)
 
-proc new_statement*(destination: Token, struct_getter: StructGetter): Statement =
-  Statement(kind: SK_STRUCT_GETTER, destination: destination,
-      struct_getter: struct_getter)
+proc set_destination*(statement: Statement, temp_var_name: string): Statement =
+  temp_var_name.new_id_token().new_statement(statement.expression)
 
 proc location*(statement: Statement): Location =
-  statement.destination.location
+  case statement.kind:
+  of SK_ASSIGNMENT: statement.destination.location
+  of SK_EXPRESSION: statement.expression.location
 
 proc `$`*(statement: Statement): string =
   case statement.kind:
-  of SK_FUNCTION_CALL:
-    fmt"{statement.destination} = {statement.function_call}"
-  of SK_STRUCT_GETTER:
-    fmt"{statement.destination} = {statement.struct_getter}"
-  of SK_STRUCT_INIT:
-    fmt"{statement.destination} = {statement.struct_init}"
+  of SK_ASSIGNMENT: fmt"{statement.destination} = {statement.expression}"
+  of SK_EXPRESSION: fmt"{statement.expression}"

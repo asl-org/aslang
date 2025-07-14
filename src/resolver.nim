@@ -2,7 +2,7 @@ import results, tables, strformat, sequtils, parseutils, sets, options, strutils
 
 import blocks
 
-import resolved/expression; export expression
+import resolved/arg; export arg
 import resolved/function_call; export function_call
 import resolved/struct_init; export struct_init
 import resolved/struct_getter; export struct_getter
@@ -44,8 +44,8 @@ proc safe_parse*[T](input: string): Result[void, string] =
   else:
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
-proc resolve_expression(scope: Table[string, ArgumentDefinition],
-    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedExpression, string] =
+proc resolve_argument(scope: Table[string, ArgumentDefinition],
+    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedArgument, string] =
   case arg_value.kind:
   of TK_ID:
     if $(arg_value) notin scope:
@@ -62,12 +62,12 @@ proc resolve_expression(scope: Table[string, ArgumentDefinition],
     of "S16": ? safe_parse[int16]($(arg_value))
     of "S32": ? safe_parse[int32]($(arg_value))
     of "S64": ? safe_parse[int64]($(arg_value))
-    else: return err(fmt"{arg_value.location} arguments with builting types can be passed as integer")
+    else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as integer")
   of TK_FLOAT:
     case $(arg_def.arg_type):
     of "F32": ? safe_parse[float32]($(arg_value))
     of "F64": ? safe_parse[float64]($(arg_value))
-    else: return err(fmt"{arg_value.location} arguments with builting types can be passed as float")
+    else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as float")
   else: # TODO: Support strings as arguments
     return err(fmt"{arg_value.location} {arg_value} can not be passed to a function as argument")
 
@@ -76,22 +76,22 @@ proc resolve_expression(scope: Table[string, ArgumentDefinition],
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
     function_def: FunctionDefinition, scope: Table[string,
-    ArgumentDefinition]): Result[seq[ResolvedExpression], string] =
+    ArgumentDefinition]): Result[seq[ResolvedArgument], string] =
   if $(function_def.name) != $(function_call.name):
     return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function_def.name}")
   if function_def.arg_def_list.len != function_call.arg_list.len:
     return err(fmt"{function_call.location} expected {function_def.arg_def_list.len} but found {function_call.arg_list.len}")
 
-  var resolved_args: seq[ResolvedExpression]
+  var resolved_args: seq[ResolvedArgument]
   for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
-    resolved_args.add( ? scope.resolve_expression(arg_def, arg_value))
+    resolved_args.add( ? scope.resolve_argument(arg_def, arg_value))
   ok(resolved_args)
 
 proc resolve_function_call_args(function_call: FunctionCall, function_defs: seq[
     FunctionDefinition], scope: Table[string, ArgumentDefinition]): Result[(
         FunctionDefinition, seq[
-    ResolvedExpression]), string] =
+    ResolvedArgument]), string] =
   for function_def in function_defs:
     let maybe_resolved_args = function_call.resolve_function_call_args(
         function_def, scope)
@@ -151,12 +151,12 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     return err(fmt"{module.location} Module `{module.name}` is not a struct")
 
   let struct = module.struct.get
-  var field_name_table: Table[string, ResolvedExpression]
+  var field_name_table: Table[string, ResolvedArgument]
   for (field_name, field_value) in struct_init.fields:
     if $(field_name) in field_name_table:
       return err(fmt"{field_name.location} {field_name} is already present in the initializer")
     let field = ? struct.find_field(field_name)
-    field_name_table[$(field_name)] = ? scope.resolve_expression(field, field_value)
+    field_name_table[$(field_name)] = ? scope.resolve_argument(field, field_value)
 
   let resolved_fields = struct.fields.values.to_seq.map_it(field_name_table[$(it.arg_name)])
   let resolved_struct_init = new_resolved_struct_init(module, resolved_fields)
@@ -178,53 +178,72 @@ proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
   let resolved_struct_getter = new_resolved_struct_getter(module, field, struct_var)
   ok(resolved_struct_getter)
 
-proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
-    string, ArgumentDefinition]): Result[ResolvedStatement, string] =
-  # check if variable is already defined in the local(case) scope
-  if $(statement.destination) in scope:
-    let defined_arg = scope[$(statement.destination)]
-    return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+proc resolved_expression(expression: Expression, file: blocks.File,
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedExpression, string] =
+  case expression.kind:
+  of EK_VARIABLE:
+    if $(expression.variable) notin scope:
+      return err(fmt"{expression.variable.location} {expression.variable} is not defined in the scope")
+    ok(new_resolved_expression(scope[$(expression.variable)]))
+  of EK_STRUCT_INIT:
+    let resolved_struct_init = ? expression.struct_init.resolve_struct_init(
+        file, scope)
+    ok(new_resolved_expression(resolved_struct_init))
+  of EK_STRUCT_GETTER:
+    let resolved_struct_getter = ? expression.struct_getter.resolve_struct_getter(
+        file, scope)
+    ok(new_resolved_expression(resolved_struct_getter))
+  of EK_FUNCTION_CALL:
+    let resolved_function_call = ? expression.function_call.resolve_function_call(
+        file, scope)
+    ok(new_resolved_expression(resolved_function_call))
 
+proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
+    string, ArgumentDefinition], temp_var_count: var uint): Result[
+        ResolvedStatement, string] =
   case statement.kind:
-  of SK_STRUCT_INIT:
-    let resolved_struct_init = ? statement.struct_init.resolve_struct_init(file,
-        scope)
-    ok(new_resolved_statement(resolved_struct_init, statement.destination))
-  of SK_STRUCT_GETTER:
-    let resolved_struct_getter = ? statement.struct_getter.resolve_struct_getter(
-        file, scope)
-    ok(new_resolved_statement(resolved_struct_getter, statement.destination))
-  of SK_FUNCTION_CALL:
-    let resolved_function_call = ? statement.function_call.resolve_function_call(
-        file, scope)
-    ok(new_resolved_statement(resolved_function_call, statement.destination))
+  of SK_ASSIGNMENT:
+    if $(statement.destination) in scope:
+      let defined_arg = scope[$(statement.destination)]
+      return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+
+    let resolved_expression = ? statement.expression.resolved_expression(file, scope)
+    ok(new_resolved_statement(statement.destination, resolved_expression))
+  of SK_EXPRESSION:
+    # assign the expresssion value to a temporary variable injected by the compiler
+    let assignment = statement.set_destination(fmt"__asl_temp_var_{temp_var_count}__")
+    temp_var_count += 1
+    let resolved_expression = ? assignment.expression.resolved_expression(file, scope)
+    ok(new_resolved_statement(assignment.destination, resolved_expression))
 
 proc resolve_case_block(case_block: Case, file: blocks.File,
-    parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedCase, string] =
+    parent_scope: Table[string, ArgumentDefinition],
+        temp_var_count: var uint): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
   var scope = parent_scope
   for (index, statement) in case_block.statements.pairs:
-    let resolved_statement = ? statement.resolve_statement(file, scope)
+    let resolved_statement = ? statement.resolve_statement(file, scope, temp_var_count)
     resolved_statements.add(resolved_statement)
-    scope[$(statement.destination)] = resolved_statement.return_argument
+    scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
   return ok(new_resolved_case(case_block.value, resolved_statements))
 
 proc resolve_else_block(else_block: Else, file: blocks.File,
-    parent_scope: Table[string, ArgumentDefinition]): Result[ResolvedElse, string] =
+    parent_scope: Table[string, ArgumentDefinition],
+        temp_var_count: var uint): Result[ResolvedElse, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the else scope to avoid non local argument name conflicts
   var scope = parent_scope
   for (index, statement) in else_block.statements.pairs:
-    let resolved_statement = ? statement.resolve_statement(file, scope)
+    let resolved_statement = ? statement.resolve_statement(file, scope, temp_var_count)
     resolved_statements.add(resolved_statement)
-    scope[$(statement.destination)] = resolved_statement.return_argument
+    scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
   return ok(new_resolved_else(resolved_statements))
 
 proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
-    ArgumentDefinition]): Result[ResolvedMatch, string] =
+    ArgumentDefinition], temp_var_count: var uint): Result[ResolvedMatch, string] =
   var resolved_case_blocks: seq[ResolvedCase]
   var resolved_else_blocks: seq[ResolvedElse]
   if $(match.destination) in scope:
@@ -236,27 +255,28 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
 
   let match_operand_def = scope[$(match.operand)]
   for case_block in match.case_blocks:
-    discard ? scope.resolve_expression(match_operand_def, case_block.value)
-    let resolved_case_block = ? case_block.resolve_case_block(file, scope)
+    discard ? scope.resolve_argument(match_operand_def, case_block.value)
+    let resolved_case_block = ? case_block.resolve_case_block(file, scope, temp_var_count)
     resolved_case_blocks.add(resolved_case_block)
 
   # Note: Even though this is a for loop but there can only be at most 1 else block.
   for (index, else_block) in match.else_blocks.pairs:
-    let resolved_else_block = ? else_block.resolve_else_block(file, scope)
+    let resolved_else_block = ? else_block.resolve_else_block(file, scope, temp_var_count)
     resolved_else_blocks.add(resolved_else_block)
 
   new_resolved_match(match, match.destination, match.operand,
       resolved_case_blocks, resolved_else_blocks)
 
 proc resolve_function_step(step: FunctionStep, file: blocks.File,
-    scope: var Table[string, ArgumentDefinition]): Result[ResolvedFunctionStep, string] =
+    scope: var Table[string, ArgumentDefinition],
+        temp_var_count: var uint): Result[ResolvedFunctionStep, string] =
   case step.kind:
   of FSK_STATEMENT:
-    let resolved_statement = ? step.statement.resolve_statement(file, scope)
-    return ok(new_resolved_function_step(resolved_statement))
+    let resolved_statement = ? step.statement.resolve_statement(file, scope, temp_var_count)
+    ok(new_resolved_function_step(resolved_statement))
   of FSK_MATCH:
-    let resolved_match = ? step.match.resolve_match(file, scope)
-    return ok(new_resolved_function_step(resolved_match))
+    let resolved_match = ? step.match.resolve_match(file, scope, temp_var_count)
+    ok(new_resolved_function_step(resolved_match))
 
 proc resolve_function(function_ref: ResolvedFunctionRef,
     file: blocks.File): Result[ResolvedFunction, string] =
@@ -269,6 +289,7 @@ proc resolve_function(function_ref: ResolvedFunctionRef,
       ? file.find_function(function_ref.function_def)
 
   var
+    temp_var_count: uint = 0
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
 
@@ -281,7 +302,7 @@ proc resolve_function(function_ref: ResolvedFunctionRef,
     scope[$(arg.arg_name)] = arg
 
   for (index, step) in function.function_steps.pairs:
-    let resolved_function_step = ? step.resolve_function_step(file, scope)
+    let resolved_function_step = ? step.resolve_function_step(file, scope, temp_var_count)
     resolved_function_steps.add(resolved_function_step)
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 
