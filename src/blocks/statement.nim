@@ -29,16 +29,31 @@ proc location*(struct_getter: StructGetter): Location =
 proc `$`*(struct_getter: StructGetter): string =
   fmt"{struct_getter.struct}.{struct_getter.field}"
 
+type LiteralInit* = ref object of RootObj
+  arg_type*: Token
+  arg_value*: Token
+
+proc new_literal_init*(arg_type: Token, arg_value: Token): LiteralInit =
+  LiteralInit(arg_type: arg_type, arg_value: arg_value)
+
+proc location*(literal_init: LiteralInit): Location =
+  literal_init.arg_type.location
+
+proc `$`*(literal_init: LiteralInit): string =
+  fmt"{literal_init.arg_type} {literal_init.arg_value}"
+
 type
   ExpressionKind* = enum
     EK_VARIABLE, EK_FUNCTION_CALL,
     EK_STRUCT_INIT, EK_STRUCT_GETTER
+    EK_LITERAL_INIT
   Expression* = ref object of RootObj
     case kind*: ExpressionKind
     of EK_VARIABLE: variable*: Token
     of EK_FUNCTION_CALL: function_call*: FunctionCall
     of EK_STRUCT_INIT: struct_init*: StructInit
     of EK_STRUCT_GETTER: struct_getter*: StructGetter
+    of EK_LITERAL_INIT: literal_init*: LiteralInit
 
 proc new_expression*(variable: Token): Expression =
   Expression(kind: EK_VARIABLE, variable: variable)
@@ -52,12 +67,16 @@ proc new_expression*(struct_init: StructInit): Expression =
 proc new_expression*(struct_getter: StructGetter): Expression =
   Expression(kind: EK_STRUCT_GETTER, struct_getter: struct_getter)
 
+proc new_expression*(literal_init: LiteralInit): Expression =
+  Expression(kind: EK_LITERAL_INIT, literal_init: literal_init)
+
 proc location*(expression: Expression): Location =
   case expression.kind:
   of EK_VARIABLE: expression.variable.location
   of EK_FUNCTION_CALL: expression.function_call.location
   of EK_STRUCT_INIT: expression.struct_init.location
   of EK_STRUCT_GETTER: expression.struct_getter.location
+  of EK_LITERAL_INIT: expression.literal_init.location
 
 proc `$`*(expression: Expression): string =
   case expression.kind:
@@ -65,6 +84,7 @@ proc `$`*(expression: Expression): string =
   of EK_FUNCTION_CALL: $(expression.function_call)
   of EK_STRUCT_GETTER: $(expression.struct_getter)
   of EK_STRUCT_INIT: $(expression.struct_init)
+  of EK_LITERAL_INIT: $(expression.literal_init)
 
 type
   StatementKind* = enum

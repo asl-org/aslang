@@ -64,6 +64,13 @@ proc resolve_float_literal(arg_type: Token, arg_value: Token): Result[void, stri
   else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as float")
   ok()
 
+proc resolve_literal(arg_type: Token, arg_value: Token): Result[void, string] =
+  case arg_value.kind:
+  of TK_INTEGER: ? arg_type.resolve_integer_literal(arg_value)
+  of TK_FLOAT: ? arg_type.resolve_float_literal(arg_value)
+  else: return err(fmt"{arg_value.location} {arg_value} is not a literal")
+  ok()
+
 proc resolve_variable(arg_type: Token, arg_value: Token, scope: Table[string,
     ArgumentDefinition]): Result[void, string] =
   if $(arg_value) notin scope:
@@ -75,10 +82,8 @@ proc resolve_variable(arg_type: Token, arg_value: Token, scope: Table[string,
 proc resolve_argument(scope: Table[string, ArgumentDefinition],
     arg_type: Token, arg_value: Token): Result[void, string] =
   case arg_value.kind:
-  of TK_INTEGER: ? arg_type.resolve_integer_literal(arg_value)
-  of TK_FLOAT: ? arg_type.resolve_float_literal(arg_value)
   of TK_ID: ? arg_type.resolve_variable(arg_value, scope)
-  else: return err(fmt"{arg_value.location} {arg_value} can not be passed to a function as argument")
+  else: ? arg_type.resolve_literal(arg_value)
   ok()
 
 # matches individual function with function call
@@ -207,6 +212,10 @@ proc resolved_expression(expression: Expression, file: blocks.File,
     let resolved_function_call = ? expression.function_call.resolve_function_call(
         file, scope)
     ok(new_resolved_expression(resolved_function_call))
+  of EK_LITERAL_INIT:
+    ? expression.literal_init.arg_type.resolve_literal(
+        expression.literal_init.arg_value)
+    ok(new_resolved_expression(expression.literal_init))
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint): Result[

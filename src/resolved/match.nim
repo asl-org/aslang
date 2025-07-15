@@ -28,7 +28,7 @@ proc c*(resolved_match: ResolvedMatch): string =
   # TODO: Fix garbage value errors if the return argument is defined
   # within one of the blocks C compiler shows undefined behavior.
   var lines = @[
-    fmt"{resolved_match.return_argument};",
+    fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.arg_name};",
     fmt"switch({match.operand}) " & "{",
   ]
   for case_block in resolved_match.case_blocks:

@@ -19,7 +19,7 @@ module Bitset:
         res = U8.and(bdata, 1)
         S64.from_U8(res)
       else:
-        S64.init(-1)
+        S64 -1
 
   fn set(Bitset bitset, U64 bit): S64
     ptr = bitset.ptr
@@ -38,7 +38,7 @@ module Bitset:
         Pointer.write_U8(bptr, res)
         S64.from_U8(res)
       else:
-        S64.init(-1)
+        S64 -1
 
   fn clear(Bitset bitset, U64 bit): S64
     ptr = bitset.ptr
@@ -58,7 +58,7 @@ module Bitset:
         Pointer.write_U8(bptr, res)
         S64.from_U8(res)
       else:
-        S64.init(-1)
+        S64 -1
 
   fn toggle(Bitset bitset, U64 bit): S64
     data = Bitset.get(bitset, bit)
@@ -68,7 +68,7 @@ module Bitset:
       case 1:
         Bitset.clear(bitset, bit)
       else:
-        S64.init(-1)
+        S64 -1
 
   fn max(U64 a, U64 b): U64
     op = U64.compare(a, b)
@@ -120,8 +120,8 @@ module Bitset:
         ans
 
 fn start(U8 seed): U8
-  exit_success = U8.init(0)
-  size = U64.init(1000001)
+  exit_success = U8 0
+  size = U64 1000001
   ptr = System.allocate(size)
   bitset = Bitset { ptr: ptr, size: size }
 

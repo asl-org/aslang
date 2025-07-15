@@ -1,6 +1,6 @@
 fn start(U8 seed): U8
-  exit_success = U8.init(0)
-  n = U64.init(100)
+  exit_success = U8 0
+  n = U64 100
 
   a = U64.subtract(n, 1)
   b = U64.add(n, 1)
