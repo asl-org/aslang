@@ -171,6 +171,12 @@ proc expect_struct_getter(parser: Parser): Result[StructGetter, string] =
   let field = ? parser.expect(TK_ID)
   ok(new_struct_getter(struct, field))
 
+proc expect_literal_init(parser: Parser): Result[LiteralInit, string] =
+  let arg_type = ? parser.expect(TK_ID)
+  discard ? parser.expect_at_least_one(TK_SPACE)
+  let arg_value = ? parser.expect(TK_INTEGER)
+  ok(new_literal_init(arg_type, arg_value))
+
 proc expect_expression(parser: Parser): Result[Expression, string] =
   let start = parser.index
   let maybe_function_call = parser.expect_function_call()
@@ -186,6 +192,11 @@ proc expect_expression(parser: Parser): Result[Expression, string] =
   let maybe_struct_getter = parser.expect_struct_getter()
   if maybe_struct_getter.is_ok:
     return ok(new_expression(maybe_struct_getter.get))
+  else: parser.index = start
+
+  let maybe_literal_init = parser.expect_literal_init()
+  if maybe_literal_init.is_ok:
+    return ok(new_expression(maybe_literal_init.get))
   else: parser.index = start
 
   let maybe_variable = parser.expect(TK_ID)

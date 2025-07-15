@@ -11,9 +11,9 @@ module Example:
     op = U64.compare(a, b)
     _a = match op:
       case 0:
-        U8.init(1)
+        U8 1
       else:
-        U8.init(0)
+        U8 0
 
   fn is_palindrome_loop(U64 a, U64 b, U64 c): U8
     op = U64.compare(c, 0)
@@ -61,7 +61,7 @@ module Example:
         k
 
 fn start(U8 seed): U8
-  exit_success = U8.init(0)
+  exit_success = U8 0
   ans = Example.loop_outer(100, 100, 0, 1000)
   System.print_U64(ans)
 

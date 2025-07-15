@@ -24,7 +24,7 @@ module Example:
         j
 
 fn start(U8 seed): U8
-  exit_success = U8.init(0)
+  exit_success = U8 0
   ans = Example.solve(2, 20, 1)
   System.print_U64(ans)
   exit_success

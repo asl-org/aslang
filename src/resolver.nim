@@ -44,34 +44,47 @@ proc safe_parse*[T](input: string): Result[void, string] =
   else:
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
-proc resolve_argument(scope: Table[string, ArgumentDefinition],
-    arg_def: ArgumentDefinition, arg_value: Token): Result[ResolvedArgument, string] =
-  case arg_value.kind:
-  of TK_ID:
-    if $(arg_value) notin scope:
-      return err(fmt"{arg_value.location} {arg_value} is not defined in the scope")
-    if $(scope[$(arg_value)].arg_type) != $(arg_def.arg_type):
-      return err(fmt"{arg_value.location} expected {arg_def.arg_type} but found {scope[$(arg_value)].arg_type}")
-  of TK_INTEGER:
-    case $(arg_def.arg_type):
-    of "U8": ? safe_parse[uint8]($(arg_value))
-    of "U16": ? safe_parse[uint16]($(arg_value))
-    of "U32": ? safe_parse[uint32]($(arg_value))
-    of "U64": ? safe_parse[uint64]($(arg_value))
-    of "S8": ? safe_parse[int8]($(arg_value))
-    of "S16": ? safe_parse[int16]($(arg_value))
-    of "S32": ? safe_parse[int32]($(arg_value))
-    of "S64": ? safe_parse[int64]($(arg_value))
-    else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as integer")
-  of TK_FLOAT:
-    case $(arg_def.arg_type):
-    of "F32": ? safe_parse[float32]($(arg_value))
-    of "F64": ? safe_parse[float64]($(arg_value))
-    else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as float")
-  else: # TODO: Support strings as arguments
-    return err(fmt"{arg_value.location} {arg_value} can not be passed to a function as argument")
+proc resolve_integer_literal(arg_type: Token, arg_value: Token): Result[void, string] =
+  case $(arg_type):
+  of "U8": ? safe_parse[uint8]($(arg_value))
+  of "U16": ? safe_parse[uint16]($(arg_value))
+  of "U32": ? safe_parse[uint32]($(arg_value))
+  of "U64": ? safe_parse[uint64]($(arg_value))
+  of "S8": ? safe_parse[int8]($(arg_value))
+  of "S16": ? safe_parse[int16]($(arg_value))
+  of "S32": ? safe_parse[int32]($(arg_value))
+  of "S64": ? safe_parse[int64]($(arg_value))
+  else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as integer")
+  ok()
 
-  ok(new_resolved_expression(arg_def.arg_type, arg_value))
+proc resolve_float_literal(arg_type: Token, arg_value: Token): Result[void, string] =
+  case $(arg_type):
+  of "F32": ? safe_parse[float32]($(arg_value))
+  of "F64": ? safe_parse[float64]($(arg_value))
+  else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as float")
+  ok()
+
+proc resolve_literal(arg_type: Token, arg_value: Token): Result[void, string] =
+  case arg_value.kind:
+  of TK_INTEGER: ? arg_type.resolve_integer_literal(arg_value)
+  of TK_FLOAT: ? arg_type.resolve_float_literal(arg_value)
+  else: return err(fmt"{arg_value.location} {arg_value} is not a literal")
+  ok()
+
+proc resolve_variable(arg_type: Token, arg_value: Token, scope: Table[string,
+    ArgumentDefinition]): Result[void, string] =
+  if $(arg_value) notin scope:
+    return err(fmt"{arg_value.location} {arg_value} is not defined in the scope")
+  if $(scope[$(arg_value)].arg_type) != $(arg_type):
+    return err(fmt"{arg_value.location} expected {arg_type} but found {scope[$(arg_value)].arg_type}")
+  ok()
+
+proc resolve_argument(scope: Table[string, ArgumentDefinition],
+    arg_type: Token, arg_value: Token): Result[void, string] =
+  case arg_value.kind:
+  of TK_ID: ? arg_type.resolve_variable(arg_value, scope)
+  else: ? arg_type.resolve_literal(arg_value)
+  ok()
 
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
@@ -85,7 +98,8 @@ proc resolve_function_call_args(function_call: FunctionCall,
   var resolved_args: seq[ResolvedArgument]
   for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
-    resolved_args.add( ? scope.resolve_argument(arg_def, arg_value))
+    ? scope.resolve_argument(arg_def.arg_type, arg_value)
+    resolved_args.add(new_resolved_argument(arg_def.arg_type, arg_value))
   ok(resolved_args)
 
 proc resolve_function_call_args(function_call: FunctionCall, function_defs: seq[
@@ -156,7 +170,8 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     if $(field_name) in field_name_table:
       return err(fmt"{field_name.location} {field_name} is already present in the initializer")
     let field = ? struct.find_field(field_name)
-    field_name_table[$(field_name)] = ? scope.resolve_argument(field, field_value)
+    ? scope.resolve_argument(field.arg_type, field_value)
+    field_name_table[$(field_name)] = new_resolved_argument(field.arg_type, field_value)
 
   let resolved_fields = struct.fields.values.to_seq.map_it(field_name_table[$(it.arg_name)])
   let resolved_struct_init = new_resolved_struct_init(module, resolved_fields)
@@ -197,6 +212,10 @@ proc resolved_expression(expression: Expression, file: blocks.File,
     let resolved_function_call = ? expression.function_call.resolve_function_call(
         file, scope)
     ok(new_resolved_expression(resolved_function_call))
+  of EK_LITERAL_INIT:
+    ? expression.literal_init.arg_type.resolve_literal(
+        expression.literal_init.arg_value)
+    ok(new_resolved_expression(expression.literal_init))
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint): Result[
@@ -255,7 +274,7 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
 
   let match_operand_def = scope[$(match.operand)]
   for case_block in match.case_blocks:
-    discard ? scope.resolve_argument(match_operand_def, case_block.value)
+    ? scope.resolve_argument(match_operand_def.arg_type, case_block.value)
     let resolved_case_block = ? case_block.resolve_case_block(file, scope, temp_var_count)
     resolved_case_blocks.add(resolved_case_block)
 

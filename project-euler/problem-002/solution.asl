@@ -4,13 +4,13 @@ module Solver:
       case 0:
         S64.add(a, b)
       case 1:
-        S64.init(b)
+        b
 
   fn solve(S64 a, S64 b, S64 c, S64 d): S64
     op = S64.compare(a, c)
     ans = match op:
       case 1:
-        S64.init(d)
+        d
       else:
         e = S64.remainder(a, 2)
         f = Solver.apply(a, d, e)
@@ -18,7 +18,7 @@ module Solver:
         Solver.solve(b, g, c, f)
 
 fn start(U8 seed): U8
-  exit_success = U8.init(0)
+  exit_success = U8 0
 
   a = Solver.solve(1, 2, 4000000, 0)
   System.print_S64(a)
