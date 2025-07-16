@@ -177,6 +177,34 @@ proc expect_literal_init(parser: Parser): Result[LiteralInit, string] =
   let arg_value = ? parser.expect(TK_INTEGER)
   ok(new_literal_init(arg_type, arg_value))
 
+proc expect_union_init_fields(parser: Parser): Result[seq[(Token, Token)], string] =
+  var fields: seq[(Token, Token)]
+  while true:
+    let name = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    discard ? parser.expect(TK_COLON)
+    discard parser.expect_any(TK_SPACE)
+    let value = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    fields.add((name, value))
+
+    let maybe_comma = parser.expect(TK_COMMA)
+    if maybe_comma.is_err: break
+    discard parser.expect_any(TK_SPACE)
+  ok(fields)
+
+proc expect_union_init(parser: Parser): Result[UnionInit, string] =
+  let union_name = ? parser.expect(TK_ID)
+  discard ? parser.expect(TK_PERIOD)
+  let union_field_name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_OCURLY)
+  discard parser.expect_any(TK_SPACE)
+  let fields = ? parser.expect_union_init_fields()
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_CCURLY)
+  ok(new_union_init(union_name, union_field_name, fields))
+
 proc expect_expression(parser: Parser): Result[Expression, string] =
   let start = parser.index
   let maybe_function_call = parser.expect_function_call()
@@ -187,6 +215,11 @@ proc expect_expression(parser: Parser): Result[Expression, string] =
   let maybe_struct_init = parser.expect_struct_init()
   if maybe_struct_init.is_ok:
     return ok(new_expression(maybe_struct_init.get))
+  else: parser.index = start
+
+  let maybe_union_init = parser.expect_union_init()
+  if maybe_union_init.is_ok:
+    return ok(new_expression(maybe_union_init.get))
   else: parser.index = start
 
   let maybe_struct_getter = parser.expect_struct_getter()

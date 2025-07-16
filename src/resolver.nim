@@ -223,6 +223,8 @@ proc resolved_expression(expression: Expression, file: blocks.File,
     ? expression.literal_init.arg_type.resolve_literal(
         expression.literal_init.arg_value)
     ok(new_resolved_expression(expression.literal_init))
+  of EK_UNION_INIT:
+    err("TODO: support union init expression in resolver")
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint): Result[
