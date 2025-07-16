@@ -261,6 +261,18 @@ proc expect_struct_definition(parser: Parser): Result[StructDefinition, string] 
 proc expect_struct_field_definition(parser: Parser): Result[ArgumentDefinition, string] =
   parser.expect_argument_definition()
 
+proc expect_union_definition(parser: Parser): Result[UnionDefinition, string] =
+  let union_token = ? parser.expect(TK_UNION)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_COLON)
+  ok(new_union_definition(union_token.location))
+
+proc expect_union_field_definition(parser: Parser): Result[UnionFieldDefinition, string] =
+  let name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_COLON)
+  ok(new_union_field_definition(name))
+
 proc expect_module_definition(parser: Parser): Result[ModuleDefinition, string] =
   let module_token = ? parser.expect(TK_MODULE)
   discard ? parser.expect_at_least_one(TK_SPACE)
@@ -288,7 +300,6 @@ proc expect_line(parser: Parser): Result[Line, string] =
   if maybe_else_def.is_ok: return ok(new_line(maybe_else_def.get))
   else: parser.index = start
 
-  # module level struct block
   let maybe_struct_def = parser.expect_struct_definition()
   if maybe_struct_def.is_ok: return ok(new_line(maybe_struct_def.get))
   else: parser.index = start
@@ -296,6 +307,14 @@ proc expect_line(parser: Parser): Result[Line, string] =
   let maybe_struct_field_def = parser.expect_struct_field_definition()
   if maybe_struct_field_def.is_ok: return ok(new_line(
       maybe_struct_field_def.get))
+  else: parser.index = start
+
+  let maybe_union_def = parser.expect_union_definition()
+  if maybe_union_def.is_ok: return ok(new_line(maybe_union_def.get))
+  else: parser.index = start
+
+  let maybe_union_field_def = parser.expect_union_field_definition()
+  if maybe_union_field_def.is_ok: return ok(new_line(maybe_union_field_def.get))
   else: parser.index = start
 
   let maybe_module_def = parser.expect_module_definition()
