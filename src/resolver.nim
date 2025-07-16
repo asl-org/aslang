@@ -86,6 +86,13 @@ proc resolve_argument(scope: Table[string, ArgumentDefinition],
   else: ? arg_type.resolve_literal(arg_value)
   ok()
 
+proc resolve_case_argument(scope: Table[string, ArgumentDefinition],
+    arg_type: Token, pattern: Pattern): Result[void, string] =
+  case pattern.kind:
+  of PK_LITERAL: ? arg_type.resolve_literal(pattern.literal)
+  else: return err("TODO: implement non literal pattern resolution")
+  ok()
+
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
     function_def: FunctionDefinition, scope: Table[string,
@@ -246,7 +253,7 @@ proc resolve_case_block(case_block: Case, file: blocks.File,
     resolved_statements.add(resolved_statement)
     scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
-  return ok(new_resolved_case(case_block.value, resolved_statements))
+  return ok(new_resolved_case(case_block.pattern, resolved_statements))
 
 proc resolve_else_block(else_block: Else, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition],
@@ -274,7 +281,8 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
 
   let match_operand_def = scope[$(match.operand)]
   for case_block in match.case_blocks:
-    ? scope.resolve_argument(match_operand_def.arg_type, case_block.value)
+    ? scope.resolve_case_argument(match_operand_def.arg_type,
+        case_block.pattern)
     let resolved_case_block = ? case_block.resolve_case_block(file, scope, temp_var_count)
     resolved_case_blocks.add(resolved_case_block)
 

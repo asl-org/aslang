@@ -238,13 +238,50 @@ proc expect_match_definition(parser: Parser): Result[MatchDefinition, string] =
   discard ? parser.expect(TK_COLON)
   ok(new_match_definition(destination, operand))
 
+proc expect_pattern_fields(parser: Parser): Result[seq[(Token, Token)], string] =
+  var fields: seq[(Token, Token)]
+  while true:
+    let name = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    discard ? parser.expect(TK_COLON)
+    discard parser.expect_any(TK_SPACE)
+    let value = ? parser.expect(TK_ID)
+    discard parser.expect_any(TK_SPACE)
+    fields.add((name, value))
+
+    let maybe_comma = parser.expect(TK_COMMA)
+    if maybe_comma.is_err: break
+    discard parser.expect_any(TK_SPACE)
+  ok(fields)
+
+proc expect_union_pattern(parser: Parser): Result[UnionPattern, string] =
+  let union_field_def_name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_OCURLY)
+  discard parser.expect_any(TK_SPACE)
+  let union_field_def_fields = ? parser.expect_pattern_fields()
+  discard parser.expect_any(TK_SPACE)
+  discard ? parser.expect(TK_CCURLY)
+  ok(new_union_pattern(union_field_def_name, union_field_def_fields))
+
+proc expect_case_pattern(parser: Parser): Result[Pattern, string] =
+  let start = parser.index
+
+  let maybe_union_pattern = parser.expect_union_pattern()
+  if maybe_union_pattern.is_ok:
+    return ok(new_pattern(maybe_union_pattern.get))
+  else: parser.index = start
+
+  # TODO: Add float/string/struct support later.
+  let value = ? parser.expect_one_of(@[TK_INTEGER])
+  ok(new_pattern(value))
+
 proc expect_case_definition(parser: Parser): Result[CaseDefinition, string] =
   let case_token = ? parser.expect(TK_CASE)
   discard ? parser.expect_at_least_one(TK_SPACE)
-  # TODO: Add float/string/struct support later.
-  let value = ? parser.expect_one_of(@[TK_INTEGER])
+  let pattern = ? parser.expect_case_pattern()
   discard ? parser.expect(TK_COLON)
-  ok(new_case_definition(value, case_token.location))
+  ok(new_case_definition(pattern, case_token.location))
 
 proc expect_else_definition(parser: Parser): Result[ElseDefinition, string] =
   let else_token = ? parser.expect(TK_ELSE)
