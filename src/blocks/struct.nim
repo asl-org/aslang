@@ -121,6 +121,10 @@ proc add_field*(union: Union, field: UnionFieldDefinition): Result[void, string]
     let predefined_location = union.fields[field_name].location
     return err(fmt"{field.location} Union field `{field_name}` is already defined at {predefined_location}")
 
+  # NOTE: At max 256 union branches are allowed due to 1 byte `id` field
+  if union.fields.len == 256:
+    return err(fmt"{field.location} Union only supports 256 fields at max")
+
   union.fields[field_name] = field
   ok()
 

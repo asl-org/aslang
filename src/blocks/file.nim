@@ -19,6 +19,9 @@ proc name*(file: File): string =
 proc struct_modules*(file: File): seq[UserModule] =
   file.user_modules.values.to_seq.filter_it(it.is_struct)
 
+proc union_modules*(file: File): seq[UserModule] =
+  file.user_modules.values.to_seq.filter_it(it.is_union)
+
 proc `$`*(file: File): string =
   file.functions.values.to_seq.map_it($(it)).join("\n\n")
 

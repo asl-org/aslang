@@ -1,4 +1,4 @@
-import results, strformat, sequtils, sets, strutils
+import strformat, sets, strutils
 
 import "../blocks"
 import case_block
@@ -27,6 +27,8 @@ proc c*(resolved_match: ResolvedMatch): string =
   let match = resolved_match.parsed_match_block
   # TODO: Fix garbage value errors if the return argument is defined
   # within one of the blocks C compiler shows undefined behavior.
+  # A potential fix is to prefix the variable names within that scope
+  # with a scope specific `hash`, location can be used as hash.
   var lines = @[
     fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.arg_name};",
     fmt"switch({match.operand}) " & "{",
@@ -40,15 +42,7 @@ proc c*(resolved_match: ResolvedMatch): string =
 
 proc new_resolved_match*(parsed_match_block: Match, destination: Token,
     operand: Token, case_blocks: seq[ResolvedCase], else_blocks: seq[
-        ResolvedElse]): Result[ResolvedMatch, string] =
-  let return_type = case_blocks[0].return_argument.arg_type
-  let case_return_args = case_blocks.map_it(it.return_argument)
-  let else_return_args = else_blocks.map_it(it.return_argument)
-  for return_arg in (case_return_args & else_return_args):
-    if $(return_type) != $(return_arg.arg_type):
-      return err(fmt"{return_arg.location} block is expected to return {return_type} but found {return_arg.arg_type}")
-
-  let return_argument = new_argument_definition(return_type, destination)
-  ok(ResolvedMatch(parsed_match_block: parsed_match_block,
+    ResolvedElse], return_argument: ArgumentDefinition): ResolvedMatch =
+  ResolvedMatch(parsed_match_block: parsed_match_block,
       destination: destination, operand: operand, case_blocks: case_blocks,
-      else_blocks: else_blocks, return_argument: return_argument))
+      else_blocks: else_blocks, return_argument: return_argument)

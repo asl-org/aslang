@@ -3,8 +3,20 @@ import strformat, sets, strutils
 import "../blocks"
 import function_call, statement
 
+type
+  ResolvedPattern* = ref object of RootObj
+    pattern: Pattern
+
+proc new_resolved_pattern*(pattern: Pattern): ResolvedPattern =
+  ResolvedPattern(pattern: pattern)
+
+proc `$`*(resolved_pattern: ResolvedPattern): string =
+  case resolved_pattern.pattern.kind:
+  of PK_LITERAL: $(resolved_pattern.pattern)
+  of PK_UNION: ""
+
 type ResolvedCase* = ref object of RootObj
-  pattern: Pattern
+  pattern: ResolvedPattern
   statements: seq[ResolvedStatement]
 
 proc return_argument*(case_block: ResolvedCase): ArgumentDefinition =
@@ -27,6 +39,6 @@ proc c*(resolved_case: ResolvedCase, result_var: Token): string =
   lines.add("}")
   return lines.join("\n")
 
-proc new_resolved_case*(pattern: Pattern, statements: seq[
+proc new_resolved_case*(pattern: ResolvedPattern, statements: seq[
     ResolvedStatement]): ResolvedCase =
   ResolvedCase(pattern: pattern, statements: statements)
