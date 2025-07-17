@@ -77,6 +77,13 @@ proc `$`*(union_field_def: UnionFieldDefinition): string =
     lines.add(child_prefix & fmt"{field.arg_type} {field.arg_name}")
   return lines.join("\n")
 
+proc find_field*(union_field_def: UnionFieldDefinition,
+    field_name: Token): Result[ArgumentDefinition, string] =
+  if $(field_name) notin union_field_def.fields:
+    return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union_field_def.location}")
+
+  ok(union_field_def.fields[$(field_name)])
+
 proc add_field*(union_field_def: UnionFieldDefinition,
     field: ArgumentDefinition): Result[void, string] =
   let field_name = $(field.arg_name)
@@ -101,6 +108,12 @@ proc new_union*(union_def: UnionDefinition): Union =
 
 proc location*(union: Union): Location =
   union.union_def.location
+
+proc find_field*(union: Union, field_name: Token): Result[UnionFieldDefinition, string] =
+  if $(field_name) notin union.fields:
+    return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union.location}")
+
+  ok(union.fields[$(field_name)])
 
 proc add_field*(union: Union, field: UnionFieldDefinition): Result[void, string] =
   let field_name = $(field.name)

@@ -137,6 +137,7 @@ type UserModule* = ref object of RootObj
   module_def*: ModuleDefinition
   functions*: seq[Function]
   struct*: Option[Struct]
+  union*: Option[Union]
 
 proc new_user_module*(module_def: ModuleDefinition): UserModule =
   UserModule(module_def: module_def)
@@ -144,6 +145,7 @@ proc new_user_module*(module_def: ModuleDefinition): UserModule =
 proc location*(module: UserModule): Location = module.module_def.location
 proc name*(module: UserModule): Token = module.module_def.name
 proc is_struct*(module: UserModule): bool = module.struct.is_some
+proc is_union*(module: UserModule): bool = module.union.is_some
 
 proc find_function*(module: UserModule, func_def: FunctionDefinition): Result[
     Function, string] =
@@ -174,7 +176,23 @@ proc add_struct*(module: UserModule, struct: Struct): Result[void, string] =
     let predefined_location = module.struct.get.location
     return err(fmt"{struct.location} Module `{module.name}` already contains a struct block at {predefined_location}")
 
+  if module.union.is_some:
+    let predefined_location = module.union.get.location
+    return err(fmt"{struct.location} Module `{module.name}` already contains a union block at {predefined_location}")
+
   module.struct = some(struct)
+  ok()
+
+proc add_union*(module: UserModule, union: Union): Result[void, string] =
+  if module.struct.is_some:
+    let predefined_location = module.struct.get.location
+    return err(fmt"{union.location} Module `{module.name}` already contains a struct block at {predefined_location}")
+
+  if module.union.is_some:
+    let predefined_location = module.union.get.location
+    return err(fmt"{union.location} Module `{module.name}` already contains a union block at {predefined_location}")
+
+  module.union = some(union)
   ok()
 
 proc close*(module: UserModule): Result[void, string] =

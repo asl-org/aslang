@@ -184,6 +184,28 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
   let resolved_struct_init = new_resolved_struct_init(module, resolved_fields)
   ok(resolved_struct_init)
 
+proc resolve_union_init(union_init: UnionInit, file: blocks.File,
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedUnionInit, string] =
+  let module = ? file.find_user_module(union_init.name)
+  if not module.is_union:
+    return err(fmt"{module.location} Module `{module.name}` is not a union")
+
+  let union = module.union.get
+  let union_field = ? union.find_field(union_init.field_name)
+
+  var field_name_table: Table[string, ResolvedArgument]
+  for (field_name, field_value) in union_init.union_fields:
+    if $(field_name) in field_name_table:
+      return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+    let field = ? union_field.find_field(field_name)
+    ? scope.resolve_argument(field.arg_type, field_value)
+    field_name_table[$(field_name)] = new_resolved_argument(field.arg_type, field_value)
+
+  let resolved_fields = union_field.fields.values.to_seq.map_it(
+      field_name_table[$(it.arg_name)])
+  let resolved_union_init = new_resolved_union_init(module, union_field, resolved_fields)
+  ok(resolved_union_init)
+
 proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructGetter, string] =
   let struct_var = struct_getter.struct
@@ -224,7 +246,8 @@ proc resolved_expression(expression: Expression, file: blocks.File,
         expression.literal_init.arg_value)
     ok(new_resolved_expression(expression.literal_init))
   of EK_UNION_INIT:
-    err("TODO: support union init expression in resolver")
+    let resolved_union_init = ? expression.union_init.resolve_union_init(file, scope)
+    ok(new_resolved_expression(resolved_union_init))
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint): Result[

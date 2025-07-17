@@ -15,7 +15,8 @@ module Status:
 fn start(U8 seed): U8
   exit_success = U8 0
 
-  success = Status.Ok { value: exit_success }
+  success_code = U64 1
+  success = Status.Ok { value: success_code }
   Status.print(success)
 
   failure_code = S64 -1

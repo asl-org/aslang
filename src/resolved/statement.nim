@@ -12,6 +12,7 @@ type
     REK_STRUCT_GETTER
     REK_FUNCTION_CALL
     REK_LITERAL_INIT
+    REK_UNION_INIT
   ResolvedExpression* = ref object of RootObj
     case kind*: ResolvedExpressionKind
     of REK_VARIABLE: variable*: ArgumentDefinition
@@ -19,6 +20,7 @@ type
     of REK_STRUCT_GETTER: struct_getter: ResolvedStructGetter
     of REK_FUNCTION_CALL: function_call: ResolvedFunctionCall
     of REK_LITERAL_INIT: literal_init: LiteralInit
+    of REK_UNION_INIT: union_init: ResolvedUnionInit
 
 proc new_resolved_expression*(variable: ArgumentDefinition): ResolvedExpression =
   ResolvedExpression(kind: REK_VARIABLE, variable: variable)
@@ -34,6 +36,9 @@ proc new_resolved_expression*(function_call: ResolvedFunctionCall): ResolvedExpr
 
 proc new_resolved_expression*(literal_init: LiteralInit): ResolvedExpression =
   ResolvedExpression(kind: REK_LITERAL_INIT, literal_init: literal_init)
+
+proc new_resolved_expression*(union_init: ResolvedUnionInit): ResolvedExpression =
+  ResolvedExpression(kind: REK_UNION_INIT, union_init: union_init)
 
 proc function_refs*(expression: ResolvedExpression): Hashset[
     ResolvedFunctionRef] =
@@ -52,6 +57,7 @@ proc return_type*(expression: ResolvedExpression): Token =
   of REK_STRUCT_GETTER: expression.struct_getter.field.arg_type
   of REK_FUNCTION_CALL: expression.function_call.return_type
   of REK_LITERAL_INIT: expression.literal_init.arg_type
+  of REK_UNION_INIT: expression.union_init.module.name
 
 proc c*(expression: ResolvedExpression): string =
   let native_code =
@@ -61,6 +67,7 @@ proc c*(expression: ResolvedExpression): string =
     of REK_STRUCT_GETTER: expression.struct_getter.c
     of REK_FUNCTION_CALL: expression.function_call.c
     of REK_LITERAL_INIT: $(expression.literal_init.arg_value)
+    of REK_UNION_INIT: expression.union_init.c
   fmt"{native_code};"
 
 type
