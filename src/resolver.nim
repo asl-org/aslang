@@ -87,7 +87,8 @@ proc resolve_argument(scope: Table[string, ArgumentDefinition],
   ok()
 
 proc resolve_union_pattern(file: blocks.File, scope: var Table[string,
-    ArgumentDefinition], module_name: Token, pattern: Pattern): Result[void, string] =
+    ArgumentDefinition], module_name: Token, pattern: Pattern): Result[
+        ResolvedPattern, string] =
   let module = ? file.find_user_module(module_name)
   if not module.is_union:
     return err(fmt"{module.location} Module `{module.name}` is not a union")
@@ -95,10 +96,12 @@ proc resolve_union_pattern(file: blocks.File, scope: var Table[string,
   let
     union = module.union.get
     union_field = ? union.find_field(pattern.union.name)
+    union_field_id = ? union.find_field_id(pattern.union.name)
   var
     field_name_table: Table[string, Token]
     field_value_table: Table[string, Token]
 
+  var args: seq[(ArgumentDefinition, Token)]
   for (field_name, field_value) in pattern.union.fields:
     # Redefinition check inside the destructured pattern
     if $(field_name) in field_name_table:
@@ -120,8 +123,9 @@ proc resolve_union_pattern(file: blocks.File, scope: var Table[string,
       return err(fmt"{field_value.location} field `{field_value}` is already defined at {predefined_location}")
 
     scope[$(field_value)] = new_argument_definition(field_type.arg_type, field_value)
+    args.add((scope[$(field_value)], field_name))
 
-  ok()
+  ok(new_resolved_pattern(module.name, pattern.union.name, union_field_id, args))
 
 proc resolve_case_pattern(scope: var Table[string, ArgumentDefinition],
     file: blocks.File, arg_type: Token, pattern: Pattern): Result[
@@ -131,8 +135,7 @@ proc resolve_case_pattern(scope: var Table[string, ArgumentDefinition],
     ? arg_type.resolve_literal(pattern.literal)
     ok(new_resolved_pattern(pattern))
   of PK_UNION:
-    ? file.resolve_union_pattern(scope, arg_type, pattern)
-    ok(new_resolved_pattern(pattern))
+    file.resolve_union_pattern(scope, arg_type, pattern)
 
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
@@ -309,19 +312,21 @@ proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     ok(new_resolved_statement(assignment.destination, resolved_expression))
 
 proc resolve_case_block(case_block: Case, file: blocks.File,
-    parent_scope: Table[string, ArgumentDefinition], arg_type: Token,
+    parent_scope: Table[string, ArgumentDefinition],
+        operand: ArgumentDefinition,
     temp_var_count: var uint): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
   var scope = parent_scope
-  let resolved_pattern = ? scope.resolve_case_pattern(file, arg_type,
+  let resolved_pattern = ? scope.resolve_case_pattern(file, operand.arg_type,
       case_block.pattern)
   for (index, statement) in case_block.statements.pairs:
     let resolved_statement = ? statement.resolve_statement(file, scope, temp_var_count)
     resolved_statements.add(resolved_statement)
     scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
-  return ok(new_resolved_case(resolved_pattern, resolved_statements))
+  return ok(new_resolved_case(resolved_pattern, operand.arg_name,
+      resolved_statements))
 
 proc resolve_else_block(else_block: Else, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition],
@@ -348,9 +353,19 @@ proc resolve_match(match: Match, file: blocks.File, scope: var Table[string,
     return err(fmt"{match.operand.location} {match.operand} is not defined in the scope")
 
   let match_operand_def = scope[$(match.operand)]
+
+  case $(match_operand_def.arg_type):
+  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64": discard
+  of "F32", "F64":
+    return err(fmt"{match.operand.location} `match` does not support floating point value `{match.operand}`")
+  else:
+    let module = ? file.find_user_module(match_operand_def.arg_type)
+    if not module.is_union:
+      return err(fmt"{match.operand.location} `match` only supports integers/union values `{match.operand}`")
+
   for case_block in match.case_blocks:
     let resolved_case_block = ? case_block.resolve_case_block(file, scope,
-        match_operand_def.arg_type, temp_var_count)
+        match_operand_def, temp_var_count)
     resolved_case_blocks.add(resolved_case_block)
 
   # Note: Even though this is a for loop but there can only be at most 1 else block.
@@ -366,7 +381,7 @@ proc resolve_match(match: Match, file: blocks.File, scope: var Table[string,
       return err(fmt"{return_arg.location} block is expected to return {return_type} but found {return_arg.arg_type}")
 
   let return_argument = new_argument_definition(return_type, match.destination)
-  ok(new_resolved_match(match, match.destination, match.operand,
+  ok(new_resolved_match(match, match.destination, match_operand_def,
       resolved_case_blocks, resolved_else_blocks, return_argument))
 
 proc resolve_function_step(step: FunctionStep, file: blocks.File,

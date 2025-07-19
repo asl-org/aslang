@@ -1,4 +1,4 @@
-import strformat, strutils, results, tables
+import strformat, strutils, results, tables, sequtils
 
 import arg_def, token
 
@@ -108,6 +108,12 @@ proc new_union*(union_def: UnionDefinition): Union =
 
 proc location*(union: Union): Location =
   union.union_def.location
+
+proc find_field_id*(union: Union, field_name: Token): Result[int, string] =
+  for (index, field_name_str) in union.fields.keys.to_seq.pairs:
+    if $(field_name) == field_name_str:
+      return ok(index)
+  return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union.location}")
 
 proc find_field*(union: Union, field_name: Token): Result[UnionFieldDefinition, string] =
   if $(field_name) notin union.fields:

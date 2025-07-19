@@ -182,7 +182,7 @@ proc free_c(module_name: string, union_name: string): string =
 proc id_h(module_name: string): string =
   @[
     fmt"U8 {module_name}_get_{ASL_UNION_ID}(Pointer ptr);",
-    fmt"U8 {module_name}_set_{ASL_UNION_ID}(Pointer ptr, U8 id);",
+    fmt"Pointer {module_name}_set_{ASL_UNION_ID}(Pointer ptr, U8 id);",
   ].join("\n")
 
 proc id_c(module_name: string): string =
@@ -194,7 +194,7 @@ proc id_c(module_name: string): string =
   ].join("\n")
 
   let setter = @[
-    fmt"U8 {module_name}_set_{ASL_UNION_ID}(Pointer ptr, U8 id)",
+    fmt"Pointer {module_name}_set_{ASL_UNION_ID}(Pointer ptr, U8 id)",
     "{",
     fmt"Pointer _ = Pointer_write_U8(ptr, id);",
     fmt"return ptr;",

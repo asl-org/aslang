@@ -6,10 +6,12 @@ import else_block
 
 import function_call
 
+const ASL_UNION_ID = "__asl_union_id__"
+
 type ResolvedMatch* = ref object of RootObj
   parsed_match_block: Match
   destination*: Token
-  operand: Token
+  operand: ArgumentDefinition
   case_blocks: seq[ResolvedCase]
   # there can only be 1 else block
   else_blocks: seq[ResolvedElse]
@@ -29,10 +31,16 @@ proc c*(resolved_match: ResolvedMatch): string =
   # within one of the blocks C compiler shows undefined behavior.
   # A potential fix is to prefix the variable names within that scope
   # with a scope specific `hash`, location can be used as hash.
-  var lines = @[
-    fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.arg_name};",
-    fmt"switch({match.operand}) " & "{",
-  ]
+  var lines = @[fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.arg_name};"]
+
+  let match_expr =
+    case $(resolved_match.operand.arg_type):
+    of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64":
+      $(resolved_match.operand.arg_name)
+    else:
+      fmt"{resolved_match.operand.arg_type}_get_{ASL_UNION_ID}({resolved_match.operand.arg_name})"
+
+  lines.add(fmt"switch({match_expr}) " & "{")
   for case_block in resolved_match.case_blocks:
     lines.add(case_block.c(match.destination))
   for else_block in resolved_match.else_blocks:
@@ -41,7 +49,8 @@ proc c*(resolved_match: ResolvedMatch): string =
   return lines.join("\n")
 
 proc new_resolved_match*(parsed_match_block: Match, destination: Token,
-    operand: Token, case_blocks: seq[ResolvedCase], else_blocks: seq[
+    operand: ArgumentDefinition, case_blocks: seq[ResolvedCase],
+        else_blocks: seq[
     ResolvedElse], return_argument: ArgumentDefinition): ResolvedMatch =
   ResolvedMatch(parsed_match_block: parsed_match_block,
       destination: destination, operand: operand, case_blocks: case_blocks,
