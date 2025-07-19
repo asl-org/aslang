@@ -45,6 +45,7 @@ type
     BK_STATEMENT
     BK_MATCH, BK_CASE, BK_ELSE
     BK_STRUCT_FIELD, BK_STRUCT
+    BK_UNION_FIELD, BK_UNION
     BK_FUNCTION, BK_MODULE, BK_FILE
 
   Block* = ref object of RootObj
@@ -58,6 +59,8 @@ type
     of BK_ELSE: else_block*: Else
     of BK_STRUCT: struct: Struct
     of BK_STRUCT_FIELD: struct_field_def: ArgumentDefinition
+    of BK_UNION: union*: Union
+    of BK_UNION_FIELD: union_field_def: UnionFieldDefinition
     of BK_MODULE: module: UserModule
 
 proc location*(asl_block: Block): Location =
@@ -70,6 +73,8 @@ proc location*(asl_block: Block): Location =
   of BK_ELSE: asl_block.else_block.location
   of BK_STRUCT: asl_block.struct.location
   of BK_STRUCT_FIELD: asl_block.struct_field_def.location
+  of BK_UNION: asl_block.union.location
+  of BK_UNION_FIELD: asl_block.union_field_def.location
   of BK_MODULE: asl_block.module.location
 
 proc indent*(asl_block: Block): int =
@@ -85,6 +90,8 @@ proc `$`*(asl_block: Block): string =
   of BK_ELSE: $(asl_block.else_block)
   of BK_STRUCT: $(asl_block.struct)
   of BK_STRUCT_FIELD: $(asl_block.struct_field_def)
+  of BK_UNION: $(asl_block.union)
+  of BK_UNION_FIELD: $(asl_block.union_field_def)
   of BK_MODULE: $(asl_block.module)
 
 proc close*(asl_block: Block): Result[void, string] =
@@ -96,6 +103,8 @@ proc close*(asl_block: Block): Result[void, string] =
   of BK_CASE: asl_block.case_block.close()
   of BK_ELSE: asl_block.else_block.close()
   of BK_STRUCT: asl_block.struct.close()
+  of BK_UNION: asl_block.union.close()
+  of BK_UNION_FIELD: asl_block.union_field_def.close()
   of BK_MODULE: asl_block.module.close()
   # leaf blocks
   of BK_STRUCT_FIELD: ok()
@@ -133,10 +142,19 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
     case child.kind:
     of BK_STRUCT_FIELD: parent.struct.add_field(child.struct_field_def)
     else: err(fmt"{parent.location} `struct` can only contain field definitions")
+  of BK_UNION:
+    case child.kind:
+    of BK_UNION_FIELD: parent.union.add_field(child.union_field_def)
+    else: err(fmt"{parent.location} `union` can only contain union field definitions")
+  of BK_UNION_FIELD:
+    case child.kind:
+    of BK_STRUCT_FIELD: parent.union_field_def.add_field(child.struct_field_def)
+    else: err(fmt"{parent.location} `union` field can only contain field definitions")
   of BK_MODULE:
     case child.kind:
     of BK_FUNCTION: parent.module.add_function(child.function)
     of BK_STRUCT: parent.module.add_struct(child.struct)
+    of BK_UNION: parent.module.add_union(child.union)
     else: err(fmt"{parent.module.name} Module can only contain functions")
   of BK_STATEMENT: err(fmt"{parent.location} statement does not support further nesting")
   of BK_STRUCT_FIELD: err(fmt"{parent.location} struct field definition does not support further nesting.")
@@ -170,6 +188,11 @@ proc new_block*(line: Line): Result[Block, string] =
     of LK_STRUCT_FIELD_DEFINITION:
       Block(kind: BK_STRUCT_FIELD, indent: indent,
           struct_field_def: line.struct_field_def)
+    of LK_UNION_DEFINITION:
+      Block(kind: BK_UNION, indent: indent, union: new_union(line.union_def))
+    of LK_UNION_FIELD_DEFINITION:
+      Block(kind: BK_UNION_FIELD, indent: indent,
+          union_field_def: line.union_field_def)
     of LK_MODULE_DEFINITION:
       Block(kind: BK_MODULE, indent: indent, module: new_user_module(
           line.module_def))

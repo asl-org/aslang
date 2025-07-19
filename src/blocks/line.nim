@@ -8,6 +8,7 @@ type
     LK_FUNCTION_DEFINITION, LK_STATEMENT
     LK_MATCH_DEFINITION, LK_CASE_DEFINITION, LK_ELSE_DEFINITION
     LK_STRUCT_DEFINITION, LK_STRUCT_FIELD_DEFINITION
+    LK_UNION_DEFINITION, LK_UNION_FIELD_DEFINITION
     LK_MODULE_DEFINITION
   Line* = ref object of RootObj
     case kind*: LineKind
@@ -18,6 +19,8 @@ type
     of LK_ELSE_DEFINITION: else_def*: ElseDefinition
     of LK_STRUCT_DEFINITION: struct_def*: StructDefinition
     of LK_STRUCT_FIELD_DEFINITION: struct_field_def*: ArgumentDefinition
+    of LK_UNION_DEFINITION: union_def*: UnionDefinition
+    of LK_UNION_FIELD_DEFINITION: union_field_def*: UnionFieldDefinition
     of LK_MODULE_DEFINITION: module_def*: ModuleDefinition
 
 proc new_line*(func_def: FunctionDefinition): Line =
@@ -41,6 +44,12 @@ proc new_line*(struct_def: StructDefinition): Line =
 proc new_line*(struct_field_def: ArgumentDefinition): Line =
   Line(kind: LK_STRUCT_FIELD_DEFINITION, struct_field_def: struct_field_def)
 
+proc new_line*(union_def: UnionDefinition): Line =
+  Line(kind: LK_UNION_DEFINITION, union_def: union_def)
+
+proc new_line*(union_field_def: UnionFieldDefinition): Line =
+  Line(kind: LK_UNION_FIELD_DEFINITION, union_field_def: union_field_def)
+
 proc new_line*(module_def: ModuleDefinition): Line =
   Line(kind: LK_MODULE_DEFINITION, module_def: module_def)
 
@@ -53,6 +62,8 @@ proc location*(line: Line): Location =
   of LK_ELSE_DEFINITION: line.else_def.location
   of LK_STRUCT_DEFINITION: line.struct_def.location
   of LK_STRUCT_FIELD_DEFINITION: line.struct_field_def.location
+  of LK_UNION_DEFINITION: line.union_def.location
+  of LK_UNION_FIELD_DEFINITION: line.union_field_def.location
   of LK_MODULE_DEFINITION: line.module_def.location
 
 proc `$`*(line: Line): string =
@@ -64,4 +75,6 @@ proc `$`*(line: Line): string =
   of LK_ELSE_DEFINITION: $(line.else_def)
   of LK_STRUCT_DEFINITION: $(line.struct_def)
   of LK_STRUCT_FIELD_DEFINITION: $(line.struct_field_def)
+  of LK_UNION_DEFINITION: $(line.union_def)
+  of LK_UNION_FIELD_DEFINITION: $(line.union_field_def)
   of LK_MODULE_DEFINITION: $(line.module_def)

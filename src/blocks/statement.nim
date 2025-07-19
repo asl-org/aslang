@@ -42,11 +42,27 @@ proc location*(literal_init: LiteralInit): Location =
 proc `$`*(literal_init: LiteralInit): string =
   fmt"{literal_init.arg_type} {literal_init.arg_value}"
 
+type UnionInit* = ref object of RootObj
+  name*: Token
+  field_name*: Token
+  union_fields*: seq[(Token, Token)]
+
+proc new_union_init*(name: Token, field_name: Token, union_fields: seq[(
+    Token, Token)]): UnionInit =
+  UnionInit(name: name, field_name: field_name, union_fields: union_fields)
+
+proc location*(union_init: UnionInit): Location =
+  union_init.name.location
+
+proc `$`*(union_init: UnionInit): string =
+  let fields = union_init.union_fields.map_it(fmt"{it[0]}: {it[1]}").join(", ")
+  $(union_init.name) & "." & $(union_init.field_name) & " { " & fields & " }"
+
 type
   ExpressionKind* = enum
     EK_VARIABLE, EK_FUNCTION_CALL,
     EK_STRUCT_INIT, EK_STRUCT_GETTER
-    EK_LITERAL_INIT
+    EK_LITERAL_INIT, EK_UNION_INIT
   Expression* = ref object of RootObj
     case kind*: ExpressionKind
     of EK_VARIABLE: variable*: Token
@@ -54,6 +70,7 @@ type
     of EK_STRUCT_INIT: struct_init*: StructInit
     of EK_STRUCT_GETTER: struct_getter*: StructGetter
     of EK_LITERAL_INIT: literal_init*: LiteralInit
+    of EK_UNION_INIT: union_init*: UnionInit
 
 proc new_expression*(variable: Token): Expression =
   Expression(kind: EK_VARIABLE, variable: variable)
@@ -70,6 +87,9 @@ proc new_expression*(struct_getter: StructGetter): Expression =
 proc new_expression*(literal_init: LiteralInit): Expression =
   Expression(kind: EK_LITERAL_INIT, literal_init: literal_init)
 
+proc new_expression*(union_init: UnionInit): Expression =
+  Expression(kind: EK_UNION_INIT, union_init: union_init)
+
 proc location*(expression: Expression): Location =
   case expression.kind:
   of EK_VARIABLE: expression.variable.location
@@ -77,6 +97,7 @@ proc location*(expression: Expression): Location =
   of EK_STRUCT_INIT: expression.struct_init.location
   of EK_STRUCT_GETTER: expression.struct_getter.location
   of EK_LITERAL_INIT: expression.literal_init.location
+  of EK_UNION_INIT: expression.union_init.location
 
 proc `$`*(expression: Expression): string =
   case expression.kind:
@@ -85,6 +106,7 @@ proc `$`*(expression: Expression): string =
   of EK_STRUCT_GETTER: $(expression.struct_getter)
   of EK_STRUCT_INIT: $(expression.struct_init)
   of EK_LITERAL_INIT: $(expression.literal_init)
+  of EK_UNION_INIT: $(expression.union_init)
 
 type
   StatementKind* = enum

@@ -86,6 +86,57 @@ proc resolve_argument(scope: Table[string, ArgumentDefinition],
   else: ? arg_type.resolve_literal(arg_value)
   ok()
 
+proc resolve_union_pattern(file: blocks.File, scope: var Table[string,
+    ArgumentDefinition], module_name: Token, pattern: Pattern): Result[
+        ResolvedPattern, string] =
+  let module = ? file.find_user_module(module_name)
+  if not module.is_union:
+    return err(fmt"{module.location} Module `{module.name}` is not a union")
+
+  let
+    union = module.union.get
+    union_field = ? union.find_field(pattern.union.name)
+    union_field_id = ? union.find_field_id(pattern.union.name)
+  var
+    field_name_table: Table[string, Token]
+    field_value_table: Table[string, Token]
+
+  var args: seq[(ArgumentDefinition, Token)]
+  for (field_name, field_value) in pattern.union.fields:
+    # Redefinition check inside the destructured pattern
+    if $(field_name) in field_name_table:
+      let predefined_location = field_name_table[$(field_name)].location
+      return err(fmt"{field_name.location} field `{field_name}` is already defined at {predefined_location}")
+
+    # Redefinition check inside the destructured pattern
+    if $(field_value) in field_value_table:
+      let predefined_location = field_value_table[$(field_value)].location
+      return err(fmt"{field_value.location} field `{field_value}` is already defined at {predefined_location}")
+
+    let field_type = ? union_field.find_field(field_name)
+    field_name_table[$(field_name)] = field_name
+    field_value_table[$(field_value)] = field_value
+
+    # Redefinition check in the scope
+    if $(field_value) in scope:
+      let predefined_location = scope[$(field_value)].location
+      return err(fmt"{field_value.location} field `{field_value}` is already defined at {predefined_location}")
+
+    scope[$(field_value)] = new_argument_definition(field_type.arg_type, field_value)
+    args.add((scope[$(field_value)], field_name))
+
+  ok(new_resolved_pattern(module.name, pattern.union.name, union_field_id, args))
+
+proc resolve_case_pattern(scope: var Table[string, ArgumentDefinition],
+    file: blocks.File, arg_type: Token, pattern: Pattern): Result[
+        ResolvedPattern, string] =
+  case pattern.kind:
+  of PK_LITERAL:
+    ? arg_type.resolve_literal(pattern.literal)
+    ok(new_resolved_pattern(pattern))
+  of PK_UNION:
+    file.resolve_union_pattern(scope, arg_type, pattern)
+
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
     function_def: FunctionDefinition, scope: Table[string,
@@ -177,6 +228,28 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
   let resolved_struct_init = new_resolved_struct_init(module, resolved_fields)
   ok(resolved_struct_init)
 
+proc resolve_union_init(union_init: UnionInit, file: blocks.File,
+    scope: Table[string, ArgumentDefinition]): Result[ResolvedUnionInit, string] =
+  let module = ? file.find_user_module(union_init.name)
+  if not module.is_union:
+    return err(fmt"{module.location} Module `{module.name}` is not a union")
+
+  let union = module.union.get
+  let union_field = ? union.find_field(union_init.field_name)
+
+  var field_name_table: Table[string, ResolvedArgument]
+  for (field_name, field_value) in union_init.union_fields:
+    if $(field_name) in field_name_table:
+      return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+    let field = ? union_field.find_field(field_name)
+    ? scope.resolve_argument(field.arg_type, field_value)
+    field_name_table[$(field_name)] = new_resolved_argument(field.arg_type, field_value)
+
+  let resolved_fields = union_field.fields.values.to_seq.map_it(
+      field_name_table[$(it.arg_name)])
+  let resolved_union_init = new_resolved_union_init(module, union_field, resolved_fields)
+  ok(resolved_union_init)
+
 proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructGetter, string] =
   let struct_var = struct_getter.struct
@@ -216,6 +289,9 @@ proc resolved_expression(expression: Expression, file: blocks.File,
     ? expression.literal_init.arg_type.resolve_literal(
         expression.literal_init.arg_value)
     ok(new_resolved_expression(expression.literal_init))
+  of EK_UNION_INIT:
+    let resolved_union_init = ? expression.union_init.resolve_union_init(file, scope)
+    ok(new_resolved_expression(resolved_union_init))
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint): Result[
@@ -237,16 +313,20 @@ proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
 
 proc resolve_case_block(case_block: Case, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition],
-        temp_var_count: var uint): Result[ResolvedCase, string] =
+        operand: ArgumentDefinition,
+    temp_var_count: var uint): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
   var scope = parent_scope
+  let resolved_pattern = ? scope.resolve_case_pattern(file, operand.arg_type,
+      case_block.pattern)
   for (index, statement) in case_block.statements.pairs:
     let resolved_statement = ? statement.resolve_statement(file, scope, temp_var_count)
     resolved_statements.add(resolved_statement)
     scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
-  return ok(new_resolved_case(case_block.value, resolved_statements))
+  return ok(new_resolved_case(resolved_pattern, operand.arg_name,
+      resolved_statements))
 
 proc resolve_else_block(else_block: Else, file: blocks.File,
     parent_scope: Table[string, ArgumentDefinition],
@@ -261,7 +341,7 @@ proc resolve_else_block(else_block: Else, file: blocks.File,
 
   return ok(new_resolved_else(resolved_statements))
 
-proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
+proc resolve_match(match: Match, file: blocks.File, scope: var Table[string,
     ArgumentDefinition], temp_var_count: var uint): Result[ResolvedMatch, string] =
   var resolved_case_blocks: seq[ResolvedCase]
   var resolved_else_blocks: seq[ResolvedElse]
@@ -273,9 +353,19 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
     return err(fmt"{match.operand.location} {match.operand} is not defined in the scope")
 
   let match_operand_def = scope[$(match.operand)]
+
+  case $(match_operand_def.arg_type):
+  of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64": discard
+  of "F32", "F64":
+    return err(fmt"{match.operand.location} `match` does not support floating point value `{match.operand}`")
+  else:
+    let module = ? file.find_user_module(match_operand_def.arg_type)
+    if not module.is_union:
+      return err(fmt"{match.operand.location} `match` only supports integers/union values `{match.operand}`")
+
   for case_block in match.case_blocks:
-    ? scope.resolve_argument(match_operand_def.arg_type, case_block.value)
-    let resolved_case_block = ? case_block.resolve_case_block(file, scope, temp_var_count)
+    let resolved_case_block = ? case_block.resolve_case_block(file, scope,
+        match_operand_def, temp_var_count)
     resolved_case_blocks.add(resolved_case_block)
 
   # Note: Even though this is a for loop but there can only be at most 1 else block.
@@ -283,8 +373,16 @@ proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
     let resolved_else_block = ? else_block.resolve_else_block(file, scope, temp_var_count)
     resolved_else_blocks.add(resolved_else_block)
 
-  new_resolved_match(match, match.destination, match.operand,
-      resolved_case_blocks, resolved_else_blocks)
+  let return_type = resolved_case_blocks[0].return_argument.arg_type
+  let case_return_args = resolved_case_blocks.map_it(it.return_argument)
+  let else_return_args = resolved_else_blocks.map_it(it.return_argument)
+  for return_arg in (case_return_args & else_return_args):
+    if $(return_type) != $(return_arg.arg_type):
+      return err(fmt"{return_arg.location} block is expected to return {return_type} but found {return_arg.arg_type}")
+
+  let return_argument = new_argument_definition(return_type, match.destination)
+  ok(new_resolved_match(match, match.destination, match_operand_def,
+      resolved_case_blocks, resolved_else_blocks, return_argument))
 
 proc resolve_function_step(step: FunctionStep, file: blocks.File,
     scope: var Table[string, ArgumentDefinition],
@@ -375,22 +473,36 @@ proc resolve_struct(module: UserModule, scope: Table[string,
 
   ok(new_resolved_struct(module, offset, field_offset))
 
-proc resolve_structs(file: blocks.File): Result[seq[ResolvedStruct], string] =
-  var scope: Table[string, UserModule]
-  var module_list: seq[UserModule]
-  for module in file.struct_modules:
-    if $(module.name) in scope:
-      let defined_struct = scope[$(module.name)]
-      return err(fmt"{module.location} `{module.name}` is already defined at {defined_struct.location}")
-    scope[$(module.name)] = module
-    module_list.add(module)
-
+proc resolve_structs(file: blocks.File, scope: Table[string,
+    UserModule]): Result[seq[ResolvedStruct], string] =
   var resolved_structs: seq[ResolvedStruct]
-  for module in module_list:
-    resolved_structs.add( ? module.resolve_struct(scope, file.name))
+  for module in file.user_modules.values:
+    if module.is_struct:
+      resolved_structs.add( ? module.resolve_struct(scope, file.name))
   return ok(resolved_structs)
 
+proc resolve_union(module: UserModule, scope: Table[string,
+    UserModule], filename: string): Result[ResolvedUnion, string] =
+  ok(new_resolved_union(module))
+
+proc resolve_unions(file: blocks.File, scope: Table[string,
+    UserModule]): Result[seq[ResolvedUnion], string] =
+  var resolved_unions: seq[ResolvedUnion]
+  for module in file.user_modules.values:
+    if module.is_union:
+      resolved_unions.add( ? module.resolve_union(scope, file.name))
+  return ok(resolved_unions)
+
 proc resolve*(file: blocks.File): Result[ResolvedFile, string] =
-  let resolved_structs = ? file.resolve_structs()
+  var scope: Table[string, UserModule]
+  for module in file.user_modules.values:
+    if module.is_struct or module.is_union:
+      if $(module.name) in scope:
+        let defined_struct = scope[$(module.name)]
+        return err(fmt"{module.location} `{module.name}` is already defined at {defined_struct.location}")
+      scope[$(module.name)] = module
+
+  let resolved_structs = ? file.resolve_structs(scope)
+  let resolved_unions = ? file.resolve_unions(scope)
   let resolved_functions = ? file.resolve_functions()
-  ok(new_resolved_file(resolved_structs, resolved_functions))
+  ok(new_resolved_file(resolved_structs, resolved_unions, resolved_functions))

@@ -3,8 +3,33 @@ import strformat, sets, strutils
 import "../blocks"
 import function_call, statement
 
+type
+  ResolvedPatternKind = enum
+    RPK_LITERAL, RPK_UNION
+  ResolvedPattern* = ref object of RootObj
+    case kind*: ResolvedPatternKind
+    of RPK_LITERAL: pattern: Pattern
+    of RPK_UNION:
+      module: Token
+      union: Token
+      id: int
+      args: seq[(ArgumentDefinition, Token)]
+
+proc new_resolved_pattern*(pattern: Pattern): ResolvedPattern =
+  ResolvedPattern(kind: RPK_LITERAL, pattern: pattern)
+
+proc new_resolved_pattern*(module: Token, union: Token, id: int, args: seq[(
+    ArgumentDefinition, Token)]): ResolvedPattern =
+  ResolvedPattern(kind: RPK_UNION, module: module, union: union, id: id, args: args)
+
+proc `$`*(resolved_pattern: ResolvedPattern): string =
+  case resolved_pattern.kind:
+  of RPK_LITERAL: $(resolved_pattern.pattern)
+  of RPK_UNION: $(resolved_pattern.id)
+
 type ResolvedCase* = ref object of RootObj
-  value: Token
+  pattern: ResolvedPattern
+  operand: Token
   statements: seq[ResolvedStatement]
 
 proc return_argument*(case_block: ResolvedCase): ArgumentDefinition =
@@ -17,7 +42,14 @@ proc function_refs*(case_block: ResolvedCase): Hashset[ResolvedFunctionRef] =
   function_ref_set
 
 proc c*(resolved_case: ResolvedCase, result_var: Token): string =
-  var lines = @[fmt"case {resolved_case.value}: " & "{"]
+  var lines: seq[string] = @[fmt"case {resolved_case.pattern}: " & "{"]
+
+  case resolved_case.pattern.kind:
+  of RPK_LITERAL: discard
+  else:
+    for (arg, field) in resolved_case.pattern.args:
+      lines.add(fmt"{arg.native_type} {arg.arg_name} = {resolved_case.pattern.module}_{resolved_case.pattern.union}_get_{field}({resolved_case.operand});")
+
   for statement in resolved_case.statements:
     lines.add(statement.c)
 
@@ -27,6 +59,6 @@ proc c*(resolved_case: ResolvedCase, result_var: Token): string =
   lines.add("}")
   return lines.join("\n")
 
-proc new_resolved_case*(value: Token, statements: seq[
-    ResolvedStatement]): ResolvedCase =
-  ResolvedCase(value: value, statements: statements)
+proc new_resolved_case*(pattern: ResolvedPattern, operand: Token,
+    statements: seq[ResolvedStatement]): ResolvedCase =
+  ResolvedCase(pattern: pattern, operand: operand, statements: statements)
