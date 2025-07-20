@@ -44,47 +44,55 @@ proc safe_parse*[T](input: string): Result[void, string] =
   else:
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
-proc resolve_integer_literal(arg_type: Token, arg_value: Token): Result[void, string] =
-  case $(arg_type):
-  of "U8": ? safe_parse[uint8]($(arg_value))
-  of "U16": ? safe_parse[uint16]($(arg_value))
-  of "U32": ? safe_parse[uint32]($(arg_value))
-  of "U64": ? safe_parse[uint64]($(arg_value))
-  of "S8": ? safe_parse[int8]($(arg_value))
-  of "S16": ? safe_parse[int16]($(arg_value))
-  of "S32": ? safe_parse[int32]($(arg_value))
-  of "S64": ? safe_parse[int64]($(arg_value))
-  else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as integer")
-  ok()
+proc resolve_integer_literal(typ: Token, value: Token): Result[
+    ResolvedLiteral, string] =
+  case $(typ):
+  of "U8": ? safe_parse[uint8]($(value))
+  of "U16": ? safe_parse[uint16]($(value))
+  of "U32": ? safe_parse[uint32]($(value))
+  of "U64": ? safe_parse[uint64]($(value))
+  of "S8": ? safe_parse[int8]($(value))
+  of "S16": ? safe_parse[int16]($(value))
+  of "S32": ? safe_parse[int32]($(value))
+  of "S64": ? safe_parse[int64]($(value))
+  else: return err(fmt"{value.location} arguments with builtin types can be passed as integer")
+  ok(new_resolved_integer_literal(typ, value))
 
-proc resolve_float_literal(arg_type: Token, arg_value: Token): Result[void, string] =
-  case $(arg_type):
-  of "F32": ? safe_parse[float32]($(arg_value))
-  of "F64": ? safe_parse[float64]($(arg_value))
-  else: return err(fmt"{arg_value.location} arguments with builtin types can be passed as float")
-  ok()
+proc resolve_float_literal(typ: Token, value: Token): Result[ResolvedLiteral, string] =
+  case $(typ):
+  of "F32": ? safe_parse[float32]($(value))
+  of "F64": ? safe_parse[float64]($(value))
+  else: return err(fmt"{value.location} arguments with builtin types can be passed as float")
+  ok(new_resolved_float_literal(typ, value))
 
-proc resolve_literal(arg_type: Token, arg_value: Token): Result[void, string] =
-  case arg_value.kind:
-  of TK_INTEGER: ? arg_type.resolve_integer_literal(arg_value)
-  of TK_FLOAT: ? arg_type.resolve_float_literal(arg_value)
-  else: return err(fmt"{arg_value.location} {arg_value} is not a literal")
-  ok()
+proc resolve_literal(typ: Token, value: Token): Result[ResolvedLiteral, string] =
+  case value.kind:
+  of TK_INTEGER: typ.resolve_integer_literal(value)
+  of TK_FLOAT: typ.resolve_float_literal(value)
+  else: return err(fmt"{value.location} {value} is not a literal")
 
-proc resolve_variable(arg_type: Token, arg_value: Token, scope: Table[string,
-    ArgumentDefinition]): Result[void, string] =
-  if $(arg_value) notin scope:
-    return err(fmt"{arg_value.location} {arg_value} is not defined in the scope")
-  if $(scope[$(arg_value)].arg_type) != $(arg_type):
-    return err(fmt"{arg_value.location} expected {arg_type} but found {scope[$(arg_value)].arg_type}")
-  ok()
+proc resolve_variable(name: Token, scope: Table[string,
+    ArgumentDefinition]): Result[ResolvedVariable, string] =
+  if $(name) notin scope:
+    return err(fmt"{name.location} {name} is not defined in the scope")
+  ok(new_resolved_variable(scope[$(name)]))
+
+proc resolve_variable(typ: Token, name: Token, scope: Table[string,
+    ArgumentDefinition]): Result[ResolvedVariable, string] =
+  let resolved_variable = ? name.resolve_variable(scope)
+  if $(resolved_variable.typ) != $(typ):
+    return err(fmt"{name.location} expected {typ} but found {resolved_variable.typ}")
+  ok(resolved_variable)
 
 proc resolve_argument(scope: Table[string, ArgumentDefinition],
-    arg_type: Token, arg_value: Token): Result[void, string] =
+    arg_type: Token, arg_value: Token): Result[ResolvedExpression, string] =
   case arg_value.kind:
-  of TK_ID: ? arg_type.resolve_variable(arg_value, scope)
-  else: ? arg_type.resolve_literal(arg_value)
-  ok()
+  of TK_ID:
+    let resolved_variable = ? arg_type.resolve_variable(arg_value, scope)
+    ok(new_resolved_expression(resolved_variable))
+  else:
+    let resolved_literal = ? arg_type.resolve_literal(arg_value)
+    ok(new_resolved_expression(resolved_literal))
 
 proc resolve_union_pattern(file: blocks.File, scope: var Table[string,
     ArgumentDefinition], module_name: Token, pattern: Pattern): Result[
@@ -132,7 +140,7 @@ proc resolve_case_pattern(scope: var Table[string, ArgumentDefinition],
         ResolvedPattern, string] =
   case pattern.kind:
   of PK_LITERAL:
-    ? arg_type.resolve_literal(pattern.literal)
+    discard ? arg_type.resolve_literal(pattern.literal)
     ok(new_resolved_pattern(pattern))
   of PK_UNION:
     file.resolve_union_pattern(scope, arg_type, pattern)
@@ -149,7 +157,7 @@ proc resolve_function_call_args(function_call: FunctionCall,
   var resolved_args: seq[ResolvedArgument]
   for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
-    ? scope.resolve_argument(arg_def.arg_type, arg_value)
+    discard ? scope.resolve_argument(arg_def.arg_type, arg_value)
     resolved_args.add(new_resolved_argument(arg_def.arg_type, arg_value))
   ok(resolved_args)
 
@@ -221,7 +229,7 @@ proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     if $(field_name) in field_name_table:
       return err(fmt"{field_name.location} {field_name} is already present in the initializer")
     let field = ? struct.find_field(field_name)
-    ? scope.resolve_argument(field.arg_type, field_value)
+    discard ? scope.resolve_argument(field.arg_type, field_value)
     field_name_table[$(field_name)] = new_resolved_argument(field.arg_type, field_value)
 
   let resolved_fields = struct.fields.values.to_seq.map_it(field_name_table[$(it.arg_name)])
@@ -242,7 +250,7 @@ proc resolve_union_init(union_init: UnionInit, file: blocks.File,
     if $(field_name) in field_name_table:
       return err(fmt"{field_name.location} {field_name} is already present in the initializer")
     let field = ? union_field.find_field(field_name)
-    ? scope.resolve_argument(field.arg_type, field_value)
+    discard ? scope.resolve_argument(field.arg_type, field_value)
     field_name_table[$(field_name)] = new_resolved_argument(field.arg_type, field_value)
 
   let resolved_fields = union_field.fields.values.to_seq.map_it(
@@ -270,9 +278,7 @@ proc resolved_expression(expression: Expression, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedExpression, string] =
   case expression.kind:
   of EK_VARIABLE:
-    if $(expression.variable) notin scope:
-      return err(fmt"{expression.variable.location} {expression.variable} is not defined in the scope")
-    ok(new_resolved_expression(scope[$(expression.variable)]))
+    ok(new_resolved_expression( ? expression.variable.resolve_variable(scope)))
   of EK_STRUCT_INIT:
     let resolved_struct_init = ? expression.struct_init.resolve_struct_init(
         file, scope)
@@ -286,9 +292,9 @@ proc resolved_expression(expression: Expression, file: blocks.File,
         file, scope)
     ok(new_resolved_expression(resolved_function_call))
   of EK_LITERAL_INIT:
-    ? expression.literal_init.arg_type.resolve_literal(
+    let resolved_literal = ? expression.literal_init.arg_type.resolve_literal(
         expression.literal_init.arg_value)
-    ok(new_resolved_expression(expression.literal_init))
+    ok(new_resolved_expression(resolved_literal))
   of EK_UNION_INIT:
     let resolved_union_init = ? expression.union_init.resolve_union_init(file, scope)
     ok(new_resolved_expression(resolved_union_init))
