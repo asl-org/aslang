@@ -5,47 +5,64 @@ import "../blocks"
 const ASL_PREFIX = "__asl__"
 const ASL_UNION_ID = "__asl_union_id__"
 
+### C CODE GENERARTION UTILS START
+
+proc getter_h(return_type: string, function_name: string): string =
+  fmt"{return_type} {function_name}(Pointer {ASL_PREFIX}ptr);"
+
+proc getter_c(return_type: string, function_name: string,
+    offset: uint): string =
+  @[
+    fmt"{return_type} {function_name}(Pointer {ASL_PREFIX}ptr)",
+    "{",
+    fmt"Pointer {ASL_PREFIX}shifted_ptr = Pointer_shift({ASL_PREFIX}ptr, {offset});",
+    fmt"{return_type} value = {return_type}_from_Pointer({ASL_PREFIX}shifted_ptr);",
+    "return value;",
+    "}",
+  ].join("\n")
+
+proc setter_h(function_name: string, field_type: string): string =
+  fmt"Pointer {function_name}(Pointer {ASL_PREFIX}ptr, {field_type} value);"
+
+proc setter_c(function_name: string, field_type: string,
+    offset: uint): string =
+  @[
+    fmt"Pointer {function_name}(Pointer {ASL_PREFIX}ptr, {field_type} value)",
+    "{",
+    fmt"Pointer {ASL_PREFIX}shifted_ptr = Pointer_shift({ASL_PREFIX}ptr, {offset});",
+    fmt"Pointer _ = Pointer_write_{field_type}({ASL_PREFIX}shifted_ptr, value);",
+    fmt"return {ASL_PREFIX}ptr;",
+    "}",
+  ].join("\n")
+
+### C CODE GENERARTION UTILS END
+
 type ResolvedStruct* = ref object of RootObj
   module: UserModule
   byte_size: uint
   field_offset: Table[string, uint]
 
-### C CODE GENERARTION UTILS START
 proc getter_h(module_name: string, field: ArgumentDefinition): string =
-  fmt"{field.native_type} {module_name}_get_{field.arg_name}(Pointer);"
+  getter_h(field.native_type, fmt"{module_name}_get_{field.arg_name}")
 
 proc getter_c(resolved_struct: ResolvedStruct,
     field: ArgumentDefinition): string =
-  let module = resolved_struct.module
-  let offset = resolved_struct.field_offset[$(field.arg_name)]
-
-  let code = @[
-    fmt"{field.native_type} {module.name}_get_{field.arg_name}(Pointer {ASL_PREFIX}ptr)",
-    "{",
-    fmt"Pointer {ASL_PREFIX}shifted_ptr = Pointer_shift({ASL_PREFIX}ptr, {offset});",
-    fmt"{field.native_type} value = {field.native_type}_from_Pointer({ASL_PREFIX}shifted_ptr);",
-    "return value;",
-    "}",
-  ]
-  return code.join("\n")
+  getter_c(
+    field.native_type,
+    fmt"{resolved_struct.module.name}_get_{field.arg_name}",
+    resolved_struct.field_offset[$(field.arg_name)]
+  )
 
 proc setter_h(module_name: string, field: ArgumentDefinition): string =
-  fmt"Pointer {module_name}_set_{field.arg_name}(Pointer, {field.native_type});"
+  setter_h(fmt"{module_name}_set_{field.arg_name}", field.native_type)
 
 proc setter_c(resolved_struct: ResolvedStruct,
     field: ArgumentDefinition): string =
-  let module = resolved_struct.module
-  let offset = resolved_struct.field_offset[$(field.arg_name)]
-
-  let code = @[
-    fmt"Pointer {module.name}_set_{field.arg_name}(Pointer {ASL_PREFIX}ptr, {field.native_type} value)",
-    "{",
-    fmt"Pointer {ASL_PREFIX}shifted_ptr = Pointer_shift({ASL_PREFIX}ptr, {offset});",
-    fmt"Pointer _ = Pointer_write_{field.native_type}({ASL_PREFIX}shifted_ptr, value);",
-    fmt"return {ASL_PREFIX}ptr;",
-    "}",
-  ]
-  return code.join("\n")
+  setter_c(
+    fmt"{resolved_struct.module.name}_set_{field.arg_name}",
+    field.native_type,
+    resolved_struct.field_offset[$(field.arg_name)]
+  )
 
 proc init_h(module: UserModule): string =
   let struct = module.struct.get
@@ -117,33 +134,25 @@ proc new_resolved_union*(module: UserModule): ResolvedUnion =
 ### C CODE GENERARTION UTILS START
 proc getter_h(module_name: string, union_name: string,
     field: ArgumentDefinition): string =
-  fmt"{field.native_type} {module_name}_{union_name}_get_{field.arg_name}(Pointer {ASL_PREFIX}ptr);"
+  getter_h(field.native_type, fmt"{module_name}_{union_name}_get_{field.arg_name}")
 
 proc getter_c(module_name: string, union_name: string,
     field: ArgumentDefinition, offset: uint): string =
-  @[
-    fmt"{field.native_type} {module_name}_{union_name}_get_{field.arg_name}(Pointer {ASL_PREFIX}ptr)",
-    "{",
-    fmt"Pointer {ASL_PREFIX}shifted_ptr = Pointer_shift({ASL_PREFIX}ptr, {offset});",
-    fmt"{field.native_type} value = {field.native_type}_from_Pointer({ASL_PREFIX}shifted_ptr);",
-    "return value;",
-    "}",
-  ].join("\n")
+  getter_c(
+    field.native_type,
+    fmt"{module_name}_{union_name}_get_{field.arg_name}",
+    offset
+  )
 
 proc setter_h(module_name: string, union_name: string,
     field: ArgumentDefinition): string =
-  fmt"Pointer {module_name}_{union_name}_set_{field.arg_name}(Pointer {ASL_PREFIX}ptr, {field.native_type} value);"
+  setter_h(fmt"{module_name}_{union_name}_set_{field.arg_name}",
+      field.native_type)
 
 proc setter_c(module_name: string, union_name: string,
     field: ArgumentDefinition, offset: uint): string =
-  @[
-    fmt"Pointer {module_name}_{union_name}_set_{field.arg_name}(Pointer {ASL_PREFIX}ptr, {field.native_type} value)",
-    "{",
-    fmt"Pointer {ASL_PREFIX}shifted_ptr = Pointer_shift({ASL_PREFIX}ptr, {offset});",
-    fmt"Pointer _ = Pointer_write_{field.native_type}({ASL_PREFIX}shifted_ptr, value);",
-    fmt"return {ASL_PREFIX}ptr;",
-    "}",
-  ].join("\n")
+  setter_c(fmt"{module_name}_{union_name}_set_{field.arg_name}",
+      field.native_type, offset)
 
 proc init_h(module_name: string, union_field_def: UnionFieldDefinition): string =
   let union_name = union_field_def.name
