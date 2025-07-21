@@ -13,6 +13,7 @@ import resolved/match; export match
 import resolved/function_step; export function_step
 import resolved/function; export function
 import resolved/struct; export struct
+import resolved/union; export union
 import resolved/file; export file
 
 proc safe_parse*[T](input: string): Result[void, string] =
@@ -77,18 +78,13 @@ proc resolve_variable(name: Token, scope: Table[string,
     return err(fmt"{name.location} {name} is not defined in the scope")
   ok(new_resolved_variable(scope[$(name)]))
 
-proc resolve_variable(typ: Token, name: Token, scope: Table[string,
-    ArgumentDefinition]): Result[ResolvedVariable, string] =
-  let resolved_variable = ? name.resolve_variable(scope)
-  if $(resolved_variable.typ) != $(typ):
-    return err(fmt"{name.location} expected {typ} but found {resolved_variable.typ}")
-  ok(resolved_variable)
-
 proc resolve_argument(scope: Table[string, ArgumentDefinition],
     arg_type: Token, arg_value: Token): Result[ResolvedExpression, string] =
   case arg_value.kind:
   of TK_ID:
-    let resolved_variable = ? arg_type.resolve_variable(arg_value, scope)
+    let resolved_variable = ? arg_value.resolve_variable(scope)
+    if $(resolved_variable.typ) != $(arg_type):
+      return err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
     ok(new_resolved_expression(resolved_variable))
   else:
     let resolved_literal = ? arg_type.resolve_literal(arg_value)
@@ -140,8 +136,8 @@ proc resolve_case_pattern(scope: var Table[string, ArgumentDefinition],
         ResolvedPattern, string] =
   case pattern.kind:
   of PK_LITERAL:
-    discard ? arg_type.resolve_literal(pattern.literal)
-    ok(new_resolved_pattern(pattern))
+    let literal = ? arg_type.resolve_literal(pattern.literal)
+    ok(new_resolved_pattern(literal))
   of PK_UNION:
     file.resolve_union_pattern(scope, arg_type, pattern)
 
