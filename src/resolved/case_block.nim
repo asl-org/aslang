@@ -46,9 +46,9 @@ proc c*(resolved_case: ResolvedCase, result_var: Token): string =
 
   case resolved_case.pattern.kind:
   of RPK_LITERAL: discard
-  else:
+  of RPK_UNION:
     for (arg, field) in resolved_case.pattern.args:
-      lines.add(fmt"{arg.native_type} {arg.arg_name} = {resolved_case.pattern.module}_{resolved_case.pattern.union}_get_{field}({resolved_case.operand});")
+      lines.add(fmt"{arg.c} = {resolved_case.pattern.module}_{resolved_case.pattern.union}_get_{field}({resolved_case.operand});")
 
   for statement in resolved_case.statements:
     lines.add(statement.c)

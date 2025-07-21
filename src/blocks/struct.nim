@@ -111,16 +111,12 @@ proc location*(union: Union): Location =
   union.union_def.location
 
 proc find_field_id*(union: Union, field_name: Token): Result[int, string] =
-  for (index, field) in union.fields.pairs:
-    if $(field_name) == $(field.name):
-      return ok(index)
-  return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union.location}")
-
-proc find_field*(union: Union, field_name: Token): Result[UnionFieldDefinition, string] =
   if $(field_name) notin union.field_map:
     return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union.location}")
+  ok(union.field_map[$(field_name)])
 
-  let index = union.field_map[$(field_name)]
+proc find_field*(union: Union, field_name: Token): Result[UnionFieldDefinition, string] =
+  let index = ? union.find_field_id(field_name)
   ok(union.fields[index])
 
 proc add_field*(union: Union, field: UnionFieldDefinition): Result[void, string] =
