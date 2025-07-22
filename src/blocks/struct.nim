@@ -1,4 +1,4 @@
-import strformat, strutils, results, tables, sequtils
+import strformat, strutils, results, tables
 
 import arg_def, token
 
@@ -101,7 +101,8 @@ proc close*(union_field_def: UnionFieldDefinition): Result[void, string] =
 
 type Union* = ref object of RootObj
   union_def*: UnionDefinition
-  fields*: Table[string, UnionFieldDefinition]
+  fields*: seq[UnionFieldDefinition]
+  field_map*: Table[string, int]
 
 proc new_union*(union_def: UnionDefinition): Union =
   Union(union_def: union_def)
@@ -110,35 +111,34 @@ proc location*(union: Union): Location =
   union.union_def.location
 
 proc find_field_id*(union: Union, field_name: Token): Result[int, string] =
-  for (index, field_name_str) in union.fields.keys.to_seq.pairs:
-    if $(field_name) == field_name_str:
-      return ok(index)
-  return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union.location}")
+  if $(field_name) notin union.field_map:
+    return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union.location}")
+  ok(union.field_map[$(field_name)])
 
 proc find_field*(union: Union, field_name: Token): Result[UnionFieldDefinition, string] =
-  if $(field_name) notin union.fields:
-    return err(fmt"{field_name.location} Union field `{field_name}` does not exist in {union.location}")
-
-  ok(union.fields[$(field_name)])
+  let index = ? union.find_field_id(field_name)
+  ok(union.fields[index])
 
 proc add_field*(union: Union, field: UnionFieldDefinition): Result[void, string] =
   let field_name = $(field.name)
-  if field_name in union.fields:
-    let predefined_location = union.fields[field_name].location
+  if field_name in union.field_map:
+    let index = union.field_map[field_name]
+    let predefined_location = union.fields[index].location
     return err(fmt"{field.location} Union field `{field_name}` is already defined at {predefined_location}")
 
   # NOTE: At max 256 union branches are allowed due to 1 byte `id` field
   if union.fields.len == 256:
     return err(fmt"{field.location} Union only supports 256 fields at max")
 
-  union.fields[field_name] = field
+  union.field_map[field_name] = union.fields.len
+  union.fields.add(field)
   ok()
 
 proc `$`*(union: Union): string =
   let prefix = " ".repeat(union.union_def.location.column - 1)
   let child_prefix = " ".repeat(union.union_def.location.column + 1)
   var lines = @[prefix & $(union.union_def)]
-  for field in union.fields.values:
+  for field in union.fields:
     lines.add(child_prefix & $(field))
   return lines.join("\n")
 

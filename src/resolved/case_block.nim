@@ -1,22 +1,22 @@
 import strformat, sets, strutils
 
 import "../blocks"
-import function_call, statement
+import function_call, statement, arg
 
 type
   ResolvedPatternKind = enum
     RPK_LITERAL, RPK_UNION
   ResolvedPattern* = ref object of RootObj
     case kind*: ResolvedPatternKind
-    of RPK_LITERAL: pattern: Pattern
+    of RPK_LITERAL: literal: ResolvedLiteral
     of RPK_UNION:
       module: Token
       union: Token
       id: int
       args: seq[(ArgumentDefinition, Token)]
 
-proc new_resolved_pattern*(pattern: Pattern): ResolvedPattern =
-  ResolvedPattern(kind: RPK_LITERAL, pattern: pattern)
+proc new_resolved_pattern*(literal: ResolvedLiteral): ResolvedPattern =
+  ResolvedPattern(kind: RPK_LITERAL, literal: literal)
 
 proc new_resolved_pattern*(module: Token, union: Token, id: int, args: seq[(
     ArgumentDefinition, Token)]): ResolvedPattern =
@@ -24,7 +24,7 @@ proc new_resolved_pattern*(module: Token, union: Token, id: int, args: seq[(
 
 proc `$`*(resolved_pattern: ResolvedPattern): string =
   case resolved_pattern.kind:
-  of RPK_LITERAL: $(resolved_pattern.pattern)
+  of RPK_LITERAL: $(resolved_pattern.literal.value)
   of RPK_UNION: $(resolved_pattern.id)
 
 type ResolvedCase* = ref object of RootObj
@@ -46,9 +46,9 @@ proc c*(resolved_case: ResolvedCase, result_var: Token): string =
 
   case resolved_case.pattern.kind:
   of RPK_LITERAL: discard
-  else:
+  of RPK_UNION:
     for (arg, field) in resolved_case.pattern.args:
-      lines.add(fmt"{arg.native_type} {arg.arg_name} = {resolved_case.pattern.module}_{resolved_case.pattern.union}_get_{field}({resolved_case.operand});")
+      lines.add(fmt"{arg.c} = {resolved_case.pattern.module}_{resolved_case.pattern.union}_get_{field}({resolved_case.operand});")
 
   for statement in resolved_case.statements:
     lines.add(statement.c)

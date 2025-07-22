@@ -1,6 +1,6 @@
 import sequtils, strutils
 
-import struct, function
+import struct, union, function
 
 type ResolvedFile* = ref object of RootObj
   structs: seq[ResolvedStruct]
