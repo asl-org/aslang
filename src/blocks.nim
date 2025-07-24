@@ -117,7 +117,7 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   case parent.kind:
   of BK_FILE:
     case child.kind:
-    of BK_MODULE: parent.file.add_module(child.module)
+    of BK_MODULE: parent.file.add_user_module(child.module)
     of BK_FUNCTION: parent.file.add_function(child.function)
     else: err(fmt"{parent.file.name} File can only contain functions or modules")
   of BK_FUNCTION:

@@ -199,3 +199,22 @@ proc close*(module: UserModule): Result[void, string] =
   if module.functions.len == 0 and (not module.is_struct):
     return err(fmt"{module.location} Module `{module.name}` must contain at least one function.")
   ok()
+
+type
+  ModuleKind* = enum
+    MK_BUILTIN, MK_USER
+  Module* = ref object of RootObj
+    case kind*: ModuleKind
+    of MK_BUILTIN: builtin_module: BuiltinModule
+    of MK_USER: user_module: UserModule
+
+proc new_module*(builtin_module: BuiltinModule): Module =
+  Module(kind: MK_BUILTIN, builtin_module: builtin_module)
+
+proc new_module*(user_module: UserModule): Module =
+  Module(kind: MK_USER, user_module: user_module)
+
+proc location*(module: Module): Location =
+  case module.kind:
+  of MK_BUILTIN: module.builtin_module.location
+  of MK_USER: module.user_module.location
