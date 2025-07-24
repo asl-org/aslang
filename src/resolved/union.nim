@@ -1,4 +1,4 @@
-import tables, strutils, strformat, sequtils, options
+import tables, strutils, strformat, sequtils
 
 import "../blocks"
 
@@ -38,10 +38,11 @@ proc setter_c(function_name: string, field_type: string,
 ### C CODE GENERARTION UTILS END
 
 type ResolvedUnion* = ref object of RootObj
-  module: UserModule
+  module_name: Token
+  union: Union
 
-proc new_resolved_union*(module: UserModule): ResolvedUnion =
-  ResolvedUnion(module: module)
+proc new_resolved_union*(module_name: Token, union: Union): ResolvedUnion =
+  ResolvedUnion(module_name: module_name, union: union)
 
 proc getter_h(module_name: string, union_name: string,
     field: ArgumentDefinition): string =
@@ -124,9 +125,9 @@ proc id_c(module_name: string): string =
   @[getter, setter].join("\n")
 
 proc h*(resolved_union: ResolvedUnion): string =
-  let module_name = $(resolved_union.module.name)
+  let module_name = $(resolved_union.module_name)
   var headers = @[id_h(module_name)]
-  let union = resolved_union.module.union.get
+  let union = resolved_union.union
   for union_field_def in union.fields:
     let union_name = $(union_field_def.name)
     for field in union_field_def.fields.values:
@@ -137,8 +138,8 @@ proc h*(resolved_union: ResolvedUnion): string =
   headers.join("\n")
 
 proc c*(resolved_union: ResolvedUnion): string =
-  let module_name = $(resolved_union.module.name)
-  let union = resolved_union.module.union.get
+  let module_name = $(resolved_union.module_name)
+  let union = resolved_union.union
   var impl = @[id_c(module_name)]
   for (id, union_field_def) in union.fields.pairs:
     # offset: 0 is for `id` (1 byte) field in unions
