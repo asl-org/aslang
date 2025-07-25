@@ -1,6 +1,7 @@
 import tables, strutils, strformat, sequtils
 
 import "../blocks"
+import struct
 
 const ASL_PREFIX = "__asl__"
 const ASL_UNION_ID = "__asl_union_id__"
@@ -152,3 +153,27 @@ proc c*(resolved_union: ResolvedUnion): string =
     impl.add(init_c(module_name, union_field_def, id, offset))
     impl.add(free_c(module_name, union_name))
   impl.join("\n")
+
+type
+  ResolvedUserModuleKind* = enum
+    RUMK_STRUCT, RUMK_UNION
+  ResolvedUserModule* = ref object of RootObj
+    case kind*: ResolvedUserModuleKind
+    of RUMK_STRUCT: struct*: ResolvedStruct
+    of RUMK_UNION: union*: ResolvedUnion
+
+proc new_resolved_user_module*(struct: ResolvedStruct): ResolvedUserModule =
+  ResolvedUserModule(kind: RUMK_STRUCT, struct: struct)
+
+proc new_resolved_user_module*(union: ResolvedUnion): ResolvedUserModule =
+  ResolvedUserModule(kind: RUMK_UNION, union: union)
+
+proc h*(resolved_user_module: ResolvedUserModule): string =
+  case resolved_user_module.kind:
+  of RUMK_STRUCT: resolved_user_module.struct.h
+  of RUMK_UNION: resolved_user_module.union.h
+
+proc c*(resolved_user_module: ResolvedUserModule): string =
+  case resolved_user_module.kind:
+  of RUMK_STRUCT: resolved_user_module.struct.c
+  of RUMK_UNION: resolved_user_module.union.c

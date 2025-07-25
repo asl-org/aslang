@@ -1,4 +1,4 @@
-import strformat, sets, strutils
+import strformat, sets, strutils, sequtils
 
 import "../blocks"
 import function_call, statement, arg
@@ -21,6 +21,11 @@ proc new_resolved_pattern*(literal: ResolvedLiteral): ResolvedPattern =
 proc new_resolved_pattern*(module: Token, union: Token, id: int, args: seq[(
     ArgumentDefinition, Token)]): ResolvedPattern =
   ResolvedPattern(kind: RPK_UNION, module: module, union: union, id: id, args: args)
+
+proc args*(pattern: ResolvedPattern): seq[ArgumentDefinition] =
+  case pattern.kind:
+  of RPK_LITERAL: @[]
+  of RPK_UNION: pattern.args.map_it(it[0])
 
 proc `$`*(resolved_pattern: ResolvedPattern): string =
   case resolved_pattern.kind:

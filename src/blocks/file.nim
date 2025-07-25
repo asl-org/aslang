@@ -21,12 +21,12 @@ proc `$`*(file: File): string =
   # TODO: Add functions to asl representation
   file.functions.values.to_seq.map_it($(it)).join("\n\n")
 
-proc user_module_count(file: File): int =
-  file.modules.pairs.to_seq.filter_it(it[1].safe_user_module.is_ok).len
+proc user_modules*(file: File): seq[UserModule] =
+  file.modules.values.to_seq.filter_it(it.safe_user_module.is_ok).map_it(it.user_module)
 
 proc find_module*(file: File, module_name: Token): Result[Module, string] =
   if $(module_name) notin file.modules:
-    return err(fmt"User Module `{module_name}` does not exist in the scope")
+    return err(fmt"Module `{module_name}` does not exist in the scope")
   let module = file.modules[$(module_name)]
   ok(module)
 
@@ -58,6 +58,6 @@ proc add_function*(file: File, function: Function): Result[void, string] =
   ok()
 
 proc close*(file: File): Result[void, string] =
-  if file.functions.len == 0 and file.user_module_count == 0:
+  if file.functions.len == 0 and file.user_modules.len == 0:
     return err(fmt"File must contain at least one module or function")
   ok()
