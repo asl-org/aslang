@@ -153,8 +153,12 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   of BK_MODULE:
     case child.kind:
     of BK_FUNCTION: parent.module.add_function(child.function)
-    of BK_STRUCT: parent.module.add_struct(child.struct)
-    of BK_UNION: parent.module.add_union(child.union)
+    of BK_STRUCT:
+      parent.module = ? parent.module.add_struct(child.struct)
+      ok()
+    of BK_UNION:
+      parent.module = ? parent.module.add_union(child.union)
+      ok()
     else: err(fmt"{parent.module.name} Module can only contain functions")
   of BK_STATEMENT: err(fmt"{parent.location} statement does not support further nesting")
   of BK_STRUCT_FIELD: err(fmt"{parent.location} struct field definition does not support further nesting.")

@@ -133,19 +133,39 @@ proc builtins*(): seq[BuiltinModule] =
     system_module(),
   ]
 
-type UserModule* = ref object of RootObj
-  module_def*: ModuleDefinition
-  functions*: seq[Function]
-  struct*: Option[Struct]
-  union*: Option[Union]
+type
+  UserModuleKind* = enum
+    UMK_DEFAULT, UMK_STRUCT, UMK_UNION
+  UserModule* = ref object of RootObj
+    module_def*: ModuleDefinition
+    functions*: seq[Function]
+    case kind*: UserModuleKind
+    of UMK_DEFAULT: discard
+    of UMK_STRUCT: struct*: Struct
+    of UMK_UNION: union*: Union
 
 proc new_user_module*(module_def: ModuleDefinition): UserModule =
-  UserModule(module_def: module_def)
+  UserModule(kind: UMK_DEFAULT, module_def: module_def)
+
+proc new_user_module(module: UserModule, struct: Struct): UserModule =
+  UserModule(kind: UMK_STRUCT, module_def: module.module_def,
+      functions: module.functions, struct: struct)
+
+proc new_user_module(module: UserModule, union: Union): UserModule =
+  UserModule(kind: UMK_UNION, module_def: module.module_def,
+      functions: module.functions, union: union)
 
 proc location*(module: UserModule): Location = module.module_def.location
 proc name*(module: UserModule): Token = module.module_def.name
-proc is_struct*(module: UserModule): bool = module.struct.is_some
-proc is_union*(module: UserModule): bool = module.union.is_some
+proc safe_struct*(module: UserModule): Result[Struct, string] =
+  case module.kind:
+  of UMK_STRUCT: ok(module.struct)
+  else: err(fmt"{module.location} Module `{module.name}` is not a struct")
+
+proc safe_union*(module: UserModule): Result[Union, string] =
+  case module.kind:
+  of UMK_UNION: ok(module.union)
+  else: err(fmt"{module.location} Module `{module.name}` is not a union")
 
 proc find_function*(module: UserModule, func_def: FunctionDefinition): Result[
     Function, string] =
@@ -158,6 +178,12 @@ proc `$`*(module: UserModule): string =
   let prefix = " ".repeat(module.module_def.location.column - 1)
   let child_prefix = " ".repeat(module.module_def.location.column + 1)
   var lines = @[prefix & $(module.module_def)]
+
+  case module.kind:
+  of UMK_DEFAULT: discard
+  of UMK_STRUCT: lines.add(child_prefix & $(module.struct))
+  of UMK_UNION: lines.add(child_prefix & $(module.union))
+
   for function in module.functions:
     lines.add(child_prefix & $(function))
   return lines.join("\n")
@@ -171,31 +197,67 @@ proc add_function*(module: UserModule, function: Function): Result[void, string]
   module.functions.add(function)
   ok()
 
-proc add_struct*(module: UserModule, struct: Struct): Result[void, string] =
-  if module.struct.is_some:
-    let predefined_location = module.struct.get.location
-    return err(fmt"{struct.location} Module `{module.name}` already contains a struct block at {predefined_location}")
+proc add_struct*(module: UserModule, struct: Struct): Result[UserModule, string] =
+  case module.kind:
+  of UMK_DEFAULT:
+    ok(new_user_module(module, struct))
+  of UMK_STRUCT:
+    let predefined_location = module.struct.location
+    err(fmt"{struct.location} Module `{module.name}` already contains a struct block at {predefined_location}")
+  of UMK_UNION:
+    let predefined_location = module.union.location
+    err(fmt"{struct.location} Module `{module.name}` already contains a union block at {predefined_location}")
 
-  if module.union.is_some:
-    let predefined_location = module.union.get.location
-    return err(fmt"{struct.location} Module `{module.name}` already contains a union block at {predefined_location}")
-
-  module.struct = some(struct)
-  ok()
-
-proc add_union*(module: UserModule, union: Union): Result[void, string] =
-  if module.struct.is_some:
-    let predefined_location = module.struct.get.location
-    return err(fmt"{union.location} Module `{module.name}` already contains a struct block at {predefined_location}")
-
-  if module.union.is_some:
-    let predefined_location = module.union.get.location
-    return err(fmt"{union.location} Module `{module.name}` already contains a union block at {predefined_location}")
-
-  module.union = some(union)
-  ok()
+proc add_union*(module: UserModule, union: Union): Result[UserModule, string] =
+  case module.kind:
+  of UMK_DEFAULT:
+    ok(new_user_module(module, union))
+  of UMK_STRUCT:
+    let predefined_location = module.struct.location
+    err(fmt"{union.location} Module `{module.name}` already contains a struct block at {predefined_location}")
+  of UMK_UNION:
+    let predefined_location = module.union.location
+    err(fmt"{union.location} Module `{module.name}` already contains a union block at {predefined_location}")
 
 proc close*(module: UserModule): Result[void, string] =
-  if module.functions.len == 0 and (not module.is_struct):
-    return err(fmt"{module.location} Module `{module.name}` must contain at least one function.")
+  case module.kind:
+  of UMK_DEFAULT:
+    if module.functions.len == 0:
+      return err(fmt"{module.location} Module `{module.name}` must contain at least one function.")
+  of UMK_STRUCT: discard
+  of UMK_UNION: discard
   ok()
+
+type
+  ModuleKind* = enum
+    MK_BUILTIN, MK_USER
+  Module* = ref object of RootObj
+    case kind*: ModuleKind
+    of MK_BUILTIN: builtin_module*: BuiltinModule
+    of MK_USER: user_module*: UserModule
+
+proc new_module*(builtin_module: BuiltinModule): Module =
+  Module(kind: MK_BUILTIN, builtin_module: builtin_module)
+
+proc new_module*(user_module: UserModule): Module =
+  Module(kind: MK_USER, user_module: user_module)
+
+proc location*(module: Module): Location =
+  case module.kind:
+  of MK_BUILTIN: module.builtin_module.location
+  of MK_USER: module.user_module.location
+
+proc name*(module: Module): Token =
+  case module.kind:
+  of MK_BUILTIN: module.builtin_module.name
+  of MK_USER: module.user_module.name
+
+proc safe_builtin_module*(module: Module): Result[BuiltinModule, string] =
+  case module.kind:
+  of MK_BUILTIN: ok(module.builtin_module)
+  else: err(fmt"{module.location} Module `{module.name}` is not a builtin module")
+
+proc safe_user_module*(module: Module): Result[UserModule, string] =
+  case module.kind:
+  of MK_USER: ok(module.user_module)
+  else: err(fmt"{module.location} Module `{module.name}` is not a user module")

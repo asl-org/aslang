@@ -1,4 +1,4 @@
-import tables, strutils, strformat, sequtils, options
+import tables, strutils, strformat, sequtils
 
 import "../blocks"
 
@@ -37,10 +37,11 @@ proc setter_c(function_name: string, field_type: string,
 ### C CODE GENERARTION UTILS END
 
 type ResolvedStruct* = ref object of RootObj
-  module: UserModule
+  module_name: Token
+  struct: Struct
 
-proc new_resolved_struct*(module: UserModule): ResolvedStruct =
-  ResolvedStruct(module: module)
+proc new_resolved_struct*(module_name: Token, struct: Struct): ResolvedStruct =
+  ResolvedStruct(module_name: module_name, struct: struct)
 
 proc getter_h(module_name: Token, field: ArgumentDefinition): string =
   getter_h(field.native_type, fmt"{module_name}_get_{field.arg_name}")
@@ -89,33 +90,33 @@ proc free_c(module_name: Token): string =
 
 proc h*(resolved_struct: ResolvedStruct): string =
   let
-    module = resolved_struct.module
-    fields = module.struct.get.fields.values.to_seq
+    module_name = resolved_struct.module_name
+    fields = resolved_struct.struct.fields.values.to_seq
 
   var headers: seq[string]
   for field in fields:
-    headers.add(getter_h(module.name, field))
-    headers.add(setter_h(module.name, field))
+    headers.add(getter_h(module_name, field))
+    headers.add(setter_h(module_name, field))
 
-  headers.add(init_h(module.name, fields))
-  headers.add(free_h(module.name))
+  headers.add(init_h(module_name, fields))
+  headers.add(free_h(module_name))
 
   return headers.join("\n")
 
 proc c*(resolved_struct: ResolvedStruct): string =
   let
-    module = resolved_struct.module
-    fields = module.struct.get.fields.values.to_seq
+    module_name = resolved_struct.module_name
+    fields = resolved_struct.struct.fields.values.to_seq
 
   var
     offset: uint = 0
     code: seq[string]
 
   for field in fields:
-    code.add(getter_c(module.name, field, offset))
-    code.add(setter_c(module.name, field, offset))
+    code.add(getter_c(module_name, field, offset))
+    code.add(setter_c(module_name, field, offset))
     offset += field.byte_size
 
-  code.add(init_c(module.name, fields, offset))
-  code.add(free_c(module.name))
+  code.add(init_c(module_name, fields, offset))
+  code.add(free_c(module_name))
   return code.join("\n\n")
