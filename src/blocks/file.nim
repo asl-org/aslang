@@ -18,8 +18,11 @@ proc name*(file: File): string =
   file.location.filename
 
 proc `$`*(file: File): string =
-  # TODO: Add functions to asl representation
-  file.functions.values.to_seq.map_it($(it)).join("\n\n")
+  # TODO: Fix content indentation
+  @[
+    file.functions.values.to_seq.map_it($(it)).join("\n\n"),
+    file.modules.values.to_seq.map_it($(it)).join("\n\n"),
+  ].join("\n\n")
 
 proc user_modules*(file: File): seq[UserModule] =
   file.modules.values.to_seq.filter_it(it.safe_user_module.is_ok).map_it(it.user_module)

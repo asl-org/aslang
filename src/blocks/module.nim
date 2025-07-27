@@ -242,6 +242,11 @@ proc new_module*(builtin_module: BuiltinModule): Module =
 proc new_module*(user_module: UserModule): Module =
   Module(kind: MK_USER, user_module: user_module)
 
+proc `$`*(module: Module): string =
+  case module.kind:
+  of MK_BUILTIN: ""
+  of MK_USER: $(module.user_module)
+
 proc location*(module: Module): Location =
   case module.kind:
   of MK_BUILTIN: module.builtin_module.location

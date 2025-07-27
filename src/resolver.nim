@@ -363,6 +363,7 @@ proc resolve_match_operand(file: blocks.File, scope: Table[string,
 
 proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
     ArgumentDefinition], temp_var_count: var uint): Result[ResolvedMatch, string] =
+  # TODO: Detect unreachable case blocks by analyzing the case patterns.
   var resolved_case_blocks: seq[ResolvedCase]
   var resolved_else_blocks: seq[ResolvedElse]
   if $(match.destination) in scope:
