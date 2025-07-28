@@ -40,10 +40,9 @@ proc add_field*(struct: Struct, field: ArgumentDefinition): Result[void, string]
 
 proc find_field*(struct: Struct, field_name: Token): Result[
     ArgumentDefinition, string] =
-  for field in struct.fields.values:
-    if $(field.arg_name) == $(field_name):
-      return ok(field)
-  return err(fmt"{field_name.location} does not have any field named {field_name} at {struct.struct_def.location}")
+  if $(field_name) notin struct.fields:
+    return err(fmt"{field_name.location} does not have any field named {field_name} at {struct.struct_def.location}")
+  return ok(struct.fields[$(field_name)])
 
 proc close*(struct: Struct): Result[void, string] =
   if struct.fields.len == 0:
@@ -126,8 +125,8 @@ proc add_field*(union: Union, field: UnionFieldDefinition): Result[void, string]
     let predefined_location = union.fields[index].location
     return err(fmt"{field.location} Union field `{field_name}` is already defined at {predefined_location}")
 
-  # NOTE: At max 256 union branches are allowed due to 1 byte `id` field
-  if union.fields.len == 256:
+  # NOTE: At max 256 union branches are allowed due to 1 byte `id` field (0-255)
+  if union.fields.len > 256:
     return err(fmt"{field.location} Union only supports 256 fields at max")
 
   union.field_map[field_name] = union.fields.len

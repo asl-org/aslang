@@ -91,20 +91,13 @@ proc resolve_argument(scope: Table[string, ArgumentDefinition],
     ok(new_resolved_argument(resolved_literal))
 
 proc resolve_union_pattern(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], module_name: Token, pattern: Pattern): Result[
-        ResolvedPattern, string] =
-  let
-    module = ? file.find_module(module_name)
-    user_module = ? module.safe_user_module
+    ArgumentDefinition], module: UserModule, union: Union,
+        pattern: Pattern): Result[ResolvedPattern, string] =
+  let union_field_id = ? union.find_field_id(pattern.union.name)
+  let union_field = union.fields[union_field_id]
 
-  let
-    union = ? user_module.safe_union
-    union_field_id = ? union.find_field_id(pattern.union.name)
-    union_field = union.fields[union_field_id]
-
-  var
-    field_name_table: Table[string, Token]
-    field_value_table: Table[string, Token]
+  var field_name_table: Table[string, Token]
+  var field_value_table: Table[string, Token]
 
   var args: seq[(ArgumentDefinition, Token)]
   for (field_name, field_value) in pattern.union.fields:
@@ -130,7 +123,7 @@ proc resolve_union_pattern(file: blocks.File, scope: Table[string,
     let arg = new_argument_definition(field_type.arg_type, field_value)
     args.add((arg, field_name))
 
-  ok(new_resolved_pattern(user_module.name, pattern.union.name, union_field_id, args))
+  ok(new_resolved_pattern(module.name, pattern.union.name, union_field_id, args))
 
 proc resolve_case_pattern(scope: var Table[string, ArgumentDefinition],
     file: blocks.File, arg_type: Token, pattern: Pattern): Result[
@@ -140,7 +133,14 @@ proc resolve_case_pattern(scope: var Table[string, ArgumentDefinition],
     let literal = ? arg_type.resolve_literal(pattern.literal)
     ok(new_resolved_pattern(literal))
   of PK_UNION:
-    file.resolve_union_pattern(scope, arg_type, pattern)
+    let module = ? file.find_module(arg_type)
+    case module.kind:
+    of MK_USER:
+      case module.user_module.kind:
+      of UMK_UNION: file.resolve_union_pattern(scope, module.user_module,
+          module.user_module.union, pattern)
+      else: err(fmt"Builtin module `{module.name}` is can not be a struct")
+    of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
 
 # matches individual function with function call
 proc resolve_function_call_args(function_call: FunctionCall,
@@ -179,36 +179,31 @@ proc resolve_local_function_call(function_call: FunctionCall,
   ok(new_resolved_function_call(func_def, resolved_args))
 
 proc resolve_builtin_function_call(function_call: FunctionCall,
-    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
-        ResolvedFunctionCall, string] =
-  let module = ? file.find_module(function_call.func_ref.module)
-  let builtin_module = ? module.safe_builtin_module
+    file: blocks.File, scope: Table[string, ArgumentDefinition],
+        module: BuiltinModule): Result[ResolvedFunctionCall, string] =
   let (func_def, resolved_args) = ? function_call.resolve_function_call_args(
-      builtin_module.functions, scope)
-  ok(new_resolved_function_call(builtin_module, func_def, resolved_args))
+      module.functions, scope)
+  ok(new_resolved_function_call(module, func_def, resolved_args))
 
 proc resolve_user_function_call(function_call: FunctionCall,
-    file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
-        ResolvedFunctionCall, string] =
-  let module = ? file.find_module(function_call.func_ref.module)
-  let user_module = ? module.safe_user_module
-  let function_defs = user_module.functions.map_it(it.definition)
+    file: blocks.File, scope: Table[string, ArgumentDefinition],
+        module: UserModule): Result[ResolvedFunctionCall, string] =
+  let function_defs = module.functions.values.to_seq.map_it(it.definition)
   let (func_def, resolved_args) = ? function_call.resolve_function_call_args(
       function_defs, scope)
-  ok(new_resolved_user_function_call(user_module, func_def, resolved_args))
+  ok(new_resolved_user_function_call(module, func_def, resolved_args))
 
 proc resolve_module_function_call(function_call: FunctionCall,
     file: blocks.File, scope: Table[string, ArgumentDefinition]): Result[
         ResolvedFunctionCall, string] =
-  let maybe_builtin_function_call = function_call.resolve_builtin_function_call(
-        file, scope)
-  if maybe_builtin_function_call.is_ok: return maybe_builtin_function_call
-
-  let maybe_user_function_call = function_call.resolve_user_function_call(
-      file, scope)
-  if maybe_user_function_call.is_ok: return maybe_user_function_call
-
-  return err(fmt"{function_call.location} `{function_call.name}` failed to find matching module function in the file {file.name}")
+  let module = ? file.find_module(function_call.func_ref.module)
+  case module.kind:
+  of MK_BUILTIN:
+    function_call.resolve_builtin_function_call(
+          file, scope, module.builtin_module)
+  of MK_USER:
+    function_call.resolve_user_function_call(
+        file, scope, module.user_module)
 
 proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedFunctionCall, string] =
@@ -218,40 +213,51 @@ proc resolve_function_call(function_call: FunctionCall, file: blocks.File,
 
 proc resolve_struct_init(struct_init: StructInit, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructInit, string] =
-  let
-    module = ? file.find_module(struct_init.struct)
-    user_module = ? module.safe_user_module
-    struct = ? user_module.safe_struct
-  var field_name_table: Table[string, ResolvedArgument]
-  for (field_name, field_value) in struct_init.fields:
-    if $(field_name) in field_name_table:
-      return err(fmt"{field_name.location} {field_name} is already present in the initializer")
-    let field = ? struct.find_field(field_name)
-    field_name_table[$(field_name)] = ? scope.resolve_argument(field.arg_type, field_value)
+  let module = ? file.find_module(struct_init.struct)
+  case module.kind:
+  of MK_USER:
+    case module.user_module.kind:
+    of UMK_STRUCT:
+      let struct = module.user_module.struct
+      var field_name_table: Table[string, ResolvedArgument]
+      for (field_name, field_value) in struct_init.fields:
+        if $(field_name) in field_name_table:
+          return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+        let field = ? struct.find_field(field_name)
+        field_name_table[$(field_name)] = ? scope.resolve_argument(
+            field.arg_type, field_value)
 
-  let resolved_fields = struct.fields.values.to_seq.map_it(field_name_table[$(it.arg_name)])
-  let resolved_struct_init = new_resolved_struct_init(user_module, resolved_fields)
-  ok(resolved_struct_init)
+      let resolved_fields = struct.fields.values.to_seq.map_it(field_name_table[
+          $(it.arg_name)])
+      let resolved_struct_init = new_resolved_struct_init(module.user_module, resolved_fields)
+      ok(resolved_struct_init)
+    else: err(fmt"Builtin module `{module.name}` is can not be a struct")
+  of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
 
 proc resolve_union_init(union_init: UnionInit, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedUnionInit, string] =
-  let
-    module = ? file.find_module(union_init.name)
-    user_module = ? module.safe_user_module
-    union = ? user_module.safe_union
-    union_field = ? union.find_field(union_init.field_name)
+  let module = ? file.find_module(union_init.name)
+  case module.kind:
+  of MK_USER:
+    case module.user_module.kind:
+    of UMK_UNION:
+      let union_field = ? module.user_module.union.find_field(
+          union_init.field_name)
+      var field_name_table: Table[string, ResolvedArgument]
+      for (field_name, field_value) in union_init.union_fields:
+        if $(field_name) in field_name_table:
+          return err(fmt"{field_name.location} {field_name} is already present in the initializer")
+        let field = ? union_field.find_field(field_name)
+        field_name_table[$(field_name)] = ? scope.resolve_argument(
+            field.arg_type, field_value)
 
-  var field_name_table: Table[string, ResolvedArgument]
-  for (field_name, field_value) in union_init.union_fields:
-    if $(field_name) in field_name_table:
-      return err(fmt"{field_name.location} {field_name} is already present in the initializer")
-    let field = ? union_field.find_field(field_name)
-    field_name_table[$(field_name)] = ? scope.resolve_argument(field.arg_type, field_value)
-
-  let resolved_fields = union_field.fields.values.to_seq.map_it(
-      field_name_table[$(it.arg_name)])
-  let resolved_union_init = new_resolved_union_init(user_module, union_field, resolved_fields)
-  ok(resolved_union_init)
+      let resolved_fields = union_field.fields.values.to_seq.map_it(
+          field_name_table[$(it.arg_name)])
+      let resolved_union_init = new_resolved_union_init(module.user_module,
+          union_field, resolved_fields)
+      ok(resolved_union_init)
+    else: err(fmt"Builtin module `{module.name}` is can not be a struct")
+  of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
 
 proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedStructGetter, string] =
@@ -260,13 +266,12 @@ proc resolve_struct_getter(struct_getter: StructGetter, file: blocks.File,
   if $(struct_var) notin scope:
     return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
 
-  let
-    module = ? file.find_module(scope[$(struct_var)].arg_type)
-    user_module = ? module.safe_user_module
-    struct = ? user_module.safe_struct
-    field = ? struct.find_field(struct_getter.field)
-    resolved_struct_getter = new_resolved_struct_getter(user_module, field, struct_var)
-  ok(resolved_struct_getter)
+  let module = ? file.find_module(scope[$(struct_var)].arg_type)
+  case module.kind:
+  of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
+  of MK_USER:
+    let field = ? module.user_module.struct.find_field(struct_getter.field)
+    ok(new_resolved_struct_getter(module.user_module, field, struct_var))
 
 proc resolved_expression(expression: Expression, file: blocks.File,
     scope: Table[string, ArgumentDefinition]): Result[ResolvedExpression, string] =
@@ -290,7 +295,8 @@ proc resolved_expression(expression: Expression, file: blocks.File,
         expression.literal_init.arg_value)
     ok(new_resolved_expression(resolved_literal))
   of EK_UNION_INIT:
-    let resolved_union_init = ? expression.union_init.resolve_union_init(file, scope)
+    let resolved_union_init = ? expression.union_init.resolve_union_init(file,
+        scope)
     ok(new_resolved_expression(resolved_union_init))
 
 proc resolve_statement(statement: Statement, file: blocks.File, scope: Table[
@@ -363,6 +369,7 @@ proc resolve_match_operand(file: blocks.File, scope: Table[string,
 
 proc resolve_match(match: Match, file: blocks.File, scope: Table[string,
     ArgumentDefinition], temp_var_count: var uint): Result[ResolvedMatch, string] =
+  # TODO: Detect unreachable case blocks by analyzing the case patterns.
   var resolved_case_blocks: seq[ResolvedCase]
   var resolved_else_blocks: seq[ResolvedElse]
   if $(match.destination) in scope:
@@ -410,8 +417,11 @@ proc resolve_function(file: blocks.File,
     case function_ref.kind:
     of RFRK_MODULE:
       let module = ? file.find_module(function_ref.module_name)
-      let user_module = ? module.safe_user_module
-      ? user_module.find_function(function_ref.function_def)
+      case module.kind:
+      of MK_BUILTIN:
+        return err(fmt"Builtin module `{module.name}` does not require resolution.")
+      of MK_USER:
+        ? module.user_module.find_function(function_ref.function_def)
     of RFRK_FUNCTION:
       ? file.find_function(function_ref.function_def)
 
@@ -444,7 +454,7 @@ proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
       discard ? file.resolve_function(func_ref)
 
   for module in file.user_modules:
-    for function in module.functions:
+    for function in module.functions.values:
       let func_ref = new_resolved_function_ref(module,
           function.definition)
       if func_ref notin visited_functions:

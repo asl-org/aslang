@@ -26,9 +26,9 @@ proc arity*(function_def: FunctionDefinition): int =
   function_def.arg_def_list.len
 
 proc hash*(func_def: FunctionDefinition): Hash =
-  var checksum = func_def.name.hash !& func_def.location.hash
+  var checksum = hash($(func_def.name))
   for arg_def in func_def.arg_def_list:
-    checksum = checksum !& arg_def.hash
+    checksum = checksum !& hash($(arg_def.arg_type))
   return checksum
 
 proc `$`*(func_def: FunctionDefinition): string =
@@ -100,14 +100,6 @@ proc `$`*(function: Function): string =
   for step in function.function_steps:
     lines.add(child_prefix & $(step))
   lines.join("\n")
-
-proc is_start*(function: Function): bool =
-  let name = $(function.definition.name)
-  let return_type = $(function.definition.return_type)
-  let arity = function.definition.arg_def_list.len
-  let first_arg_type = $(function.definition.arg_def_list[0].arg_type)
-  return name == "start" and return_type == "U8" and arity == 1 and
-      first_arg_type == "U8"
 
 proc add_statement*(function: Function, statement: Statement): Result[void, string] =
   function.function_steps.add(new_function_step(statement))
