@@ -44,18 +44,18 @@ proc new_resolved_struct*(module_name: Token, struct: Struct): ResolvedStruct =
   ResolvedStruct(module_name: module_name, struct: struct)
 
 proc getter_h(module_name: Token, field: ArgumentDefinition): string =
-  getter_h(field.native_type, fmt"{module_name}_get_{field.arg_name}")
+  getter_h(field.native_type, fmt"{module_name}_get_{field.name}")
 
 proc getter_c(module_name: Token,
     field: ArgumentDefinition, offset: uint): string =
-  getter_c(field.native_type, fmt"{module_name}_get_{field.arg_name}", offset)
+  getter_c(field.native_type, fmt"{module_name}_get_{field.name}", offset)
 
 proc setter_h(module_name: Token, field: ArgumentDefinition): string =
-  setter_h(fmt"{module_name}_set_{field.arg_name}", field.native_type)
+  setter_h(fmt"{module_name}_set_{field.name}", field.native_type)
 
 proc setter_c(module_name: Token, field: ArgumentDefinition,
     offset: uint): string =
-  setter_c(fmt"{module_name}_set_{field.arg_name}", field.native_type, offset)
+  setter_c(fmt"{module_name}_set_{field.name}", field.native_type, offset)
 
 proc init_h(module_name: Token, fields: seq[ArgumentDefinition]): string =
   let args_str = fields.map_it($(it)).join(", ")
@@ -64,7 +64,7 @@ proc init_h(module_name: Token, fields: seq[ArgumentDefinition]): string =
 proc init_c(module_name: Token, fields: seq[ArgumentDefinition],
     byte_size: uint): string =
   let fields_def = fields.map_it($(it)).join(", ")
-  let setter_calls = fields.map_it(fmt"{ASL_PREFIX}ptr = {module_name}_set_{it.arg_name}({ASL_PREFIX}ptr, {it.arg_name});").join("\n")
+  let setter_calls = fields.map_it(fmt"{ASL_PREFIX}ptr = {module_name}_set_{it.name}({ASL_PREFIX}ptr, {it.name});").join("\n")
 
   let code = @[
     fmt"Pointer {module_name}_init({fields_def})",

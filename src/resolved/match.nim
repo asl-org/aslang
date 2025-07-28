@@ -31,14 +31,14 @@ proc c*(resolved_match: ResolvedMatch): string =
   # within one of the blocks C compiler shows undefined behavior.
   # A potential fix is to prefix the variable names within that scope
   # with a scope specific `hash`, location can be used as hash.
-  var lines = @[fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.arg_name};"]
+  var lines = @[fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.name};"]
 
   let match_expr =
-    case $(resolved_match.operand.arg_type):
+    case $(resolved_match.operand.typ):
     of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64":
-      $(resolved_match.operand.arg_name)
+      $(resolved_match.operand.name)
     else:
-      fmt"{resolved_match.operand.arg_type}_get_{ASL_UNION_ID}({resolved_match.operand.arg_name})"
+      fmt"{resolved_match.operand.typ}_get_{ASL_UNION_ID}({resolved_match.operand.name})"
 
   lines.add(fmt"switch({match_expr}) " & "{")
   for case_block in resolved_match.case_blocks:

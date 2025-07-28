@@ -20,7 +20,7 @@ proc c*(resolved_else_block: ResolvedElse, result_var: Token): string =
   for statement in resolved_else_block.statements:
     lines.add(statement.c)
 
-  let return_arg = resolved_else_block.return_argument.arg_name
+  let return_arg = resolved_else_block.return_argument.name
   lines.add(fmt"{result_var} = {return_arg};")
   lines.add("break;")
   lines.add("}")

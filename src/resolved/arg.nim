@@ -20,8 +20,8 @@ type ResolvedVariable* = ref object of RootObj
 proc new_resolved_variable*(arg_def: ArgumentDefinition): ResolvedVariable =
   ResolvedVariable(arg_def: arg_def)
 
-proc typ*(variable: ResolvedVariable): Token = variable.arg_def.arg_type
-proc name*(variable: ResolvedVariable): Token = variable.arg_def.arg_name
+proc typ*(variable: ResolvedVariable): Token = variable.arg_def.typ
+proc name*(variable: ResolvedVariable): Token = variable.arg_def.name
 
 type
   ResolvedArgumentKind = enum

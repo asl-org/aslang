@@ -28,7 +28,7 @@ proc arity*(function_def: FunctionDefinition): int =
 proc hash*(func_def: FunctionDefinition): Hash =
   var checksum = hash($(func_def.name))
   for arg_def in func_def.arg_def_list:
-    checksum = checksum !& hash($(arg_def.arg_type))
+    checksum = checksum !& hash($(arg_def.typ))
   return checksum
 
 proc `$`*(func_def: FunctionDefinition): string =
