@@ -59,7 +59,7 @@ proc return_type*(expression: ResolvedExpression): Token =
   of REK_STRUCT_INIT: expression.struct_init.module.name
   of REK_STRUCT_GETTER: expression.struct_getter.field.typ
   of REK_FUNCTION_CALL: expression.function_call.return_type
-  of REK_LITERAL_INIT: expression.literal.typ
+  of REK_LITERAL_INIT: expression.literal.module.name
   of REK_UNION_INIT: expression.union_init.module.name
 
 proc c*(expression: ResolvedExpression): string =
