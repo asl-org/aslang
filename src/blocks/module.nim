@@ -1,4 +1,4 @@
-import strutils, options, results, strformat, sequtils
+import strutils, options, results, strformat, sequtils, hashes, tables
 
 import token, function, struct
 
@@ -138,7 +138,7 @@ type
     UMK_DEFAULT, UMK_STRUCT, UMK_UNION
   UserModule* = ref object of RootObj
     module_def*: ModuleDefinition
-    functions*: seq[Function]
+    functions*: Table[Hash, Function]
     case kind*: UserModuleKind
     of UMK_DEFAULT: discard
     of UMK_STRUCT: struct*: Struct
@@ -157,22 +157,12 @@ proc new_user_module(module: UserModule, union: Union): UserModule =
 
 proc location*(module: UserModule): Location = module.module_def.location
 proc name*(module: UserModule): Token = module.module_def.name
-proc safe_struct*(module: UserModule): Result[Struct, string] =
-  case module.kind:
-  of UMK_STRUCT: ok(module.struct)
-  else: err(fmt"{module.location} Module `{module.name}` is not a struct")
-
-proc safe_union*(module: UserModule): Result[Union, string] =
-  case module.kind:
-  of UMK_UNION: ok(module.union)
-  else: err(fmt"{module.location} Module `{module.name}` is not a union")
 
 proc find_function*(module: UserModule, func_def: FunctionDefinition): Result[
     Function, string] =
-  for function in module.functions:
-    if function.definition == func_def:
-      return ok(function)
-  return err(fmt"Function `{func_def.name}` is not defined in the module `{module.name}`")
+  if func_def.hash notin module.functions:
+    return err(fmt"Function `{func_def.name}` is not defined in the module `{module.name}`")
+  ok(module.functions[func_def.hash])
 
 proc `$`*(module: UserModule): string =
   let prefix = " ".repeat(module.module_def.location.column - 1)
@@ -184,7 +174,7 @@ proc `$`*(module: UserModule): string =
   of UMK_STRUCT: lines.add(child_prefix & $(module.struct))
   of UMK_UNION: lines.add(child_prefix & $(module.union))
 
-  for function in module.functions:
+  for function in module.functions.values:
     lines.add(child_prefix & $(function))
   return lines.join("\n")
 
@@ -194,7 +184,7 @@ proc add_function*(module: UserModule, function: Function): Result[void, string]
     let predefined_location = maybe_found.get.location
     return err(fmt"{function.location} Function `{function.name}` is already defined in module `{module.name}` at {predefined_location}")
 
-  module.functions.add(function)
+  module.functions[function.definition.hash] = function
   ok()
 
 proc add_struct*(module: UserModule, struct: Struct): Result[UserModule, string] =
@@ -256,13 +246,3 @@ proc name*(module: Module): Token =
   case module.kind:
   of MK_BUILTIN: module.builtin_module.name
   of MK_USER: module.user_module.name
-
-proc safe_builtin_module*(module: Module): Result[BuiltinModule, string] =
-  case module.kind:
-  of MK_BUILTIN: ok(module.builtin_module)
-  else: err(fmt"{module.location} Module `{module.name}` is not a builtin module")
-
-proc safe_user_module*(module: Module): Result[UserModule, string] =
-  case module.kind:
-  of MK_USER: ok(module.user_module)
-  else: err(fmt"{module.location} Module `{module.name}` is not a user module")
