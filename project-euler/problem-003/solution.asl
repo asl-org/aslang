@@ -105,7 +105,7 @@ module Bitset:
         j = U64.multiply(i, 2)
         Bitset.mark_non_prime(bitset, j, i)
         Bitset.update_ans(i, ans)
-      case 1:
+      else:
         ans
 
   fn solve(Bitset bitset, U64 start, U64 ans): U64

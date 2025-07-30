@@ -105,7 +105,7 @@ module Example:
         j = U64.multiply(i, 2)
         Example.mark_non_prime(primes, j, i)
         Example.check_count(primes, i, c)
-      case 1:
+      else:
         next_i = U64.add(i, 1)
         Example.solve(primes, next_i, c)
 

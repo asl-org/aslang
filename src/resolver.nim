@@ -16,7 +16,7 @@ import resolved/struct; export struct
 import resolved/union; export union
 import resolved/file; export file
 
-proc safe_parse*[T](input: string): Result[void, string] =
+proc safe_parse*[T](input: string): Result[T, string] =
   when T is SomeSignedInt:
     var temp: BiggestInt
     let code = parseBiggestInt(input, temp)
@@ -24,7 +24,7 @@ proc safe_parse*[T](input: string): Result[void, string] =
       return err("Failed to parse signed int from: " & input)
     if temp < T.low.BiggestInt or temp > T.high.BiggestInt:
       return err("Overflow: Value out of range for type " & $T)
-    ok()
+    ok(T(temp))
   elif T is SomeUnsignedInt:
     var temp: BiggestUInt
     let code = parseBiggestUInt(input, temp)
@@ -32,7 +32,7 @@ proc safe_parse*[T](input: string): Result[void, string] =
       return err("Failed to parse unsigned int from: " & input)
     if temp < T.low.BiggestUInt or temp > T.high.BiggestUInt:
       return err("Overflow: Value out of range for type " & $T)
-    ok()
+    ok(T(temp))
   elif T is SomeFloat:
     var temp: BiggestFloat
     let code = parseBiggestFloat(input, temp)
@@ -41,29 +41,29 @@ proc safe_parse*[T](input: string): Result[void, string] =
     let casted = T(temp)
     if BiggestFloat(casted) != temp:
       return err("Precision loss when converting to " & $T)
-    ok()
+    ok(T(temp))
   else:
     err("safe_parse only supports signed/unsigned integers and floating-point types")
 
 proc resolve_integer_literal(module: BuiltinModule, value: Token): Result[
     ResolvedLiteral, string] =
   case $(module.name):
-  of "U8": ? safe_parse[uint8]($(value))
-  of "U16": ? safe_parse[uint16]($(value))
-  of "U32": ? safe_parse[uint32]($(value))
-  of "U64": ? safe_parse[uint64]($(value))
-  of "S8": ? safe_parse[int8]($(value))
-  of "S16": ? safe_parse[int16]($(value))
-  of "S32": ? safe_parse[int32]($(value))
-  of "S64": ? safe_parse[int64]($(value))
+  of "U8": discard ? safe_parse[uint8]($(value))
+  of "U16": discard ? safe_parse[uint16]($(value))
+  of "U32": discard ? safe_parse[uint32]($(value))
+  of "U64": discard ? safe_parse[uint64]($(value))
+  of "S8": discard ? safe_parse[int8]($(value))
+  of "S16": discard ? safe_parse[int16]($(value))
+  of "S32": discard ? safe_parse[int32]($(value))
+  of "S64": discard ? safe_parse[int64]($(value))
   else: return err(fmt"{value.location} arguments with builtin types can be passed as integer")
   ok(new_resolved_integer_literal(module, value))
 
 proc resolve_float_literal(module: BuiltinModule, value: Token): Result[
     ResolvedLiteral, string] =
   case $(module.name):
-  of "F32": ? safe_parse[float32]($(value))
-  of "F64": ? safe_parse[float64]($(value))
+  of "F32": discard ? safe_parse[float32]($(value))
+  of "F64": discard ? safe_parse[float64]($(value))
   else: return err(fmt"{value.location} arguments with builtin types can be passed as float")
   ok(new_resolved_float_literal(module, value))
 
@@ -331,7 +331,7 @@ proc resolve_case_pattern(file: blocks.File, scope: var Table[string,
       case module.user_module.kind:
       of UMK_UNION: file.resolve_union_pattern(scope, module.user_module,
           module.user_module.union, pattern)
-      else: err(fmt"Builtin module `{module.name}` is can not be a struct")
+      else: err(fmt"{module.location} Module `{module.name}` is not a union")
     of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
 
 proc resolve_case_block(file: blocks.File, parent_scope: Table[string,
@@ -417,6 +417,67 @@ proc resolve_match(file: blocks.File, scope: Table[string,
   ok(new_resolved_match(match, match.destination, match_operand_def,
       resolved_case_blocks, resolved_else_blocks, return_argument))
 
+proc resolve_match_new(file: blocks.File, scope: Table[string,
+    ArgumentDefinition], temp_var_count: var uint, match: Match): Result[void, string] =
+  if $(match.operand) notin scope:
+    return err(fmt"{match.operand.location} variable `{match.operand}` is not defined in scope")
+
+  let operand_def = scope[$(match.operand)]
+  let operand_module = ? file.find_module(operand_def.typ)
+
+  case operand_module.kind:
+  of MK_USER:
+    case operand_module.user_module.kind:
+    of UMK_UNION: ok()
+    of UMK_STRUCT: err(fmt"{match.operand.location} `match` does not support struct value `{match.operand}`")
+    of UMK_DEFAULT: err("MATCH RESOLUTION: UNREACHABLE")
+  of MK_BUILTIN:
+    case $(operand_module.builtin_module):
+    of "S8", "S16", "S32", "S64":
+      # 1. There must always be an else block
+      if match.else_blocks.len == 0:
+        return err(fmt"{match.operand.location} matching integer literal requires the `else` block")
+
+      var intset: Table[int64, Token]
+      for case_block in match.case_blocks:
+        # 2. All the case block patterns can be cast to the respective integer module
+        case case_block.pattern.kind:
+        of PK_LITERAL:
+          discard ? operand_module.builtin_module.resolve_integer_literal(
+              case_block.pattern.literal)
+          # 3. All case pattern contain unique values
+          let intval = ? safe_parse[int64]($(case_block.pattern.literal))
+          if intval in intset:
+            let predefined_location = intset[intval].location
+            return err(fmt"{case_block.pattern.location} is unreachable due to predefined duplicate case block `{predefined_location}`")
+          intset[intval] = case_block.pattern.literal
+        else:
+          return err(fmt"{case_block.pattern.location} expected an integer literal of type `{operand_module.builtin_module.name}`")
+      ok()
+    of "U8", "U16", "U32", "U64":
+      # 1. There must always be an else block
+      if match.else_blocks.len == 0:
+        return err(fmt"{match.operand.location} matching integer literal requires the `else` block")
+
+      var uintset: Table[uint64, Token]
+      for case_block in match.case_blocks:
+        # 2. All the case block patterns can be cast to the respective integer module
+        case case_block.pattern.kind:
+        of PK_LITERAL:
+          discard ? operand_module.builtin_module.resolve_integer_literal(
+              case_block.pattern.literal)
+          # 3. All case pattern contain unique values
+          let uintval = ? safe_parse[uint64]($(case_block.pattern.literal))
+          if uintval in uintset:
+            let predefined_location = uintset[uintval].location
+            return err(fmt"{case_block.pattern.location} is unreachable due to predefined duplicate case block `{predefined_location}`")
+          uintset[uintval] = case_block.pattern.literal
+        else:
+          return err(fmt"{case_block.pattern.location} expected an integer literal of type `{operand_module.builtin_module.name}`")
+      ok()
+    of "F32", "F64": err(fmt"{match.operand.location} `match` does not support floating point value `{match.operand}`")
+    else: err("MATCH RESOLUTION: UNREACHABLE")
+
 proc resolve_function_step(file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint,
         step: FunctionStep): Result[
@@ -428,6 +489,7 @@ proc resolve_function_step(file: blocks.File, scope: Table[
     ok(new_resolved_function_step(resolved_statement))
   of FSK_MATCH:
     let resolved_match = ? file.resolve_match(scope, temp_var_count, step.match)
+    ? file.resolve_match_new(scope, temp_var_count, step.match)
     ok(new_resolved_function_step(resolved_match))
 
 proc resolve_function(file: blocks.File,

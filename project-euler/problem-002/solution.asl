@@ -3,7 +3,7 @@ module Solver:
     ans = match c:
       case 0:
         S64.add(a, b)
-      case 1:
+      else:
         b
 
   fn solve(S64 a, S64 b, S64 c, S64 d): S64

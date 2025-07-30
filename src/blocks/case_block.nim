@@ -10,6 +10,9 @@ proc new_union_pattern*(name: Token, fields: seq[(Token,
     Token)]): UnionPattern =
   UnionPattern(name: name, fields: fields)
 
+proc location*(pattern: UnionPattern): Location =
+  pattern.name.location
+
 proc `$`*(union_pattern: UnionPattern): string =
   let fields_csv = union_pattern.fields.map_it(fmt"{it[0]}: {it[1]}").join(", ")
   let fields_str = "{ " & fields_csv & " }"
@@ -28,6 +31,11 @@ proc new_pattern*(literal: Token): Pattern =
 
 proc new_pattern*(union: UnionPattern): Pattern =
   Pattern(kind: PK_UNION, union: union)
+
+proc location*(pattern: Pattern): Location =
+  case pattern.kind:
+  of PK_LITERAL: pattern.literal.location
+  of PK_UNION: pattern.union.location
 
 proc `$`*(pattern: Pattern): string =
   case pattern.kind:
