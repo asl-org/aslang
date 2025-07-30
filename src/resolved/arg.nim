@@ -5,14 +5,16 @@ type
     RLK_INTEGER, RLK_FLOAT
   ResolvedLiteral* = ref object of RootObj
     kind*: ResolvedLiteralKind
-    typ*: Token
+    module*: BuiltinModule
     value*: Token
 
-proc new_resolved_integer_literal*(typ: Token, value: Token): ResolvedLiteral =
-  ResolvedLiteral(kind: RLK_INTEGER, typ: typ, value: value)
+proc new_resolved_integer_literal*(module: BuiltinModule,
+    value: Token): ResolvedLiteral =
+  ResolvedLiteral(kind: RLK_INTEGER, module: module, value: value)
 
-proc new_resolved_float_literal*(typ: Token, value: Token): ResolvedLiteral =
-  ResolvedLiteral(kind: RLK_FLOAT, typ: typ, value: value)
+proc new_resolved_float_literal*(module: BuiltinModule,
+    value: Token): ResolvedLiteral =
+  ResolvedLiteral(kind: RLK_FLOAT, module: module, value: value)
 
 type ResolvedVariable* = ref object of RootObj
   arg_def: ArgumentDefinition
@@ -20,8 +22,8 @@ type ResolvedVariable* = ref object of RootObj
 proc new_resolved_variable*(arg_def: ArgumentDefinition): ResolvedVariable =
   ResolvedVariable(arg_def: arg_def)
 
-proc typ*(variable: ResolvedVariable): Token = variable.arg_def.arg_type
-proc name*(variable: ResolvedVariable): Token = variable.arg_def.arg_name
+proc typ*(variable: ResolvedVariable): Token = variable.arg_def.typ
+proc name*(variable: ResolvedVariable): Token = variable.arg_def.name
 
 type
   ResolvedArgumentKind = enum

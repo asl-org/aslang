@@ -12,4 +12,4 @@ proc new_resolved_struct_getter*(module: UserModule,
   ResolvedStructGetter(module: module, field: field, arg: arg)
 
 proc c*(getter: ResolvedStructGetter): string =
-  fmt"{getter.module.name}_get_{getter.field.arg_name}({getter.arg})"
+  fmt"{getter.module.name}_get_{getter.field.name}({getter.arg})"

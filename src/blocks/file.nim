@@ -38,10 +38,6 @@ proc find_function*(file: File, func_def: FunctionDefinition): Result[Function, 
     return err(fmt"Function `{func_def.name}` is not defined in the scope")
   ok(file.functions[func_def.hash])
 
-proc find_start_function*(file: File): Result[Function, string] =
-  let start_fn_def = new_function_definition("start", @[("U8", "argc")], "U8")
-  file.find_function(start_fn_def)
-
 proc add_module*(file: File, user_module: UserModule): Result[void, string] =
   let maybe_found = file.find_module(user_module.name)
   if maybe_found.is_ok:

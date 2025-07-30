@@ -47,24 +47,24 @@ proc new_resolved_union*(module_name: Token, union: Union): ResolvedUnion =
 
 proc getter_h(module_name: string, union_name: string,
     field: ArgumentDefinition): string =
-  getter_h(field.native_type, fmt"{module_name}_{union_name}_get_{field.arg_name}")
+  getter_h(field.native_type, fmt"{module_name}_{union_name}_get_{field.name}")
 
 proc getter_c(module_name: string, union_name: string,
     field: ArgumentDefinition, offset: uint): string =
   getter_c(
     field.native_type,
-    fmt"{module_name}_{union_name}_get_{field.arg_name}",
+    fmt"{module_name}_{union_name}_get_{field.name}",
     offset
   )
 
 proc setter_h(module_name: string, union_name: string,
     field: ArgumentDefinition): string =
-  setter_h(fmt"{module_name}_{union_name}_set_{field.arg_name}",
+  setter_h(fmt"{module_name}_{union_name}_set_{field.name}",
       field.native_type)
 
 proc setter_c(module_name: string, union_name: string,
     field: ArgumentDefinition, offset: uint): string =
-  setter_c(fmt"{module_name}_{union_name}_set_{field.arg_name}",
+  setter_c(fmt"{module_name}_{union_name}_set_{field.name}",
       field.native_type, offset)
 
 proc init_h(module_name: string, union_field_def: UnionFieldDefinition): string =
@@ -78,7 +78,7 @@ proc init_c(module_name: string, union_field_def: UnionFieldDefinition,
   let fields_def = union_field_def.fields.values.to_seq.map_it($(it)).join(", ")
   let id_setter = fmt"{ASL_PREFIX}ptr = {module_name}_set_{ASL_UNION_ID}({ASL_PREFIX}ptr, {id});"
   let setter_calls = union_field_def.fields.values.to_seq.map_it(
-    fmt"{ASL_PREFIX}ptr = {module_name}_{union_name}_set_{it.arg_name}({ASL_PREFIX}ptr, {it.arg_name});").join("\n")
+    fmt"{ASL_PREFIX}ptr = {module_name}_{union_name}_set_{it.name}({ASL_PREFIX}ptr, {it.name});").join("\n")
 
   @[
     fmt"Pointer {module_name}_{union_name}_init({fields_def})",

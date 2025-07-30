@@ -26,11 +26,11 @@ proc `$`*(struct: Struct): string =
   let child_prefix = " ".repeat(struct.struct_def.location.column + 1)
   var lines = @[prefix & $(struct.struct_def)]
   for field in struct.fields.values:
-    lines.add(child_prefix & fmt"{field.arg_type} {field.arg_name}")
+    lines.add(child_prefix & fmt"{field.typ} {field.name}")
   return lines.join("\n")
 
 proc add_field*(struct: Struct, field: ArgumentDefinition): Result[void, string] =
-  let field_name = $(field.arg_name)
+  let field_name = $(field.name)
   if field_name in struct.fields:
     let predefined_field = struct.fields[field_name]
     return err(fmt"{field.location} Field `{field_name}` is already defined at {predefined_field.location}")
@@ -73,7 +73,7 @@ proc `$`*(union_field_def: UnionFieldDefinition): string =
   let child_prefix = " ".repeat(union_field_def.name.location.column + 1)
   var lines = @[prefix & $(union_field_def.name)]
   for field in union_field_def.fields.values:
-    lines.add(child_prefix & fmt"{field.arg_type} {field.arg_name}")
+    lines.add(child_prefix & fmt"{field.typ} {field.name}")
   return lines.join("\n")
 
 proc find_field*(union_field_def: UnionFieldDefinition,
@@ -85,7 +85,7 @@ proc find_field*(union_field_def: UnionFieldDefinition,
 
 proc add_field*(union_field_def: UnionFieldDefinition,
     field: ArgumentDefinition): Result[void, string] =
-  let field_name = $(field.arg_name)
+  let field_name = $(field.name)
   if field_name in union_field_def.fields:
     let predefined_location = union_field_def.fields[field_name].location
     return err(fmt"{field.location} Union field `{field_name}` is already defined at {predefined_location}")
