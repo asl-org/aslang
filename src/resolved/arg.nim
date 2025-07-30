@@ -5,14 +5,14 @@ type
     RLK_INTEGER, RLK_FLOAT
   ResolvedLiteral* = ref object of RootObj
     kind*: ResolvedLiteralKind
-    module*: Module
+    module*: BuiltinModule
     value*: Token
 
-proc new_resolved_integer_literal*(module: Module,
+proc new_resolved_integer_literal*(module: BuiltinModule,
     value: Token): ResolvedLiteral =
   ResolvedLiteral(kind: RLK_INTEGER, module: module, value: value)
 
-proc new_resolved_float_literal*(module: Module,
+proc new_resolved_float_literal*(module: BuiltinModule,
     value: Token): ResolvedLiteral =
   ResolvedLiteral(kind: RLK_FLOAT, module: module, value: value)
 
