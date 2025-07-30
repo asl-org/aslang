@@ -417,6 +417,103 @@ proc resolve_match(file: blocks.File, scope: Table[string,
   ok(new_resolved_match(match, match.destination, match_operand_def,
       resolved_case_blocks, resolved_else_blocks, return_argument))
 
+proc resolve_union_pattern_fields_new(scope: Table[string, ArgumentDefinition],
+    union_def: UnionFieldDefinition, union_pattern: UnionPattern): Result[void, string] =
+  # Union pattern can destructure all/subset of the defined union fields
+  # must be unique for the destructured pattern.
+  var union_def_field_name_set: Table[string, Token]
+  var union_def_field_value_set: Table[string, Token]
+  for (field_name, field_value) in union_pattern.fields:
+    # field name checks
+    if $(field_name) in union_def_field_name_set:
+      let predefined_location = union_def_field_name_set[$(
+          field_name)].location
+      return err(fmt"{field_name.location} field `{field_name}` is already used in {predefined_location}")
+    discard ? union_def.find_field(field_name)
+    union_def_field_name_set[$(field_name)] = field_name
+
+    # field value checks
+    if $(field_value) in union_def_field_value_set:
+      let predefined_location = union_def_field_value_set[$(
+          field_value)].location
+      return err(fmt"{field_value.location} field `{field_value}` is already used in {predefined_location}")
+    if $(field_value) in scope:
+      let predefined_location = scope[$(field_value)].location
+      return err(fmt"{field_value.location} field `{field_value}` is already defined at {predefined_location}")
+  ok()
+
+proc resolve_union_pattern_new(scope: Table[string, ArgumentDefinition],
+    match: Match, module: UserModule): Result[void, string] =
+  # All case pattern must be union patterns
+  let first_non_union_pattern_index = match.case_blocks.map_it(
+      it.pattern.kind == PK_UNION).find(false)
+  if first_non_union_pattern_index != -1:
+    let non_union_pattern_location = match.case_blocks[
+        first_non_union_pattern_index].location
+    return err(fmt"{non_union_pattern_location} expected a union pattern of type `{module.name}`")
+
+  let union = module.union
+  let union_patterns = match.case_blocks.map_it(it.pattern.union)
+  var union_field_id_set: Table[int, UnionPattern]
+
+  for upat in union_patterns:
+    # Union pattern must belong to the module's union field.
+    let union_id = ? union.find_field_id(upat.name)
+    if union_id in union_field_id_set:
+      let predefined_location = union_field_id_set[union_id].location
+      return err(fmt"{upat.location} is unreachable due to predefined duplicate case block `{predefined_location}`")
+
+    union_field_id_set[union_id] = upat
+    ? resolve_union_pattern_fields_new(scope, union.fields[union_id], upat)
+
+  # if case blocks do not cover all the union branches,
+  # then match block must always have an else block.
+  if union_field_id_set.len < union.fields.len and match.else_blocks.len == 0:
+    err(fmt"{match.operand.location} matching partial union pattern requires the `else` block")
+  else:
+    ok()
+
+proc resolve_literal_pattern_new[IntType](match: Match, literal_patterns: seq[
+    Token], module: BuiltinModule): Result[void, string] =
+  var intset: Table[IntType, Token]
+  for lpat in literal_patterns:
+    # All the case block patterns must be castable to the respective integer module
+    discard ? module.resolve_integer_literal(lpat)
+    # All case pattern must contain unique values
+    let intval = ? safe_parse[IntType]($(lpat))
+    if intval in intset:
+      let predefined_location = intset[intval].location
+      return err(fmt"{lpat.location} is unreachable due to predefined duplicate case block `{predefined_location}`")
+    intset[intval] = lpat
+
+  # There must always be an else block, because it is not humanely
+  # possible to have case block for every integer value
+  if match.else_blocks.len == 0:
+    err(fmt"{match.operand.location} matching integer literal requires the `else` block")
+  else:
+    ok()
+
+proc resolve_literal_pattern_new(match: Match, module: BuiltinModule): Result[
+    void, string] =
+  # All case pattern must be integer literal patterns
+  let first_non_literal_pattern_index = match.case_blocks.map_it(
+        it.pattern.kind == PK_LITERAL).find(false)
+  if first_non_literal_pattern_index != -1:
+    let non_union_pattern_location = match.case_blocks[
+        first_non_literal_pattern_index].location
+    return err(fmt"{non_union_pattern_location} expected a integer literal of type `{module.name}`")
+
+  let literal_patterns = match.case_blocks.map_it(it.pattern.literal)
+  case $(module.name):
+  of "S8", "S16", "S32", "S64": resolve_literal_pattern_new[int64](match,
+      literal_patterns, module)
+  of "U8", "U16", "U32", "U64": resolve_literal_pattern_new[uint64](match,
+      literal_patterns, module)
+  of "F32", "F64":
+    err(fmt"{match.operand.location} `match` does not support floating point values `{match.operand}`")
+  else:
+    err("MATCH RESOLUTION: UNREACHABLE")
+
 proc resolve_match_new(file: blocks.File, scope: Table[string,
     ArgumentDefinition], temp_var_count: var uint, match: Match): Result[void, string] =
   if $(match.operand) notin scope:
@@ -426,57 +523,14 @@ proc resolve_match_new(file: blocks.File, scope: Table[string,
   let operand_module = ? file.find_module(operand_def.typ)
 
   case operand_module.kind:
-  of MK_USER:
-    case operand_module.user_module.kind:
-    of UMK_UNION: ok()
-    of UMK_STRUCT: err(fmt"{match.operand.location} `match` does not support struct value `{match.operand}`")
-    of UMK_DEFAULT: err("MATCH RESOLUTION: UNREACHABLE")
   of MK_BUILTIN:
-    case $(operand_module.builtin_module):
-    of "S8", "S16", "S32", "S64":
-      # 1. There must always be an else block
-      if match.else_blocks.len == 0:
-        return err(fmt"{match.operand.location} matching integer literal requires the `else` block")
-
-      var intset: Table[int64, Token]
-      for case_block in match.case_blocks:
-        # 2. All the case block patterns can be cast to the respective integer module
-        case case_block.pattern.kind:
-        of PK_LITERAL:
-          discard ? operand_module.builtin_module.resolve_integer_literal(
-              case_block.pattern.literal)
-          # 3. All case pattern contain unique values
-          let intval = ? safe_parse[int64]($(case_block.pattern.literal))
-          if intval in intset:
-            let predefined_location = intset[intval].location
-            return err(fmt"{case_block.pattern.location} is unreachable due to predefined duplicate case block `{predefined_location}`")
-          intset[intval] = case_block.pattern.literal
-        else:
-          return err(fmt"{case_block.pattern.location} expected an integer literal of type `{operand_module.builtin_module.name}`")
-      ok()
-    of "U8", "U16", "U32", "U64":
-      # 1. There must always be an else block
-      if match.else_blocks.len == 0:
-        return err(fmt"{match.operand.location} matching integer literal requires the `else` block")
-
-      var uintset: Table[uint64, Token]
-      for case_block in match.case_blocks:
-        # 2. All the case block patterns can be cast to the respective integer module
-        case case_block.pattern.kind:
-        of PK_LITERAL:
-          discard ? operand_module.builtin_module.resolve_integer_literal(
-              case_block.pattern.literal)
-          # 3. All case pattern contain unique values
-          let uintval = ? safe_parse[uint64]($(case_block.pattern.literal))
-          if uintval in uintset:
-            let predefined_location = uintset[uintval].location
-            return err(fmt"{case_block.pattern.location} is unreachable due to predefined duplicate case block `{predefined_location}`")
-          uintset[uintval] = case_block.pattern.literal
-        else:
-          return err(fmt"{case_block.pattern.location} expected an integer literal of type `{operand_module.builtin_module.name}`")
-      ok()
-    of "F32", "F64": err(fmt"{match.operand.location} `match` does not support floating point value `{match.operand}`")
-    else: err("MATCH RESOLUTION: UNREACHABLE")
+    resolve_literal_pattern_new(match, operand_module.builtin_module)
+  of MK_USER:
+    let user_module = operand_module.user_module
+    case user_module.kind:
+    of UMK_UNION: scope.resolve_union_pattern_new(match, user_module)
+    of UMK_STRUCT: err(fmt"{match.operand.location} `match` does not support struct values `{match.operand}`")
+    of UMK_DEFAULT: err("MATCH RESOLUTION: UNREACHABLE")
 
 proc resolve_function_step(file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint,
