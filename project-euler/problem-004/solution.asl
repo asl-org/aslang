@@ -34,10 +34,10 @@ module Example:
   fn update_ans(U64 a, U64 k): U64
     op = Example.is_palindrome(a)
     _a = match op:
-      case 0:
-        k
       case 1:
         Example.max(a, k)
+      else:
+        k
 
   fn loop_inner(U64 i, U64 j, U64 k, U64 l): U64
     op = U64.compare(j, l)
