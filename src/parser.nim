@@ -48,27 +48,36 @@ proc expect_line_end(parser: Parser): Result[void, string] =
   ok()
 
 proc expect_empty_line(parser: Parser): Result[void, string] =
-  discard parser.expect_any(TK_SPACE)
+  var maybe_space = parser.expect_one_of(@[TK_SPACE, TK_INDENT])
+  while maybe_space.is_ok:
+    maybe_space = parser.expect_one_of(@[TK_SPACE, TK_INDENT])
   ? parser.expect_line_end()
   ok()
 
 proc expect_comment(parser: Parser): Result[void, string] =
-  discard parser.expect_any(TK_SPACE)
-  discard ? parser.expect(TK_HASHTAG)
+  var maybe_space = parser.expect_one_of(@[TK_SPACE, TK_INDENT])
+  while maybe_space.is_ok:
+    maybe_space = parser.expect_one_of(@[TK_SPACE, TK_INDENT])
 
-  while true:
-    let maybe_line_end = parser.expect_line_end()
-    if maybe_line_end.is_ok: break
+  # from `#` until `\n` or `EOF` is a comment
+  let _ = ? parser.expect(TK_HASHTAG)
+  var maybe_line_end = parser.expect_line_end()
+  while not maybe_line_end.is_ok:
     parser.index += 1
+    maybe_line_end = parser.expect_line_end()
 
   ok()
 
 proc expect_ignorable_line(parser: Parser): Result[void, string] =
+  let start = parser.index
+
   var maybe_empty_line = parser.expect_empty_line()
   if maybe_empty_line.is_ok: return ok()
+  else: parser.index = start
 
   var maybe_comment = parser.expect_comment()
   if maybe_comment.is_ok: return ok()
+  else: parser.index = start
 
   return err(fmt"{parser.location} failed to match empty line or comment")
 
@@ -352,47 +361,49 @@ proc expect_module_definition(parser: Parser): Result[ModuleDefinition, string] 
   ok(new_module_definition(name, module_token.location))
 
 proc expect_line(parser: Parser): Result[Line, string] =
+  let indents = parser.expect_any(TK_INDENT).len
   let start = parser.index
 
   let maybe_func_def = parser.expect_function_definition()
-  if maybe_func_def.is_ok: return ok(new_line(maybe_func_def.get))
+  if maybe_func_def.is_ok: return ok(new_line(indents, maybe_func_def.get))
   else: parser.index = start
 
   let maybe_match_def = parser.expect_match_definition()
-  if maybe_match_def.is_ok: return ok(new_line(maybe_match_def.get))
+  if maybe_match_def.is_ok: return ok(new_line(indents, maybe_match_def.get))
   else: parser.index = start
 
   let maybe_case_def = parser.expect_case_definition()
-  if maybe_case_def.is_ok: return ok(new_line(maybe_case_def.get))
+  if maybe_case_def.is_ok: return ok(new_line(indents, maybe_case_def.get))
   else: parser.index = start
 
   let maybe_else_def = parser.expect_else_definition()
-  if maybe_else_def.is_ok: return ok(new_line(maybe_else_def.get))
+  if maybe_else_def.is_ok: return ok(new_line(indents, maybe_else_def.get))
   else: parser.index = start
 
   let maybe_struct_def = parser.expect_struct_definition()
-  if maybe_struct_def.is_ok: return ok(new_line(maybe_struct_def.get))
+  if maybe_struct_def.is_ok: return ok(new_line(indents, maybe_struct_def.get))
   else: parser.index = start
 
   let maybe_struct_field_def = parser.expect_struct_field_definition()
-  if maybe_struct_field_def.is_ok: return ok(new_line(
+  if maybe_struct_field_def.is_ok: return ok(new_line(indents,
       maybe_struct_field_def.get))
   else: parser.index = start
 
   let maybe_union_def = parser.expect_union_definition()
-  if maybe_union_def.is_ok: return ok(new_line(maybe_union_def.get))
+  if maybe_union_def.is_ok: return ok(new_line(indents, maybe_union_def.get))
   else: parser.index = start
 
   let maybe_union_field_def = parser.expect_union_field_definition()
-  if maybe_union_field_def.is_ok: return ok(new_line(maybe_union_field_def.get))
+  if maybe_union_field_def.is_ok: return ok(new_line(indents,
+      maybe_union_field_def.get))
   else: parser.index = start
 
   let maybe_module_def = parser.expect_module_definition()
-  if maybe_module_def.is_ok: return ok(new_line(maybe_module_def.get))
+  if maybe_module_def.is_ok: return ok(new_line(indents, maybe_module_def.get))
   else: parser.index = start
 
   let maybe_statement = parser.expect_statement()
-  if maybe_statement.is_ok: return ok(new_line(maybe_statement.get))
+  if maybe_statement.is_ok: return ok(new_line(indents, maybe_statement.get))
   else: parser.index = start
 
   err(fmt"{parser.location} expected one of the following: statement, function/match/case/else/struct definition")
@@ -409,6 +420,5 @@ proc parse*(tokens: seq[Token]): Result[seq[Line], string] =
     if parser.index >= parser.tokens.len: break
 
     # parse main line content
-    discard parser.expect_any(TK_SPACE)
     lines.add( ? parser.expect_line())
   ok(lines)
