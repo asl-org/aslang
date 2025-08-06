@@ -1,4 +1,4 @@
-import strutils, strformat, hashes, sequtils, results
+import strutils, strformat, hashes, sequtils, results, tables
 
 import token, statement, match, arg_def
 
@@ -37,6 +37,15 @@ proc `$`*(func_def: FunctionDefinition): string =
 
 proc `==`*(func_def: FunctionDefinition, other: FunctionDefinition): bool =
   hash(func_def) == hash(other)
+
+proc close*(func_def: FunctionDefinition): Result[void, string] =
+  var arg_name_table: Table[string, ArgumentDefinition]
+  for arg_def in func_def.arg_def_list:
+    if $(arg_def.name) in arg_name_table:
+      let predefined_location = arg_name_table[$(arg_def.name)].location
+      return err(fmt"{arg_def.location} Argument `{arg_def.name}` is already defined at {predefined_location}")
+    arg_name_table[$(arg_def.name)] = arg_def
+  ok()
 
 type
   FunctionStepKind* = enum

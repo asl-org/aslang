@@ -33,6 +33,7 @@ let TOKEN_SPECS* = @[
   TokenSpec(kind: TSK_STATIC, value: "else", token_kind: TK_ELSE),
   TokenSpec(kind: TSK_STATIC, value: "struct", token_kind: TK_STRUCT),
   TokenSpec(kind: TSK_STATIC, value: "union", token_kind: TK_UNION),
+  TokenSpec(kind: TSK_STATIC, value: "generic", token_kind: TK_GENERIC),
   # values
   TokenSpec(kind: TSK_DYNAMIC, matcher: expect_identifier, token_kind: TK_ID),
   TokenSpec(kind: TSK_DYNAMIC, matcher: expect_string, token_kind: TK_STRING),

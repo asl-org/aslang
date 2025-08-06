@@ -139,6 +139,8 @@ type
   UserModule* = ref object of RootObj
     module_def*: ModuleDefinition
     functions*: Table[Hash, Function]
+    generic_map: Table[string, int]
+    generics*: seq[Generic]
     case kind*: UserModuleKind
     of UMK_DEFAULT: discard
     of UMK_STRUCT: struct*: Struct
@@ -208,6 +210,15 @@ proc add_union*(module: UserModule, union: Union): Result[UserModule, string] =
   of UMK_UNION:
     let predefined_location = module.union.location
     err(fmt"{union.location} Module `{module.name}` already contains a union block at {predefined_location}")
+
+proc add_generic*(module: UserModule, generic: Generic): Result[void, string] =
+  if $(generic.name) in module.generic_map:
+    let predefined_location = module.generics[module.generic_map[$(
+        generic.name)]].location
+    return err(fmt"Generic `{generic.name}` is already defined at {predefined_location}")
+  module.generic_map[$(generic.name)] = module.generics.len
+  module.generics.add(generic)
+  ok()
 
 proc close*(module: UserModule): Result[void, string] =
   case module.kind:
