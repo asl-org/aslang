@@ -9,6 +9,7 @@ type
     LK_MATCH_DEFINITION, LK_CASE_DEFINITION, LK_ELSE_DEFINITION
     LK_STRUCT_DEFINITION, LK_STRUCT_FIELD_DEFINITION
     LK_UNION_DEFINITION, LK_UNION_FIELD_DEFINITION
+    LK_GENERIC_DEFINITION
     LK_MODULE_DEFINITION
   Line* = ref object of RootObj
     indent*: int
@@ -22,6 +23,7 @@ type
     of LK_STRUCT_FIELD_DEFINITION: struct_field_def*: ArgumentDefinition
     of LK_UNION_DEFINITION: union_def*: UnionDefinition
     of LK_UNION_FIELD_DEFINITION: union_field_def*: UnionFieldDefinition
+    of LK_GENERIC_DEFINITION: generic*: Generic
     of LK_MODULE_DEFINITION: module_def*: ModuleDefinition
 
 proc new_line*(indent: int, func_def: FunctionDefinition): Line =
@@ -53,6 +55,9 @@ proc new_line*(indent: int, union_field_def: UnionFieldDefinition): Line =
   Line(kind: LK_UNION_FIELD_DEFINITION, indent: indent,
       union_field_def: union_field_def)
 
+proc new_line*(indent: int, generic: Generic): Line =
+  Line(kind: LK_GENERIC_DEFINITION, indent: indent, generic: generic)
+
 proc new_line*(indent: int, module_def: ModuleDefinition): Line =
   Line(kind: LK_MODULE_DEFINITION, indent: indent, module_def: module_def)
 
@@ -67,6 +72,7 @@ proc location*(line: Line): Location =
   of LK_STRUCT_FIELD_DEFINITION: line.struct_field_def.location
   of LK_UNION_DEFINITION: line.union_def.location
   of LK_UNION_FIELD_DEFINITION: line.union_field_def.location
+  of LK_GENERIC_DEFINITION: line.generic.location
   of LK_MODULE_DEFINITION: line.module_def.location
 
 proc `$`*(line: Line): string =
@@ -80,4 +86,5 @@ proc `$`*(line: Line): string =
   of LK_STRUCT_FIELD_DEFINITION: $(line.struct_field_def)
   of LK_UNION_DEFINITION: $(line.union_def)
   of LK_UNION_FIELD_DEFINITION: $(line.union_field_def)
+  of LK_GENERIC_DEFINITION: $(line.generic)
   of LK_MODULE_DEFINITION: $(line.module_def)

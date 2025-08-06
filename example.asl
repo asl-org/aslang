@@ -1,4 +1,8 @@
 module Status:
+  generic Value
+  generic Error:
+    fn code(Error err): U64
+
   union:
     Ok:
       U64 value

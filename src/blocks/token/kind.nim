@@ -1,7 +1,8 @@
 type
   TokenKind* = enum
     # keywords
-    TK_MODULE, TK_FN, TK_MATCH, TK_CASE, TK_ELSE, TK_STRUCT, TK_UNION
+    TK_MODULE, TK_FN, TK_MATCH, TK_CASE, TK_ELSE
+    TK_STRUCT, TK_UNION, TK_GENERIC
     # values
     TK_ID, TK_STRING, TK_FLOAT, TK_INTEGER
     # prefix operators

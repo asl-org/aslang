@@ -346,6 +346,17 @@ proc expect_union_definition(parser: Parser): Result[UnionDefinition, string] =
   discard ? parser.expect(TK_COLON)
   ok(new_union_definition(union_token.location))
 
+proc expect_generic_definition(parser: Parser): Result[Generic, string] =
+  let generic_token = ? parser.expect(TK_GENERIC)
+  discard parser.expect_any(TK_SPACE)
+  let name = ? parser.expect(TK_ID)
+  discard parser.expect_any(TK_SPACE)
+  let maybe_extended = parser.expect(TK_COLON)
+  if maybe_extended.is_ok:
+    ok(new_extended_generic(name, generic_token.location))
+  else:
+    ok(new_generic(name, generic_token.location))
+
 proc expect_union_field_definition(parser: Parser): Result[UnionFieldDefinition, string] =
   let name = ? parser.expect(TK_ID)
   discard parser.expect_any(TK_SPACE)
@@ -391,6 +402,11 @@ proc expect_line(parser: Parser): Result[Line, string] =
 
   let maybe_union_def = parser.expect_union_definition()
   if maybe_union_def.is_ok: return ok(new_line(indents, maybe_union_def.get))
+  else: parser.index = start
+
+  let maybe_generic_def = parser.expect_generic_definition()
+  if maybe_generic_def.is_ok: return ok(new_line(indents,
+      maybe_generic_def.get))
   else: parser.index = start
 
   let maybe_union_field_def = parser.expect_union_field_definition()

@@ -45,6 +45,7 @@ type
     BK_MATCH, BK_CASE, BK_ELSE
     BK_STRUCT_FIELD, BK_STRUCT
     BK_UNION_FIELD, BK_UNION
+    BK_GENERIC_FIELD, BK_GENERIC
     BK_FUNCTION, BK_MODULE, BK_FILE
 
   Block* = ref object of RootObj
@@ -60,6 +61,8 @@ type
     of BK_STRUCT_FIELD: struct_field_def: ArgumentDefinition
     of BK_UNION: union*: Union
     of BK_UNION_FIELD: union_field_def: UnionFieldDefinition
+    of BK_GENERIC_FIELD: generic_field: FunctionDefinition
+    of BK_GENERIC: generic: Generic
     of BK_MODULE: module: UserModule
 
 proc location*(asl_block: Block): Location =
@@ -74,6 +77,8 @@ proc location*(asl_block: Block): Location =
   of BK_STRUCT_FIELD: asl_block.struct_field_def.location
   of BK_UNION: asl_block.union.location
   of BK_UNION_FIELD: asl_block.union_field_def.location
+  of BK_GENERIC_FIELD: asl_block.generic_field.location
+  of BK_GENERIC: asl_block.generic.location
   of BK_MODULE: asl_block.module.location
 
 proc `$`*(asl_block: Block): string =
@@ -88,6 +93,8 @@ proc `$`*(asl_block: Block): string =
   of BK_STRUCT_FIELD: $(asl_block.struct_field_def)
   of BK_UNION: $(asl_block.union)
   of BK_UNION_FIELD: $(asl_block.union_field_def)
+  of BK_GENERIC_FIELD: $(asl_block.generic_field)
+  of BK_GENERIC: $(asl_block.generic)
   of BK_MODULE: $(asl_block.module)
 
 proc close*(asl_block: Block): Result[void, string] =
@@ -101,6 +108,8 @@ proc close*(asl_block: Block): Result[void, string] =
   of BK_STRUCT: asl_block.struct.close()
   of BK_UNION: asl_block.union.close()
   of BK_UNION_FIELD: asl_block.union_field_def.close()
+  of BK_GENERIC_FIELD: asl_block.generic_field.close()
+  of BK_GENERIC: asl_block.generic.close()
   of BK_MODULE: asl_block.module.close()
   # leaf blocks
   of BK_STRUCT_FIELD: ok()
@@ -146,82 +155,126 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
     case child.kind:
     of BK_STRUCT_FIELD: parent.union_field_def.add_field(child.struct_field_def)
     else: err(fmt"{parent.location} `union` field can only contain field definitions")
+  of BK_GENERIC:
+    case child.kind:
+    of BK_GENERIC_FIELD: parent.generic.add_constraint(child.generic_field)
+    else: err(fmt"{parent.location} `generic` field can only contain function definitions")
   of BK_MODULE:
     case child.kind:
     of BK_FUNCTION: parent.module.add_function(child.function)
-    of BK_STRUCT:
-      parent.module = ? parent.module.add_struct(child.struct)
-      ok()
-    of BK_UNION:
-      parent.module = ? parent.module.add_union(child.union)
-      ok()
+    of BK_GENERIC: parent.module.add_generic(child.generic)
+    of BK_STRUCT: parent.module = ? parent.module.add_struct(child.struct); ok()
+    of BK_UNION: parent.module = ? parent.module.add_union(child.union); ok()
     else: err(fmt"{parent.module.name} Module can only contain functions")
   of BK_STATEMENT: err(fmt"{parent.location} statement does not support further nesting")
   of BK_STRUCT_FIELD: err(fmt"{parent.location} struct field definition does not support further nesting.")
+  of BK_GENERIC_FIELD: err(fmt"{parent.location} generic field definition does not support further nesting.")
 
 proc new_block*(filename: string): Block =
   Block(indent: -1, kind: BK_FILE, file: new_file(filename))
 
-proc new_block*(line: Line): Result[Block, string] =
-  let asl_block =
+proc new_block*(parent: Block, line: Line): Result[Block, string] =
+  case parent.kind:
+  of BK_FILE:
+    case line.kind:
+    of LK_MODULE_DEFINITION:
+      ok(Block(kind: BK_MODULE, indent: line.indent, module: new_user_module(
+          line.module_def)))
+    of LK_FUNCTION_DEFINITION:
+      ok(Block(kind: BK_FUNCTION, indent: line.indent, function: new_function(
+          line.func_def)))
+    else: err(fmt"Line `{line.kind}` can not be nested inside file.")
+  of BK_FUNCTION:
+    case line.kind:
+    of LK_STATEMENT:
+      ok(Block(kind: BK_STATEMENT, indent: line.indent,
+          statement: line.statement))
+    of LK_MATCH_DEFINITION:
+      ok(Block(kind: BK_MATCH, indent: line.indent, match_block: new_match(
+          line.match_def)))
+    else: err(fmt"Line `{line.kind}` can not be nested inside function.")
+  of BK_MATCH:
+    case line.kind:
+    of LK_CASE_DEFINITION: ok(Block(kind: BK_CASE, indent: line.indent,
+        case_block: new_case(line.case_def)))
+    of LK_ELSE_DEFINITION: ok(Block(kind: BK_ELSE, indent: line.indent,
+        else_block: new_else(line.else_def)))
+    else: err(fmt"Line `{line.kind}` can not be nested inside match.")
+  of BK_CASE:
+    case line.kind:
+    of LK_STATEMENT: ok(Block(kind: BK_STATEMENT, indent: line.indent,
+        statement: line.statement))
+    else: err(fmt"Line `{line.kind}` can not be nested inside case.")
+  of BK_ELSE:
+    case line.kind:
+    of LK_STATEMENT: ok(Block(kind: BK_STATEMENT, indent: line.indent,
+        statement: line.statement))
+    else: err(fmt"Line `{line.kind}` can not be nested inside else.")
+  of BK_STRUCT:
+    case line.kind:
+    of LK_STRUCT_FIELD_DEFINITION: ok(Block(kind: BK_STRUCT_FIELD,
+        indent: line.indent, struct_field_def: line.struct_field_def))
+    else: err(fmt"Line `{line.kind}` can not be nested inside struct.")
+  of BK_UNION:
+    case line.kind:
+    of LK_UNION_FIELD_DEFINITION: ok(Block(kind: BK_UNION_FIELD,
+        indent: line.indent, union_field_def: line.union_field_def))
+    else: err(fmt"Line `{line.kind}` can not be nested inside union.")
+  of BK_UNION_FIELD:
+    case line.kind:
+    of LK_STRUCT_FIELD_DEFINITION: ok(Block(kind: BK_STRUCT_FIELD,
+        indent: line.indent, struct_field_def: line.struct_field_def))
+    else: err(fmt"Line `{line.kind}` can not be nested inside union field.")
+  of BK_GENERIC:
     case line.kind:
     of LK_FUNCTION_DEFINITION:
-      Block(kind: BK_FUNCTION, indent: line.indent, function: new_function(line.func_def))
-    of LK_STATEMENT:
-      Block(kind: BK_STATEMENT, indent: line.indent, statement: line.statement)
-    of LK_MATCH_DEFINITION:
-      Block(kind: BK_MATCH, indent: line.indent, match_block: new_match(
-          line.match_def))
-    of LK_CASE_DEFINITION:
-      Block(kind: BK_CASE, indent: line.indent, case_block: new_case(line.case_def))
-    of LK_ELSE_DEFINITION:
-      Block(kind: BK_ELSE, indent: line.indent, else_block: new_else(line.else_def))
-    of LK_STRUCT_DEFINITION:
-      Block(kind: BK_STRUCT, indent: line.indent, struct: new_struct(
-          line.struct_def))
-    of LK_STRUCT_FIELD_DEFINITION:
-      Block(kind: BK_STRUCT_FIELD, indent: line.indent,
-          struct_field_def: line.struct_field_def)
-    of LK_UNION_DEFINITION:
-      Block(kind: BK_UNION, indent: line.indent, union: new_union(
-          line.union_def))
-    of LK_UNION_FIELD_DEFINITION:
-      Block(kind: BK_UNION_FIELD, indent: line.indent,
-          union_field_def: line.union_field_def)
-    of LK_MODULE_DEFINITION:
-      Block(kind: BK_MODULE, indent: line.indent, module: new_user_module(
-          line.module_def))
-  ok(asl_block)
+      ok(Block(kind: BK_GENERIC_FIELD, indent: line.indent,
+          generic_field: line.func_def))
+    else: err(fmt"Line `{line.kind}` can not be nested inside generic")
+  of BK_MODULE:
+    case line.kind:
+    of LK_FUNCTION_DEFINITION: ok(Block(kind: BK_FUNCTION,
+        indent: line.indent, function: new_function(line.func_def)))
+    of LK_GENERIC_DEFINITION: ok(Block(kind: BK_GENERIC, indent: line.indent,
+        generic: line.generic))
+    of LK_STRUCT_DEFINITION: ok(Block(kind: BK_STRUCT, indent: line.indent,
+        struct: new_struct(line.struct_def)))
+    of LK_UNION_DEFINITION: ok(Block(kind: BK_UNION, indent: line.indent,
+        union: new_union(line.union_def)))
+    else: err(fmt"Line `{line.kind}` can not be nested inside module.")
+  of BK_STATEMENT: err(fmt"Line `{line.kind}` can not be nested inside statement.")
+  of BK_STRUCT_FIELD: err(fmt"Line `{line.kind}` can not be nested inside struct field.")
+  of BK_GENERIC_FIELD: err(fmt"Line `{line.kind}` can not be nested inside generic field.")
 
 proc blockify*(filename: string, lines: seq[Line]): Result[File, string] =
   var stack = @[new_block(filename)]
   for line in lines:
-    let current_block = ? new_block(line)
-    var last_block = stack[^1]
+    var child_block = stack[^1]
 
-    while stack.len > 1 and last_block.indent >= current_block.indent:
+    while stack.len > 1 and child_block.indent >= line.indent:
       # reducing stack size is equivalent to popping last element
       stack.set_len(stack.len - 1)
-      let second_last_block = stack[^1]
+      let parent_block = stack[^1]
       # close and merge last block into its parent(second last block)
-      ? last_block.close()
-      ? second_last_block.add_child(last_block)
+      ? child_block.close()
+      ? parent_block.add_child(child_block)
       # now second last block becomes the last block
-      last_block = second_last_block
+      child_block = parent_block
 
-    if last_block.indent + 1 != current_block.indent:
-      return err(fmt"{current_block.location} indentation error")
+    if child_block.indent + 1 != line.indent:
+      return err(fmt"{line.location} indentation error")
 
+    let current_block = ? new_block(child_block, line)
     case current_block.kind:
     # statement & struct field is the leaf block
-    of BK_STATEMENT: ? last_block.add_child(current_block)
-    of BK_STRUCT_FIELD: ? last_block.add_child(current_block)
+    of BK_STATEMENT: ? child_block.add_child(current_block)
+    of BK_STRUCT_FIELD: ? child_block.add_child(current_block)
     else: stack.add(current_block)
 
   while stack.len > 1:
-    let parent_block = stack[^2]
     let child_block = stack[^1]
     ? child_block.close()
+    let parent_block = stack[^2]
     ? parent_block.add_child(child_block)
     stack.set_len(stack.len - 1)
 

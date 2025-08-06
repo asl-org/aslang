@@ -1,6 +1,6 @@
 import strformat, strutils, results, tables
 
-import arg_def, token
+import arg_def, token, function
 
 type StructDefinition* = ref object of RootObj
   location*: Location
@@ -144,4 +144,49 @@ proc `$`*(union: Union): string =
 proc close*(union: Union): Result[void, string] =
   if union.fields.len < 2:
     return err(fmt"{union.location} Union must have at least 2 fields.")
+  ok()
+
+type
+  GenericKind* = enum
+    GDK_DEFAULT, GDK_EXTENDED
+  Generic* = ref object of RootObj
+    name*: Token
+    location*: Location
+    case kind*: GenericKind
+    of GDK_DEFAULT: discard
+    of GDK_EXTENDED: constraints: seq[FunctionDefinition]
+
+proc `$`*(generic: Generic): string =
+  case generic.kind:
+  of GDK_DEFAULT:
+    fmt"generic {generic.name}"
+  of GDK_EXTENDED:
+    fmt"generic {generic.name}:"
+
+proc new_generic*(name: Token,
+    location: Location): Generic =
+  Generic(kind: GDK_DEFAULT, name: name, location: location)
+
+proc new_extended_generic*(name: Token,
+    location: Location): Generic =
+  Generic(kind: GDK_EXTENDED, name: name, location: location)
+
+proc add_constraint*(generic: Generic, func_def: FunctionDefinition): Result[
+    void, string] =
+  case generic.kind:
+  of GDK_DEFAULT:
+    err(fmt"{generic.location} Generic block is missing `:` at the end")
+  of GDK_EXTENDED:
+    for constraint in generic.constraints:
+      if constraint.hash() == func_def.hash():
+        return err(fmt"{func_def.location} same constraint is already defined at {constraint.location}")
+    generic.constraints.add(func_def)
+    ok()
+
+proc close*(generic: Generic): Result[void, string] =
+  case generic.kind:
+  of GDK_DEFAULT: discard
+  of GDK_EXTENDED:
+    if generic.constraints.len == 0:
+      return err(fmt"{generic.location} `generic` block must contain at least one constraint.")
   ok()
