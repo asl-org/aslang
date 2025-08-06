@@ -38,7 +38,6 @@ export file
 
 # Needed since nim also has a builtin `File` type
 type File = file.File
-const INDENT_SIZE = 2 # spaces
 
 type
   BlockKind* = enum
@@ -77,9 +76,6 @@ proc location*(asl_block: Block): Location =
   of BK_UNION_FIELD: asl_block.union_field_def.location
   of BK_MODULE: asl_block.module.location
 
-proc indent*(asl_block: Block): int =
-  (asl_block.location.column - 1) div 2
-
 proc `$`*(asl_block: Block): string =
   case asl_block.kind:
   of BK_FILE: $(asl_block.file)
@@ -112,7 +108,7 @@ proc close*(asl_block: Block): Result[void, string] =
 
 proc add_child*(parent: Block, child: Block): Result[void, string] =
   if parent.indent + 1 != child.indent:
-    return err(fmt"Indentation error child block {child.kind} must be nested with {INDENT_SIZE} spaces inside parent block {parent.kind}")
+    return err(fmt"Indentation error child block {child.kind} must be nested inside parent block {parent.kind}")
 
   case parent.kind:
   of BK_FILE:
@@ -164,41 +160,36 @@ proc add_child*(parent: Block, child: Block): Result[void, string] =
   of BK_STRUCT_FIELD: err(fmt"{parent.location} struct field definition does not support further nesting.")
 
 proc new_block*(filename: string): Block =
-  # file is the invisible parent block therefore -1 indent
   Block(indent: -1, kind: BK_FILE, file: new_file(filename))
 
 proc new_block*(line: Line): Result[Block, string] =
-  let spaces = line.location.column - 1
-  if (spaces mod INDENT_SIZE) != 0:
-    return err(fmt"Indentation error expected prefix spaces as multiple of {INDENT_SIZE} but found {spaces}")
-  let indent = spaces div INDENT_SIZE
-
   let asl_block =
     case line.kind:
     of LK_FUNCTION_DEFINITION:
-      Block(kind: BK_FUNCTION, indent: indent, function: new_function(line.func_def))
+      Block(kind: BK_FUNCTION, indent: line.indent, function: new_function(line.func_def))
     of LK_STATEMENT:
-      Block(kind: BK_STATEMENT, indent: indent, statement: line.statement)
+      Block(kind: BK_STATEMENT, indent: line.indent, statement: line.statement)
     of LK_MATCH_DEFINITION:
-      Block(kind: BK_MATCH, indent: indent, match_block: new_match(
+      Block(kind: BK_MATCH, indent: line.indent, match_block: new_match(
           line.match_def))
     of LK_CASE_DEFINITION:
-      Block(kind: BK_CASE, indent: indent, case_block: new_case(line.case_def))
+      Block(kind: BK_CASE, indent: line.indent, case_block: new_case(line.case_def))
     of LK_ELSE_DEFINITION:
-      Block(kind: BK_ELSE, indent: indent, else_block: new_else(line.else_def))
+      Block(kind: BK_ELSE, indent: line.indent, else_block: new_else(line.else_def))
     of LK_STRUCT_DEFINITION:
-      Block(kind: BK_STRUCT, indent: indent, struct: new_struct(
+      Block(kind: BK_STRUCT, indent: line.indent, struct: new_struct(
           line.struct_def))
     of LK_STRUCT_FIELD_DEFINITION:
-      Block(kind: BK_STRUCT_FIELD, indent: indent,
+      Block(kind: BK_STRUCT_FIELD, indent: line.indent,
           struct_field_def: line.struct_field_def)
     of LK_UNION_DEFINITION:
-      Block(kind: BK_UNION, indent: indent, union: new_union(line.union_def))
+      Block(kind: BK_UNION, indent: line.indent, union: new_union(
+          line.union_def))
     of LK_UNION_FIELD_DEFINITION:
-      Block(kind: BK_UNION_FIELD, indent: indent,
+      Block(kind: BK_UNION_FIELD, indent: line.indent,
           union_field_def: line.union_field_def)
     of LK_MODULE_DEFINITION:
-      Block(kind: BK_MODULE, indent: indent, module: new_user_module(
+      Block(kind: BK_MODULE, indent: line.indent, module: new_user_module(
           line.module_def))
   ok(asl_block)
 
@@ -206,22 +197,25 @@ proc blockify*(filename: string, lines: seq[Line]): Result[File, string] =
   var stack = @[new_block(filename)]
   for line in lines:
     let current_block = ? new_block(line)
-    while stack.len > 1:
-      let child_block = stack[^1]
-      if child_block.indent < current_block.indent: break
-      if child_block.indent + 1 < current_block.indent:
-        return err(fmt"{current_block.location} indentation error")
-      stack.set_len(stack.len - 1) # pop child block
+    var last_block = stack[^1]
 
-      let parent_block = stack[^1]
-      ? child_block.close()
-      ? parent_block.add_child(child_block)
+    while stack.len > 1 and last_block.indent >= current_block.indent:
+      # reducing stack size is equivalent to popping last element
+      stack.set_len(stack.len - 1)
+      let second_last_block = stack[^1]
+      # close and merge last block into its parent(second last block)
+      ? last_block.close()
+      ? second_last_block.add_child(last_block)
+      # now second last block becomes the last block
+      last_block = second_last_block
 
-    let parent_block = stack[^1]
+    if last_block.indent + 1 != current_block.indent:
+      return err(fmt"{current_block.location} indentation error")
+
     case current_block.kind:
     # statement & struct field is the leaf block
-    of BK_STATEMENT: ? parent_block.add_child(current_block)
-    of BK_STRUCT_FIELD: ? parent_block.add_child(current_block)
+    of BK_STATEMENT: ? last_block.add_child(current_block)
+    of BK_STRUCT_FIELD: ? last_block.add_child(current_block)
     else: stack.add(current_block)
 
   while stack.len > 1:

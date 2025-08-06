@@ -11,6 +11,7 @@ type
     LK_UNION_DEFINITION, LK_UNION_FIELD_DEFINITION
     LK_MODULE_DEFINITION
   Line* = ref object of RootObj
+    indent*: int
     case kind*: LineKind
     of LK_FUNCTION_DEFINITION: func_def*: FunctionDefinition
     of LK_STATEMENT: statement*: Statement
@@ -23,35 +24,37 @@ type
     of LK_UNION_FIELD_DEFINITION: union_field_def*: UnionFieldDefinition
     of LK_MODULE_DEFINITION: module_def*: ModuleDefinition
 
-proc new_line*(func_def: FunctionDefinition): Line =
-  Line(kind: LK_FUNCTION_DEFINITION, func_def: func_def)
+proc new_line*(indent: int, func_def: FunctionDefinition): Line =
+  Line(kind: LK_FUNCTION_DEFINITION, indent: indent, func_def: func_def)
 
-proc new_line*(statement: Statement): Line =
-  Line(kind: LK_STATEMENT, statement: statement)
+proc new_line*(indent: int, statement: Statement): Line =
+  Line(kind: LK_STATEMENT, indent: indent, statement: statement)
 
-proc new_line*(match_def: MatchDefinition): Line =
-  Line(kind: LK_MATCH_DEFINITION, match_def: match_def)
+proc new_line*(indent: int, match_def: MatchDefinition): Line =
+  Line(kind: LK_MATCH_DEFINITION, indent: indent, match_def: match_def)
 
-proc new_line*(case_def: CaseDefinition): Line =
-  Line(kind: LK_CASE_DEFINITION, case_def: case_def)
+proc new_line*(indent: int, case_def: CaseDefinition): Line =
+  Line(kind: LK_CASE_DEFINITION, indent: indent, case_def: case_def)
 
-proc new_line*(else_def: ElseDefinition): Line =
-  Line(kind: LK_ELSE_DEFINITION, else_def: else_def)
+proc new_line*(indent: int, else_def: ElseDefinition): Line =
+  Line(kind: LK_ELSE_DEFINITION, indent: indent, else_def: else_def)
 
-proc new_line*(struct_def: StructDefinition): Line =
-  Line(kind: LK_STRUCT_DEFINITION, struct_def: struct_def)
+proc new_line*(indent: int, struct_def: StructDefinition): Line =
+  Line(kind: LK_STRUCT_DEFINITION, indent: indent, struct_def: struct_def)
 
-proc new_line*(struct_field_def: ArgumentDefinition): Line =
-  Line(kind: LK_STRUCT_FIELD_DEFINITION, struct_field_def: struct_field_def)
+proc new_line*(indent: int, struct_field_def: ArgumentDefinition): Line =
+  Line(kind: LK_STRUCT_FIELD_DEFINITION, indent: indent,
+      struct_field_def: struct_field_def)
 
-proc new_line*(union_def: UnionDefinition): Line =
-  Line(kind: LK_UNION_DEFINITION, union_def: union_def)
+proc new_line*(indent: int, union_def: UnionDefinition): Line =
+  Line(kind: LK_UNION_DEFINITION, indent: indent, union_def: union_def)
 
-proc new_line*(union_field_def: UnionFieldDefinition): Line =
-  Line(kind: LK_UNION_FIELD_DEFINITION, union_field_def: union_field_def)
+proc new_line*(indent: int, union_field_def: UnionFieldDefinition): Line =
+  Line(kind: LK_UNION_FIELD_DEFINITION, indent: indent,
+      union_field_def: union_field_def)
 
-proc new_line*(module_def: ModuleDefinition): Line =
-  Line(kind: LK_MODULE_DEFINITION, module_def: module_def)
+proc new_line*(indent: int, module_def: ModuleDefinition): Line =
+  Line(kind: LK_MODULE_DEFINITION, indent: indent, module_def: module_def)
 
 proc location*(line: Line): Location =
   case line.kind:

@@ -54,7 +54,6 @@ chmod +x bootstrap.sh
 ./bootstrap.sh
 
 # Memory leak detection, see script content for usage instructions.
-cript contains detailed usage instrutions
 chmod +x memcheck.sh
 ./memcheck.sh
 

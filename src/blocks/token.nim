@@ -74,6 +74,7 @@ let TOKEN_SPECS* = @[
   TokenSpec(kind: TSK_STATIC, value: "'", token_kind: TK_SINGLE_QUOTE),
   TokenSpec(kind: TSK_STATIC, value: "\"", token_kind: TK_DOUBLE_QUOTE),
   # space characters
+  TokenSpec(kind: TSK_STATIC, value: "  ", token_kind: TK_INDENT),
   TokenSpec(kind: TSK_STATIC, value: " ", token_kind: TK_SPACE),
   TokenSpec(kind: TSK_STATIC, value: "\n", token_kind: TK_NEWLINE),
 ]
