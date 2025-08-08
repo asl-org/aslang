@@ -1,7 +1,7 @@
-import strformat, sets, strutils, sequtils
+import strformat, sets, strutils, sequtils, tables
 
 import "../blocks"
-import function_call, statement, arg
+import statement, arg, function_ref
 
 type
   ResolvedPatternKind = enum
@@ -45,6 +45,19 @@ proc function_refs*(case_block: ResolvedCase): Hashset[ResolvedFunctionRef] =
   for statement in case_block.statements:
     function_ref_set.incl(statement.function_refs)
   function_ref_set
+
+proc generic_impls*(case_block: ResolvedCase): Table[string, Table[string,
+    HashSet[string]]] =
+  var impls: Table[string, Table[string, HashSet[string]]]
+  for statement in case_block.statements:
+    for (module_name, impl_map) in statement.generic_impls.pairs:
+      if module_name notin impls:
+        impls[module_name] = init_table[string, HashSet[string]]()
+      for (generic, concrete) in impl_map.pairs:
+        if generic notin impls[module_name]:
+          impls[module_name][generic] = init_hashset[string]()
+        impls[module_name][generic].incl(concrete)
+  return impls
 
 proc c*(resolved_case: ResolvedCase, result_var: Token): string =
   var lines: seq[string] = @[fmt"case {resolved_case.pattern}: " & "{"]

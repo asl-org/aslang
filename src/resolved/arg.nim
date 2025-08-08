@@ -1,4 +1,7 @@
+import tables, sets
+
 import "../blocks"
+import function_ref
 
 type
   ResolvedLiteralKind* = enum
@@ -16,27 +19,69 @@ proc new_resolved_float_literal*(module: BuiltinModule,
     value: Token): ResolvedLiteral =
   ResolvedLiteral(kind: RLK_FLOAT, module: module, value: value)
 
-type ResolvedVariable* = ref object of RootObj
-  arg_def: ArgumentDefinition
+
+type
+  ResolvedVariableKind* = enum
+    RVK_DEFAULT, RVK_GENERIC
+  ResolvedVariable* = ref object of RootObj
+    arg_def*: ArgumentDefinition
+    case kind*: ResolvedVariableKind
+    of RVK_DEFAULT: discard
+    of RVK_GENERIC:
+      generic*: Token
+      function_refs*: HashSet[ResolvedFunctionRef]
 
 proc new_resolved_variable*(arg_def: ArgumentDefinition): ResolvedVariable =
-  ResolvedVariable(arg_def: arg_def)
+  ResolvedVariable(kind: RVK_DEFAULT, arg_def: arg_def)
+
+proc new_resolved_variable*(resolved_var: ResolvedVariable,
+    generic: Token, function_refs: HashSet[
+        ResolvedFunctionRef]): ResolvedVariable =
+  ResolvedVariable(kind: RVK_GENERIC, arg_def: resolved_var.arg_def,
+      generic: generic, function_refs: function_refs)
 
 proc typ*(variable: ResolvedVariable): Token = variable.arg_def.typ
 proc name*(variable: ResolvedVariable): Token = variable.arg_def.name
 
+proc generic_impls*(variable: ResolvedVariable): Table[string, HashSet[string]] =
+  var impls: Table[string, HashSet[string]]
+  case variable.kind:
+  of RVK_GENERIC:
+    impls[$(variable.generic)] = init_hashset[string]()
+    impls[$(variable.generic)].incl($(variable.typ))
+  of RVK_DEFAULT:
+    discard
+  return impls
+
 type
-  ResolvedArgumentKind = enum
+  ResolvedArgumentKind* = enum
     RAK_LITERAL, RAK_VARIABLE
   ResolvedArgument* = ref object of RootObj
-    case kind: ResolvedArgumentKind
-    of RAK_LITERAL: literal: ResolvedLiteral
-    of RAK_VARIABLE: variable: ResolvedVariable
+    case kind*: ResolvedArgumentKind
+    of RAK_LITERAL: literal*: ResolvedLiteral
+    of RAK_VARIABLE: variable*: ResolvedVariable
+
+proc function_refs*(arg: ResolvedArgument): HashSet[ResolvedFunctionRef] =
+  case arg.kind:
+  of RAK_VARIABLE: arg.variable.function_refs
+  else: init_hashset[ResolvedFunctionRef]()
+
+proc generic_impls*(arg: ResolvedArgument): Table[string, HashSet[string]] =
+  case arg.kind:
+  of RAK_VARIABLE: arg.variable.generic_impls
+  else: init_table[string, HashSet[string]]()
 
 proc value*(arg: ResolvedArgument): Token =
   case arg.kind:
   of RAK_LITERAL: arg.literal.value
   of RAK_VARIABLE: arg.variable.name
+
+proc return_type*(arg: ResolvedArgument): Token =
+  case arg.kind:
+  of RAK_LITERAL: arg.literal.module.name
+  of RAK_VARIABLE: arg.variable.typ
+
+proc c*(arg: ResolvedArgument): string = $(arg.value)
 
 proc new_resolved_argument*(literal: ResolvedLiteral): ResolvedArgument =
   ResolvedArgument(kind: RAK_LITERAL, literal: literal)

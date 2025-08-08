@@ -33,6 +33,13 @@ proc name*(builtin_module: BuiltinModule): Token =
 
 proc `$`*(module: BuiltinModule): string = $(module.module_def.name)
 
+proc find_function*(module: BuiltinModule,
+    func_def: FunctionDefinition): Result[FunctionDefinition, string] =
+  for mod_func_def in module.functions:
+    if func_def.hash() == mod_func_def.hash():
+      return ok(func_def)
+  return err(fmt"{func_def.location} Builtin module `{module.name}` has no function definition matching `{func_def}`")
+
 proc u8_module(): BuiltinModule =
   new_builtin_module("U8", @[
     ("U8", "init", @[("U8", "a")]),
@@ -111,6 +118,7 @@ proc pointer_module(): BuiltinModule =
 
 proc system_module(): BuiltinModule =
   new_builtin_module("System", @[
+    ("U64", "print_S32", @[("S32", "a")]),
     ("U64", "print_S64", @[("S64", "a")]),
     ("U64", "print_U64", @[("U64", "a")]),
     ("Pointer", "allocate", @[("U64", "size")]),
@@ -138,8 +146,9 @@ type
     UMK_DEFAULT, UMK_STRUCT, UMK_UNION
   UserModule* = ref object of RootObj
     module_def*: ModuleDefinition
-    functions*: Table[Hash, Function]
-    generic_map: Table[string, int]
+    function_map*: Table[Hash, int]
+    functions*: seq[Function]
+    generic_map*: Table[string, int]
     generics*: seq[Generic]
     case kind*: UserModuleKind
     of UMK_DEFAULT: discard
@@ -151,20 +160,30 @@ proc new_user_module*(module_def: ModuleDefinition): UserModule =
 
 proc new_user_module(module: UserModule, struct: Struct): UserModule =
   UserModule(kind: UMK_STRUCT, module_def: module.module_def,
-      functions: module.functions, struct: struct)
+      functions: module.functions, struct: struct, generics: module.generics,
+      generic_map: module.generic_map)
 
 proc new_user_module(module: UserModule, union: Union): UserModule =
   UserModule(kind: UMK_UNION, module_def: module.module_def,
-      functions: module.functions, union: union)
+      functions: module.functions, union: union, generics: module.generics,
+      generic_map: module.generic_map)
 
 proc location*(module: UserModule): Location = module.module_def.location
 proc name*(module: UserModule): Token = module.module_def.name
 
 proc find_function*(module: UserModule, func_def: FunctionDefinition): Result[
     Function, string] =
-  if func_def.hash notin module.functions:
-    return err(fmt"Function `{func_def.name}` is not defined in the module `{module.name}`")
-  ok(module.functions[func_def.hash])
+  if func_def.hash notin module.function_map:
+    err(fmt"Function `{func_def.name}` is not defined in the module `{module.name}`")
+  else:
+    ok(module.functions[module.function_map[func_def.hash]])
+
+proc find_generic*(module: UserModule, generic_name: Token): Result[Generic, string] =
+  if $(generic_name) notin module.generic_map:
+    err(fmt"Generic `{generic_name}` not defined in the module `{module.name}`")
+  else:
+    let gen_index = module.generic_map[$(generic_name)]
+    ok(module.generics[gen_index])
 
 proc `$`*(module: UserModule): string =
   let prefix = " ".repeat(module.module_def.location.column - 1)
@@ -176,7 +195,7 @@ proc `$`*(module: UserModule): string =
   of UMK_STRUCT: lines.add(child_prefix & $(module.struct))
   of UMK_UNION: lines.add(child_prefix & $(module.union))
 
-  for function in module.functions.values:
+  for function in module.functions:
     lines.add(child_prefix & $(function))
   return lines.join("\n")
 
@@ -186,7 +205,8 @@ proc add_function*(module: UserModule, function: Function): Result[void, string]
     let predefined_location = maybe_found.get.location
     return err(fmt"{function.location} Function `{function.name}` is already defined in module `{module.name}` at {predefined_location}")
 
-  module.functions[function.definition.hash] = function
+  module.function_map[function.definition.hash] = module.functions.len
+  module.functions.add(function)
   ok()
 
 proc add_struct*(module: UserModule, struct: Struct): Result[UserModule, string] =
@@ -212,9 +232,9 @@ proc add_union*(module: UserModule, union: Union): Result[UserModule, string] =
     err(fmt"{union.location} Module `{module.name}` already contains a union block at {predefined_location}")
 
 proc add_generic*(module: UserModule, generic: Generic): Result[void, string] =
-  if $(generic.name) in module.generic_map:
-    let predefined_location = module.generics[module.generic_map[$(
-        generic.name)]].location
+  let maybe_generic = module.find_generic(generic.name)
+  if maybe_generic.is_ok:
+    let predefined_location = maybe_generic.get.location
     return err(fmt"Generic `{generic.name}` is already defined at {predefined_location}")
   module.generic_map[$(generic.name)] = module.generics.len
   module.generics.add(generic)
@@ -257,3 +277,12 @@ proc name*(module: Module): Token =
   case module.kind:
   of MK_BUILTIN: module.builtin_module.name
   of MK_USER: module.user_module.name
+
+proc find_function*(module: Module, func_def: FunctionDefinition): Result[
+    FunctionDefinition, string] =
+  case module.kind:
+  of MK_USER:
+    let function = ? module.user_module.find_function(func_def)
+    ok(function.definition)
+  of MK_BUILTIN:
+    module.builtin_module.find_function(func_def)

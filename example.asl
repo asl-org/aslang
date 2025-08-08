@@ -1,30 +1,53 @@
+module TestValue:
+  struct:
+    U64 value
+
+  fn print(TestValue value): U64
+    val = value.value
+    System.print_S64(val)
+
+module TestError:
+  struct:
+    S32 code
+
+  fn code(TestError err): S32
+    err.code
+
+  fn print(TestError err): U64
+    code = err.code
+    System.print_S32(code)
+
 module Status:
-  generic Value
+  generic Value:
+    fn print(Value value): U64
   generic Error:
-    fn code(Error err): U64
+    fn code(Error err): S32
+    fn print(Error err): U64
 
   union:
     Ok:
-      U64 value
+      Value value
     Err:
-      S64 error
+      Error error
 
   fn print(Status status): U64
     a = match status:
       case Ok { value: value }:
-        System.print_U64(value)
+        Value.print(value)
       case Err { error: error }:
-        System.print_S64(error)
+        Error.print(error)
 
 fn start(U8 seed): U8
   exit_success = U8 0
 
-  success_code = U64 1
-  success = Status.Ok { value: success_code }
+  success_code = U64 10
+  test_value = TestValue { value: success_code }
+  success = Status.Ok { value: test_value }
   Status.print(success)
 
-  failure_code = S64 -1
-  failure = Status.Err { error: failure_code }
+  failure_code = S32 -12
+  test_error = TestError { code: failure_code }
+  failure = Status.Err { error: test_error }
   Status.print(failure)
 
   exit_success

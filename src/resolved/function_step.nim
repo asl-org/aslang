@@ -1,7 +1,7 @@
-import sets
+import sets, tables
 
 import "../blocks"
-import function_call
+import function_ref
 import statement
 import match
 
@@ -21,6 +21,12 @@ proc function_refs*(function_step: ResolvedFunctionStep): Hashset[
   case function_step.kind:
   of RFSK_STATEMENT: function_step.statement.function_refs
   of RFSK_MATCH: function_step.match.function_refs
+
+proc generic_impls*(function_step: ResolvedFunctionStep): Table[string, Table[
+    string, HashSet[string]]] =
+  case function_step.kind:
+  of RFSK_STATEMENT: function_step.statement.generic_impls
+  of RFSK_MATCH: function_step.match.generic_impls
 
 proc destination*(function_step: ResolvedFunctionStep): Token =
   case function_step.kind:

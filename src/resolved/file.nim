@@ -7,6 +7,18 @@ type ResolvedFile* = ref object of RootObj
   functions: seq[ResolvedFunction]
 
 proc h*(resolved_file: ResolvedFile): string =
+  # for user_mod in resolved_file.user_modules:
+  #   echo "=".repeat(100)
+  #   echo user_mod.h
+  #   echo "=".repeat(100)
+  #   echo "\n"
+
+  # for function in resolved_file.functions:
+  #   echo "=".repeat(100)
+  #   echo function.h
+  #   echo "=".repeat(100)
+  #   echo "\n"
+
   @[
     resolved_file.user_modules.map_it(it.h).join("\n"),
     resolved_file.functions.map_it(it.h).join("\n\n"),
