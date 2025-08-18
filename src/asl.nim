@@ -48,10 +48,7 @@ proc compile(input_file: string, output_file: string,
 
   # New lexer integration
   let lexer = new_lexer(input_file, content)
-  let tokens = lexer.scan_tokens()
-  for token in tokens:
-    if token.kind == Illegal:
-      return err(fmt"{token.location} Unexpected character: '{token.lexeme}'")
+  let tokens = ? lexer.scan_tokens()
 
   let lines = ? parse(tokens)
   let file = ? blockify(input_file, lines)

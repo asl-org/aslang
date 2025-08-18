@@ -1,6 +1,8 @@
 import token
 import strutils
 import tables
+import results
+import strformat
 
 type Lexer* = ref object
   source: string
@@ -15,47 +17,30 @@ type Lexer* = ref object
 var keywords: Table[string, TokenKind]
 proc init_keywords() =
   keywords = {
-    "module": tkModule,
-    "fn": tkFn,
-    "match": tkMatch,
-    "case": tkCase,
-    "else": tkElse,
-    "struct": tkStruct,
-    "union": tkUnion,
-    "generic": tkGeneric
+    "module": tkModule, "fn": tkFn, "match": tkMatch, "case": tkCase,
+    "else": tkElse, "struct": tkStruct, "union": tkUnion, "generic": tkGeneric
   }.to_table
 init_keywords()
 
 # --- Forward Declarations ---
-proc scan_token(lexer: Lexer)
+proc scan_token(lexer: Lexer): Result[void, string]
 
 # --- Constructor ---
 proc new_lexer*(filename: string, source: string): Lexer =
   Lexer(
-    filename: filename,
-    source: source,
-    tokens: new_seq[Token](),
-    start: 0,
-    current: 0,
-    line: 1,
-    line_start: 0
+    filename: filename, source: source, tokens: new_seq[Token](),
+    start: 0, current: 0, line: 1, line_start: 0
   )
 
 # --- State & Helpers ---
-proc is_at_end(lexer: Lexer): bool =
-  lexer.current >= lexer.source.len
-
+proc is_at_end(lexer: Lexer): bool = lexer.current >= lexer.source.len
 proc advance(lexer: Lexer): char =
   result = lexer.source[lexer.current]
   lexer.current += 1
-
 proc peek(lexer: Lexer): char =
-  if lexer.is_at_end(): return '\0'
-  return lexer.source[lexer.current]
-
+  if lexer.is_at_end(): '\0' else: lexer.source[lexer.current]
 proc peek_next(lexer: Lexer): char =
-  if lexer.current + 1 >= lexer.source.len: return '\0'
-  return lexer.source[lexer.current + 1]
+  if lexer.current + 1 >= lexer.source.len: '\0' else: lexer.source[lexer.current + 1]
 
 proc add_token(lexer: Lexer, kind: TokenKind) =
   let lexeme = lexer.source.substr(lexer.start, lexer.current - 1)
@@ -64,57 +49,57 @@ proc add_token(lexer: Lexer, kind: TokenKind) =
   lexer.tokens.add(Token(kind: kind, lexeme: lexeme, location: location))
 
 proc match(lexer: Lexer, expected: char): bool =
-  if lexer.is_at_end(): return false
-  if lexer.source[lexer.current] != expected: return false
+  if lexer.is_at_end() or lexer.source[lexer.current] != expected: return false
   lexer.current += 1
-  return true
+  true
 
 # --- Parsing Logic for Dynamic Tokens ---
-proc parse_string(lexer: Lexer) =
+proc parse_string(lexer: Lexer): Result[void, string] =
   while peek(lexer) != '"' and not lexer.is_at_end():
     if peek(lexer) == '\n':
-      lexer.add_token(tkIllegal)
-      return
+      let col = lexer.start - lexer.line_start + 1
+      let loc = Location(filename: lexer.filename, line: lexer.line, col: col)
+      return err(fmt"{loc} Error: Newlines are not allowed in strings.")
     discard lexer.advance()
 
   if lexer.is_at_end():
-    lexer.add_token(tkIllegal)
-    return
+    let col = lexer.start - lexer.line_start + 1
+    let loc = Location(filename: lexer.filename, line: lexer.line, col: col)
+    return err(fmt"{loc} Error: Unterminated string.")
 
   discard lexer.advance()
   lexer.add_token(tkString)
+  ok()
 
-proc parse_number(lexer: Lexer) =
-  while peek(lexer).is_digit():
-    discard lexer.advance()
-
+proc parse_number(lexer: Lexer): Result[void, string] =
+  while peek(lexer).is_digit(): discard lexer.advance()
   if peek(lexer) == '.' and peek_next(lexer).is_digit():
     discard lexer.advance()
-    while peek(lexer).is_digit():
-      discard lexer.advance()
+    while peek(lexer).is_digit(): discard lexer.advance()
     lexer.add_token(tkFloat)
   else:
     lexer.add_token(tkInteger)
+  ok()
 
-proc parse_identifier(lexer: Lexer) =
+proc parse_identifier(lexer: Lexer): Result[void, string] =
   while peek(lexer).is_alpha_numeric() or peek(lexer) == '_':
     discard lexer.advance()
-
   let text = lexer.source.substr(lexer.start, lexer.current - 1)
   let kind = keywords.getOrDefault(text, tkIdentifier)
   lexer.add_token(kind)
+  ok()
 
 # --- Main Scanning Logic ---
-proc scan_tokens*(lexer: Lexer): seq[Token] =
+proc scan_tokens*(lexer: Lexer): Result[seq[Token], string] =
   while not lexer.is_at_end():
     lexer.start = lexer.current
-    scan_token(lexer)
+    ? lexer.scan_token()
 
   let eof_loc = Location(filename: lexer.filename, line: lexer.line, col: lexer.current - lexer.line_start + 1)
   lexer.tokens.add(Token(kind: tkEof, lexeme: "", location: eof_loc))
-  return lexer.tokens
+  ok(lexer.tokens)
 
-proc scan_token(lexer: Lexer) =
+proc scan_token(lexer: Lexer): Result[void, string] =
   let c = lexer.advance()
   case c:
     of '(': lexer.add_token(tkLeftParen)
@@ -132,19 +117,17 @@ proc scan_token(lexer: Lexer) =
     of ':': lexer.add_token(tkColon)
     of '=': lexer.add_token(tkEqual)
     of ' ':
-      if lexer.match(' '):
-        lexer.add_token(tkIndent)
-      else:
-        discard
+      if lexer.match(' '): lexer.add_token(tkIndent)
     of '\n':
       lexer.add_token(tkNewline)
       lexer.line += 1
       lexer.line_start = lexer.current
-    of '"': parse_string(lexer)
+    of '"': ? lexer.parse_string()
     else:
-      if c.is_alpha_ascii():
-        parse_identifier(lexer)
-      elif c.is_digit():
-        parse_number(lexer)
+      if c.is_alpha_ascii(): ? lexer.parse_identifier()
+      elif c.is_digit(): ? lexer.parse_number()
       else:
-        lexer.add_token(tkIllegal)
+        let col = lexer.start - lexer.line_start + 1
+        let loc = Location(filename: lexer.filename, line: lexer.line, col: col)
+        return err(fmt"{loc} Error: Unexpected character '{c}'.")
+  ok()
