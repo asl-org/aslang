@@ -15,14 +15,14 @@ type Lexer* = ref object
 var keywords: Table[string, TokenKind]
 proc init_keywords() =
   keywords = {
-    "module": Module,
-    "fn": Fn,
-    "match": Match,
-    "case": Case,
-    "else": Else,
-    "struct": Struct,
-    "union": Union,
-    "generic": Generic
+    "module": tkModule,
+    "fn": tkFn,
+    "match": tkMatch,
+    "case": tkCase,
+    "else": tkElse,
+    "struct": tkStruct,
+    "union": tkUnion,
+    "generic": tkGeneric
   }.to_table
 init_keywords()
 
@@ -73,16 +73,16 @@ proc match(lexer: Lexer, expected: char): bool =
 proc parse_string(lexer: Lexer) =
   while peek(lexer) != '"' and not lexer.is_at_end():
     if peek(lexer) == '\n':
-      lexer.add_token(Illegal)
+      lexer.add_token(tkIllegal)
       return
     discard lexer.advance()
 
   if lexer.is_at_end():
-    lexer.add_token(Illegal)
+    lexer.add_token(tkIllegal)
     return
 
   discard lexer.advance()
-  lexer.add_token(String)
+  lexer.add_token(tkString)
 
 proc parse_number(lexer: Lexer) =
   while peek(lexer).is_digit():
@@ -92,16 +92,16 @@ proc parse_number(lexer: Lexer) =
     discard lexer.advance()
     while peek(lexer).is_digit():
       discard lexer.advance()
-    lexer.add_token(Float)
+    lexer.add_token(tkFloat)
   else:
-    lexer.add_token(Integer)
+    lexer.add_token(tkInteger)
 
 proc parse_identifier(lexer: Lexer) =
   while peek(lexer).is_alpha_numeric() or peek(lexer) == '_':
     discard lexer.advance()
 
   let text = lexer.source.substr(lexer.start, lexer.current - 1)
-  let kind = keywords.getOrDefault(text, Identifier)
+  let kind = keywords.getOrDefault(text, tkIdentifier)
   lexer.add_token(kind)
 
 # --- Main Scanning Logic ---
@@ -111,33 +111,33 @@ proc scan_tokens*(lexer: Lexer): seq[Token] =
     scan_token(lexer)
 
   let eof_loc = Location(filename: lexer.filename, line: lexer.line, col: lexer.current - lexer.line_start + 1)
-  lexer.tokens.add(Token(kind: Eof, lexeme: "", location: eof_loc))
+  lexer.tokens.add(Token(kind: tkEof, lexeme: "", location: eof_loc))
   return lexer.tokens
 
 proc scan_token(lexer: Lexer) =
   let c = lexer.advance()
   case c:
-    of '(': lexer.add_token(LeftParen)
-    of ')': lexer.add_token(RightParen)
-    of '{': lexer.add_token(LeftBrace)
-    of '}': lexer.add_token(RightBrace)
-    of '[': lexer.add_token(LeftBracket)
-    of ']': lexer.add_token(RightBracket)
-    of ',': lexer.add_token(Comma)
-    of '.': lexer.add_token(Dot)
-    of '-': lexer.add_token(Minus)
-    of '+': lexer.add_token(Plus)
-    of '*': lexer.add_token(Star)
-    of '/': lexer.add_token(Slash)
-    of ':': lexer.add_token(Colon)
-    of '=': lexer.add_token(Equal)
+    of '(': lexer.add_token(tkLeftParen)
+    of ')': lexer.add_token(tkRightParen)
+    of '{': lexer.add_token(tkLeftBrace)
+    of '}': lexer.add_token(tkRightBrace)
+    of '[': lexer.add_token(tkLeftBracket)
+    of ']': lexer.add_token(tkRightBracket)
+    of ',': lexer.add_token(tkComma)
+    of '.': lexer.add_token(tkDot)
+    of '-': lexer.add_token(tkMinus)
+    of '+': lexer.add_token(tkPlus)
+    of '*': lexer.add_token(tkStar)
+    of '/': lexer.add_token(tkSlash)
+    of ':': lexer.add_token(tkColon)
+    of '=': lexer.add_token(tkEqual)
     of ' ':
       if lexer.match(' '):
-        lexer.add_token(Indent)
+        lexer.add_token(tkIndent)
       else:
         discard
     of '\n':
-      lexer.add_token(Newline)
+      lexer.add_token(tkNewline)
       lexer.line += 1
       lexer.line_start = lexer.current
     of '"': parse_string(lexer)
@@ -147,4 +147,4 @@ proc scan_token(lexer: Lexer) =
       elif c.is_digit():
         parse_number(lexer)
       else:
-        lexer.add_token(Illegal)
+        lexer.add_token(tkIllegal)

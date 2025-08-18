@@ -19,20 +19,20 @@ proc `$`*(loc: Location): string =
 type
   TokenKind* = enum
     # Single-character tokens
-    LeftParen, RightParen, LeftBrace, RightBrace, LeftBracket, RightBracket,
-    Comma, Dot, Minus, Plus, Slash, Star, Colon, Equal,
+    tkLeftParen, tkRightParen, tkLeftBrace, tkRightBrace, tkLeftBracket, tkRightBracket,
+    tkComma, tkDot, tkMinus, tkPlus, tkSlash, tkStar, tkColon, tkEqual,
 
     # Literals
-    Identifier, String, Integer, Float,
+    tkIdentifier, tkString, tkInteger, tkFloat,
 
     # Keywords
-    Module, Fn, Match, Case, Else, Struct, Union, Generic,
+    tkModule, tkFn, tkMatch, tkCase, tkElse, tkStruct, tkUnion, tkGeneric,
 
     # Whitespace & Control
-    Indent, # Represents two spaces
-    Newline,
-    Eof,     # End of File
-    Illegal  # Represents an unrecognized token
+    tkIndent, # Represents two spaces
+    tkNewline,
+    tkEof,     # End of File
+    tkIllegal  # Represents an unrecognized token
 
 # --- Token ---
 # Represents a single token scanned from the source code.
