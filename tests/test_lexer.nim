@@ -59,7 +59,12 @@ suite "ASLang Lexer Tests":
 
     check(tokens.len == 3)
     check(tokens[0].kind == tkString)
+    check(tokens[0].lexeme == "\"hello world\"")
+    check(tokens[0].content == "hello world")
+
     check(tokens[1].kind == tkString)
+    check(tokens[1].lexeme == "\"\"")
+    check(tokens[1].content == "")
 
   test "Handles unterminated strings":
     let source = "\"this string never ends"

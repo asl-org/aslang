@@ -42,11 +42,13 @@ proc peek(lexer: Lexer): char =
 proc peek_next(lexer: Lexer): char =
   if lexer.current + 1 >= lexer.source.len: '\0' else: lexer.source[lexer.current + 1]
 
-proc add_token(lexer: Lexer, kind: TokenKind) =
+proc add_token(lexer: Lexer, kind: TokenKind, content_override: string = "") =
   let lexeme = lexer.source.substr(lexer.start, lexer.current - 1)
+  let content = if content_override == "": lexeme else: content_override
   let col = lexer.start - lexer.line_start + 1
   let location = Location(filename: lexer.filename, line: lexer.line, col: col)
-  lexer.tokens.add(Token(kind: kind, lexeme: lexeme, location: location))
+  let token = new_token(kind, lexeme, content, location)
+  lexer.tokens.add(token)
 
 proc match(lexer: Lexer, expected: char): bool =
   if lexer.is_at_end() or lexer.source[lexer.current] != expected: return false
@@ -68,7 +70,9 @@ proc parse_string(lexer: Lexer): Result[void, string] =
     return err(fmt"{loc} Error: Unterminated string.")
 
   discard lexer.advance()
-  lexer.add_token(tkString)
+  # The content is the value inside the quotes.
+  let content = lexer.source.substr(lexer.start + 1, lexer.current - 2)
+  lexer.add_token(tkString, content)
   ok()
 
 proc parse_number(lexer: Lexer): Result[void, string] =
@@ -96,7 +100,8 @@ proc scan_tokens*(lexer: Lexer): Result[seq[Token], string] =
     ? lexer.scan_token()
 
   let eof_loc = Location(filename: lexer.filename, line: lexer.line, col: lexer.current - lexer.line_start + 1)
-  lexer.tokens.add(Token(kind: tkEof, lexeme: "", location: eof_loc))
+  # For EOF, lexeme and content are empty.
+  lexer.tokens.add(new_token(tkEof, "", "", eof_loc))
   ok(lexer.tokens)
 
 proc scan_token(lexer: Lexer): Result[void, string] =

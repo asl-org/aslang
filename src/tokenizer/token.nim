@@ -32,15 +32,18 @@ type
     tkIndent, # Represents two spaces
     tkNewline,
     tkEof,     # End of File
-    tkIllegal  # Represents an unrecognized token
 
 # --- Token ---
 # Represents a single token scanned from the source code.
 type
   Token* = ref object of RootObj
     kind*: TokenKind
+    lexeme*: string
     content*: string
     location*: Location
 
+proc new_token*(kind: TokenKind, lexeme: string, content: string, location: Location): Token =
+  Token(kind: kind, lexeme: lexeme, content: content, location: location)
+
 proc `$`*(token: Token): string =
-  fmt"[{token.kind:12}] '{token.content}' @ {token.location}"
+  fmt"[{token.kind:12}] '{token.lexeme}' @ {token.location}"
