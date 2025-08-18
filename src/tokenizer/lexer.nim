@@ -116,6 +116,7 @@ proc scan_token(lexer: Lexer): Result[void, string] =
     of '/': lexer.add_token(tkSlash)
     of ':': lexer.add_token(tkColon)
     of '=': lexer.add_token(tkEqual)
+    of '#': lexer.add_token(tkHashtag)
     of ' ':
       if lexer.match(' '): lexer.add_token(tkIndent)
     of '\n':

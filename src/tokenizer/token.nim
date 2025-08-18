@@ -20,7 +20,7 @@ type
   TokenKind* = enum
     # Single-character tokens
     tkLeftParen, tkRightParen, tkLeftBrace, tkRightBrace, tkLeftBracket, tkRightBracket,
-    tkComma, tkDot, tkMinus, tkPlus, tkSlash, tkStar, tkColon, tkEqual,
+    tkComma, tkDot, tkMinus, tkPlus, tkSlash, tkStar, tkColon, tkEqual, tkHashtag,
 
     # Literals
     tkIdentifier, tkString, tkInteger, tkFloat,
@@ -37,10 +37,10 @@ type
 # --- Token ---
 # Represents a single token scanned from the source code.
 type
-  Token* = object
+  Token* = ref object of RootObj
     kind*: TokenKind
-    lexeme*: string
+    content*: string
     location*: Location
 
 proc `$`*(token: Token): string =
-  fmt"[{token.kind:12}] '{token.lexeme}' @ {token.location}"
+  fmt"[{token.kind:12}] '{token.content}' @ {token.location}"

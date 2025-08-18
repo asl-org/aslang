@@ -1,6 +1,6 @@
 import results, strformat
 
-import blocks/token
+import tokenizer/token
 export token
 
 import blocks/arg_def
