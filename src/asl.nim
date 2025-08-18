@@ -1,6 +1,7 @@
 import os, parseopt, osproc, strutils, strformat, results
 
-import tokenizer
+import tokenizer/lexer
+import tokenizer/token
 import parser
 import blocks
 import resolver
@@ -44,7 +45,14 @@ proc generate(resolved_file: ResolvedFile): Result[string, string] = ok(@[
 proc compile(input_file: string, output_file: string,
     output_binary: string): Result[void, string] =
   let content = ? read_file_safe(input_file)
-  let tokens = ? tokenize(input_file, content)
+
+  # New lexer integration
+  let lexer = new_lexer(input_file, content)
+  let tokens = lexer.scan_tokens()
+  for token in tokens:
+    if token.kind == Illegal:
+      return err(fmt"{token.location} Unexpected character: '{token.lexeme}'")
+
   let lines = ? parse(tokens)
   let file = ? blockify(input_file, lines)
   let resolved_file = ? resolve(file)
