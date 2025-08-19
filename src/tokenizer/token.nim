@@ -19,8 +19,10 @@ proc `$`*(loc: Location): string =
 type
   TokenKind* = enum
     # Single-character tokens
-    tkLeftParen, tkRightParen, tkLeftBrace, tkRightBrace, tkLeftBracket, tkRightBracket,
-    tkComma, tkDot, tkMinus, tkPlus, tkSlash, tkStar, tkColon, tkEqual, tkHashtag,
+    tkLeftParen, tkRightParen, tkLeftBrace, tkRightBrace, tkLeftBracket,
+      tkRightBracket,
+    tkComma, tkDot, tkMinus, tkPlus, tkSlash, tkStar, tkColon, tkEqual,
+      tkHashtag,
 
     # Literals
     tkIdentifier, tkString, tkInteger, tkFloat,
@@ -39,11 +41,11 @@ type
   Token* = ref object of RootObj
     kind*: TokenKind
     lexeme*: string
-    content*: string
     location*: Location
 
-proc new_token*(kind: TokenKind, lexeme: string, content: string, location: Location): Token =
-  Token(kind: kind, lexeme: lexeme, content: content, location: location)
+proc new_token*(kind: TokenKind, lexeme: string, location: Location): Token =
+  Token(kind: kind, lexeme: lexeme, location: location)
 
 proc `$`*(token: Token): string =
-  fmt"[{token.kind:12}] '{token.lexeme}' @ {token.location}"
+  let content = if token.kind != tkNewline: token.lexeme else: "\\n"
+  fmt"[{token.kind:16}] '{content}' @ {token.location}"

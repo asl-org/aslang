@@ -14,13 +14,16 @@ type Lexer* = ref object
   line_start: int
 
 # --- Keyword Table ---
-var keywords: Table[string, TokenKind]
-proc init_keywords() =
-  keywords = {
-    "module": tkModule, "fn": tkFn, "match": tkMatch, "case": tkCase,
-    "else": tkElse, "struct": tkStruct, "union": tkUnion, "generic": tkGeneric
-  }.to_table
-init_keywords()
+const keywords = {
+  "module": tkModule,
+  "fn": tkFn,
+  "match": tkMatch,
+  "case": tkCase,
+  "else": tkElse,
+  "struct": tkStruct,
+  "union": tkUnion,
+  "generic": tkGeneric
+}.to_table
 
 # --- Forward Declarations ---
 proc scan_token(lexer: Lexer): Result[void, string]
@@ -40,14 +43,14 @@ proc advance(lexer: Lexer): char =
 proc peek(lexer: Lexer): char =
   if lexer.is_at_end(): '\0' else: lexer.source[lexer.current]
 proc peek_next(lexer: Lexer): char =
-  if lexer.current + 1 >= lexer.source.len: '\0' else: lexer.source[lexer.current + 1]
+  if lexer.current + 1 >= lexer.source.len: '\0' else: lexer.source[
+      lexer.current + 1]
 
-proc add_token(lexer: Lexer, kind: TokenKind, content_override: string = "") =
+proc add_token(lexer: Lexer, kind: TokenKind) =
   let lexeme = lexer.source.substr(lexer.start, lexer.current - 1)
-  let content = if content_override == "": lexeme else: content_override
   let col = lexer.start - lexer.line_start + 1
   let location = Location(filename: lexer.filename, line: lexer.line, col: col)
-  let token = new_token(kind, lexeme, content, location)
+  let token = new_token(kind, lexeme, location)
   lexer.tokens.add(token)
 
 proc match(lexer: Lexer, expected: char): bool =
@@ -61,18 +64,17 @@ proc parse_string(lexer: Lexer): Result[void, string] =
     if peek(lexer) == '\n':
       let col = lexer.start - lexer.line_start + 1
       let loc = Location(filename: lexer.filename, line: lexer.line, col: col)
-      return err[void, string](fmt"{loc} Error: Newlines are not allowed in strings.")
+      return err(fmt"{loc} Error: Newlines are not allowed in strings.")
     discard lexer.advance()
 
   if lexer.is_at_end():
     let col = lexer.start - lexer.line_start + 1
     let loc = Location(filename: lexer.filename, line: lexer.line, col: col)
-    return err[void, string](fmt"{loc} Error: Unterminated string.")
+    return err(fmt"{loc} Error: Unterminated string.")
 
   discard lexer.advance()
-  let content = lexer.source.substr(lexer.start + 1, lexer.current - 2)
-  lexer.add_token(tkString, content)
-  ok[string]()
+  lexer.add_token(tkString)
+  ok()
 
 proc parse_number(lexer: Lexer): Result[void, string] =
   while peek(lexer).is_digit(): discard lexer.advance()
@@ -82,7 +84,7 @@ proc parse_number(lexer: Lexer): Result[void, string] =
     lexer.add_token(tkFloat)
   else:
     lexer.add_token(tkInteger)
-  ok[string]()
+  ok()
 
 proc parse_identifier(lexer: Lexer): Result[void, string] =
   while peek(lexer).is_alpha_numeric() or peek(lexer) == '_':
@@ -90,18 +92,19 @@ proc parse_identifier(lexer: Lexer): Result[void, string] =
   let text = lexer.source.substr(lexer.start, lexer.current - 1)
   let kind = keywords.getOrDefault(text, tkIdentifier)
   lexer.add_token(kind)
-  ok[string]()
+  ok()
 
 # --- Main Scanning Logic ---
 proc scan_tokens*(lexer: Lexer): Result[seq[Token], string] =
   while not lexer.is_at_end():
     lexer.start = lexer.current
     let res = lexer.scan_token()
-    if res.is_err: return err[seq[Token], string](res.error)
+    if res.is_err: return err(res.error)
 
-  let eof_loc = Location(filename: lexer.filename, line: lexer.line, col: lexer.current - lexer.line_start + 1)
-  lexer.tokens.add(new_token(tkEof, "", "", eof_loc))
-  ok[seq[Token], string](lexer.tokens)
+  let eof_loc = Location(filename: lexer.filename, line: lexer.line,
+      col: lexer.current - lexer.line_start + 1)
+  lexer.tokens.add(new_token(tkEof, "", eof_loc))
+  ok(lexer.tokens)
 
 proc scan_token(lexer: Lexer): Result[void, string] =
   let c = lexer.advance()
@@ -140,5 +143,5 @@ proc scan_token(lexer: Lexer): Result[void, string] =
       else:
         let col = lexer.start - lexer.line_start + 1
         let loc = Location(filename: lexer.filename, line: lexer.line, col: col)
-        return err[void, string](fmt"{loc} Error: Unexpected character '{c}'.")
-  ok[string]()
+        return err(fmt"{loc} Error: Unexpected character '{c}'.")
+  ok()

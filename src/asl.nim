@@ -1,9 +1,6 @@
-import os, parseopt, osproc, strutils, strformat, results
+import os, parseopt, strformat, results
 
 import tokenizer
-import parser
-import blocks
-import resolver
 
 const
   Version = "0.1.0"
@@ -33,25 +30,14 @@ proc read_file_safe(filename: string): Result[string, string] =
   except OSError as e:
     err(fmt"Failed to read file '{filename}': {e.msg}")
 
-proc generate(resolved_file: ResolvedFile): Result[string, string] = ok(@[
-    "#include \"runtime/asl.h\"",
-    @[resolved_file.h, resolved_file.c].join("\n"),
-    "int main(int argc, char** argv) {",
-    "return (int)start((U8)argc);",
-    "}\n"
-  ].join("\n"))
-
 proc compile(input_file: string, output_file: string,
     output_binary: string): Result[void, string] =
   let content = ? read_file_safe(input_file)
-  let tokens = ? tokenize(input_file, content)
-  let lines = ? parse(tokens)
-  let file = ? blockify(input_file, lines)
-  let resolved_file = ? resolve(file)
-  let code = ? generate(resolved_file)
-  ? write_file_safe(output_file, code)
-  let exit_code = exec_cmd(fmt"gcc -O3 -o {output_binary} {output_file}")
-  if exit_code != 0: err("GCC Compilation failed.") else: ok()
+  let lexer = new_lexer(input_file, content)
+  let tokens = ? lexer.scan_tokens()
+  for token in tokens:
+    echo token
+  ok()
 
 proc show_help() =
   echo fmt"ASL Compiler v{Version}"
