@@ -1,7 +1,6 @@
 import os, parseopt, osproc, strutils, strformat, results
 
-import tokenizer/lexer
-import tokenizer/token
+import tokenizer
 import parser
 import blocks
 import resolver
@@ -45,11 +44,7 @@ proc generate(resolved_file: ResolvedFile): Result[string, string] = ok(@[
 proc compile(input_file: string, output_file: string,
     output_binary: string): Result[void, string] =
   let content = ? read_file_safe(input_file)
-
-  # New lexer integration
-  let lexer = new_lexer(input_file, content)
-  let tokens = ? lexer.scan_tokens()
-
+  let tokens = ? tokenize(input_file, content)
   let lines = ? parse(tokens)
   let file = ? blockify(input_file, lines)
   let resolved_file = ? resolve(file)

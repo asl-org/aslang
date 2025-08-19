@@ -31,7 +31,7 @@ type
     # Whitespace & Control
     tkIndent, # Represents two spaces
     tkNewline,
-    tkEof,     # End of File
+    tkEof
 
 # --- Token ---
 # Represents a single token scanned from the source code.

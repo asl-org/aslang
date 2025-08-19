@@ -3,6 +3,3 @@ asl
 example
 .vscode
 solution
-
-# Test binaries
-/tests/test_lexer
