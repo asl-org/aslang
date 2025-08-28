@@ -1,7 +1,7 @@
-import results, strformat, sequtils, sets, strutils
+import results, strformat, sequtils, sets, strutils, tables
 
 import "../blocks"
-import function_call
+import function_ref
 import function_step
 
 type ResolvedFunction* = ref object of RootObj
@@ -14,6 +14,19 @@ proc function_refs*(function: ResolvedFunction): Hashset[ResolvedFunctionRef] =
   for step in function.steps:
     function_ref_set.incl(step.function_refs)
   function_ref_set
+
+proc generic_impls*(function: ResolvedFunction): Table[string, Table[string,
+    HashSet[string]]] =
+  var impls: Table[string, Table[string, HashSet[string]]]
+  for step in function.steps:
+    for (module_name, impl_map) in step.generic_impls.pairs:
+      if module_name notin impls:
+        impls[module_name] = init_table[string, HashSet[string]]()
+      for (generic, concrete) in impl_map.pairs:
+        if generic notin impls[module_name]:
+          impls[module_name][generic] = init_hashset[string]()
+        impls[module_name][generic].incl(concrete)
+  return impls
 
 proc h*(resolved_function: ResolvedFunction): string =
   let function = resolved_function.function

@@ -1,10 +1,10 @@
-import strformat, sets, strutils
+import strformat, sets, strutils, tables
 
 import "../blocks"
 import case_block
 import else_block
 
-import function_call
+import function_ref
 
 const ASL_UNION_ID = "__asl_union_id__"
 
@@ -24,6 +24,35 @@ proc function_refs*(match: ResolvedMatch): HashSet[ResolvedFunctionRef] =
   for else_block in match.else_blocks:
     function_ref_set.incl(else_block.function_refs)
   return function_ref_set
+
+# proc generic_impls*(match: ResolvedMatch): seq[(Token, seq[(Token, Token)])] =
+#   var impls: seq[(Token, seq[(Token, Token)])]
+#   for case_block in match.case_blocks:
+#     impls.add(case_block.generic_impls)
+#   for else_block in match.else_blocks:
+#     impls.add(else_block.generic_impls)
+
+proc generic_impls*(match: ResolvedMatch): Table[string, Table[string,
+    HashSet[string]]] =
+  var impls: Table[string, Table[string, HashSet[string]]]
+  for case_block in match.case_blocks:
+    for (module_name, impl_map) in case_block.generic_impls.pairs:
+      if module_name notin impls:
+        impls[module_name] = init_table[string, HashSet[string]]()
+      for (generic, concrete) in impl_map.pairs:
+        if generic notin impls[module_name]:
+          impls[module_name][generic] = init_hashset[string]()
+        impls[module_name][generic].incl(concrete)
+
+  for else_block in match.else_blocks:
+    for (module_name, impl_map) in else_block.generic_impls.pairs:
+      if module_name notin impls:
+        impls[module_name] = init_table[string, HashSet[string]]()
+      for (generic, concrete) in impl_map.pairs:
+        if generic notin impls[module_name]:
+          impls[module_name][generic] = init_hashset[string]()
+        impls[module_name][generic].incl(concrete)
+  return impls
 
 proc c*(resolved_match: ResolvedMatch): string =
   let match = resolved_match.parsed_match_block

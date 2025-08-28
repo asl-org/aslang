@@ -1,4 +1,4 @@
-import tables, strutils, strformat, sequtils
+import strutils, strformat, sequtils
 
 import "../blocks"
 
@@ -7,7 +7,7 @@ const ASL_PREFIX = "__asl__"
 ### C CODE GENERARTION UTILS START
 
 proc getter_h(return_type: string, function_name: string): string =
-  fmt"{return_type} {function_name}(Pointer {ASL_PREFIX}ptr);"
+  fmt"{return_type} {function_name}(Pointer);"
 
 proc getter_c(return_type: string, function_name: string,
     offset: uint): string =
@@ -21,7 +21,7 @@ proc getter_c(return_type: string, function_name: string,
   ].join("\n")
 
 proc setter_h(function_name: string, field_type: string): string =
-  fmt"Pointer {function_name}(Pointer {ASL_PREFIX}ptr, {field_type} value);"
+  fmt"Pointer {function_name}(Pointer, {field_type});"
 
 proc setter_c(function_name: string, field_type: string,
     offset: uint): string =
@@ -58,7 +58,7 @@ proc setter_c(module_name: Token, field: ArgumentDefinition,
   setter_c(fmt"{module_name}_set_{field.name}", field.native_type, offset)
 
 proc init_h(module_name: Token, fields: seq[ArgumentDefinition]): string =
-  let args_str = fields.map_it($(it)).join(", ")
+  let args_str = fields.map_it($(it.native_type)).join(", ")
   fmt"Pointer {module_name}_init({args_str});"
 
 proc init_c(module_name: Token, fields: seq[ArgumentDefinition],
@@ -91,7 +91,7 @@ proc free_c(module_name: Token): string =
 proc h*(resolved_struct: ResolvedStruct): string =
   let
     module_name = resolved_struct.module_name
-    fields = resolved_struct.struct.fields.values.to_seq
+    fields = resolved_struct.struct.fields
 
   var headers: seq[string]
   for field in fields:
@@ -106,7 +106,7 @@ proc h*(resolved_struct: ResolvedStruct): string =
 proc c*(resolved_struct: ResolvedStruct): string =
   let
     module_name = resolved_struct.module_name
-    fields = resolved_struct.struct.fields.values.to_seq
+    fields = resolved_struct.struct.fields
 
   var
     offset: uint = 0
