@@ -29,16 +29,22 @@ type
     of RVK_DEFAULT: discard
     of RVK_GENERIC:
       generic*: Token
-      function_refs*: HashSet[ResolvedFunctionRef]
+      func_refs*: HashSet[ResolvedFunctionRef]
 
 proc new_resolved_variable*(arg_def: ArgumentDefinition): ResolvedVariable =
   ResolvedVariable(kind: RVK_DEFAULT, arg_def: arg_def)
 
 proc new_resolved_variable*(resolved_var: ResolvedVariable,
-    generic: Token, function_refs: HashSet[
+    generic: Token, func_refs: HashSet[
         ResolvedFunctionRef]): ResolvedVariable =
   ResolvedVariable(kind: RVK_GENERIC, arg_def: resolved_var.arg_def,
-      generic: generic, function_refs: function_refs)
+      generic: generic, func_refs: func_refs)
+
+proc function_refs*(resolved_var: ResolvedVariable): HashSet[
+    ResolvedFunctionRef] =
+  case resolved_var.kind:
+  of RVK_DEFAULT: init_hashset[ResolvedFunctionRef]()
+  of RVK_GENERIC: resolved_var.func_refs
 
 proc typ*(variable: ResolvedVariable): Token = variable.arg_def.typ
 proc name*(variable: ResolvedVariable): Token = variable.arg_def.name
