@@ -37,4 +37,10 @@ S16 S16_from_U32(U32 value) { return (S16)value; }
 S16 S16_from_U64(U64 value) { return (S16)value; }
 S16 S16_from_Pointer(Pointer ptr) { return (*((S16 *)ptr)); }
 
+Pointer S16_write_Pointer(Pointer ptr, S16 value)
+{
+  (*((S16 *)ptr)) = value;
+  return ptr;
+}
+
 #endif // ASL_S16_H

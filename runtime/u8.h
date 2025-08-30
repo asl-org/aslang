@@ -36,4 +36,10 @@ U8 U8_from_U32(U32 value) { return (U8)value; }
 U8 U8_from_U64(U64 value) { return (U8)value; }
 U8 U8_from_Pointer(Pointer ptr) { return (*((U8 *)ptr)); }
 
+Pointer U8_write_Pointer(Pointer ptr, U8 value)
+{
+  (*((U8 *)ptr)) = value;
+  return ptr;
+}
+
 #endif // ASL_U8_H

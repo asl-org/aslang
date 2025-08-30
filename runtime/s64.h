@@ -37,4 +37,10 @@ S64 S64_from_U32(U32 value) { return (S64)value; }
 S64 S64_from_U64(U64 value) { return (S64)value; }
 S64 S64_from_Pointer(Pointer ptr) { return (*((S64 *)ptr)); }
 
+Pointer S64_write_Pointer(Pointer ptr, S64 value)
+{
+  (*((S64 *)ptr)) = value;
+  return ptr;
+}
+
 #endif // ASL_S64_H

@@ -38,4 +38,10 @@ U32 U32_from_S64(S64 value) { return (U32)value; }
 U32 U32_from_U64(U64 value) { return (U32)value; }
 U32 U32_from_Pointer(Pointer ptr) { return (*((U32 *)ptr)); }
 
+Pointer U32_write_Pointer(Pointer ptr, U32 value)
+{
+  (*((U32 *)ptr)) = value;
+  return ptr;
+}
+
 #endif // ASL_U32_H

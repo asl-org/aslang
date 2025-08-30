@@ -45,6 +45,7 @@ proc u8_module(): BuiltinModule =
     ("U8", "init", @[("U8", "a")]),
     ("U64", "byte_size", @[("U64", "a")]),
     ("U8", "from_Pointer", @[("Pointer", "p")]),
+    ("Pointer", "write_Pointer", @[("Pointer", "a"), ("U8", "b")]),
     ("U8", "lshift", @[("U8", "a"), ("U64", "b")]),
     ("U8", "rshift", @[("U8", "a"), ("U64", "b")]),
     ("U8", "and", @[("U8", "a"), ("U8", "b")]),
@@ -75,6 +76,7 @@ proc u64_module(): BuiltinModule =
     ("U64", "quotient", @[("U64", "a"), ("U64", "b")]),
     ("U64", "remainder", @[("U64", "a"), ("U64", "b")]),
     ("U64", "from_Pointer", @[("Pointer", "a")]),
+    ("Pointer", "write_Pointer", @[("Pointer", "a"), ("U64", "b")]),
   ])
 
 proc s8_module(): BuiltinModule =
@@ -125,8 +127,6 @@ proc pointer_module(): BuiltinModule =
     ("Pointer", "init", @[("Pointer", "a")]),
     ("U64", "byte_size", @[("U64", "a")]),
     ("Pointer", "shift", @[("Pointer", "a"), ("U64", "b")]),
-    ("Pointer", "write_U8", @[("Pointer", "a"), ("U8", "b")]),
-    ("Pointer", "write_U64", @[("Pointer", "a"), ("U64", "b")]),
   ])
 
 proc system_module(): BuiltinModule =

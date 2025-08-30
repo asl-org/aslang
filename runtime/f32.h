@@ -29,5 +29,9 @@ F32 F32_from_U32(U32 value) { return (F32)value; }
 F32 F32_from_U64(U64 value) { return (F32)value; }
 F32 F32_from_F64(F64 value) { return (F32)value; }
 F32 F32_from_Pointer(Pointer ptr) { return (*((F32 *)ptr)); }
-
+Pointer F32_write_Pointer(Pointer ptr, F32 value)
+{
+  (*((F32 *)ptr)) = value;
+  return ptr;
+}
 #endif // ASL_F32_H

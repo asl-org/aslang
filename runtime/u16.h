@@ -38,4 +38,10 @@ U16 U16_from_U32(U32 value) { return (U16)value; }
 U16 U16_from_U64(U64 value) { return (U16)value; }
 U16 U16_from_Pointer(Pointer ptr) { return (*((U16 *)ptr)); }
 
+Pointer U16_write_Pointer(Pointer ptr, U16 value)
+{
+  (*((U16 *)ptr)) = value;
+  return ptr;
+}
+
 #endif // ASL_U16_H
