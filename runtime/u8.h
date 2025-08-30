@@ -6,6 +6,7 @@
 // Module: U8
 
 U8 U8_init(U8 a) { return a; }
+U64 U8_byte_size(U64 items) { return items * sizeof(U8); }
 
 // safe
 U8 U8_and(U8 a, U8 b) { return a & b; }

@@ -6,6 +6,7 @@
 // Module: U32
 
 U32 U32_init(U32 a) { return a; }
+U64 U32_byte_size(U64 items) { return items * sizeof(U32); }
 
 // safe
 U32 U32_and(U32 a, U32 b) { return a & b; }

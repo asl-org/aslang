@@ -5,6 +5,7 @@
 
 // Module: F32
 F32 F32_init(F32 a) { return a; }
+U64 F32_byte_size(U64 items) { return items * sizeof(F32); }
 
 // unsafe
 F32 F32_add(F32 a, F32 b) { return a + b; }

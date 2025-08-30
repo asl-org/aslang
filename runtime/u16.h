@@ -6,6 +6,7 @@
 // Module: U16
 
 U16 U16_init(U16 a) { return a; }
+U64 U16_byte_size(U64 items) { return items * sizeof(U16); }
 
 // safe
 U16 U16_and(U16 a, U16 b) { return a & b; }

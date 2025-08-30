@@ -5,6 +5,7 @@
 
 // Module: U64
 U64 U64_init(U64 a) { return a; }
+U64 U64_byte_size(U64 items) { return items * sizeof(U64); }
 
 // safe
 U64 U64_and(U64 a, U64 b) { return a & b; }

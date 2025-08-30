@@ -5,6 +5,7 @@
 
 // Module: S32
 S32 S32_init(S32 a) { return a; }
+U64 S32_byte_size(U64 items) { return items * sizeof(S32); }
 
 // safe
 S32 S32_and(S32 a, S32 b) { return a & b; }

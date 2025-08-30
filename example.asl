@@ -1,53 +1,77 @@
-module TestValue:
+module Array:
   struct:
-    U64 value
+    U64 size
+    Pointer ptr
 
-  fn print(TestValue value): U64
-    val = value.value
-    System.print_S64(val)
+  fn new(U64 size): Array
+    byte_size = U64.byte_size(size)
+    ptr = System.allocate(byte_size)
+    arr = Array { ptr: ptr, size: size }
 
-module TestError:
-  struct:
-    S32 code
+  fn set(Array arr, U64 index, U64 val): Array
+    size = arr.size
+    c = U64.compare(index, size)
+    _ = match c:
+      case -1:
+        ptr = arr.ptr
+        offset = U64.multiply(index, 8)
+        addr = Pointer.shift(ptr, offset)
+        _updated = Pointer.write_U64(addr, val)
+        arr
+      else:
+        arr
 
-  fn code(TestError err): S32
-    err.code
+  fn get(Array arr, U64 index): U64
+    size = arr.size
+    c = U64.compare(index, size)
+    _ = match c:
+      case -1:
+        ptr = arr.ptr
+        offset = U64.multiply(index, 8)
+        addr = Pointer.shift(ptr, offset)
+        ans = U64.from_Pointer(addr)
+      else:
+        U64 0
 
-  fn print(TestError err): U64
-    code = err.code
-    System.print_S32(code)
+  fn print(Array arr): U64
+    Array._print(arr, 0)
 
-module Status:
-  generic Value:
-    fn print(Value value): U64
-  generic Error:
-    fn code(Error err): S32
-    fn print(Error err): U64
+  fn _print(Array arr, U64 index): U64
+    size = arr.size
+    c = U64.compare(index, size)
+    _ = match c:
+      case -1:
+        item = Array.get(arr, index)
+        item_bytes = System.print_U64(item)
+        next_index = U64.add(index, 1)
+        rest_bytes = Array._print(arr, next_index)
+        U64.add(item_bytes, rest_bytes)
+      else:
+        U64 0
 
-  union:
-    Ok:
-      Value value
-    Err:
-      Error error
-
-  fn print(Status status): U64
-    a = match status:
-      case Ok { value: value }:
-        Value.print(value)
-      case Err { error: error }:
-        Error.print(error)
 
 fn start(U8 seed): U8
   exit_success = U8 0
 
-  success_code = U64 10
-  test_value = TestValue { value: success_code }
-  success = Status.Ok { value: test_value }
-  Status.print(success)
+  arr = Array.new(8)
+  size = arr.size
 
-  failure_code = S32 -12
-  test_error = TestError { code: failure_code }
-  failure = Status.Err { error: test_error }
-  Status.print(failure)
+  System.print_U64(size)
+  Array.set(arr, 0, 1)
+  Array.set(arr, 1, 2)
+
+  first = Array.get(arr, 0)
+  System.print_U64(first)
+
+  second = Array.get(arr, 1)
+  System.print_U64(second)
+
+  third = Array.get(arr, 2)
+  System.print_U64(third)
+
+  ninth = Array.get(arr, 8)
+  System.print_U64(ninth)
+
+  Array.print(arr)
 
   exit_success

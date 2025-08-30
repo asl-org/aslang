@@ -5,6 +5,7 @@
 
 // Module: F64
 F64 F64_init(F64 a) { return a; }
+U64 F64_byte_size(U64 items) { return items * sizeof(F64); }
 
 // unsafe
 F64 F64_add(F64 a, F64 b) { return a + b; }
