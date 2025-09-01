@@ -39,7 +39,7 @@ proc find_module*(file: File, module_name: Token): Result[Module, string] =
 
 proc find_function*(file: File, func_def: FunctionDefinition): Result[Function, string] =
   if func_def.hash notin file.function_map:
-    return err(fmt"Function `{func_def.name}` is not defined in the scope")
+    return err(fmt"{file.name}: Failed to find matching function `{func_def.name}`")
   ok(file.functions[file.function_map[func_def.hash]])
 
 proc add_module*(file: File, user_module: UserModule): Result[void, string] =

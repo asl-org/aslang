@@ -1,15 +1,45 @@
-import hashes
+import hashes, results
 
 import token/helpers
 
-import token/spec; export spec
 import token/location; export location
-import token/kind; export kind
 
-type Token* = ref object of RootObj
-  content*: string
-  kind*: TokenKind
-  location*: Location
+type
+  TokenKind* = enum
+    # keywords
+    TK_MODULE, TK_FN, TK_MATCH, TK_CASE, TK_ELSE
+    TK_STRUCT, TK_UNION, TK_GENERIC
+    # values
+    TK_ID, TK_STRING, TK_FLOAT, TK_INTEGER
+    # prefix operators
+    TK_HASHTAG, TK_TILDE, TK_AT_THE_RATE, TK_BACKSLASH
+    # infix operators
+    TK_PLUS, TK_MINUS, TK_ASTERISK, TK_SLASH, TK_DOLLAR, TK_PERCENT, TK_EQUAL
+    TK_AMPERSAND, TK_PIPE, TK_CARET, TK_PERIOD, TK_SEMI_COLON, TK_COLON, TK_COMMA
+    # postfix operators
+    TK_BANG, TK_QUESTION_MARK
+    # grouping operators
+    TK_OPAREN, TK_CPAREN, TK_OCURLY, TK_CCURLY, TK_OSQUARE, TK_CSQUARE
+    TK_OANGLE, TK_CANGLE, TK_SINGLE_QUOTE, TK_DOUBLE_QUOTE, TK_BACKTICK
+    # space characters
+    TK_INDENT, TK_NEWLINE, TK_SPACE
+    # EOF
+    TK_EOF
+
+  Token* = ref object of RootObj
+    content*: string
+    kind*: TokenKind
+    location*: Location
+
+  TokenSpecKind* = enum
+    TSK_STATIC, TSK_DYNAMIC
+  TokenSpec* = ref object of RootObj
+    token_kind*: TokenKind
+    case kind*: TokenSpecKind
+    of TSK_STATIC:
+      value*: string
+    of TSK_DYNAMIC:
+      matcher*: proc(content: string, index: int): Result[string, string]
 
 proc new_id_token*(content: string): Token =
   Token(kind: TK_ID, content: content)

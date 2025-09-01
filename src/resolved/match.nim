@@ -25,13 +25,6 @@ proc function_refs*(match: ResolvedMatch): HashSet[ResolvedFunctionRef] =
     function_ref_set.incl(else_block.function_refs)
   return function_ref_set
 
-# proc generic_impls*(match: ResolvedMatch): seq[(Token, seq[(Token, Token)])] =
-#   var impls: seq[(Token, seq[(Token, Token)])]
-#   for case_block in match.case_blocks:
-#     impls.add(case_block.generic_impls)
-#   for else_block in match.else_blocks:
-#     impls.add(else_block.generic_impls)
-
 proc generic_impls*(match: ResolvedMatch): Table[string, Table[string,
     HashSet[string]]] =
   var impls: Table[string, Table[string, HashSet[string]]]

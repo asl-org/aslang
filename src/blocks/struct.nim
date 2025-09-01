@@ -200,6 +200,8 @@ proc constraints*(generic: Generic, module_name: Token): seq[
     for arg_def in func_def.arg_def_list:
       if $(arg_def.typ) == $(generic.name):
         concrete_arg_def_list.add(new_argument_definition(module_name, arg_def.name))
+      else:
+        concrete_arg_def_list.add(arg_def)
 
     let concrete_return_type =
       if $(func_def.return_type) == $(generic.name): module_name

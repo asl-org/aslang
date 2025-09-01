@@ -32,4 +32,8 @@ proc `==`*(func_ref: ResolvedFunctionRef, other: ResolvedFunctionRef): bool =
   hash(func_ref) == hash(other)
 
 proc `$`*(func_ref: ResolvedFunctionRef): string =
-  fmt"{func_ref.module_name}.{func_ref.function_def.name}"
+  case func_ref.kind:
+  of RFRK_FUNCTION:
+    fmt"{func_ref.function_def.name}"
+  of RFRK_MODULE:
+    fmt"{func_ref.module_name}.{func_ref.function_def.name}"
