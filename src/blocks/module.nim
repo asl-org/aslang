@@ -1,6 +1,6 @@
 import strutils, options, results, strformat, sequtils, hashes, tables
 
-import token, function, struct
+import token, function, struct, arg_def
 
 type ModuleDefinition* = ref object of RootObj
   name*: Token
@@ -191,9 +191,13 @@ proc find_function*(module: UserModule, func_def: FunctionDefinition): Result[
   else:
     ok(module.functions[module.function_map[func_def.hash]])
 
-proc find_generic*(module: UserModule, generic_name: Token): Result[Generic, string] =
-  if $(generic_name) notin module.generic_map:
-    err(fmt"Generic `{generic_name}` not defined in the module `{module.name}`")
+proc find_generic*(module: UserModule, generic_name: ArgumentType): Result[
+    Generic, string] =
+  if generic_name.children.len > 0:
+    return err(fmt"TODO: implement find_generic for generic argument types")
+
+  if $(generic_name.parent) notin module.generic_map:
+    err(fmt"Generic `{generic_name.parent}` not defined in the module `{module.name}`")
   else:
     let gen_index = module.generic_map[$(generic_name)]
     ok(module.generics[gen_index])
@@ -245,7 +249,7 @@ proc add_union*(module: UserModule, union: Union): Result[UserModule, string] =
     err(fmt"{union.location} Module `{module.name}` already contains a union block at {predefined_location}")
 
 proc add_generic*(module: UserModule, generic: Generic): Result[void, string] =
-  let maybe_generic = module.find_generic(generic.name)
+  let maybe_generic = module.find_generic(new_argument_type(generic.name))
   if maybe_generic.is_ok:
     let predefined_location = maybe_generic.get.location
     return err(fmt"Generic `{generic.name}` is already defined at {predefined_location}")

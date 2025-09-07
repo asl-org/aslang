@@ -1,6 +1,6 @@
 import sequtils, strutils, results, strformat, tables, hashes
 
-import token, function, module
+import token, function, module, arg_def
 
 type File* = ref object of RootObj
   location*: Location
@@ -31,10 +31,10 @@ proc `$`*(file: File): string =
 proc user_modules*(file: File): seq[UserModule] =
   file.modules.filter_it(it.kind == MK_USER).map_it(it.user_module)
 
-proc find_module*(file: File, module_name: Token): Result[Module, string] =
-  if $(module_name) notin file.module_map:
-    return err(fmt"{module_name.location} Module `{module_name}` does not exist in the scope")
-  let module = file.modules[file.module_map[$(module_name)]]
+proc find_module*(file: File, arg_type: ArgumentType): Result[Module, string] =
+  if $(arg_type.parent) notin file.module_map:
+    return err(fmt"{arg_type.parent.location} Module `{arg_type.parent}` does not exist in the scope")
+  let module = file.modules[file.module_map[$(arg_type.parent)]]
   ok(module)
 
 proc find_function*(file: File, func_def: FunctionDefinition): Result[Function, string] =
@@ -44,7 +44,7 @@ proc find_function*(file: File, func_def: FunctionDefinition): Result[Function, 
 
 proc add_module*(file: File, user_module: UserModule): Result[void, string] =
   echo "find_module: 12"
-  let maybe_found = file.find_module(user_module.name)
+  let maybe_found = file.find_module(new_argument_type(user_module.name))
   if maybe_found.is_ok:
     let predefined_module = maybe_found.get
     case predefined_module.kind:

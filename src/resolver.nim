@@ -83,7 +83,7 @@ proc resolve_variable(scope: Table[string, ArgumentDefinition],
 
 # module function call arg resolution
 proc resolve_argument(file: blocks.File, module: Module, scope: Table[string,
-    ArgumentDefinition], arg_type: Token, arg_value: Token): Result[
+    ArgumentDefinition], arg_type: ArgumentType, arg_value: Token): Result[
     ResolvedArgument, string] =
   let maybe_arg_module = file.find_module(arg_type)
   if maybe_arg_module.is_ok:
@@ -91,7 +91,7 @@ proc resolve_argument(file: blocks.File, module: Module, scope: Table[string,
     case arg_value.kind:
     of TK_ID:
       let resolved_variable = ? scope.resolve_variable(arg_value)
-      if $(arg_module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
+      if $(arg_module.name) == $(arg_type.parent): ok(new_resolved_argument(resolved_variable))
       else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
     else:
       case arg_module.kind:
@@ -129,7 +129,7 @@ proc resolve_argument(file: blocks.File, module: Module, scope: Table[string,
 
 # local function call arg resolution
 proc resolve_argument(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], arg_type: Token, arg_value: Token): Result[
+    ArgumentDefinition], arg_type: ArgumentType, arg_value: Token): Result[
     ResolvedArgument, string] =
   let arg_module = ? file.find_module(arg_type)
   case arg_value.kind:
@@ -146,7 +146,7 @@ proc resolve_argument(file: blocks.File, scope: Table[string,
       err(fmt"{arg_type.location} Module `{arg_type}` is a user module and therefore does not support literals")
 
 proc resolve_union_argument(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], arg_type: Token, arg_value: Token,
+    ArgumentDefinition], arg_type: ArgumentType, arg_value: Token,
         module: UserModule): Result[
     ResolvedArgument, string] =
   # echo fmt"find_module: 1 {arg_type} {arg_value}"
@@ -369,7 +369,7 @@ proc resolve_module_function_call(file: blocks.File, scope: Table[string,
       of GDK_DEFAULT: return err(fmt"{function_call.location} Generic `{generic.name}` does not have any constraint matching the function call at {generic.location}")
       of GDK_EXTENDED: discard
 
-      var arg_type_list: seq[Token]
+      var arg_type_list: seq[ArgumentType]
       var resolved_args: seq[ResolvedArgument]
       for arg in function_call.arg_list:
         case arg.kind:
@@ -435,7 +435,8 @@ proc resolve_expression(file: blocks.File, scope: Table[string,
     ok(new_resolved_expression(resolved_function_call))
   of EK_LITERAL_INIT:
     # echo "find_module: 5"
-    let module = ? file.find_module(expression.literal_init.arg_type)
+    let module = ? file.find_module(new_argument_type(
+        expression.literal_init.arg_type))
     case module.kind:
     of MK_BUILTIN:
       let resolved_literal = ? module.builtin_module.resolve_literal(
@@ -681,7 +682,8 @@ proc resolve_function(file: blocks.File,
     case function_ref.kind:
     of RFRK_MODULE:
       # echo "find_module: 7"
-      let module = ? file.find_module(function_ref.module_name)
+      let module = ? file.find_module(new_argument_type(
+          function_ref.module_name))
       func_module = some(module)
       case module.kind:
       of MK_BUILTIN:
@@ -724,7 +726,8 @@ proc resolve_function(file: blocks.File,
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 
   # echo "find_module: 8"
-  let maybe_return_type = file.find_module(function.definition.return_type)
+  let maybe_return_type = file.find_module(new_argument_type(
+      function.definition.return_type))
   if maybe_return_type.is_ok:
     discard
   else: # handle generics
@@ -740,7 +743,7 @@ proc resolve_function(file: blocks.File,
     of MK_BUILTIN: return err(fmt"{function.location} Failed to find matching module `{function.return_type}`")
     of MK_USER: discard
 
-    discard ? func_module.get.user_module.find_generic(expected_return_type)
+    discard ? func_module.get.user_module.find_generic(new_argument_type(expected_return_type))
   return new_resolved_function(function_ref, function, resolved_function_steps)
 
 proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[

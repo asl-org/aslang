@@ -46,7 +46,7 @@ proc function_refs*(resolved_var: ResolvedVariable): HashSet[
   of RVK_DEFAULT: init_hashset[ResolvedFunctionRef]()
   of RVK_GENERIC: resolved_var.func_refs
 
-proc typ*(variable: ResolvedVariable): Token = variable.arg_def.typ
+proc typ*(variable: ResolvedVariable): ArgumentType = variable.arg_def.typ
 proc name*(variable: ResolvedVariable): Token = variable.arg_def.name
 
 proc generic_impls*(variable: ResolvedVariable): Table[string, HashSet[string]] =
@@ -82,9 +82,9 @@ proc value*(arg: ResolvedArgument): Token =
   of RAK_LITERAL: arg.literal.value
   of RAK_VARIABLE: arg.variable.name
 
-proc return_type*(arg: ResolvedArgument): Token =
+proc return_type*(arg: ResolvedArgument): ArgumentType =
   case arg.kind:
-  of RAK_LITERAL: arg.literal.module.name
+  of RAK_LITERAL: new_argument_type(arg.literal.module.name)
   of RAK_VARIABLE: arg.variable.typ
 
 proc c*(arg: ResolvedArgument): string = $(arg.value)

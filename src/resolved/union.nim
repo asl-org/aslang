@@ -146,7 +146,7 @@ proc h*(resolved_union: ResolvedUnion): string =
       # in case of generic types there will be concrete impls
       if $(field.typ) in generic_impls:
         # generic id
-        headers.add(fmt"Pointer {module_name}_{field.typ}_get_{ASL_UNION_ID}(Pointer);")
+        # headers.add(fmt"Pointer {module_name}_{field.typ}_get_{ASL_UNION_ID}(Pointer);")
         headers.add(fmt"Pointer {module_name}_{field.typ}_set_{ASL_UNION_ID}(Pointer, U8);")
         for concrete in generic_impls[$(field.typ)]:
           let concrete_field = new_argument_definition(concrete, $(field.name))

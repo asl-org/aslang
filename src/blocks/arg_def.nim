@@ -1,18 +1,44 @@
-import hashes, strformat
+import hashes, strformat, sequtils, strutils
 
 import token
 
+type ArgumentType* = ref object of RootObj
+  parent*: Token
+  children*: seq[ArgumentType]
+
+proc new_argument_type*(parent: Token): ArgumentType =
+  ArgumentType(parent: parent)
+
+proc new_argument_type*(parent: Token, children: seq[
+    ArgumentType]): ArgumentType =
+  ArgumentType(parent: parent, children: children)
+
+proc location*(arg_type: ArgumentType): Location =
+  arg_type.parent.location
+
+proc `$`*(arg_type: ArgumentType): string =
+  let children = arg_type.children.map_it($(it)).join(", ")
+  if children.len == 0: return $(arg_type.parent)
+  return fmt"{arg_type.parent}[{children}]"
+
+proc hash*(arg_type: ArgumentType): Hash =
+  let parent_hash = hash(arg_type.parent)
+  var children_hash: Hash
+  for child in arg_type.children:
+    children_hash = children_hash !& hash(child)
+  parent_hash !& children_hash
+
 type ArgumentDefinition* = ref object of RootObj
-  typ*: Token
+  typ*: ArgumentType
   name*: Token
 
-proc new_argument_definition*(typ: Token,
+proc new_argument_definition*(typ: ArgumentType,
     name: Token): ArgumentDefinition =
   ArgumentDefinition(typ: typ, name: name)
 
 proc new_argument_definition*(arg_type: string,
     arg_name: string): ArgumentDefinition =
-  let arg_type_token = new_id_token(arg_type)
+  let arg_type_token = new_argument_type(new_id_token(arg_type))
   let arg_name_token = new_id_token(arg_name)
   new_argument_definition(arg_type_token, arg_name_token)
 

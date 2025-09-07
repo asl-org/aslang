@@ -1,12 +1,13 @@
 import strformat, sequtils, strutils
 
-import token, function_call
+import token, function_call, arg_def
 
 type StructInit* = ref object of RootObj
-  struct*: Token
+  struct*: ArgumentType
   fields*: seq[(Token, Token)]
 
-proc new_struct_init*(struct: Token, fields: seq[(Token, Token)]): StructInit =
+proc new_struct_init*(struct: ArgumentType, fields: seq[(Token,
+    Token)]): StructInit =
   StructInit(struct: struct, fields: fields)
 
 proc location*(struct_init: StructInit): Location =
@@ -43,11 +44,11 @@ proc `$`*(literal_init: LiteralInit): string =
   fmt"{literal_init.arg_type} {literal_init.arg_value}"
 
 type UnionInit* = ref object of RootObj
-  name*: Token
+  name*: ArgumentType
   field_name*: Token
   union_fields*: seq[(Token, Token)]
 
-proc new_union_init*(name: Token, field_name: Token, union_fields: seq[(
+proc new_union_init*(name: ArgumentType, field_name: Token, union_fields: seq[(
     Token, Token)]): UnionInit =
   UnionInit(name: name, field_name: field_name, union_fields: union_fields)
 

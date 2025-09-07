@@ -60,7 +60,7 @@ proc c*(resolved_match: ResolvedMatch): string =
     of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64":
       $(resolved_match.operand.name)
     else:
-      fmt"{resolved_match.operand.typ}_get_{ASL_UNION_ID}({resolved_match.operand.name})"
+      fmt"{resolved_match.operand.typ.parent}_get_{ASL_UNION_ID}({resolved_match.operand.name})"
 
   lines.add(fmt"switch({match_expr}) " & "{")
   for case_block in resolved_match.case_blocks:
