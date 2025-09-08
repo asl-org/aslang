@@ -64,7 +64,7 @@ proc generic_impls*(expression: ResolvedExpression): Table[string, Table[string,
 proc return_type*(expression: ResolvedExpression): ArgumentType =
   case expression.kind:
   of REK_ARGUMENT: expression.argument.return_type
-  of REK_FUNCTION_CALL: new_argument_type(expression.function_call.return_type)
+  of REK_FUNCTION_CALL: expression.function_call.return_type
   of REK_STRUCT_INIT: new_argument_type(expression.struct_init.module.name)
   of REK_STRUCT_GETTER: expression.struct_getter.field.typ
   of REK_UNION_INIT: new_argument_type(expression.union_init.module.name)

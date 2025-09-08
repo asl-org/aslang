@@ -3,6 +3,42 @@ import tables, sets
 import "../blocks"
 import function_ref
 
+type ResolvedGeneric* = ref object of RootObj
+  module: Module
+  generic: Generic
+
+proc new_resolved_generic*(module: Module, generic: Generic): ResolvedGeneric =
+  ResolvedGeneric(module: module, generic: generic)
+
+type
+  ResolvedArgumentTypeKind* = enum
+    RATK_DEFAULT, RATK_GENERIC
+  ResolvedArgumentType* = ref object of RootObj
+    case kind: ResolvedArgumentTypeKind
+    of RATK_DEFAULT:
+      parent: Module
+      children: seq[ResolvedArgumentType]
+    of RATK_GENERIC:
+      generic: ResolvedGeneric
+
+proc new_resolved_argument_type*(parent: Module): ResolvedArgumentType =
+  ResolvedArgumentType(kind: RATK_DEFAULT, parent: parent)
+
+proc new_resolved_argument_type*(parent: Module, children: seq[
+    ResolvedArgumentType]): ResolvedArgumentType =
+  ResolvedArgumentType(kind: RATK_DEFAULT, parent: parent, children: children)
+
+proc new_resolved_argument_type*(generic: ResolvedGeneric): ResolvedArgumentType =
+  ResolvedArgumentType(kind: RATK_GENERIC, generic: generic)
+
+type ResolvedArgumentDefinition* = ref object of RootObj
+  name: Token
+  arg_type: ResolvedArgumentType
+
+proc new_resolved_argument_definition*(name: Token,
+    arg_type: ResolvedArgumentType): ResolvedArgumentDefinition =
+  ResolvedArgumentDefinition(name: name, arg_type: arg_type)
+
 type
   ResolvedLiteralKind* = enum
     RLK_INTEGER, RLK_FLOAT

@@ -5,11 +5,11 @@ import token, statement, match, arg_def
 type FunctionDefinition* = ref object of RootObj
   name*: Token
   arg_def_list*: seq[ArgumentDefinition]
-  return_type*: Token
+  return_type*: ArgumentType
   location*: Location
 
 proc new_function_definition*(name: Token, arg_def_list: seq[
-    ArgumentDefinition], return_type: Token,
+    ArgumentDefinition], return_type: ArgumentType,
         location: Location = Location()): FunctionDefinition =
   FunctionDefinition(name: name, arg_def_list: arg_def_list,
       return_type: return_type, location: location)
@@ -17,7 +17,7 @@ proc new_function_definition*(name: Token, arg_def_list: seq[
 proc new_function_definition*(name: string, arg_def_list: seq[(string, string)],
     return_type: string): FunctionDefinition =
   let name_token = new_id_token(name)
-  let return_type_token = new_id_token(return_type)
+  let return_type_token = new_argument_type(new_id_token(return_type))
   let arg_def_list_token = arg_def_list.map_it(new_argument_definition(it[0], it[1]))
   new_function_definition(name_token, arg_def_list_token, return_type_token,
       Location())

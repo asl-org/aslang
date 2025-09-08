@@ -92,7 +92,7 @@ proc resolve_argument(file: blocks.File, module: Module, scope: Table[string,
     of TK_ID:
       let resolved_variable = ? scope.resolve_variable(arg_value)
       if $(arg_module.name) == $(arg_type.parent): ok(new_resolved_argument(resolved_variable))
-      else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+      else: err(fmt"1 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
     else:
       case arg_module.kind:
       of MK_BUILTIN:
@@ -102,7 +102,7 @@ proc resolve_argument(file: blocks.File, module: Module, scope: Table[string,
         err(fmt"{arg_type.location} Module `{arg_type}` is a user module and therefore does not support literals")
   else:
     case module.kind:
-    of MK_BUILTIN: err("UNREACHABLE")
+    of MK_BUILTIN: err("1 UNREACHABLE")
     of MK_USER:
       let module = module.user_module
       let generic = ? module.find_generic(arg_type)
@@ -136,7 +136,7 @@ proc resolve_argument(file: blocks.File, scope: Table[string,
   of TK_ID:
     let resolved_variable = ? scope.resolve_variable(arg_value)
     if $(arg_module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
-    else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+    else: err(fmt"2 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
   else:
     case arg_module.kind:
     of MK_BUILTIN:
@@ -157,7 +157,7 @@ proc resolve_union_argument(file: blocks.File, scope: Table[string,
     of TK_ID:
       let resolved_variable = ? scope.resolve_variable(arg_value)
       if $(module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
-      else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+      else: err(fmt"3 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
     else:
       case module.kind:
       of MK_BUILTIN:
@@ -675,43 +675,23 @@ proc resolve_function_step(file: blocks.File, scope: Table[
     let resolved_match = ? file.resolve_match(scope, temp_var_count, step.match, func_module)
     ok(new_resolved_function_step(resolved_match))
 
-proc resolve_function(file: blocks.File,
+proc resolve_function(file: blocks.File, module: Module, function: Function,
     function_ref: ResolvedFunctionRef): Result[ResolvedFunction, string] =
-  var func_module: Option[Module]
-  let function =
-    case function_ref.kind:
-    of RFRK_MODULE:
-      # echo "find_module: 7"
-      let module = ? file.find_module(new_argument_type(
-          function_ref.module_name))
-      func_module = some(module)
-      case module.kind:
-      of MK_BUILTIN:
-        return err(fmt"Builtin module `{module.name}` does not require resolution.")
-      of MK_USER:
-        ? module.user_module.find_function(function_ref.function_def)
-    of RFRK_FUNCTION:
-      ? file.find_function(function_ref.function_def)
-
   var
     temp_var_count: uint = 0
     scope: Table[string, ArgumentDefinition]
     resolved_function_steps: seq[ResolvedFunctionStep]
 
   for arg in function.arg_def_list:
-    # echo "find_module: 9"
     let maybe_module = file.find_module(arg.typ)
     if maybe_module.is_ok:
       discard
-    else: # handle generics
-      if func_module.is_none:
-        return err(fmt"{function.location} Failed to find matching module `{function.return_type}`")
-
-      case func_module.get.kind:
+    else:
+      case module.kind:
       of MK_BUILTIN: return err(fmt"{function.location} Failed to find matching module `{function.return_type}`")
       of MK_USER: discard
 
-      discard ? func_module.get.user_module.find_generic(arg.typ)
+      discard ? module.user_module.find_generic(arg.typ)
 
     if $(arg.name) in scope:
       let defined_arg = scope[$(arg.name)]
@@ -721,30 +701,98 @@ proc resolve_function(file: blocks.File,
 
   for (index, step) in function.function_steps.pairs:
     let resolved_function_step = ? file.resolve_function_step(scope,
-        temp_var_count, step, func_module)
+        temp_var_count, step, some(module))
     resolved_function_steps.add(resolved_function_step)
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 
   # echo "find_module: 8"
-  let maybe_return_type = file.find_module(new_argument_type(
-      function.definition.return_type))
+  let expected_return_type = function.definition.return_type
+  let maybe_return_type = file.find_module(expected_return_type)
   if maybe_return_type.is_ok:
     discard
   else: # handle generics
-    let expected_return_type = function.definition.return_type
-    let actual_return_type = resolved_function_steps[^1].return_argument.typ
-    if $(actual_return_type) != $(expected_return_type):
-      return err(fmt"{function.location} Expected function to return `{expected_return_type}` but found {actual_return_type}")
-
-    if func_module.is_none:
-      return err(fmt"{function.location} Failed to find matching module `{function.return_type}`")
-
-    case func_module.get.kind:
+    case module.kind:
     of MK_BUILTIN: return err(fmt"{function.location} Failed to find matching module `{function.return_type}`")
     of MK_USER: discard
+    discard ? module.user_module.find_generic(expected_return_type)
 
-    discard ? func_module.get.user_module.find_generic(new_argument_type(expected_return_type))
-  return new_resolved_function(function_ref, function, resolved_function_steps)
+  let actual_return_type = resolved_function_steps[^1].return_argument.typ
+  if $(function.return_type) != $(actual_return_type):
+    return err(fmt"{function.location} expected {function.name} to return {function.return_type} but found {actual_return_type}")
+  ok(new_resolved_function(function_ref, function, resolved_function_steps))
+
+proc resolve_argument_type(file: blocks.File, arg_type: ArgumentType): Result[
+    ResolvedArgumentType, string] =
+  let module = ? file.find_module(arg_type)
+  var resolved_children_arg_types: seq[ResolvedArgumentType]
+  for child_arg_type in arg_type.children:
+    let resolved_child_arg_type = ? file.resolve_argument_type(child_arg_type)
+    resolved_children_arg_types.add(resolved_child_arg_type)
+  ok(new_resolved_argument_type(module, resolved_children_arg_types))
+
+proc resolve_argument_definition(file: blocks.File,
+    arg_def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_arg_type = ? file.resolve_argument_type(arg_def.typ)
+  ok(new_resolved_argument_definition(arg_def.name, resolved_arg_type))
+
+proc resolve_function_definition(file: blocks.File,
+    func_def: FunctionDefinition): Result[(ResolvedFunctionDefinition, Table[
+    string, ArgumentDefinition]), string] =
+  var scope: Table[string, ArgumentDefinition]
+  var resolved_arg_defs: seq[ResolvedArgumentDefinition]
+
+  for arg_def in func_def.arg_def_list:
+    # arg_def uniqueness check
+    if $(arg_def.name) in scope:
+      let defined_arg = scope[$(arg_def.name)]
+      return err(fmt"{arg_def.location} {arg_def.name} is already defined {defined_arg.location}")
+    scope[$(arg_def.name)] = arg_def
+
+    # resolution
+    let resolved_arg_def = ? file.resolve_argument_definition(arg_def)
+    resolved_arg_defs.add(resolved_arg_def)
+
+  let return_module = ? file.find_module(func_def.return_type)
+  ok((new_resolved_function_definition(func_def.name, resolved_arg_defs,
+      return_module), scope))
+
+# local function resolution
+proc resolve_function(file: blocks.File, function: Function,
+    function_ref: ResolvedFunctionRef): Result[ResolvedFunction, string] =
+  var
+    temp_var_count: uint = 0
+    resolved_function_steps: seq[ResolvedFunctionStep]
+
+  var (resolved_function_definition, scope) = ?
+    file.resolve_function_definition(function.definition)
+
+  for (index, step) in function.function_steps.pairs:
+    let resolved_function_step = ? file.resolve_function_step(scope,
+        temp_var_count, step, none(Module))
+    resolved_function_steps.add(resolved_function_step)
+    scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
+
+  let expected_return_type = resolved_function_definition.return_module
+  let actual_return_type = resolved_function_steps[^1].return_argument.typ
+  if $(actual_return_type) != $(expected_return_type.name):
+    return err(fmt"{function.location} Expected function to return `{expected_return_type.name}` but found {actual_return_type}")
+  ok(new_resolved_function(function_ref, function, resolved_function_steps))
+
+proc resolve_function_ref(file: blocks.File,
+    function_ref: ResolvedFunctionRef): Result[ResolvedFunction, string] =
+  case function_ref.kind:
+  of RFRK_MODULE:
+    let module = ? file.find_module(new_argument_type(function_ref.module_name))
+    case module.kind:
+    of MK_BUILTIN:
+      err(fmt"Builtin module `{module.name}` does not require resolution.")
+    of MK_USER:
+      let function = ? module.user_module.find_function(
+          function_ref.function_def)
+      file.resolve_function(module, function, function_ref)
+  of RFRK_FUNCTION:
+    let function = ? file.find_function(function_ref.function_def)
+    file.resolve_function(function, function_ref)
 
 proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
     ResolvedFunctionRef]): Result[void, string] =
@@ -752,7 +800,7 @@ proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
     let func_ref = new_resolved_function_ref(function.definition)
     if func_ref notin visited_functions:
       echo fmt"Unused function: {function.location} {function.name}"
-      discard ? file.resolve_function(func_ref)
+      discard ? file.resolve_function_ref(func_ref)
 
   for module in file.user_modules:
     for function in module.functions:
@@ -760,7 +808,7 @@ proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
           function.definition)
       if func_ref notin visited_functions:
         echo fmt"Unused function: {function.location} {module.name}.{function.name}"
-        discard ? file.resolve_function(func_ref)
+        discard ? file.resolve_function_ref(func_ref)
   ok()
 
 proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
@@ -779,7 +827,7 @@ proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
     visited_function_refs.incl(function_ref)
     stack.set_len(stack.len - 1)
 
-    let resolved_function = ? file.resolve_function(function_ref)
+    let resolved_function = ? file.resolve_function_ref(function_ref)
     let new_functions = resolved_function.function_refs.difference(visited_function_refs)
     for (module_name, impl_map) in resolved_function.generic_impls.pairs:
       if module_name notin generic_impls:

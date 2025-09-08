@@ -3,51 +3,34 @@ module Array:
     fn byte_size(U64 items): U64
     fn from_Pointer(Pointer ptr): Value
     fn write_Pointer(Pointer ptr, Value val): Pointer
-    # fn print(Value value): U64
 
   struct:
     U64 size
     Pointer ptr
 
-  fn new(U64 size): Array
+  fn new(U64 size): Array[Value]
     bytes = U64.multiply(size, 8)
     ptr = System.allocate(bytes)
-    arr = Array { ptr: ptr, size: size }
+    arr = Array[Value] { ptr: ptr, size: size }
 
-  fn set(Array arr, U64 index, Value val): Array
+  fn set(Array[Value] arr, U64 index, Value val): Array[Value]
     ptr = arr.ptr
     offset = Value.byte_size(index)
     addr = Pointer.shift(ptr, offset)
     _updated = Value.write_Pointer(addr, val) # generic
     arr
 
-  fn get(Array arr, U64 index): Value
+  fn get(Array[Value] arr, U64 index): Value
     ptr = arr.ptr
     offset = Value.byte_size(index)
     addr = Pointer.shift(ptr, offset)
     ans = Value.from_Pointer(addr) # generic
 
-  # fn print(Array arr): U64
-  #   Array._print(arr, 0)
-
-  # fn _print(Array arr, U64 index): U64
-  #   size = arr.size
-  #   c = U64.compare(index, size)
-  #   _ = match c:
-  #     case -1:
-  #       item = Array.get(arr, index)
-  #       item_bytes = Value.print(item)
-  #       next_index = U64.add(index, 1)
-  #       rest_bytes = Array._print(arr, next_index)
-  #       U64.add(item_bytes, rest_bytes)
-  #     else:
-  #       U64 0
-
 
 fn start(U8 seed): U8
   exit_success = U8 0
 
-  arr = Array.new(8)
+  arr = Array[U64].new(8)
   size = arr.size
 
   System.print_U64(size)

@@ -71,7 +71,7 @@ proc generic_impls*(function_call: ResolvedFunctionCall): Table[string, Table[
     discard
   return impls
 
-proc return_type*(resolved_function_call: ResolvedFunctionCall): Token =
+proc return_type*(resolved_function_call: ResolvedFunctionCall): ArgumentType =
   resolved_function_call.function_def.return_type
 
 proc c*(fncall: ResolvedFunctionCall): string =

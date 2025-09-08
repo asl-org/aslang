@@ -142,7 +142,7 @@ proc expect_function_definition(parser: Parser): Result[FunctionDefinition, stri
   discard parser.expect_any(TK_SPACE)
   discard ? parser.expect(TK_COLON)
   discard parser.expect_any(TK_SPACE)
-  let return_type = ? parser.expect(TK_ID)
+  let return_type = ? parser.expect_argument_type()
   ok(new_function_definition(function_name, arg_def_list, return_type, fn.location))
 
 proc expect_argument_list(parser: Parser): Result[seq[Token], string] =
