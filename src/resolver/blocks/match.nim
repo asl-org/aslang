@@ -1,6 +1,5 @@
 import strformat, sets, strutils, tables
 
-import "../blocks"
 import case_block
 import else_block
 

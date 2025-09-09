@@ -1,6 +1,5 @@
 import sets, tables
 
-import "../blocks"
 import function_ref
 import statement
 import match

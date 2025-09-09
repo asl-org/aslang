@@ -1,6 +1,6 @@
 import strformat
 
-import "../blocks"
+import function_ref
 
 type ResolvedStructGetter* = ref object of RootObj
   module*: UserModule

@@ -1,6 +1,4 @@
 import tables, sets
-
-import "../blocks"
 import function_ref
 
 type ResolvedGeneric* = ref object of RootObj

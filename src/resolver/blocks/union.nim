@@ -1,6 +1,6 @@
 import tables, strutils, strformat, sequtils, sets
 
-import "../blocks"
+import function_ref
 import struct
 
 const ASL_PREFIX = "__asl__"

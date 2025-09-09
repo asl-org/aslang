@@ -1,5 +1,7 @@
 import strformat, hashes
-import "../blocks"
+
+import "../../parser/blocks"
+export blocks
 
 type
   ResolvedFunctionRefKind* = enum
