@@ -8,13 +8,13 @@ import function_step
 type ResolvedFunctionDefinition* = ref object of RootObj
   name: Token
   arg_defs: seq[ResolvedArgumentDefinition]
-  return_module*: Module
+  return_type*: Module
 
 proc new_resolved_function_definition*(name: Token, arg_defs: seq[
     ResolvedArgumentDefinition],
-    return_module: Module): ResolvedFunctionDefinition =
+    return_type: Module): ResolvedFunctionDefinition =
   ResolvedFunctionDefinition(name: name, arg_defs: arg_defs,
-      return_module: return_module)
+      return_type: return_type)
 
 type ResolvedFunction* = ref object of RootObj
   func_ref*: ResolvedFunctionRef

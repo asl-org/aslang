@@ -4,10 +4,11 @@ import "../blocks"
 import function_ref
 
 type ResolvedGeneric* = ref object of RootObj
-  module: Module
+  module: UserModule
   generic: Generic
 
-proc new_resolved_generic*(module: Module, generic: Generic): ResolvedGeneric =
+proc new_resolved_generic*(module: UserModule,
+    generic: Generic): ResolvedGeneric =
   ResolvedGeneric(module: module, generic: generic)
 
 type
