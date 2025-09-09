@@ -46,6 +46,8 @@ proc function_refs*(expression: ResolvedExpression): Hashset[
   of REK_FUNCTION_CALL:
     let maybe_func_ref = expression.function_call.user_function
     if maybe_func_ref.is_some: function_set.incl(maybe_func_ref.get)
+  of REK_STRUCT_INIT:
+    function_set.incl(expression.struct_init.function_refs)
   of REK_UNION_INIT:
     function_set.incl(expression.union_init.function_refs)
   else: discard
@@ -55,15 +57,17 @@ proc generic_impls*(expression: ResolvedExpression): Table[string, Table[string,
     HashSet[string]]] =
   case expression.kind:
   of REK_UNION_INIT: expression.union_init.generic_impls
+  of REK_STRUCT_INIT: expression.struct_init.generic_impls
+  of REK_FUNCTION_CALL: expression.function_call.generic_impls
   else: init_table[string, Table[string, HashSet[string]]]()
 
-proc return_type*(expression: ResolvedExpression): Token =
+proc return_type*(expression: ResolvedExpression): ArgumentType =
   case expression.kind:
   of REK_ARGUMENT: expression.argument.return_type
   of REK_FUNCTION_CALL: expression.function_call.return_type
-  of REK_STRUCT_INIT: expression.struct_init.module.name
+  of REK_STRUCT_INIT: new_argument_type(expression.struct_init.module.name)
   of REK_STRUCT_GETTER: expression.struct_getter.field.typ
-  of REK_UNION_INIT: expression.union_init.module.name
+  of REK_UNION_INIT: new_argument_type(expression.union_init.module.name)
 
 proc c*(expression: ResolvedExpression, return_argument: ArgumentDefinition): string =
   case expression.kind:

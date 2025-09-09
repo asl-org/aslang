@@ -6,6 +6,7 @@
 // Module: U16
 
 U16 U16_init(U16 a) { return a; }
+U64 U16_byte_size(U64 items) { return items * sizeof(U16); }
 
 // safe
 U16 U16_and(U16 a, U16 b) { return a & b; }
@@ -36,5 +37,11 @@ U16 U16_from_S64(S64 value) { return (U16)value; }
 U16 U16_from_U32(U32 value) { return (U16)value; }
 U16 U16_from_U64(U64 value) { return (U16)value; }
 U16 U16_from_Pointer(Pointer ptr) { return (*((U16 *)ptr)); }
+
+Pointer U16_write_Pointer(Pointer ptr, U16 value)
+{
+  (*((U16 *)ptr)) = value;
+  return ptr;
+}
 
 #endif // ASL_U16_H

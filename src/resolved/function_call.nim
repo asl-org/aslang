@@ -1,4 +1,4 @@
-import sequtils, strutils, strformat, options
+import sequtils, strutils, strformat, options, tables, sets
 
 import "../blocks"
 import arg
@@ -49,7 +49,29 @@ proc user_function*(resolved_function_call: ResolvedFunctionCall): Option[
   of RFCK_MODULE: some(new_resolved_function_ref(resolved_function_call.module,
       resolved_function_call.function_def))
 
-proc return_type*(resolved_function_call: ResolvedFunctionCall): Token =
+proc generic_impls*(function_call: ResolvedFunctionCall): Table[string, Table[
+    string, HashSet[string]]] =
+  var impls: Table[string, Table[string, HashSet[string]]]
+  case function_call.kind:
+  of RFCK_MODULE:
+    impls[$(function_call.module.name)] = init_table[string, HashSet[string]]()
+    for arg in function_call.args:
+      for (generic, concrete) in arg.generic_impls.pairs:
+        if generic notin impls[$(function_call.module.name)]:
+          impls[$(function_call.module.name)][generic] = init_hashset[string]()
+        impls[$(function_call.module.name)][generic].incl(concrete)
+  of RFCK_GENERIC:
+    impls[$(function_call.concrete)] = init_table[string, HashSet[string]]()
+    for arg in function_call.args:
+      for (generic, concrete) in arg.generic_impls.pairs:
+        if generic notin impls[$(function_call.concrete)]:
+          impls[$(function_call.concrete)][generic] = init_hashset[string]()
+        impls[$(function_call.concrete)][generic].incl(concrete)
+  else:
+    discard
+  return impls
+
+proc return_type*(resolved_function_call: ResolvedFunctionCall): ArgumentType =
   resolved_function_call.function_def.return_type
 
 proc c*(fncall: ResolvedFunctionCall): string =

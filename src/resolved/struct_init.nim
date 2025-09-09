@@ -12,6 +12,24 @@ proc new_resolved_struct_init*(module: UserModule, fields: seq[
     ResolvedArgument]): ResolvedStructInit =
   ResolvedStructInit(module: module, fields: fields)
 
+proc function_refs*(struct_init: ResolvedStructInit): HashSet[
+    ResolvedFunctionRef] =
+  var function_set: HashSet[ResolvedFunctionRef]
+  for field in struct_init.fields:
+    function_set.incl(field.function_refs)
+  return function_set
+
+proc generic_impls*(struct_init: ResolvedStructInit): Table[string, Table[
+    string, HashSet[string]]] =
+  var impls: Table[string, Table[string, HashSet[string]]]
+  impls[$(struct_init.module.name)] = init_table[string, HashSet[string]]()
+  for field in struct_init.fields:
+    for (generic, concrete) in field.generic_impls.pairs:
+      if generic notin impls[$(struct_init.module.name)]:
+        impls[$(struct_init.module.name)][generic] = init_hashset[string]()
+      impls[$(struct_init.module.name)][generic].incl(concrete)
+  return impls
+
 proc c*(init: ResolvedStructInit): string =
   let fields = init.fields.map_it($(it.value)).join(", ")
   fmt"{init.module.name}_init({fields})"

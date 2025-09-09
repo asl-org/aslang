@@ -81,28 +81,75 @@ proc resolve_variable(scope: Table[string, ArgumentDefinition],
     return err(fmt"{name.location} {name} is not defined in the scope")
   ok(new_resolved_variable(scope[$(name)]))
 
-proc resolve_argument(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], arg_type: Token, arg_value: Token): Result[
+# module function call arg resolution
+proc resolve_argument(file: blocks.File, module: Module, scope: Table[string,
+    ArgumentDefinition], arg_type: ArgumentType, arg_value: Token): Result[
     ResolvedArgument, string] =
-  let module = ? file.find_module(arg_type)
+  let maybe_arg_module = file.find_module(arg_type)
+  if maybe_arg_module.is_ok:
+    let arg_module = maybe_arg_module.get
+    case arg_value.kind:
+    of TK_ID:
+      let resolved_variable = ? scope.resolve_variable(arg_value)
+      if $(arg_module.name) == $(arg_type.parent): ok(new_resolved_argument(resolved_variable))
+      else: err(fmt"1 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+    else:
+      case arg_module.kind:
+      of MK_BUILTIN:
+        let resolved_literal = ? arg_module.builtin_module.resolve_literal(arg_value)
+        ok(new_resolved_argument(resolved_literal))
+      of MK_USER:
+        err(fmt"{arg_type.location} Module `{arg_type}` is a user module and therefore does not support literals")
+  else:
+    case module.kind:
+    of MK_BUILTIN: err("1 UNREACHABLE")
+    of MK_USER:
+      let module = module.user_module
+      let generic = ? module.find_generic(arg_type)
+      case arg_value.kind:
+      of TK_ID:
+        let resolved_variable = ? scope.resolve_variable(arg_value)
+        var argval_module_func_refs: HashSet[ResolvedFunctionRef]
+        case generic.kind:
+        of GDK_DEFAULT: discard
+        of GDK_EXTENDED:
+          let argval_module = ? file.find_module(resolved_variable.typ)
+          for func_def in generic.constraints(argval_module.name):
+            discard ? argval_module.find_function(func_def)
+            case argval_module.kind:
+            of MK_BUILTIN: discard
+            of MK_USER:
+              argval_module_func_refs.incl(new_resolved_function_ref(
+                  argval_module.user_module, func_def))
+        let generic_resolved_variable = new_resolved_variable(resolved_variable,
+            generic.name, argval_module_func_refs)
+        ok(new_resolved_argument(generic_resolved_variable))
+      else:
+        err(fmt"{arg_value.location} generic fields only support identifier as values")
+
+# local function call arg resolution
+proc resolve_argument(file: blocks.File, scope: Table[string,
+    ArgumentDefinition], arg_type: ArgumentType, arg_value: Token): Result[
+    ResolvedArgument, string] =
+  let arg_module = ? file.find_module(arg_type)
   case arg_value.kind:
   of TK_ID:
     let resolved_variable = ? scope.resolve_variable(arg_value)
-    if $(module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
-    else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+    if $(arg_module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
+    else: err(fmt"2 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
   else:
-    case module.kind:
+    case arg_module.kind:
     of MK_BUILTIN:
-      let resolved_literal = ? module.builtin_module.resolve_literal(arg_value)
+      let resolved_literal = ? arg_module.builtin_module.resolve_literal(arg_value)
       ok(new_resolved_argument(resolved_literal))
     of MK_USER:
       err(fmt"{arg_type.location} Module `{arg_type}` is a user module and therefore does not support literals")
 
 proc resolve_union_argument(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], arg_type: Token, arg_value: Token,
+    ArgumentDefinition], arg_type: ArgumentType, arg_value: Token,
         module: UserModule): Result[
     ResolvedArgument, string] =
-  echo fmt"find_module: 1 {arg_type} {arg_value}"
+  # echo fmt"find_module: 1 {arg_type} {arg_value}"
   let maybe_module = file.find_module(arg_type)
   if maybe_module.is_ok:
     let module = maybe_module.get
@@ -110,7 +157,7 @@ proc resolve_union_argument(file: blocks.File, scope: Table[string,
     of TK_ID:
       let resolved_variable = ? scope.resolve_variable(arg_value)
       if $(module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
-      else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+      else: err(fmt"3 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
     else:
       case module.kind:
       of MK_BUILTIN:
@@ -144,7 +191,7 @@ proc resolve_union_argument(file: blocks.File, scope: Table[string,
 
 proc resolve_struct_init(file: blocks.File, scope: Table[string,
     ArgumentDefinition], struct_init: StructInit): Result[ResolvedStructInit, string] =
-  echo "find_module: 2"
+  # echo "find_module: 2"
   let module = ? file.find_module(struct_init.struct)
   case module.kind:
   of MK_USER:
@@ -156,8 +203,8 @@ proc resolve_struct_init(file: blocks.File, scope: Table[string,
         if $(field_name) in field_name_table:
           return err(fmt"{field_name.location} {field_name} is already present in the initializer")
         let field = ? struct.find_field(field_name)
-        echo "resolve_argument: 1"
-        field_name_table[$(field_name)] = ? file.resolve_argument(scope,
+        # echo "resolve_argument: 1"
+        field_name_table[$(field_name)] = ? file.resolve_argument(module, scope,
             field.typ, field_value)
 
       let resolved_fields = struct.fields.map_it(field_name_table[
@@ -170,7 +217,7 @@ proc resolve_struct_init(file: blocks.File, scope: Table[string,
 proc resolve_union_init(file: blocks.File, scope: Table[string,
     ArgumentDefinition], union_init: UnionInit,
         temp_var_count: var uint): Result[ResolvedUnionInit, string] =
-  echo "find_module: 3"
+  # echo "find_module: 3"
   let module = ? file.find_module(union_init.name)
   case module.kind:
   of MK_USER:
@@ -183,7 +230,7 @@ proc resolve_union_init(file: blocks.File, scope: Table[string,
         if $(field_name) in field_name_table:
           return err(fmt"{field_name.location} {field_name} is already present in the initializer")
         let field = ? union_field.find_field(field_name)
-        echo "resolve_argument: 2"
+        # echo "resolve_argument: 2"
         field_name_table[$(field_name)] = ? file.resolve_union_argument(scope,
             field.typ, field_value, module.user_module)
 
@@ -212,7 +259,7 @@ proc resolve_struct_getter(file: blocks.File, scope: Table[string,
   if $(struct_var) notin scope:
     return err(fmt"{struct_var.location} {struct_var} is not defined in the scope")
 
-  echo "find_module: 4"
+  # echo "find_module: 4"
   let module = ? file.find_module(scope[$(struct_var)].typ)
   case module.kind:
   of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
@@ -221,8 +268,8 @@ proc resolve_struct_getter(file: blocks.File, scope: Table[string,
     ok(new_resolved_struct_getter(module.user_module, field, struct_var))
 
 # matches individual function with function call
-proc resolve_function_call_args(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], function_call: FunctionCall,
+proc resolve_function_call_args(file: blocks.File, module: Module,
+    scope: Table[string, ArgumentDefinition], function_call: FunctionCall,
     function_def: FunctionDefinition): Result[seq[ResolvedArgument], string] =
   if $(function_def.name) != $(function_call.name):
     return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function_def.name}")
@@ -232,13 +279,45 @@ proc resolve_function_call_args(file: blocks.File, scope: Table[string,
   var resolved_args: seq[ResolvedArgument]
   for (arg_def, arg_value) in zip(function_def.arg_def_list,
       function_call.arg_list):
-    echo "resolve_argument: 3"
+    # echo "resolve_argument: 3"
+    let resolved_arg = ? file.resolve_argument(module, scope, arg_def.typ, arg_value)
+    resolved_args.add(resolved_arg)
+  ok(resolved_args)
+
+# module function call arg resolution
+proc resolve_function_call_args(file: blocks.File, module: Module,
+    scope: Table[string, ArgumentDefinition], function_call: FunctionCall,
+        function_defs: seq[
+    FunctionDefinition]): Result[(FunctionDefinition, seq[ResolvedArgument]), string] =
+  for function_def in function_defs:
+    let maybe_resolved_args = file.resolve_function_call_args(module, scope,
+        function_call, function_def)
+    if maybe_resolved_args.is_ok:
+      return ok((function_def, maybe_resolved_args.get))
+
+  return err(fmt"{function_call.location} Failed to find match function for function call {function_call.func_ref}")
+
+# matches local individual function with function call
+proc resolve_function_call_args(file: blocks.File, scope: Table[
+    string, ArgumentDefinition], function_call: FunctionCall,
+    function_def: FunctionDefinition): Result[seq[ResolvedArgument], string] =
+  if $(function_def.name) != $(function_call.name):
+    return err(fmt"{function_call.location} expected function with name {function_call.name} but found {function_def.name}")
+  if function_def.arg_def_list.len != function_call.arg_list.len:
+    return err(fmt"{function_call.location} expected {function_def.arg_def_list.len} but found {function_call.arg_list.len}")
+
+  var resolved_args: seq[ResolvedArgument]
+  for (arg_def, arg_value) in zip(function_def.arg_def_list,
+      function_call.arg_list):
+    # echo "resolve_argument: 3"
     let resolved_arg = ? file.resolve_argument(scope, arg_def.typ, arg_value)
     resolved_args.add(resolved_arg)
   ok(resolved_args)
 
-proc resolve_function_call_args(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], function_call: FunctionCall, function_defs: seq[
+# local function call arg resolution
+proc resolve_function_call_args(file: blocks.File, scope: Table[
+    string, ArgumentDefinition], function_call: FunctionCall,
+        function_defs: seq[
     FunctionDefinition]): Result[(FunctionDefinition, seq[ResolvedArgument]), string] =
   for function_def in function_defs:
     let maybe_resolved_args = file.resolve_function_call_args(scope,
@@ -249,71 +328,70 @@ proc resolve_function_call_args(file: blocks.File, scope: Table[string,
   return err(fmt"{function_call.location} Failed to find match function for function call {function_call.func_ref}")
 
 proc resolve_builtin_function_call(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], module: BuiltinModule,
+    ArgumentDefinition], module: Module,
         function_call: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let (func_def, resolved_args) = ? file.resolve_function_call_args(scope,
-      function_call, module.functions)
-  ok(new_resolved_function_call(module, func_def, resolved_args))
+  let (func_def, resolved_args) = ? file.resolve_function_call_args(module,
+      scope, function_call, module.builtin_module.functions)
+  ok(new_resolved_function_call(module.builtin_module, func_def, resolved_args))
 
 proc resolve_user_function_call(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], module: UserModule, function_call: FunctionCall,
+    ArgumentDefinition], module: Module, function_call: FunctionCall,
     ): Result[ResolvedFunctionCall, string] =
-  let function_defs = module.functions.map_it(it.definition)
-  let (func_def, resolved_args) = ? file.resolve_function_call_args(scope,
-      function_call, function_defs)
-  ok(new_resolved_function_call(module, func_def, resolved_args))
+  let function_defs = module.user_module.functions.map_it(it.definition)
+  let (func_def, resolved_args) = ? file.resolve_function_call_args(module,
+      scope, function_call, function_defs)
+  ok(new_resolved_function_call(module.user_module, func_def, resolved_args))
 
 proc resolve_module_function_call(file: blocks.File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall, func_module: Option[
-    Module]): Result[ResolvedFunctionCall, string] =
-  echo "find_module: 13"
+    UserModule]): Result[ResolvedFunctionCall, string] =
+  # echo "find_module: 13"
   let maybe_module = file.find_module(function_call.func_ref.module)
   if maybe_module.is_ok:
     let module = maybe_module.get
     case module.kind:
     of MK_BUILTIN:
-      file.resolve_builtin_function_call(scope, module.builtin_module, function_call)
+      file.resolve_builtin_function_call(scope, module, function_call)
     of MK_USER:
-      file.resolve_user_function_call(scope, module.user_module, function_call)
+      file.resolve_user_function_call(scope, module, function_call)
   else:
-    if func_module.is_none: return err("UNREACHABLE")
-    case func_module.get.kind:
-    of MK_BUILTIN:
-      err("UNREACHABLE")
-    of MK_USER:
-      let module = func_module.get.user_module
-      let generic = ? module.find_generic(
-        function_call.func_ref.module)
-      case generic.kind:
-      of GDK_DEFAULT: return err(fmt"{function_call.location} Generic `{generic.name}` does not have any constraint matching the function call at {generic.location}")
-      of GDK_EXTENDED: discard
+    if func_module.is_none:
+      return err("UNREACHABLE")
 
-      var arg_type_list: seq[Token]
-      var resolved_args: seq[ResolvedArgument]
-      for arg in function_call.arg_list:
-        case arg.kind:
-        of TK_ID:
-          if $(arg) notin scope:
-            return err("{arg.location} argument is not defined in scope")
-          resolved_args.add(new_resolved_argument(new_resolved_variable(scope[$(arg)])))
-          arg_type_list.add(scope[$(arg)].typ)
-        else:
-          return err("{function_call.func_ref.module.location} Generic function calls do not support literal as arguments")
+    let module = func_module.get
+    let generic = ? module.find_generic(function_call.func_ref.module)
 
-      for func_def in generic.constraints:
-        if $(func_def.name) != $(function_call.func_ref.name): continue
-        if func_def.arg_def_list.len != function_call.arg_list.len: continue
+    case generic.kind:
+    of GDK_DEFAULT: return err(fmt"{function_call.location} Generic `{generic.name}` does not have any constraint matching the function call at {generic.location}")
+    of GDK_EXTENDED: discard
 
-        var matched = true
-        for (expected_arg_def, actual_arg_type) in zip(func_def.arg_def_list,
-            arg_type_list):
-          matched = matched and ($(expected_arg_def.typ) == $(actual_arg_type))
-          if not matched: break
+    var arg_type_list: seq[ArgumentType]
+    var resolved_args: seq[ResolvedArgument]
+    for arg in function_call.arg_list:
+      case arg.kind:
+      of TK_ID:
+        if $(arg) notin scope:
+          return err("{arg.location} argument is not defined in scope")
+        resolved_args.add(new_resolved_argument(new_resolved_variable(scope[$(arg)])))
+        arg_type_list.add(scope[$(arg)].typ)
+      else:
+        return err("{function_call.func_ref.module.location} Generic function calls do not support literal as arguments")
 
-        if not matched: continue
+    for func_def in generic.constraints:
+      if $(func_def.name) != $(function_call.func_ref.name): continue
+      if func_def.arg_def_list.len != function_call.arg_list.len: continue
+
+      var matched = true
+      for (expected_arg_def, actual_arg_type) in zip(func_def.arg_def_list,
+          arg_type_list):
+        if $(expected_arg_def.typ) != $(actual_arg_type):
+          matched = false
+          break
+
+      if matched:
         return ok(new_resolved_function_call(generic.name, module.name,
             func_def, resolved_args))
-      err(fmt"{function_call.location} Generic `{generic.name}` does not have any constraint matching the function call at {generic.location}")
+    err(fmt"{function_call.location} Generic `{generic.name}` does not have any constraint matching the function call at {generic.location}")
 
 proc resolve_local_function_call(file: blocks.File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall): Result[
@@ -325,15 +403,15 @@ proc resolve_local_function_call(file: blocks.File, scope: Table[string,
 
 proc resolve_function_call(file: blocks.File, scope: Table[string,
     ArgumentDefinition], function_call: FunctionCall, func_module: Option[
-        Module]): Result[ResolvedFunctionCall, string] =
+        UserModule]): Result[ResolvedFunctionCall, string] =
   case function_call.func_ref.kind:
   of FRK_MODULE: file.resolve_module_function_call(scope, function_call,
       func_module)
   of FRK_LOCAL: file.resolve_local_function_call(scope, function_call)
 
-proc resolved_expression(file: blocks.File, scope: Table[string,
+proc resolve_expression(file: blocks.File, scope: Table[string,
     ArgumentDefinition], expression: Expression, func_module: Option[
-        Module], temp_var_count: var uint): Result[ResolvedExpression, string] =
+        UserModule], temp_var_count: var uint): Result[ResolvedExpression, string] =
   case expression.kind:
   of EK_VARIABLE:
     let resolved_variable = ? scope.resolve_variable(expression.variable)
@@ -352,8 +430,9 @@ proc resolved_expression(file: blocks.File, scope: Table[string,
         expression.function_call, func_module)
     ok(new_resolved_expression(resolved_function_call))
   of EK_LITERAL_INIT:
-    echo "find_module: 5"
-    let module = ? file.find_module(expression.literal_init.arg_type)
+    # echo "find_module: 5"
+    let module = ? file.find_module(new_argument_type(
+        expression.literal_init.arg_type))
     case module.kind:
     of MK_BUILTIN:
       let resolved_literal = ? module.builtin_module.resolve_literal(
@@ -366,27 +445,6 @@ proc resolved_expression(file: blocks.File, scope: Table[string,
     let resolved_union_init = ? file.resolve_union_init(scope,
         expression.union_init, temp_var_count)
     ok(new_resolved_expression(resolved_union_init))
-
-proc resolve_statement(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], temp_var_count: var uint,
-    statement: Statement, func_module: Option[Module]): Result[
-        ResolvedStatement, string] =
-  case statement.kind:
-  of SK_ASSIGNMENT:
-    if $(statement.destination) in scope:
-      let defined_arg = scope[$(statement.destination)]
-      return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
-
-    let resolved_expression = ? file.resolved_expression(scope,
-        statement.expression, func_module, temp_var_count)
-    ok(new_resolved_statement(statement.destination, resolved_expression))
-  of SK_EXPRESSION:
-    # assign the expresssion value to a temporary variable injected by the compiler
-    let assignment = statement.set_destination(fmt"__asl_temp_var_{temp_var_count}__")
-    temp_var_count += 1
-    let resolved_expression = ? file.resolved_expression(scope,
-        assignment.expression, func_module, temp_var_count)
-    ok(new_resolved_statement(assignment.destination, resolved_expression))
 
 proc resolve_union_pattern_fields(scope: Table[string, ArgumentDefinition],
     union_def: UnionFieldDefinition, union_pattern: UnionPattern): Result[seq[(
@@ -496,47 +554,174 @@ proc resolve_literal_pattern(match: Match, module: BuiltinModule): Result[
   else:
     err("MATCH RESOLUTION: UNREACHABLE")
 
-proc resolve_case_block(file: blocks.File, parent_scope: Table[string,
-    ArgumentDefinition], resolved_pattern: ResolvedPattern,
-        operand: ArgumentDefinition, temp_var_count: var uint,
-    case_block: Case, func_module: Option[Module]): Result[ResolvedCase, string] =
+# module
+proc resolve_statement(file: blocks.File, func_module: UserModule, scope: Table[
+    string, ArgumentDefinition], temp_var_count: var uint,
+        statement: Statement): Result[ResolvedStatement, string] =
+  case statement.kind:
+  of SK_ASSIGNMENT:
+    if $(statement.destination) in scope:
+      let defined_arg = scope[$(statement.destination)]
+      return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+
+    let resolved_expression = ? file.resolve_expression(scope,
+        statement.expression, some(func_module), temp_var_count)
+    ok(new_resolved_statement(statement.destination, resolved_expression))
+  of SK_EXPRESSION:
+    # assign the expresssion value to a temporary variable injected by the compiler
+    let assignment = statement.set_destination(fmt"__asl_temp_var_{temp_var_count}__")
+    temp_var_count += 1
+    let resolved_expression = ? file.resolve_expression(scope,
+        assignment.expression, some(func_module), temp_var_count)
+    ok(new_resolved_statement(assignment.destination, resolved_expression))
+
+# local
+proc resolve_statement(file: blocks.File, scope: Table[string,
+    ArgumentDefinition], temp_var_count: var uint,
+    statement: Statement): Result[ResolvedStatement, string] =
+  case statement.kind:
+  of SK_ASSIGNMENT:
+    if $(statement.destination) in scope:
+      let defined_arg = scope[$(statement.destination)]
+      return err(fmt"{statement.destination.location} {statement.destination} is already defined {defined_arg.location}")
+
+    let resolved_expression = ? file.resolve_expression(scope,
+        statement.expression, none(UserModule), temp_var_count)
+    ok(new_resolved_statement(statement.destination, resolved_expression))
+  of SK_EXPRESSION:
+    # assign the expresssion value to a temporary variable injected by the compiler
+    let assignment = statement.set_destination(fmt"__asl_temp_var_{temp_var_count}__")
+    temp_var_count += 1
+    let resolved_expression = ? file.resolve_expression(scope,
+        assignment.expression, none(UserModule), temp_var_count)
+    ok(new_resolved_statement(assignment.destination, resolved_expression))
+
+# module
+proc resolve_case_block(file: blocks.File, func_module: UserModule,
+    parent_scope: Table[string, ArgumentDefinition],
+    resolved_pattern: ResolvedPattern,
+    temp_var_count: var uint, operand: ArgumentDefinition,
+        case_block: Case): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
   var scope = parent_scope
   for arg in resolved_pattern.args:
     scope[$(arg.name)] = arg
   for (index, statement) in case_block.statements.pairs:
-    let resolved_statement = ? file.resolve_statement(scope, temp_var_count,
-        statement, func_module)
+    let resolved_statement = ? file.resolve_statement(func_module, scope,
+        temp_var_count, statement)
     resolved_statements.add(resolved_statement)
     scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
   return ok(new_resolved_case(resolved_pattern, operand.name,
       resolved_statements))
 
-proc resolve_else_block(file: blocks.File, parent_scope: Table[string,
-    ArgumentDefinition], temp_var_count: var uint, else_block: Else,
-        func_module: Option[Module]): Result[
+# local
+proc resolve_case_block(file: blocks.File, parent_scope: Table[string,
+    ArgumentDefinition], resolved_pattern: ResolvedPattern,
+    temp_var_count: var uint, operand: ArgumentDefinition,
+    case_block: Case): Result[ResolvedCase, string] =
+  var resolved_statements: seq[ResolvedStatement]
+  # copy current function scope to the case scope to avoid non local argument name conflicts
+  var scope = parent_scope
+  for arg in resolved_pattern.args:
+    scope[$(arg.name)] = arg
+  for (index, statement) in case_block.statements.pairs:
+    let resolved_statement = ? file.resolve_statement(scope, temp_var_count, statement)
+    resolved_statements.add(resolved_statement)
+    scope[$(resolved_statement.destination)] = resolved_statement.return_argument
+
+  return ok(new_resolved_case(resolved_pattern, operand.name,
+      resolved_statements))
+
+# module
+proc resolve_else_block(file: blocks.File, func_module: UserModule,
+    parent_scope: Table[string, ArgumentDefinition], temp_var_count: var uint,
+        else_block: Else): Result[
     ResolvedElse, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the else scope to avoid non local argument name conflicts
   var scope = parent_scope
   for (index, statement) in else_block.statements.pairs:
-    let resolved_statement = ? file.resolve_statement(scope, temp_var_count,
-        statement, func_module)
+    let resolved_statement = ? file.resolve_statement(func_module, scope,
+        temp_var_count, statement)
     resolved_statements.add(resolved_statement)
     scope[$(resolved_statement.destination)] = resolved_statement.return_argument
 
   return ok(new_resolved_else(resolved_statements))
 
-proc resolve_match(file: blocks.File, scope: Table[string,
-    ArgumentDefinition], temp_var_count: var uint, match: Match,
-        func_module: Option[Module]): Result[ResolvedMatch, string] =
+# local
+proc resolve_else_block(file: blocks.File, parent_scope: Table[string,
+    ArgumentDefinition], temp_var_count: var uint, else_block: Else): Result[
+    ResolvedElse, string] =
+  var resolved_statements: seq[ResolvedStatement]
+  # copy current function scope to the else scope to avoid non local argument name conflicts
+  var scope = parent_scope
+  for (index, statement) in else_block.statements.pairs:
+    let resolved_statement = ? file.resolve_statement(scope, temp_var_count, statement)
+    resolved_statements.add(resolved_statement)
+    scope[$(resolved_statement.destination)] = resolved_statement.return_argument
+
+  return ok(new_resolved_else(resolved_statements))
+
+# module
+proc resolve_match(file: blocks.File, func_module: UserModule, scope: Table[
+    string, ArgumentDefinition], temp_var_count: var uint,
+    match: Match): Result[ResolvedMatch, string] =
   if $(match.operand) notin scope:
     return err(fmt"{match.operand.location} variable `{match.operand}` is not defined in scope")
 
   let operand_def = scope[$(match.operand)]
-  echo "find_module: 6"
+  let operand_module = ? file.find_module(operand_def.typ)
+
+  var resolved_patterns: seq[ResolvedPattern]
+  case operand_module.kind:
+  of MK_BUILTIN:
+    resolved_patterns = ? resolve_literal_pattern(match,
+        operand_module.builtin_module)
+  of MK_USER:
+    let user_module = operand_module.user_module
+    case user_module.kind:
+    of UMK_UNION: resolved_patterns = ? scope.resolve_union_pattern(match, user_module)
+    of UMK_STRUCT: return err(fmt"{match.operand.location} `match` does not support struct values `{match.operand}`")
+    of UMK_DEFAULT: return err("MATCH RESOLUTION: UNREACHABLE")
+
+  var resolved_case_blocks: seq[ResolvedCase]
+  var resolved_else_blocks: seq[ResolvedElse]
+  if $(match.destination) in scope:
+    let defined_arg = scope[$(match.destination)]
+    return err(fmt"{match.destination.location} {match.destination} is already defined {defined_arg.location}")
+
+  for index, case_block in match.case_blocks.pairs:
+    let resolved_case_block = ? file.resolve_case_block(func_module, scope,
+        resolved_patterns[index], temp_var_count, operand_def, case_block)
+    resolved_case_blocks.add(resolved_case_block)
+
+  # Note: Even though this is a for loop but there can only be at most 1 else block.
+  for else_block in match.else_blocks:
+    let resolved_else_block = ? file.resolve_else_block(func_module, scope,
+        temp_var_count, else_block)
+    resolved_else_blocks.add(resolved_else_block)
+
+  let return_type = resolved_case_blocks[0].return_argument.typ
+  let case_return_args = resolved_case_blocks.map_it(it.return_argument)
+  let else_return_args = resolved_else_blocks.map_it(it.return_argument)
+  for return_arg in (case_return_args & else_return_args):
+    if $(return_type) != $(return_arg.typ):
+      return err(fmt"{return_arg.location} block is expected to return {return_type} but found {return_arg.typ}")
+
+  let return_argument = new_argument_definition(return_type, match.destination)
+  ok(new_resolved_match(match, match.destination, operand_def,
+      resolved_case_blocks, resolved_else_blocks, return_argument))
+
+# local
+proc resolve_match(file: blocks.File, scope: Table[string, ArgumentDefinition],
+    temp_var_count: var uint, match: Match): Result[ResolvedMatch, string] =
+  if $(match.operand) notin scope:
+    return err(fmt"{match.operand.location} variable `{match.operand}` is not defined in scope")
+
+  let operand_def = scope[$(match.operand)]
+  # echo "find_module: 6"
   let operand_module = ? file.find_module(operand_def.typ)
 
   var resolved_patterns: seq[ResolvedPattern]
@@ -559,13 +744,12 @@ proc resolve_match(file: blocks.File, scope: Table[string,
 
   for index, case_block in match.case_blocks.pairs:
     let resolved_case_block = ? file.resolve_case_block(scope,
-        resolved_patterns[index], operand_def, temp_var_count, case_block, func_module)
+        resolved_patterns[index], temp_var_count, operand_def, case_block)
     resolved_case_blocks.add(resolved_case_block)
 
   # Note: Even though this is a for loop but there can only be at most 1 else block.
   for else_block in match.else_blocks:
-    let resolved_else_block = ? file.resolve_else_block(scope,
-        temp_var_count, else_block, func_module)
+    let resolved_else_block = ? file.resolve_else_block(scope, temp_var_count, else_block)
     resolved_else_blocks.add(resolved_else_block)
 
   let return_type = resolved_case_blocks[0].return_argument.typ
@@ -579,58 +763,174 @@ proc resolve_match(file: blocks.File, scope: Table[string,
   ok(new_resolved_match(match, match.destination, operand_def,
       resolved_case_blocks, resolved_else_blocks, return_argument))
 
+# module
+proc resolve_function_step(file: blocks.File, module: UserModule, scope: Table[
+    string, ArgumentDefinition], temp_var_count: var uint,
+    step: FunctionStep): Result[ResolvedFunctionStep, string] =
+  case step.kind:
+  of FSK_STATEMENT:
+    let resolved_statement = ? file.resolve_statement(module, scope,
+        temp_var_count, step.statement)
+    ok(new_resolved_function_step(resolved_statement))
+  of FSK_MATCH:
+    let resolved_match = ? file.resolve_match(module, scope, temp_var_count, step.match)
+    ok(new_resolved_function_step(resolved_match))
+
+# local
 proc resolve_function_step(file: blocks.File, scope: Table[
     string, ArgumentDefinition], temp_var_count: var uint,
-        step: FunctionStep, func_module: Option[Module]): Result[
+        step: FunctionStep): Result[
     ResolvedFunctionStep, string] =
   case step.kind:
   of FSK_STATEMENT:
     let resolved_statement = ? file.resolve_statement(scope, temp_var_count,
-        step.statement, func_module)
+        step.statement)
     ok(new_resolved_function_step(resolved_statement))
   of FSK_MATCH:
-    let resolved_match = ? file.resolve_match(scope, temp_var_count, step.match, func_module)
+    let resolved_match = ? file.resolve_match(scope, temp_var_count, step.match)
     ok(new_resolved_function_step(resolved_match))
 
-proc resolve_function(file: blocks.File,
+# module
+proc resolve_argument_type(file: blocks.File, module: UserModule,
+    arg_type: ArgumentType): Result[ResolvedArgumentType, string] =
+  let maybe_module = file.find_module(arg_type)
+  if maybe_module.is_ok:
+    let arg_module = maybe_module.get
+    var resolved_children_arg_types: seq[ResolvedArgumentType]
+    for child_arg_type in arg_type.children:
+      # TODO: Make sure `child_arg_type` also satisfies all the generic constraints
+      let resolved_child_arg_type = ? file.resolve_argument_type(module, child_arg_type)
+      resolved_children_arg_types.add(resolved_child_arg_type)
+    ok(new_resolved_argument_type(arg_module, resolved_children_arg_types))
+  else:
+    let generic = ? module.find_generic(arg_type)
+    let resolved_generic = new_resolved_generic(module, generic)
+    ok(new_resolved_argument_type(resolved_generic))
+
+# local
+proc resolve_argument_type(file: blocks.File, arg_type: ArgumentType): Result[
+    ResolvedArgumentType, string] =
+  let module = ? file.find_module(arg_type)
+  var resolved_children_arg_types: seq[ResolvedArgumentType]
+  for child_arg_type in arg_type.children:
+    # TODO: Make sure `child_arg_type` also satisfies all the generic constraints
+    let resolved_child_arg_type = ? file.resolve_argument_type(child_arg_type)
+    resolved_children_arg_types.add(resolved_child_arg_type)
+  ok(new_resolved_argument_type(module, resolved_children_arg_types))
+
+# module
+proc resolve_argument_definition(file: blocks.File, module: UserModule,
+    arg_def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_arg_type = ? file.resolve_argument_type(module, arg_def.typ)
+  ok(new_resolved_argument_definition(arg_def.name, resolved_arg_type))
+
+# local
+proc resolve_argument_definition(file: blocks.File,
+    arg_def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_arg_type = ? file.resolve_argument_type(arg_def.typ)
+  ok(new_resolved_argument_definition(arg_def.name, resolved_arg_type))
+
+# module
+proc resolve_function_definition(file: blocks.File, module: UserModule,
+    function_def: FunctionDefinition): Result[(ResolvedFunctionDefinition,
+        Table[string, ArgumentDefinition]), string] =
+  var scope: Table[string, ArgumentDefinition]
+  var resolved_arg_defs: seq[ResolvedArgumentDefinition]
+  for arg_def in function_def.arg_def_list:
+    # arg_def.name uniqueness check
+    if $(arg_def.name) in scope:
+      let defined_arg = scope[$(arg_def.name)]
+      return err(fmt"{arg_def.location} {arg_def.name} is already defined {defined_arg.location}")
+    scope[$(arg_def.name)] = arg_def
+
+    # resolution
+    let resolved_arg_def = ? file.resolve_argument_definition(module, arg_def)
+    resolved_arg_defs.add(resolved_arg_def)
+
+  let return_module = ? file.find_module(function_def.return_type)
+  let resolved_func_def = new_resolved_function_definition(function_def.name,
+      resolved_arg_defs, return_module)
+  ok((resolved_func_def, scope))
+
+# local
+proc resolve_function_definition(file: blocks.File,
+    func_def: FunctionDefinition): Result[(ResolvedFunctionDefinition, Table[
+    string, ArgumentDefinition]), string] =
+  var scope: Table[string, ArgumentDefinition]
+  var resolved_arg_defs: seq[ResolvedArgumentDefinition]
+
+  for arg_def in func_def.arg_def_list:
+    # arg_def.name uniqueness check
+    if $(arg_def.name) in scope:
+      let defined_arg = scope[$(arg_def.name)]
+      return err(fmt"{arg_def.location} {arg_def.name} is already defined {defined_arg.location}")
+    scope[$(arg_def.name)] = arg_def
+
+    # resolution
+    let resolved_arg_def = ? file.resolve_argument_definition(arg_def)
+    resolved_arg_defs.add(resolved_arg_def)
+
+  let return_module = ? file.find_module(func_def.return_type)
+  ok((new_resolved_function_definition(func_def.name, resolved_arg_defs,
+      return_module), scope))
+
+# module
+proc resolve_function(file: blocks.File, module: UserModule, function: Function,
     function_ref: ResolvedFunctionRef): Result[ResolvedFunction, string] =
-  var func_module: Option[Module]
-  let function =
-    case function_ref.kind:
-    of RFRK_MODULE:
-      echo "find_module: 7"
-      let module = ? file.find_module(function_ref.module_name)
-      func_module = some(module)
-      case module.kind:
-      of MK_BUILTIN:
-        return err(fmt"Builtin module `{module.name}` does not require resolution.")
-      of MK_USER:
-        ? module.user_module.find_function(function_ref.function_def)
-    of RFRK_FUNCTION:
-      ? file.find_function(function_ref.function_def)
-
-  var
-    temp_var_count: uint = 0
-    scope: Table[string, ArgumentDefinition]
-    resolved_function_steps: seq[ResolvedFunctionStep]
-
-  echo "find_module: 8"
-  discard ? file.find_module(function.definition.return_type)
-  for arg in function.arg_def_list:
-    echo "find_module: 9"
-    discard ? file.find_module(arg.typ)
-    if $(arg.name) in scope:
-      let defined_arg = scope[$(arg.name)]
-      return err(fmt"{arg.location} {arg.name} is already defined {defined_arg.location}")
-    scope[$(arg.name)] = arg
+  var temp_var_count: uint = 0
+  var resolved_function_steps: seq[ResolvedFunctionStep]
+  var (resolved_function_def, scope) = ? file.resolve_function_definition(
+      module, function.definition)
 
   for (index, step) in function.function_steps.pairs:
-    let resolved_function_step = ? file.resolve_function_step(scope,
-        temp_var_count, step, func_module)
+    let resolved_function_step = ? file.resolve_function_step(module, scope,
+        temp_var_count, step)
     resolved_function_steps.add(resolved_function_step)
     scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
 
-  new_resolved_function(function_ref, function, resolved_function_steps)
+  let expected_return_type = resolved_function_def.return_type
+  let actual_return_type = resolved_function_steps[^1].return_argument.typ
+  if $(expected_return_type.name) != $(actual_return_type):
+    return err(fmt"{function.location} expected {function.name} to return {expected_return_type.name} but found {actual_return_type}")
+  ok(new_resolved_function(function_ref, function, resolved_function_steps))
+
+# local
+proc resolve_function(file: blocks.File, function: Function,
+    function_ref: ResolvedFunctionRef): Result[ResolvedFunction, string] =
+  var
+    temp_var_count: uint = 0
+    resolved_function_steps: seq[ResolvedFunctionStep]
+
+  var (resolved_function_definition, scope) = ?
+    file.resolve_function_definition(function.definition)
+
+  for (index, step) in function.function_steps.pairs:
+    let resolved_function_step = ? file.resolve_function_step(scope,
+        temp_var_count, step)
+    resolved_function_steps.add(resolved_function_step)
+    scope[$(resolved_function_step.destination)] = resolved_function_step.return_argument
+
+  let expected_return_type = resolved_function_definition.return_type
+  let actual_return_type = resolved_function_steps[^1].return_argument.typ
+  if $(actual_return_type) != $(expected_return_type.name):
+    return err(fmt"{function.location} Expected function to return `{expected_return_type.name}` but found {actual_return_type}")
+  ok(new_resolved_function(function_ref, function, resolved_function_steps))
+
+proc resolve_function_ref(file: blocks.File,
+    function_ref: ResolvedFunctionRef): Result[ResolvedFunction, string] =
+  case function_ref.kind:
+  of RFRK_MODULE:
+    let module = ? file.find_module(new_argument_type(function_ref.module_name))
+    case module.kind:
+    of MK_BUILTIN:
+      err(fmt"Builtin module `{module.name}` does not require resolution.")
+    of MK_USER:
+      let function = ? module.user_module.find_function(
+          function_ref.function_def)
+      file.resolve_function(module.user_module, function, function_ref)
+  of RFRK_FUNCTION:
+    let function = ? file.find_function(function_ref.function_def)
+    file.resolve_function(function, function_ref)
 
 proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
     ResolvedFunctionRef]): Result[void, string] =
@@ -638,7 +938,7 @@ proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
     let func_ref = new_resolved_function_ref(function.definition)
     if func_ref notin visited_functions:
       echo fmt"Unused function: {function.location} {function.name}"
-      discard ? file.resolve_function(func_ref)
+      discard ? file.resolve_function_ref(func_ref)
 
   for module in file.user_modules:
     for function in module.functions:
@@ -646,7 +946,7 @@ proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
           function.definition)
       if func_ref notin visited_functions:
         echo fmt"Unused function: {function.location} {module.name}.{function.name}"
-        discard ? file.resolve_function(func_ref)
+        discard ? file.resolve_function_ref(func_ref)
   ok()
 
 proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
@@ -665,7 +965,7 @@ proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
     visited_function_refs.incl(function_ref)
     stack.set_len(stack.len - 1)
 
-    let resolved_function = ? file.resolve_function(function_ref)
+    let resolved_function = ? file.resolve_function_ref(function_ref)
     let new_functions = resolved_function.function_refs.difference(visited_function_refs)
     for (module_name, impl_map) in resolved_function.generic_impls.pairs:
       if module_name notin generic_impls:
@@ -682,13 +982,29 @@ proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
   ok((resolved_functions, generic_impls))
 
 # TODO: Use generic impls in struct resolution
-proc resolve_user_module_struct(file: blocks.File, module_name: Token,
+proc resolve_user_module_struct(file: blocks.File, module: UserModule,
     struct: Struct, generic_impls: Table[string, Table[string, HashSet[
         string]]]): Result[ResolvedStruct, string] =
   for (name, field) in struct.fields.pairs:
-    echo "find_module: 10"
-    discard ? file.find_module(field.typ)
-  ok(new_resolved_struct(module_name, struct))
+    # echo "find_module: 10"
+    let maybe_module = file.find_module(field.typ)
+    if maybe_module.is_ok:
+      discard
+    else:
+      discard ? module.find_generic(field.typ)
+
+  if $(module.name) in generic_impls:
+    # NOTE: Generic types are nothing but unions implemented by the user
+    # of the library, so internally compiler collects all the concrete types
+    # turns them into a union therefore uses the limit of 256 union branches
+    # That means if a generic has more than 256 (id field is of 1 byte)
+    # implementations, just raise error for now.
+    for (generic, concrete) in generic_impls[$(module.name)].pairs:
+      if concrete.len > 256:
+        return err(fmt"{module.location} Generic `{generic}` types can have at max 256 implementations but found {concrete.len}")
+    ok(new_resolved_struct(module, struct, generic_impls[$(module.name)]))
+  else:
+    ok(new_resolved_struct(module, struct))
 
 # TODO: Use generic impls in union resolution
 proc resolve_user_module_union(file: blocks.File, module: UserModule,
@@ -696,7 +1012,7 @@ proc resolve_user_module_union(file: blocks.File, module: UserModule,
         string]]]): Result[ResolvedUnion, string] =
   for (_, struct) in union.fields.pairs:
     for (_, field) in struct.fields.pairs:
-      echo "find_module: 11"
+      # echo "find_module: 11"
       let maybe_module = file.find_module(field.typ)
       if maybe_module.is_ok:
         discard
@@ -723,7 +1039,7 @@ proc resolve_user_module(file: blocks.File, module: UserModule,
   case module.kind:
   of UMK_DEFAULT: err(fmt"{module.location} Module `{module.name}` is neither a struct nor union")
   of UMK_STRUCT:
-    let struct = ? file.resolve_user_module_struct(module.name, module.struct, generic_impls)
+    let struct = ? file.resolve_user_module_struct(module, module.struct, generic_impls)
     ok(new_resolved_user_module(struct))
   of UMK_UNION:
     let union = ? file.resolve_user_module_union(module, module.union, generic_impls)

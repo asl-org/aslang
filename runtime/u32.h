@@ -6,6 +6,7 @@
 // Module: U32
 
 U32 U32_init(U32 a) { return a; }
+U64 U32_byte_size(U64 items) { return items * sizeof(U32); }
 
 // safe
 U32 U32_and(U32 a, U32 b) { return a & b; }
@@ -36,5 +37,11 @@ U32 U32_from_S32(S32 value) { return (U32)value; }
 U32 U32_from_S64(S64 value) { return (U32)value; }
 U32 U32_from_U64(U64 value) { return (U32)value; }
 U32 U32_from_Pointer(Pointer ptr) { return (*((U32 *)ptr)); }
+
+Pointer U32_write_Pointer(Pointer ptr, U32 value)
+{
+  (*((U32 *)ptr)) = value;
+  return ptr;
+}
 
 #endif // ASL_U32_H

@@ -5,6 +5,7 @@
 #include <string.h>
 
 Pointer Pointer_init(Pointer ptr) { return ptr; }
+U64 Pointer_byte_size(U64 items) { return items * sizeof(Pointer); }
 
 Pointer Pointer_shift(Pointer ptr, U64 offset) { return ptr + offset; }
 

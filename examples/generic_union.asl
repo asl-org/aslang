@@ -30,7 +30,7 @@ module Status:
     Err:
       Error error
 
-  fn print(Status status): U64
+  fn print(Status[Value, Error] status): U64
     a = match status:
       case Ok { value: value }:
         Value.print(value)
@@ -42,12 +42,12 @@ fn start(U8 seed): U8
 
   success_code = U64 10
   test_value = TestValue { value: success_code }
-  success = Status.Ok { value: test_value }
-  Status.print(success)
+  success = Status[TestValue, TestError].Ok { value: test_value }
+  Status[TestValue, TestError].print(success)
 
   failure_code = S32 -12
   test_error = TestError { code: failure_code }
-  failure = Status.Err { error: test_error }
-  Status.print(failure)
+  failure = Status[TestValue, TestError].Err { error: test_error }
+  Status[TestValue, TestError].print(failure)
 
   exit_success

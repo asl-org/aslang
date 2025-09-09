@@ -1,6 +1,6 @@
 import strutils, sequtils, strformat
 
-import token
+import token, arg_def
 
 type
   FunctionRefKind* = enum
@@ -9,12 +9,12 @@ type
     name*: Token
     case kind*: FunctionRefKind
     of FRK_LOCAL: discard
-    of FRK_MODULE: module*: Token
+    of FRK_MODULE: module*: ArgumentType
 
 proc new_function_ref*(name: Token): FunctionRef =
   FunctionRef(kind: FRK_LOCAL, name: name)
 
-proc new_function_ref*(module: Token, name: Token): FunctionRef =
+proc new_function_ref*(module: ArgumentType, name: Token): FunctionRef =
   FunctionRef(kind: FRK_MODULE, module: module, name: name)
 
 proc location*(func_ref: FunctionRef): Location =
@@ -42,7 +42,7 @@ proc location*(function_call: FunctionCall): Location =
 proc name*(function_call: FunctionCall): Token =
   function_call.func_ref.name
 
-proc module*(function_call: FunctionCall): Token =
+proc module*(function_call: FunctionCall): ArgumentType =
   function_call.func_ref.module
 
 proc `$`*(function_call: FunctionCall): string =

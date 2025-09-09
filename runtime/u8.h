@@ -6,6 +6,7 @@
 // Module: U8
 
 U8 U8_init(U8 a) { return a; }
+U64 U8_byte_size(U64 items) { return items * sizeof(U8); }
 
 // safe
 U8 U8_and(U8 a, U8 b) { return a & b; }
@@ -34,5 +35,11 @@ U8 U8_from_U16(U16 value) { return (U8)value; }
 U8 U8_from_U32(U32 value) { return (U8)value; }
 U8 U8_from_U64(U64 value) { return (U8)value; }
 U8 U8_from_Pointer(Pointer ptr) { return (*((U8 *)ptr)); }
+
+Pointer U8_write_Pointer(Pointer ptr, U8 value)
+{
+  (*((U8 *)ptr)) = value;
+  return ptr;
+}
 
 #endif // ASL_U8_H

@@ -1,8 +1,9 @@
-import strutils, strformat, sequtils
+import strutils, strformat, sequtils, tables, sets
 
 import "../blocks"
 
 const ASL_PREFIX = "__asl__"
+const ASL_UNION_ID = "__asl_union_id__"
 
 ### C CODE GENERARTION UTILS START
 
@@ -37,11 +38,17 @@ proc setter_c(function_name: string, field_type: string,
 ### C CODE GENERARTION UTILS END
 
 type ResolvedStruct* = ref object of RootObj
-  module_name: Token
+  module: UserModule
   struct: Struct
+  generic_impls: Table[string, HashSet[string]]
 
-proc new_resolved_struct*(module_name: Token, struct: Struct): ResolvedStruct =
-  ResolvedStruct(module_name: module_name, struct: struct)
+proc new_resolved_struct*(module: UserModule, struct: Struct): ResolvedStruct =
+  ResolvedStruct(module: module, struct: struct)
+
+proc new_resolved_struct*(module: UserModule, struct: Struct,
+    generic_impls: Table[string, HashSet[string]]): ResolvedStruct =
+  ResolvedStruct(module: module, struct: struct,
+      generic_impls: generic_impls)
 
 proc getter_h(module_name: Token, field: ArgumentDefinition): string =
   getter_h(field.native_type, fmt"{module_name}_get_{field.name}")
@@ -90,8 +97,10 @@ proc free_c(module_name: Token): string =
 
 proc h*(resolved_struct: ResolvedStruct): string =
   let
-    module_name = resolved_struct.module_name
+    module = resolved_struct.module
+    module_name = module.name
     fields = resolved_struct.struct.fields
+    generic_impls = resolved_struct.generic_impls
 
   var headers: seq[string]
   for field in fields:
@@ -101,22 +110,94 @@ proc h*(resolved_struct: ResolvedStruct): string =
   headers.add(init_h(module_name, fields))
   headers.add(free_h(module_name))
 
+  for generic in module.generics:
+    # in case of generic types there will be concrete impls
+    if $(generic.name) in generic_impls:
+      # generic id
+      headers.add(fmt"Pointer {module_name}_{generic.name}_get_{ASL_UNION_ID}(Pointer);")
+      headers.add(fmt"Pointer {module_name}_{generic.name}_set_{ASL_UNION_ID}(Pointer, U8);")
+      for concrete in generic_impls[$(generic.name)]:
+        let concrete_field = new_argument_definition(concrete, "temp_arg_name")
+        # generic init
+        headers.add(fmt"Pointer {module_name}_{generic.name}_{concrete}_init({concrete_field.native_type});")
+      let generic_constraints = module.generics[module.generic_map[$(
+          generic.name)]].constraints
+      for constraint in generic_constraints:
+        let args_str = constraint.arg_def_list.map_it(it.native_type).join(", ")
+        let return_arg = new_argument_definition($(constraint.return_type), "temp_arg_name")
+        headers.add(fmt"{return_arg.native_type} {module_name}_{generic.name}_{constraint.name}({args_str});")
+
   return headers.join("\n")
 
 proc c*(resolved_struct: ResolvedStruct): string =
   let
-    module_name = resolved_struct.module_name
+    module = resolved_struct.module
+    module_name = module.name
     fields = resolved_struct.struct.fields
+    generic_impls = resolved_struct.generic_impls
 
   var
     offset: uint = 0
-    code: seq[string]
+    impl: seq[string]
 
   for field in fields:
-    code.add(getter_c(module_name, field, offset))
-    code.add(setter_c(module_name, field, offset))
+    impl.add(getter_c(module_name, field, offset))
+    impl.add(setter_c(module_name, field, offset))
     offset += field.byte_size
 
-  code.add(init_c(module_name, fields, offset))
-  code.add(free_c(module_name))
-  return code.join("\n\n")
+  for generic in module.generics:
+    # in case of generic types there will be concrete impls
+    if $(generic.name) in generic_impls:
+      # generic id
+      impl.add([
+        fmt"Pointer {module_name}_{generic.name}_get_{ASL_UNION_ID}(Pointer ptr)",
+        "{",
+        fmt"return U8_from_Pointer(ptr);",
+        "}",
+      ])
+
+      impl.add(@[
+        fmt"Pointer {module_name}_{generic.name}_set_{ASL_UNION_ID}(Pointer ptr, U8 id)",
+        "{",
+        fmt"Pointer _ = Pointer_write_U8(ptr, id);",
+        fmt"return ptr;",
+        "}",
+      ])
+      for (gen_index, concrete) in generic_impls[$(generic.name)].to_seq.pairs:
+        let concrete_field = new_argument_definition(concrete, "temp_arg_name")
+        # generic init
+        impl.add(@[
+          fmt"Pointer {module_name}_{generic.name}_{concrete}_init({concrete_field.native_type} value)",
+          "{",
+          fmt"Pointer ptr = System_allocate(1 + {concrete_field.byte_size});",
+            fmt"Pointer _1 = {module_name}_{generic.name}_set_{ASL_UNION_ID}(ptr, {gen_index});",
+            fmt"Pointer _2 = {module_name}_{generic.name}_{concrete}_set(ptr, value);",
+            fmt"return ptr;",
+          "}"
+        ])
+      let generic_constraints = module.generics[module.generic_map[$(
+          generic.name)]].constraints
+      for constraint in generic_constraints:
+        var args: seq[string]
+        var generic_args: seq[ArgumentDefinition]
+        for arg_def in constraint.arg_def_list:
+          if $(arg_def.typ) == $(generic.name):
+            args.add(arg_def.native_type)
+            generic_args.add(arg_def)
+          else:
+            args.add(arg_def.native_type)
+
+        if generic_args.len == 0:
+          if $(constraint.return_type) != $(generic.name):
+            echo "WARNING: it should never occur"
+          else:
+            discard
+        else:
+          discard
+        let args_str = args.join(", ")
+        let return_arg = new_argument_definition($(constraint.return_type), "temp_arg_name")
+        impl.add(fmt"{return_arg.native_type} {module_name}_{generic.name}_{constraint.name}({args_str});")
+
+  impl.add(init_c(module_name, fields, offset))
+  impl.add(free_c(module_name))
+  return impl.join("\n\n")

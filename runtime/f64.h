@@ -5,6 +5,7 @@
 
 // Module: F64
 F64 F64_init(F64 a) { return a; }
+U64 F64_byte_size(U64 items) { return items * sizeof(F64); }
 
 // unsafe
 F64 F64_add(F64 a, F64 b) { return a + b; }
@@ -28,5 +29,10 @@ F64 F64_from_S64(S64 value) { return (F64)value; }
 F64 F64_from_U64(U64 value) { return (F64)value; }
 F64 F64_from_F32(F32 value) { return (F64)value; }
 F64 F64_from_Pointer(Pointer ptr) { return (*((F64 *)ptr)); }
+Pointer F64_write_Pointer(Pointer ptr, F64 value)
+{
+  (*((F64 *)ptr)) = value;
+  return ptr;
+}
 
 #endif // ASL_F64_H

@@ -1,8 +1,20 @@
-import results, strformat, sequtils, sets, strutils, tables
+import strformat, sequtils, sets, strutils, tables
 
 import "../blocks"
+import arg
 import function_ref
 import function_step
+
+type ResolvedFunctionDefinition* = ref object of RootObj
+  name: Token
+  arg_defs: seq[ResolvedArgumentDefinition]
+  return_type*: Module
+
+proc new_resolved_function_definition*(name: Token, arg_defs: seq[
+    ResolvedArgumentDefinition],
+    return_type: Module): ResolvedFunctionDefinition =
+  ResolvedFunctionDefinition(name: name, arg_defs: arg_defs,
+      return_type: return_type)
 
 type ResolvedFunction* = ref object of RootObj
   func_ref*: ResolvedFunctionRef
@@ -45,8 +57,5 @@ proc c*(resolved_function: ResolvedFunction): string =
   @[signature, "{", body.join("\n"), "}"].join("\n")
 
 proc new_resolved_function*(func_ref: ResolvedFunctionRef, function: Function,
-    steps: seq[ResolvedFunctionStep]): Result[ResolvedFunction, string] =
-  let actual_return_type = steps[^1].return_argument.typ
-  if $(function.return_type) != $(actual_return_type):
-    return err(fmt"{function.location} expected {function.name} to return {function.return_type} but found {actual_return_type}")
-  ok(ResolvedFunction(func_ref: func_ref, function: function, steps: steps))
+    steps: seq[ResolvedFunctionStep]): ResolvedFunction =
+  ResolvedFunction(func_ref: func_ref, function: function, steps: steps)

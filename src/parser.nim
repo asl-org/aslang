@@ -81,8 +81,36 @@ proc expect_ignorable_line(parser: Parser): Result[void, string] =
 
   return err(fmt"{parser.location} failed to match empty line or comment")
 
+proc expect_argument_type(parser: Parser): Result[ArgumentType, string] =
+  let parent = ? parser.expect(TK_ID)
+  let maybe_generic = parser.expect(TK_OSQUARE)
+  # simple type
+  if maybe_generic.is_err:
+    return ok(new_argument_type(parent))
+
+  var children: seq[ArgumentType]
+  # generic type
+  while true:
+    discard parser.expect_any(TK_SPACE)
+    let arg_type = ? parser.expect_argument_type()
+    children.add(arg_type)
+    discard parser.expect_any(TK_SPACE)
+    let maybe_comma = parser.expect(TK_COMMA)
+    # there is more
+    if maybe_comma.is_ok: continue
+
+    let maybe_close_square = parser.expect(TK_CSQUARE)
+    if maybe_close_square.is_ok:
+      break
+    else:
+      return err("{parser.location} expected a `,` or `]` but failed due to {maybe_close_square.error}")
+
+  if children.len == 0:
+    return err("{parser.location} expected generic type but found none")
+  ok(new_argument_type(parent, children))
+
 proc expect_argument_definition(parser: Parser): Result[ArgumentDefinition, string] =
-  let arg_type = ? parser.expect(TK_ID)
+  let arg_type = ? parser.expect_argument_type()
   discard ? parser.expect_at_least_one(TK_SPACE)
   let arg_name = ? parser.expect(TK_ID)
   ok(new_argument_definition(arg_type, arg_name))
@@ -114,7 +142,7 @@ proc expect_function_definition(parser: Parser): Result[FunctionDefinition, stri
   discard parser.expect_any(TK_SPACE)
   discard ? parser.expect(TK_COLON)
   discard parser.expect_any(TK_SPACE)
-  let return_type = ? parser.expect(TK_ID)
+  let return_type = ? parser.expect_argument_type()
   ok(new_function_definition(function_name, arg_def_list, return_type, fn.location))
 
 proc expect_argument_list(parser: Parser): Result[seq[Token], string] =
@@ -132,15 +160,21 @@ proc expect_argument_list(parser: Parser): Result[seq[Token], string] =
   discard ? parser.expect(TK_CPAREN)
   ok(arg_list)
 
-proc expect_function_ref(parser: Parser): Result[FunctionRef, string] =
-  var name = ? parser.expect(TK_ID)
-  let maybe_period = parser.expect(TK_PERIOD)
-  if maybe_period.is_err:
-    return ok(new_function_ref(name))
+proc expect_module_function_ref(parser: Parser): Result[FunctionRef, string] =
+  let arg_type = ? parser.expect_argument_type()
+  discard ? parser.expect(TK_PERIOD)
+  let name = ? parser.expect(TK_ID)
+  ok(new_function_ref(arg_type, name))
 
-  let module = name
-  name = ? parser.expect(TK_ID)
-  ok(new_function_ref(module, name))
+proc expect_function_ref(parser: Parser): Result[FunctionRef, string] =
+  let start = parser.index
+  let maybe_module_func_ref = parser.expect_module_function_ref()
+  if maybe_module_func_ref.is_ok:
+    return ok(maybe_module_func_ref.get)
+  else: parser.index = start
+
+  let name = ? parser.expect(TK_ID)
+  ok(new_function_ref(name))
 
 proc expect_function_call(parser: Parser): Result[FunctionCall, string] =
   let function_ref = ? parser.expect_function_ref()
@@ -165,7 +199,7 @@ proc expect_struct_init_fields(parser: Parser): Result[seq[(Token, Token)], stri
   ok(fields)
 
 proc expect_struct_init(parser: Parser): Result[StructInit, string] =
-  let struct = ? parser.expect(TK_ID)
+  let struct = ? parser.expect_argument_type()
   discard parser.expect_any(TK_SPACE)
   discard ? parser.expect(TK_OCURLY)
   discard parser.expect_any(TK_SPACE)
@@ -203,7 +237,7 @@ proc expect_union_init_fields(parser: Parser): Result[seq[(Token, Token)], strin
   ok(fields)
 
 proc expect_union_init(parser: Parser): Result[UnionInit, string] =
-  let union_name = ? parser.expect(TK_ID)
+  let union_name = ? parser.expect_argument_type()
   discard ? parser.expect(TK_PERIOD)
   let union_field_name = ? parser.expect(TK_ID)
   discard parser.expect_any(TK_SPACE)
@@ -229,7 +263,8 @@ proc expect_expression(parser: Parser): Result[Expression, string] =
   let maybe_union_init = parser.expect_union_init()
   if maybe_union_init.is_ok:
     return ok(new_expression(maybe_union_init.get))
-  else: parser.index = start
+  else:
+    parser.index = start
 
   let maybe_struct_getter = parser.expect_struct_getter()
   if maybe_struct_getter.is_ok:

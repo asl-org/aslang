@@ -40,7 +40,7 @@ proc expect_double_quote(content: string, start: int): Result[string, string] =
 proc expect_backslash(content: string, start: int): Result[string, string] =
   if start >= content.len:
     return err("expected '\\' but reached end of input")
-  if content[start] == '"':
+  if content[start] == '\\':
     return err("expected '\\' but found " & $(content[start]))
   return ok(content.substr(start, start))
 
@@ -55,7 +55,7 @@ proc expect_escaped_double_quote(content: string, start: int): Result[string, st
 proc expect_visible_ascii(content: string, start: int): Result[string, string] =
   if start >= content.len:
     return err(fmt"expected a visible ascii character between 32-126 but reached end of input")
-  if content[start] != '_' and (not content[start].is_alpha_ascii):
+  if content[start].ord notin 32..126:
     return err(fmt"expected a visible ascii character between 32-126 but found {content[start]}")
   return ok(content.substr(start, start))
 

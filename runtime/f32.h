@@ -5,6 +5,7 @@
 
 // Module: F32
 F32 F32_init(F32 a) { return a; }
+U64 F32_byte_size(U64 items) { return items * sizeof(F32); }
 
 // unsafe
 F32 F32_add(F32 a, F32 b) { return a + b; }
@@ -28,5 +29,9 @@ F32 F32_from_U32(U32 value) { return (F32)value; }
 F32 F32_from_U64(U64 value) { return (F32)value; }
 F32 F32_from_F64(F64 value) { return (F32)value; }
 F32 F32_from_Pointer(Pointer ptr) { return (*((F32 *)ptr)); }
-
+Pointer F32_write_Pointer(Pointer ptr, F32 value)
+{
+  (*((F32 *)ptr)) = value;
+  return ptr;
+}
 #endif // ASL_F32_H

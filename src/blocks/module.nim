@@ -1,6 +1,6 @@
 import strutils, options, results, strformat, sequtils, hashes, tables
 
-import token, function, struct
+import token, function, struct, arg_def
 
 type ModuleDefinition* = ref object of RootObj
   name*: Token
@@ -43,7 +43,9 @@ proc find_function*(module: BuiltinModule,
 proc u8_module(): BuiltinModule =
   new_builtin_module("U8", @[
     ("U8", "init", @[("U8", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
     ("U8", "from_Pointer", @[("Pointer", "p")]),
+    ("Pointer", "write_Pointer", @[("Pointer", "a"), ("U8", "b")]),
     ("U8", "lshift", @[("U8", "a"), ("U64", "b")]),
     ("U8", "rshift", @[("U8", "a"), ("U64", "b")]),
     ("U8", "and", @[("U8", "a"), ("U8", "b")]),
@@ -54,42 +56,51 @@ proc u8_module(): BuiltinModule =
 proc u16_module(): BuiltinModule =
   new_builtin_module("U16", @[
     ("U16", "init", @[("U16", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
   ])
 
 proc u32_module(): BuiltinModule =
   new_builtin_module("U32", @[
     ("U32", "init", @[("U32", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
   ])
 
 proc u64_module(): BuiltinModule =
   new_builtin_module("U64", @[
     ("U64", "init", @[("U64", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
     ("S64", "compare", @[("U64", "a"), ("U64", "b")]),
     ("U64", "add", @[("U64", "a"), ("U64", "b")]),
     ("U64", "subtract", @[("U64", "a"), ("U64", "b")]),
     ("U64", "multiply", @[("U64", "a"), ("U64", "b")]),
     ("U64", "quotient", @[("U64", "a"), ("U64", "b")]),
     ("U64", "remainder", @[("U64", "a"), ("U64", "b")]),
+    ("U64", "from_Pointer", @[("Pointer", "a")]),
+    ("Pointer", "write_Pointer", @[("Pointer", "a"), ("U64", "b")]),
   ])
 
 proc s8_module(): BuiltinModule =
   new_builtin_module("S8", @[
     ("S8", "init", @[("S8", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
   ])
 
 proc s16_module(): BuiltinModule =
   new_builtin_module("S16", @[
     ("S16", "init", @[("S16", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
   ])
 
 proc s32_module(): BuiltinModule =
   new_builtin_module("S32", @[
     ("S32", "init", @[("S32", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
   ])
 
 proc s64_module(): BuiltinModule =
   new_builtin_module("S64", @[
     ("S64", "init", @[("S64", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
     ("S64", "from_U8", @[("U8", "a")]),
     ("S64", "add", @[("S64", "a"), ("S64", "b")]),
     ("S64", "subtract", @[("S64", "a"), ("S64", "b")]),
@@ -102,18 +113,20 @@ proc s64_module(): BuiltinModule =
 proc f32_module(): BuiltinModule =
   new_builtin_module("F32", @[
     ("F32", "init", @[("F32", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
   ])
 
 proc f64_module(): BuiltinModule =
   new_builtin_module("F64", @[
     ("F64", "init", @[("F64", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
   ])
 
 proc pointer_module(): BuiltinModule =
   new_builtin_module("Pointer", @[
     ("Pointer", "init", @[("Pointer", "a")]),
+    ("U64", "byte_size", @[("U64", "a")]),
     ("Pointer", "shift", @[("Pointer", "a"), ("U64", "b")]),
-    ("Pointer", "write_U8", @[("Pointer", "a"), ("U8", "b")]),
   ])
 
 proc system_module(): BuiltinModule =
@@ -178,9 +191,13 @@ proc find_function*(module: UserModule, func_def: FunctionDefinition): Result[
   else:
     ok(module.functions[module.function_map[func_def.hash]])
 
-proc find_generic*(module: UserModule, generic_name: Token): Result[Generic, string] =
-  if $(generic_name) notin module.generic_map:
-    err(fmt"Generic `{generic_name}` not defined in the module `{module.name}`")
+proc find_generic*(module: UserModule, generic_name: ArgumentType): Result[
+    Generic, string] =
+  if generic_name.children.len > 0:
+    return err(fmt"TODO: implement find_generic for generic argument types")
+
+  if $(generic_name.parent) notin module.generic_map:
+    err(fmt"Generic `{generic_name.parent}` not defined in the module `{module.name}`")
   else:
     let gen_index = module.generic_map[$(generic_name)]
     ok(module.generics[gen_index])
@@ -232,7 +249,7 @@ proc add_union*(module: UserModule, union: Union): Result[UserModule, string] =
     err(fmt"{union.location} Module `{module.name}` already contains a union block at {predefined_location}")
 
 proc add_generic*(module: UserModule, generic: Generic): Result[void, string] =
-  let maybe_generic = module.find_generic(generic.name)
+  let maybe_generic = module.find_generic(new_argument_type(generic.name))
   if maybe_generic.is_ok:
     let predefined_location = maybe_generic.get.location
     return err(fmt"Generic `{generic.name}` is already defined at {predefined_location}")

@@ -3,6 +3,43 @@ import tables, sets
 import "../blocks"
 import function_ref
 
+type ResolvedGeneric* = ref object of RootObj
+  module: UserModule
+  generic: Generic
+
+proc new_resolved_generic*(module: UserModule,
+    generic: Generic): ResolvedGeneric =
+  ResolvedGeneric(module: module, generic: generic)
+
+type
+  ResolvedArgumentTypeKind* = enum
+    RATK_DEFAULT, RATK_GENERIC
+  ResolvedArgumentType* = ref object of RootObj
+    case kind: ResolvedArgumentTypeKind
+    of RATK_DEFAULT:
+      parent: Module
+      children: seq[ResolvedArgumentType]
+    of RATK_GENERIC:
+      generic: ResolvedGeneric
+
+proc new_resolved_argument_type*(parent: Module): ResolvedArgumentType =
+  ResolvedArgumentType(kind: RATK_DEFAULT, parent: parent)
+
+proc new_resolved_argument_type*(parent: Module, children: seq[
+    ResolvedArgumentType]): ResolvedArgumentType =
+  ResolvedArgumentType(kind: RATK_DEFAULT, parent: parent, children: children)
+
+proc new_resolved_argument_type*(generic: ResolvedGeneric): ResolvedArgumentType =
+  ResolvedArgumentType(kind: RATK_GENERIC, generic: generic)
+
+type ResolvedArgumentDefinition* = ref object of RootObj
+  name: Token
+  arg_type: ResolvedArgumentType
+
+proc new_resolved_argument_definition*(name: Token,
+    arg_type: ResolvedArgumentType): ResolvedArgumentDefinition =
+  ResolvedArgumentDefinition(name: name, arg_type: arg_type)
+
 type
   ResolvedLiteralKind* = enum
     RLK_INTEGER, RLK_FLOAT
@@ -46,7 +83,7 @@ proc function_refs*(resolved_var: ResolvedVariable): HashSet[
   of RVK_DEFAULT: init_hashset[ResolvedFunctionRef]()
   of RVK_GENERIC: resolved_var.func_refs
 
-proc typ*(variable: ResolvedVariable): Token = variable.arg_def.typ
+proc typ*(variable: ResolvedVariable): ArgumentType = variable.arg_def.typ
 proc name*(variable: ResolvedVariable): Token = variable.arg_def.name
 
 proc generic_impls*(variable: ResolvedVariable): Table[string, HashSet[string]] =
@@ -82,9 +119,9 @@ proc value*(arg: ResolvedArgument): Token =
   of RAK_LITERAL: arg.literal.value
   of RAK_VARIABLE: arg.variable.name
 
-proc return_type*(arg: ResolvedArgument): Token =
+proc return_type*(arg: ResolvedArgument): ArgumentType =
   case arg.kind:
-  of RAK_LITERAL: arg.literal.module.name
+  of RAK_LITERAL: new_argument_type(arg.literal.module.name)
   of RAK_VARIABLE: arg.variable.typ
 
 proc c*(arg: ResolvedArgument): string = $(arg.value)

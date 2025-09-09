@@ -5,6 +5,7 @@
 
 // Module: U64
 U64 U64_init(U64 a) { return a; }
+U64 U64_byte_size(U64 items) { return items * sizeof(U64); }
 
 // safe
 U64 U64_and(U64 a, U64 b) { return a & b; }
@@ -35,5 +36,11 @@ U64 U64_from_U32(U32 value) { return (U64)value; }
 // unsafe
 U64 U64_from_S64(S64 value) { return (U64)value; }
 U64 U64_from_Pointer(Pointer ptr) { return (*((U64 *)ptr)); }
+
+Pointer U64_write_Pointer(Pointer ptr, U64 value)
+{
+  (*((U64 *)ptr)) = value;
+  return ptr;
+}
 
 #endif // ASL_U64_H
