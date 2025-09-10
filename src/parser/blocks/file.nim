@@ -43,7 +43,7 @@ proc find_function*(file: File, func_def: FunctionDefinition): Result[Function, 
   ok(file.functions[file.function_map[func_def.hash]])
 
 proc add_module*(file: File, user_module: UserModule): Result[void, string] =
-  echo "find_module: 12"
+  # echo "find_module: 12"
   let maybe_found = file.find_module(new_argument_type(user_module.name))
   if maybe_found.is_ok:
     let predefined_module = maybe_found.get

@@ -214,6 +214,15 @@ proc constraints*(generic: Generic, module_name: Token): seq[
 
   return concrete_constraints
 
+proc concrete*(generic: Generic, concrete: Token): Result[seq[
+    FunctionDefinition], string] =
+  var concrete_constraints: seq[FunctionDefinition]
+  for constraint in generic.constraints:
+    let concrete_constraint = ? constraint.concrete(generic.name, concrete)
+    concrete_constraints.add(concrete_constraint)
+  ok(concrete_constraints)
+
+
 proc close*(generic: Generic): Result[void, string] =
   case generic.kind:
   of GDK_DEFAULT: discard

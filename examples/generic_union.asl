@@ -37,17 +37,20 @@ module Status:
       case Err { error: error }:
         Error.print(error)
 
+fn top_print(Status[TestValue, TestError] status): U64
+  Status[TestValue, TestError].print(status)
+
 fn start(U8 seed): U8
   exit_success = U8 0
 
   success_code = U64 10
   test_value = TestValue { value: success_code }
   success = Status[TestValue, TestError].Ok { value: test_value }
-  Status[TestValue, TestError].print(success)
+  top_print(success)
 
   failure_code = S32 -12
   test_error = TestError { code: failure_code }
   failure = Status[TestValue, TestError].Err { error: test_error }
-  Status[TestValue, TestError].print(failure)
+  top_print(failure)
 
   exit_success

@@ -4,20 +4,45 @@ import arg
 import function_ref
 import function_step
 
-type ResolvedFunctionDefinition* = ref object of RootObj
-  name: Token
-  arg_defs: seq[ResolvedArgumentDefinition]
-  return_type*: Module
+type
+  ResolvedFunctionDefinitionKind = enum
+    RFDK_LOCAL, RFDK_MODULE
+  ResolvedFunctionDefinition* = ref object of RootObj
+    name: Token
+    arg_defs: seq[ResolvedArgumentDefinition]
+    return_type*: Module
+    case kind: ResolvedFunctionDefinitionKind
+    of RFDK_LOCAL: discard
+    of RFDK_MODULE: module: UserModule
 
 proc new_resolved_function_definition*(name: Token, arg_defs: seq[
     ResolvedArgumentDefinition],
     return_type: Module): ResolvedFunctionDefinition =
-  ResolvedFunctionDefinition(name: name, arg_defs: arg_defs,
+  ResolvedFunctionDefinition(kind: RFDK_LOCAL, name: name, arg_defs: arg_defs,
       return_type: return_type)
 
+proc new_resolved_function_definition*(module: UserModule, name: Token,
+    arg_defs: seq[ResolvedArgumentDefinition],
+    return_type: Module): ResolvedFunctionDefinition =
+  ResolvedFunctionDefinition(kind: RFDK_MODULE, module: module, name: name,
+      arg_defs: arg_defs, return_type: return_type)
+
+proc c*(func_def: ResolvedFunctionDefinition): string =
+  let name =
+    case func_def.kind:
+    of RFDK_LOCAL: $(func_def.name)
+    of RFDK_MODULE: fmt"{func_def.module.name}_{func_def.name}"
+
+  let args = func_def.arg_defs.map_it($(it.c)).join(", ")
+  let return_type =
+    case func_def.return_type.kind:
+    of MK_USER: "Pointer"
+    of MK_BUILTIN: $(func_def.return_type.name)
+
+  fmt"{return_type} {name}({args})"
+
 type ResolvedFunction* = ref object of RootObj
-  func_ref*: ResolvedFunctionRef
-  function*: Function
+  func_def*: ResolvedFunctionDefinition
   steps*: seq[ResolvedFunctionStep]
 
 proc function_refs*(function: ResolvedFunction): Hashset[ResolvedFunctionRef] =
@@ -39,22 +64,18 @@ proc generic_impls*(function: ResolvedFunction): Table[string, Table[string,
         impls[module_name][generic].incl(concrete)
   return impls
 
-proc h*(resolved_function: ResolvedFunction): string =
-  let function = resolved_function.function
-  let args_def_str = function.definition.arg_def_list.map_it(it.c).join(", ")
-  fmt"{function.native_return_type} {resolved_function.func_ref.name}({args_def_str});"
+proc h*(function: ResolvedFunction): string =
+  fmt"{function.func_def.c};"
 
-proc c*(resolved_function: ResolvedFunction): string =
-  let function = resolved_function.function
-  let args_def_str = function.definition.arg_def_list.map_it(it.c).join(", ")
-  let signature = fmt"{function.native_return_type} {resolved_function.func_ref.name}({args_def_str})"
+proc c*(function: ResolvedFunction): string =
+  let signature = fmt"{function.func_def.c}"
 
-  var body = resolved_function.steps.map_it(it.c)
-  let return_arg_name = resolved_function.steps[^1].return_argument.name
+  var body = function.steps.map_it(it.c)
+  let return_arg_name = function.steps[^1].return_argument.name
   body.add(fmt"return {return_arg_name};")
 
   @[signature, "{", body.join("\n"), "}"].join("\n")
 
-proc new_resolved_function*(func_ref: ResolvedFunctionRef, function: Function,
-    steps: seq[ResolvedFunctionStep]): ResolvedFunction =
-  ResolvedFunction(func_ref: func_ref, function: function, steps: steps)
+proc new_resolved_function*(func_def: ResolvedFunctionDefinition, steps: seq[
+    ResolvedFunctionStep]): ResolvedFunction =
+  ResolvedFunction(func_def: func_def, steps: steps)

@@ -1,19 +1,7 @@
 import results, tables, strformat, sequtils, parseutils, sets, options, strutils
 
-import blocks/arg; export arg
-import blocks/function_ref; export function_ref
-import blocks/function_call; export function_call
-import blocks/struct_init; export struct_init
-import blocks/struct_getter; export struct_getter
-import blocks/statement; export statement
-import blocks/case_block; export case_block
-import blocks/else_block; export else_block
-import blocks/match; export match
-import blocks/function_step; export function_step
-import blocks/function; export function
-import blocks/struct; export struct
-import blocks/union; export union
-import blocks/file; export file
+import blocks
+export blocks
 
 proc safe_parse*[T](input: string): Result[T, string] =
   when T is SomeSignedInt:
@@ -133,8 +121,8 @@ proc resolve_argument(file: blocks.File, scope: Table[string,
   case arg_value.kind:
   of TK_ID:
     let resolved_variable = ? scope.resolve_variable(arg_value)
-    if $(arg_module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
-    else: err(fmt"2 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+    if $(arg_module.name) == $(arg_type.parent): ok(new_resolved_argument(resolved_variable))
+    else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
   else:
     case arg_module.kind:
     of MK_BUILTIN:
@@ -318,6 +306,8 @@ proc resolve_function_call_args(file: blocks.File, scope: Table[string,
         function_call, function_def)
     if maybe_resolved_args.is_ok:
       return ok((function_def, maybe_resolved_args.get))
+    else:
+      echo maybe_resolved_args.error
 
   return err(fmt"{function_call.location} Failed to find match function for function call {function_call.func_ref}")
 
@@ -836,11 +826,65 @@ proc resolve_function_step(file: blocks.File, scope: Table[
     ok(new_resolved_function_step(resolved_match))
 
 # module
+proc resolve_generic_constraints(file: blocks.File, parent: UserModule,
+    arg_module: Module, arg_type: ArgumentType): Result[void, string] =
+  case arg_module.kind:
+  of MK_BUILTIN:
+    if arg_type.children.len != 0:
+      return err(fmt"{arg_type.location} Builtin module `{arg_module.name}` does not support generics.")
+  of MK_USER:
+    let generics = arg_module.user_module.generics
+    if arg_type.children.len != generics.len:
+      if generics.len == 0:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` does not support generics.")
+      else:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` expects `{generics.len}` but `{arg_type.children.len}` were given.")
+
+    for (generic, child_arg_type) in zip(generics, arg_type.children):
+      let maybe_module = file.find_module(child_arg_type)
+      if maybe_module.is_ok:
+        let child_arg_module = maybe_module.get
+        let concrete_constraints = ? generic.concrete(child_arg_module.name)
+        for func_def in concrete_constraints:
+          # TODO: Think about the usage of the constraint resolution output.
+          discard ? child_arg_module.find_function(func_def)
+      else:
+        let child_generic = ? parent.find_generic(child_arg_type)
+        if child_arg_type.children.len != 0:
+          return err(fmt"{child_arg_type.location} Generic `{child_generic.name}` can not be nested further.")
+  return ok()
+
+# local
+proc resolve_generic_constraints(file: blocks.File, arg_module: Module,
+    arg_type: ArgumentType): Result[void, string] =
+  case arg_module.kind:
+  of MK_BUILTIN:
+    if arg_type.children.len != 0:
+      return err(fmt"{arg_type.location} Builtin module `{arg_module.name}` does not support generics.")
+  of MK_USER:
+    let generics = arg_module.user_module.generics
+    if arg_type.children.len != generics.len:
+      if generics.len == 0:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` does not support generics.")
+      else:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` expects `{generics.len}` but `{arg_type.children.len}` were given.")
+
+    for (generic, child_arg_type) in zip(generics, arg_type.children):
+      let child_arg_module = ? file.find_module(child_arg_type)
+      let concrete_constraints = ? generic.concrete(child_arg_module.name)
+      for func_def in concrete_constraints:
+        # TODO: Think about the usage of the constraint resolution output.
+        discard ? child_arg_module.find_function(func_def)
+  return ok()
+
+# module
 proc resolve_argument_type(file: blocks.File, module: UserModule,
     arg_type: ArgumentType): Result[ResolvedArgumentType, string] =
   let maybe_module = file.find_module(arg_type)
   if maybe_module.is_ok:
     let arg_module = maybe_module.get
+    ? file.resolve_generic_constraints(module, arg_module, arg_type)
+
     var resolved_children_arg_types: seq[ResolvedArgumentType]
     for child_arg_type in arg_type.children:
       # TODO: Make sure `child_arg_type` also satisfies all the generic constraints
@@ -855,13 +899,14 @@ proc resolve_argument_type(file: blocks.File, module: UserModule,
 # local
 proc resolve_argument_type(file: blocks.File, arg_type: ArgumentType): Result[
     ResolvedArgumentType, string] =
-  let module = ? file.find_module(arg_type)
+  let arg_module = ? file.find_module(arg_type)
+  ? file.resolve_generic_constraints(arg_module, arg_type)
+
   var resolved_children_arg_types: seq[ResolvedArgumentType]
   for child_arg_type in arg_type.children:
-    # TODO: Make sure `child_arg_type` also satisfies all the generic constraints
     let resolved_child_arg_type = ? file.resolve_argument_type(child_arg_type)
     resolved_children_arg_types.add(resolved_child_arg_type)
-  ok(new_resolved_argument_type(module, resolved_children_arg_types))
+  ok(new_resolved_argument_type(arg_module, resolved_children_arg_types))
 
 # module
 proc resolve_argument_definition(file: blocks.File, module: UserModule,
@@ -893,8 +938,8 @@ proc resolve_function_definition(file: blocks.File, module: UserModule,
     resolved_arg_defs.add(resolved_arg_def)
 
   let return_module = ? file.find_module(function_def.return_type)
-  let resolved_func_def = new_resolved_function_definition(function_def.name,
-      resolved_arg_defs, return_module)
+  let resolved_func_def = new_resolved_function_definition(module,
+      function_def.name, resolved_arg_defs, return_module)
   ok((resolved_func_def, scope))
 
 # local
@@ -937,7 +982,7 @@ proc resolve_function(file: blocks.File, module: UserModule, function: Function,
   let actual_return_type = resolved_function_steps[^1].return_argument.typ
   if $(expected_return_type.name) != $(actual_return_type):
     return err(fmt"{function.location} expected {function.name} to return {expected_return_type.name} but found {actual_return_type}")
-  ok(new_resolved_function(function_ref, function, resolved_function_steps))
+  ok(new_resolved_function(resolved_function_def, resolved_function_steps))
 
 # local
 proc resolve_function(file: blocks.File, function: Function,
@@ -959,7 +1004,8 @@ proc resolve_function(file: blocks.File, function: Function,
   let actual_return_type = resolved_function_steps[^1].return_argument.typ
   if $(actual_return_type) != $(expected_return_type.name):
     return err(fmt"{function.location} Expected function to return `{expected_return_type.name}` but found {actual_return_type}")
-  ok(new_resolved_function(function_ref, function, resolved_function_steps))
+  ok(new_resolved_function(resolved_function_definition,
+      resolved_function_steps))
 
 proc resolve_function_ref(file: blocks.File,
     function_ref: ResolvedFunctionRef): Result[ResolvedFunction, string] =
@@ -994,8 +1040,7 @@ proc resolve_unused_functions(file: blocks.File, visited_functions: HashSet[
         discard ? file.resolve_function_ref(func_ref)
   ok()
 
-proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
-    string, Table[string, HashSet[string]]]), string] =
+proc resolve_functions(file: blocks.File): Result[seq[ResolvedFunction], string] =
   let start_fn_def = new_function_definition("start", @[("U8", "argc")], "U8")
   let start_function = ? file.find_function(start_fn_def)
 
@@ -1003,7 +1048,6 @@ proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
     stack = @[new_resolved_function_ref(start_function.definition)]
     visited_function_refs = init_hashset[ResolvedFunctionRef]()
     resolved_functions: seq[ResolvedFunction]
-    generic_impls: Table[string, Table[string, HashSet[string]]]
 
   while stack.len > 0:
     let function_ref = stack[^1]
@@ -1012,19 +1056,11 @@ proc resolve_functions(file: blocks.File): Result[(seq[ResolvedFunction], Table[
 
     let resolved_function = ? file.resolve_function_ref(function_ref)
     let new_functions = resolved_function.function_refs.difference(visited_function_refs)
-    for (module_name, impl_map) in resolved_function.generic_impls.pairs:
-      if module_name notin generic_impls:
-        generic_impls[module_name] = init_table[string, HashSet[string]]()
-      for (generic, concrete) in impl_map.pairs:
-        if generic notin generic_impls[module_name]:
-          generic_impls[module_name][generic] = init_hashset[string]()
-        generic_impls[module_name][generic].incl(concrete)
-
     resolved_functions.add(resolved_function)
     stack.add(new_functions.to_seq)
 
   ? file.resolve_unused_functions(visited_function_refs)
-  ok((resolved_functions, generic_impls))
+  ok(resolved_functions)
 
 # TODO: Use generic impls in struct resolution
 proc resolve_user_module_struct(file: blocks.File, module: UserModule,
@@ -1101,7 +1137,21 @@ proc resolve_user_modules(file: blocks.File, generic_impls: Table[string, Table[
         generic_impls))
   return ok(resolved_user_modules)
 
+proc reduce_generic_impls(resolved_functions: seq[ResolvedFunction]): Table[
+    string, Table[string, HashSet[string]]] =
+  var generic_impls: Table[string, Table[string, HashSet[string]]]
+  for resolved_function in resolved_functions:
+    for (module_name, impl_map) in resolved_function.generic_impls.pairs:
+      if module_name notin generic_impls:
+        generic_impls[module_name] = init_table[string, HashSet[string]]()
+      for (generic, concrete) in impl_map.pairs:
+        if generic notin generic_impls[module_name]:
+          generic_impls[module_name][generic] = init_hashset[string]()
+        generic_impls[module_name][generic].incl(concrete)
+  return generic_impls
+
 proc resolve*(file: blocks.File): Result[ResolvedFile, string] =
-  let (resolved_functions, generic_impls) = ? file.resolve_functions()
+  let resolved_functions = ? file.resolve_functions()
+  let generic_impls = reduce_generic_impls(resolved_functions)
   let resolved_user_modules = ? file.resolve_user_modules(generic_impls)
   ok(new_resolved_file(resolved_user_modules, resolved_functions))

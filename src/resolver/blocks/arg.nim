@@ -1,4 +1,4 @@
-import tables, sets
+import tables, sets, strformat
 import function_ref
 
 type ResolvedGeneric* = ref object of RootObj
@@ -30,6 +30,14 @@ proc new_resolved_argument_type*(parent: Module, children: seq[
 proc new_resolved_argument_type*(generic: ResolvedGeneric): ResolvedArgumentType =
   ResolvedArgumentType(kind: RATK_GENERIC, generic: generic)
 
+proc c*(arg_type: ResolvedArgumentType): string =
+  case arg_type.kind:
+  of RATK_DEFAULT:
+    case arg_type.parent.kind:
+    of MK_BUILTIN: $(arg_type.parent.name)
+    else: "Pointer"
+  of RATK_GENERIC: "Pointer"
+
 type ResolvedArgumentDefinition* = ref object of RootObj
   name: Token
   arg_type: ResolvedArgumentType
@@ -37,6 +45,9 @@ type ResolvedArgumentDefinition* = ref object of RootObj
 proc new_resolved_argument_definition*(name: Token,
     arg_type: ResolvedArgumentType): ResolvedArgumentDefinition =
   ResolvedArgumentDefinition(name: name, arg_type: arg_type)
+
+proc c*(arg_def: ResolvedArgumentDefinition): string =
+  fmt"{arg_def.arg_type.c} {arg_def.name}"
 
 type
   ResolvedLiteralKind* = enum
