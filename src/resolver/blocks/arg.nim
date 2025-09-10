@@ -70,10 +70,11 @@ type
   ResolvedVariableKind* = enum
     RVK_DEFAULT, RVK_GENERIC
   ResolvedVariable* = ref object of RootObj
-    arg_def*: ArgumentDefinition
     case kind*: ResolvedVariableKind
-    of RVK_DEFAULT: discard
+    of RVK_DEFAULT:
+      arg_def*: ArgumentDefinition
     of RVK_GENERIC:
+      variable: ResolvedVariable
       generic*: Token
       func_refs*: HashSet[ResolvedFunctionRef]
 
@@ -83,26 +84,32 @@ proc new_resolved_variable*(arg_def: ArgumentDefinition): ResolvedVariable =
 proc new_resolved_variable*(resolved_var: ResolvedVariable,
     generic: Token, func_refs: HashSet[
         ResolvedFunctionRef]): ResolvedVariable =
-  ResolvedVariable(kind: RVK_GENERIC, arg_def: resolved_var.arg_def,
-      generic: generic, func_refs: func_refs)
+  ResolvedVariable(kind: RVK_GENERIC, variable: resolved_var, generic: generic,
+      func_refs: func_refs)
 
-proc function_refs*(resolved_var: ResolvedVariable): HashSet[
+proc function_refs*(variable: ResolvedVariable): HashSet[
     ResolvedFunctionRef] =
-  case resolved_var.kind:
+  case variable.kind:
   of RVK_DEFAULT: init_hashset[ResolvedFunctionRef]()
-  of RVK_GENERIC: resolved_var.func_refs
+  of RVK_GENERIC: variable.func_refs
 
-proc typ*(variable: ResolvedVariable): ArgumentType = variable.arg_def.typ
-proc name*(variable: ResolvedVariable): Token = variable.arg_def.name
+proc typ*(variable: ResolvedVariable): ArgumentType =
+  case variable.kind:
+  of RVK_DEFAULT: variable.arg_def.typ
+  of RVK_GENERIC: variable.variable.arg_def.typ
+
+proc name*(variable: ResolvedVariable): Token =
+  case variable.kind:
+  of RVK_DEFAULT: variable.arg_def.name
+  of RVK_GENERIC: variable.variable.arg_def.name
 
 proc generic_impls*(variable: ResolvedVariable): Table[string, HashSet[string]] =
   var impls: Table[string, HashSet[string]]
   case variable.kind:
+  of RVK_DEFAULT: discard
   of RVK_GENERIC:
     impls[$(variable.generic)] = init_hashset[string]()
     impls[$(variable.generic)].incl($(variable.typ))
-  of RVK_DEFAULT:
-    discard
   return impls
 
 type

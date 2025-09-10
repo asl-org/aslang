@@ -82,7 +82,7 @@ proc c*(init: ResolvedUnionInit): string =
 
         let module_name = $(init.module.name)
         let generic_name = $(field.variable.generic)
-        code.add(fmt"Pointer {temp_var} = {module_name}_{generic_name}_{field.variable.arg_def.typ}_init({field_name});")
+        code.add(fmt"Pointer {temp_var} = {module_name}_{generic_name}_{field.variable.typ}_init({field_name});")
     of RAK_LITERAL:
       field_values.add($(field.value))
 
