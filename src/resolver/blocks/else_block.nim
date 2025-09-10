@@ -1,6 +1,5 @@
 import strformat, sets, strutils, tables
 
-import "../blocks"
 import statement, function_ref
 
 type ResolvedElse* = ref object of RootObj

@@ -1,4 +1,4 @@
-import hashes, strformat, sequtils, strutils
+import hashes, strformat, sequtils, strutils, results
 
 import token
 
@@ -27,6 +27,20 @@ proc hash*(arg_type: ArgumentType): Hash =
   for child in arg_type.children:
     children_hash = children_hash !& hash(child)
   parent_hash !& children_hash
+
+proc concrete*(arg_type: ArgumentType, generic: Token, concrete: Token): Result[
+    ArgumentType, string] =
+  if $(arg_type.parent) == $(generic):
+    if arg_type.children.len != 0:
+      err(fmt"{arg_type.parent.location} Generic `{arg_type.parent}` can not be nested further.")
+    else:
+      ok(new_argument_type(concrete))
+  else:
+    var concrete_children_arg_types: seq[ArgumentType]
+    for child_arg_type in arg_type.children:
+      let concrete_child_arg_type = ? child_arg_type.concrete(generic, concrete)
+      concrete_children_arg_types.add(concrete_child_arg_type)
+    ok(new_argument_type(arg_type.parent, concrete_children_arg_types))
 
 type ArgumentDefinition* = ref object of RootObj
   typ*: ArgumentType
@@ -62,3 +76,8 @@ proc native_type*(arg_def: ArgumentDefinition): string =
 
 proc c*(arg_def: ArgumentDefinition): string =
   fmt"{arg_def.native_type} {arg_def.name}"
+
+proc concrete*(arg_def: ArgumentDefinition, generic: Token,
+    concrete: Token): Result[ArgumentDefinition, string] =
+  let concrete_arg_type = ? arg_def.typ.concrete(generic, concrete)
+  ok(new_argument_definition(concrete_arg_type, arg_def.name))

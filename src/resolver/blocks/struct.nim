@@ -1,6 +1,6 @@
 import strutils, strformat, sequtils, tables, sets
 
-import "../blocks"
+import function_ref
 
 const ASL_PREFIX = "__asl__"
 const ASL_UNION_ID = "__asl_union_id__"

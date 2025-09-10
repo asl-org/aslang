@@ -1,6 +1,6 @@
 import results, strformat
 
-import blocks/token
+import parser/blocks/token
 
 type Tokenizer = ref object of RootObj
   index: int = 0

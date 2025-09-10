@@ -1,6 +1,5 @@
 import strformat, sets, strutils, sequtils, tables
 
-import "../blocks"
 import statement, arg, function_ref
 
 type

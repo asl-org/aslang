@@ -47,6 +47,17 @@ proc close*(func_def: FunctionDefinition): Result[void, string] =
     arg_name_table[$(arg_def.name)] = arg_def
   ok()
 
+proc concrete*(func_def: FunctionDefinition, generic: Token,
+    concrete: Token): Result[FunctionDefinition, string] =
+  var concrete_arg_defs: seq[ArgumentDefinition]
+  for arg_def in func_def.arg_def_list:
+    let concrete_arg_def = ? arg_def.concrete(generic, concrete)
+    concrete_arg_defs.add(concrete_arg_def)
+
+  let concrete_return_type = ? func_def.return_type.concrete(generic, concrete)
+  ok(new_function_definition(func_def.name, concrete_arg_defs,
+      concrete_return_type, func_def.location))
+
 type
   FunctionStepKind* = enum
     FSK_STATEMENT, FSK_MATCH

@@ -2,7 +2,7 @@ import os, parseopt, osproc, strutils, strformat, results
 
 import tokenizer
 import parser
-import blocks
+import parser/blocks
 import resolver
 
 const
