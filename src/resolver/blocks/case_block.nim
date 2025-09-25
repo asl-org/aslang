@@ -7,21 +7,23 @@ type
     RPK_LITERAL, RPK_UNION
   ResolvedPattern* = ref object of RootObj
     case kind*: ResolvedPatternKind
-    of RPK_LITERAL: literal: ResolvedLiteral
+    of RPK_LITERAL:
+      literal: ResolvedLiteral
     of RPK_UNION:
-      module: Token
-      union: Token
+      module: UserModule
+      union: UnionFieldDefinition
       id: int
-      args: seq[(ArgumentDefinition, Token)]
+      args: seq[(ResolvedArgumentDefinition, Token)]
 
 proc new_resolved_pattern*(literal: ResolvedLiteral): ResolvedPattern =
   ResolvedPattern(kind: RPK_LITERAL, literal: literal)
 
-proc new_resolved_pattern*(module: Token, union: Token, id: int, args: seq[(
-    ArgumentDefinition, Token)]): ResolvedPattern =
+proc new_resolved_pattern*(module: UserModule, union: UnionFieldDefinition,
+    id: int, args: seq[(ResolvedArgumentDefinition,
+        Token)]): ResolvedPattern =
   ResolvedPattern(kind: RPK_UNION, module: module, union: union, id: id, args: args)
 
-proc args*(pattern: ResolvedPattern): seq[ArgumentDefinition] =
+proc args*(pattern: ResolvedPattern): seq[ResolvedArgumentDefinition] =
   case pattern.kind:
   of RPK_LITERAL: @[]
   of RPK_UNION: pattern.args.map_it(it[0])
@@ -64,8 +66,8 @@ proc c*(resolved_case: ResolvedCase, result_var: Token): string =
   case resolved_case.pattern.kind:
   of RPK_LITERAL: discard
   of RPK_UNION:
-    for (arg, field) in resolved_case.pattern.args:
-      lines.add(fmt"{arg.c} = {resolved_case.pattern.module}_{resolved_case.pattern.union}_get_{field}({resolved_case.operand});")
+    for (resolved_arg, field) in resolved_case.pattern.args:
+      lines.add(fmt"{resolved_arg.c} = {resolved_case.pattern.module.name}_{resolved_case.pattern.union.name}_get_{field}({resolved_case.operand});")
 
   for statement in resolved_case.statements:
     lines.add(statement.c)

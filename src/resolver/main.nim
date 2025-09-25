@@ -5,6 +5,8 @@ export blocks
 
 type FunctionScope = ref object of RootObj
   scope: Table[string, ArgumentDefinition]
+  # TODO: new scope for resolved types, get rid of the un-resolved `scope`
+  resolved_scope: Table[string, ResolvedArgumentDefinition]
   temp_var_count: uint = 0
 
 proc add_arg(fn_scope: FunctionScope, arg_def: ArgumentDefinition): Result[
@@ -15,11 +17,25 @@ proc add_arg(fn_scope: FunctionScope, arg_def: ArgumentDefinition): Result[
   fn_scope.scope[$(arg_def.name)] = arg_def
   ok(fn_scope)
 
+proc add_arg(fn_scope: FunctionScope, arg_def: ResolvedArgumentDefinition): Result[
+    FunctionScope, string] =
+  if $(arg_def.name) in fn_scope.resolved_scope:
+    let defined_arg = fn_scope.resolved_scope[$(arg_def.name)]
+    return err(fmt"{arg_def.name.location} variable `{arg_def.name}` is already defined the scope {defined_arg.name.location}")
+  fn_scope.resolved_scope[$(arg_def.name)] = arg_def
+  ok(fn_scope)
+
 proc get_arg(fn_scope: FunctionScope, arg_name: Token): Result[
     ArgumentDefinition, string] =
-  if $(arg_name) notin fn_scope.scope:
-    return err(fmt"{arg_name.location} variable `{arg_name}` is not defined the scope.")
-  ok(fn_scope.scope[$(arg_name)])
+  if $(arg_name) in fn_scope.scope:
+    return ok(fn_scope.scope[$(arg_name)])
+
+  # TODO: cleanup after scope contains all the resolved values
+  if $(arg_name) in fn_scope.resolved_scope:
+    let resolved_arg = fn_scope.resolved_scope[$(arg_name)]
+    return ok(resolved_arg.arg_def)
+
+  return err(fmt"{arg_name.location} variable `{arg_name}` is not defined the scope.")
 
 proc get_temp_var_count(fn_scope: FunctionScope): uint =
   let count = fn_scope.temp_var_count
@@ -29,6 +45,8 @@ proc get_temp_var_count(fn_scope: FunctionScope): uint =
 proc clone(scope: FunctionScope): Result[FunctionScope, string] =
   var new_scope = FunctionScope(temp_var_count: scope.temp_var_count)
   for arg_name, arg_def in scope.scope.pairs:
+    new_scope = ? new_scope.add_arg(arg_def)
+  for arg_name, arg_def in scope.resolved_scope.pairs:
     new_scope = ? new_scope.add_arg(arg_def)
   ok(new_scope)
 
@@ -89,6 +107,100 @@ proc resolve_literal(module: BuiltinModule,
   of TK_INTEGER: module.resolve_integer_literal(value)
   of TK_FLOAT: module.resolve_float_literal(value)
   else: err(fmt"{value.location} {value} is not a literal")
+
+# module
+proc resolve_generic_constraints(file: blocks.File, parent: UserModule,
+    arg_module: Module, arg_type: ArgumentType): Result[void, string] =
+  case arg_module.kind:
+  of MK_BUILTIN:
+    if arg_type.children.len != 0:
+      return err(fmt"{arg_type.location} Builtin module `{arg_module.name}` does not support generics.")
+  of MK_USER:
+    let generics = arg_module.user_module.generics
+    if arg_type.children.len != generics.len:
+      if generics.len == 0:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` does not support generics.")
+      else:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` expects `{generics.len}` but `{arg_type.children.len}` were given.")
+
+    for (generic, child_arg_type) in zip(generics, arg_type.children):
+      let maybe_module = file.find_module(child_arg_type)
+      if maybe_module.is_ok:
+        let child_arg_module = maybe_module.get
+        let concrete_constraints = ? generic.concrete(child_arg_module.name)
+        for func_def in concrete_constraints:
+          # TODO: Think about the usage of the constraint resolution output.
+          discard ? child_arg_module.find_function(func_def)
+      else:
+        let child_generic = ? parent.find_generic(child_arg_type)
+        if child_arg_type.children.len != 0:
+          return err(fmt"{child_arg_type.location} Generic `{child_generic.name}` can not be nested further.")
+  return ok()
+
+# local
+proc resolve_generic_constraints(file: blocks.File, arg_module: Module,
+    arg_type: ArgumentType): Result[void, string] =
+  case arg_module.kind:
+  of MK_BUILTIN:
+    if arg_type.children.len != 0:
+      return err(fmt"{arg_type.location} Builtin module `{arg_module.name}` does not support generics.")
+  of MK_USER:
+    let generics = arg_module.user_module.generics
+    if arg_type.children.len != generics.len:
+      if generics.len == 0:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` does not support generics.")
+      else:
+        return err(fmt"{arg_type.location} Module `{arg_module.name}` expects `{generics.len}` but `{arg_type.children.len}` were given.")
+
+    for (generic, child_arg_type) in zip(generics, arg_type.children):
+      let child_arg_module = ? file.find_module(child_arg_type)
+      let concrete_constraints = ? generic.concrete(child_arg_module.name)
+      for func_def in concrete_constraints:
+        # TODO: Think about the usage of the constraint resolution output.
+        discard ? child_arg_module.find_function(func_def)
+  return ok()
+
+# module
+proc resolve_argument_type(file: blocks.File, module: UserModule,
+    arg_type: ArgumentType): Result[ResolvedArgumentType, string] =
+  let maybe_module = file.find_module(arg_type)
+  if maybe_module.is_ok:
+    let arg_module = maybe_module.get
+    ? file.resolve_generic_constraints(module, arg_module, arg_type)
+
+    var resolved_children_arg_types: seq[ResolvedArgumentType]
+    for child_arg_type in arg_type.children:
+      let resolved_child_arg_type = ? file.resolve_argument_type(module, child_arg_type)
+      resolved_children_arg_types.add(resolved_child_arg_type)
+    ok(new_resolved_argument_type(arg_module, resolved_children_arg_types))
+  else:
+    let generic = ? module.find_generic(arg_type)
+    let resolved_generic = new_resolved_generic(module, generic)
+    ok(new_resolved_argument_type(resolved_generic))
+
+# local
+proc resolve_argument_type(file: blocks.File, arg_type: ArgumentType): Result[
+    ResolvedArgumentType, string] =
+  let arg_module = ? file.find_module(arg_type)
+  ? file.resolve_generic_constraints(arg_module, arg_type)
+
+  var resolved_children_arg_types: seq[ResolvedArgumentType]
+  for child_arg_type in arg_type.children:
+    let resolved_child_arg_type = ? file.resolve_argument_type(child_arg_type)
+    resolved_children_arg_types.add(resolved_child_arg_type)
+  ok(new_resolved_argument_type(arg_module, resolved_children_arg_types))
+
+# module
+proc resolve_argument_definition(file: blocks.File, module: UserModule,
+    arg_def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_arg_type = ? file.resolve_argument_type(module, arg_def.typ)
+  ok(new_resolved_argument_definition(arg_def.name, resolved_arg_type))
+
+# local
+proc resolve_argument_definition(file: blocks.File,
+    arg_def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_arg_type = ? file.resolve_argument_type(arg_def.typ)
+  ok(new_resolved_argument_definition(arg_def.name, resolved_arg_type))
 
 proc resolve_variable(scope: FunctionScope,
     name: Token): Result[ResolvedVariable, string] =
@@ -488,13 +600,14 @@ proc resolve_expression(file: blocks.File, scope: FunctionScope,
         expression.union_init)
     ok(new_resolved_expression(resolved_union_init))
 
-proc resolve_union_pattern_fields(union_def: UnionFieldDefinition,
-    union_pattern: UnionPattern): Result[seq[(ArgumentDefinition, Token)], string] =
+proc resolve_union_pattern_fields(file: blocks.File, module: UserModule,
+    union_def: UnionFieldDefinition, union_pattern: UnionPattern): Result[seq[(
+        ResolvedArgumentDefinition, Token)], string] =
   # Union pattern can destructure all/subset of the defined union fields
   # must be unique for the destructured pattern.
   var union_def_field_name_set: Table[string, Token]
   var union_def_field_value_set: Table[string, Token]
-  var pattern_fields: seq[(ArgumentDefinition, Token)]
+  var pattern_fields: seq[(ResolvedArgumentDefinition, Token)]
   for (field_name, field_value) in union_pattern.fields:
     # field name checks
     if $(field_name) in union_def_field_name_set:
@@ -511,11 +624,12 @@ proc resolve_union_pattern_fields(union_def: UnionFieldDefinition,
       return err(fmt"{field_value.location} field `{field_value}` is already used in {predefined_location}")
 
     let arg = new_argument_definition(field.typ, field_value)
-    pattern_fields.add((arg, field_name))
+    let resolved_arg = ? file.resolve_argument_definition(module, arg)
+    pattern_fields.add((resolved_arg, field_name))
   ok(pattern_fields)
 
-proc resolve_union_pattern(match: Match, module: UserModule): Result[seq[
-    ResolvedPattern], string] =
+proc resolve_union_pattern(file: blocks.File, match: Match,
+    module: UserModule): Result[seq[ResolvedPattern], string] =
   # All case pattern must be union patterns
   let first_non_union_pattern_index = match.case_blocks.map_it(
       it.pattern.kind == PK_UNION).find(false)
@@ -532,14 +646,16 @@ proc resolve_union_pattern(match: Match, module: UserModule): Result[seq[
   for upat in union_patterns:
     # Union pattern must belong to the module's union field.
     let union_id = ? union.find_field_id(upat.name)
+    let union_field = ? union.find_field(upat.name)
     if union_id in union_field_id_set:
       let predefined_location = union_field_id_set[union_id].location
       return err(fmt"{upat.location} is unreachable due to predefined duplicate case block `{predefined_location}`")
 
     union_field_id_set[union_id] = upat
-    let pattern_fields = ? resolve_union_pattern_fields(union.fields[union_id], upat)
+    let pattern_fields = ? resolve_union_pattern_fields(file, module,
+        union_field, upat)
 
-    resolved_patterns.add(new_resolved_pattern(module.name, upat.name, union_id,
+    resolved_patterns.add(new_resolved_pattern(module, union_field, union_id,
         pattern_fields))
 
   # if case blocks do not cover all the union branches,
@@ -695,7 +811,7 @@ proc resolve_match(file: blocks.File, func_module: UserModule,
   of MK_USER:
     let user_module = operand_module.user_module
     case user_module.kind:
-    of UMK_UNION: resolved_patterns = ? resolve_union_pattern(match, user_module)
+    of UMK_UNION: resolved_patterns = ? resolve_union_pattern(file, match, user_module)
     of UMK_STRUCT: return err(fmt"{match.operand.location} `match` does not support struct values `{match.operand}`")
     of UMK_DEFAULT: return err("MATCH RESOLUTION: UNREACHABLE")
 
@@ -737,7 +853,7 @@ proc resolve_match(file: blocks.File, scope: FunctionScope,
   of MK_USER:
     let user_module = operand_module.user_module
     case user_module.kind:
-    of UMK_UNION: resolved_patterns = ? resolve_union_pattern(match, user_module)
+    of UMK_UNION: resolved_patterns = ? resolve_union_pattern(file, match, user_module)
     of UMK_STRUCT: return err(fmt"{match.operand.location} `match` does not support struct values `{match.operand}`")
     of UMK_DEFAULT: return err("MATCH RESOLUTION: UNREACHABLE")
 
@@ -789,111 +905,15 @@ proc resolve_function_step(file: blocks.File, scope: FunctionScope,
     ok(new_resolved_function_step(resolved_match))
 
 # module
-proc resolve_generic_constraints(file: blocks.File, parent: UserModule,
-    arg_module: Module, arg_type: ArgumentType): Result[void, string] =
-  case arg_module.kind:
-  of MK_BUILTIN:
-    if arg_type.children.len != 0:
-      return err(fmt"{arg_type.location} Builtin module `{arg_module.name}` does not support generics.")
-  of MK_USER:
-    let generics = arg_module.user_module.generics
-    if arg_type.children.len != generics.len:
-      if generics.len == 0:
-        return err(fmt"{arg_type.location} Module `{arg_module.name}` does not support generics.")
-      else:
-        return err(fmt"{arg_type.location} Module `{arg_module.name}` expects `{generics.len}` but `{arg_type.children.len}` were given.")
-
-    for (generic, child_arg_type) in zip(generics, arg_type.children):
-      let maybe_module = file.find_module(child_arg_type)
-      if maybe_module.is_ok:
-        let child_arg_module = maybe_module.get
-        let concrete_constraints = ? generic.concrete(child_arg_module.name)
-        for func_def in concrete_constraints:
-          # TODO: Think about the usage of the constraint resolution output.
-          discard ? child_arg_module.find_function(func_def)
-      else:
-        let child_generic = ? parent.find_generic(child_arg_type)
-        if child_arg_type.children.len != 0:
-          return err(fmt"{child_arg_type.location} Generic `{child_generic.name}` can not be nested further.")
-  return ok()
-
-# local
-proc resolve_generic_constraints(file: blocks.File, arg_module: Module,
-    arg_type: ArgumentType): Result[void, string] =
-  case arg_module.kind:
-  of MK_BUILTIN:
-    if arg_type.children.len != 0:
-      return err(fmt"{arg_type.location} Builtin module `{arg_module.name}` does not support generics.")
-  of MK_USER:
-    let generics = arg_module.user_module.generics
-    if arg_type.children.len != generics.len:
-      if generics.len == 0:
-        return err(fmt"{arg_type.location} Module `{arg_module.name}` does not support generics.")
-      else:
-        return err(fmt"{arg_type.location} Module `{arg_module.name}` expects `{generics.len}` but `{arg_type.children.len}` were given.")
-
-    for (generic, child_arg_type) in zip(generics, arg_type.children):
-      let child_arg_module = ? file.find_module(child_arg_type)
-      let concrete_constraints = ? generic.concrete(child_arg_module.name)
-      for func_def in concrete_constraints:
-        # TODO: Think about the usage of the constraint resolution output.
-        discard ? child_arg_module.find_function(func_def)
-  return ok()
-
-# module
-proc resolve_argument_type(file: blocks.File, module: UserModule,
-    arg_type: ArgumentType): Result[ResolvedArgumentType, string] =
-  let maybe_module = file.find_module(arg_type)
-  if maybe_module.is_ok:
-    let arg_module = maybe_module.get
-    ? file.resolve_generic_constraints(module, arg_module, arg_type)
-
-    var resolved_children_arg_types: seq[ResolvedArgumentType]
-    for child_arg_type in arg_type.children:
-      let resolved_child_arg_type = ? file.resolve_argument_type(module, child_arg_type)
-      resolved_children_arg_types.add(resolved_child_arg_type)
-    ok(new_resolved_argument_type(arg_module, resolved_children_arg_types))
-  else:
-    let generic = ? module.find_generic(arg_type)
-    let resolved_generic = new_resolved_generic(module, generic)
-    ok(new_resolved_argument_type(resolved_generic))
-
-# local
-proc resolve_argument_type(file: blocks.File, arg_type: ArgumentType): Result[
-    ResolvedArgumentType, string] =
-  let arg_module = ? file.find_module(arg_type)
-  ? file.resolve_generic_constraints(arg_module, arg_type)
-
-  var resolved_children_arg_types: seq[ResolvedArgumentType]
-  for child_arg_type in arg_type.children:
-    let resolved_child_arg_type = ? file.resolve_argument_type(child_arg_type)
-    resolved_children_arg_types.add(resolved_child_arg_type)
-  ok(new_resolved_argument_type(arg_module, resolved_children_arg_types))
-
-# module
-proc resolve_argument_definition(file: blocks.File, module: UserModule,
-    arg_def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  let resolved_arg_type = ? file.resolve_argument_type(module, arg_def.typ)
-  ok(new_resolved_argument_definition(arg_def.name, resolved_arg_type))
-
-# local
-proc resolve_argument_definition(file: blocks.File,
-    arg_def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  let resolved_arg_type = ? file.resolve_argument_type(arg_def.typ)
-  ok(new_resolved_argument_definition(arg_def.name, resolved_arg_type))
-
-# module
 proc resolve_function_definition(file: blocks.File, module: UserModule,
     function_def: FunctionDefinition): Result[(ResolvedFunctionDefinition,
     FunctionScope), string] =
   var scope = FunctionScope()
   var resolved_arg_defs: seq[ResolvedArgumentDefinition]
   for arg_def in function_def.arg_def_list:
-    discard ? scope.add_arg(arg_def)
-
-    # resolution
     let resolved_arg_def = ? file.resolve_argument_definition(module, arg_def)
     resolved_arg_defs.add(resolved_arg_def)
+    discard ? scope.add_arg(resolved_arg_def)
 
   let return_module = ? file.find_module(function_def.return_type)
   let resolved_func_def = new_resolved_function_definition(module,
@@ -908,12 +928,9 @@ proc resolve_function_definition(file: blocks.File,
   var resolved_arg_defs: seq[ResolvedArgumentDefinition]
 
   for arg_def in func_def.arg_def_list:
-    # arg_def.name uniqueness check
-    discard ? scope.add_arg(arg_def)
-
-    # resolution
     let resolved_arg_def = ? file.resolve_argument_definition(arg_def)
     resolved_arg_defs.add(resolved_arg_def)
+    discard ? scope.add_arg(resolved_arg_def)
 
   let return_module = ? file.find_module(func_def.return_type)
   ok((new_resolved_function_definition(func_def.name, resolved_arg_defs,

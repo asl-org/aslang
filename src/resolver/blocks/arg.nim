@@ -1,4 +1,4 @@
-import tables, sets, strformat
+import tables, sets, strformat, sequtils
 import function_ref
 
 type ResolvedGeneric* = ref object of RootObj
@@ -30,6 +30,15 @@ proc new_resolved_argument_type*(parent: Module, children: seq[
 proc new_resolved_argument_type*(generic: ResolvedGeneric): ResolvedArgumentType =
   ResolvedArgumentType(kind: RATK_GENERIC, generic: generic)
 
+# TODO: Cleanup after scope contains resolved values
+proc arg_type(arg_type: ResolvedArgumentType): ArgumentType =
+  case arg_type.kind:
+  of RATK_DEFAULT:
+    let children = arg_type.children.map_it(it.arg_type)
+    new_argument_type(arg_type.parent.name, children)
+  of RATK_GENERIC:
+    new_argument_type(arg_type.generic.generic.name)
+
 proc c*(arg_type: ResolvedArgumentType): string =
   case arg_type.kind:
   of RATK_DEFAULT:
@@ -39,7 +48,7 @@ proc c*(arg_type: ResolvedArgumentType): string =
   of RATK_GENERIC: "Pointer"
 
 type ResolvedArgumentDefinition* = ref object of RootObj
-  name: Token
+  name*: Token
   arg_type: ResolvedArgumentType
 
 proc new_resolved_argument_definition*(name: Token,
@@ -48,6 +57,10 @@ proc new_resolved_argument_definition*(name: Token,
 
 proc c*(arg_def: ResolvedArgumentDefinition): string =
   fmt"{arg_def.arg_type.c} {arg_def.name}"
+
+# TODO: Cleanup after scope contains resolved values
+proc arg_def*(arg_def: ResolvedArgumentDefinition): ArgumentDefinition =
+  new_argument_definition(arg_def.arg_type.arg_type, arg_def.name)
 
 type
   ResolvedLiteralKind* = enum
