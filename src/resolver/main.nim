@@ -896,9 +896,8 @@ proc resolve_match(file: blocks.File, func_module: UserModule,
   let resolved_return_argument = new_resolved_argument_definition(
       match.destination, resolved_return_type)
 
-  ok(new_resolved_match(match, match.destination, operand_def,
-      resolved_case_blocks, resolved_else_blocks, return_argument,
-      resolved_return_argument))
+  ok(new_resolved_match(match.destination, resolved_operand_def,
+      resolved_case_blocks, resolved_else_blocks, resolved_return_argument))
 
 # local
 proc resolve_match(file: blocks.File, scope: FunctionScope,
@@ -955,9 +954,8 @@ proc resolve_match(file: blocks.File, scope: FunctionScope,
   let resolved_return_argument = new_resolved_argument_definition(
       match.destination, resolved_return_type)
 
-  ok(new_resolved_match(match, match.destination, operand_def,
-      resolved_case_blocks, resolved_else_blocks, return_argument,
-      resolved_return_argument))
+  ok(new_resolved_match(match.destination, resolved_operand_def,
+      resolved_case_blocks, resolved_else_blocks, resolved_return_argument))
 
 # module
 proc resolve_function_step(file: blocks.File, module: UserModule,
