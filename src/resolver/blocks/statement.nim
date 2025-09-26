@@ -67,6 +67,14 @@ proc return_type*(expression: ResolvedExpression): ArgumentType =
   of REK_STRUCT_GETTER: expression.struct_getter.field.typ
   of REK_UNION_INIT: new_argument_type(expression.union_init.module.name)
 
+proc resolved_return_type*(expression: ResolvedExpression): ResolvedArgumentType =
+  case expression.kind:
+  of REK_ARGUMENT: expression.argument.resolved_return_type
+  of REK_FUNCTION_CALL: expression.function_call.resolved_return_type
+  of REK_STRUCT_INIT: expression.struct_init.resolved_return_type
+  of REK_STRUCT_GETTER: expression.struct_getter.resolved_return_type
+  of REK_UNION_INIT: expression.union_init.resolved_return_type
+
 proc c*(expression: ResolvedExpression, return_argument: ArgumentDefinition): string =
   case expression.kind:
   of REK_ARGUMENT:
@@ -100,6 +108,10 @@ proc generic_impls*(statement: ResolvedStatement): Table[string, Table[string,
 proc return_argument*(statement: ResolvedStatement): ArgumentDefinition =
   new_argument_definition(statement.expression.return_type,
       statement.destination)
+
+proc resolved_return_argument*(statement: ResolvedStatement): ResolvedArgumentDefinition =
+  new_resolved_argument_definition(statement.destination,
+      statement.expression.resolved_return_type)
 
 proc c*(statement: ResolvedStatement): string =
   statement.expression.c(statement.return_argument)

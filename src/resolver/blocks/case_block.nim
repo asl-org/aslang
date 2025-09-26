@@ -41,6 +41,9 @@ type ResolvedCase* = ref object of RootObj
 proc return_argument*(case_block: ResolvedCase): ArgumentDefinition =
   case_block.statements[^1].return_argument
 
+proc resolved_return_argument*(case_block: ResolvedCase): ResolvedArgumentDefinition =
+  case_block.statements[^1].resolved_return_argument
+
 proc function_refs*(case_block: ResolvedCase): Hashset[ResolvedFunctionRef] =
   var function_ref_set: Hashset[ResolvedFunctionRef]
   for statement in case_block.statements:

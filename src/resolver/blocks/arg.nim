@@ -31,7 +31,7 @@ proc new_resolved_argument_type*(generic: ResolvedGeneric): ResolvedArgumentType
   ResolvedArgumentType(kind: RATK_GENERIC, generic: generic)
 
 # TODO: Cleanup after scope contains resolved values
-proc arg_type(arg_type: ResolvedArgumentType): ArgumentType =
+proc arg_type*(arg_type: ResolvedArgumentType): ArgumentType =
   case arg_type.kind:
   of RATK_DEFAULT:
     let children = arg_type.children.map_it(it.arg_type)
@@ -49,7 +49,7 @@ proc c*(arg_type: ResolvedArgumentType): string =
 
 type ResolvedArgumentDefinition* = ref object of RootObj
   name*: Token
-  arg_type: ResolvedArgumentType
+  arg_type*: ResolvedArgumentType
 
 proc new_resolved_argument_definition*(name: Token,
     arg_type: ResolvedArgumentType): ResolvedArgumentDefinition =
@@ -86,13 +86,16 @@ type
     case kind*: ResolvedVariableKind
     of RVK_DEFAULT:
       arg_def*: ArgumentDefinition
+      resolved_arg_def*: ResolvedArgumentDefinition
     of RVK_GENERIC:
       variable: ResolvedVariable
       generic*: Token
       func_refs*: HashSet[ResolvedFunctionRef]
 
-proc new_resolved_variable*(arg_def: ArgumentDefinition): ResolvedVariable =
-  ResolvedVariable(kind: RVK_DEFAULT, arg_def: arg_def)
+proc new_resolved_variable*(arg_def: ArgumentDefinition,
+    resolved_arg_def: ResolvedArgumentDefinition): ResolvedVariable =
+  ResolvedVariable(kind: RVK_DEFAULT, arg_def: arg_def,
+      resolved_arg_def: resolved_arg_def)
 
 proc new_resolved_variable*(resolved_var: ResolvedVariable,
     generic: Token, func_refs: HashSet[
@@ -110,6 +113,11 @@ proc typ*(variable: ResolvedVariable): ArgumentType =
   case variable.kind:
   of RVK_DEFAULT: variable.arg_def.typ
   of RVK_GENERIC: variable.variable.arg_def.typ
+
+proc resolved_typ*(variable: ResolvedVariable): ResolvedArgumentType =
+  case variable.kind:
+  of RVK_DEFAULT: variable.resolved_arg_def.arg_type
+  of RVK_GENERIC: variable.variable.resolved_arg_def.arg_type
 
 proc name*(variable: ResolvedVariable): Token =
   case variable.kind:
@@ -152,6 +160,11 @@ proc return_type*(arg: ResolvedArgument): ArgumentType =
   case arg.kind:
   of RAK_LITERAL: new_argument_type(arg.literal.module.name)
   of RAK_VARIABLE: arg.variable.typ
+
+proc resolved_return_type*(arg: ResolvedArgument): ResolvedArgumentType =
+  case arg.kind:
+  of RAK_LITERAL: new_resolved_argument_type(new_module(arg.literal.module))
+  of RAK_VARIABLE: arg.variable.resolved_typ
 
 proc c*(arg: ResolvedArgument): string = $(arg.value)
 

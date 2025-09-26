@@ -1,5 +1,6 @@
 import sets, tables
 
+import arg
 import function_ref
 import statement
 import match
@@ -36,6 +37,11 @@ proc return_argument*(function_step: ResolvedFunctionStep): ArgumentDefinition =
   case function_step.kind:
   of RFSK_STATEMENT: function_step.statement.return_argument
   of RFSK_MATCH: function_step.match.return_argument
+
+proc resolved_return_argument*(function_step: ResolvedFunctionStep): ResolvedArgumentDefinition =
+  case function_step.kind:
+  of RFSK_STATEMENT: function_step.statement.resolved_return_argument
+  of RFSK_MATCH: function_step.match.resolved_return_argument
 
 proc c*(function_step: ResolvedFunctionStep): string =
   case function_step.kind:

@@ -1,12 +1,15 @@
 import strformat, sets, strutils, tables
 
-import statement, function_ref
+import statement, function_ref, arg
 
 type ResolvedElse* = ref object of RootObj
   statements: seq[ResolvedStatement]
 
 proc return_argument*(else_block: ResolvedElse): ArgumentDefinition =
   else_block.statements[^1].return_argument
+
+proc resolved_return_argument*(else_block: ResolvedElse): ResolvedArgumentDefinition =
+  else_block.statements[^1].resolved_return_argument
 
 proc function_refs*(else_block: ResolvedElse): Hashset[ResolvedFunctionRef] =
   var function_ref_set: Hashset[ResolvedFunctionRef]

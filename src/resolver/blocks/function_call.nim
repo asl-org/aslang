@@ -8,7 +8,9 @@ type
     RFCK_BUILTIN, RFCK_MODULE, RFCK_LOCAL, RFCK_GENERIC
   ResolvedFunctionCall* = ref object of RootObj
     args: seq[ResolvedArgument]
+    name: Token
     function_def: FunctionDefinition
+    resolved_return_type*: ResolvedArgumentType
     case kind: ResolvedFunctionCallKind
     of RFCK_LOCAL: discard
     of RFCK_GENERIC:
@@ -18,25 +20,29 @@ type
     of RFCK_MODULE: module: UserModule
 
 proc new_resolved_function_call*(function_def: FunctionDefinition, args: seq[
-        ResolvedArgument]): ResolvedFunctionCall =
+        ResolvedArgument], resolved_return_type: ResolvedArgumentType): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_LOCAL,
-      function_def: function_def, args: args)
+      function_def: function_def, args: args, name: function_def.name,
+      resolved_return_type: resolved_return_type)
 
 proc new_resolved_function_call*(module: BuiltinModule,
     function_def: FunctionDefinition, args: seq[
-        ResolvedArgument]): ResolvedFunctionCall =
+        ResolvedArgument], resolved_return_type: ResolvedArgumentType): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_BUILTIN,
-      builtin_module: module, function_def: function_def, args: args)
+      builtin_module: module, function_def: function_def, args: args,
+      name: function_def.name, resolved_return_type: resolved_return_type)
 
 proc new_resolved_function_call*(module: UserModule, function_def: FunctionDefinition, args: seq[
-        ResolvedArgument]): ResolvedFunctionCall =
+        ResolvedArgument], resolved_return_type: ResolvedArgumentType): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_MODULE,
-      module: module, function_def: function_def, args: args)
+      module: module, function_def: function_def, args: args,
+      name: function_def.name, resolved_return_type: resolved_return_type)
 
 proc new_resolved_function_call*(generic: Token, concrete: Token, function_def: FunctionDefinition, args: seq[
-        ResolvedArgument]): ResolvedFunctionCall =
+        ResolvedArgument], resolved_return_type: ResolvedArgumentType): ResolvedFunctionCall =
   ResolvedFunctionCall(kind: RFCK_GENERIC, generic: generic, concrete: concrete,
-      function_def: function_def, args: args)
+      function_def: function_def, args: args, name: function_def.name,
+      resolved_return_type: resolved_return_type)
 
 proc user_function*(resolved_function_call: ResolvedFunctionCall): Option[
     ResolvedFunctionRef] =
@@ -77,10 +83,10 @@ proc c*(fncall: ResolvedFunctionCall): string =
   let args_str = fncall.args.map_it($(it.value)).join(", ")
   case fncall.kind:
   of RFCK_BUILTIN:
-    fmt"{fncall.builtin_module.name}_{fncall.function_def.name}({args_str})"
+    fmt"{fncall.builtin_module.name}_{fncall.name}({args_str})"
   of RFCK_GENERIC:
-    fmt"{fncall.concrete}_{fncall.generic}_{fncall.function_def.name}({args_str})"
+    fmt"{fncall.concrete}_{fncall.generic}_{fncall.name}({args_str})"
   of RFCK_LOCAL:
-    fmt"{fncall.function_def.name}({args_str})"
+    fmt"{fncall.name}({args_str})"
   of RFCK_MODULE:
-    fmt"{fncall.module.name}_{fncall.function_def.name}({args_str})"
+    fmt"{fncall.module.name}_{fncall.name}({args_str})"
