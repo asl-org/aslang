@@ -85,21 +85,17 @@ type
   ResolvedVariable* = ref object of RootObj
     case kind*: ResolvedVariableKind
     of RVK_DEFAULT:
-      arg_def*: ArgumentDefinition
-      resolved_arg_def*: ResolvedArgumentDefinition
+      arg_def*: ResolvedArgumentDefinition
     of RVK_GENERIC:
       variable: ResolvedVariable
       generic*: Token
       func_refs*: HashSet[ResolvedFunctionRef]
 
-proc new_resolved_variable*(arg_def: ArgumentDefinition,
-    resolved_arg_def: ResolvedArgumentDefinition): ResolvedVariable =
-  ResolvedVariable(kind: RVK_DEFAULT, arg_def: arg_def,
-      resolved_arg_def: resolved_arg_def)
+proc new_resolved_variable*(arg_def: ResolvedArgumentDefinition): ResolvedVariable =
+  ResolvedVariable(kind: RVK_DEFAULT, arg_def: arg_def)
 
 proc new_resolved_variable*(resolved_var: ResolvedVariable,
-    generic: Token, func_refs: HashSet[
-        ResolvedFunctionRef]): ResolvedVariable =
+    generic: Token, func_refs: HashSet[ResolvedFunctionRef]): ResolvedVariable =
   ResolvedVariable(kind: RVK_GENERIC, variable: resolved_var, generic: generic,
       func_refs: func_refs)
 
@@ -109,15 +105,13 @@ proc function_refs*(variable: ResolvedVariable): HashSet[
   of RVK_DEFAULT: init_hashset[ResolvedFunctionRef]()
   of RVK_GENERIC: variable.func_refs
 
-proc typ*(variable: ResolvedVariable): ArgumentType =
-  case variable.kind:
-  of RVK_DEFAULT: variable.arg_def.typ
-  of RVK_GENERIC: variable.variable.arg_def.typ
-
 proc resolved_typ*(variable: ResolvedVariable): ResolvedArgumentType =
   case variable.kind:
-  of RVK_DEFAULT: variable.resolved_arg_def.arg_type
-  of RVK_GENERIC: variable.variable.resolved_arg_def.arg_type
+  of RVK_DEFAULT: variable.arg_def.arg_type
+  of RVK_GENERIC: variable.variable.arg_def.arg_type
+
+proc typ*(variable: ResolvedVariable): ArgumentType =
+  variable.resolved_typ.arg_type
 
 proc name*(variable: ResolvedVariable): Token =
   case variable.kind:
