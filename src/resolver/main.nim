@@ -4,18 +4,8 @@ import blocks
 export blocks
 
 type FunctionScope = ref object of RootObj
-  scope: Table[string, ArgumentDefinition]
-  # TODO: new scope for resolved types, get rid of the un-resolved `scope`
   resolved_scope: Table[string, ResolvedArgumentDefinition]
   temp_var_count: uint = 0
-
-proc add_arg(fn_scope: FunctionScope, arg_def: ArgumentDefinition): Result[
-    FunctionScope, string] =
-  if $(arg_def.name) in fn_scope.scope:
-    let defined_arg = fn_scope.scope[$(arg_def.name)]
-    return err(fmt"{arg_def.location} variable `{arg_def.name}` is already defined the scope {defined_arg.location}")
-  fn_scope.scope[$(arg_def.name)] = arg_def
-  ok(fn_scope)
 
 proc add_arg(fn_scope: FunctionScope, arg_def: ResolvedArgumentDefinition): Result[
     FunctionScope, string] =
@@ -26,18 +16,6 @@ proc add_arg(fn_scope: FunctionScope, arg_def: ResolvedArgumentDefinition): Resu
   ok(fn_scope)
 
 proc get_arg(fn_scope: FunctionScope, arg_name: Token): Result[
-    ArgumentDefinition, string] =
-  if $(arg_name) in fn_scope.scope:
-    return ok(fn_scope.scope[$(arg_name)])
-
-  # TODO: cleanup after scope contains all the resolved values
-  if $(arg_name) in fn_scope.resolved_scope:
-    let resolved_arg = fn_scope.resolved_scope[$(arg_name)]
-    return ok(resolved_arg.arg_def)
-
-  return err(fmt"{arg_name.location} variable `{arg_name}` is not defined the scope.")
-
-proc get_arg_resolved(fn_scope: FunctionScope, arg_name: Token): Result[
     ResolvedArgumentDefinition, string] =
   if $(arg_name) notin fn_scope.resolved_scope:
     return err(fmt"{arg_name.location} variable `{arg_name}` is not defined the scope.")
@@ -50,8 +28,6 @@ proc get_temp_var_count(fn_scope: FunctionScope): uint =
 
 proc clone(scope: FunctionScope): Result[FunctionScope, string] =
   var new_scope = FunctionScope(temp_var_count: scope.temp_var_count)
-  for arg_name, arg_def in scope.scope.pairs:
-    new_scope = ? new_scope.add_arg(arg_def)
   for arg_name, arg_def in scope.resolved_scope.pairs:
     new_scope = ? new_scope.add_arg(arg_def)
   ok(new_scope)
@@ -210,27 +186,13 @@ proc resolve_argument_definition(file: blocks.File,
 
 proc resolve_variable(file: blocks.File, scope: FunctionScope,
     name: Token): Result[ResolvedVariable, string] =
-  let arg_def = ? scope.get_arg(name)
-
-  let maybe_resolved_arg = scope.get_arg_resolved(name)
-  if maybe_resolved_arg.is_ok:
-    return ok(new_resolved_variable(arg_def, maybe_resolved_arg.get))
-
-  let resolved_arg_def = ? file.resolve_argument_definition(arg_def)
-  discard ? scope.add_arg(resolved_arg_def)
-  ok(new_resolved_variable(arg_def, resolved_arg_def))
+  let resolved_arg = ? scope.get_arg(name)
+  ok(new_resolved_variable(resolved_arg))
 
 proc resolve_variable(file: blocks.File, module: UserModule,
     scope: FunctionScope, name: Token): Result[ResolvedVariable, string] =
-  let arg_def = ? scope.get_arg(name)
-
-  let maybe_resolved_arg = scope.get_arg_resolved(name)
-  if maybe_resolved_arg.is_ok:
-    return ok(new_resolved_variable(arg_def, maybe_resolved_arg.get))
-
-  let resolved_arg_def = ? file.resolve_argument_definition(module, arg_def)
-  discard ? scope.add_arg(resolved_arg_def)
-  ok(new_resolved_variable(arg_def, resolved_arg_def))
+  let resolved_arg = ? scope.get_arg(name)
+  ok(new_resolved_variable(resolved_arg))
 
 # module function call arg resolution
 proc resolve_argument(file: blocks.File, module: Module, scope: FunctionScope,
@@ -431,7 +393,8 @@ proc resolve_struct_getter(file: blocks.File, scope: FunctionScope,
     struct_getter: StructGetter): Result[ResolvedStructGetter, string] =
   let struct_var = struct_getter.struct
 
-  let struct_var_def = ? scope.get_arg(struct_var)
+  let resolved_struct_var_def = ? scope.get_arg(struct_var)
+  let struct_var_def = resolved_struct_var_def.arg_def
   let module = ? file.find_module(struct_var_def.typ)
   case module.kind:
   of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
@@ -541,11 +504,10 @@ proc resolve_generic_function_call(file: blocks.File, module: UserModule,
     for arg in function_call.arg_list:
       case arg.kind:
       of TK_ID:
-        let arg_def = ? scope.get_arg(arg)
-        let resolved_arg_def = ? scope.get_arg_resolved(arg)
-        resolved_args.add(new_resolved_argument(new_resolved_variable(arg_def,
+        let resolved_arg_def = ? scope.get_arg(arg)
+        resolved_args.add(new_resolved_argument(new_resolved_variable(
             resolved_arg_def)))
-        arg_type_list.add(arg_def.typ)
+        arg_type_list.add(resolved_arg_def.arg_def.typ)
       else:
         return err("{function_call.func_ref.module.location} Generic function calls do not support literal as arguments")
 
@@ -834,7 +796,6 @@ proc resolve_case_block(file: blocks.File, func_module: UserModule,
   for (index, statement) in case_block.statements.pairs:
     let resolved_statement = ? file.resolve_statement(func_module, scope, statement)
     resolved_statements.add(resolved_statement)
-    discard ? scope.add_arg(resolved_statement.return_argument)
     discard ? scope.add_arg(resolved_statement.resolved_return_argument)
   return ok(new_resolved_case(resolved_pattern, operand.name,
       resolved_statements))
@@ -851,7 +812,6 @@ proc resolve_case_block(file: blocks.File, parent_scope: FunctionScope,
   for (index, statement) in case_block.statements.pairs:
     let resolved_statement = ? file.resolve_statement(scope, statement)
     resolved_statements.add(resolved_statement)
-    discard ? scope.add_arg(resolved_statement.return_argument)
     discard ? scope.add_arg(resolved_statement.resolved_return_argument)
   return ok(new_resolved_case(resolved_pattern, operand.name,
       resolved_statements))
@@ -865,7 +825,6 @@ proc resolve_else_block(file: blocks.File, func_module: UserModule,
   for (index, statement) in else_block.statements.pairs:
     let resolved_statement = ? file.resolve_statement(func_module, scope, statement)
     resolved_statements.add(resolved_statement)
-    discard ? scope.add_arg(resolved_statement.return_argument)
     discard ? scope.add_arg(resolved_statement.resolved_return_argument)
   return ok(new_resolved_else(resolved_statements))
 
@@ -878,7 +837,6 @@ proc resolve_else_block(file: blocks.File, parent_scope: FunctionScope,
   for (index, statement) in else_block.statements.pairs:
     let resolved_statement = ? file.resolve_statement(scope, statement)
     resolved_statements.add(resolved_statement)
-    discard ? scope.add_arg(resolved_statement.return_argument)
     discard ? scope.add_arg(resolved_statement.resolved_return_argument)
 
   return ok(new_resolved_else(resolved_statements))
@@ -886,7 +844,8 @@ proc resolve_else_block(file: blocks.File, parent_scope: FunctionScope,
 # module
 proc resolve_match(file: blocks.File, func_module: UserModule,
     scope: FunctionScope, match: Match): Result[ResolvedMatch, string] =
-  let operand_def = ? scope.get_arg(match.operand)
+  let resolved_operand_def = ? scope.get_arg(match.operand)
+  let operand_def = resolved_operand_def.arg_def
   let operand_module = ? file.find_module(operand_def.typ)
 
   var resolved_patterns: seq[ResolvedPattern]
@@ -937,14 +896,14 @@ proc resolve_match(file: blocks.File, func_module: UserModule,
   let resolved_return_argument = new_resolved_argument_definition(
       match.destination, resolved_return_type)
 
-  ok(new_resolved_match(match, match.destination, operand_def,
-      resolved_case_blocks, resolved_else_blocks, return_argument,
-      resolved_return_argument))
+  ok(new_resolved_match(match.destination, resolved_operand_def,
+      resolved_case_blocks, resolved_else_blocks, resolved_return_argument))
 
 # local
 proc resolve_match(file: blocks.File, scope: FunctionScope,
     match: Match): Result[ResolvedMatch, string] =
-  let operand_def = ? scope.get_arg(match.operand)
+  let resolved_operand_def = ? scope.get_arg(match.operand)
+  let operand_def = resolved_operand_def.arg_def
   let operand_module = ? file.find_module(operand_def.typ)
 
   var resolved_patterns: seq[ResolvedPattern]
@@ -995,9 +954,8 @@ proc resolve_match(file: blocks.File, scope: FunctionScope,
   let resolved_return_argument = new_resolved_argument_definition(
       match.destination, resolved_return_type)
 
-  ok(new_resolved_match(match, match.destination, operand_def,
-      resolved_case_blocks, resolved_else_blocks, return_argument,
-      resolved_return_argument))
+  ok(new_resolved_match(match.destination, resolved_operand_def,
+      resolved_case_blocks, resolved_else_blocks, resolved_return_argument))
 
 # module
 proc resolve_function_step(file: blocks.File, module: UserModule,
@@ -1035,7 +993,6 @@ proc resolve_function(file: blocks.File, module: UserModule, function: Function,
   for (index, step) in function.function_steps.pairs:
     let resolved_function_step = ? file.resolve_function_step(module, scope, step)
     resolved_function_steps.add(resolved_function_step)
-    discard ? scope.add_arg(resolved_function_step.return_argument)
     discard ? scope.add_arg(resolved_function_step.resolved_return_argument)
 
   let expected_return_type = resolved_function_def.return_type
@@ -1058,7 +1015,6 @@ proc resolve_function(file: blocks.File, function: Function,
   for (index, step) in function.function_steps.pairs:
     let resolved_function_step = ? file.resolve_function_step(scope, step)
     resolved_function_steps.add(resolved_function_step)
-    discard ? scope.add_arg(resolved_function_step.return_argument)
     discard ? scope.add_arg(resolved_function_step.resolved_return_argument)
 
   let expected_return_type = resolved_function_definition.return_type

@@ -8,13 +8,11 @@ import function_ref, arg
 const ASL_UNION_ID = "__asl_union_id__"
 
 type ResolvedMatch* = ref object of RootObj
-  parsed_match_block: Match
   destination*: Token
-  operand: ArgumentDefinition
+  resolved_operand: ResolvedArgumentDefinition
   case_blocks: seq[ResolvedCase]
   # there can only be 1 else block
   else_blocks: seq[ResolvedElse]
-  return_argument*: ArgumentDefinition
   resolved_return_argument*: ResolvedArgumentDefinition
 
 proc function_refs*(match: ResolvedMatch): HashSet[ResolvedFunctionRef] =
@@ -48,33 +46,31 @@ proc generic_impls*(match: ResolvedMatch): Table[string, Table[string,
   return impls
 
 proc c*(resolved_match: ResolvedMatch): string =
-  let match = resolved_match.parsed_match_block
   # TODO: Fix garbage value errors if the return argument is defined
   # within one of the blocks C compiler shows undefined behavior.
   # A potential fix is to prefix the variable names within that scope
   # with a scope specific `hash`, location can be used as hash.
-  var lines = @[fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.name};"]
+  var lines = @[fmt"{resolved_match.resolved_return_argument.c};"]
 
   let match_expr =
-    case $(resolved_match.operand.typ):
+    case $(resolved_match.resolved_operand.arg_def.typ):
     of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64":
-      $(resolved_match.operand.name)
+      $(resolved_match.resolved_operand.arg_def.name)
     else:
-      fmt"{resolved_match.operand.typ.parent}_get_{ASL_UNION_ID}({resolved_match.operand.name})"
+      fmt"{resolved_match.resolved_operand.arg_def.typ.parent}_get_{ASL_UNION_ID}({resolved_match.resolved_operand.arg_def.name})"
 
   lines.add(fmt"switch({match_expr}) " & "{")
   for case_block in resolved_match.case_blocks:
-    lines.add(case_block.c(match.destination))
+    lines.add(case_block.c(resolved_match.destination))
   for else_block in resolved_match.else_blocks:
-    lines.add(else_block.c(match.destination))
+    lines.add(else_block.c(resolved_match.destination))
   lines.add("}")
   return lines.join("\n")
 
-proc new_resolved_match*(parsed_match_block: Match, destination: Token,
-    operand: ArgumentDefinition, case_blocks: seq[ResolvedCase],
-    else_blocks: seq[ResolvedElse], return_argument: ArgumentDefinition,
+proc new_resolved_match*(destination: Token,
+    resolved_operand: ResolvedArgumentDefinition, case_blocks: seq[
+    ResolvedCase], else_blocks: seq[ResolvedElse],
     resolved_return_argument: ResolvedArgumentDefinition): ResolvedMatch =
-  ResolvedMatch(parsed_match_block: parsed_match_block,
-      destination: destination, operand: operand, case_blocks: case_blocks,
-      else_blocks: else_blocks, return_argument: return_argument,
+  ResolvedMatch(destination: destination, resolved_operand: resolved_operand,
+      case_blocks: case_blocks, else_blocks: else_blocks,
       resolved_return_argument: resolved_return_argument)
