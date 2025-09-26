@@ -14,7 +14,6 @@ type ResolvedMatch* = ref object of RootObj
   case_blocks: seq[ResolvedCase]
   # there can only be 1 else block
   else_blocks: seq[ResolvedElse]
-  return_argument*: ArgumentDefinition
   resolved_return_argument*: ResolvedArgumentDefinition
 
 proc function_refs*(match: ResolvedMatch): HashSet[ResolvedFunctionRef] =
@@ -53,7 +52,7 @@ proc c*(resolved_match: ResolvedMatch): string =
   # within one of the blocks C compiler shows undefined behavior.
   # A potential fix is to prefix the variable names within that scope
   # with a scope specific `hash`, location can be used as hash.
-  var lines = @[fmt"{resolved_match.return_argument.native_type} {resolved_match.return_argument.name};"]
+  var lines = @[fmt"{resolved_match.resolved_return_argument.c};"]
 
   let match_expr =
     case $(resolved_match.operand.typ):
@@ -72,9 +71,8 @@ proc c*(resolved_match: ResolvedMatch): string =
 
 proc new_resolved_match*(parsed_match_block: Match, destination: Token,
     operand: ArgumentDefinition, case_blocks: seq[ResolvedCase],
-    else_blocks: seq[ResolvedElse], return_argument: ArgumentDefinition,
+    else_blocks: seq[ResolvedElse],
     resolved_return_argument: ResolvedArgumentDefinition): ResolvedMatch =
   ResolvedMatch(parsed_match_block: parsed_match_block,
       destination: destination, operand: operand, case_blocks: case_blocks,
-      else_blocks: else_blocks, return_argument: return_argument,
-      resolved_return_argument: resolved_return_argument)
+      else_blocks: else_blocks, resolved_return_argument: resolved_return_argument)
