@@ -9,7 +9,7 @@ type
     RFDK_LOCAL, RFDK_MODULE
   ResolvedFunctionDefinition* = ref object of RootObj
     name: Token
-    arg_defs: seq[ResolvedArgumentDefinition]
+    arg_defs*: seq[ResolvedArgumentDefinition]
     return_type*: Module
     case kind: ResolvedFunctionDefinitionKind
     of RFDK_LOCAL: discard

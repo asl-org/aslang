@@ -33,17 +33,23 @@ proc c*(init: ResolvedStructInit): string =
   let fields = init.fields.map_it($(it.value)).join(", ")
   fmt"{init.module.name}_init({fields})"
 
+proc resolved_return_type*(init: ResolvedStructInit): ResolvedArgumentType =
+  new_resolved_argument_type(new_module(init.module))
+
 type ResolvedUnionInit* = ref object of RootObj
   module*: UserModule
   union_field: UnionFieldDefinition
   fields: seq[ResolvedArgument]
   temp_var_start: uint
+  resolved_return_type*: ResolvedArgumentType
 
 proc new_resolved_union_init*(module: UserModule,
     union_field: UnionFieldDefinition, fields: seq[
-    ResolvedArgument], temp_var_start: uint): ResolvedUnionInit =
+    ResolvedArgument], temp_var_start: uint,
+        resolved_return_type: ResolvedArgumentType): ResolvedUnionInit =
   ResolvedUnionInit(module: module, union_field: union_field, fields: fields,
-      temp_var_start: temp_var_start)
+      temp_var_start: temp_var_start, resolved_return_type: resolved_return_type)
+
 
 proc function_refs*(union_init: ResolvedUnionInit): HashSet[
     ResolvedFunctionRef] =
@@ -82,7 +88,7 @@ proc c*(init: ResolvedUnionInit): string =
 
         let module_name = $(init.module.name)
         let generic_name = $(field.variable.generic)
-        code.add(fmt"Pointer {temp_var} = {module_name}_{generic_name}_{field.variable.arg_def.typ}_init({field_name});")
+        code.add(fmt"Pointer {temp_var} = {module_name}_{generic_name}_{field.variable.typ}_init({field_name});")
     of RAK_LITERAL:
       field_values.add($(field.value))
 

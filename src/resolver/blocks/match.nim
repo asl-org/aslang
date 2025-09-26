@@ -3,7 +3,7 @@ import strformat, sets, strutils, tables
 import case_block
 import else_block
 
-import function_ref
+import function_ref, arg
 
 const ASL_UNION_ID = "__asl_union_id__"
 
@@ -15,6 +15,7 @@ type ResolvedMatch* = ref object of RootObj
   # there can only be 1 else block
   else_blocks: seq[ResolvedElse]
   return_argument*: ArgumentDefinition
+  resolved_return_argument*: ResolvedArgumentDefinition
 
 proc function_refs*(match: ResolvedMatch): HashSet[ResolvedFunctionRef] =
   var function_ref_set: Hashset[ResolvedFunctionRef]
@@ -71,8 +72,9 @@ proc c*(resolved_match: ResolvedMatch): string =
 
 proc new_resolved_match*(parsed_match_block: Match, destination: Token,
     operand: ArgumentDefinition, case_blocks: seq[ResolvedCase],
-        else_blocks: seq[
-    ResolvedElse], return_argument: ArgumentDefinition): ResolvedMatch =
+    else_blocks: seq[ResolvedElse], return_argument: ArgumentDefinition,
+    resolved_return_argument: ResolvedArgumentDefinition): ResolvedMatch =
   ResolvedMatch(parsed_match_block: parsed_match_block,
       destination: destination, operand: operand, case_blocks: case_blocks,
-      else_blocks: else_blocks, return_argument: return_argument)
+      else_blocks: else_blocks, return_argument: return_argument,
+      resolved_return_argument: resolved_return_argument)
