@@ -38,9 +38,6 @@ type ResolvedCase* = ref object of RootObj
   operand: Token
   statements: seq[ResolvedStatement]
 
-proc return_argument*(case_block: ResolvedCase): ArgumentDefinition =
-  case_block.statements[^1].return_argument
-
 proc resolved_return_argument*(case_block: ResolvedCase): ResolvedArgumentDefinition =
   case_block.statements[^1].resolved_return_argument
 
@@ -75,7 +72,7 @@ proc c*(resolved_case: ResolvedCase, result_var: Token): string =
   for statement in resolved_case.statements:
     lines.add(statement.c)
 
-  let return_arg = resolved_case.return_argument.name
+  let return_arg = resolved_case.resolved_return_argument.name
   lines.add(fmt"{result_var} = {return_arg};")
   lines.add("break;")
   lines.add("}")

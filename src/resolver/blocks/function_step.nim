@@ -33,11 +33,6 @@ proc destination*(function_step: ResolvedFunctionStep): Token =
   of RFSK_STATEMENT: function_step.statement.destination
   of RFSK_MATCH: function_step.match.destination
 
-proc return_argument*(function_step: ResolvedFunctionStep): ArgumentDefinition =
-  case function_step.kind:
-  of RFSK_STATEMENT: function_step.statement.resolved_return_argument.arg_def
-  of RFSK_MATCH: function_step.match.resolved_return_argument.arg_def
-
 proc resolved_return_argument*(function_step: ResolvedFunctionStep): ResolvedArgumentDefinition =
   case function_step.kind:
   of RFSK_STATEMENT: function_step.statement.resolved_return_argument

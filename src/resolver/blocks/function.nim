@@ -71,7 +71,7 @@ proc c*(function: ResolvedFunction): string =
   let signature = fmt"{function.func_def.c}"
 
   var body = function.steps.map_it(it.c)
-  let return_arg_name = function.steps[^1].return_argument.name
+  let return_arg_name = function.steps[^1].resolved_return_argument.name
   body.add(fmt"return {return_arg_name};")
 
   @[signature, "{", body.join("\n"), "}"].join("\n")
