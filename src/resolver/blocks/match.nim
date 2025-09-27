@@ -53,11 +53,11 @@ proc c*(resolved_match: ResolvedMatch): string =
   var lines = @[fmt"{resolved_match.resolved_return_argument.c};"]
 
   let match_expr =
-    case $(resolved_match.resolved_operand.arg_def.typ):
+    case $(resolved_match.resolved_operand.arg_type.name):
     of "U8", "U16", "U32", "U64", "S8", "S16", "S32", "S64":
-      $(resolved_match.resolved_operand.arg_def.name)
+      $(resolved_match.resolved_operand.name)
     else:
-      fmt"{resolved_match.resolved_operand.arg_def.typ.parent}_get_{ASL_UNION_ID}({resolved_match.resolved_operand.arg_def.name})"
+      fmt"{resolved_match.resolved_operand.arg_type.name}_get_{ASL_UNION_ID}({resolved_match.resolved_operand.name})"
 
   lines.add(fmt"switch({match_expr}) " & "{")
   for case_block in resolved_match.case_blocks:

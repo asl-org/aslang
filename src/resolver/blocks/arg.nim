@@ -1,4 +1,4 @@
-import tables, sets, strformat, sequtils, hashes
+import tables, sets, strformat, hashes
 import function_ref
 
 type ResolvedGeneric* = ref object of RootObj
@@ -9,13 +9,16 @@ proc new_resolved_generic*(module: UserModule,
     generic: Generic): ResolvedGeneric =
   ResolvedGeneric(module: module, generic: generic)
 
+proc name*(generic: ResolvedGeneric): Token =
+  generic.generic.name
+
 type
   ResolvedArgumentTypeKind* = enum
     RATK_DEFAULT, RATK_GENERIC
   ResolvedArgumentType* = ref object of RootObj
-    case kind: ResolvedArgumentTypeKind
+    case kind*: ResolvedArgumentTypeKind
     of RATK_DEFAULT:
-      parent: Module
+      parent*: Module
       children: seq[ResolvedArgumentType]
     of RATK_GENERIC:
       generic: ResolvedGeneric
@@ -30,14 +33,10 @@ proc new_resolved_argument_type*(parent: Module, children: seq[
 proc new_resolved_argument_type*(generic: ResolvedGeneric): ResolvedArgumentType =
   ResolvedArgumentType(kind: RATK_GENERIC, generic: generic)
 
-# TODO: Cleanup after scope contains resolved values
-proc arg_type*(arg_type: ResolvedArgumentType): ArgumentType =
+proc name*(arg_type: ResolvedArgumentType): Token =
   case arg_type.kind:
-  of RATK_DEFAULT:
-    let children = arg_type.children.map_it(it.arg_type)
-    new_argument_type(arg_type.parent.name, children)
-  of RATK_GENERIC:
-    new_argument_type(arg_type.generic.generic.name)
+  of RATK_DEFAULT: arg_type.parent.name
+  of RATK_GENERIC: arg_type.generic.name
 
 proc c*(arg_type: ResolvedArgumentType): string =
   case arg_type.kind:
@@ -50,17 +49,14 @@ proc c*(arg_type: ResolvedArgumentType): string =
 type ResolvedArgumentDefinition* = ref object of RootObj
   name*: Token
   arg_type*: ResolvedArgumentType
+  location*: Location
 
 proc new_resolved_argument_definition*(name: Token,
-    arg_type: ResolvedArgumentType): ResolvedArgumentDefinition =
-  ResolvedArgumentDefinition(name: name, arg_type: arg_type)
+    arg_type: ResolvedArgumentType, location: Location = Location()): ResolvedArgumentDefinition =
+  ResolvedArgumentDefinition(name: name, arg_type: arg_type, location: location)
 
 proc c*(arg_def: ResolvedArgumentDefinition): string =
   fmt"{arg_def.arg_type.c} {arg_def.name}"
-
-# TODO: Cleanup after scope contains resolved values
-proc arg_def*(arg_def: ResolvedArgumentDefinition): ArgumentDefinition =
-  new_argument_definition(arg_def.arg_type.arg_type, arg_def.name)
 
 type
   ResolvedLiteralKind* = enum
@@ -110,8 +106,10 @@ proc resolved_typ*(variable: ResolvedVariable): ResolvedArgumentType =
   of RVK_DEFAULT: variable.arg_def.arg_type
   of RVK_GENERIC: variable.variable.arg_def.arg_type
 
-proc typ*(variable: ResolvedVariable): ArgumentType =
-  variable.resolved_typ.arg_type
+proc typ*(variable: ResolvedVariable): ResolvedArgumentType =
+  case variable.kind:
+  of RVK_DEFAULT: variable.arg_def.arg_type
+  of RVK_GENERIC: variable.variable.typ
 
 proc name*(variable: ResolvedVariable): Token =
   case variable.kind:
@@ -124,7 +122,7 @@ proc generic_impls*(variable: ResolvedVariable): Table[string, HashSet[string]] 
   of RVK_DEFAULT: discard
   of RVK_GENERIC:
     impls[$(variable.generic)] = init_hashset[string]()
-    impls[$(variable.generic)].incl($(variable.typ))
+    impls[$(variable.generic)].incl($(variable.typ.name))
   return impls
 
 type
@@ -149,11 +147,6 @@ proc value*(arg: ResolvedArgument): Token =
   case arg.kind:
   of RAK_LITERAL: arg.literal.value
   of RAK_VARIABLE: arg.variable.name
-
-proc return_type*(arg: ResolvedArgument): ArgumentType =
-  case arg.kind:
-  of RAK_LITERAL: new_argument_type(arg.literal.module.name)
-  of RAK_VARIABLE: arg.variable.typ
 
 proc resolved_return_type*(arg: ResolvedArgument): ResolvedArgumentType =
   case arg.kind:

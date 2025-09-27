@@ -5,9 +5,6 @@ import statement, function_ref, arg
 type ResolvedElse* = ref object of RootObj
   statements: seq[ResolvedStatement]
 
-proc return_argument*(else_block: ResolvedElse): ArgumentDefinition =
-  else_block.statements[^1].return_argument
-
 proc resolved_return_argument*(else_block: ResolvedElse): ResolvedArgumentDefinition =
   else_block.statements[^1].resolved_return_argument
 
@@ -35,7 +32,7 @@ proc c*(resolved_else_block: ResolvedElse, result_var: Token): string =
   for statement in resolved_else_block.statements:
     lines.add(statement.c)
 
-  let return_arg = resolved_else_block.return_argument.name
+  let return_arg = resolved_else_block.resolved_return_argument.name
   lines.add(fmt"{result_var} = {return_arg};")
   lines.add("break;")
   lines.add("}")

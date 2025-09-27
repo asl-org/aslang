@@ -59,14 +59,6 @@ proc generic_impls*(expression: ResolvedExpression): Table[string, Table[string,
   of REK_FUNCTION_CALL: expression.function_call.generic_impls
   else: init_table[string, Table[string, HashSet[string]]]()
 
-proc return_type*(expression: ResolvedExpression): ArgumentType =
-  case expression.kind:
-  of REK_ARGUMENT: expression.argument.return_type
-  of REK_FUNCTION_CALL: expression.function_call.return_type
-  of REK_STRUCT_INIT: new_argument_type(expression.struct_init.module.name)
-  of REK_STRUCT_GETTER: expression.struct_getter.field.typ
-  of REK_UNION_INIT: new_argument_type(expression.union_init.module.name)
-
 proc resolved_return_type*(expression: ResolvedExpression): ResolvedArgumentType =
   case expression.kind:
   of REK_ARGUMENT: expression.argument.resolved_return_type
@@ -75,7 +67,7 @@ proc resolved_return_type*(expression: ResolvedExpression): ResolvedArgumentType
   of REK_STRUCT_GETTER: expression.struct_getter.resolved_return_type
   of REK_UNION_INIT: expression.union_init.resolved_return_type
 
-proc c*(expression: ResolvedExpression, return_argument: ArgumentDefinition): string =
+proc c*(expression: ResolvedExpression, return_argument: ResolvedArgumentDefinition): string =
   case expression.kind:
   of REK_ARGUMENT:
     fmt"{return_argument.c} = {expression.argument.c};"
@@ -105,16 +97,12 @@ proc generic_impls*(statement: ResolvedStatement): Table[string, Table[string,
     HashSet[string]]] =
   statement.expression.generic_impls
 
-proc return_argument*(statement: ResolvedStatement): ArgumentDefinition =
-  new_argument_definition(statement.expression.return_type,
-      statement.destination)
-
 proc resolved_return_argument*(statement: ResolvedStatement): ResolvedArgumentDefinition =
   new_resolved_argument_definition(statement.destination,
       statement.expression.resolved_return_type)
 
 proc c*(statement: ResolvedStatement): string =
-  statement.expression.c(statement.return_argument)
+  statement.expression.c(statement.resolved_return_argument)
 
 proc new_resolved_statement*(destination: Token,
     expression: ResolvedExpression): ResolvedStatement =

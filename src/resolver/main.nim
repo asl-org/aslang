@@ -209,7 +209,7 @@ proc resolve_argument(file: blocks.File, module: Module, scope: FunctionScope,
         of MK_USER:
           ? file.resolve_variable(module.user_module, scope, arg_value)
       if $(arg_module.name) == $(arg_type.parent): ok(new_resolved_argument(resolved_variable))
-      else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+      else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ.name}")
     else:
       case arg_module.kind:
       of MK_BUILTIN:
@@ -230,7 +230,11 @@ proc resolve_argument(file: blocks.File, module: Module, scope: FunctionScope,
         case generic.kind:
         of GDK_DEFAULT: discard
         of GDK_EXTENDED:
-          let argval_module = ? file.find_module(resolved_variable.typ)
+          case resolved_variable.typ.kind:
+          of RATK_DEFAULT: discard
+          of RATK_GENERIC: return err("todo: fix resolve argument resolution")
+
+          let argval_module = resolved_variable.typ.parent
           for func_def in generic.constraints(argval_module.name):
             discard ? argval_module.find_function(func_def)
             case argval_module.kind:
@@ -252,7 +256,7 @@ proc resolve_argument(file: blocks.File, scope: FunctionScope,
   of TK_ID:
     let resolved_variable = ? resolve_variable(file, scope, arg_value)
     if $(arg_module.name) == $(arg_type.parent): ok(new_resolved_argument(resolved_variable))
-    else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+    else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ.name}")
   else:
     case arg_module.kind:
     of MK_BUILTIN:
@@ -271,7 +275,7 @@ proc resolve_union_argument(file: blocks.File, scope: FunctionScope,
     of TK_ID:
       let resolved_variable = ? resolve_variable(file, scope, arg_value)
       if $(module.name) == $(arg_type): ok(new_resolved_argument(resolved_variable))
-      else: err(fmt"3 {arg_value.location} expected {arg_type} but found {resolved_variable.typ}")
+      else: err(fmt"{arg_value.location} expected {arg_type} but found {resolved_variable.typ.name}")
     else:
       case module.kind:
       of MK_BUILTIN:
@@ -289,7 +293,11 @@ proc resolve_union_argument(file: blocks.File, scope: FunctionScope,
       of GDK_DEFAULT:
         discard
       of GDK_EXTENDED:
-        let argval_module = ? file.find_module(resolved_variable.typ)
+        case resolved_variable.typ.kind:
+        of RATK_DEFAULT: discard
+        of RATK_GENERIC: return err("todo: fix union argument resolution")
+
+        let argval_module = resolved_variable.typ.parent
         for func_def in generic.constraints(argval_module.name):
           discard ? argval_module.find_function(func_def)
           case argval_module.kind:
@@ -394,8 +402,13 @@ proc resolve_struct_getter(file: blocks.File, scope: FunctionScope,
   let struct_var = struct_getter.struct
 
   let resolved_struct_var_def = ? scope.get_arg(struct_var)
-  let struct_var_def = resolved_struct_var_def.arg_def
-  let module = ? file.find_module(struct_var_def.typ)
+  # let struct_var_def = resolved_struct_var_def.arg_def
+  # let module = ? file.find_module(struct_var_def.typ)
+  case resolved_struct_var_def.arg_type.kind:
+  of RATK_DEFAULT: discard
+  of RATK_GENERIC: return err("todo: fix struct getter resolution")
+
+  let module = resolved_struct_var_def.arg_type.parent
   case module.kind:
   of MK_BUILTIN: err(fmt"Builtin module `{module.name}` is can not be a struct")
   of MK_USER:
@@ -499,7 +512,7 @@ proc resolve_generic_function_call(file: blocks.File, module: UserModule,
   of GDK_DEFAULT:
     err(fmt"{function_call.location} Generic `{generic.name}` does not have any constraint matching the function call at {generic.location}")
   of GDK_EXTENDED:
-    var arg_type_list: seq[ArgumentType]
+    var arg_type_list: seq[ResolvedArgumentType]
     var resolved_args: seq[ResolvedArgument]
     for arg in function_call.arg_list:
       case arg.kind:
@@ -507,7 +520,7 @@ proc resolve_generic_function_call(file: blocks.File, module: UserModule,
         let resolved_arg_def = ? scope.get_arg(arg)
         resolved_args.add(new_resolved_argument(new_resolved_variable(
             resolved_arg_def)))
-        arg_type_list.add(resolved_arg_def.arg_def.typ)
+        arg_type_list.add(resolved_arg_def.arg_type)
       else:
         return err("{function_call.func_ref.module.location} Generic function calls do not support literal as arguments")
 
@@ -518,7 +531,7 @@ proc resolve_generic_function_call(file: blocks.File, module: UserModule,
       var matched = true
       for (expected_arg_def, actual_arg_type) in zip(func_def.arg_def_list,
           arg_type_list):
-        if $(expected_arg_def.typ) != $(actual_arg_type):
+        if $(expected_arg_def.typ) != $(actual_arg_type.name):
           matched = false
           break
 
@@ -785,7 +798,7 @@ proc resolve_statement(file: blocks.File, scope: FunctionScope,
 # module
 proc resolve_case_block(file: blocks.File, func_module: UserModule,
     parent_scope: FunctionScope,
-    resolved_pattern: ResolvedPattern, operand: ArgumentDefinition,
+    resolved_pattern: ResolvedPattern, operand: ResolvedArgumentDefinition,
     case_block: Case): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
@@ -802,7 +815,7 @@ proc resolve_case_block(file: blocks.File, func_module: UserModule,
 
 # local
 proc resolve_case_block(file: blocks.File, parent_scope: FunctionScope,
-    resolved_pattern: ResolvedPattern, operand: ArgumentDefinition,
+    resolved_pattern: ResolvedPattern, operand: ResolvedArgumentDefinition,
     case_block: Case): Result[ResolvedCase, string] =
   var resolved_statements: seq[ResolvedStatement]
   # copy current function scope to the case scope to avoid non local argument name conflicts
@@ -845,8 +858,11 @@ proc resolve_else_block(file: blocks.File, parent_scope: FunctionScope,
 proc resolve_match(file: blocks.File, func_module: UserModule,
     scope: FunctionScope, match: Match): Result[ResolvedMatch, string] =
   let resolved_operand_def = ? scope.get_arg(match.operand)
-  let operand_def = resolved_operand_def.arg_def
-  let operand_module = ? file.find_module(operand_def.typ)
+  let operand_def_type = resolved_operand_def.arg_type
+  case operand_def_type.kind:
+  of RATK_GENERIC: return err("todo: imporve error message in resolve_match")
+  of RATK_DEFAULT: discard
+  let operand_module = operand_def_type.parent
 
   var resolved_patterns: seq[ResolvedPattern]
   case operand_module.kind:
@@ -865,7 +881,7 @@ proc resolve_match(file: blocks.File, func_module: UserModule,
 
   for index, case_block in match.case_blocks.pairs:
     let resolved_case_block = ? file.resolve_case_block(func_module, scope,
-        resolved_patterns[index], operand_def, case_block)
+        resolved_patterns[index], resolved_operand_def, case_block)
     resolved_case_blocks.add(resolved_case_block)
 
   # Note: Even though this is a for loop but there can only be at most 1 else block.
@@ -873,25 +889,16 @@ proc resolve_match(file: blocks.File, func_module: UserModule,
     let resolved_else_block = ? file.resolve_else_block(func_module, scope, else_block)
     resolved_else_blocks.add(resolved_else_block)
 
-  let return_type = resolved_case_blocks[0].return_argument.typ
-  let case_return_args = resolved_case_blocks.map_it(it.return_argument)
-  let else_return_args = resolved_else_blocks.map_it(it.return_argument)
-  for return_arg in (case_return_args & else_return_args):
-    if $(return_type) != $(return_arg.typ):
-      return err(fmt"{return_arg.location} block is expected to return {return_type} but found {return_arg.typ}")
-
-  let return_argument = new_argument_definition(return_type, match.destination)
-
-  let resolved_return_type = ? file.resolve_argument_type(func_module,
-      resolved_case_blocks[0].return_argument.typ)
+  let resolved_return_type = resolved_case_blocks[
+      0].resolved_return_argument.arg_type
   let resolved_case_return_args = resolved_case_blocks.map_it(
       it.resolved_return_argument)
   let resolved_else_return_args = resolved_else_blocks.map_it(
       it.resolved_return_argument)
   for resolved_return_arg in (resolved_case_return_args &
       resolved_else_return_args):
-    if $(resolved_return_type.arg_type) != $(resolved_return_arg.arg_def.typ):
-      return err(fmt"{resolved_return_arg.arg_def.location} block is expected to return {resolved_return_type.arg_type} but found {resolved_return_arg.arg_def.typ}")
+    if $(resolved_return_type.name) != $(resolved_return_arg.arg_type.name):
+      return err(fmt"{resolved_return_arg.name.location} block is expected to return {resolved_return_type.name} but found {resolved_return_arg.arg_type.name}")
 
   let resolved_return_argument = new_resolved_argument_definition(
       match.destination, resolved_return_type)
@@ -903,8 +910,11 @@ proc resolve_match(file: blocks.File, func_module: UserModule,
 proc resolve_match(file: blocks.File, scope: FunctionScope,
     match: Match): Result[ResolvedMatch, string] =
   let resolved_operand_def = ? scope.get_arg(match.operand)
-  let operand_def = resolved_operand_def.arg_def
-  let operand_module = ? file.find_module(operand_def.typ)
+  let operand_def_type = resolved_operand_def.arg_type
+  case operand_def_type.kind:
+  of RATK_GENERIC: return err("todo: imporve error message in resolve_match")
+  of RATK_DEFAULT: discard
+  let operand_module = operand_def_type.parent
 
   var resolved_patterns: seq[ResolvedPattern]
   case operand_module.kind:
@@ -923,7 +933,7 @@ proc resolve_match(file: blocks.File, scope: FunctionScope,
 
   for index, case_block in match.case_blocks.pairs:
     let resolved_case_block = ? file.resolve_case_block(scope,
-        resolved_patterns[index], operand_def, case_block)
+        resolved_patterns[index], resolved_operand_def, case_block)
     resolved_case_blocks.add(resolved_case_block)
 
   # Note: Even though this is a for loop but there can only be at most 1 else block.
@@ -931,25 +941,16 @@ proc resolve_match(file: blocks.File, scope: FunctionScope,
     let resolved_else_block = ? file.resolve_else_block(scope, else_block)
     resolved_else_blocks.add(resolved_else_block)
 
-  let return_type = resolved_case_blocks[0].return_argument.typ
-  let case_return_args = resolved_case_blocks.map_it(it.return_argument)
-  let else_return_args = resolved_else_blocks.map_it(it.return_argument)
-  for return_arg in (case_return_args & else_return_args):
-    if $(return_type) != $(return_arg.typ):
-      return err(fmt"{return_arg.location} block is expected to return {return_type} but found {return_arg.typ}")
-
-  let return_argument = new_argument_definition(return_type, match.destination)
-
-  let resolved_return_type = ? file.resolve_argument_type(resolved_case_blocks[
-      0].return_argument.typ)
+  let resolved_return_type = resolved_case_blocks[
+      0].resolved_return_argument.arg_type
   let resolved_case_return_args = resolved_case_blocks.map_it(
       it.resolved_return_argument)
   let resolved_else_return_args = resolved_else_blocks.map_it(
       it.resolved_return_argument)
   for resolved_return_arg in (resolved_case_return_args &
       resolved_else_return_args):
-    if $(resolved_return_type.arg_type) != $(resolved_return_arg.arg_def.typ):
-      return err(fmt"{resolved_return_arg.arg_def.location} block is expected to return {resolved_return_type.arg_type} but found {resolved_return_arg.arg_def.typ}")
+    if $(resolved_return_type.name) != $(resolved_return_arg.arg_type.name):
+      return err(fmt"{resolved_return_arg.name.location} block is expected to return {resolved_return_type.name} but found {resolved_return_arg.arg_type.name}")
 
   let resolved_return_argument = new_resolved_argument_definition(
       match.destination, resolved_return_type)
@@ -996,9 +997,10 @@ proc resolve_function(file: blocks.File, module: UserModule, function: Function,
     discard ? scope.add_arg(resolved_function_step.resolved_return_argument)
 
   let expected_return_type = resolved_function_def.return_type
-  let actual_return_type = resolved_function_steps[^1].return_argument.typ
-  if $(expected_return_type.name) != $(actual_return_type):
-    return err(fmt"{function.location} expected {function.name} to return {expected_return_type.name} but found {actual_return_type}")
+  let actual_return_type = resolved_function_steps[
+      ^1].resolved_return_argument.arg_type
+  if $(expected_return_type.name) != $(actual_return_type.name):
+    return err(fmt"{function.location} expected {function.name} to return {expected_return_type.name} but found {actual_return_type.name}")
   ok(new_resolved_function(resolved_function_def, resolved_function_steps))
 
 # local
@@ -1018,9 +1020,10 @@ proc resolve_function(file: blocks.File, function: Function,
     discard ? scope.add_arg(resolved_function_step.resolved_return_argument)
 
   let expected_return_type = resolved_function_definition.return_type
-  let actual_return_type = resolved_function_steps[^1].return_argument.typ
-  if $(actual_return_type) != $(expected_return_type.name):
-    return err(fmt"{function.location} Expected function to return `{expected_return_type.name}` but found {actual_return_type}")
+  let actual_return_type = resolved_function_steps[
+      ^1].resolved_return_argument.arg_type
+  if $(actual_return_type.name) != $(expected_return_type.name):
+    return err(fmt"{function.location} Expected function to return `{expected_return_type.name}` but found {actual_return_type.name}")
   ok(new_resolved_function(resolved_function_definition,
       resolved_function_steps))
 
