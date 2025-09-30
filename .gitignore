@@ -1,0 +1,27 @@
+# ASLang compiled artifacts
+aslang
+
+# Nim compiled artifacts
+nimcache/
+*.nim.cfg
+*.o
+*.d
+*.so
+*.dll
+*.exe
+# Nim generated documentation
+doc/html/
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Operating System specific files
+.DS_Store
+Thumbs.db
+
+# Dependencies managed by a package manager (if applicable)
+# For example, if using Nimble to manage dependencies in a 'vendor' directory:
+# vendor/
