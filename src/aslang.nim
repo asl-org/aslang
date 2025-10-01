@@ -1,5 +1,5 @@
 import results, parseopt, os
-import compiler
+from compiler import compile
 
 const Usage = """
 A Software Language for Zero Maintenance Systems
@@ -22,7 +22,7 @@ when isMainModule:
   for (kind, key, val) in getopt():
     case kind:
     of cmdArgument:
-      filename = key
+      filename = key.absolutePath
     of cmdLongOption, cmdShortOption:
       case key:
       of "o", "output":
@@ -42,9 +42,9 @@ when isMainModule:
 
 
   if output.len == 0:
-    output = extract_filename(filename)
+    (_, output, _) = split_file(filename)
 
-  let maybe_compiled = compiler.compile(filename, output)
+  let maybe_compiled = filename.compile(output)
   if maybe_compiled.is_ok:
     quit(QuitSuccess)
   else:
