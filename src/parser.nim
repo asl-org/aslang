@@ -181,12 +181,13 @@ proc new_struct_get(name: Identifier, field: Identifier): StructGet =
 
 type
   ExpressionKind = enum
-    EK_FNCALL, EK_INIT, EK_STRUCT_GET
+    EK_FNCALL, EK_INIT, EK_STRUCT_GET, EK_VARIABLE
   Expression = ref object of RootObj
     case kind: ExpressionKind
     of EK_FNCALL: fncall: FunctionCall
     of EK_INIT: init: Initializer
     of EK_STRUCT_GET: struct_get: StructGet
+    of EK_VARIABLE: variable: Identifier
 
 proc new_expression(fncall: FunctionCall): Expression =
   Expression(kind: EK_FNCALL, fncall: fncall)
@@ -197,6 +198,9 @@ proc new_expression(init: Initializer): Expression =
 proc new_expression(struct_get: StructGet): Expression =
   Expression(kind: EK_STRUCT_GET, struct_get: struct_get)
 
+proc new_expression(variable: Identifier): Expression =
+  Expression(kind: EK_VARIABLE, variable: variable)
+
 type Assignment = ref object of RootObj
   arg: Identifier
   expression: Expression
@@ -205,18 +209,119 @@ proc new_assignment(arg: Identifier, expression: Expression): Assignment =
   Assignment(arg: arg, expression: expression)
 
 type
+  StatementKind = enum
+    SK_EXPR, SK_ASSIGN
+  Statement = ref object of RootObj
+    case kind: StatementKind
+    of SK_EXPR: expression: Expression
+    of SK_ASSIGN: assignment: Assignment
+
+proc new_statement(expression: Expression): Statement =
+  Statement(kind: SK_EXPR, expression: expression)
+
+proc new_statement(assignment: Assignment): Statement =
+  Statement(kind: SK_ASSIGN, assignment: assignment)
+
+type
+  StructPatternKind = enum
+    SPK_DEFAULT, SPK_NAMED
+  StructPattern = ref object of RootObj
+    args: seq[(Identifier, Identifier)]
+    case kind: StructPatternKind
+    of SPK_DEFAULT: location: Location
+    of SPK_NAMED: struct: Identifier
+
+proc new_struct_pattern(args: seq[(Identifier, Identifier)],
+    location: Location): StructPattern =
+  StructPattern(kind: SPK_DEFAULT, args: args, location: location)
+
+proc new_struct_pattern(struct: Identifier, args: seq[(Identifier,
+    Identifier)]): StructPattern =
+  StructPattern(kind: SPK_NAMED, struct: struct, args: args)
+
+type
+  CasePatternKind = enum
+    CPK_LITERAL, CPK_STRUCT
+  CasePattern = ref object of RootObj
+    case kind: CasePatternKind
+    of CPK_LITERAL: literal: Literal
+    of CPK_STRUCT: struct: StructPattern
+
+proc new_case_pattern(literal: Literal): CasePattern =
+  CasePattern(kind: CPK_LITERAL, literal: literal)
+
+proc new_case_pattern(struct: StructPattern): CasePattern =
+  CasePattern(kind: CPK_STRUCT, struct: struct)
+
+type CaseDefinition = ref object of RootObj
+  pattern: CasePattern
+  location: Location
+
+proc new_case_definition(pattern: CasePattern,
+    location: Location): CaseDefinition =
+  CaseDefinition(pattern: pattern, location: location)
+
+type Case = ref object of RootObj
+  def: CaseDefinition
+  statements: seq[Statement]
+
+proc new_case(def: CaseDefinition, statements: seq[Statement]): Case =
+  Case(def: def, statements: statements)
+
+type Else = ref object of RootObj
+  statements: seq[Statement]
+  location: Location
+
+proc new_else(statements: seq[Statement], location: Location): Else =
+  Else(statements: statements, location: location)
+
+type
+  MatchDefinitionKind = enum
+    MDK_DEFAULT, MDK_ASSIGNED
+  MatchDefinition = ref object of RootObj
+    operand: Identifier
+    case kind: MatchDefinitionKind
+    of MDK_DEFAULT: location: Location
+    of MDK_ASSIGNED: arg: Identifier
+
+proc new_match_definition(operand: Identifier,
+    location: Location): MatchDefinition =
+  MatchDefinition(kind: MDK_DEFAULT, operand: operand, location: location)
+
+proc new_match_definition(operand: Identifier,
+    arg: Identifier): MatchDefinition =
+  MatchDefinition(kind: MDK_ASSIGNED, arg: arg, operand: operand)
+
+type
+  MatchKind = enum
+    MK_CASE_ONLY, MK_COMPLETE
+  Match = ref object of RootObj
+    def: MatchDefinition
+    case_blocks: seq[Case]
+    case kind: MatchKind
+    of MK_CASE_ONLY: discard
+    of MK_COMPLETE: else_block: Else
+
+proc new_match(def: MatchDefinition, case_blocks: seq[Case]): Match =
+  Match(kind: MK_CASE_ONLY, def: def, case_blocks: case_blocks)
+
+proc new_match(def: MatchDefinition, case_blocks: seq[Case],
+    else_block: Else): Match =
+  Match(kind: MK_COMPLETE, case_blocks: case_blocks, else_block: else_block)
+
+type
   FunctionStepKind = enum
-    FSK_EXPR, FSK_ASSIGN
+    FSK_STATEMENT, FSK_MATCH
   FunctionStep = ref object of RootObj
     case kind: FunctionStepKind
-    of FSK_EXPR: expression: Expression
-    of FSK_ASSIGN: assignment: Assignment
+    of FSK_STATEMENT: statement: Statement
+    of FSK_MATCH: match: Match
 
-proc new_function_step(expression: Expression): FunctionStep =
-  FunctionStep(kind: FSK_EXPR, expression: expression)
+proc new_function_step(statement: Statement): FunctionStep =
+  FunctionStep(kind: FSK_STATEMENT, statement: statement)
 
-proc new_function_step(assignment: Assignment): FunctionStep =
-  FunctionStep(kind: FSK_ASSIGN, assignment: assignment)
+proc new_function_step(match: Match): FunctionStep =
+  FunctionStep(kind: FSK_MATCH, match: match)
 
 type Function = ref object of RootObj
   def: FunctionDefinition
@@ -225,9 +330,22 @@ type Function = ref object of RootObj
 proc new_function(def: FunctionDefinition, steps: seq[FunctionStep]): Function =
   Function(def: def, steps: steps)
 
-type Generic = ref object of RootObj
-  name: Identifier
-  defs: seq[FunctionDefinition]
+type
+  GenericKind = enum
+    GK_DEFAULT, GK_CONSTRAINED
+  Generic = ref object of RootObj
+    name: Identifier
+    location: Location
+    case kind: GenericKind
+    of GK_DEFAULT: discard
+    of GK_CONSTRAINED: defs: seq[FunctionDefinition]
+
+proc new_generic(name: Identifier, location: Location): Generic =
+  Generic(kind: GK_DEFAULT, name: name, location: location)
+
+proc new_generic(name: Identifier, defs: seq[FunctionDefinition],
+    location: Location): Generic =
+  Generic(kind: GK_CONSTRAINED, name: name, defs: defs, location: location)
 
 type ModuleDefinition = ref object of RootObj
   name: Identifier
@@ -553,6 +671,27 @@ proc struct_spec(parser: Parser, indent: int): Result[Struct, string] =
 
   ok(new_struct(def, fields))
 
+proc argument_definition_list_spec(parser: Parser): Result[seq[
+    ArgumentDefinition], string] =
+  var argdefs: seq[ArgumentDefinition]
+  discard ? parser.expect(open_paren_bracket_spec)
+
+  discard ? parser.expect(space_consumer_spec)
+  # NOTE: Every function must have an input argument
+  argdefs.add( ? parser.expect(argument_definition_spec))
+  discard ? parser.expect(space_consumer_spec)
+
+  var maybe_comma = parser.expect(comma_spec)
+  while maybe_comma.is_ok:
+    discard ? parser.expect(space_consumer_spec)
+    argdefs.add( ? parser.expect(argument_definition_spec))
+    discard ? parser.expect(space_consumer_spec)
+
+    maybe_comma = parser.expect(comma_spec)
+
+  discard ? parser.expect(close_paren_bracket_spec)
+  ok(argdefs)
+
 proc function_definition_spec(parser: Parser, indent: int): Result[
     FunctionDefinition, string] =
   discard ? parser.expect(indent_spec, indent)
@@ -562,24 +701,7 @@ proc function_definition_spec(parser: Parser, indent: int): Result[
   discard ? parser.expect(space_consumer_spec)
 
   let name = ? parser.expect(identifier_spec)
-
-  discard ? parser.expect(open_paren_bracket_spec)
-  var args: seq[ArgumentDefinition]
-
-  discard ? parser.expect(space_consumer_spec)
-  # NOTE: Every function must have an input argument
-  args.add( ? parser.expect(argument_definition_spec))
-  discard ? parser.expect(space_consumer_spec)
-
-  var maybe_comma = parser.expect(comma_spec)
-  while maybe_comma.is_ok:
-    discard ? parser.expect(space_consumer_spec)
-    args.add( ? parser.expect(argument_definition_spec))
-    discard ? parser.expect(space_consumer_spec)
-
-    maybe_comma = parser.expect(comma_spec)
-
-  discard ? parser.expect(close_paren_bracket_spec)
+  let args = ? parser.expect(argument_definition_list_spec)
   discard ? parser.expect(space_consumer_spec)
 
   discard ? parser.expect(colon_spec)
@@ -679,8 +801,7 @@ proc function_ref_spec(parser: Parser): Result[FunctionRef, string] =
   let token = ? parser.peek()
   err(fmt"{token.location} expected a function call but found {token.value}")
 
-proc function_call_spec(parser: Parser): Result[FunctionCall, string] =
-  let fnref = ? parser.expect(function_ref_spec)
+proc argument_list_spec(parser: Parser): Result[seq[Argument], string] =
   discard ? parser.expect(open_paren_bracket_spec)
 
   var args: seq[Argument]
@@ -697,6 +818,11 @@ proc function_call_spec(parser: Parser): Result[FunctionCall, string] =
     maybe_comma = parser.expect(comma_spec)
 
   discard ? parser.expect(close_paren_bracket_spec)
+  ok(args)
+
+proc function_call_spec(parser: Parser): Result[FunctionCall, string] =
+  let fnref = ? parser.expect(function_ref_spec)
+  let args = ? parser.expect(argument_list_spec)
   ok(new_function_call(fnref, args))
 
 proc literal_init_spec(parser: Parser): Result[LiteralInit, string] =
@@ -724,13 +850,11 @@ proc struct_ref_spec(parser: Parser): Result[StructRef, string] =
   let struct = ? parser.expect(identifier_spec)
   ok(new_struct_ref(module, struct))
 
-proc struct_init_spec(parser: Parser): Result[StructInit, string] =
-  let struct_ref = ? parser.expect(struct_ref_spec)
-  discard ? parser.expect(space_consumer_spec)
+proc keyword_argument_list_spec(parser: Parser): Result[seq[KeywordArgument], string] =
+  var args: seq[KeywordArgument]
   discard ? parser.expect(open_curly_bracket_spec)
 
   discard ? parser.expect(space_consumer_spec)
-  var args: seq[KeywordArgument]
   # NOTE: every struct init must have at least one keyword argument
   args.add( ? parser.expect(keyword_argument_spec))
   discard ? parser.expect(space_consumer_spec)
@@ -742,7 +866,13 @@ proc struct_init_spec(parser: Parser): Result[StructInit, string] =
     maybe_comma = parser.expect(comma_spec)
 
   discard ? parser.expect(close_curly_bracket_spec)
-  ok(new_struct_init(struct_ref, args))
+  ok(args)
+
+proc struct_init_spec(parser: Parser): Result[StructInit, string] =
+  let struct_ref = ? parser.expect(struct_ref_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let kwargs = ? parser.expect(keyword_argument_list_spec)
+  ok(new_struct_init(struct_ref, kwargs))
 
 proc initializer_spec(parser: Parser): Result[Initializer, string] =
   let maybe_literal_init = parser.expect(literal_init_spec)
@@ -775,6 +905,10 @@ proc expression_spec(parser: Parser): Result[Expression, string] =
   if maybe_struct_get.is_ok:
     return ok(new_expression(maybe_struct_get.get))
 
+  let maybe_variable = parser.expect(identifier_spec)
+  if maybe_variable.is_ok:
+    return ok(new_expression(maybe_variable.get))
+
   let token = ? parser.peek()
   err(fmt"{token.location} expected a valid expression but found {token.value}")
 
@@ -786,16 +920,180 @@ proc assignment_spec(parser: Parser): Result[Assignment, string] =
   let expression = ? parser.expect(expression_spec)
   ok(new_assignment(arg, expression))
 
-proc function_step_spec(parser: Parser, indent: int): Result[FunctionStep, string] =
+proc statement_spec(parser: Parser, indent: int): Result[Statement, string] =
   discard ? parser.expect(indent_spec, indent)
 
   let maybe_assignment = parser.expect(assignment_spec)
   if maybe_assignment.is_ok:
-    return ok(new_function_step(maybe_assignment.get))
+    return ok(new_statement(maybe_assignment.get))
 
   let maybe_expression = parser.expect(expression_spec)
   if maybe_expression.is_ok:
-    return ok(new_function_step(maybe_expression.get))
+    return ok(new_statement(maybe_expression.get))
+
+proc match_definition_default_spec(parser: Parser): Result[
+    MatchDefinition, string] =
+  let match_keyword = ? parser.expect(match_keyword_spec)
+  discard ? parser.expect(space_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let operand = ? parser.expect(identifier_spec)
+  discard ? parser.expect(space_consumer_spec)
+  discard ? parser.expect(colon_spec)
+  ok(new_match_definition(operand, match_keyword.location))
+
+proc match_definition_assigned_spec(parser: Parser): Result[
+    MatchDefinition, string] =
+  let arg = ? parser.expect(identifier_spec)
+  discard ? parser.expect(space_consumer_spec)
+  discard ? parser.expect(equal_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let match_def_default = ? parser.expect(match_definition_default_spec)
+  ok(new_match_definition(match_def_default.operand, arg))
+
+proc match_definition_spec(parser: Parser, indent: int): Result[MatchDefinition, string] =
+  discard ? parser.expect(indent_spec, indent)
+
+  let maybe_match_def_default = parser.expect(match_definition_default_spec)
+  if maybe_match_def_default.is_ok:
+    return maybe_match_def_default
+
+  let maybe_match_def_assigned = parser.expect(match_definition_assigned_spec)
+  if maybe_match_def_assigned.is_ok:
+    return maybe_match_def_assigned
+
+  let token = ? parser.peek()
+  err(fmt"{token.location} expected a valid match definition")
+
+proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
+    Identifier), string] =
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(space_consumer_spec)
+  discard ? parser.expect(colon_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let value = ? parser.expect(identifier_spec)
+  ok((name, value))
+
+proc struct_pattern_default_spec(parser: Parser): Result[StructPattern, string] =
+  let open_curly = ? parser.expect(open_curly_bracket_spec)
+  discard ? parser.expect(space_consumer_spec)
+
+  var keywords: seq[(Identifier, Identifier)]
+  keywords.add( ? parser.expect(keyword_value_identifier_spec))
+  discard ? parser.expect(space_consumer_spec)
+  var maybe_comma = parser.expect(comma_spec)
+  while maybe_comma.is_ok:
+    discard ? parser.expect(space_consumer_spec)
+    keywords.add( ? parser.expect(keyword_value_identifier_spec))
+    discard ? parser.expect(space_consumer_spec)
+    maybe_comma = parser.expect(comma_spec)
+
+  discard ? parser.expect(close_curly_bracket_spec)
+  ok(new_struct_pattern(keywords, open_curly.location))
+
+proc struct_pattern_named_spec(parser: Parser): Result[StructPattern, string] =
+  let struct = ? parser.expect(identifier_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let struct_pattern_default = ? parser.expect(struct_pattern_default_spec)
+  ok(new_struct_pattern(struct, struct_pattern_default.args))
+
+proc struct_pattern_spec(parser: Parser): Result[StructPattern, string] =
+  let maybe_struct_pattern_named = parser.expect(struct_pattern_named_spec)
+  if maybe_struct_pattern_named.is_ok:
+    return maybe_struct_pattern_named
+
+  let maybe_struct_pattern_default = parser.expect(struct_pattern_default_spec)
+  if maybe_struct_pattern_default.is_ok:
+    return maybe_struct_pattern_default
+
+  let token = ? parser.peek()
+  err(fmt"{token.location} expected a valid struct pattern but found `{token.value}`")
+
+proc case_pattern_spec(parser: Parser): Result[CasePattern, string] =
+  let maybe_struct_pattern = parser.expect(struct_pattern_spec)
+  if maybe_struct_pattern.is_ok:
+    return ok(new_case_pattern(maybe_struct_pattern.get))
+
+  let maybe_literal = parser.expect(literal_spec)
+  if maybe_literal.is_ok:
+    return ok(new_case_pattern(maybe_literal.get))
+
+  let token = ? parser.peek()
+  err(fmt"{token.location} expected a valid case pattern but found `{token.value}`")
+
+proc case_definition_spec(parser: Parser): Result[CaseDefinition, string] =
+  let case_keyword = ? parser.expect(case_keyword_spec)
+  discard ? parser.expect(space_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let pattern = ? parser.expect(case_pattern_spec)
+  discard ? parser.expect(space_consumer_spec)
+  discard ? parser.expect(colon_spec)
+  ok(new_case_definition(pattern, case_keyword.location))
+
+proc case_spec(parser: Parser, indent: int): Result[Case, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let case_def = ? parser.expect(case_definition_spec)
+  ? parser.expect(empty_line_consumer_spec)
+
+  var statements: seq[Statement]
+  var maybe_statement = parser.expect(statement_spec, indent + 1)
+  while maybe_statement.is_ok:
+    statements.add(maybe_statement.get)
+    ? parser.expect(empty_line_consumer_spec)
+    maybe_statement = parser.expect(statement_spec, indent + 1)
+
+  if statements.len == 0:
+    let token = ? parser.peek()
+    return err(fmt"{token.location} case block must have at least 1 statement")
+
+  ok(new_case(case_def, statements))
+
+proc else_spec(parser: Parser, indent: int): Result[Else, string] =
+  discard ? parser.expect(indent_spec, indent)
+
+  let else_def = ? parser.expect(else_keyword_spec)
+  discard ? parser.expect(space_consumer_spec)
+  discard ? parser.expect(colon_spec)
+  ? parser.expect(empty_line_consumer_spec)
+
+  var statements: seq[Statement]
+  var maybe_statement = parser.expect(statement_spec, indent + 1)
+  while maybe_statement.is_ok:
+    statements.add(maybe_statement.get)
+    ? parser.expect(empty_line_consumer_spec)
+    maybe_statement = parser.expect(statement_spec, indent + 1)
+
+  if statements.len == 0:
+    let token = ? parser.peek()
+    return err(fmt"{token.location} case block must have at least 1 statement")
+
+  ok(new_else(statements, else_def.location))
+
+proc match_spec(parser: Parser, indent: int): Result[Match, string] =
+  let match_def = ? parser.expect(match_definition_spec, indent)
+  var cases: seq[Case]
+
+  ? parser.expect(empty_line_consumer_spec)
+  var maybe_case = parser.expect(case_spec, indent + 1)
+  while maybe_case.is_ok:
+    cases.add(maybe_case.get)
+    ? parser.expect(empty_line_consumer_spec)
+    maybe_case = parser.expect(case_spec, indent + 1)
+
+  var maybe_else = parser.expect(else_spec, indent + 1)
+  if maybe_else.is_ok:
+    return ok(new_match(match_def, cases, maybe_else.get))
+
+  return ok(new_match(match_def, cases))
+
+proc function_step_spec(parser: Parser, indent: int): Result[FunctionStep, string] =
+  # NOTE: match must be tried first due to overlapping structure of expressions.
+  let maybe_match = parser.expect(match_spec, indent)
+  if maybe_match.is_ok:
+    return ok(new_function_step(maybe_match.get))
+
+  let maybe_statement = parser.expect(statement_spec, indent)
+  if maybe_statement.is_ok:
+    return ok(new_function_step(maybe_statement.get))
 
   let token = ? parser.peek()
   err(fmt"{token.location} expected either an expression or assignment but found `{token.value}`")
@@ -817,22 +1115,72 @@ proc function_spec(parser: Parser, indent: int): Result[Function, string] =
 
   ok(new_function(def, steps))
 
+proc generic_default_spec(parser: Parser, indent: int): Result[Generic, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let generic_keyword = ? parser.expect(generic_keyword_spec)
+  discard ? parser.expect(space_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let name = ? parser.expect(identifier_spec)
+  ok(new_generic(name, generic_keyword.location))
+
+proc generic_constrained_spec(parser: Parser, indent: int): Result[Generic, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let generic_keyword = ? parser.expect(generic_keyword_spec)
+  discard ? parser.expect(space_spec)
+  discard ? parser.expect(space_consumer_spec)
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(space_consumer_spec)
+  discard ? parser.expect(colon_spec)
+
+  var defs: seq[FunctionDefinition]
+  ? parser.expect(empty_line_consumer_spec)
+
+  var maybe_func_def = parser.expect(function_definition_spec, indent + 1)
+  while maybe_func_def.is_ok:
+    defs.add(maybe_func_def.get)
+    ? parser.expect(empty_line_consumer_spec)
+    maybe_func_def = parser.expect(function_definition_spec, indent + 1)
+
+  ok(new_generic(name, defs, generic_keyword.location))
+
+proc generic_spec(parser: Parser, indent: int): Result[Generic, string] =
+  let maybe_generic_constrained = parser.expect(generic_constrained_spec, indent)
+  if maybe_generic_constrained.is_ok:
+    return maybe_generic_constrained
+
+  # NOTE: generic default parser must be second since it is a subset of
+  # generic_named spec and therefore may result in malformed parsing.
+  let maybe_generic_default = parser.expect(generic_default_spec, indent)
+  if maybe_generic_default.is_ok:
+    return maybe_generic_default
+
+  let token = ? parser.peek()
+  err(fmt"{token.location} expected a generic block `{token.value}`")
+
 proc module_spec(parser: Parser, indent: int): Result[Module, string] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
+  var generics: seq[Generic]
   var structs: seq[Struct]
   var functions: seq[Function]
 
   while parser.can_parse():
     ? parser.expect(empty_line_consumer_spec)
 
+    let maybe_generic = parser.expect(generic_spec, indent + 1)
+    if maybe_generic.is_ok:
+      generics.add(maybe_generic.get)
+      continue
+
     let maybe_struct = parser.expect(struct_spec, indent + 1)
     if maybe_struct.is_ok:
       structs.add(maybe_struct.get)
+      continue
 
     let maybe_function = parser.expect(function_spec, indent + 1)
     if maybe_function.is_ok:
       functions.add(maybe_function.get)
+      continue
 
     break
   ok(new_module(def, structs, @[], functions))
