@@ -8,6 +8,8 @@ type Location* = object
 proc new_location*(filename: string): Location =
   Location(filename: filename)
 
+proc new_location*(): Location = Location()
+
 proc update*(location: Location, value: string): Location =
   var new_location = location
   for x in value:

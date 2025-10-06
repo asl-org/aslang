@@ -19,11 +19,17 @@ proc new_identifier*(name: string, location: Location): Result[Identifier, strin
     return err(fmt"{location} identifier length `{name.len}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
   ok(Identifier(name: name, location: location))
 
-proc asl(identifier: Identifier): string =
+proc location*(identifier: Identifier): Location =
+  identifier.location
+
+proc asl*(identifier: Identifier): string =
   identifier.name
 
-proc hash(identifier: Identifier): Hash =
+proc hash*(identifier: Identifier): Hash =
   hash(identifier.name)
+
+proc `==`*(a: Identifier, b: Identifier): bool =
+  a.name == b.name
 
 type
   ArgumentTypeKind = enum
@@ -47,6 +53,17 @@ proc new_argument_type*(module: Identifier, children: seq[
 
 proc location(argtype: ArgumentType): Location =
   argtype.module.location
+
+proc module*(argtype: ArgumentType): Identifier =
+  argtype.module
+
+proc kind*(argtype: ArgumentType): ArgumentTypeKind =
+  argtype.kind
+
+proc children*(argtype: ArgumentType): seq[ArgumentType] =
+  case argtype.kind:
+  of ATK_SIMPLE: @[]
+  of ATK_NESTED: argtype.children
 
 proc asl(argtype: ArgumentType): string =
   case argtype.kind:
@@ -76,6 +93,9 @@ proc new_argument_definition*(name: Identifier,
     argtype: ArgumentType): ArgumentDefinition =
   ArgumentDefinition(name: name, argtype: argtype)
 
+proc argtype*(def: ArgumentDefinition): ArgumentType =
+  def.argtype
+
 proc location(def: ArgumentDefinition): Location =
   def.argtype.location
 
@@ -84,8 +104,8 @@ proc asl(def: ArgumentDefinition): string =
   let type_str = def.argtype.asl
   fmt"{type_str} {name_str}"
 
-proc hash(def: ArgumentDefinition): Hash =
-  hash(def.argtype)
+proc name*(def: ArgumentDefinition): Identifier = def.name
+proc hash(def: ArgumentDefinition): Hash = hash(def.argtype)
 
 type
   StructDefinitionKind = enum
@@ -129,6 +149,14 @@ proc new_struct*(def: StructDefinition, fields: seq[
 
   ok(Struct(def: def, fields: fields, fields_map: fields_map))
 
+proc find_field(struct: Struct, field: Identifier): Result[ArgumentType, string] =
+  if field notin struct.fields_map:
+    err(fmt"{field.location} field `{field.asl}` does not exist")
+  else:
+    ok(struct.fields[struct.fields_map[field]].argtype)
+
+proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields
+
 proc location(struct: Struct): Location =
   struct.def.location
 
@@ -167,7 +195,13 @@ proc new_function_definition*(name: Identifier, args: seq[ArgumentDefinition],
   ok(FunctionDefinition(name: name, args: args, args_map: args_map,
       returns: returns, location: location))
 
-proc asl(def: FunctionDefinition): string =
+proc args*(def: FunctionDefinition): seq[ArgumentDefinition] =
+  def.args
+
+proc returns*(def: FunctionDefinition): ArgumentType =
+  def.returns
+
+proc asl*(def: FunctionDefinition): string =
   var args: seq[string]
   for arg in def.args:
     args.add(arg.asl)
@@ -284,6 +318,12 @@ proc new_literal*(float_literal: FloatLiteral): Literal =
 proc new_literal*(string_literal: StringLiteral): Literal =
   Literal(kind: LK_STRING, string_literal: string_literal)
 
+# proc location(literal: Literal): Location =
+#   case literal.kind:
+#   of LK_INTEGER: literal.integer_literal.location
+#   of LK_FLOAT: literal.float_literal.location
+#   of LK_STRING: literal.string_literal.location
+
 proc asl(literal: Literal): string =
   case literal.kind:
   of LK_INTEGER: literal.integer_literal.asl
@@ -351,10 +391,10 @@ proc new_function_call*(fnref: FunctionRef, args: seq[Argument]): Result[
     return err(fmt"{fnref.location} function call argument length `{args.len}` exceeded maximum args length `{MAX_ARGS_LENGTH}`")
   ok(FunctionCall(fnref: fnref, args: args))
 
-# proc location(fncall: FunctionCall): Location =
-#   fncall.fnref.location
+proc location(fncall: FunctionCall): Location =
+  fncall.fnref.location
 
-proc asl(fncall: FunctionCall): string =
+proc asl*(fncall: FunctionCall): string =
   var args: seq[string]
   for arg in fncall.args:
     args.add(arg.asl)
@@ -368,8 +408,8 @@ type LiteralInit* = ref object of RootObj
 proc new_literal_init*(module: ArgumentType, literal: Literal): LiteralInit =
   LiteralInit(module: module, literal: literal)
 
-# proc location(init: LiteralInit): Location =
-#   init.module.location
+proc location(init: LiteralInit): Location =
+  init.module.location
 
 proc asl(init: LiteralInit): string =
   fmt"{init.module.asl} {init.literal.asl}"
@@ -432,8 +472,8 @@ proc new_struct_init*(struct_ref: StructRef, args: seq[
 
   ok(StructInit(struct_ref: struct_ref, args: args, args_map: args_map))
 
-# proc location(init: StructInit): Location =
-#   init.struct_ref.location
+proc location(init: StructInit): Location =
+  init.struct_ref.location
 
 proc asl(init: StructInit): string =
   var args: seq[string]
@@ -455,10 +495,10 @@ proc new_initializer*(literal: LiteralInit): Initializer =
 proc new_initializer*(struct: StructInit): Initializer =
   Initializer(kind: IK_STRUCT, struct: struct)
 
-# proc location(init: Initializer): Location =
-#   case init.kind:
-#   of IK_LITERAL: init.literal.location
-#   of IK_STRUCT: init.struct.location
+proc location(init: Initializer): Location =
+  case init.kind:
+  of IK_LITERAL: init.literal.location
+  of IK_STRUCT: init.struct.location
 
 proc asl(init: Initializer): string =
   case init.kind:
@@ -472,10 +512,11 @@ type StructGet* = ref object of RootObj
 proc new_struct_get*(name: Identifier, field: Identifier): StructGet =
   StructGet(name: name, field: field)
 
-# proc location(struct_get: StructGet): Location =
-#   struct_get.name.location
+proc location*(struct_get: StructGet): Location = struct_get.name.location
+proc name*(struct_get: StructGet): Identifier = struct_get.name
+proc field*(struct_get: StructGet): Identifier = struct_get.field
 
-proc asl(struct_get: StructGet): string =
+proc asl*(struct_get: StructGet): string =
   fmt"{struct_get.name.asl}.{struct_get.field.asl}"
 
 type
@@ -500,12 +541,32 @@ proc new_expression*(struct_get: StructGet): Expression =
 proc new_expression*(variable: Identifier): Expression =
   Expression(kind: EK_VARIABLE, variable: variable)
 
-# proc location(expression: Expression): Location =
-#   case expression.kind:
-#   of EK_FNCALL: expression.fncall.location
-#   of EK_INIT: expression.init.location
-#   of EK_STRUCT_GET: expression.struct_get.location
-#   of EK_VARIABLE: expression.variable.location
+proc location*(expression: Expression): Location =
+  case expression.kind:
+  of EK_FNCALL: expression.fncall.location
+  of EK_INIT: expression.init.location
+  of EK_STRUCT_GET: expression.struct_get.location
+  of EK_VARIABLE: expression.variable.location
+
+proc fncall*(expression: Expression): Result[FunctionCall, string] =
+  case expression.kind:
+  of EK_FNCALL: ok(expression.fncall)
+  else: err(fmt"{expression.location} [UNREACHABLE] expected expression to be a function call")
+
+proc init*(expression: Expression): Result[Initializer, string] =
+  case expression.kind:
+  of EK_INIT: ok(expression.init)
+  else: err(fmt"{expression.location} [UNREACHABLE] expected expression to be a initializer")
+
+proc struct_get*(expression: Expression): Result[StructGet, string] =
+  case expression.kind:
+  of EK_STRUCT_GET: ok(expression.struct_get)
+  else: err(fmt"{expression.location} [UNREACHABLE] expected expression to be a struct getter")
+
+proc variable*(expression: Expression): Result[Identifier, string] =
+  case expression.kind:
+  of EK_VARIABLE: ok(expression.variable)
+  else: err(fmt"{expression.location} [UNREACHABLE] expected expression to be an identifier")
 
 proc asl(expression: Expression): string =
   case expression.kind:
@@ -514,42 +575,35 @@ proc asl(expression: Expression): string =
   of EK_STRUCT_GET: expression.struct_get.asl
   of EK_VARIABLE: expression.variable.asl
 
-type Assignment* = ref object of RootObj
-  arg: Identifier
-  expression: Expression
-
-proc new_assignment*(arg: Identifier, expression: Expression): Assignment =
-  Assignment(arg: arg, expression: expression)
-
-# proc location(assignment: Assignment): Location =
-#   assignment.arg.location
-
-proc asl(assignment: Assignment): string =
-  fmt"{assignment.arg.asl} = {assignment.expression.asl}"
-
 type
   StatementKind = enum
-    SK_EXPR, SK_ASSIGN
+    SK_USER, SK_AUTO
   Statement* = ref object of RootObj
-    case kind: StatementKind
-    of SK_EXPR: expression: Expression
-    of SK_ASSIGN: assignment: Assignment
+    kind: StatementKind
+    arg: Identifier
+    expression: Expression
 
-proc new_statement*(expression: Expression): Statement =
-  Statement(kind: SK_EXPR, expression: expression)
+proc new_statement*(expression: Expression): Result[Statement, string] =
+  let arg = ? new_identifier(fmt"__asl__arg__{expression.location.hash.to_hex}__",
+      expression.location)
+  ok(Statement(kind: SK_AUTO, arg: arg, expression: expression))
 
-proc new_statement*(assignment: Assignment): Statement =
-  Statement(kind: SK_ASSIGN, assignment: assignment)
+proc new_statement*(arg: Identifier, expression: Expression): Statement =
+  Statement(kind: SK_USER, arg: arg, expression: expression)
 
-# proc location(statement: Statement): Location =
-#   case statement.kind:
-#   of SK_ASSIGN: statement.assignment.location
-#   of SK_EXPR: statement.expression.location
+proc location(statement: Statement): Location =
+  statement.arg.location
+
+proc expression*(statement: Statement): Expression = statement.expression
+proc arg*(statement: Statement): Identifier = statement.arg
 
 proc asl(statement: Statement): string =
   case statement.kind:
-  of SK_ASSIGN: statement.assignment.asl
-  of SK_EXPR: statement.expression.asl
+  of SK_USER: fmt"{statement.arg.asl} = {statement.expression.asl}"
+  of SK_AUTO: statement.expression.asl
+
+proc debug*(statement: Statement): string =
+  fmt"{statement.arg.asl} = {statement.expression.asl}"
 
 type
   StructPatternKind = enum
@@ -694,32 +748,28 @@ type
   MatchDefinitionKind = enum
     MDK_DEFAULT, MDK_ASSIGNED
   MatchDefinition* = ref object of RootObj
+    kind: MatchDefinitionKind
     operand: Identifier
-    case kind: MatchDefinitionKind
-    of MDK_DEFAULT: location: Location
-    of MDK_ASSIGNED: arg: Identifier
+    arg: Identifier
 
 proc new_match_definition*(operand: Identifier,
-    location: Location): MatchDefinition =
-  MatchDefinition(kind: MDK_DEFAULT, operand: operand, location: location)
+    location: Location): Result[MatchDefinition, string] =
+  let arg = ? new_identifier(fmt"__asl__arg__{location.hash.to_hex}__", location)
+  ok(MatchDefinition(kind: MDK_DEFAULT, arg: arg, operand: operand))
 
 proc new_match_definition*(def: MatchDefinition,
-    arg: Identifier): Result[MatchDefinition, string] =
-  case def.kind:
-  of MDK_DEFAULT:
-    ok(MatchDefinition(kind: MDK_ASSIGNED, arg: arg, operand: def.operand))
-  of MDK_ASSIGNED:
-    err(fmt"{def.location} [UNREACHABLE] match operation result can only be assigned to 1 variable")
+    arg: Identifier): MatchDefinition =
+  MatchDefinition(kind: MDK_ASSIGNED, arg: arg, operand: def.operand)
 
-proc location(def: MatchDefinition): Location =
-  case def.kind:
-  of MDK_DEFAULT: def.location
-  of MDK_ASSIGNED: def.arg.location
+proc location(def: MatchDefinition): Location = def.arg.location
 
 proc asl(def: MatchDefinition): string =
   case def.kind:
   of MDK_DEFAULT: fmt"match {def.operand.asl}:"
   of MDK_ASSIGNED: fmt"{def.arg.asl} = match {def.operand.asl}:"
+
+proc debug*(def: MatchDefinition): string =
+  fmt"{def.arg.asl} = match {def.operand.asl}:"
 
 type
   MatchKind = enum
@@ -744,8 +794,8 @@ proc new_match*(def: MatchDefinition, case_blocks: seq[Case],
   ok(Match(kind: MK_COMPLETE, def: def, case_blocks: case_blocks,
       else_block: else_block))
 
-# proc location(match: Match): Location =
-#   match.def.location
+proc location(match: Match): Location =
+  match.def.location
 
 proc asl(match: Match, indent: string): seq[string] =
   let header = match.def.asl
@@ -764,7 +814,7 @@ proc asl(match: Match, indent: string): seq[string] =
   return (@[header] & lines)
 
 type
-  FunctionStepKind = enum
+  FunctionStepKind* = enum
     FSK_STATEMENT, FSK_MATCH
   FunctionStep* = ref object of RootObj
     case kind: FunctionStepKind
@@ -777,12 +827,22 @@ proc new_function_step*(statement: Statement): FunctionStep =
 proc new_function_step*(match: Match): FunctionStep =
   FunctionStep(kind: FSK_MATCH, match: match)
 
-# proc location(step: FunctionStep): Location =
-#   case step.kind:
-#   of FSK_STATEMENT: step.statement.location
-#   of FSK_MATCH: step.statement.location
+proc location*(step: FunctionStep): Location =
+  case step.kind:
+  of FSK_STATEMENT: step.statement.location
+  of FSK_MATCH: step.match.location
 
-proc asl(step: FunctionStep, indent: string): seq[string] =
+proc statement*(step: FunctionStep): Result[Statement, string] =
+  case step.kind:
+  of FSK_STATEMENT: ok(step.statement)
+  of FSK_MATCH: err(fmt"{step.location} function step is not a statement")
+
+proc match*(step: FunctionStep): Result[Match, string] =
+  case step.kind:
+  of FSK_STATEMENT: err(fmt"{step.location} function step is not a match block")
+  of FSK_MATCH: ok(step.match)
+
+proc asl*(step: FunctionStep, indent: string): seq[string] =
   case step.kind:
   of FSK_STATEMENT: @[step.statement.asl]
   of FSK_MATCH: step.match.asl(indent)
@@ -795,6 +855,7 @@ proc new_function*(def: FunctionDefinition, steps: seq[
     FunctionStep]): Result[Function, string] =
   if steps.len == 0:
     return err(fmt"{def.location} function `{def.name.asl}` must have at least one statement")
+
   ok(Function(def: def, steps: steps))
 
 proc location(function: Function): Location =
@@ -803,7 +864,13 @@ proc location(function: Function): Location =
 proc name(function: Function): Identifier =
   function.def.name
 
-proc asl(function: Function, indent: string): seq[string] =
+proc def*(function: Function): FunctionDefinition =
+  function.def
+
+proc steps*(function: Function): seq[FunctionStep] =
+  function.steps
+
+proc asl*(function: Function, indent: string): seq[string] =
   let header = function.def.asl
 
   var lines: seq[string]
@@ -814,7 +881,7 @@ proc asl(function: Function, indent: string): seq[string] =
   return (@[header] & lines)
 
 type
-  GenericKind = enum
+  GenericKind* = enum
     GK_DEFAULT, GK_CONSTRAINED
   Generic* = ref object of RootObj
     name: Identifier
@@ -828,6 +895,9 @@ proc new_generic*(name: Identifier, location: Location): Generic =
 
 proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
     location: Location): Result[Generic, string] =
+  if defs.len == 0:
+    return err(fmt"{location} generic `{name.asl}` must have at least one constraint")
+
   var defs_map: Table[Hash, int]
   for index, def in defs.pairs:
     let def_hash = def.hash
@@ -837,6 +907,11 @@ proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
     defs_map[def_hash] = index
 
   ok(Generic(kind: GK_CONSTRAINED, name: name, defs: defs, location: location))
+
+proc defs*(generic: Generic): seq[FunctionDefinition] =
+  case generic.kind:
+  of GK_DEFAULT: @[]
+  of GK_CONSTRAINED: generic.defs
 
 proc asl(generic: Generic, indent: string): seq[string] =
   case generic.kind:
@@ -851,19 +926,19 @@ proc asl(generic: Generic, indent: string): seq[string] =
 
     @[header] & defs
 
-type ModuleDefinition* = ref object of RootObj
+type UserModuleDefinition* = ref object of RootObj
   name: Identifier
   location: Location
 
 proc new_module_definition*(name: Identifier,
-    location: Location): ModuleDefinition =
-  ModuleDefinition(name: name, location: location)
+    location: Location): UserModuleDefinition =
+  UserModuleDefinition(name: name, location: location)
 
-proc asl(def: ModuleDefinition): string =
+proc asl(def: UserModuleDefinition): string =
   fmt"module {def.name.asl}:"
 
-type Module* = ref object of RootObj
-  def: ModuleDefinition
+type UserModule* = ref object of RootObj
+  def: UserModuleDefinition
   generics: seq[Generic]
   generics_map: Table[Identifier, int]
   structs: seq[Struct]
@@ -872,8 +947,8 @@ type Module* = ref object of RootObj
   functions: seq[Function]
   functions_map: Table[Hash, int]
 
-proc new_module*(def: ModuleDefinition, generics: seq[Generic], structs: seq[
-    Struct], functions: seq[Function]): Result[Module, string] =
+proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
+    structs: seq[Struct], functions: seq[Function]): Result[UserModule, string] =
   if generics.len + structs.len + functions.len == 0:
     return err(fmt"{def.location} module can not be empty")
 
@@ -893,7 +968,9 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic], structs: seq[
   for index, struct in structs:
     case struct.def.kind:
     of SDK_DEFAULT:
-      if default_struct_index != -1:
+      if default_struct_index == -1:
+        default_struct_index = index
+      else:
         let predefined_default_struct_location = structs[
             default_struct_index].location
         return err(fmt"{struct.location} default struct is already defined at {predefined_default_struct_location}")
@@ -927,18 +1004,29 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic], structs: seq[
 
     functions_map[def_hash] = index
 
-  ok(Module(def: def, structs: structs, structs_map: structs_map,
+  ok(UserModule(def: def, structs: structs, structs_map: structs_map,
       default_struct_index: default_struct_index, generics: generics,
       generics_map: generics_map, functions: functions,
       functions_map: functions_map))
 
-proc name(module: Module): Identifier =
+proc name(module: UserModule): Identifier =
   module.def.name
 
-proc location(module: Module): Location =
+proc location(module: UserModule): Location =
   module.def.location
 
-proc asl(module: Module, indent: string): seq[string] =
+proc generics*(module: UserModule): seq[Generic] = module.generics
+proc structs*(module: UserModule): seq[Struct] = module.structs
+proc functions*(module: UserModule): seq[Function] = module.functions
+
+proc find_field*(module: UserModule, field: Identifier): Result[ArgumentType, string] =
+  if module.default_struct_index == -1: # No struct block is defined
+    err(fmt"{field.location} module `{module.name.asl}` does not have a default struct")
+  else:
+    let struct = module.structs[module.default_struct_index]
+    struct.find_field(field)
+
+proc asl(module: UserModule, indent: string): seq[string] =
   let header = module.def.asl
   var lines: seq[string]
   for generic in module.generics:
@@ -956,28 +1044,188 @@ proc asl(module: Module, indent: string): seq[string] =
 
   return (@[header] & lines)
 
+type NativeFunction = ref object of RootObj
+  def: FunctionDefinition
+  native: string
+
+proc new_native_function(native: string, returns: string, name: string,
+    args: seq[string]): Result[NativeFunction, string] =
+  var argdefs: seq[ArgumentDefinition]
+  for index, arg in args.pairs:
+    let argid = ? new_identifier(arg, new_location())
+    let argtype = new_argument_type(argid)
+    let argname = ? new_identifier(fmt"_{index}", Location())
+    let argdef = new_argument_definition(argname, argtype)
+    argdefs.add(argdef)
+
+  var def = ? new_function_definition(
+    ? new_identifier(name, Location()), # name
+    argdefs,
+    new_argument_type( ? new_identifier(returns, Location())), # return type
+    Location()
+  )
+
+  ok(NativeFunction(def: def, native: native))
+
+type NativeModule = ref object of RootObj
+  name: Identifier
+  functions: seq[NativeFunction]
+  functions_map: Table[Hash, int]
+
+proc new_native_module(name: string, functions: seq[
+    NativeFunction]): Result[NativeModule, string] =
+  let name = ? new_identifier(name, Location())
+  ok(NativeModule(name: name, functions: functions))
+
+proc native_modules(): Result[seq[NativeModule], string] =
+  ok(@[
+    ? new_native_module("S8", @[
+      ? new_native_function("S8_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S8_read_Pointer", "S8", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S8_write_Pointer", "Pointer", "write", @["S8",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("S16", @[
+      ? new_native_function("S16_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S16_read_Pointer", "S16", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S16_write_Pointer", "Pointer", "write", @["S16",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("S32", @[
+      ? new_native_function("S32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S32_read_Pointer", "S32", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S32_write_Pointer", "Pointer", "write", @["S32",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("S64", @[
+      ? new_native_function("S64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S64_read_Pointer", "S64", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S64_write_Pointer", "Pointer", "write", @["S64",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U8", @[
+      ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U8_read_Pointer", "U8", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U8_write_Pointer", "Pointer", "write", @["U8",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U16", @[
+      ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U16_read_Pointer", "U16", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U16_write_Pointer", "Pointer", "write", @["U16",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U32", @[
+      ? new_native_function("U32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U32_read_Pointer", "U32", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U32_write_Pointer", "Pointer", "write", @["U32",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U64", @[
+      ? new_native_function("U64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U64_read_Pointer", "U64", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U64_write_Pointer", "Pointer", "write", @["U64",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("F32", @[
+      ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("F32_read_Pointer", "F32", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("F32_write_Pointer", "Pointer", "write", @["F32",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("F64", @[
+      ? new_native_function("F64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("F64_read_Pointer", "F64", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["F64",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("Pointer", @[
+      ? new_native_function("Pointer_byte_size", "U64", "byte_size", @[
+          "U64"]),
+      ? new_native_function("Pointer_read_Pointer", "Pointer", "read", @[
+          "Pointer", "U64"]),
+      ? new_native_function("Pointer_write_Pointer", "Pointer", "write", @[
+          "Pointer", "Pointer", "U64"]),
+    ]),
+    ? new_native_module("System", @[
+      ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
+      ? new_native_function("System_free", "Pointer", "free", @["Pointer"]),
+    ])
+  ])
+
+type
+  ModuleKind = enum
+    MK_NATIVE, MK_USER
+  Module* = ref object of RootObj
+    case kind: ModuleKind
+    of MK_NATIVE: native: NativeModule
+    of MK_USER: user: UserModule
+
+proc new_module(native: NativeModule): Module =
+  Module(kind: MK_NATIVE, native: native)
+
+proc new_module(user: UserModule): Module =
+  Module(kind: MK_USER, user: user)
+
+proc name(module: Module): Identifier =
+  case module.kind:
+  of MK_NATIVE: module.native.name
+  of MK_USER: module.user.name
+
+proc location(module: Module): Location =
+  case module.kind:
+  of MK_NATIVE: Location()
+  of MK_USER: module.user.location
+
+proc find_field*(module: Module, field: Identifier): Result[ArgumentType, string] =
+  case module.kind:
+  of MK_NATIVE: err(fmt"{field.location} module `{field.asl}` does not have a struct block")
+  of MK_USER: module.user.find_field(field)
+
 type File* = ref object of RootObj
   path: string
   indent: int
   modules: seq[Module]
   modules_map: Table[Identifier, int]
+  user_modules: seq[UserModule]
   functions: seq[Function]
   functions_map: Table[Hash, int]
 
-proc new_file*(path: string, modules: seq[Module], functions: seq[Function],
-    indent: int): Result[File, string] =
-  if functions.len + modules.len == 0:
+proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
+    Function], indent: int): Result[File, string] =
+  if functions.len + user_modules.len == 0:
     return err(fmt"{path} file can not be empty")
 
   # NOTE: Build index to enable module look by name
+  var modules: seq[Module]
   var modules_map: Table[Identifier, int]
-  for index, module in modules.pairs:
+
+  for native_module in ( ? native_modules()):
+    let module = new_module(native_module)
+    if module.name in modules_map:
+      return err(fmt"Native module `{module.name.asl} is defined twice")
+    modules_map[module.name] = modules.len
+    modules.add(module)
+
+  for user_module in user_modules:
     # NOTE: Validation for module name collisions
+    let module = new_module(user_module)
     if module.name in modules_map:
       let predefined_module_location = modules[modules_map[
           module.name]].location
       return err(fmt"{module.location} module `{module.name.asl}` is already defined at {predefined_module_location}")
-    modules_map[module.name] = index
+    modules_map[module.name] = modules.len
+    modules.add(module)
 
   # NOTE: Build index to enable function look up by definition
   var functions_map: Table[Hash, int]
@@ -996,13 +1244,17 @@ proc new_file*(path: string, modules: seq[Module], functions: seq[Function],
     functions_map[def_hash] = index
 
   ok(File(path: path, modules: modules, modules_map: modules_map,
-      functions: functions, functions_map: functions_map, indent: indent))
+      user_modules: user_modules, functions: functions,
+      functions_map: functions_map, indent: indent))
+
+proc user_modules*(file: File): seq[UserModule] = file.user_modules
+proc functions*(file: File): seq[Function] = file.functions
 
 proc asl*(file: File): string =
   var lines: seq[string]
   let indent = " ".repeat(file.indent)
 
-  for module in file.modules:
+  for module in file.user_modules:
     for line in module.asl(indent):
       lines.add(line)
     lines.add("\n")
@@ -1013,3 +1265,11 @@ proc asl*(file: File): string =
     lines.add("\n")
 
   lines.map_it(it.strip(leading = false)).join("\n").replace(re"\n{3,}", "\n\n")
+
+proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
+  # NOTE: Somehow `modules_map` table is not behaving as expected when using `in` operator.
+  if module_name in file.modules_map:
+    ok(file.modules[file.modules_map[module_name]])
+  else:
+    err(fmt"{module_name.location} module `{module_name.asl}` is not defined in the file {file.path}")
+

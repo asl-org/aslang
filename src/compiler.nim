@@ -2,6 +2,7 @@ import results, strformat, unicode
 
 import tokenizer
 import parser
+import resolver
 
 proc write_file_safe(filename: string, content: string): Result[void, string] =
   try:
@@ -24,5 +25,6 @@ proc read_file_safe(filename: string): Result[string, string] =
 proc compile*(filename: string, output: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
-  discard ? parse(filename, tokens)
+  let file = ? parse(filename, tokens)
+  discard ? resolve(file)
   ok()
