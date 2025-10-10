@@ -5,10 +5,10 @@ module User:
 
   fn print(User user): U64
     user_id = user.id
-    System.print_U64(user_id)
+    System.print(user_id)
 
     user_age = user.age
-    System.print_U64(user_age)
+    System.print(user_age)
 
 fn start(U8 seed): U8
   id = U64 1

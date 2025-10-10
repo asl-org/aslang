@@ -841,7 +841,4 @@ proc file_spec(parser: Parser): Result[ast.File, string] =
   new_file(parser.path, modules, functions, parser.indent)
 
 proc parse*(path: string, tokens: seq[Token]): Result[ast.File, string] =
-  let parser = Parser(path: path, tokens: tokens, indent: INDENT_SIZE)
-  let file = ? parser.expect(file_spec)
-  echo file.asl
-  ok(file)
+  Parser(path: path, tokens: tokens, indent: INDENT_SIZE).expect(file_spec)

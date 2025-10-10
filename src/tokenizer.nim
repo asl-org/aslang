@@ -2,6 +2,9 @@ import results, strformat
 
 import tokens
 
+const MAX_DIGITS_LENGTH = 256
+const MAX_STRING_LENGTH = 1 shl 16
+
 proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
   var index = 0
   var location = new_location(filename)
@@ -92,7 +95,7 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
       # NOTE: this check is needed because in case it is not present while loop
       # will be skipped entirely resulting into an invalid string token.
       if index == content.len:
-        return err(fmt"{location} failed to parse malformed string literal")
+        return err(fmt"{location} [TE101] failed to parse malformed string literal")
 
       while index < content.len:
         if content[index] == '"':
@@ -102,6 +105,9 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
             break
         else:
           index += 1
+
+        if index > start + MAX_STRING_LENGTH:
+          return err(fmt"{location} [TE102] string literal exceeded maximum supported length of {MAX_STRING_LENGTH}")
 
       index += 1 # move past double quote again
 
@@ -118,6 +124,8 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
       let start = index
       while index < content.len and content[index] in '0'..'9':
         index += 1
+        if index > start + MAX_DIGITS_LENGTH:
+          return err(fmt"{location} [TE103] integer literal exceeded maximum supported length of {MAX_DIGITS_LENGTH}")
       let token = new_token(TK_DIGITS, content.substr(start, index - 1), location)
       location = location.update(token.value)
       tokens.add(token)
@@ -135,7 +143,7 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
       location = location.update(token.value)
       tokens.add(token)
     else:
-      return err(fmt"{location} Unexpected character `{content[index]}` encountered")
+      return err(fmt"[TE104] {location} Unexpected character `{content[index]}` encountered")
 
   # NOTE: Adding NEW_LINE Token to indicate end of token stream
   tokens.add(new_token(TK_NEW_LINE, "\n", location))

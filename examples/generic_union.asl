@@ -4,7 +4,7 @@ module TestValue:
 
   fn print(TestValue value): U64
     val = value.value
-    System.print_S64(val)
+    System.print(val)
 
 module TestError:
   struct:
@@ -15,7 +15,7 @@ module TestError:
 
   fn print(TestError err): U64
     code = err.code
-    System.print_S32(code)
+    System.print(code)
 
 module Status:
   generic Value:
