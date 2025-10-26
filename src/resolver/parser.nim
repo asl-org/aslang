@@ -1,7 +1,10 @@
 import results, strformat, options
 
-import tokens
-import ast
+import parser/tokenizer
+export tokenizer
+
+import parser/ast
+export ast
 
 # parser constants
 const INDENT_SIZE = 2 # spaces
@@ -794,29 +797,37 @@ proc generic_spec(parser: Parser, indent: int): Result[Generic, string] =
 proc module_spec(parser: Parser, indent: int): Result[UserModule, string] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
-  var generics: seq[Generic]
-  var structs: seq[Struct]
-  var functions: seq[Function]
 
+  var generics: seq[Generic]
   while parser.can_parse():
     ? parser.expect(empty_line_consumer_spec)
 
     let maybe_generic = parser.expect(generic_spec, indent + 1)
     if maybe_generic.is_ok:
       generics.add(maybe_generic.get)
-      continue
+    else:
+      break
+
+  var structs: seq[Struct]
+  while parser.can_parse():
+    ? parser.expect(empty_line_consumer_spec)
 
     let maybe_struct = parser.expect(struct_spec, indent + 1)
     if maybe_struct.is_ok:
       structs.add(maybe_struct.get)
-      continue
+    else:
+      break
+
+  var functions: seq[Function]
+  while parser.can_parse():
+    ? parser.expect(empty_line_consumer_spec)
 
     let maybe_function = parser.expect(function_spec, indent + 1)
     if maybe_function.is_ok:
       functions.add(maybe_function.get)
-      continue
+    else:
+      break
 
-    break
   new_user_module(def, generics, structs, functions)
 
 proc file_spec(parser: Parser): Result[ast.File, string] =

@@ -1,6 +1,6 @@
 import results, strformat, strutils, sequtils, re, tables, hashes
 
-import tokens
+import tokenizer
 
 # ast node constants
 const MAX_IDENTIFIER_LENGTH = 256
@@ -146,6 +146,11 @@ proc new_struct_definition*(name: Identifier,
     location: Location): StructDefinition =
   StructDefinition(kind: SDK_NAMED, name: name, location: location)
 
+proc name(def: StructDefinition): Result[Identifier, string] =
+  case def.kind:
+  of SDK_DEFAULT: err(fmt"{def.location} expected a named struct but found anonymous struct")
+  of SDK_NAMED: ok(def.name)
+
 proc asl(def: StructDefinition): string =
   case def.kind:
   of SDK_DEFAULT: "struct:"
@@ -183,8 +188,8 @@ proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields
 proc location*(struct: Struct): Location =
   struct.def.location
 
-proc name*(struct: Struct): Identifier =
-  struct.def.name
+proc name*(struct: Struct): Result[Identifier, string] =
+  name(struct.def)
 
 proc asl(struct: Struct, indent: string): seq[string] =
   let header = struct.def.asl
@@ -936,8 +941,16 @@ proc location*(step: FunctionStep): Location =
   of FSK_MATCH: step.match.location
 
 proc kind*(step: FunctionStep): FunctionStepKind = step.kind
-proc statement*(step: FunctionStep): Statement = step.statement
-proc match*(step: FunctionStep): Match = step.match
+
+proc statement*(step: FunctionStep): Result[Statement, string] =
+  case step.kind:
+  of FSK_STATEMENT: ok(step.statement)
+  of FSK_MATCH: err(fmt"{step.location} expected a statement but found match block")
+
+proc match*(step: FunctionStep): Result[Match, string] =
+  case step.kind:
+  of FSK_MATCH: ok(step.match)
+  of FSK_STATEMENT: err(fmt"{step.location} expected a match block but found statement")
 
 proc asl*(step: FunctionStep, indent: string): seq[string] =
   case step.kind:
@@ -958,7 +971,7 @@ proc new_function*(def: FunctionDefinition, steps: seq[
 proc location(function: Function): Location =
   function.def.location
 
-proc name(function: Function): Identifier =
+proc name*(function: Function): Identifier =
   function.def.name
 
 proc def*(function: Function): FunctionDefinition =
@@ -1029,6 +1042,9 @@ proc concrete_function_definitions*(generic: Generic,
 
 proc argument_type*(generic: Generic): ArgumentType =
   new_argument_type(generic.name)
+
+proc location*(generic: Generic): Location =
+  generic.location
 
 proc defs*(generic: Generic): seq[FunctionDefinition] =
   case generic.kind:
@@ -1138,16 +1154,17 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
             default_struct_index].location
         return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
     of SDK_NAMED:
-      if struct.name in generics_map:
-        let generic = generics[generics_map[struct.name]]
-        return err(fmt"{struct.location} [PE146] struct `{struct.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+      let struct_name = ? struct.name
+      if struct_name in generics_map:
+        let generic = generics[generics_map[struct_name]]
+        return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
 
-      if struct.name in structs_map:
+      if struct_name in structs_map:
         let predefined_struct_location = structs[structs_map[
-            struct.name]].location
-        return err(fmt"{struct.location} [PE147] struct `{struct.name.asl}` is already defined at {predefined_struct_location}")
+            struct_name]].location
+        return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
 
-      structs_map[struct.name] = index
+      structs_map[struct_name] = index
 
   var function_defs_hash_map: Table[Hash, int]
   var functions_map: Table[Identifier, seq[int]]
@@ -1158,7 +1175,8 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
 
     if function.name in structs_map:
       let struct = structs[structs_map[function.name]]
-      return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct.name.asl}` at {struct.location}")
+      let struct_name = ? struct.name
+      return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
 
     let def_hash = function.def.hash
     if def_hash in function_defs_hash_map:
@@ -1180,10 +1198,13 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
 proc hash*(module: UserModule): Hash =
   module.def.hash
 
+proc `==`*(self: UserModule, other: UserModule): bool =
+  self.hash == other.hash
+
 proc name*(module: UserModule): Identifier =
   module.def.name
 
-proc location(module: UserModule): Location =
+proc location*(module: UserModule): Location =
   module.def.location
 
 proc generics*(module: UserModule): seq[Generic] = module.generics
@@ -1434,6 +1455,7 @@ proc native_modules(): Result[seq[NativeModule], string] =
       ? new_native_function("System_print_U8", "U64", "print", @["U8"]),
       ? new_native_function("System_print_U64", "U64", "print", @["U64"]),
       ? new_native_function("System_print_S32", "U64", "print", @["S32"]),
+      ? new_native_function("System_print_S64", "U64", "print", @["S64"]),
     ])
   ])
 

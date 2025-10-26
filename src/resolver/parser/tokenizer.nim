@@ -1,6 +1,7 @@
 import results, strformat
 
-import tokens
+import tokenizer/tokens
+export tokens
 
 const MAX_DIGITS_LENGTH = 256
 const MAX_STRING_LENGTH = 1 shl 16

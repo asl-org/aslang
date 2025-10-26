@@ -7,9 +7,9 @@ module Status:
   fn print(Status status): U64
     _ = match status:
       case Ok { value: value }:
-        System.print_U64(value)
+        System.print(value)
       case Err { code: code }:
-        System.print_S64(code)
+        System.print(code)
 
 fn start(U8 seed): U8
   value = U64 0

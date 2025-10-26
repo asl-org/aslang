@@ -1,7 +1,5 @@
 import results, strformat, unicode
 
-import tokenizer
-import parser
 import resolver
 
 proc write_file_safe(filename: string, content: string): Result[void, string] =
