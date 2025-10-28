@@ -448,7 +448,10 @@ proc asl(fnref: FunctionRef): string =
 
 proc kind*(fnref: FunctionRef): FunctionRefKind = fnref.kind
 proc name*(fnref: FunctionRef): Identifier = fnref.name
-proc module*(fnref: FunctionRef): ArgumentType = fnref.module
+proc module*(fnref: FunctionRef): Result[ArgumentType, string] =
+  case fnref.kind:
+  of FRK_LOCAL: err("{fnref.location} expected a module function call but found local function call")
+  of FRK_MODULE: ok(fnref.module)
 
 type FunctionCall* = ref object of RootObj
   fnref: FunctionRef
@@ -648,10 +651,25 @@ proc location*(expression: Expression): Location =
   of EK_VARIABLE: expression.variable.location
 
 proc kind*(expression: Expression): ExpressionKind = expression.kind
-proc fncall*(expression: Expression): FunctionCall = expression.fncall
-proc init*(expression: Expression): Initializer = expression.init
-proc struct_get*(expression: Expression): StructGet = expression.struct_get
-proc variable*(expression: Expression): Identifier = expression.variable
+proc fncall*(expression: Expression): Result[FunctionCall, string] =
+  case expression.kind:
+  of EK_FNCALL: ok(expression.fncall)
+  else: err(fmt"{expression.location} expression is not a function call")
+
+proc init*(expression: Expression): Result[Initializer, string] =
+  case expression.kind:
+  of EK_INIT: ok(expression.init)
+  else: err(fmt"{expression.location} expression is not an initializer")
+
+proc struct_get*(expression: Expression): Result[StructGet, string] =
+  case expression.kind:
+  of EK_STRUCT_GET: ok(expression.struct_get)
+  else: err(fmt"{expression.location} expression is not a struct get")
+
+proc variable*(expression: Expression): Result[Identifier, string] =
+  case expression.kind:
+  of EK_VARIABLE: ok(expression.variable)
+  else: err(fmt"{expression.location} expression is not a variable")
 
 proc asl(expression: Expression): string =
   case expression.kind:

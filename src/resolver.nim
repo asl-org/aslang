@@ -329,7 +329,8 @@ proc resolve(file: ast.File, module: UserModule, fnref: FunctionRef,
     let defs = ? file.find_functions(fnref.name, arity)
     ok(new_resolved_function_ref(fnref, defs))
   of FRK_MODULE:
-    let argtype = ? resolve(file, module, fnref.module)
+    let fnref_module = ? fnref.module
+    let argtype = ? resolve(file, module, fnref_module)
     case argtype.kind:
     of RATK_CONCRETE:
       let defs = ? argtype.concrete_type.module.find_functions(fnref.name, arity)
@@ -350,7 +351,8 @@ proc resolve(file: ast.File, fnref: FunctionRef, arity: int): Result[
     let defs = ? file.find_functions(fnref.name, arity)
     ok(new_resolved_function_ref(fnref, defs))
   of FRK_MODULE:
-    let argtype = ? resolve(file, fnref.module)
+    let fnref_module = ? fnref.module
+    let argtype = ? resolve(file, fnref_module)
     case argtype.kind:
     of RATK_CONCRETE:
       let defs = ? argtype.concrete_type.module.find_functions(fnref.name, arity)
@@ -584,7 +586,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
   of FRK_LOCAL:
     err(fmt"{fncall.location} [RE141] function `{fncall.fnref.name.asl}` does not exist")
   of FRK_MODULE:
-    err(fmt"{fncall.location} [RE142] module `{fncall.fnref.module.asl}` does not have any function named `{fncall.fnref.name.asl}`")
+    let fnref_module = ? fncall.fnref.module
+    err(fmt"{fncall.location} [RE142] module `{fnref_module.asl}` does not have any function named `{fncall.fnref.name.asl}`")
 
 proc resolve(file: ast.File, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
@@ -628,7 +631,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
   of FRK_LOCAL:
     err(fmt"{fncall.location} [RE141] function `{fncall.fnref.name.asl}` does not exist")
   of FRK_MODULE:
-    err(fmt"{fncall.location} [RE142] module `{fncall.fnref.module.asl}` does not have any function named `{fncall.fnref.name.asl}`")
+    let fnref_module = ? fncall.fnref.module
+    err(fmt"{fncall.location} [RE142] module `{fnref_module.asl}` does not have any function named `{fncall.fnref.name.asl}`")
 
 proc resolve(file: ast.File, module: UserModule, struct_ref: StructRef): Result[
     ResolvedStructRef, string] =
@@ -748,18 +752,20 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
   case expression.kind:
   of EK_FNCALL:
-    let resolved_function_call = ? resolve(file, module, scope,
-        expression.fncall)
+    let fncall = ? expression.fncall
+    let resolved_function_call = ? resolve(file, module, scope, fncall)
     ok(new_resolved_expression(expression, resolved_function_call))
   of EK_INIT:
-    let resolved_init = ? resolve(file, module, scope, expression.init)
+    let init = ? expression.init
+    let resolved_init = ? resolve(file, module, scope, init)
     ok(new_resolved_expression(expression, resolved_init))
   of EK_STRUCT_GET:
-    let resolved_struct_get = ? resolve(file, module, scope,
-        expression.struct_get)
+    let struct_get = ? expression.struct_get
+    let resolved_struct_get = ? resolve(file, module, scope, struct_get)
     ok(new_resolved_expression(expression, resolved_struct_get))
   of EK_VARIABLE:
-    let resolved_arg = ? scope.get(expression.variable)
+    let variable = ? expression.variable
+    let resolved_arg = ? scope.get(variable)
     ok(new_resolved_expression(expression, resolved_arg))
 
 proc resolve(file: ast.File, scope: FunctionScope,
@@ -768,18 +774,20 @@ proc resolve(file: ast.File, scope: FunctionScope,
     echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
   case expression.kind:
   of EK_FNCALL:
-    let resolved_function_call = ? resolve(file, scope,
-        expression.fncall)
+    let fncall = ? expression.fncall
+    let resolved_function_call = ? resolve(file, scope, fncall)
     ok(new_resolved_expression(expression, resolved_function_call))
   of EK_INIT:
-    let resolved_init = ? resolve(file, scope, expression.init)
+    let init = ? expression.init
+    let resolved_init = ? resolve(file, scope, init)
     ok(new_resolved_expression(expression, resolved_init))
   of EK_STRUCT_GET:
-    let resolved_struct_get = ? resolve(file, scope,
-        expression.struct_get)
+    let struct_get = ? expression.struct_get
+    let resolved_struct_get = ? resolve(file, scope, struct_get)
     ok(new_resolved_expression(expression, resolved_struct_get))
   of EK_VARIABLE:
-    let resolved_arg = ? scope.get(expression.variable)
+    let variable = ? expression.variable
+    let resolved_arg = ? scope.get(variable)
     ok(new_resolved_expression(expression, resolved_arg))
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
