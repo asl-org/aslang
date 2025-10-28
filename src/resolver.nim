@@ -1,13 +1,17 @@
-import results, strformat, sequtils, tables, parseutils, strutils, sets, algorithm
-
-import resolver/parser
-export parser
+import results, strformat, sequtils, tables, parseutils, strutils, sets
 
 import resolver/resolved_ast
 export resolved_ast
 
+import resolver/deps_analyzer
+export deps_analyzer
+
+const DEBUG = false
+
 proc resolve(file: ast.File, module: UserModule, generic: Generic,
     argtype: ArgumentType): Result[ResolvedArgumentType, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE GENERIC ARG TYPE: {argtype.location}"
   # NOTE: leaf argument types
   case argtype.kind:
   of ATK_SIMPLE:
@@ -81,6 +85,8 @@ proc resolve(file: ast.File, module: UserModule, generic: Generic,
 
 proc resolve(file: ast.File, module: UserModule,
     argtype: ArgumentType): Result[ResolvedArgumentType, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE ARG TYPE: {argtype.location}"
   # NOTE: leaf argument types
   case argtype.kind:
   of ATK_SIMPLE:
@@ -158,6 +164,8 @@ proc resolve(file: ast.File, module: UserModule,
 
 proc resolve(file: ast.File, argtype: ArgumentType): Result[
     ResolvedArgumentType, string] =
+  if DEBUG:
+    echo fmt"Resolving ARG TYPE: {argtype.location}"
   # NOTE: leaf argument types
   case argtype.kind:
   of ATK_SIMPLE:
@@ -216,6 +224,8 @@ proc resolve(file: ast.File, argtype: ArgumentType): Result[
 
 proc resolve(file: ast.File, module: UserModule, generic: Generic,
     def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE ARG DEF: {def.location}"
   let resolved_type = ? resolve(file, module, generic, def.argtype)
   if resolved_type.is_struct:
     ok(new_resolved_argument_definition(def.name, resolved_type, def.location))
@@ -224,6 +234,8 @@ proc resolve(file: ast.File, module: UserModule, generic: Generic,
 
 proc resolve(file: ast.File, module: UserModule,
     def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE ARG DEF: {def.location}"
   let resolved_type = ? resolve(file, module, def.argtype)
   if resolved_type.is_struct:
     ok(new_resolved_argument_definition(def.name, resolved_type, def.location))
@@ -232,6 +244,8 @@ proc resolve(file: ast.File, module: UserModule,
 
 proc resolve(file: ast.File, def: ArgumentDefinition): Result[
     ResolvedArgumentDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving ARG DEF: {def.location}"
   let resolved_type = ? resolve(file, def.argtype)
   if resolved_type.is_struct:
     ok(new_resolved_argument_definition(def.name, resolved_type, def.location))
@@ -240,6 +254,8 @@ proc resolve(file: ast.File, def: ArgumentDefinition): Result[
 
 proc resolve(file: ast.File, module: UserModule, generic: Generic,
     def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE GENERIC FUNCTION DEF: {def.location}"
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let resolved_arg = ? resolve(file, module, generic, arg)
@@ -254,6 +270,8 @@ proc resolve(file: ast.File, module: UserModule, generic: Generic,
 
 proc resolve(file: ast.File, module: UserModule,
     def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION DEF: {def.location}"
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let resolved_arg = ? resolve(file, module, arg)
@@ -268,6 +286,8 @@ proc resolve(file: ast.File, module: UserModule,
 
 proc resolve(file: ast.File, def: FunctionDefinition): Result[
     ResolvedFunctionDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION DEF: {def.location}"
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let resolved_arg = ? resolve(file, arg)
@@ -282,6 +302,8 @@ proc resolve(file: ast.File, def: FunctionDefinition): Result[
 
 proc resolve(file: ast.File, module: UserModule, generic: Generic): Result[
     ResolvedGeneric, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE GENERIC: {generic.location}"
   var resolved_defs: seq[ResolvedFunctionDefinition]
   for def in generic.defs:
     let resolved_def = ? resolve(file, module, generic, def)
@@ -290,6 +312,8 @@ proc resolve(file: ast.File, module: UserModule, generic: Generic): Result[
 
 proc resolve(file: ast.File, module: UserModule, struct: Struct): Result[
     ResolvedStruct, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE STRUCT: {struct.location}"
   var resolved_fields: seq[ResolvedArgumentDefinition]
   for field in struct.fields:
     let resolved_field = ? resolve(file, module, field)
@@ -298,6 +322,8 @@ proc resolve(file: ast.File, module: UserModule, struct: Struct): Result[
 
 proc resolve(file: ast.File, module: UserModule, fnref: FunctionRef,
     arity: int): Result[ResolvedFunctionRef, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION REF: {fnref.location}"
   case fnref.kind:
   of FRK_LOCAL:
     let defs = ? file.find_functions(fnref.name, arity)
@@ -317,6 +343,8 @@ proc resolve(file: ast.File, module: UserModule, fnref: FunctionRef,
 
 proc resolve(file: ast.File, fnref: FunctionRef, arity: int): Result[
     ResolvedFunctionRef, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION REF: {fnref.location}"
   case fnref.kind:
   of FRK_LOCAL:
     let defs = ? file.find_functions(fnref.name, arity)
@@ -419,6 +447,8 @@ proc resolve(module: NativeModule, literal: StringLiteral): Result[
   else: err("{literal.location} [RE136] string literals are only supported via `String` native module")
 
 proc resolve(module: NativeModule, literal: Literal): Result[ResolvedLiteral, string] =
+  if DEBUG:
+    echo fmt"Resolving LITERAL: {literal.location}"
   case literal.kind:
   of LK_INTEGER:
     let integer_literal = ? literal.integer_literal
@@ -433,6 +463,8 @@ proc resolve(module: NativeModule, literal: Literal): Result[ResolvedLiteral, st
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     arg: Argument, argdef: ResolvedArgumentDefinition): Result[
     ResolvedArgument, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION CALL ARG: {arg.location}"
   case arg.kind:
   of AK_LITERAL:
     case argdef.argtype.kind:
@@ -463,6 +495,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 proc resolve(file: ast.File, scope: FunctionScope,
     arg: Argument, argdef: ResolvedArgumentDefinition): Result[
     ResolvedArgument, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION CALL ARG: {arg.location}"
   case arg.kind:
   of AK_LITERAL:
     case argdef.argtype.kind:
@@ -510,6 +544,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION CALL: {fncall.location}"
   let resolved_fnref = ? resolve(file, module, fncall.fnref, fncall.args.len)
   for def in resolved_fnref.defs:
     case resolved_fnref.kind
@@ -523,8 +559,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
         if maybe_match.is_ok:
           return ok(new_resolved_function_call(fncall, resolved_fnref,
               concrete_def, maybe_match.get))
-        else:
-          echo maybe_match.error
+        # else:
+        #   echo maybe_match.error
 
       let resolved_def = ? resolve(file, def)
       let concrete_def = resolved_def.concrete_function_definition(
@@ -533,16 +569,16 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
       if maybe_match.is_ok:
         return ok(new_resolved_function_call(fncall, resolved_fnref,
             concrete_def, maybe_match.get))
-      else:
-        echo maybe_match.error
+      # else:
+      #   echo maybe_match.error
     of RFRK_LOCAL:
       let resolved_def = ? resolve(file, def)
       let maybe_match = resolve(file, module, scope, resolved_def, fncall.args)
       if maybe_match.is_ok:
         return ok(new_resolved_function_call(fncall, resolved_fnref,
             resolved_def, maybe_match.get))
-      else:
-        echo maybe_match.error
+      # else:
+      #   echo maybe_match.error
 
   case fncall.fnref.kind:
   of FRK_LOCAL:
@@ -552,6 +588,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION CALL: {fncall.location}"
   let resolved_fnref = ? resolve(file, fncall.fnref, fncall.args.len)
   for def in resolved_fnref.defs:
     case resolved_fnref.kind
@@ -565,8 +603,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
         if maybe_match.is_ok:
           return ok(new_resolved_function_call(fncall, resolved_fnref,
               concrete_def, maybe_match.get))
-        else:
-          echo maybe_match.error
+        # else:
+        #   echo maybe_match.error
 
       let resolved_def = ? resolve(file, def)
       let concrete_def = resolved_def.concrete_function_definition(
@@ -575,16 +613,16 @@ proc resolve(file: ast.File, scope: FunctionScope,
       if maybe_match.is_ok:
         return ok(new_resolved_function_call(fncall, resolved_fnref,
             concrete_def, maybe_match.get))
-      else:
-        echo maybe_match.error
+      # else:
+      #   echo maybe_match.error
     of RFRK_LOCAL:
       let resolved_def = ? resolve(file, def)
       let maybe_match = resolve(file, scope, resolved_def, fncall.args)
       if maybe_match.is_ok:
         return ok(new_resolved_function_call(fncall, resolved_fnref,
             resolved_def, maybe_match.get))
-      else:
-        echo maybe_match.error
+      # else:
+      #   echo maybe_match.error
 
   case fncall.fnref.kind:
   of FRK_LOCAL:
@@ -594,6 +632,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, struct_ref: StructRef): Result[
     ResolvedStructRef, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STRUCT REF: {struct_ref.location}"
   let resolved_argtype = ? resolve(file, module, struct_ref.module)
   let resolved_argmodule = ? resolved_argtype.user_module
   let struct =
@@ -607,6 +647,8 @@ proc resolve(file: ast.File, module: UserModule, struct_ref: StructRef): Result[
 
 proc resolve(file: ast.File, struct_ref: StructRef): Result[
     ResolvedStructRef, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STRUCT REF: {struct_ref.location}"
   let resolved_argtype = ? resolve(file, struct_ref.module)
   let resolved_argmodule = ? resolved_argtype.user_module
   let struct =
@@ -620,6 +662,8 @@ proc resolve(file: ast.File, struct_ref: StructRef): Result[
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     init: StructInit): Result[ResolvedStructInit, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION STRUCT INIT: {init.location}"
   let resolved_struct_ref = ? resolve(file, module, init.struct_ref)
   var resolved_fields = new_seq[ResolvedArgument](init.args.len)
   for kwarg in init.args:
@@ -630,6 +674,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     init: StructInit): Result[ResolvedStructInit, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION STRUCT INIT: {init.location}"
   let resolved_struct_ref = ? resolve(file, init.struct_ref)
   var resolved_fields = new_seq[ResolvedArgument](init.args.len)
   for kwarg in init.args:
@@ -640,6 +686,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     init: Initializer): Result[ResolvedInitializer, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION INIT: {init.location}"
   case init.kind:
   of IK_LITERAL:
     let literal_init = ? init.literal
@@ -651,6 +699,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     init: Initializer): Result[ResolvedInitializer, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION INIT: {init.location}"
   case init.kind:
   of IK_LITERAL:
     let literal_init = ? init.literal
@@ -666,6 +716,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     struct_get: StructGet): Result[ResolvedStructGet, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION STRUCT GET: {struct_get.location}"
   let argdef = ? scope.get(struct_get.name)
   let argmodule = ? argdef.argtype.user_module
   let default_struct = ? argmodule.find_struct()
@@ -678,6 +730,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     struct_get: StructGet): Result[ResolvedStructGet, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION STRUCT GET: {struct_get.location}"
   let argdef = ? scope.get(struct_get.name)
   let argmodule = ? argdef.argtype.user_module
   let default_struct = ? argmodule.find_struct()
@@ -690,6 +744,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
   case expression.kind:
   of EK_FNCALL:
     let resolved_function_call = ? resolve(file, module, scope,
@@ -708,6 +764,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
   case expression.kind:
   of EK_FNCALL:
     let resolved_function_call = ? resolve(file, scope,
@@ -726,6 +784,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     statement: Statement): Result[ResolvedStatement, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT: {statement.location}"
   let resolved_expression = ? resolve(file, module, scope, statement.expression)
   let arg = new_resolved_argument_definition(statement.arg,
       resolved_expression.return_type, statement.location)
@@ -733,6 +793,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     statement: Statement): Result[ResolvedStatement, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP STATEMENT: {statement.location}"
   let resolved_expression = ? resolve(file, scope, statement.expression)
   let arg = new_resolved_argument_definition(statement.arg,
       resolved_expression.return_type, statement.location)
@@ -741,6 +803,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 proc resolve(file: ast.File, scope: FunctionScope,
     operand: ResolvedArgumentDefinition, pattern: StructPattern): Result[
     ResolvedStructPattern, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP MATCH CASE DEF STRUCT PATTERN: {pattern.location}"
   case pattern.kind
   of SPK_DEFAULT:
     let operand_module = ? operand.argtype.user_module
@@ -775,6 +839,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     operand: ResolvedArgumentDefinition, def: CaseDefinition): Result[
         ResolvedCaseDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP MATCH CASE DEF: {def.location}"
   case def.pattern.kind:
   of CPK_LITERAL:
     let literal = ? def.pattern.literal
@@ -806,6 +872,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 proc resolve(file: ast.File, scope: FunctionScope,
     operand: ResolvedArgumentDefinition, def: CaseDefinition): Result[
     ResolvedCaseDefinition, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP MATCH CASE DEF: {def.location}"
   case def.pattern.kind:
   of CPK_LITERAL:
     let literal = ? def.pattern.literal
@@ -836,6 +904,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     operand: ResolvedArgumentDefinition, case_block: Case): Result[ResolvedCase, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP MATCH CASE: {case_block.location}"
   let resolved_case_def = ? resolve(file, module, scope, operand,
       case_block.def)
   var case_block_scope = scope.clone()
@@ -848,6 +918,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     operand: ResolvedArgumentDefinition, case_block: Case): Result[ResolvedCase, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP MATCH CASE: {case_block.location}"
   let resolved_case_def = ? resolve(file, scope, operand,
       case_block.def)
   var case_block_scope = scope.clone()
@@ -860,6 +932,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     else_block: Else): Result[ResolvedElse, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP MATCH ELSE: {else_block.location}"
   var else_block_scope = scope.clone()
   var resolved_statements: seq[ResolvedStatement]
   for statement in else_block.statements:
@@ -870,6 +944,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     else_block: Else): Result[ResolvedElse, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP MATCH ELSE: {else_block.location}"
   var else_block_scope = scope.clone()
   var resolved_statements: seq[ResolvedStatement]
   for statement in else_block.statements:
@@ -880,6 +956,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     match: Match): Result[ResolvedMatch, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP MATCH: {match.location}"
   let operand_def = ? scope.get(match.def.operand)
 
   case match.kind:
@@ -908,6 +986,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     match: Match): Result[ResolvedMatch, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP MATCH: {match.location}"
   let operand_def = ? scope.get(match.def.operand)
 
   case match.kind:
@@ -936,6 +1016,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     step: FunctionStep): Result[ResolvedFunctionStep, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION STEP: {step.location}"
   case step.kind:
   of FSK_STATEMENT:
     let statement = ? step.statement
@@ -948,6 +1030,8 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
 
 proc resolve(file: ast.File, scope: FunctionScope,
     step: FunctionStep): Result[ResolvedFunctionStep, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION STEP: {step.location}"
   case step.kind:
   of FSK_STATEMENT:
     let statement = ? step.statement
@@ -960,6 +1044,8 @@ proc resolve(file: ast.File, scope: FunctionScope,
 
 proc resolve(file: ast.File, module: UserModule, function: Function): Result[
     ResolvedFunction, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE FUNCTION: {function.location}"
   let resolved_function_def = ? resolve(file, module, function.def)
   var scope = FunctionScope()
   for arg in resolved_function_def.args:
@@ -979,6 +1065,8 @@ proc resolve(file: ast.File, module: UserModule, function: Function): Result[
   ok(new_resolved_function(function, resolved_function_def, resolved_steps))
 
 proc resolve(file: ast.File, function: Function): Result[ResolvedFunction, string] =
+  if DEBUG:
+    echo fmt"Resolving FUNCTION: {function.location}"
   let resolved_function_def = ? resolve(file, function.def)
   var scope = FunctionScope()
   for arg in resolved_function_def.args:
@@ -998,6 +1086,8 @@ proc resolve(file: ast.File, function: Function): Result[ResolvedFunction, strin
 
 proc resolve(file: ast.File, module: UserModule): Result[
     ResolvedModule, string] =
+  if DEBUG:
+    echo fmt"Resolving MODULE: {module.location}"
   var resolved_generics: seq[ResolvedGeneric]
   for generic in module.generics:
     let resolved_generic = ? resolve(file, module, generic)
@@ -1017,8 +1107,9 @@ proc resolve(file: ast.File, module: UserModule): Result[
       resolved_functions))
 
 proc resolve*(file: ast.File): Result[ResolvedFile, string] =
+  let modules = ? deps(file)
   var resolved_modules: seq[ResolvedModule]
-  for module in file.user_modules:
+  for module in modules:
     let resolved_module = ? resolve(file, module)
     resolved_modules.add(resolved_module)
 

@@ -1,6 +1,6 @@
 import results, strformat, sequtils, tables, strutils
 
-import parser
+import deps_analyzer
 
 type ResolvedConcreteArgumentType* = ref object of RootObj
   module*: Module

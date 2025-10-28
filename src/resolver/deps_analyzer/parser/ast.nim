@@ -231,6 +231,9 @@ proc replace_argument_type(def: FunctionDefinition, generic: Identifier,
   let new_return_type = ? def.returns.replace_argument_type(generic, concrete)
   new_function_definition(def.name, new_args, new_return_type, def.location)
 
+proc location*(def: FunctionDefinition): Location =
+  def.location
+
 proc name*(def: FunctionDefinition): Identifier =
   def.name
 
@@ -433,7 +436,7 @@ proc new_function_ref*(name: Identifier): FunctionRef =
 proc new_function_ref*(name: Identifier, module: ArgumentType): FunctionRef =
   FunctionRef(kind: FRK_MODULE, name: name, module: module)
 
-proc location(fnref: FunctionRef): Location =
+proc location*(fnref: FunctionRef): Location =
   case fnref.kind:
   of FRK_LOCAL: fnref.name.location
   of FRK_MODULE: fnref.module.location
@@ -558,7 +561,7 @@ proc new_struct_init*(struct_ref: StructRef, args: seq[
 proc struct_ref*(init: StructInit): StructRef = init.struct_ref
 proc args*(init: StructInit): seq[KeywordArgument] = init.args
 
-proc location(init: StructInit): Location =
+proc location*(init: StructInit): Location =
   init.struct_ref.location
 
 proc asl*(init: StructInit): string =
@@ -968,7 +971,7 @@ proc new_function*(def: FunctionDefinition, steps: seq[
 
   ok(Function(def: def, steps: steps))
 
-proc location(function: Function): Location =
+proc location*(function: Function): Location =
   function.def.location
 
 proc name*(function: Function): Identifier =
