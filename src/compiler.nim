@@ -24,5 +24,6 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)
+  discard ? populate_types(file)
   discard ? resolve(file)
   ok()

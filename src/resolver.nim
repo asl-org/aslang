@@ -552,6 +552,7 @@ proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
   for def in resolved_fnref.defs:
     case resolved_fnref.kind
     of RFRK_MODULE:
+      # NOTE: Will also have to handle the generic calls.
       let maybe_arg_user_module = resolved_fnref.argtype.user_module
       if maybe_arg_user_module.is_ok:
         let resolved_def = ? resolve(file, maybe_arg_user_module.get, def)
@@ -597,6 +598,7 @@ proc resolve(file: ast.File, scope: FunctionScope,
   for def in resolved_fnref.defs:
     case resolved_fnref.kind
     of RFRK_MODULE:
+      # NOTE: Will also have to handle the generic calls.
       let maybe_arg_user_module = resolved_fnref.argtype.user_module
       if maybe_arg_user_module.is_ok:
         let resolved_def = ? resolve(file, maybe_arg_user_module.get, def)
@@ -1115,9 +1117,8 @@ proc resolve(file: ast.File, module: UserModule): Result[
       resolved_functions))
 
 proc resolve*(file: ast.File): Result[ResolvedFile, string] =
-  let modules = ? deps(file)
   var resolved_modules: seq[ResolvedModule]
-  for module in modules:
+  for module in file.user_modules:
     let resolved_module = ? resolve(file, module)
     resolved_modules.add(resolved_module)
 

@@ -131,7 +131,7 @@ proc name*(def: ArgumentDefinition): Identifier = def.name
 proc hash(def: ArgumentDefinition): Hash = hash(def.argtype)
 
 type
-  StructDefinitionKind = enum
+  StructDefinitionKind* = enum
     SDK_DEFAULT, SDK_NAMED
   StructDefinition* = ref object of RootObj
     location: Location
@@ -145,6 +145,8 @@ proc new_struct_definition*(location: Location): StructDefinition =
 proc new_struct_definition*(name: Identifier,
     location: Location): StructDefinition =
   StructDefinition(kind: SDK_NAMED, name: name, location: location)
+
+proc kind*(def: StructDefinition): StructDefinitionKind = def.kind
 
 proc name(def: StructDefinition): Result[Identifier, string] =
   case def.kind:
@@ -188,8 +190,8 @@ proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields
 proc location*(struct: Struct): Location =
   struct.def.location
 
-proc name*(struct: Struct): Result[Identifier, string] =
-  name(struct.def)
+proc name*(struct: Struct): Result[Identifier, string] = name(struct.def)
+proc def*(struct: Struct): StructDefinition = struct.def
 
 proc asl(struct: Struct, indent: string): seq[string] =
   let header = struct.def.asl
@@ -470,6 +472,7 @@ proc location*(fncall: FunctionCall): Location =
 
 proc fnref*(fncall: FunctionCall): FunctionRef = fncall.fnref
 proc args*(fncall: FunctionCall): seq[Argument] = fncall.args
+proc name*(fncall: FunctionCall): Identifier = fncall.fnref.name
 
 proc asl*(fncall: FunctionCall): string =
   var args: seq[string]
@@ -1130,6 +1133,9 @@ proc new_module_definition*(name: Identifier,
     location: Location): UserModuleDefinition =
   UserModuleDefinition(name: name, location: location)
 
+proc location*(def: UserModuleDefinition): Location =
+  def.location
+
 proc asl(def: UserModuleDefinition): string =
   fmt"module {def.name.asl}:"
 
@@ -1221,6 +1227,9 @@ proc hash*(module: UserModule): Hash =
 
 proc `==`*(self: UserModule, other: UserModule): bool =
   self.hash == other.hash
+
+proc def*(module: UserModule): UserModuleDefinition =
+  module.def
 
 proc name*(module: UserModule): Identifier =
   module.def.name
@@ -1362,7 +1371,7 @@ proc name*(module: NativeModule): Identifier =
 proc argument_type*(module: NativeModule): Result[ArgumentType, string] =
   ok(new_argument_type(module.name))
 
-proc find_functions(module: NativeModule, name: Identifier,
+proc find_functions*(module: NativeModule, name: Identifier,
     argcount: int): Result[seq[FunctionDefinition], string] =
   if name notin module.functions_map:
     return err(fmt"[PE158] {name.location} module `{module.name.asl}` does not have any function named `{name.asl}`")
@@ -1616,6 +1625,7 @@ proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
       user_modules: user_modules, functions: functions,
       functions_map: functions_map, indent: indent))
 
+proc path*(file: File): string = file.path
 proc user_modules*(file: File): seq[UserModule] = file.user_modules
 proc functions*(file: File): seq[Function] = file.functions
 
