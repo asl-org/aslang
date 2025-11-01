@@ -1,6 +1,7 @@
 import results, strformat, unicode
 
 import resolver
+import resolver_v2
 
 proc write_file_safe(filename: string, content: string): Result[void, string] =
   try:
@@ -24,6 +25,7 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)
-  discard ? populate_types(file)
+  let typed_file = ? assign_type(file)
   discard ? resolve(file)
+  # discard ? resolve_v2(typed_file)
   ok()

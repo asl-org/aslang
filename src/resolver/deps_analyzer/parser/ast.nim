@@ -32,103 +32,101 @@ proc `==`*(a: Identifier, b: Identifier): bool =
   a.hash == b.hash
 
 type
-  ArgumentTypeKind* = enum
-    ATK_SIMPLE, ATK_NESTED
-  ArgumentType* = ref object of RootObj
+  ModuleRefKind* = enum
+    MRK_SIMPLE, MRK_NESTED
+  ModuleRef* = ref object of RootObj
     module: Identifier
-    case kind: ArgumentTypeKind
-    of ATK_SIMPLE: discard
-    of ATK_NESTED: children: seq[ArgumentType]
+    case kind: ModuleRefKind
+    of MRK_SIMPLE: discard
+    of MRK_NESTED: children: seq[ModuleRef]
 
-proc new_argument_type*(module: Identifier): ArgumentType =
-  ArgumentType(kind: ATK_SIMPLE, module: module)
+proc new_module_ref*(module: Identifier): ModuleRef =
+  ModuleRef(kind: MRK_SIMPLE, module: module)
 
-proc new_argument_type*(module: Identifier, children: seq[
-    ArgumentType]): Result[ArgumentType, string] =
+proc new_module_ref*(module: Identifier, children: seq[
+    ModuleRef]): Result[ModuleRef, string] =
   if children.len == 0:
-    return err(fmt"{module.location} [PE103] nested argument types can not have empty children type list")
+    return err(fmt"{module.location} [PE103] nested module refs can not have empty child module ref list")
   if children.len > MAX_TYPE_CHILDREN_COUNT:
-    return err(fmt"{module.location} [PE104] a nested type only supports upto `{MAX_TYPE_CHILDREN_COUNT}` children types but `{children.len}` were given")
-  ok(ArgumentType(kind: ATK_NESTED, module: module, children: children))
+    return err(fmt"{module.location} [PE104] a nested module ref only supports upto `{MAX_TYPE_CHILDREN_COUNT}` children types but `{children.len}` were given")
+  ok(ModuleRef(kind: MRK_NESTED, module: module, children: children))
 
-proc location*(argtype: ArgumentType): Location =
-  argtype.module.location
+proc location*(module_ref: ModuleRef): Location =
+  module_ref.module.location
 
-proc replace_argument_type(argtype: ArgumentType, generic: Identifier,
-    concrete: ArgumentType): Result[ArgumentType, string] =
-  case argtype.kind:
-  of ATK_SIMPLE:
-    if argtype.module == generic:
-      ok(concrete)
+proc concrete_module_ref(module_ref: ModuleRef, generic: Identifier,
+    concrete: ModuleRef): Result[ModuleRef, string] =
+  case module_ref.kind:
+  of MRK_SIMPLE:
+    if module_ref.module == generic: ok(concrete)
+    else: ok(module_ref)
+  of MRK_NESTED:
+    if module_ref.module == generic:
+      err(fmt"{module_ref.location} [PE105] generic `{generic.asl}` can not be used as a nested module ref")
     else:
-      ok(argtype)
-  of ATK_NESTED:
-    if argtype.module == generic:
-      err(fmt"{argtype.location} [PE105] generic `{generic.asl}` can not be used as a nested type")
-    else:
-      var new_children: seq[ArgumentType]
-      for child in argtype.children:
-        let new_child = ? child.replace_argument_type(generic, concrete)
+      var new_children: seq[ModuleRef]
+      for child in module_ref.children:
+        let new_child = ? child.concrete_module_ref(generic, concrete)
         new_children.add(new_child)
-      new_argument_type(argtype.module, new_children)
+      new_module_ref(module_ref.module, new_children)
 
-proc module*(argtype: ArgumentType): Identifier =
-  argtype.module
+proc module*(module_ref: ModuleRef): Identifier =
+  module_ref.module
 
-proc kind*(argtype: ArgumentType): ArgumentTypeKind =
-  argtype.kind
+proc kind*(module_ref: ModuleRef): ModuleRefKind =
+  module_ref.kind
 
-proc children*(argtype: ArgumentType): seq[ArgumentType] =
-  case argtype.kind:
-  of ATK_SIMPLE: @[]
-  of ATK_NESTED: argtype.children
+proc children*(module_ref: ModuleRef): seq[ModuleRef] =
+  case module_ref.kind:
+  of MRK_SIMPLE: @[]
+  of MRK_NESTED: module_ref.children
 
-proc asl*(argtype: ArgumentType): string =
-  case argtype.kind:
-  of ATK_SIMPLE: argtype.module.asl
-  of ATK_NESTED:
+proc asl*(module_ref: ModuleRef): string =
+  case module_ref.kind:
+  of MRK_SIMPLE: module_ref.module.asl
+  of MRK_NESTED:
     var children: seq[string]
-    for child in argtype.children:
+    for child in module_ref.children:
       children.add(child.asl)
-    let module_str = argtype.module.asl
+    let module_str = module_ref.module.asl
     let children_str = children.join(", ")
     fmt"{module_str}[{children_str}]"
 
-proc hash(argtype: ArgumentType): Hash =
-  var acc = hash(argtype.module)
-  case argtype.kind:
-  of ATK_SIMPLE: discard
-  of ATK_NESTED:
-    for child in argtype.children:
+proc hash(module_ref: ModuleRef): Hash =
+  var acc = hash(module_ref.module)
+  case module_ref.kind:
+  of MRK_SIMPLE: discard
+  of MRK_NESTED:
+    for child in module_ref.children:
       acc = acc !& hash(child)
   return acc
 
 type ArgumentDefinition* = ref object of RootObj
   name: Identifier
-  argtype: ArgumentType
+  module_ref: ModuleRef
 
 proc new_argument_definition*(name: Identifier,
-    argtype: ArgumentType): ArgumentDefinition =
-  ArgumentDefinition(name: name, argtype: argtype)
+    module_ref: ModuleRef): ArgumentDefinition =
+  ArgumentDefinition(name: name, module_ref: module_ref)
 
-proc replace_argument_type(def: ArgumentDefinition, generic: Identifier,
-    concrete: ArgumentType): Result[ArgumentDefinition, string] =
-  let new_type = ? def.argtype.replace_argument_type(generic, concrete)
-  ok(new_argument_definition(def.name, new_type))
+proc concrete_module_ref(def: ArgumentDefinition, generic: Identifier,
+    concrete: ModuleRef): Result[ArgumentDefinition, string] =
+  let new_module_ref = ? def.module_ref.concrete_module_ref(generic, concrete)
+  ok(new_argument_definition(def.name, new_module_ref))
 
-proc argtype*(def: ArgumentDefinition): ArgumentType =
-  def.argtype
+proc module_ref*(def: ArgumentDefinition): ModuleRef =
+  def.module_ref
 
 proc location*(def: ArgumentDefinition): Location =
-  def.argtype.location
+  def.module_ref.location
 
 proc asl(def: ArgumentDefinition): string =
   let name_str = def.name.asl
-  let type_str = def.argtype.asl
-  fmt"{type_str} {name_str}"
+  let ref_str = def.module_ref.asl
+  fmt"{ref_str} {name_str}"
 
 proc name*(def: ArgumentDefinition): Identifier = def.name
-proc hash(def: ArgumentDefinition): Hash = hash(def.argtype)
+proc hash(def: ArgumentDefinition): Hash = hash(def.module_ref)
 
 type
   StructDefinitionKind* = enum
@@ -179,11 +177,11 @@ proc new_struct*(def: StructDefinition, fields: seq[
 
   ok(Struct(def: def, fields: fields, fields_map: fields_map))
 
-proc find_field*(struct: Struct, field: Identifier): Result[ArgumentType, string] =
+proc find_field*(struct: Struct, field: Identifier): Result[ModuleRef, string] =
   if field notin struct.fields_map:
     err(fmt"{field.location} [PE109] field `{field.asl}` does not exist")
   else:
-    ok(struct.fields[struct.fields_map[field]].argtype)
+    ok(struct.fields[struct.fields_map[field]].module_ref)
 
 proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields
 
@@ -203,12 +201,12 @@ proc asl(struct: Struct, indent: string): seq[string] =
 
 type FunctionDefinition* = ref object of RootObj
   name: Identifier
-  returns: ArgumentType
+  returns: ModuleRef
   args: seq[ArgumentDefinition]
   location: Location
 
 proc new_function_definition*(name: Identifier, args: seq[ArgumentDefinition],
-    returns: ArgumentType, location: Location): Result[FunctionDefinition, string] =
+    returns: ModuleRef, location: Location): Result[FunctionDefinition, string] =
   if args.len == 0:
     return err(fmt"{location} [PE110] function argument list can not be empty")
   if args.len > MAX_ARGS_LENGTH:
@@ -224,14 +222,14 @@ proc new_function_definition*(name: Identifier, args: seq[ArgumentDefinition],
   ok(FunctionDefinition(name: name, args: args, returns: returns,
       location: location))
 
-proc replace_argument_type(def: FunctionDefinition, generic: Identifier,
-    concrete: ArgumentType): Result[FunctionDefinition, string] =
+proc concrete_module_ref(def: FunctionDefinition, generic: Identifier,
+    concrete: ModuleRef): Result[FunctionDefinition, string] =
   var new_args: seq[ArgumentDefinition]
   for arg in def.args:
-    let new_arg = ? arg.replace_argument_type(generic, concrete)
+    let new_arg = ? arg.concrete_module_ref(generic, concrete)
     new_args.add(new_arg)
-  let new_return_type = ? def.returns.replace_argument_type(generic, concrete)
-  new_function_definition(def.name, new_args, new_return_type, def.location)
+  let new_return_module_ref = ? def.returns.concrete_module_ref(generic, concrete)
+  new_function_definition(def.name, new_args, new_return_module_ref, def.location)
 
 proc location*(def: FunctionDefinition): Location =
   def.location
@@ -242,7 +240,7 @@ proc name*(def: FunctionDefinition): Identifier =
 proc args*(def: FunctionDefinition): seq[ArgumentDefinition] =
   def.args
 
-proc returns*(def: FunctionDefinition): ArgumentType =
+proc returns*(def: FunctionDefinition): ModuleRef =
   def.returns
 
 proc asl*(def: FunctionDefinition): string =
@@ -430,12 +428,12 @@ type
     name: Identifier
     case kind: FunctionRefKind
     of FRK_LOCAL: discard
-    of FRK_MODULE: module: ArgumentType
+    of FRK_MODULE: module: ModuleRef
 
 proc new_function_ref*(name: Identifier): FunctionRef =
   FunctionRef(kind: FRK_LOCAL, name: name)
 
-proc new_function_ref*(name: Identifier, module: ArgumentType): FunctionRef =
+proc new_function_ref*(name: Identifier, module: ModuleRef): FunctionRef =
   FunctionRef(kind: FRK_MODULE, name: name, module: module)
 
 proc location*(fnref: FunctionRef): Location =
@@ -450,7 +448,7 @@ proc asl(fnref: FunctionRef): string =
 
 proc kind*(fnref: FunctionRef): FunctionRefKind = fnref.kind
 proc name*(fnref: FunctionRef): Identifier = fnref.name
-proc module*(fnref: FunctionRef): Result[ArgumentType, string] =
+proc module*(fnref: FunctionRef): Result[ModuleRef, string] =
   case fnref.kind:
   of FRK_LOCAL: err("{fnref.location} expected a module function call but found local function call")
   of FRK_MODULE: ok(fnref.module)
@@ -482,16 +480,16 @@ proc asl*(fncall: FunctionCall): string =
   fmt"{fncall.fnref.asl}({args_str})"
 
 type LiteralInit* = ref object of RootObj
-  module: ArgumentType
+  module: ModuleRef
   literal: Literal
 
-proc new_literal_init*(module: ArgumentType, literal: Literal): LiteralInit =
+proc new_literal_init*(module: ModuleRef, literal: Literal): LiteralInit =
   LiteralInit(module: module, literal: literal)
 
 proc location*(init: LiteralInit): Location =
   init.module.location
 
-proc module*(init: LiteralInit): ArgumentType = init.module
+proc module*(init: LiteralInit): ModuleRef = init.module
 proc literal*(init: LiteralInit): Literal = init.literal
 
 proc asl*(init: LiteralInit): string =
@@ -517,22 +515,22 @@ type
   StructRefKind* = enum
     SRK_DEFAULT, SRK_NAMED
   StructRef* = ref object of RootObj
-    module: ArgumentType
+    module: ModuleRef
     case kind: StructRefKind
     of SRK_DEFAULT: discard
     of SRK_NAMED: struct: Identifier
 
-proc new_struct_ref*(module: ArgumentType): StructRef =
+proc new_struct_ref*(module: ModuleRef): StructRef =
   StructRef(kind: SRK_DEFAULT, module: module)
 
-proc new_struct_ref*(module: ArgumentType, struct: Identifier): StructRef =
+proc new_struct_ref*(module: ModuleRef, struct: Identifier): StructRef =
   StructRef(kind: SRK_NAMED, module: module, struct: struct)
 
 proc location*(struct_ref: StructRef): Location =
   struct_ref.module.location
 
 proc kind*(struct_ref: StructRef): StructRefKind = struct_ref.kind
-proc module*(struct_ref: StructRef): ArgumentType = struct_ref.module
+proc module*(struct_ref: StructRef): ModuleRef = struct_ref.module
 proc struct*(struct_ref: StructRef): Result[Identifier, string] =
   case struct_ref.kind:
   of SRK_DEFAULT: err(fmt"{struct_ref.location} expected named struct but found default")
@@ -1053,19 +1051,19 @@ proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
       defs_hash_map: defs_hash_map, location: location))
 
 proc concrete_function_definitions*(generic: Generic,
-    concrete: ArgumentType): Result[seq[FunctionDefinition], string] =
+    concrete: ModuleRef): Result[seq[FunctionDefinition], string] =
   var concrete_function_defs: seq[FunctionDefinition]
   case generic.kind:
   of GK_DEFAULT:
     ok(concrete_function_defs)
   of GK_CONSTRAINED:
     for def in generic.defs:
-      let new_def = ? def.replace_argument_type(generic.name, concrete)
+      let new_def = ? def.concrete_module_ref(generic.name, concrete)
       concrete_function_defs.add(new_def)
     ok(concrete_function_defs)
 
-proc argument_type*(generic: Generic): ArgumentType =
-  new_argument_type(generic.name)
+proc module_ref*(generic: Generic): ModuleRef =
+  new_module_ref(generic.name)
 
 proc location*(generic: Generic): Location =
   generic.location
@@ -1242,12 +1240,12 @@ proc structs*(module: UserModule): seq[Struct] = module.structs
 proc functions*(module: UserModule): seq[Function] = module.functions
 proc is_struct*(module: UserModule): bool = module.structs.len > 0
 
-proc argument_type*(module: UserModule): Result[ArgumentType, string] =
+proc module_ref*(module: UserModule): Result[ModuleRef, string] =
   if module.generics.len > 0:
-    let children = module.generics.map_it(new_argument_type(it.name))
-    new_argument_type(module.name, children)
+    let children = module.generics.map_it(new_module_ref(it.name))
+    new_module_ref(module.name, children)
   else:
-    ok(new_argument_type(module.name))
+    ok(new_module_ref(module.name))
 
 proc find_struct*(module: UserModule): Result[Struct, string] =
   if module.default_struct_index == -1: # No struct block is defined
@@ -1261,7 +1259,7 @@ proc find_struct*(module: UserModule, name: Identifier): Result[Struct, string] 
   else:
     ok(module.structs[module.structs_map[name]])
 
-proc find_field*(module: UserModule, field: Identifier): Result[ArgumentType, string] =
+proc find_field*(module: UserModule, field: Identifier): Result[ModuleRef, string] =
   if module.default_struct_index == -1: # No struct block is defined
     err(fmt"{field.location} [PE151] module `{module.name.asl}` does not have a default struct")
   else:
@@ -1320,15 +1318,15 @@ proc new_native_function(native: string, returns: string, name: string,
   var argdefs: seq[ArgumentDefinition]
   for index, arg in args.pairs:
     let argid = ? new_identifier(arg, new_location())
-    let argtype = new_argument_type(argid)
+    let module_ref = new_module_ref(argid)
     let argname = ? new_identifier(fmt"__asl__arg__{index}__", Location())
-    let argdef = new_argument_definition(argname, argtype)
+    let argdef = new_argument_definition(argname, module_ref)
     argdefs.add(argdef)
 
   var def = ? new_function_definition(
     ? new_identifier(name, Location()), # name
     argdefs,
-    new_argument_type( ? new_identifier(returns, Location())), # return type
+    new_module_ref( ? new_identifier(returns, Location())), # return type
     Location()
   )
 
@@ -1368,8 +1366,8 @@ proc hash(module: NativeModule): Hash =
 proc name*(module: NativeModule): Identifier =
   module.name
 
-proc argument_type*(module: NativeModule): Result[ArgumentType, string] =
-  ok(new_argument_type(module.name))
+proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
+  ok(new_module_ref(module.name))
 
 proc find_functions*(module: NativeModule, name: Identifier,
     argcount: int): Result[seq[FunctionDefinition], string] =
@@ -1513,10 +1511,10 @@ proc hash*(module: Module): Hash =
 proc `==`*(self: Module, other: Module): bool =
   self.hash == other.hash
 
-proc argument_type*(module: Module): Result[ArgumentType, string] =
+proc module_ref*(module: Module): Result[ModuleRef, string] =
   case module.kind:
-  of MK_NATIVE: module.native.argument_type
-  of MK_USER: module.user.argument_type
+  of MK_NATIVE: module.native.module_ref
+  of MK_USER: module.user.module_ref
 
 proc generics*(module: Module): seq[Generic] =
   case module.kind:
@@ -1548,7 +1546,7 @@ proc is_struct*(module: Module): bool =
   of MK_NATIVE: true
   of MK_USER: module.user.is_struct
 
-proc find_field*(module: Module, field: Identifier): Result[ArgumentType, string] =
+proc find_field*(module: Module, field: Identifier): Result[ModuleRef, string] =
   case module.kind:
   of MK_NATIVE: err(fmt"{field.location} [PE162] module `{field.asl}` does not have a struct block")
   of MK_USER: module.user.find_field(field)

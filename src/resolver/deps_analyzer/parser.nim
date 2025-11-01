@@ -240,32 +240,32 @@ proc struct_definition_spec(parser: Parser): Result[
   else:
     parser.expect(struct_named_definition_spec)
 
-proc argument_type_spec(parser: Parser): Result[ArgumentType, string] =
-  let argtype = ? parser.expect(identifier_spec)
+proc module_ref_spec(parser: Parser): Result[ModuleRef, string] =
+  let module_ref = ? parser.expect(identifier_spec)
 
   var maybe_open_square_bracket = parser.expect(open_square_bracket_spec)
   if maybe_open_square_bracket.is_err:
-    return ok(new_argument_type(argtype))
+    return ok(new_module_ref(module_ref))
 
-  var children: seq[ArgumentType]
+  var children: seq[ModuleRef]
   discard ? parser.expect(optional_space_spec)
-  children.add( ? parser.expect(argument_type_spec))
+  children.add( ? parser.expect(module_ref_spec))
   discard ? parser.expect(optional_space_spec)
 
   while parser.expect(comma_spec).is_ok:
     discard ? parser.expect(optional_space_spec)
-    children.add( ? parser.expect(argument_type_spec))
+    children.add( ? parser.expect(module_ref_spec))
     discard ? parser.expect(optional_space_spec)
 
   discard ? parser.expect(close_square_bracket_spec)
-  new_argument_type(argtype, children)
+  new_module_ref(module_ref, children)
 
 proc argument_definition_spec(parser: Parser): Result[
     ArgumentDefinition, string] =
-  let argtype = ? parser.expect(argument_type_spec)
+  let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(strict_space_spec)
   let name = ? parser.expect(identifier_spec)
-  ok(new_argument_definition(name, argtype))
+  ok(new_argument_definition(name, module_ref))
 
 # TODO: Fix this later.
 proc struct_field_definition_spec(parser: Parser, indent: int): Result[
@@ -324,7 +324,7 @@ proc function_definition_spec(parser: Parser, indent: int): Result[
   discard ? parser.expect(colon_spec)
 
   discard ? parser.expect(optional_space_spec)
-  let returns = ? parser.expect(argument_type_spec)
+  let returns = ? parser.expect(module_ref_spec)
 
   new_function_definition(name, args, returns, fn_keyword.location)
 
@@ -390,10 +390,10 @@ proc function_ref_local_spec(parser: Parser): Result[FunctionRef, string] =
   ok(new_function_ref(name))
 
 proc function_ref_module_spec(parser: Parser): Result[FunctionRef, string] =
-  let argtype = ? parser.expect(argument_type_spec)
+  let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(dot_spec)
   let name = ? parser.expect(identifier_spec)
-  ok(new_function_ref(name, argtype))
+  ok(new_function_ref(name, module_ref))
 
 proc function_ref_spec(parser: Parser): Result[FunctionRef, string] =
   let maybe_module_fnref = parser.expect(function_ref_module_spec)
@@ -425,10 +425,10 @@ proc function_call_spec(parser: Parser): Result[FunctionCall, string] =
   new_function_call(fnref, args)
 
 proc literal_init_spec(parser: Parser): Result[LiteralInit, string] =
-  let argtype = ? parser.expect(argument_type_spec)
+  let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(strict_space_spec)
   let literal = ? parser.expect(literal_spec)
-  ok(new_literal_init(argtype, literal))
+  ok(new_literal_init(module_ref, literal))
 
 proc keyword_argument_spec(parser: Parser): Result[KeywordArgument, string] =
   let name = ? parser.expect(identifier_spec)
@@ -439,7 +439,7 @@ proc keyword_argument_spec(parser: Parser): Result[KeywordArgument, string] =
   ok(new_keyword_argument(name, value))
 
 proc struct_ref_spec(parser: Parser): Result[StructRef, string] =
-  let module = ? parser.expect(argument_type_spec)
+  let module = ? parser.expect(module_ref_spec)
 
   let maybe_dot = parser.expect(dot_spec)
   if maybe_dot.is_err:

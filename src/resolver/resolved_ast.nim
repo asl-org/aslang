@@ -2,116 +2,118 @@ import results, strformat, sequtils, tables, strutils
 
 import deps_analyzer
 
-type ResolvedConcreteArgumentType* = ref object of RootObj
+type ResolvedConcreteModuleRef* = ref object of RootObj
   module*: Module
 
-proc new_resolved_concrete_argument_type*(
-  module: Module): ResolvedConcreteArgumentType =
-  ResolvedConcreteArgumentType(module: module)
+proc new_resolved_concrete_module_ref*(
+  module: Module): ResolvedConcreteModuleRef =
+  ResolvedConcreteModuleRef(module: module)
 
-proc is_struct*(argtype: ResolvedConcreteArgumentType): bool =
-  argtype.module.is_struct
+proc is_struct*(module_ref: ResolvedConcreteModuleRef): bool =
+  module_ref.module.is_struct
 
-proc `==`*(self: ResolvedConcreteArgumentType,
-    other: ResolvedConcreteArgumentType): bool =
+proc `==`*(self: ResolvedConcreteModuleRef,
+    other: ResolvedConcreteModuleRef): bool =
   self.module.hash == other.module.hash
 
-proc asl*(argtype: ResolvedConcreteArgumentType): string =
-  argtype.module.name.asl
+proc asl*(module_ref: ResolvedConcreteModuleRef): string =
+  module_ref.module.name.asl
 
-type ResolvedGenericArgumentType* = ref object of RootObj
+type ResolvedGenericModuleRef* = ref object of RootObj
   module*: UserModule
   generic*: Generic
 
-proc new_resolved_generic_argument_type*(module: UserModule,
-    generic: Generic): ResolvedGenericArgumentType =
-  ResolvedGenericArgumentType(module: module, generic: generic)
+proc new_resolved_generic_module_ref*(module: UserModule,
+    generic: Generic): ResolvedGenericModuleRef =
+  ResolvedGenericModuleRef(module: module, generic: generic)
 
-proc is_struct*(argtype: ResolvedGenericArgumentType): bool =
-  argtype.module.is_struct
+proc is_struct*(module_ref: ResolvedGenericModuleRef): bool =
+  module_ref.module.is_struct
 
-proc `==`*(self: ResolvedGenericArgumentType,
-    other: ResolvedGenericArgumentType): bool =
+proc `==`*(self: ResolvedGenericModuleRef,
+    other: ResolvedGenericModuleRef): bool =
   self.module.hash == other.module.hash and self.generic.hash ==
       other.generic.hash
 
-proc asl*(argtype: ResolvedGenericArgumentType): string =
-  argtype.generic.name.asl
+proc asl*(module_ref: ResolvedGenericModuleRef): string =
+  module_ref.generic.name.asl
 
 type
-  ResolvedArgumentTypeKind* = enum
+  ResolvedModuleRefKind* = enum
     RATK_CONCRETE, RATK_GENERIC, RATK_NESTED
-  ResolvedArgumentType* = ref object of RootObj
-    argtype: ArgumentType
-    concrete_map*: Table[Generic, ResolvedArgumentType]
-    case kind*: ResolvedArgumentTypeKind
-    of RATK_CONCRETE: concrete_type*: ResolvedConcreteArgumentType
-    of RATK_GENERIC: generic_type*: ResolvedGenericArgumentType
+  ResolvedModuleRef* = ref object of RootObj
+    module_ref: ModuleRef
+    concrete_map*: Table[Generic, ResolvedModuleRef]
+    case kind*: ResolvedModuleRefKind
+    of RATK_CONCRETE: concrete_type*: ResolvedConcreteModuleRef
+    of RATK_GENERIC: generic_type*: ResolvedGenericModuleRef
     of RATK_NESTED:
       module*: UserModule
-      children*: seq[ResolvedArgumentType]
+      children*: seq[ResolvedModuleRef]
 
-proc new_resolved_argument_type*(argtype: ArgumentType,
-    concrete_type: ResolvedConcreteArgumentType): ResolvedArgumentType =
-  ResolvedArgumentType(kind: RATK_CONCRETE, argtype: argtype,
+proc new_resolved_module_ref*(module_ref: ModuleRef,
+    concrete_type: ResolvedConcreteModuleRef): ResolvedModuleRef =
+  ResolvedModuleRef(kind: RATK_CONCRETE, module_ref: module_ref,
       concrete_type: concrete_type)
 
-proc new_resolved_argument_type*(argtype: ArgumentType,
-    generic_type: ResolvedGenericArgumentType): ResolvedArgumentType =
-  ResolvedArgumentType(kind: RATK_GENERIC, argtype: argtype,
+proc new_resolved_module_ref*(module_ref: ModuleRef,
+    generic_type: ResolvedGenericModuleRef): ResolvedModuleRef =
+  ResolvedModuleRef(kind: RATK_GENERIC, module_ref: module_ref,
       generic_type: generic_type)
 
-proc new_resolved_argument_type*(argtype: ArgumentType, module: UserModule,
-    children: seq[ResolvedArgumentType], concrete_map: Table[Generic,
-        ResolvedArgumentType]): ResolvedArgumentType =
-  ResolvedArgumentType(kind: RATK_NESTED, argtype: argtype, module: module,
-      children: children, concrete_map: concrete_map)
+proc new_resolved_module_ref*(module_ref: ModuleRef, module: UserModule,
+    children: seq[ResolvedModuleRef], concrete_map: Table[Generic,
+        ResolvedModuleRef]): ResolvedModuleRef =
+  ResolvedModuleRef(kind: RATK_NESTED, module_ref: module_ref,
+      module: module, children: children, concrete_map: concrete_map)
 
-proc concrete_argument_type*(argtype: ResolvedArgumentType, concrete_map: Table[
-    Generic, ResolvedArgumentType]): ResolvedArgumentType =
-  case argtype.kind:
-  of RATK_CONCRETE: argtype
+proc concrete_module_ref*(module_ref: ResolvedModuleRef,
+    concrete_map: Table[Generic, ResolvedModuleRef]): ResolvedModuleRef =
+  case module_ref.kind:
+  of RATK_CONCRETE: module_ref
   of RATK_GENERIC:
-    if argtype.generic_type.generic in concrete_map:
-      concrete_map[argtype.generic_type.generic]
+    if module_ref.generic_type.generic in concrete_map:
+      concrete_map[module_ref.generic_type.generic]
     else:
-      argtype
+      module_ref
   of RATK_NESTED:
-    var children: seq[ResolvedArgumentType]
-    var new_concrete_map: Table[Generic, ResolvedArgumentType]
-    for (generic, child) in zip(argtype.module.generics, argtype.children):
-      new_concrete_map[generic] = child.concrete_argument_type(concrete_map)
+    var children: seq[ResolvedModuleRef]
+    var new_concrete_map: Table[Generic, ResolvedModuleRef]
+    for (generic, child) in zip(module_ref.module.generics,
+        module_ref.children):
+      new_concrete_map[generic] = child.concrete_module_ref(concrete_map)
       children.add(new_concrete_map[generic])
-    new_resolved_argument_type(argtype.argtype, argtype.module, children, new_concrete_map)
+    new_resolved_module_ref(module_ref.module_ref, module_ref.module,
+        children, new_concrete_map)
 
-proc location*(argtype: ResolvedArgumentType): Location =
-  argtype.argtype.location
+proc location*(module_ref: ResolvedModuleRef): Location =
+  module_ref.module_ref.location
 
-proc user_module*(argtype: ResolvedArgumentType): Result[UserModule, string] =
-  case argtype.kind:
+proc user_module*(module_ref: ResolvedModuleRef): Result[UserModule, string] =
+  case module_ref.kind:
   of RATK_CONCRETE:
-    case argtype.concrete_type.module.kind:
-    of MK_NATIVE: err(fmt"{argtype.location} expected user defined argument type but found native type")
-    of MK_USER: argtype.concrete_type.module.user_module
-  of RATK_GENERIC: ok(argtype.generic_type.module)
-  of RATK_NESTED: ok(argtype.module)
+    case module_ref.concrete_type.module.kind:
+    of MK_NATIVE: err(fmt"{module_ref.location} expected user module ref but found native module")
+    of MK_USER: module_ref.concrete_type.module.user_module
+  of RATK_GENERIC: ok(module_ref.generic_type.module)
+  of RATK_NESTED: ok(module_ref.module)
 
-proc native_module*(argtype: ResolvedArgumentType): Result[NativeModule, string] =
-  case argtype.kind:
+proc native_module*(module_ref: ResolvedModuleRef): Result[NativeModule, string] =
+  case module_ref.kind:
   of RATK_CONCRETE:
-    case argtype.concrete_type.module.kind:
-    of MK_NATIVE: argtype.concrete_type.module.native_module
-    of MK_USER: err(fmt"{argtype.location} expected native argument type but found user defined type")
-  of RATK_GENERIC: err(fmt"{argtype.location} expected native argument type but found user defined type")
-  of RATK_NESTED: err(fmt"{argtype.location} expected native argument type but found user defined type")
+    case module_ref.concrete_type.module.kind:
+    of MK_NATIVE: module_ref.concrete_type.module.native_module
+    of MK_USER: err(fmt"{module_ref.location} expected native module ref but found user module")
+  of RATK_GENERIC: err(fmt"{module_ref.location} expected native module ref but found user module")
+  of RATK_NESTED: err(fmt"{module_ref.location} expected native module ref but found user module")
 
-proc is_struct*(argtype: ResolvedArgumentType): bool =
-  case argtype.kind:
-  of RATK_CONCRETE: argtype.concrete_type.is_struct
-  of RATK_GENERIC: argtype.generic_type.is_struct
-  of RATK_NESTED: argtype.module.is_struct
+proc is_struct*(module_ref: ResolvedModuleRef): bool =
+  case module_ref.kind:
+  of RATK_CONCRETE: module_ref.concrete_type.is_struct
+  of RATK_GENERIC: module_ref.generic_type.is_struct
+  of RATK_NESTED: module_ref.module.is_struct
 
-proc `==`*(self: ResolvedArgumentType, other: ResolvedArgumentType): bool =
+proc `==`*(self: ResolvedModuleRef, other: ResolvedModuleRef): bool =
   if self.kind != other.kind:
     return false
   case self.kind:
@@ -127,54 +129,55 @@ proc `==`*(self: ResolvedArgumentType, other: ResolvedArgumentType): bool =
         return false
     return true
 
-proc asl*(argtype: ResolvedArgumentType): string =
-  case argtype.kind:
-  of RATK_CONCRETE: argtype.concrete_type.asl
-  of RATK_GENERIC: argtype.generic_type.asl
+proc asl*(module_ref: ResolvedModuleRef): string =
+  case module_ref.kind:
+  of RATK_CONCRETE: module_ref.concrete_type.asl
+  of RATK_GENERIC: module_ref.generic_type.asl
   of RATK_NESTED:
-    let module = argtype.module.name.asl
+    let module = module_ref.module.name.asl
     var children: seq[string]
-    for child in argtype.children:
+    for child in module_ref.children:
       children.add(child.asl)
     let children_str = children.join(", ")
     fmt"{module}[{children_str}]"
 
 type ResolvedArgumentDefinition* = ref object of RootObj
   name: Identifier
-  argtype*: ResolvedArgumentType
+  module_ref*: ResolvedModuleRef
   location: Location
 
 proc new_resolved_argument_definition*(name: Identifier,
-    argtype: ResolvedArgumentType, location: Location): ResolvedArgumentDefinition =
-  ResolvedArgumentDefinition(name: name, argtype: argtype, location: location)
+    module_ref: ResolvedModuleRef, location: Location): ResolvedArgumentDefinition =
+  ResolvedArgumentDefinition(name: name, module_ref: module_ref,
+      location: location)
 
 proc concrete_argument_definition*(def: ResolvedArgumentDefinition,
     concrete_map: Table[Generic,
-    ResolvedArgumentType]): ResolvedArgumentDefinition =
-  new_resolved_argument_definition(def.name, def.argtype.concrete_argument_type(
-      concrete_map), def.location)
+    ResolvedModuleRef]): ResolvedArgumentDefinition =
+  new_resolved_argument_definition(def.name,
+      def.module_ref.concrete_module_ref(concrete_map), def.location)
 
 proc asl*(def: ResolvedArgumentDefinition): string =
-  fmt"{def.argtype.asl} {def.name.asl}"
+  fmt"{def.module_ref.asl} {def.name.asl}"
 
 type ResolvedFunctionDefinition* = ref object of RootObj
   def: FunctionDefinition
   args*: seq[ResolvedArgumentDefinition]
-  returns*: ResolvedArgumentType
+  returns*: ResolvedModuleRef
 
 proc new_resolved_function_definition*(def: FunctionDefinition, args: seq[
     ResolvedArgumentDefinition],
-    returns: ResolvedArgumentType): ResolvedFunctionDefinition =
+    returns: ResolvedModuleRef): ResolvedFunctionDefinition =
   ResolvedFunctionDefinition(def: def, args: args, returns: returns)
 
 proc concrete_function_definition*(def: ResolvedFunctionDefinition,
-    argtype: ResolvedArgumentType): ResolvedFunctionDefinition =
+    module_ref: ResolvedModuleRef): ResolvedFunctionDefinition =
   var concrete_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let concrete_arg = arg.concrete_argument_definition(argtype.concrete_map)
+    let concrete_arg = arg.concrete_argument_definition(module_ref.concrete_map)
     concrete_args.add(concrete_arg)
-  let concrete_return_type = def.returns.concrete_argument_type(
-      argtype.concrete_map)
+  let concrete_return_type = def.returns.concrete_module_ref(
+      module_ref.concrete_map)
   new_resolved_function_definition(def.def, concrete_args, concrete_return_type)
 
 proc asl*(def: ResolvedFunctionDefinition): string =
@@ -215,7 +218,7 @@ proc find_field_id*(struct: ResolvedStruct, name: Identifier): Result[int, strin
   ok(struct.fields_map[name])
 
 proc concrete_struct*(struct: ResolvedStruct, concrete_map: Table[Generic,
-    ResolvedArgumentType]): Result[ResolvedStruct, string] =
+    ResolvedModuleRef]): Result[ResolvedStruct, string] =
   var fields: seq[ResolvedArgumentDefinition]
   for field in struct.fields:
     fields.add(field.concrete_argument_definition(concrete_map))
@@ -225,26 +228,26 @@ type
   ResolvedLiteralKind* = enum
     RLK_INTEGER, RLK_FLOAT, RLK_STRING
   ResolvedLiteral* = ref object of RootObj
-    argtype: ResolvedArgumentType
+    module_ref: ResolvedModuleRef
     case kind: ResolvedLiteralKind
     of RLK_INTEGER: integer_literal: IntegerLiteral
     of RLK_FLOAT: float_literal: FloatLiteral
     of RLK_STRING: string_literal: StringLiteral
 
 proc new_resolved_literal*(integer_literal: IntegerLiteral,
-    argtype: ResolvedArgumentType): ResolvedLiteral =
+    module_ref: ResolvedModuleRef): ResolvedLiteral =
   ResolvedLiteral(kind: RLK_INTEGER, integer_literal: integer_literal,
-      argtype: argtype)
+      module_ref: module_ref)
 
 proc new_resolved_literal*(float_literal: FloatLiteral,
-    argtype: ResolvedArgumentType): ResolvedLiteral =
+    module_ref: ResolvedModuleRef): ResolvedLiteral =
   ResolvedLiteral(kind: RLK_FLOAT, float_literal: float_literal,
-      argtype: argtype)
+      module_ref: module_ref)
 
 proc new_resolved_literal*(string_literal: StringLiteral,
-    argtype: ResolvedArgumentType): ResolvedLiteral =
+    module_ref: ResolvedModuleRef): ResolvedLiteral =
   ResolvedLiteral(kind: RLK_STRING, string_literal: string_literal,
-      argtype: argtype)
+      module_ref: module_ref)
 
 type
   ResolvedArgumentKind* = enum
@@ -271,21 +274,21 @@ type
     defs*: seq[FunctionDefinition]
     case kind*: ResolvedFunctionRefKind
     of RFRK_LOCAL: discard
-    of RFRK_MODULE: argtype*: ResolvedArgumentType
+    of RFRK_MODULE: module_ref*: ResolvedModuleRef
 
 proc new_resolved_function_ref*(fnref: FunctionRef, defs: seq[
     FunctionDefinition]): ResolvedFunctionRef =
   ResolvedFunctionRef(kind: RFRK_LOCAL, fnref: fnref, defs: defs)
 
 proc new_resolved_function_ref*(fnref: FunctionRef,
-    argtype: ResolvedArgumentType, defs: seq[
+    module_ref: ResolvedModuleRef, defs: seq[
         FunctionDefinition]): ResolvedFunctionRef =
-  ResolvedFunctionRef(kind: RFRK_MODULE, fnref: fnref, argtype: argtype, defs: defs)
+  ResolvedFunctionRef(kind: RFRK_MODULE, fnref: fnref, module_ref: module_ref, defs: defs)
 
 proc asl*(fnref: ResolvedFunctionRef): string =
   case fnref.kind:
   of RFRK_LOCAL: ""
-  of RFRK_MODULE: fnref.argtype.asl
+  of RFRK_MODULE: fnref.module_ref.asl
 
 type ResolvedFunctionCall* = ref object of RootObj
   fncall: FunctionCall
@@ -298,7 +301,7 @@ proc new_resolved_function_call*(fncall: FunctionCall,
     ResolvedArgument]): ResolvedFunctionCall =
   ResolvedFunctionCall(fncall: fncall, fnref: fnref, def: def, args: args)
 
-proc return_type*(fncall: ResolvedFunctionCall): ResolvedArgumentType =
+proc return_type*(fncall: ResolvedFunctionCall): ResolvedModuleRef =
   fncall.def.returns
 
 type ResolvedLiteralInit* = ref object of RootObj
@@ -309,17 +312,18 @@ proc new_resolved_literal_init*(init: LiteralInit,
     literal: ResolvedLiteral): ResolvedLiteralInit =
   ResolvedLiteralInit(init: init, literal: literal)
 
-proc return_type*(init: ResolvedLiteralInit): ResolvedArgumentType =
-  init.literal.argtype
+proc return_type*(init: ResolvedLiteralInit): ResolvedModuleRef =
+  init.literal.module_ref
 
 type ResolvedStructRef* = ref object of RootObj
   struct_ref: StructRef
-  argtype: ResolvedArgumentType
+  module_ref: ResolvedModuleRef
   struct*: ResolvedStruct
 
 proc new_resolved_struct_ref*(struct_ref: StructRef,
-    argtype: ResolvedArgumentType, struct: ResolvedStruct): ResolvedStructRef =
-  ResolvedStructRef(struct_ref: struct_ref, argtype: argtype, struct: struct)
+    module_ref: ResolvedModuleRef, struct: ResolvedStruct): ResolvedStructRef =
+  ResolvedStructRef(struct_ref: struct_ref, module_ref: module_ref,
+      struct: struct)
 
 type ResolvedStructInit* = ref object of RootObj
   init: StructInit
@@ -330,8 +334,8 @@ proc new_resolved_struct_init*(init: StructInit, struct_ref: ResolvedStructRef,
     fields: seq[ResolvedArgument]): ResolvedStructInit =
   ResolvedStructInit(init: init, struct_ref: struct_ref, fields: fields)
 
-proc return_type*(init: ResolvedStructInit): ResolvedArgumentType =
-  init.struct_ref.argtype
+proc return_type*(init: ResolvedStructInit): ResolvedModuleRef =
+  init.struct_ref.module_ref
 
 type
   ResolvedInitializerKind* = enum
@@ -350,22 +354,22 @@ proc new_resolved_initializer*(init: Initializer,
     struct: ResolvedStructInit): ResolvedInitializer =
   ResolvedInitializer(kind: RIK_STRUCT, init: init, struct: struct)
 
-proc return_type*(init: ResolvedInitializer): ResolvedArgumentType =
+proc return_type*(init: ResolvedInitializer): ResolvedModuleRef =
   case init.kind:
   of RIK_LITERAL: init.literal.return_type
   of RIK_STRUCT: init.struct.return_type
 
 type ResolvedStructGet* = ref object of RootObj
   struct_get: StructGet
-  argtype: ResolvedArgumentType
+  module_ref: ResolvedModuleRef
   field: ResolvedArgumentDefinition
 
 proc new_resolved_struct_get*(struct_get: StructGet,
-    argtype: ResolvedArgumentType, field: ResolvedArgumentDefinition): ResolvedStructGet =
-  ResolvedStructGet(struct_get: struct_get, argtype: argtype, field: field)
+    module_ref: ResolvedModuleRef, field: ResolvedArgumentDefinition): ResolvedStructGet =
+  ResolvedStructGet(struct_get: struct_get, module_ref: module_ref, field: field)
 
-proc return_type*(struct_get: ResolvedStructGet): ResolvedArgumentType =
-  struct_get.field.argtype
+proc return_type*(struct_get: ResolvedStructGet): ResolvedModuleRef =
+  struct_get.field.module_ref
 
 type
   ResolvedExpressionKind* = enum
@@ -396,12 +400,12 @@ proc new_resolved_expression*(expression: Expression,
   ResolvedExpression(kind: REK_VARIABLE, expression: expression,
       variable: variable)
 
-proc return_type*(expression: ResolvedExpression): ResolvedArgumentType =
+proc return_type*(expression: ResolvedExpression): ResolvedModuleRef =
   case expression.kind:
   of REK_FNCALL: expression.fncall.return_type
   of REK_INIT: expression.init.return_type
   of REK_STRUCT_GET: expression.struct_get.return_type
-  of REK_VARIABLE: expression.variable.argtype
+  of REK_VARIABLE: expression.variable.module_ref
 
 type ResolvedStatement* = ref object of RootObj
   statement: Statement
@@ -413,7 +417,7 @@ proc new_resolved_statement*(statement: Statement,
     expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(statement: statement, arg: arg, expression: expression)
 
-proc return_type*(statement: ResolvedStatement): ResolvedArgumentType =
+proc return_type*(statement: ResolvedStatement): ResolvedModuleRef =
   statement.expression.return_type
 
 type
@@ -466,7 +470,7 @@ proc new_resolved_case*(case_block: Case, def: ResolvedCaseDefinition,
     statements: seq[ResolvedStatement]): ResolvedCase =
   ResolvedCase(case_block: case_block, def: def, statements: statements)
 
-proc return_type*(case_block: ResolvedCase): ResolvedArgumentType =
+proc return_type*(case_block: ResolvedCase): ResolvedModuleRef =
   case_block.statements[^1].return_type
 
 proc location*(case_block: ResolvedCase): Location =
@@ -480,7 +484,7 @@ proc new_resolved_else*(else_block: Else, statements: seq[
     ResolvedStatement]): ResolvedElse =
   ResolvedElse(else_block: else_block, statements: statements)
 
-proc return_type*(else_block: ResolvedElse): ResolvedArgumentType =
+proc return_type*(else_block: ResolvedElse): ResolvedModuleRef =
   else_block.statements[^1].return_type
 
 proc location*(else_block: ResolvedElse): Location =
