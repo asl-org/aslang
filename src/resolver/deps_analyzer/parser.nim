@@ -519,35 +519,28 @@ proc statement_spec(parser: Parser, indent: int): Result[Statement, string] =
 
   let maybe_expression = parser.expect(expression_spec)
   if maybe_expression.is_ok:
-    return new_statement(maybe_expression.get)
+    return ok(new_statement(maybe_expression.get))
 
 proc match_definition_default_spec(parser: Parser): Result[
     MatchDefinition, string] =
   let match_keyword = ? parser.expect(match_keyword_spec)
-  discard ? parser.expect(space_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(strict_space_spec)
   let operand = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
   new_match_definition(operand, match_keyword.location)
 
-proc match_definition_assigned_spec(parser: Parser): Result[
-    MatchDefinition, string] =
+proc match_definition_spec(parser: Parser): Result[MatchDefinition, string] =
+  let maybe_match_def_default = parser.expect(match_definition_default_spec)
+  if maybe_match_def_default.is_ok:
+    return maybe_match_def_default
+
   let arg = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(equal_spec)
   discard ? parser.expect(optional_space_spec)
   let match_def_default = ? parser.expect(match_definition_default_spec)
   ok(new_match_definition(match_def_default, arg))
-
-proc match_definition_spec(parser: Parser, indent: int): Result[MatchDefinition, string] =
-  discard ? parser.expect(indent_spec, indent)
-
-  let maybe_match_def_default = parser.expect(match_definition_default_spec)
-  if maybe_match_def_default.is_ok:
-    maybe_match_def_default
-  else:
-    parser.expect(match_definition_assigned_spec)
 
 proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
     Identifier), string] =
@@ -636,8 +629,8 @@ proc else_spec(parser: Parser, indent: int): Result[Else, string] =
 
   new_else(statements, else_def.location)
 
-proc match_spec(parser: Parser, indent: int): Result[Match, string] =
-  let match_def = ? parser.expect(match_definition_spec, indent)
+proc simple_match_spec(parser: Parser, indent: int): Result[Match, string] =
+  let match_def = ? parser.expect(match_definition_spec)
   var cases: seq[Case]
 
   discard ? parser.expect(optional_empty_line_spec)
@@ -652,6 +645,10 @@ proc match_spec(parser: Parser, indent: int): Result[Match, string] =
     return new_match(match_def, cases, maybe_else.get)
 
   return new_match(match_def, cases)
+
+proc match_spec(parser: Parser, indent: int): Result[Match, string] =
+  discard ? parser.expect(indent_spec, indent)
+  parser.expect(simple_match_spec, indent)
 
 proc function_step_spec(parser: Parser, indent: int): Result[FunctionStep, string] =
   # NOTE: match must be tried first due to overlapping structure of expressions.

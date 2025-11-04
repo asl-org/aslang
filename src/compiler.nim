@@ -27,5 +27,5 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let file = ? parse(filename, tokens)
   let typed_file = ? assign_type(file)
   discard ? resolve(file)
-  # discard ? resolve_v2(typed_file)
+  ? resolve_v2(typed_file)
   ok()

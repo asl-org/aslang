@@ -1,4 +1,4 @@
-import results, strformat, tables, strutils, sets, algorithm, options, sequtils, options
+import results, strformat, tables, strutils, sets, algorithm, options, sequtils, hashes
 
 import deps_analyzer/parser
 export parser
@@ -34,9 +34,9 @@ proc detect_cycle[T](graph: Table[T, HashSet[T]]): Result[seq[T], seq[T]] =
   ok(visited.to_seq.reversed)
 
 type
-  TypedModuleRefKind = enum
+  TypedModuleRefKind* = enum
     TMRK_NATIVE, TMRK_USER, TMRK_GENERIC
-  TypedModuleRef = ref object of RootObj
+  TypedModuleRef* = ref object of RootObj
     location: Location
     case kind: TypedModuleRefKind
     of TMRK_NATIVE:
@@ -45,57 +45,115 @@ type
       user_module: UserModule
       children: seq[TypedModuleRef]
     of TMRK_GENERIC:
-      module: UserModule
       generic: Generic
 
-proc new_typed_module_ref(native_module: NativeModule,
+proc new_typed_module_ref*(native_module: NativeModule,
     location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_NATIVE, native_module: native_module,
       location: location)
 
-proc new_typed_module_ref(user_module: UserModule,
+proc new_typed_module_ref*(user_module: UserModule,
     location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_USER, user_module: user_module, location: location)
 
-proc new_typed_module_ref(user_module: UserModule, children: seq[
+proc new_typed_module_ref*(user_module: UserModule, children: seq[
     TypedModuleRef], location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_USER, user_module: user_module, children: children,
       location: location)
 
-proc new_typed_module_ref(module: UserModule,
+proc new_typed_module_ref*(module: UserModule,
     generic: Generic, location: Location): TypedModuleRef =
-  TypedModuleRef(kind: TMRK_GENERIC, module: module, generic: generic,
+  TypedModuleRef(kind: TMRK_GENERIC, generic: generic,
       location: location)
+
+proc concretize(module_ref: TypedModuleRef, generic: Generic,
+    concrete_module_ref: TypedModuleRef): TypedModuleRef =
+  case module_ref.kind:
+  of TMRK_NATIVE: module_ref
+  of TMRK_GENERIC:
+    if module_ref.generic == generic: concrete_module_ref
+    else: module_ref
+  of TMRK_USER:
+    var concrete_children: seq[TypedModuleRef]
+    for child in module_ref.children:
+      let concrete_child = child.concretize(generic, concrete_module_ref)
+      concrete_children.add(concrete_child)
+    new_typed_module_ref(module_ref.user_module, concrete_children,
+        module_ref.location)
 
 proc module_deps(module_ref: TypedModuleRef): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
   case module_ref.kind:
   of TMRK_NATIVE: discard
-  of TMRK_GENERIC: module_set.incl(module_ref.module)
+  of TMRK_GENERIC: discard
   of TMRK_USER:
     module_set.incl(module_ref.user_module)
     for child in module_ref.children:
       module_set.incl(child.module_deps)
   module_set
 
-# proc native_module(module_ref: TypedModuleRef): Result[NativeModule, string] =
-#   case module_ref.kind:
-#   of TMRK_NATIVE: ok(module_ref.native)
-#   else: err(fmt"{module_ref.location} expected a native module")
+proc hash(module_ref: TypedModuleRef): Hash =
+  case module_ref.kind:
+  of TMRK_NATIVE:
+    module_ref.native_module.hash
+  of TMRK_GENERIC:
+    module_ref.generic.hash
+  of TMRK_USER:
+    var acc = module_ref.user_module.hash
+    for child in module_ref.children:
+      acc = acc !& child.hash
+    acc
 
-# proc user_module(module_ref: TypedModuleRef): Result[UserModule, string] =
-#   case module_ref.kind:
-#   of TMRK_USER: ok(module_ref.user)
-#   of TMRK_GENERIC: ok(module_ref.module)
-#   of TMRK_NESTED: ok(module_ref.container)
-#   else: err(fmt"{module_ref.location} expected a user module")
+proc self*(module_ref: TypedModuleRef): TypedModuleRef =
+  case module_ref.kind:
+  of TMRK_NATIVE: module_ref
+  of TMRK_GENERIC: module_ref
+  of TMRK_USER:
+    var child_module_refs: seq[TypedModuleRef]
+    for generic in module_ref.user_module.generics:
+      let child_module_ref = new_typed_module_ref(module_ref.user_module,
+          generic, module_ref.location)
+      child_module_refs.add(child_module_ref)
+    new_typed_module_ref(module_ref.user_module, child_module_refs,
+        module_ref.location)
 
-# proc generic(module_ref: TypedModuleRef): Result[Generic, string] =
-#   case module_ref.kind:
-#   of TMRK_GENERIC: ok(module_ref.generic)
-#   else: err(fmt"{module_ref.location} expected a generic")
+proc asl*(module_ref: TypedModuleRef): string =
+  case module_ref.kind:
+  of TMRK_NATIVE: module_ref.native_module.name.asl
+  of TMRK_GENERIC: module_ref.generic.name.asl
+  of TMRK_USER:
+    let module_name = module_ref.user_module.name.asl
+    var children: seq[string]
+    for child in module_ref.children:
+      children.add(child.asl)
+    let children_str = children.join(", ")
+    if children.len == 0: module_name
+    else: fmt"{module_name}[{children_str}]"
 
-type TypedArgumentDefinition = ref object of RootObj
+proc location*(module_ref: TypedModuleRef): Location = module_ref.location
+proc kind*(module_ref: TypedModuleRef): TypedModuleRefKind = module_ref.kind
+proc native_module*(module_ref: TypedModuleRef): Result[NativeModule, string] =
+  case module_ref.kind:
+  of TMRK_NATIVE: ok(module_ref.native_module)
+  else: err(fmt"{module_ref.location} expected a native module")
+
+proc user_module*(module_ref: TypedModuleRef): Result[UserModule, string] =
+  case module_ref.kind:
+  of TMRK_USER: ok(module_ref.user_module)
+  of TMRK_GENERIC: err(fmt"{module_ref.location} expected a user module")
+  else: err(fmt"{module_ref.location} expected a user module")
+
+proc children*(module_ref: TypedModuleRef): Result[seq[TypedModuleRef], string] =
+  case module_ref.kind:
+  of TMRK_USER: ok(module_ref.children)
+  else: err(fmt"{module_ref.location} expected a nested module ref")
+
+proc generic*(module_ref: TypedModuleRef): Result[Generic, string] =
+  case module_ref.kind:
+  of TMRK_GENERIC: ok(module_ref.generic)
+  else: err(fmt"{module_ref.location} expected a generic")
+
+type TypedArgumentDefinition* = ref object of RootObj
   name: Identifier
   module_ref: TypedModuleRef
 
@@ -103,13 +161,23 @@ proc new_typed_argument_definition(module_ref: TypedModuleRef,
     name: Identifier): TypedArgumentDefinition =
   TypedArgumentDefinition(module_ref: module_ref, name: name)
 
-# proc location(arg: TypedArgumentDefinition): Location =
-#   arg.module_ref.location
+proc concretize(def: TypedArgumentDefinition, generic: Generic,
+    module_ref: TypedModuleRef): TypedArgumentDefinition =
+  let concrete_module_ref = concretize(def.module_ref, generic, module_ref)
+  new_typed_argument_definition(concrete_module_ref, def.name)
 
 proc module_deps(arg: TypedArgumentDefinition): HashSet[UserModule] =
   arg.module_ref.module_deps
 
-type TypedFunctionDefinition = ref object of RootObj
+proc hash(def: TypedArgumentDefinition): Hash =
+  def.module_ref.hash
+
+proc location*(arg: TypedArgumentDefinition): Location = arg.module_ref.location
+proc name*(arg: TypedArgumentDefinition): Identifier = arg.name
+proc module_ref*(arg: TypedArgumentDefinition): TypedModuleRef = arg.module_ref
+proc asl*(arg: TypedArgumentDefinition): string = fmt"{arg.module_ref.asl} {arg.name.asl}"
+
+type TypedFunctionDefinition* = ref object of RootObj
   name: Identifier
   args: seq[TypedArgumentDefinition]
   returns: TypedModuleRef
@@ -128,25 +196,43 @@ proc module_deps(def: TypedFunctionDefinition): HashSet[UserModule] =
   module_set.incl(def.returns.module_deps)
   module_set
 
-type TypedGeneric = ref object of RootObj
-  name: Identifier
-  defs: seq[TypedFunctionDefinition]
-  location: Location
+proc hash*(def: TypedFunctionDefinition): Hash =
+  var acc = def.name.hash
+  for arg in def.args:
+    acc = acc !& arg.hash
+  acc !& def.returns.hash
 
-proc new_typed_generic(name: Identifier, defs: seq[TypedFunctionDefinition],
-    location: Location): TypedGeneric =
-  TypedGeneric(name: name, defs: defs, location: location)
+proc `==`*(self: TypedFunctionDefinition,
+    other: TypedFunctionDefinition): bool =
+  self.hash == other.hash
 
-proc module_deps(generic: TypedGeneric): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for def in generic.defs:
-    module_set.incl(def.module_deps)
-  module_set
+proc asl*(def: TypedFunctionDefinition): string =
+  var args: seq[string]
+  for arg in def.args: args.add(arg.asl)
+
+  let args_str = args.join(", ")
+  let returns_str = def.returns.asl
+  fmt"fn {def.name.asl}({args_str}): {returns_str}"
+
+proc location*(def: TypedFunctionDefinition): Location = def.location
+proc name*(def: TypedFunctionDefinition): Identifier = def.name
+proc returns*(def: TypedFunctionDefinition): TypedModuleRef = def.returns
+proc args*(def: TypedFunctionDefinition): seq[
+    TypedArgumentDefinition] = def.args
+
+proc concretize(def: TypedFunctionDefinition, generic: Generic,
+    module_ref: TypedModuleRef): TypedFunctionDefinition =
+  var concrete_args: seq[TypedArgumentDefinition]
+  for arg in def.args:
+    let concrete_arg = arg.concretize(generic, module_ref)
+    concrete_args.add(concrete_arg)
+  let concrete_returns = def.returns.concretize(generic, module_ref)
+  new_typed_function_definition(def.name, concrete_args, concrete_returns, def.location)
 
 type
-  TypedStructKind = enum
+  TypedStructKind* = enum
     TSK_DEFAULT, TSK_NAMED
-  TypedStruct = ref object of RootObj
+  TypedStruct* = ref object of RootObj
     fields: seq[TypedArgumentDefinition]
     location: Location
     case kind: TypedStructKind
@@ -167,7 +253,18 @@ proc module_deps(struct: TypedStruct): HashSet[UserModule] =
     module_set.incl(field.module_deps)
   module_set
 
-type TypedLiteralInit = ref object of RootObj
+proc hash*(struct: TypedStruct): Hash = struct.location.hash
+proc `==`*(self: TypedStruct, other: TypedStruct): bool = self.hash == other.hash
+
+proc kind*(struct: TypedStruct): TypedStructKind = struct.kind
+proc location*(struct: TypedStruct): Location = struct.location
+proc fields*(struct: TypedStruct): seq[TypedArgumentDefinition] = struct.fields
+proc name*(struct: TypedStruct): Result[Identifier, string] =
+  case struct.kind:
+  of TSK_DEFAULT: err("{struct.location} expected a named struct")
+  of TSK_NAMED: ok(struct.name)
+
+type TypedLiteralInit* = ref object of RootObj
   module_ref: TypedModuleRef
   literal: Literal
 
@@ -175,40 +272,63 @@ proc new_typed_literal_init(module_ref: TypedModuleRef,
     literal: Literal): TypedLiteralInit =
   TypedLiteralInit(module_ref: module_ref, literal: literal)
 
-# proc location(init: TypedLiteralInit): Location =
-#   init.module_ref.location
+proc location(init: TypedLiteralInit): Location =
+  init.module_ref.location
 
 proc module_deps(init: TypedLiteralInit): HashSet[UserModule] =
   init.module_ref.module_deps
 
 type
-  TypedStructInitKind = enum
-    TSIK_DEFAULT, TSIK_NAMED
-  TypedStructInit = ref object of RootObj
+  TypedStructRefKind* = enum
+    TSRK_DEFAULT, TSRK_NAMED
+  TypedStructRef* = ref object of RootObj
     module_ref: TypedModuleRef
-    args: seq[KeywordArgument]
-    case kind: TypedStructInitKind
-    of TSIK_DEFAULT: discard
-    of TSIK_NAMED: name: Identifier
+    case kind: TypedStructRefKind
+    of TSRK_DEFAULT: discard
+    of TSRK_NAMED: name: Identifier
 
-proc new_typed_struct_init(module_ref: TypedModuleRef,
-    args: seq[KeywordArgument]): TypedStructInit =
-  TypedStructInit(kind: TSIK_DEFAULT, module_ref: module_ref, args: args)
+proc new_typed_struct_ref(module_ref: TypedModuleRef): TypedStructRef =
+  TypedStructRef(kind: TSRK_DEFAULT, module_ref: module_ref)
 
-proc new_typed_struct_init(name: Identifier, module_ref: TypedModuleRef,
-    args: seq[KeywordArgument]): TypedStructInit =
-  TypedStructInit(kind: TSIK_NAMED, name: name, module_ref: module_ref, args: args)
+proc new_typed_struct_ref(module_ref: TypedModuleRef,
+    name: Identifier): TypedStructRef =
+  TypedStructRef(kind: TSRK_NAMED, module_ref: module_ref, name: name)
 
-# proc location(init: TypedStructInit): Location =
-#   init.module_ref.location
+proc module_deps(struct_ref: TypedStructRef): HashSet[UserModule] =
+  struct_ref.module_ref.module_deps
+
+proc location*(struct_ref: TypedStructRef): Location = struct_ref.module_ref.location
+proc kind*(struct_ref: TypedStructRef): TypedStructRefKind = struct_ref.kind
+proc module_ref*(struct_ref: TypedStructRef): TypedModuleRef = struct_ref.module_ref
+proc name*(struct_ref: TypedStructRef): Result[Identifier, string] =
+  case struct_ref.kind:
+  of TSRK_NAMED: ok(struct_ref.name)
+  of TSRK_DEFAULT: err(fmt"{struct_ref.location} expected a named struct")
+
+type TypedStructInit* = ref object of RootObj
+  struct_ref: TypedStructRef
+  args: seq[KeywordArgument]
+  args_map: Table[Identifier, Argument]
+
+proc new_typed_struct_init(struct_ref: TypedStructRef, args: seq[
+    KeywordArgument]): TypedStructInit =
+  var args_map: Table[Identifier, Argument]
+  for arg in args: args_map[arg.name] = arg.value
+  TypedStructInit(struct_ref: struct_ref, args: args, args_map: args_map)
 
 proc module_deps(init: TypedStructInit): HashSet[UserModule] =
-  init.module_ref.module_deps
+  init.struct_ref.module_deps
+
+proc location*(init: TypedStructInit): Location = init.struct_ref.location
+proc struct_ref*(init: TypedStructInit): TypedStructRef = init.struct_ref
+proc get*(init: TypedStructInit, name: Identifier): Result[Argument, string] =
+  if name in init.args_map: ok(init.args_map[name])
+  else: err(fmt"{init.location} field `{name.asl}` is not present")
 
 type
-  TypedInitializerKind = enum
+  TypedInitializerKind* = enum
     TIK_LITERAL, TIK_STRUCT
-  TypedInitializer = ref object of RootObj
+  TypedInitializer* = ref object of RootObj
     case kind: TypedInitializerKind
     of TIK_LITERAL: literal: TypedLiteralInit
     of TIK_STRUCT: struct: TypedStructInit
@@ -219,10 +339,20 @@ proc new_typed_initializer(literal: TypedLiteralInit): TypedInitializer =
 proc new_typed_initializer(struct: TypedStructInit): TypedInitializer =
   TypedInitializer(kind: TIK_STRUCT, struct: struct)
 
-# proc location(init: TypedInitializer): Location =
-#   case init.kind:
-#   of TIK_LITERAL: init.literal.location
-#   of TIK_STRUCT: init.struct.location
+proc location*(init: TypedInitializer): Location =
+  case init.kind:
+  of TIK_LITERAL: init.literal.location
+  of TIK_STRUCT: init.struct.location
+
+proc kind*(init: TypedInitializer): TypedInitializerKind = init.kind
+proc struct*(init: TypedInitializer): Result[TypedStructInit, string] =
+  case init.kind:
+  of TIK_STRUCT: ok(init.struct)
+  else: err(fmt"{init.location} expected a struct initializer")
+proc literal*(init: TypedInitializer): Result[TypedLiteralInit, string] =
+  case init.kind:
+  of TIK_LITERAL: ok(init.literal)
+  else: err(fmt"{init.location} expected a literal initializer")
 
 proc module_deps(init: TypedInitializer): HashSet[UserModule] =
   case init.kind:
@@ -230,34 +360,56 @@ proc module_deps(init: TypedInitializer): HashSet[UserModule] =
   of TIK_STRUCT: init.struct.module_deps
 
 type
-  TypedFunctionCallKind = enum
-    TFCK_MODULE, TFCK_LOCAL
-  TypedFunctionCall = ref object of RootObj
+  TypedFunctionRefKind* = enum
+    TFRK_LOCAL, TFRK_MODULE
+  TypedFunctionRef* = ref object of RootObj
     name: Identifier
+    arity: uint
+    case kind: TypedFunctionRefKind
+    of TFRK_LOCAL: discard
+    of TFRK_MODULE: module_ref: TypedModuleRef
+
+proc new_typed_function_ref(name: Identifier, arity: uint): TypedFunctionRef =
+  TypedFunctionRef(kind: TFRK_LOCAL, name: name, arity: arity)
+
+proc new_typed_function_ref(module_ref: TypedModuleRef, name: Identifier,
+    arity: uint): TypedFunctionRef =
+  TypedFunctionRef(kind: TFRK_MODULE, module_ref: module_ref, name: name, arity: arity)
+
+proc module_deps(fnref: TypedFunctionRef): HashSet[UserModule] =
+  case fnref.kind:
+  of TFRK_LOCAL: init_hashset[UserModule]()
+  of TFRK_MODULE: fnref.module_ref.module_deps
+
+proc location*(fnref: TypedFunctionRef): Location =
+  case fnref.kind:
+  of TFRK_LOCAL: fnref.name.location
+  of TFRK_MODULE: fnref.module_ref.location
+
+proc kind*(fnref: TypedFunctionRef): TypedFunctionRefKind = fnref.kind
+proc name*(fnref: TypedFunctionRef): Identifier = fnref.name
+proc arity*(fnref: TypedFunctionRef): uint = fnref.arity
+proc module_ref*(fnref: TypedFunctionRef): Result[TypedModuleRef, string] =
+  case fnref.kind:
+  of TFRK_LOCAL: err(fmt"{fnref.location} expected a module function call")
+  of TFRK_MODULE: ok(fnref.module_ref)
+
+type
+  TypedFunctionCall* = ref object of RootObj
+    fnref: TypedFunctionRef
     args: seq[Argument]
-    case kind: TypedFunctionCallKind
-    of TFCK_LOCAL: discard
-    of TFCK_MODULE: module_ref: TypedModuleRef
 
-proc new_typed_function_call(name: Identifier, args: seq[
+proc new_typed_function_call(fnref: TypedFunctionRef, args: seq[
     Argument]): TypedFunctionCall =
-  TypedFunctionCall(kind: TFCK_LOCAL, name: name, args: args)
+  TypedFunctionCall(fnref: fnref, args: args)
 
-proc new_typed_function_call(module_ref: TypedModuleRef, name: Identifier,
-    args: seq[Argument]): TypedFunctionCall =
-  TypedFunctionCall(kind: TFCK_MODULE, module_ref: module_ref, name: name, args: args)
+proc module_deps(fncall: TypedFunctionCall): HashSet[
+    UserModule] = fncall.fnref.module_deps
+proc location*(fncall: TypedFunctionCall): Location = fncall.fnref.location
+proc fnref*(fncall: TypedFunctionCall): TypedFunctionRef = fncall.fnref
+proc args*(fncall: TypedFunctionCall): seq[Argument] = fncall.args
 
-# proc location(fncall: TypedFunctionCall): Location =
-#   case fncall.kind:
-#   of TFCK_LOCAL: fncall.name.location
-#   of TFCK_MODULE: fncall.module_ref.location
-
-proc module_deps(fncall: TypedFunctionCall): HashSet[UserModule] =
-  case fncall.kind:
-  of TFCK_LOCAL: init_hashset[UserModule]()
-  of TFCK_MODULE: fncall.module_ref.module_deps
-
-type TypedStructGet = ref object of RootObj
+type TypedStructGet* = ref object of RootObj
   variable: Identifier
   field: Identifier
 
@@ -265,11 +417,12 @@ proc new_typed_struct_get(variable: Identifier,
     field: Identifier): TypedStructGet =
   TypedStructGet(variable: variable, field: field)
 
-# proc location(struct_get: TypedStructGet): Location =
-#   struct_get.variable.location
-
 proc module_deps(struct_get: TypedStructGet): HashSet[UserModule] =
   init_hashset[UserModule]()
+
+proc location*(struct_get: TypedStructGet): Location = struct_get.variable.location
+proc variable*(struct_get: TypedStructGet): Identifier = struct_get.variable
+proc field*(struct_get: TypedStructGet): Identifier = struct_get.field
 
 type TypedVariable = ref object of RootObj
   name: Identifier
@@ -282,9 +435,9 @@ proc module_deps(variable: TypedVariable): HashSet[UserModule] = init_hashset[
     UserModule]()
 
 type
-  TypedExpressionKind = enum
+  TypedExpressionKind* = enum
     TEK_FNCALL, TEK_INIT, TEK_STRUCT_GET, TEK_VARIABLE
-  TypedExpression = ref object of RootObj
+  TypedExpression* = ref object of RootObj
     case kind: TypedExpressionKind
     of TEK_FNCALL: fncall: TypedFunctionCall
     of TEK_INIT: init: TypedInitializer
@@ -303,13 +456,6 @@ proc new_typed_expression(struct_get: TypedStructGet): TypedExpression =
 proc new_typed_expression(variable: TypedVariable): TypedExpression =
   TypedExpression(kind: TEK_VARIABLE, variable: variable)
 
-# proc location(expression: TypedExpression): Location =
-#   case expression.kind:
-#   of TEK_FNCALL: expression.fncall.location
-#   of TEK_INIT: expression.init.location
-#   of TEK_STRUCT_GET: expression.struct_get.location
-#   of TEK_VARIABLE: expression.variable.location
-
 proc module_deps(expression: TypedExpression): HashSet[UserModule] =
   case expression.kind:
   of TEK_FNCALL: expression.fncall.module_deps
@@ -317,7 +463,36 @@ proc module_deps(expression: TypedExpression): HashSet[UserModule] =
   of TEK_STRUCT_GET: expression.struct_get.module_deps
   of TEK_VARIABLE: expression.variable.module_deps
 
-type TypedStatement = ref object of RootObj
+proc location*(expression: TypedExpression): Location =
+  case expression.kind:
+  of TEK_FNCALL: expression.fncall.location
+  of TEK_INIT: expression.init.location
+  of TEK_STRUCT_GET: expression.struct_get.location
+  of TEK_VARIABLE: expression.variable.location
+
+proc kind*(expression: TypedExpression): TypedExpressionKind = expression.kind
+
+proc fncall*(expression: TypedExpression): Result[TypedFunctionCall, string] =
+  case expression.kind:
+  of TEK_FNCALL: ok(expression.fncall)
+  else: err(fmt"{expression.location} expected a function call")
+
+proc init*(expression: TypedExpression): Result[TypedInitializer, string] =
+  case expression.kind:
+  of TEK_INIT: ok(expression.init)
+  else: err(fmt"{expression.location} expected an initilaizer")
+
+proc struct_get*(expression: TypedExpression): Result[TypedStructGet, string] =
+  case expression.kind:
+  of TEK_STRUCT_GET: ok(expression.struct_get)
+  else: err(fmt"{expression.location} expected a struct field accessor")
+
+proc variable*(expression: TypedExpression): Result[TypedVariable, string] =
+  case expression.kind:
+  of TEK_VARIABLE: ok(expression.variable)
+  else: err(fmt"{expression.location} expected a variable")
+
+type TypedStatement* = ref object of RootObj
   arg: Identifier
   expression: TypedExpression
 
@@ -325,11 +500,12 @@ proc new_typed_statement(arg: Identifier,
     expression: TypedExpression): TypedStatement =
   TypedStatement(arg: arg, expression: expression)
 
-# proc location(statement: TypedStatement): Location =
-#   statement.arg.location
-
 proc module_deps(statement: TypedStatement): HashSet[UserModule] =
   statement.expression.module_deps
+
+proc arg*(statement: TypedStatement): Identifier = statement.arg
+proc expression*(statement: TypedStatement): TypedExpression = statement.expression
+proc location*(statement: TypedStatement): Location = statement.arg.location
 
 type TypedCase = ref object of RootObj
   pattern: CasePattern
@@ -367,9 +543,9 @@ proc module_deps(else_block: TypedElse): HashSet[UserModule] =
 
 
 type
-  TypedMatchKind = enum
+  TypedMatchKind* = enum
     TMK_CASE_ONLY, TMK_COMPLETE
-  TypedMatch = ref object of RootObj
+  TypedMatch* = ref object of RootObj
     operand: Identifier
     arg: Identifier
     case_blocks: seq[TypedCase]
@@ -387,8 +563,8 @@ proc new_typed_match(operand: Identifier, arg: Identifier, case_blocks: seq[
   TypedMatch(kind: TMK_COMPLETE, operand: operand, arg: arg,
       case_blocks: case_blocks, else_block: else_block)
 
-# proc location(match: TypedMatch): Location =
-#   match.arg.location
+proc location*(match: TypedMatch): Location =
+  match.arg.location
 
 proc module_deps(match: TypedMatch): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
@@ -400,9 +576,9 @@ proc module_deps(match: TypedMatch): HashSet[UserModule] =
   module_set
 
 type
-  TypedFunctionStepKind = enum
+  TypedFunctionStepKind* = enum
     TFSK_STATEMENT, TFSK_MATCH
-  TypedFunctionStep = ref object of RootObj
+  TypedFunctionStep* = ref object of RootObj
     case kind: TypedFunctionStepKind
     of TFSK_STATEMENT: statement: TypedStatement
     of TFSK_MATCH: match: TypedMatch
@@ -423,7 +599,17 @@ proc module_deps(step: TypedFunctionStep): HashSet[UserModule] =
   of TFSK_STATEMENT: step.statement.module_deps
   of TFSK_MATCH: step.match.module_deps
 
-type TypedFunction = ref object of RootObj
+proc kind*(step: TypedFunctionStep): TypedFunctionStepKind = step.kind
+proc statement*(step: TypedFunctionStep): Result[TypedStatement, string] =
+  case step.kind:
+  of TFSK_STATEMENT: ok(step.statement)
+  of TFSK_MATCH: err("{step.location} expected a statement")
+proc match*(step: TypedFunctionStep): Result[TypedMatch, string] =
+  case step.kind:
+  of TFSK_STATEMENT: err("{step.location} expected a match")
+  of TFSK_MATCH: ok(step.match)
+
+type TypedFunction* = ref object of RootObj
   def: TypedFunctionDefinition
   steps: seq[TypedFunctionStep]
 
@@ -441,40 +627,8 @@ proc module_deps(function: TypedFunction): HashSet[UserModule] =
     module_set.incl(step.module_deps)
   module_set
 
-type TypedModule = ref object of RootObj
-  name: Identifier
-  location: Location
-  generics: seq[TypedGeneric]
-  structs: seq[TypedStruct]
-  functions: seq[TypedFunction]
-
-proc new_typed_module(name: Identifier, generics: seq[TypedGeneric],
-    structs: seq[TypedStruct], functions: seq[TypedFunction],
-    location: Location): TypedModule =
-  TypedModule(name: name, location: location, generics: generics,
-      structs: structs, functions: functions)
-
-# proc location(module: TypedModule): Location =
-#   module.location
-
-proc module_deps(module: TypedModule): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for generic in module.generics:
-    module_set.incl(generic.module_deps)
-  for struct in module.structs:
-    module_set.incl(struct.module_deps)
-  for function in module.functions:
-    module_set.incl(function.module_deps)
-  module_set
-
-type TypedFile* = ref object of RootObj
-  name: string
-  modules: seq[TypedModule]
-  functions: seq[TypedFunction]
-
-proc new_typed_file(name: string, modules: seq[TypedModule], functions: seq[
-    TypedFunction]): TypedFile =
-  TypedFile(name: name, modules: modules, functions: functions)
+proc def*(function: TypedFunction): TypedFunctionDefinition = function.def
+proc steps*(function: TypedFunction): seq[TypedFunctionStep] = function.steps
 
 proc assign_type(file: ast.File, optional_module: Option[UserModule],
     module_name: Identifier): Result[TypedModuleRef, string] =
@@ -568,24 +722,27 @@ proc assign_type(file: ast.File, init: LiteralInit): Result[
   ok(new_typed_literal_init(module_ref, init.literal))
 
 proc assign_type(file: ast.File, module: UserModule,
+    struct_ref: StructRef): Result[TypedStructRef, string] =
+  let module_ref = ? assign_type(file, module, struct_ref.module)
+  case struct_ref.kind:
+  of SRK_DEFAULT: ok(new_typed_struct_ref(module_ref))
+  of SRK_NAMED: ok(new_typed_struct_ref(module_ref, ? struct_ref.struct))
+
+proc assign_type(file: ast.File, struct_ref: StructRef): Result[TypedStructRef, string] =
+  let module_ref = ? assign_type(file, struct_ref.module)
+  case struct_ref.kind:
+  of SRK_DEFAULT: ok(new_typed_struct_ref(module_ref))
+  of SRK_NAMED: ok(new_typed_struct_ref(module_ref, ? struct_ref.struct))
+
+proc assign_type(file: ast.File, module: UserModule,
     init: StructInit): Result[TypedStructInit, string] =
-  let module_ref = ? assign_type(file, module, init.struct_ref.module)
-  case init.struct_ref.kind:
-  of SRK_DEFAULT:
-    ok(new_typed_struct_init(module_ref, init.args))
-  of SRK_NAMED:
-    let name = ? init.struct_ref.struct
-    ok(new_typed_struct_init(name, module_ref, init.args))
+  let struct_ref = ? assign_type(file, module, init.struct_ref)
+  ok(new_typed_struct_init(struct_ref, init.args))
 
 proc assign_type(file: ast.File, init: StructInit): Result[
     TypedStructInit, string] =
-  let module_ref = ? assign_type(file, init.struct_ref.module)
-  case init.struct_ref.kind:
-  of SRK_DEFAULT:
-    ok(new_typed_struct_init(module_ref, init.args))
-  of SRK_NAMED:
-    let name = ? init.struct_ref.struct
-    ok(new_typed_struct_init(name, module_ref, init.args))
+  let struct_ref = ? assign_type(file, init.struct_ref)
+  ok(new_typed_struct_init(struct_ref, init.args))
 
 proc assign_type(file: ast.File, module: UserModule,
     init: Initializer): Result[TypedInitializer, string] =
@@ -612,22 +769,32 @@ proc assign_type(file: ast.File, init: Initializer): Result[
     ok(new_typed_initializer(typed_struct_init))
 
 proc assign_type(file: ast.File, module: UserModule,
-    fncall: FunctionCall): Result[TypedFunctionCall, string] =
-  case fncall.fnref.kind:
+    fnref: FunctionRef, arity: uint): Result[TypedFunctionRef, string] =
+  case fnref.kind:
   of FRK_LOCAL:
-    ok(new_typed_function_call(fncall.name, fncall.args))
+    ok(new_typed_function_ref(fnref.name, arity))
   of FRK_MODULE:
-    let module_ref = ? assign_type(file, module, ? fncall.fnref.module)
-    ok(new_typed_function_call(module_ref, fncall.name, fncall.args))
+    let module_ref = ? assign_type(file, module, ? fnref.module)
+    ok(new_typed_function_ref(module_ref, fnref.name, arity))
+
+proc assign_type(file: ast.File, fnref: FunctionRef, arity: uint): Result[
+    TypedFunctionRef, string] =
+  case fnref.kind:
+  of FRK_LOCAL:
+    ok(new_typed_function_ref(fnref.name, arity))
+  of FRK_MODULE:
+    let module_ref = ? assign_type(file, ? fnref.module)
+    ok(new_typed_function_ref(module_ref, fnref.name, arity))
+
+proc assign_type(file: ast.File, module: UserModule,
+    fncall: FunctionCall): Result[TypedFunctionCall, string] =
+  let fnref = ? assign_type(file, module, fncall.fnref, fncall.args.len.uint)
+  ok(new_typed_function_call(fnref, fncall.args))
 
 proc assign_type(file: ast.File, fncall: FunctionCall): Result[
     TypedFunctionCall, string] =
-  case fncall.fnref.kind:
-  of FRK_LOCAL:
-    ok(new_typed_function_call(fncall.name, fncall.args))
-  of FRK_MODULE:
-    let module_ref = ? assign_type(file, ? fncall.fnref.module)
-    ok(new_typed_function_call(module_ref, fncall.name, fncall.args))
+  let fnref = ? assign_type(file, fncall.fnref, fncall.args.len.uint)
+  ok(new_typed_function_call(fnref, fncall.args))
 
 proc assign_type(file: ast.File, module: UserModule,
     expression: Expression): Result[TypedExpression, string] =
@@ -787,13 +954,54 @@ proc assign_type(file: ast.File, function: Function): Result[
     typed_steps.add(typed_step)
   ok(new_typed_function(typed_def, typed_steps))
 
+type TypedGeneric* = ref object of RootObj
+  generic: Generic
+  defs: seq[TypedFunctionDefinition]
+  defs_map: Table[TypedFunctionDefinition, TypedFunctionDefinition]
+  location: Location
+
+proc new_typed_generic(generic: Generic, defs: seq[TypedFunctionDefinition],
+    location: Location): TypedGeneric =
+  var defs_map: Table[TypedFunctionDefinition, TypedFunctionDefinition]
+  for def in defs: defs_map[def] = def
+  TypedGeneric(generic: generic, defs: defs, defs_map: defs_map,
+      location: location)
+
+proc module_deps(generic: TypedGeneric): HashSet[UserModule] =
+  var module_set: HashSet[UserModule]
+  for def in generic.defs:
+    module_set.incl(def.module_deps)
+  module_set
+
+proc location*(generic: TypedGeneric): Location = generic.location
+proc name*(generic: TypedGeneric): Identifier = generic.generic.name
+proc defs*(generic: TypedGeneric): seq[TypedFunctionDefinition] = generic.defs
+proc hash*(generic: TypedGeneric): Hash = generic.location.hash
+proc `==`*(self: TypedGeneric, other: TypedGeneric): bool = self.hash == other.hash
+proc asl*(generic: TypedGeneric): string = generic.name.asl
+
+proc concrete_defs*(generic: TypedGeneric, module_ref: TypedModuleRef): seq[
+    TypedFunctionDefinition] =
+  var concrete_defs: seq[TypedFunctionDefinition]
+  for def in generic.defs:
+    let concrete_def = def.concretize(generic.generic, module_ref)
+    concrete_defs.add(concrete_def)
+  concrete_defs
+
+proc find_function*(generic: TypedGeneric,
+    def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
+  if def in generic.defs_map:
+    ok(generic.defs_map[def])
+  else:
+    err("failed to find function `{def.asl}`")
+
 proc assign_type(file: ast.File, module: UserModule,
     generic: Generic): Result[TypedGeneric, string] =
   var typed_defs: seq[TypedFunctionDefinition]
   for def in generic.defs:
     let typed_def = ? assign_type(file, module, generic, def)
     typed_defs.add(typed_def)
-  ok(new_typed_generic(generic.name, typed_defs, generic.location))
+  ok(new_typed_generic(generic, typed_defs, generic.location))
 
 proc assign_type(file: ast.File, module: UserModule, struct: Struct): Result[
     TypedStruct, string] =
@@ -810,11 +1018,68 @@ proc assign_type(file: ast.File, module: UserModule, struct: Struct): Result[
     let struct_name = ? struct.name
     ok(new_typed_struct(struct_name, typed_fields, struct.location))
 
+type TypedModule* = ref object of RootObj
+  name: Identifier
+  location: Location
+  generics: seq[TypedGeneric]
+  generics_map: Table[Generic, TypedGeneric]
+  structs: seq[TypedStruct]
+  functions_map: Table[TypedFunctionDefinition, TypedFunction]
+  functions: seq[TypedFunction]
+
+proc new_typed_module(name: Identifier, generic_pairs: seq[(Generic,
+    TypedGeneric)], structs: seq[TypedStruct], functions: seq[TypedFunction],
+    location: Location): TypedModule =
+  var generics: seq[TypedGeneric]
+  var generics_map: Table[Generic, TypedGeneric]
+  for (generic, typed_generic) in generic_pairs:
+    generics.add(typed_generic)
+    generics_map[generic] = typed_generic
+
+  var functions_map: Table[TypedFunctionDefinition, TypedFunction]
+  for function in functions: functions_map[function.def] = function
+
+  TypedModule(name: name, location: location, generics: generics,
+      generics_map: generics_map, structs: structs, functions: functions,
+      functions_map: functions_map)
+
+proc module_deps(module: TypedModule): HashSet[UserModule] =
+  var module_set: HashSet[UserModule]
+  for generic in module.generics:
+    module_set.incl(generic.module_deps)
+  for struct in module.structs:
+    module_set.incl(struct.module_deps)
+  for function in module.functions:
+    module_set.incl(function.module_deps)
+  module_set
+
+proc location*(module: TypedModule): Location = module.location
+proc name*(module: TypedModule): Identifier = module.name
+proc generics*(module: TypedModule): seq[TypedGeneric] = module.generics
+proc structs*(module: TypedModule): seq[TypedStruct] = module.structs
+proc functions*(module: TypedModule): seq[TypedFunction] = module.functions
+proc hash*(module: TypedModule): Hash = module.location.hash
+proc `==`*(self: TypedModule, other: TypedModule): bool = self.hash == other.hash
+proc asl*(module: TypedModule): string = module.name.asl
+
+proc find_generic*(module: TypedModule, generic: Generic): Result[TypedGeneric, string] =
+  if generic in module.generics_map:
+    ok(module.generics_map[generic])
+  else:
+    err("failed to find generic `{generic.name.asl}`")
+
+proc find_function*(module: TypedModule, def: TypedFunctionDefinition): Result[
+    TypedFunctionDefinition, string] =
+  if def in module.functions_map:
+    ok(module.functions_map[def].def)
+  else:
+    err("failed to find function `{def.asl}`")
+
 proc assign_type(file: ast.File, module: UserModule): Result[TypedModule, string] =
-  var typed_generics: seq[TypedGeneric]
+  var generic_pairs: seq[(Generic, TypedGeneric)]
   for generic in module.generics:
     let typed_generic = ? assign_type(file, module, generic)
-    typed_generics.add(typed_generic)
+    generic_pairs.add((generic, typed_generic))
 
   var typed_structs: seq[TypedStruct]
   for struct in module.structs:
@@ -825,16 +1090,110 @@ proc assign_type(file: ast.File, module: UserModule): Result[TypedModule, string
   for function in module.functions:
     let typed_function = ? assign_type(file, module, function)
     typed_functions.add(typed_function)
-  ok(new_typed_module(module.name, typed_generics, typed_structs,
+  ok(new_typed_module(module.name, generic_pairs, typed_structs,
       typed_functions, module.location))
 
+type TypedNativeFunction* = ref object of RootObj
+  native: string
+  def: TypedFunctionDefinition
+
+proc new_typed_native_function(native: string,
+    def: TypedFunctionDefinition): TypedNativeFunction =
+  TypedNativeFunction(native: native, def: def)
+
+proc native*(function: TypedNativeFunction): string = function.native
+proc def*(function: TypedNativeFunction): TypedFunctionDefinition = function.def
+
+proc assign_type(file: ast.File, module: NativeModule,
+    function: NativeFunction): Result[TypedNativeFunction, string] =
+  let typed_def = ? assign_type(file, function.def)
+  ok(new_typed_native_function(function.native, typed_def))
+
+type TypedNativeModule* = ref object of RootObj
+  name: Identifier
+  functions: seq[TypedNativeFunction]
+  functions_map: Table[TypedFunctionDefinition, TypedNativeFunction]
+
+proc new_typed_native_module(name: Identifier, functions: seq[
+    TypedNativeFunction]): TypedNativeModule =
+  var functions_map: Table[TypedFunctionDefinition, TypedNativeFunction]
+  for function in functions: functions_map[function.def] = function
+  TypedNativeModule(name: name, functions: functions,
+      functions_map: functions_map)
+
+proc name*(module: TypedNativeModule): Identifier = module.name
+proc functions*(module: TypedNativeModule): seq[
+    TypedNativeFunction] = module.functions
+
+proc hash*(module: TypedNativeModule): Hash = module.name.hash
+proc `==`*(self: TypedNativeModule, other: TypedNativeModule): bool = self.hash == other.hash
+proc asl*(module: TypedNativeModule): string = module.name.asl
+
+proc assign_type(file: ast.File, module: NativeModule): Result[
+    TypedNativeModule, string] =
+  var typed_functions: seq[TypedNativeFunction]
+  for function in module.functions:
+    let typed_function = ? assign_type(file, module, function)
+    typed_functions.add(typed_function)
+  ok(new_typed_native_module(module.name, typed_functions))
+
+proc find_function*(module: TypedNativeModule,
+    def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
+  if def in module.functions_map:
+    ok(module.functions_map[def].def)
+  else:
+    err("failed to find function `{def.asl}`")
+
+type TypedFile* = ref object of RootObj
+  name: string
+  native_modules: seq[TypedNativeModule]
+  native_modules_map: Table[NativeModule, TypedNativeModule]
+  modules: seq[TypedModule]
+  modules_map: Table[UserModule, TypedModule]
+  functions: seq[TypedFunction]
+
+proc new_typed_file(name: string, native_modules: seq[(NativeModule,
+    TypedNativeModule)], modules: seq[TypedModule], modules_map: Table[
+
+UserModule, TypedModule], functions: seq[TypedFunction]): TypedFile =
+  var native_modules_map: Table[NativeModule, TypedNativeModule]
+  var typed_native_modules: seq[TypedNativeModule]
+  for (native_module, typed_native_module) in native_modules:
+    native_modules_map[native_module] = typed_native_module
+    typed_native_modules.add(typed_native_module)
+  TypedFile(name: name, native_modules: typed_native_modules,
+      native_modules_map: native_modules_map, modules: modules,
+      modules_map: modules_map, functions: functions)
+
+proc native_modules*(file: TypedFile): seq[
+    TypedNativeModule] = file.native_modules
+proc modules*(file: TypedFile): seq[TypedModule] = file.modules
+proc functions*(file: TypedFile): seq[TypedFunction] = file.functions
+proc find_module*(file: TypedFile, module: UserModule): Result[TypedModule, string] =
+  if module in file.modules_map:
+    ok(file.modules_map[module])
+  else:
+    err("failed to find module `{module.name.asl}`")
+
+proc find_module*(file: TypedFile, module: NativeModule): Result[
+    TypedNativeModule, string] =
+  if module in file.native_modules_map:
+    ok(file.native_modules_map[module])
+  else:
+    err("failed to find native module `{module.name.asl}`")
+
 proc assign_type*(file: ast.File): Result[TypedFile, string] =
+  var native_modules: seq[(NativeModule, TypedNativeModule)]
+  for module in file.native_modules:
+    let typed_module = ? assign_type(file, module)
+    native_modules.add((module, typed_module))
+
   var module_graph: Table[UserModule, HashSet[UserModule]]
-  var module_to_typed_module_map: Table[UserModule, TypedModule]
+  var modules_map: Table[UserModule, TypedModule]
   for module in file.user_modules:
     let typed_module = ? assign_type(file, module)
     module_graph[module] = typed_module.module_deps
-    module_to_typed_module_map[module] = typed_module
+    modules_map[module] = typed_module
 
   # NOTE: Cycle detection and Topologically sort based on module dependencies.
   let maybe_module_order = detect_cycle(module_graph)
@@ -848,11 +1207,12 @@ proc assign_type*(file: ast.File): Result[TypedFile, string] =
   let module_resolution_order = maybe_module_order.get
   var typed_modules: seq[TypedModule]
   for module in module_resolution_order:
-    typed_modules.add(module_to_typed_module_map[module])
+    typed_modules.add(modules_map[module])
 
   var typed_functions: seq[TypedFunction]
   for function in file.functions:
     let typed_function = ? assign_type(file, function)
     typed_functions.add(typed_function)
 
-  ok(new_typed_file(file.path, typed_modules, typed_functions))
+  ok(new_typed_file(file.path, native_modules, typed_modules, modules_map,
+      typed_functions))

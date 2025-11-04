@@ -19,6 +19,10 @@ proc new_identifier*(name: string, location: Location): Result[Identifier, strin
     return err(fmt"{location} [PE102] identifier length `{name.len}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
   ok(Identifier(name: name, location: location))
 
+proc new_identifier(location: Location): Identifier =
+  let name = fmt"__asl__arg__{location.hash.to_hex}__"
+  Identifier(name: name, location: location)
+
 proc location*(identifier: Identifier): Location =
   identifier.location
 
@@ -672,12 +676,12 @@ proc variable*(expression: Expression): Result[Identifier, string] =
   of EK_VARIABLE: ok(expression.variable)
   else: err(fmt"{expression.location} expression is not a variable")
 
-proc asl(expression: Expression): string =
+proc asl(expression: Expression): seq[string] =
   case expression.kind:
-  of EK_FNCALL: expression.fncall.asl
-  of EK_INIT: expression.init.asl
-  of EK_STRUCT_GET: expression.struct_get.asl
-  of EK_VARIABLE: expression.variable.asl
+  of EK_FNCALL: @[expression.fncall.asl]
+  of EK_INIT: @[expression.init.asl]
+  of EK_STRUCT_GET: @[expression.struct_get.asl]
+  of EK_VARIABLE: @[expression.variable.asl]
 
 type
   StatementKind = enum
@@ -687,10 +691,9 @@ type
     arg: Identifier
     expression: Expression
 
-proc new_statement*(expression: Expression): Result[Statement, string] =
-  let arg = ? new_identifier(fmt"__asl__arg__{expression.location.hash.to_hex}__",
-      expression.location)
-  ok(Statement(kind: SK_AUTO, arg: arg, expression: expression))
+proc new_statement*(expression: Expression): Statement =
+  let arg = new_identifier(expression.location)
+  Statement(kind: SK_AUTO, arg: arg, expression: expression)
 
 proc new_statement*(arg: Identifier, expression: Expression): Statement =
   Statement(kind: SK_USER, arg: arg, expression: expression)
@@ -701,13 +704,12 @@ proc location*(statement: Statement): Location =
 proc expression*(statement: Statement): Expression = statement.expression
 proc arg*(statement: Statement): Identifier = statement.arg
 
-proc asl*(statement: Statement): string =
+proc asl*(statement: Statement): seq[string] =
+  var lines = statement.expression.asl
   case statement.kind:
-  of SK_USER: fmt"{statement.arg.asl} = {statement.expression.asl}"
-  of SK_AUTO: statement.expression.asl
-
-proc debug*(statement: Statement): string =
-  fmt"{statement.arg.asl} = {statement.expression.asl}"
+  of SK_AUTO: discard
+  of SK_USER: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
+  return lines
 
 type
   StructPatternKind* = enum
@@ -976,7 +978,7 @@ proc match*(step: FunctionStep): Result[Match, string] =
 
 proc asl*(step: FunctionStep, indent: string): seq[string] =
   case step.kind:
-  of FSK_STATEMENT: @[step.statement.asl]
+  of FSK_STATEMENT: step.statement.asl
   of FSK_MATCH: step.match.asl(indent)
 
 type Function* = ref object of RootObj
@@ -1309,7 +1311,7 @@ proc asl(module: UserModule, indent: string): seq[string] =
 
   return (@[header] & lines)
 
-type NativeFunction = ref object of RootObj
+type NativeFunction* = ref object of RootObj
   def: FunctionDefinition
   native: string
 
@@ -1334,6 +1336,11 @@ proc new_native_function(native: string, returns: string, name: string,
 
 proc name(function: NativeFunction): Identifier =
   function.def.name
+
+proc def*(function: NativeFunction): FunctionDefinition =
+  function.def
+
+proc native*(function: NativeFunction): string = function.native
 
 type NativeModule* = ref object of RootObj
   name: Identifier
@@ -1360,11 +1367,14 @@ proc new_native_module(name: string, functions: seq[
       functions_map: functions_map,
       function_defs_hash_map: function_defs_hash_map))
 
-proc hash(module: NativeModule): Hash =
+proc hash*(module: NativeModule): Hash =
   module.name.hash
 
 proc name*(module: NativeModule): Identifier =
   module.name
+
+proc functions*(module: NativeModule): seq[NativeFunction] =
+  module.functions
 
 proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
   ok(new_module_ref(module.name))
@@ -1568,6 +1578,7 @@ type File* = ref object of RootObj
   indent: int
   modules: seq[Module]
   modules_map: Table[Identifier, int]
+  native_modules: seq[NativeModule]
   user_modules: seq[UserModule]
   functions: seq[Function]
   functions_map: Table[Identifier, seq[int]]
@@ -1580,8 +1591,10 @@ proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
   # NOTE: Build index to enable module look by name
   var modules: seq[Module]
   var modules_map: Table[Identifier, int]
+  var native_modules: seq[NativeModule]
 
   for native_module in ( ? native_modules()):
+    native_modules.add(native_module)
     let module = new_module(native_module)
     if module.name in modules_map:
       return err(fmt"[PE164] Native module `{module.name.asl} is defined twice")
@@ -1619,11 +1632,13 @@ proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
       functions_map[function.name] = new_seq[int]()
     functions_map[function.name].add(index)
 
-  ok(File(path: path, modules: modules, modules_map: modules_map,
-      user_modules: user_modules, functions: functions,
+  ok(File(path: path, native_modules: native_modules, modules: modules,
+      modules_map: modules_map, user_modules: user_modules,
+      functions: functions,
       functions_map: functions_map, indent: indent))
 
 proc path*(file: File): string = file.path
+proc native_modules*(file: File): seq[NativeModule] = file.native_modules
 proc user_modules*(file: File): seq[UserModule] = file.user_modules
 proc functions*(file: File): seq[Function] = file.functions
 
