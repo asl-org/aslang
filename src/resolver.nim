@@ -749,10 +749,19 @@ proc resolve(file: ast.File, scope: FunctionScope,
   ok(new_resolved_struct_get(struct_get, argdef.module_ref, resolved_field))
 
 proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
+    match: Match): Result[ResolvedMatch, string]
+proc resolve(file: ast.File, scope: FunctionScope, match: Match): Result[
+    ResolvedMatch, string]
+
+proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string] =
   if DEBUG:
     echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
   case expression.kind:
+  of EK_MATCH:
+    let match = ? expression.match
+    let resolved_function_call = ? resolve(file, module, scope, match)
+    ok(new_resolved_expression(expression, resolved_function_call))
   of EK_FNCALL:
     let fncall = ? expression.fncall
     let resolved_function_call = ? resolve(file, module, scope, fncall)
@@ -775,6 +784,10 @@ proc resolve(file: ast.File, scope: FunctionScope,
   if DEBUG:
     echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
   case expression.kind:
+  of EK_MATCH:
+    let match = ? expression.match
+    let resolved_function_call = ? resolve(file, scope, match)
+    ok(new_resolved_expression(expression, resolved_function_call))
   of EK_FNCALL:
     let fncall = ? expression.fncall
     let resolved_function_call = ? resolve(file, scope, fncall)
@@ -1024,33 +1037,33 @@ proc resolve(file: ast.File, scope: FunctionScope,
         return err(fmt"{resolved_case_block.location} case block return type does not match with else block return type at {resolved_else_block.location}")
     ok(new_resolved_match(match, resolved_case_blocks, resolved_else_block))
 
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    step: FunctionStep): Result[ResolvedFunctionStep, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP: {step.location}"
-  case step.kind:
-  of FSK_STATEMENT:
-    let statement = ? step.statement
-    let resolved_statement = ? resolve(file, module, scope, statement)
-    ok(new_resolved_function_step(step, resolved_statement))
-  of FSK_MATCH:
-    let match = ? step.match
-    let resolved_match = ? resolve(file, module, scope, match)
-    ok(new_resolved_function_step(step, resolved_match))
+# proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
+#     step: FunctionStep): Result[ResolvedFunctionStep, string] =
+#   if DEBUG:
+#     echo fmt"Resolving MODULE FUNCTION STEP: {step.location}"
+#   case step.kind:
+#   of FSK_STATEMENT:
+#     let statement = ? step.statement
+#     let resolved_statement = ? resolve(file, module, scope, statement)
+#     ok(new_resolved_function_step(step, resolved_statement))
+#   of FSK_MATCH:
+#     let match = ? step.match
+#     let resolved_match = ? resolve(file, module, scope, match)
+#     ok(new_resolved_function_step(step, resolved_match))
 
-proc resolve(file: ast.File, scope: FunctionScope,
-    step: FunctionStep): Result[ResolvedFunctionStep, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP: {step.location}"
-  case step.kind:
-  of FSK_STATEMENT:
-    let statement = ? step.statement
-    let resolved_statement = ? resolve(file, scope, statement)
-    ok(new_resolved_function_step(step, resolved_statement))
-  of FSK_MATCH:
-    let match = ? step.match
-    let resolved_match = ? resolve(file, scope, match)
-    ok(new_resolved_function_step(step, resolved_match))
+# proc resolve(file: ast.File, scope: FunctionScope,
+#     step: FunctionStep): Result[ResolvedFunctionStep, string] =
+#   if DEBUG:
+#     echo fmt"Resolving FUNCTION STEP: {step.location}"
+#   case step.kind:
+#   of FSK_STATEMENT:
+#     let statement = ? step.statement
+#     let resolved_statement = ? resolve(file, scope, statement)
+#     ok(new_resolved_function_step(step, resolved_statement))
+#   of FSK_MATCH:
+#     let match = ? step.match
+#     let resolved_match = ? resolve(file, scope, match)
+#     ok(new_resolved_function_step(step, resolved_match))
 
 proc resolve(file: ast.File, module: UserModule, function: Function): Result[
     ResolvedFunction, string] =
@@ -1061,7 +1074,7 @@ proc resolve(file: ast.File, module: UserModule, function: Function): Result[
   for arg in resolved_function_def.args:
     scope = ? scope.add(arg)
 
-  var resolved_steps: seq[ResolvedFunctionStep]
+  var resolved_steps: seq[ResolvedStatement]
   for step in function.steps:
     let resolved_step = ? resolve(file, module, scope, step)
     resolved_steps.add(resolved_step)
@@ -1081,7 +1094,7 @@ proc resolve(file: ast.File, function: Function): Result[ResolvedFunction, strin
   var scope = FunctionScope()
   for arg in resolved_function_def.args:
     scope = ? scope.add(arg)
-  var resolved_steps: seq[ResolvedFunctionStep]
+  var resolved_steps: seq[ResolvedStatement]
   for step in function.steps:
     let resolved_step = ? resolve(file, scope, step)
     resolved_steps.add(resolved_step)

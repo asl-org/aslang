@@ -372,55 +372,6 @@ proc return_type*(struct_get: ResolvedStructGet): ResolvedModuleRef =
   struct_get.field.module_ref
 
 type
-  ResolvedExpressionKind* = enum
-    REK_FNCALL, REK_INIT, REK_STRUCT_GET, REK_VARIABLE
-  ResolvedExpression* = ref object of RootObj
-    expression: Expression
-    case kind: ResolvedExpressionKind
-    of REK_FNCALL: fncall: ResolvedFunctionCall
-    of REK_INIT: init: ResolvedInitializer
-    of REK_STRUCT_GET: struct_get: ResolvedStructGet
-    of REK_VARIABLE: variable: ResolvedArgumentDefinition
-
-proc new_resolved_expression*(expression: Expression,
-    fncall: ResolvedFunctionCall): ResolvedExpression =
-  ResolvedExpression(kind: REK_FNCALL, expression: expression, fncall: fncall)
-
-proc new_resolved_expression*(expression: Expression,
-    init: ResolvedInitializer): ResolvedExpression =
-  ResolvedExpression(kind: REK_INIT, expression: expression, init: init)
-
-proc new_resolved_expression*(expression: Expression,
-    struct_get: ResolvedStructGet): ResolvedExpression =
-  ResolvedExpression(kind: REK_STRUCT_GET, expression: expression,
-      struct_get: struct_get)
-
-proc new_resolved_expression*(expression: Expression,
-    variable: ResolvedArgumentDefinition): ResolvedExpression =
-  ResolvedExpression(kind: REK_VARIABLE, expression: expression,
-      variable: variable)
-
-proc return_type*(expression: ResolvedExpression): ResolvedModuleRef =
-  case expression.kind:
-  of REK_FNCALL: expression.fncall.return_type
-  of REK_INIT: expression.init.return_type
-  of REK_STRUCT_GET: expression.struct_get.return_type
-  of REK_VARIABLE: expression.variable.module_ref
-
-type ResolvedStatement* = ref object of RootObj
-  statement: Statement
-  arg*: ResolvedArgumentDefinition
-  expression: ResolvedExpression
-
-proc new_resolved_statement*(statement: Statement,
-    arg: ResolvedArgumentDefinition,
-    expression: ResolvedExpression): ResolvedStatement =
-  ResolvedStatement(statement: statement, arg: arg, expression: expression)
-
-proc return_type*(statement: ResolvedStatement): ResolvedModuleRef =
-  statement.expression.return_type
-
-type
   ResolvedStructPatternKind* = enum
     RSPK_DEFAULT, RSPK_NAMED
   ResolvedStructPattern* = ref object of RootObj
@@ -461,10 +412,76 @@ proc new_resolved_case_definition*(def: CaseDefinition,
     pattern: ResolvedCasePattern): ResolvedCaseDefinition =
   ResolvedCaseDefinition(def: def, pattern: pattern)
 
-type ResolvedCase* = ref object of RootObj
-  case_block: Case
-  def: ResolvedCaseDefinition
-  statements: seq[ResolvedStatement]
+type
+  ResolvedExpressionKind* = enum
+    REK_MATCH, REK_FNCALL, REK_INIT, REK_STRUCT_GET, REK_VARIABLE
+  ResolvedExpression* = ref object of RootObj
+    expression: Expression
+    case kind: ResolvedExpressionKind
+    of REK_MATCH: match: ResolvedMatch
+    of REK_FNCALL: fncall: ResolvedFunctionCall
+    of REK_INIT: init: ResolvedInitializer
+    of REK_STRUCT_GET: struct_get: ResolvedStructGet
+    of REK_VARIABLE: variable: ResolvedArgumentDefinition
+  ResolvedStatement* = ref object of RootObj
+    statement: Statement
+    arg*: ResolvedArgumentDefinition
+    expression: ResolvedExpression
+  ResolvedCase* = ref object of RootObj
+    case_block: Case
+    def: ResolvedCaseDefinition
+    statements: seq[ResolvedStatement]
+  ResolvedElse* = ref object of RootObj
+    else_block: Else
+    statements: seq[ResolvedStatement]
+  ResolvedMatchKind* = enum
+    RMK_CASE_ONLY, RMK_COMPLETE
+  ResolvedMatch* = ref object of RootObj
+    match: Match
+    case_blocks: seq[ResolvedCase]
+    case kind: ResolvedMatchKind
+    of RMK_CASE_ONLY: discard
+    of RMK_COMPLETE: else_block: ResolvedElse
+
+proc new_resolved_expression*(expression: Expression,
+    match: ResolvedMatch): ResolvedExpression =
+  ResolvedExpression(kind: REK_MATCH, expression: expression, match: match)
+
+proc new_resolved_expression*(expression: Expression,
+    fncall: ResolvedFunctionCall): ResolvedExpression =
+  ResolvedExpression(kind: REK_FNCALL, expression: expression, fncall: fncall)
+
+proc new_resolved_expression*(expression: Expression,
+    init: ResolvedInitializer): ResolvedExpression =
+  ResolvedExpression(kind: REK_INIT, expression: expression, init: init)
+
+proc new_resolved_expression*(expression: Expression,
+    struct_get: ResolvedStructGet): ResolvedExpression =
+  ResolvedExpression(kind: REK_STRUCT_GET, expression: expression,
+      struct_get: struct_get)
+
+proc new_resolved_expression*(expression: Expression,
+    variable: ResolvedArgumentDefinition): ResolvedExpression =
+  ResolvedExpression(kind: REK_VARIABLE, expression: expression,
+      variable: variable)
+
+proc return_type(match: ResolvedMatch): ResolvedModuleRef
+
+proc return_type*(expression: ResolvedExpression): ResolvedModuleRef =
+  case expression.kind:
+  of REK_MATCH: expression.match.return_type
+  of REK_FNCALL: expression.fncall.return_type
+  of REK_INIT: expression.init.return_type
+  of REK_STRUCT_GET: expression.struct_get.return_type
+  of REK_VARIABLE: expression.variable.module_ref
+
+proc new_resolved_statement*(statement: Statement,
+    arg: ResolvedArgumentDefinition,
+    expression: ResolvedExpression): ResolvedStatement =
+  ResolvedStatement(statement: statement, arg: arg, expression: expression)
+
+proc return_type*(statement: ResolvedStatement): ResolvedModuleRef =
+  statement.expression.return_type
 
 proc new_resolved_case*(case_block: Case, def: ResolvedCaseDefinition,
     statements: seq[ResolvedStatement]): ResolvedCase =
@@ -476,10 +493,6 @@ proc return_type*(case_block: ResolvedCase): ResolvedModuleRef =
 proc location*(case_block: ResolvedCase): Location =
   case_block.case_block.location
 
-type ResolvedElse* = ref object of RootObj
-  else_block: Else
-  statements: seq[ResolvedStatement]
-
 proc new_resolved_else*(else_block: Else, statements: seq[
     ResolvedStatement]): ResolvedElse =
   ResolvedElse(else_block: else_block, statements: statements)
@@ -490,16 +503,6 @@ proc return_type*(else_block: ResolvedElse): ResolvedModuleRef =
 proc location*(else_block: ResolvedElse): Location =
   else_block.else_block.location
 
-type
-  ResolvedMatchKind* = enum
-    RMK_CASE_ONLY, RMK_COMPLETE
-  ResolvedMatch* = ref object of RootObj
-    match: Match
-    case_blocks: seq[ResolvedCase]
-    case kind: ResolvedMatchKind
-    of RMK_CASE_ONLY: discard
-    of RMK_COMPLETE: else_block: ResolvedElse
-
 proc new_resolved_match*(match: Match, case_blocks: seq[
     ResolvedCase]): ResolvedMatch =
   ResolvedMatch(kind: RMK_CASE_ONLY, match: match, case_blocks: case_blocks)
@@ -509,40 +512,43 @@ proc new_resolved_match*(match: Match, case_blocks: seq[ResolvedCase],
   ResolvedMatch(kind: RMK_COMPLETE, match: match, case_blocks: case_blocks,
       else_block: else_block)
 
+proc return_type(match: ResolvedMatch): ResolvedModuleRef =
+  match.case_blocks[0].return_type
+
 proc arg*(match: ResolvedMatch): ResolvedArgumentDefinition =
   new_resolved_argument_definition(match.match.def.arg, match.case_blocks[
       0].return_type, match.match.def.arg.location)
 
-type
-  ResolvedFunctionStepKind* = enum
-    RFSK_MATCH, RFSK_STATEMENT
-  ResolvedFunctionStep* = ref object of RootObj
-    step: FunctionStep
-    case kind: ResolvedFunctionStepKind
-    of RFSK_STATEMENT: statement: ResolvedStatement
-    of RFSK_MATCH: match: ResolvedMatch
+# type
+#   ResolvedFunctionStepKind* = enum
+#     RFSK_MATCH, RFSK_STATEMENT
+#   ResolvedFunctionStep* = ref object of RootObj
+#     step: FunctionStep
+#     case kind: ResolvedFunctionStepKind
+#     of RFSK_STATEMENT: statement: ResolvedStatement
+#     of RFSK_MATCH: match: ResolvedMatch
 
-proc new_resolved_function_step*(step: FunctionStep,
-    statement: ResolvedStatement): ResolvedFunctionStep =
-  ResolvedFunctionStep(kind: RFSK_STATEMENT, step: step, statement: statement)
+# proc new_resolved_function_step*(step: FunctionStep,
+#     statement: ResolvedStatement): ResolvedFunctionStep =
+#   ResolvedFunctionStep(kind: RFSK_STATEMENT, step: step, statement: statement)
 
-proc new_resolved_function_step*(step: FunctionStep,
-    match: ResolvedMatch): ResolvedFunctionStep =
-  ResolvedFunctionStep(kind: RFSK_MATCH, step: step, match: match)
+# proc new_resolved_function_step*(step: FunctionStep,
+#     match: ResolvedMatch): ResolvedFunctionStep =
+#   ResolvedFunctionStep(kind: RFSK_MATCH, step: step, match: match)
 
-proc arg*(step: ResolvedFunctionStep): ResolvedArgumentDefinition =
-  case step.kind:
-  of RFSK_MATCH: step.match.arg
-  of RFSK_STATEMENT: step.statement.arg
+# proc arg*(step: ResolvedFunctionStep): ResolvedArgumentDefinition =
+#   case step.kind:
+#   of RFSK_MATCH: step.match.arg
+#   of RFSK_STATEMENT: step.statement.arg
 
 type ResolvedFunction* = ref object of RootObj
   function: Function
   def: ResolvedFunctionDefinition
-  steps: seq[ResolvedFunctionStep]
+  steps: seq[ResolvedStatement]
 
 proc new_resolved_function*(function: Function,
     def: ResolvedFunctionDefinition, steps: seq[
-        ResolvedFunctionStep]): ResolvedFunction =
+        ResolvedStatement]): ResolvedFunction =
   ResolvedFunction(function: function, def: def, steps: steps)
 
 type ResolvedModule* = ref object of RootObj

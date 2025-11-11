@@ -436,13 +436,36 @@ proc module_deps(variable: TypedVariable): HashSet[UserModule] = init_hashset[
 
 type
   TypedExpressionKind* = enum
-    TEK_FNCALL, TEK_INIT, TEK_STRUCT_GET, TEK_VARIABLE
+    TEK_MATCH, TEK_FNCALL, TEK_INIT, TEK_STRUCT_GET, TEK_VARIABLE
   TypedExpression* = ref object of RootObj
     case kind: TypedExpressionKind
+    of TEK_MATCH: match: TypedMatch
     of TEK_FNCALL: fncall: TypedFunctionCall
     of TEK_INIT: init: TypedInitializer
     of TEK_STRUCT_GET: struct_get: TypedStructGet
     of TEK_VARIABLE: variable: TypedVariable
+  TypedStatement* = ref object of RootObj
+    arg: Identifier
+    expression: TypedExpression
+  TypedCase = ref object of RootObj
+    pattern: CasePattern
+    location: Location
+    statements: seq[TypedStatement]
+  TypedElse = ref object of RootObj
+    location: Location
+    statements: seq[TypedStatement]
+  TypedMatchKind* = enum
+    TMK_CASE_ONLY, TMK_COMPLETE
+  TypedMatch* = ref object of RootObj
+    operand: Identifier
+    arg: Identifier
+    case_blocks: seq[TypedCase]
+    case kind: TypedMatchKind
+    of TMK_CASE_ONLY: discard
+    of TMK_COMPLETE: else_block: TypedElse
+
+proc new_typed_expression(match: TypedMatch): TypedExpression =
+  TypedExpression(kind: TEK_MATCH, match: match)
 
 proc new_typed_expression(fncall: TypedFunctionCall): TypedExpression =
   TypedExpression(kind: TEK_FNCALL, fncall: fncall)
@@ -456,21 +479,32 @@ proc new_typed_expression(struct_get: TypedStructGet): TypedExpression =
 proc new_typed_expression(variable: TypedVariable): TypedExpression =
   TypedExpression(kind: TEK_VARIABLE, variable: variable)
 
+proc module_deps(match: TypedMatch): HashSet[UserModule]
+
 proc module_deps(expression: TypedExpression): HashSet[UserModule] =
   case expression.kind:
+  of TEK_MATCH: expression.match.module_deps
   of TEK_FNCALL: expression.fncall.module_deps
   of TEK_INIT: expression.init.module_deps
   of TEK_STRUCT_GET: expression.struct_get.module_deps
   of TEK_VARIABLE: expression.variable.module_deps
 
+proc location*(match: TypedMatch): Location
+
 proc location*(expression: TypedExpression): Location =
   case expression.kind:
+  of TEK_MATCH: expression.match.location
   of TEK_FNCALL: expression.fncall.location
   of TEK_INIT: expression.init.location
   of TEK_STRUCT_GET: expression.struct_get.location
   of TEK_VARIABLE: expression.variable.location
 
 proc kind*(expression: TypedExpression): TypedExpressionKind = expression.kind
+
+proc match*(expression: TypedExpression): Result[TypedMatch, string] =
+  case expression.kind:
+  of TEK_MATCH: ok(expression.match)
+  else: err(fmt"{expression.location} expected a match expression")
 
 proc fncall*(expression: TypedExpression): Result[TypedFunctionCall, string] =
   case expression.kind:
@@ -492,10 +526,6 @@ proc variable*(expression: TypedExpression): Result[TypedVariable, string] =
   of TEK_VARIABLE: ok(expression.variable)
   else: err(fmt"{expression.location} expected a variable")
 
-type TypedStatement* = ref object of RootObj
-  arg: Identifier
-  expression: TypedExpression
-
 proc new_typed_statement(arg: Identifier,
     expression: TypedExpression): TypedStatement =
   TypedStatement(arg: arg, expression: expression)
@@ -506,11 +536,6 @@ proc module_deps(statement: TypedStatement): HashSet[UserModule] =
 proc arg*(statement: TypedStatement): Identifier = statement.arg
 proc expression*(statement: TypedStatement): TypedExpression = statement.expression
 proc location*(statement: TypedStatement): Location = statement.arg.location
-
-type TypedCase = ref object of RootObj
-  pattern: CasePattern
-  location: Location
-  statements: seq[TypedStatement]
 
 proc new_typed_case(pattern: CasePattern, statements: seq[TypedStatement],
     location: Location): TypedCase =
@@ -525,10 +550,6 @@ proc module_deps(case_block: TypedCase): HashSet[UserModule] =
     module_set.incl(statement.module_deps)
   module_set
 
-type TypedElse = ref object of RootObj
-  location: Location
-  statements: seq[TypedStatement]
-
 proc new_typed_else(statements: seq[TypedStatement],
     location: Location): TypedElse =
   TypedElse(statements: statements, location: location)
@@ -541,18 +562,6 @@ proc module_deps(else_block: TypedElse): HashSet[UserModule] =
     module_set.incl(statement.module_deps)
   module_set
 
-
-type
-  TypedMatchKind* = enum
-    TMK_CASE_ONLY, TMK_COMPLETE
-  TypedMatch* = ref object of RootObj
-    operand: Identifier
-    arg: Identifier
-    case_blocks: seq[TypedCase]
-    case kind: TypedMatchKind
-    of TMK_CASE_ONLY: discard
-    of TMK_COMPLETE: else_block: TypedElse
-
 proc new_typed_match(operand: Identifier, arg: Identifier, case_blocks: seq[
     TypedCase]): TypedMatch =
   TypedMatch(kind: TMK_CASE_ONLY, operand: operand, arg: arg,
@@ -563,8 +572,7 @@ proc new_typed_match(operand: Identifier, arg: Identifier, case_blocks: seq[
   TypedMatch(kind: TMK_COMPLETE, operand: operand, arg: arg,
       case_blocks: case_blocks, else_block: else_block)
 
-proc location*(match: TypedMatch): Location =
-  match.arg.location
+proc location*(match: TypedMatch): Location = match.arg.location
 
 proc module_deps(match: TypedMatch): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
@@ -575,46 +583,12 @@ proc module_deps(match: TypedMatch): HashSet[UserModule] =
   of TMK_COMPLETE: module_set.incl(match.else_block.module_deps)
   module_set
 
-type
-  TypedFunctionStepKind* = enum
-    TFSK_STATEMENT, TFSK_MATCH
-  TypedFunctionStep* = ref object of RootObj
-    case kind: TypedFunctionStepKind
-    of TFSK_STATEMENT: statement: TypedStatement
-    of TFSK_MATCH: match: TypedMatch
-
-proc new_typed_function_step(statement: TypedStatement): TypedFunctionStep =
-  TypedFunctionStep(kind: TFSK_STATEMENT, statement: statement)
-
-proc new_typed_function_step(match: TypedMatch): TypedFunctionStep =
-  TypedFunctionStep(kind: TFSK_MATCH, match: match)
-
-# proc location(step: TypedFunctionStep): Location =
-#   case step.kind:
-#   of TFSK_STATEMENT: step.statement.location
-#   of TFSK_MATCH: step.match.location
-
-proc module_deps(step: TypedFunctionStep): HashSet[UserModule] =
-  case step.kind:
-  of TFSK_STATEMENT: step.statement.module_deps
-  of TFSK_MATCH: step.match.module_deps
-
-proc kind*(step: TypedFunctionStep): TypedFunctionStepKind = step.kind
-proc statement*(step: TypedFunctionStep): Result[TypedStatement, string] =
-  case step.kind:
-  of TFSK_STATEMENT: ok(step.statement)
-  of TFSK_MATCH: err("{step.location} expected a statement")
-proc match*(step: TypedFunctionStep): Result[TypedMatch, string] =
-  case step.kind:
-  of TFSK_STATEMENT: err("{step.location} expected a match")
-  of TFSK_MATCH: ok(step.match)
-
 type TypedFunction* = ref object of RootObj
   def: TypedFunctionDefinition
-  steps: seq[TypedFunctionStep]
+  steps: seq[TypedStatement]
 
 proc new_typed_function(def: TypedFunctionDefinition, steps: seq[
-    TypedFunctionStep]): TypedFunction =
+    TypedStatement]): TypedFunction =
   TypedFunction(def: def, steps: steps)
 
 # proc location(function: TypedFunction): Location =
@@ -628,7 +602,7 @@ proc module_deps(function: TypedFunction): HashSet[UserModule] =
   module_set
 
 proc def*(function: TypedFunction): TypedFunctionDefinition = function.def
-proc steps*(function: TypedFunction): seq[TypedFunctionStep] = function.steps
+proc steps*(function: TypedFunction): seq[TypedStatement] = function.steps
 
 proc assign_type(file: ast.File, optional_module: Option[UserModule],
     module_name: Identifier): Result[TypedModuleRef, string] =
@@ -796,9 +770,17 @@ proc assign_type(file: ast.File, fncall: FunctionCall): Result[
   let fnref = ? assign_type(file, fncall.fnref, fncall.args.len.uint)
   ok(new_typed_function_call(fnref, fncall.args))
 
+# Forward Declaration needed due to cyclic dependencies
+proc assign_type(file: ast.File, module: UserModule, match: Match): Result[
+    TypedMatch, string]
+
 proc assign_type(file: ast.File, module: UserModule,
     expression: Expression): Result[TypedExpression, string] =
   case expression.kind:
+  of EK_MATCH:
+    let match = ? expression.match
+    let typed_match = ? assign_type(file, module, match)
+    ok(new_typed_expression(typed_match))
   of EK_FNCALL:
     let fncall = ? expression.fncall
     let typed_fncall = ? assign_type(file, module, fncall)
@@ -817,9 +799,17 @@ proc assign_type(file: ast.File, module: UserModule,
     let typed_variable = new_typed_variable(variable)
     ok(new_typed_expression(typed_variable))
 
+# Forward Declaration needed due to cyclic dependencies
+proc assign_type(file: ast.File, match: Match): Result[
+    TypedMatch, string]
+
 proc assign_type(file: ast.File, expression: Expression): Result[
     TypedExpression, string] =
   case expression.kind:
+  of EK_MATCH:
+    let match = ? expression.match
+    let typed_match = ? assign_type(file, match)
+    ok(new_typed_expression(typed_match))
   of EK_FNCALL:
     let fncall = ? expression.fncall
     let typed_fncall = ? assign_type(file, fncall)
@@ -913,33 +903,9 @@ proc assign_type(file: ast.File, match: Match): Result[
     ok(new_typed_match(match.def.operand, match.def.arg, typed_cases, typed_else))
 
 proc assign_type(file: ast.File, module: UserModule,
-    step: FunctionStep): Result[TypedFunctionStep, string] =
-  case step.kind:
-  of FSK_STATEMENT:
-    let statement = ? step.statement
-    let typed_statement = ? assign_type(file, module, statement)
-    ok(new_typed_function_step(typed_statement))
-  of FSK_MATCH:
-    let match = ? step.match
-    let typed_match = ? assign_type(file, module, match)
-    ok(new_typed_function_step(typed_match))
-
-proc assign_type(file: ast.File, step: FunctionStep): Result[
-    TypedFunctionStep, string] =
-  case step.kind:
-  of FSK_STATEMENT:
-    let statement = ? step.statement
-    let typed_statement = ? assign_type(file, statement)
-    ok(new_typed_function_step(typed_statement))
-  of FSK_MATCH:
-    let match = ? step.match
-    let typed_match = ? assign_type(file, match)
-    ok(new_typed_function_step(typed_match))
-
-proc assign_type(file: ast.File, module: UserModule,
     function: Function): Result[TypedFunction, string] =
   let typed_def = ? assign_type(file, module, function.def)
-  var typed_steps: seq[TypedFunctionStep]
+  var typed_steps: seq[TypedStatement]
   for step in function.steps:
     let typed_step = ? assign_type(file, module, step)
     typed_steps.add(typed_step)
@@ -948,7 +914,7 @@ proc assign_type(file: ast.File, module: UserModule,
 proc assign_type(file: ast.File, function: Function): Result[
     TypedFunction, string] =
   let typed_def = ? assign_type(file, function.def)
-  var typed_steps: seq[TypedFunctionStep]
+  var typed_steps: seq[TypedStatement]
   for step in function.steps:
     let typed_step = ? assign_type(file, step)
     typed_steps.add(typed_step)

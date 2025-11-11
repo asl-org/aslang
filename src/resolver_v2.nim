@@ -965,6 +965,8 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
   of TEK_VARIABLE:
     let variable = ? expression.variable
     err(fmt"{expression.location} todo: resolve module function expression")
+  of TEK_MATCH:
+    err(fmt"{expression.location} todo: resolve module function expression")
 
 type ResolvedStatement = ref object of RootObj
   arg: Identifier
@@ -990,41 +992,12 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
         scope: FunctionScope, match: TypedMatch): Result[void, string] =
   err(fmt"{match.location} todo: resolve module function match")
 
-type
-  ResolvedFunctionStepKind = enum
-    RFSK_STATEMENT
-  ResolvedFunctionStep = ref object of RootObj
-    case kind: ResolvedFunctionStepKind
-    of RFSK_STATEMENT: statement: ResolvedStatement
-
-proc new_resolved_function_step(statement: ResolvedStatement): ResolvedFunctionStep =
-  ResolvedFunctionStep(kind: RFSK_STATEMENT, statement: statement)
-
-proc return_arg(step: ResolvedFunctionStep): ResolvedArgumentDefinition =
-  case step.kind:
-  of RFSK_STATEMENT: step.statement.return_arg
-
-proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
-    module_def: ResolvedModuleDefinition, module: TypedModule,
-        scope: FunctionScope, step: TypedFunctionStep): Result[
-            ResolvedFunctionStep, string] =
-  case step.kind:
-  of TFSK_STATEMENT:
-    let statement = ? step.statement
-    let resolved_statement = ? resolve(file_def, file, module_def, module,
-        scope, statement)
-    ok(new_resolved_function_step(resolved_statement))
-  of TFSK_MATCH:
-    let match = ? step.match
-    ? resolve(file_def, file, module_def, module, scope, match)
-    err(fmt"todo: resolve module function step")
-
 type ResolvedFunction = ref object of RootObj
   def: ResolvedFunctionDefinition
-  steps: seq[ResolvedFunctionStep]
+  steps: seq[ResolvedStatement]
 
 proc new_resolved_function(def: ResolvedFunctionDefinition, steps: seq[
-    ResolvedFunctionStep]): ResolvedFunction =
+    ResolvedStatement]): ResolvedFunction =
   ResolvedFunction(def: def, steps: steps)
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
@@ -1035,7 +1008,7 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
   for arg in resolved_function_def.args:
     scope = ? scope.set(arg)
 
-  var resolved_steps: seq[ResolvedFunctionStep]
+  var resolved_steps: seq[ResolvedStatement]
   for step in function.steps:
     let resolved_function_step = ? resolve(file_def, file, module_def, module,
         scope, step)

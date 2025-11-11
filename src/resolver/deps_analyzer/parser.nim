@@ -486,41 +486,6 @@ proc struct_get_spec(parser: Parser): Result[StructGet, string] =
   let field = ? parser.expect(identifier_spec)
   ok(new_struct_get(name, field))
 
-proc expression_spec(parser: Parser): Result[Expression, string] =
-  let maybe_fncall = parser.expect(function_call_spec)
-  if maybe_fncall.is_ok:
-    return ok(new_expression(maybe_fncall.get))
-
-  let maybe_init = parser.expect(initializer_spec)
-  if maybe_init.is_ok:
-    return ok(new_expression(maybe_init.get))
-
-  let maybe_struct_get = parser.expect(struct_get_spec)
-  if maybe_struct_get.is_ok:
-    return ok(new_expression(maybe_struct_get.get))
-  else:
-    let variable = ? parser.expect(identifier_spec)
-    ok(new_expression(variable))
-
-proc assigned_statement_spec(parser: Parser): Result[Statement, string] =
-  let arg = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(equal_spec)
-  discard ? parser.expect(optional_space_spec)
-  let expression = ? parser.expect(expression_spec)
-  ok(new_statement(arg, expression))
-
-proc statement_spec(parser: Parser, indent: int): Result[Statement, string] =
-  discard ? parser.expect(indent_spec, indent)
-
-  let maybe_assigned_statement = parser.expect(assigned_statement_spec)
-  if maybe_assigned_statement.is_ok:
-    return ok(maybe_assigned_statement.get)
-
-  let maybe_expression = parser.expect(expression_spec)
-  if maybe_expression.is_ok:
-    return ok(new_statement(maybe_expression.get))
-
 proc match_definition_default_spec(parser: Parser): Result[
     MatchDefinition, string] =
   let match_keyword = ? parser.expect(match_keyword_spec)
@@ -598,6 +563,46 @@ proc case_definition_spec(parser: Parser): Result[CaseDefinition, string] =
   discard ? parser.expect(colon_spec)
   ok(new_case_definition(pattern, case_keyword.location))
 
+# Forward declaration needed due to match <-> expression cyclic dependency
+proc match_spec(parser: Parser, indent: int): Result[Match, string]
+
+proc expression_spec(parser: Parser, indent: int): Result[Expression, string] =
+  let maybe_match = parser.expect(match_spec, indent)
+  if maybe_match.is_ok:
+    return ok(new_expression(maybe_match.get))
+
+  let maybe_fncall = parser.expect(function_call_spec)
+  if maybe_fncall.is_ok:
+    return ok(new_expression(maybe_fncall.get))
+
+  let maybe_init = parser.expect(initializer_spec)
+  if maybe_init.is_ok:
+    return ok(new_expression(maybe_init.get))
+
+  let maybe_struct_get = parser.expect(struct_get_spec)
+  if maybe_struct_get.is_ok:
+    return ok(new_expression(maybe_struct_get.get))
+
+  let variable = ? parser.expect(identifier_spec)
+  ok(new_expression(variable))
+
+proc assignment_spec(parser: Parser): Result[Identifier, string] =
+  let arg = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(equal_spec)
+  discard ? parser.expect(optional_space_spec)
+  ok(arg)
+
+proc statement_spec(parser: Parser, indent: int): Result[Statement, string] =
+  discard ? parser.expect(indent_spec, indent)
+
+  let maybe_assignment = parser.expect(assignment_spec)
+  let expression = ? parser.expect(expression_spec, indent)
+  if maybe_assignment.is_ok:
+    ok(new_statement(maybe_assignment.get, expression))
+  else:
+    ok(new_statement(expression))
+
 proc case_spec(parser: Parser, indent: int): Result[Case, string] =
   discard ? parser.expect(indent_spec, indent)
   let case_def = ? parser.expect(case_definition_spec)
@@ -629,7 +634,7 @@ proc else_spec(parser: Parser, indent: int): Result[Else, string] =
 
   new_else(statements, else_def.location)
 
-proc simple_match_spec(parser: Parser, indent: int): Result[Match, string] =
+proc match_spec(parser: Parser, indent: int): Result[Match, string] =
   let match_def = ? parser.expect(match_definition_spec)
   var cases: seq[Case]
 
@@ -646,33 +651,20 @@ proc simple_match_spec(parser: Parser, indent: int): Result[Match, string] =
 
   return new_match(match_def, cases)
 
-proc match_spec(parser: Parser, indent: int): Result[Match, string] =
-  discard ? parser.expect(indent_spec, indent)
-  parser.expect(simple_match_spec, indent)
-
-proc function_step_spec(parser: Parser, indent: int): Result[FunctionStep, string] =
-  # NOTE: match must be tried first due to overlapping structure of expressions.
-  let maybe_match = parser.expect(match_spec, indent)
-  if maybe_match.is_ok:
-    ok(new_function_step(maybe_match.get))
-  else:
-    let statement = ? parser.expect(statement_spec, indent)
-    ok(new_function_step(statement))
-
 proc function_spec(parser: Parser, indent: int): Result[Function, string] =
   let def = ? parser.expect(function_definition_spec, indent)
   discard ? parser.expect(strict_empty_line_spec)
 
-  var steps: seq[FunctionStep]
+  var steps: seq[Statement]
   # NOTE: Function must have at least 1 expression.
-  steps.add( ? parser.expect(function_step_spec, indent + 1))
+  steps.add( ? parser.expect(statement_spec, indent + 1))
   discard ? parser.expect(optional_empty_line_spec)
 
-  var maybe_expression = parser.expect(function_step_spec, indent + 1)
+  var maybe_expression = parser.expect(statement_spec, indent + 1)
   while maybe_expression.is_ok:
     steps.add(maybe_expression.get)
     discard ? parser.expect(optional_empty_line_spec)
-    maybe_expression = parser.expect(function_step_spec, indent + 1)
+    maybe_expression = parser.expect(statement_spec, indent + 1)
 
   new_function(def, steps)
 

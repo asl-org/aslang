@@ -627,91 +627,6 @@ proc asl*(struct_get: StructGet): string =
   fmt"{struct_get.name.asl}.{struct_get.field.asl}"
 
 type
-  ExpressionKind* = enum
-    EK_FNCALL, EK_INIT, EK_STRUCT_GET, EK_VARIABLE
-  Expression* = ref object of RootObj
-    case kind: ExpressionKind
-    of EK_FNCALL: fncall: FunctionCall
-    of EK_INIT: init: Initializer
-    of EK_STRUCT_GET: struct_get: StructGet
-    of EK_VARIABLE: variable: Identifier
-
-proc new_expression*(fncall: FunctionCall): Expression =
-  Expression(kind: EK_FNCALL, fncall: fncall)
-
-proc new_expression*(init: Initializer): Expression =
-  Expression(kind: EK_INIT, init: init)
-
-proc new_expression*(struct_get: StructGet): Expression =
-  Expression(kind: EK_STRUCT_GET, struct_get: struct_get)
-
-proc new_expression*(variable: Identifier): Expression =
-  Expression(kind: EK_VARIABLE, variable: variable)
-
-proc location*(expression: Expression): Location =
-  case expression.kind:
-  of EK_FNCALL: expression.fncall.location
-  of EK_INIT: expression.init.location
-  of EK_STRUCT_GET: expression.struct_get.location
-  of EK_VARIABLE: expression.variable.location
-
-proc kind*(expression: Expression): ExpressionKind = expression.kind
-proc fncall*(expression: Expression): Result[FunctionCall, string] =
-  case expression.kind:
-  of EK_FNCALL: ok(expression.fncall)
-  else: err(fmt"{expression.location} expression is not a function call")
-
-proc init*(expression: Expression): Result[Initializer, string] =
-  case expression.kind:
-  of EK_INIT: ok(expression.init)
-  else: err(fmt"{expression.location} expression is not an initializer")
-
-proc struct_get*(expression: Expression): Result[StructGet, string] =
-  case expression.kind:
-  of EK_STRUCT_GET: ok(expression.struct_get)
-  else: err(fmt"{expression.location} expression is not a struct get")
-
-proc variable*(expression: Expression): Result[Identifier, string] =
-  case expression.kind:
-  of EK_VARIABLE: ok(expression.variable)
-  else: err(fmt"{expression.location} expression is not a variable")
-
-proc asl(expression: Expression): seq[string] =
-  case expression.kind:
-  of EK_FNCALL: @[expression.fncall.asl]
-  of EK_INIT: @[expression.init.asl]
-  of EK_STRUCT_GET: @[expression.struct_get.asl]
-  of EK_VARIABLE: @[expression.variable.asl]
-
-type
-  StatementKind = enum
-    SK_USER, SK_AUTO
-  Statement* = ref object of RootObj
-    kind: StatementKind
-    arg: Identifier
-    expression: Expression
-
-proc new_statement*(expression: Expression): Statement =
-  let arg = new_identifier(expression.location)
-  Statement(kind: SK_AUTO, arg: arg, expression: expression)
-
-proc new_statement*(arg: Identifier, expression: Expression): Statement =
-  Statement(kind: SK_USER, arg: arg, expression: expression)
-
-proc location*(statement: Statement): Location =
-  statement.arg.location
-
-proc expression*(statement: Statement): Expression = statement.expression
-proc arg*(statement: Statement): Identifier = statement.arg
-
-proc asl*(statement: Statement): seq[string] =
-  var lines = statement.expression.asl
-  case statement.kind:
-  of SK_AUTO: discard
-  of SK_USER: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
-  return lines
-
-type
   StructPatternKind* = enum
     SPK_DEFAULT, SPK_NAMED
   StructPattern* = ref object of RootObj
@@ -819,52 +734,6 @@ proc pattern*(def: CaseDefinition): CasePattern = def.pattern
 proc asl(def: CaseDefinition): string =
   fmt"case {def.pattern.asl}:"
 
-type Case* = ref object of RootObj
-  def: CaseDefinition
-  statements: seq[Statement]
-
-proc new_case*(def: CaseDefinition, statements: seq[Statement]): Result[Case, string] =
-  if statements.len == 0:
-    return err(fmt"{def.location} [PE130] case block must have at least one statement")
-  ok(Case(def: def, statements: statements))
-
-proc location*(case_block: Case): Location =
-  case_block.def.location
-
-proc def*(case_block: Case): CaseDefinition = case_block.def
-proc statements*(case_block: Case): seq[Statement] = case_block.statements
-
-proc asl*(case_block: Case, indent: string): seq[string] =
-  let header = case_block.def.asl
-
-  var statements: seq[string]
-  for statement in case_block.statements:
-    statements.add(indent & statement.asl)
-
-  return (@[header] & statements)
-
-type Else* = ref object of RootObj
-  statements: seq[Statement]
-  location: Location
-
-proc new_else*(statements: seq[Statement], location: Location): Result[Else, string] =
-  if statements.len == 0:
-    return err(fmt"{location} [PE131] else block must have at least one statement")
-
-  ok(Else(statements: statements, location: location))
-
-proc location*(else_block: Else): Location = else_block.location
-proc statements*(else_block: Else): seq[Statement] = else_block.statements
-
-proc asl*(else_block: Else, indent: string): seq[string] =
-  let header = "else: "
-
-  var statements: seq[string]
-  for statement in else_block.statements:
-    statements.add(indent & statement.asl)
-
-  return (@[header] & statements)
-
 type
   MatchDefinitionKind* = enum
     MDK_DEFAULT, MDK_ASSIGNED
@@ -894,7 +763,29 @@ proc asl(def: MatchDefinition): string =
 proc debug*(def: MatchDefinition): string =
   fmt"{def.arg.asl} = match {def.operand.asl}:"
 
+# This block is together due to match <-> expression cyclic dependency by design
 type
+  ExpressionKind* = enum
+    EK_MATCH, EK_FNCALL, EK_INIT, EK_STRUCT_GET, EK_VARIABLE
+  Expression* = ref object of RootObj
+    case kind: ExpressionKind
+    of EK_MATCH: match: Match
+    of EK_FNCALL: fncall: FunctionCall
+    of EK_INIT: init: Initializer
+    of EK_STRUCT_GET: struct_get: StructGet
+    of EK_VARIABLE: variable: Identifier
+  StatementKind = enum
+    SK_USER, SK_AUTO
+  Statement* = ref object of RootObj
+    kind: StatementKind
+    arg: Identifier
+    expression: Expression
+  Case* = ref object of RootObj
+    def: CaseDefinition
+    statements: seq[Statement]
+  Else* = ref object of RootObj
+    statements: seq[Statement]
+    location: Location
   MatchKind* = enum
     MK_CASE_ONLY, MK_COMPLETE
   Match* = ref object of RootObj
@@ -904,6 +795,131 @@ type
     of MK_CASE_ONLY: discard
     of MK_COMPLETE: else_block: Else
 
+proc new_expression*(match: Match): Expression =
+  Expression(kind: EK_MATCH, match: match)
+
+proc new_expression*(fncall: FunctionCall): Expression =
+  Expression(kind: EK_FNCALL, fncall: fncall)
+
+proc new_expression*(init: Initializer): Expression =
+  Expression(kind: EK_INIT, init: init)
+
+proc new_expression*(struct_get: StructGet): Expression =
+  Expression(kind: EK_STRUCT_GET, struct_get: struct_get)
+
+proc new_expression*(variable: Identifier): Expression =
+  Expression(kind: EK_VARIABLE, variable: variable)
+
+# Expression
+
+# Forward declaration needed due to match <-> expression cyclic dependency by design
+proc location*(match: Match): Location
+
+proc location*(expression: Expression): Location =
+  case expression.kind:
+  of EK_MATCH: expression.match.location
+  of EK_FNCALL: expression.fncall.location
+  of EK_INIT: expression.init.location
+  of EK_STRUCT_GET: expression.struct_get.location
+  of EK_VARIABLE: expression.variable.location
+
+proc asl(match: Match, indent: string): seq[string]
+
+proc asl(expression: Expression, indent: string): seq[string] =
+  case expression.kind:
+  of EK_MATCH: expression.match.asl(indent)
+  of EK_FNCALL: @[indent & expression.fncall.asl]
+  of EK_INIT: @[indent & expression.init.asl]
+  of EK_STRUCT_GET: @[indent & expression.struct_get.asl]
+  of EK_VARIABLE: @[indent & expression.variable.asl]
+
+proc kind*(expression: Expression): ExpressionKind = expression.kind
+
+proc match*(expression: Expression): Result[Match, string] =
+  case expression.kind:
+  of EK_MATCH: ok(expression.match)
+  else: err(fmt"{expression.location} expression is not a function call")
+
+proc fncall*(expression: Expression): Result[FunctionCall, string] =
+  case expression.kind:
+  of EK_FNCALL: ok(expression.fncall)
+  else: err(fmt"{expression.location} expression is not a function call")
+
+proc init*(expression: Expression): Result[Initializer, string] =
+  case expression.kind:
+  of EK_INIT: ok(expression.init)
+  else: err(fmt"{expression.location} expression is not an initializer")
+
+proc struct_get*(expression: Expression): Result[StructGet, string] =
+  case expression.kind:
+  of EK_STRUCT_GET: ok(expression.struct_get)
+  else: err(fmt"{expression.location} expression is not a struct get")
+
+proc variable*(expression: Expression): Result[Identifier, string] =
+  case expression.kind:
+  of EK_VARIABLE: ok(expression.variable)
+  else: err(fmt"{expression.location} expression is not a variable")
+
+# Statement
+proc new_statement*(expression: Expression): Statement =
+  let arg = new_identifier(expression.location)
+  Statement(kind: SK_AUTO, arg: arg, expression: expression)
+
+proc new_statement*(arg: Identifier, expression: Expression): Statement =
+  Statement(kind: SK_USER, arg: arg, expression: expression)
+
+proc location*(statement: Statement): Location = statement.arg.location
+proc expression*(statement: Statement): Expression = statement.expression
+proc arg*(statement: Statement): Identifier = statement.arg
+
+proc asl*(statement: Statement, indent: string): seq[string] =
+  var lines = statement.expression.asl(indent)
+  case statement.kind:
+  of SK_AUTO: discard
+  of SK_USER: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
+  return lines
+
+# Case
+proc new_case*(def: CaseDefinition, statements: seq[Statement]): Result[Case, string] =
+  if statements.len == 0:
+    return err(fmt"{def.location} [PE130] case block must have at least one statement")
+  ok(Case(def: def, statements: statements))
+
+proc location*(case_block: Case): Location =
+  case_block.def.location
+
+proc def*(case_block: Case): CaseDefinition = case_block.def
+proc statements*(case_block: Case): seq[Statement] = case_block.statements
+
+proc asl*(case_block: Case, indent: string): seq[string] =
+  let header = case_block.def.asl
+
+  var statements: seq[string]
+  for statement in case_block.statements:
+    statements.add(statement.asl(indent))
+
+  return (@[header] & statements)
+
+# Else
+proc new_else*(statements: seq[Statement], location: Location): Result[Else, string] =
+  if statements.len == 0:
+    return err(fmt"{location} [PE131] else block must have at least one statement")
+
+  ok(Else(statements: statements, location: location))
+
+proc location*(else_block: Else): Location = else_block.location
+proc statements*(else_block: Else): seq[Statement] = else_block.statements
+
+proc asl*(else_block: Else, indent: string): seq[string] =
+  let header = "else: "
+
+  var statements: seq[string]
+  for statement in else_block.statements:
+    statements.add(statement.asl(indent))
+
+  return (@[header] & statements)
+
+# Match
 proc new_match*(def: MatchDefinition, case_blocks: seq[Case]): Result[Match, string] =
   if case_blocks.len < 2:
     return err(fmt"{location(def)} [PE132] match block must have at least 2 case blocks")
@@ -945,48 +961,12 @@ proc asl(match: Match, indent: string): seq[string] =
 
   return (@[header] & lines)
 
-type
-  FunctionStepKind* = enum
-    FSK_STATEMENT, FSK_MATCH
-  FunctionStep* = ref object of RootObj
-    case kind: FunctionStepKind
-    of FSK_STATEMENT: statement: Statement
-    of FSK_MATCH: match: Match
-
-proc new_function_step*(statement: Statement): FunctionStep =
-  FunctionStep(kind: FSK_STATEMENT, statement: statement)
-
-proc new_function_step*(match: Match): FunctionStep =
-  FunctionStep(kind: FSK_MATCH, match: match)
-
-proc location*(step: FunctionStep): Location =
-  case step.kind:
-  of FSK_STATEMENT: step.statement.location
-  of FSK_MATCH: step.match.location
-
-proc kind*(step: FunctionStep): FunctionStepKind = step.kind
-
-proc statement*(step: FunctionStep): Result[Statement, string] =
-  case step.kind:
-  of FSK_STATEMENT: ok(step.statement)
-  of FSK_MATCH: err(fmt"{step.location} expected a statement but found match block")
-
-proc match*(step: FunctionStep): Result[Match, string] =
-  case step.kind:
-  of FSK_MATCH: ok(step.match)
-  of FSK_STATEMENT: err(fmt"{step.location} expected a match block but found statement")
-
-proc asl*(step: FunctionStep, indent: string): seq[string] =
-  case step.kind:
-  of FSK_STATEMENT: step.statement.asl
-  of FSK_MATCH: step.match.asl(indent)
-
 type Function* = ref object of RootObj
   def: FunctionDefinition
-  steps: seq[FunctionStep]
+  steps: seq[Statement]
 
-proc new_function*(def: FunctionDefinition, steps: seq[
-    FunctionStep]): Result[Function, string] =
+proc new_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
+    Function, string] =
   if steps.len == 0:
     return err(fmt"{def.location} [PE134] function `{def.name.asl}` must have at least one statement")
 
@@ -1001,7 +981,7 @@ proc name*(function: Function): Identifier =
 proc def*(function: Function): FunctionDefinition =
   function.def
 
-proc steps*(function: Function): seq[FunctionStep] =
+proc steps*(function: Function): seq[Statement] =
   function.steps
 
 proc asl*(function: Function, indent: string): seq[string] =
