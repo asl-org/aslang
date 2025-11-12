@@ -1,4 +1,5 @@
-import results, strformat, tables, strutils, sets, algorithm, options, sequtils, hashes
+import results, strformat, tables, strutils, sets, algorithm, options, sequtils,
+    hashes, parseutils
 
 import deps_analyzer/parser
 export parser
@@ -32,6 +33,36 @@ proc detect_cycle[T](graph: Table[T, HashSet[T]]): Result[seq[T], seq[T]] =
       if maybe_dag.is_err: return err(maybe_dag.error.to_seq)
       visited = maybe_dag.get
   ok(visited.to_seq.reversed)
+
+# Numeric literal parser utility
+proc safe_parse*[T](input: string): Result[void, string] =
+  when T is SomeSignedInt:
+    var temp: BiggestInt
+    let code = parse_biggest_int(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse signed int from: " & input)
+    if temp < T.low.BiggestInt or temp > T.high.BiggestInt:
+      return err("Overflow: Value out of range for type " & $T)
+    ok() # ok(T(temp))
+  elif T is SomeUnsignedInt:
+    var temp: BiggestUInt
+    let code = parse_biggest_uint(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse unsigned int from: " & input)
+    if temp < T.low.BiggestUInt or temp > T.high.BiggestUInt:
+      return err("Overflow: Value out of range for type " & $T)
+    ok() # ok(T(temp))
+  elif T is SomeFloat:
+    var temp: BiggestFloat
+    let code = parse_biggest_float(input, temp)
+    if code == 0 or code != input.len:
+      return err("Failed to parse float from: " & input)
+    let casted = T(temp)
+    if BiggestFloat(casted) != temp:
+      return err("Precision loss when converting to " & $T)
+    ok() # ok(T(temp))
+  else:
+    err("safe_parse only supports signed/unsigned integers and floating-point types")
 
 type
   TypedModuleRefKind* = enum
@@ -272,8 +303,9 @@ proc new_typed_literal_init(module_ref: TypedModuleRef,
     literal: Literal): TypedLiteralInit =
   TypedLiteralInit(module_ref: module_ref, literal: literal)
 
-proc location(init: TypedLiteralInit): Location =
-  init.module_ref.location
+proc location*(init: TypedLiteralInit): Location = init.module_ref.location
+proc module_ref*(init: TypedLiteralInit): TypedModuleRef = init.module_ref
+proc literal*(init: TypedLiteralInit): Literal = init.literal
 
 proc module_deps(init: TypedLiteralInit): HashSet[UserModule] =
   init.module_ref.module_deps
@@ -308,22 +340,17 @@ proc name*(struct_ref: TypedStructRef): Result[Identifier, string] =
 type TypedStructInit* = ref object of RootObj
   struct_ref: TypedStructRef
   args: seq[KeywordArgument]
-  args_map: Table[Identifier, Argument]
 
 proc new_typed_struct_init(struct_ref: TypedStructRef, args: seq[
     KeywordArgument]): TypedStructInit =
-  var args_map: Table[Identifier, Argument]
-  for arg in args: args_map[arg.name] = arg.value
-  TypedStructInit(struct_ref: struct_ref, args: args, args_map: args_map)
+  TypedStructInit(struct_ref: struct_ref, args: args)
 
 proc module_deps(init: TypedStructInit): HashSet[UserModule] =
   init.struct_ref.module_deps
 
 proc location*(init: TypedStructInit): Location = init.struct_ref.location
 proc struct_ref*(init: TypedStructInit): TypedStructRef = init.struct_ref
-proc get*(init: TypedStructInit, name: Identifier): Result[Argument, string] =
-  if name in init.args_map: ok(init.args_map[name])
-  else: err(fmt"{init.location} field `{name.asl}` is not present")
+proc fields*(init: TypedStructInit): seq[KeywordArgument] = init.args
 
 type
   TypedInitializerKind* = enum
@@ -424,13 +451,14 @@ proc location*(struct_get: TypedStructGet): Location = struct_get.variable.locat
 proc variable*(struct_get: TypedStructGet): Identifier = struct_get.variable
 proc field*(struct_get: TypedStructGet): Identifier = struct_get.field
 
-type TypedVariable = ref object of RootObj
+type TypedVariable* = ref object of RootObj
   name: Identifier
 
 proc new_typed_variable(name: Identifier): TypedVariable =
   TypedVariable(name: name)
 
-proc location(variable: TypedVariable): Location = variable.location
+proc location(variable: TypedVariable): Location = variable.name.location
+proc name*(variable: TypedVariable): Identifier = variable.name
 proc module_deps(variable: TypedVariable): HashSet[UserModule] = init_hashset[
     UserModule]()
 
@@ -447,18 +475,18 @@ type
   TypedStatement* = ref object of RootObj
     arg: Identifier
     expression: TypedExpression
-  TypedCase = ref object of RootObj
+  TypedCase* = ref object of RootObj
     pattern: CasePattern
     location: Location
     statements: seq[TypedStatement]
-  TypedElse = ref object of RootObj
+  TypedElse* = ref object of RootObj
     location: Location
     statements: seq[TypedStatement]
   TypedMatchKind* = enum
     TMK_CASE_ONLY, TMK_COMPLETE
   TypedMatch* = ref object of RootObj
+    location: Location
     operand: Identifier
-    arg: Identifier
     case_blocks: seq[TypedCase]
     case kind: TypedMatchKind
     of TMK_CASE_ONLY: discard
@@ -526,6 +554,7 @@ proc variable*(expression: TypedExpression): Result[TypedVariable, string] =
   of TEK_VARIABLE: ok(expression.variable)
   else: err(fmt"{expression.location} expected a variable")
 
+# Statement
 proc new_typed_statement(arg: Identifier,
     expression: TypedExpression): TypedStatement =
   TypedStatement(arg: arg, expression: expression)
@@ -537,12 +566,15 @@ proc arg*(statement: TypedStatement): Identifier = statement.arg
 proc expression*(statement: TypedStatement): TypedExpression = statement.expression
 proc location*(statement: TypedStatement): Location = statement.arg.location
 
+# Case
 proc new_typed_case(pattern: CasePattern, statements: seq[TypedStatement],
     location: Location): TypedCase =
   TypedCase(pattern: pattern, statements: statements, location: location)
 
-# proc location(case_block: TypedCase): Location =
-#   case_block.location
+proc location*(case_block: TypedCase): Location = case_block.location
+proc pattern*(case_block: TypedCase): CasePattern = case_block.pattern
+proc statements*(case_block: TypedCase): seq[
+    TypedStatement] = case_block.statements
 
 proc module_deps(case_block: TypedCase): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
@@ -550,11 +582,14 @@ proc module_deps(case_block: TypedCase): HashSet[UserModule] =
     module_set.incl(statement.module_deps)
   module_set
 
+# Else
 proc new_typed_else(statements: seq[TypedStatement],
     location: Location): TypedElse =
   TypedElse(statements: statements, location: location)
 
-# proc location(else_block: TypedElse): Location = else_block.location
+proc location*(else_block: TypedElse): Location = else_block.location
+proc statements*(else_block: TypedElse): seq[
+    TypedStatement] = else_block.statements
 
 proc module_deps(else_block: TypedElse): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
@@ -562,17 +597,25 @@ proc module_deps(else_block: TypedElse): HashSet[UserModule] =
     module_set.incl(statement.module_deps)
   module_set
 
+# Match
 proc new_typed_match(operand: Identifier, arg: Identifier, case_blocks: seq[
-    TypedCase]): TypedMatch =
-  TypedMatch(kind: TMK_CASE_ONLY, operand: operand, arg: arg,
-      case_blocks: case_blocks)
+    TypedCase], location: Location): TypedMatch =
+  TypedMatch(kind: TMK_CASE_ONLY, operand: operand, case_blocks: case_blocks,
+      location: location)
 
 proc new_typed_match(operand: Identifier, arg: Identifier, case_blocks: seq[
-    TypedCase], else_block: TypedElse): TypedMatch =
-  TypedMatch(kind: TMK_COMPLETE, operand: operand, arg: arg,
-      case_blocks: case_blocks, else_block: else_block)
+    TypedCase], else_block: TypedElse, location: Location): TypedMatch =
+  TypedMatch(kind: TMK_COMPLETE, operand: operand, case_blocks: case_blocks,
+      else_block: else_block, location: location)
 
-proc location*(match: TypedMatch): Location = match.arg.location
+proc kind*(match: TypedMatch): TypedMatchKind = match.kind
+proc location*(match: TypedMatch): Location = match.location
+proc operand*(match: TypedMatch): Identifier = match.operand
+proc case_blocks*(match: TypedMatch): seq[TypedCase] = match.case_blocks
+proc else_block*(match: TypedMatch): Result[TypedElse, string] =
+  case match.kind:
+  of TMK_CASE_ONLY: err(fmt"{match.location} expected an else block")
+  of TMK_COMPLETE: ok(match.else_block)
 
 proc module_deps(match: TypedMatch): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
@@ -881,11 +924,13 @@ proc assign_type(file: ast.File, module: UserModule, match: Match): Result[
 
   case match.kind:
   of MK_CASE_ONLY:
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases))
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        match.def.location))
   of MK_COMPLETE:
     let else_block = ? match.else_block
     let typed_else = ? assign_type(file, module, else_block)
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases, typed_else))
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        typed_else, match.def.location))
 
 proc assign_type(file: ast.File, match: Match): Result[
     TypedMatch, string] =
@@ -896,11 +941,13 @@ proc assign_type(file: ast.File, match: Match): Result[
 
   case match.kind:
   of MK_CASE_ONLY:
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases))
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        match.def.location))
   of MK_COMPLETE:
     let else_block = ? match.else_block
     let typed_else = ? assign_type(file, else_block)
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases, typed_else))
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        typed_else, match.def.location))
 
 proc assign_type(file: ast.File, module: UserModule,
     function: Function): Result[TypedFunction, string] =
@@ -1094,6 +1141,44 @@ proc functions*(module: TypedNativeModule): seq[
 proc hash*(module: TypedNativeModule): Hash = module.name.hash
 proc `==`*(self: TypedNativeModule, other: TypedNativeModule): bool = self.hash == other.hash
 proc asl*(module: TypedNativeModule): string = module.name.asl
+
+proc validate(module: TypedNativeModule,
+    integer_literal: IntegerLiteral): Result[void, string] =
+  case module.name.asl:
+  of "S8": safe_parse[int8](integer_literal.asl)
+  of "S16": safe_parse[int16](integer_literal.asl)
+  of "S32": safe_parse[int32](integer_literal.asl)
+  of "S64": safe_parse[int64](integer_literal.asl)
+  of "U8": safe_parse[uint8](integer_literal.asl)
+  of "U16": safe_parse[uint16](integer_literal.asl)
+  of "U32": safe_parse[uint32](integer_literal.asl)
+  of "U64": safe_parse[uint64](integer_literal.asl)
+  else: err("{integer_literal.location} integer can not be converted to module `{module.name.asl}`")
+
+proc validate(module: TypedNativeModule, float_literal: FloatLiteral): Result[
+    void, string] =
+  case module.name.asl:
+  of "F32": safe_parse[float32](float_literal.asl)
+  of "F64": safe_parse[float64](float_literal.asl)
+  else: err("{float_literal.location} float can not be converted to module `{module.name.asl}`")
+
+proc validate(module: TypedNativeModule,
+    string_literal: StringLiteral): Result[void, string] =
+  case module.name.asl:
+  of "String": ok()
+  else: err("{string_literal.location} string can not be converted to module `{module.name.asl}`")
+
+proc validate*(module: TypedNativeModule, literal: Literal): Result[void, string] =
+  case literal.kind:
+  of LK_INTEGER:
+    let integer_literal = ? literal.integer_literal
+    validate(module, integer_literal)
+  of LK_FLOAT:
+    let float_literal = ? literal.float_literal
+    validate(module, float_literal)
+  of LK_STRING:
+    let string_literal = ? literal.string_literal
+    validate(module, string_literal)
 
 proc assign_type(file: ast.File, module: NativeModule): Result[
     TypedNativeModule, string] =

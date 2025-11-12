@@ -68,7 +68,7 @@ fn print(Array[U8] arr): U64
 fn start(U8 seed): U8
   exit_success = U8 0
 
-  arr = Array[U8] { size: 8 }
+  arr = Array[U8].init(8)
   Array[U8].set(arr, 0, 1)
   Array[U8].set(arr, 1, 2)
 

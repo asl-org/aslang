@@ -1,4 +1,4 @@
-import results, strformat, sequtils, tables, parseutils, strutils, sets
+import results, sequtils, strformat, tables, hashes, strutils, sets
 
 import resolver/resolved_ast
 export resolved_ast
@@ -6,1138 +6,1610 @@ export resolved_ast
 import resolver/deps_analyzer
 export deps_analyzer
 
-const DEBUG = false
+type
+  ResolvedModuleRefKind = enum
+    RMRK_NATIVE, RMRK_USER, RMRK_GENERIC
+  ResolvedModuleRef = ref object of RootObj
+    location: Location
+    case kind: ResolvedModuleRefKind
+    of RMRK_NATIVE: native_module: TypedNativeModule
+    of RMRK_GENERIC: generic: TypedGeneric
+    of RMRK_USER:
+      user_module: TypedModule
+      children: seq[ResolvedModuleRef]
+      concrete_map: Table[TypedGeneric, ResolvedModuleRef]
 
-proc resolve(file: ast.File, module: UserModule, generic: Generic,
-    module_ref: ModuleRef): Result[ResolvedModuleRef, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE GENERIC ARG TYPE: {module_ref.location}"
-  # NOTE: leaf argument types
+proc new_resolved_module_ref(native_module: TypedNativeModule,
+    location: Location): ResolvedModuleRef =
+  ResolvedModuleRef(kind: RMRK_NATIVE, native_module: native_module,
+      location: location)
+
+proc new_resolved_module_ref(generic: TypedGeneric,
+    location: Location): ResolvedModuleRef =
+  ResolvedModuleRef(kind: RMRK_GENERIC, generic: generic,
+      location: location)
+
+proc new_resolved_module_ref(user_module: TypedModule, children: seq[
+    ResolvedModuleRef], location: Location): ResolvedModuleRef =
+  var concrete_map: Table[TypedGeneric, ResolvedModuleRef]
+  for (generic, child) in zip(user_module.generics, children):
+    concrete_map[generic] = child
+  ResolvedModuleRef(kind: RMRK_USER, user_module: user_module,
+      concrete_map: concrete_map, children: children, location: location)
+
+proc can_be_argument(module_ref: ResolvedModuleRef): Result[void, string] =
   case module_ref.kind:
-  of MRK_SIMPLE:
-    # NOTE: generic module ref
-    if module_ref.module == generic.name:
-      let resolved_generic_type = new_resolved_generic_module_ref(module, generic)
-      return ok(new_resolved_module_ref(module_ref, resolved_generic_type))
-    # NOTE: concrete argument module ref
-    let arg_module = ? file.find_module(module_ref.module)
-    # NOTE: The module itself where generic is defined can not be used as argument to constraint
-    if arg_module.hash == module.hash:
-      return err(fmt"{module_ref.location} [RE103] module `{module_ref.module.asl}` can not be used as an argument in generic constraints")
+  of RMRK_NATIVE: ok() # native modules can be passed as an argument
+  of RMRK_GENERIC: ok() # generic arguments can be passed as an argument too.
+  of RMRK_USER:
+    let module = module_ref.user_module
+    if module.structs.len > 0: ok()
+    else: err(fmt"{module_ref.location} module `{module.name.asl}` can not be passed as an argument")
 
-    if arg_module.generics.len != 0:
-      return err(fmt"{module_ref.location} [RE104] module `{module_ref.module.asl}` expects `{arg_module.generics.len}` generic types but `0` were given")
-
-    let resolved_concrete_type = new_resolved_concrete_module_ref(arg_module)
-    ok(new_resolved_module_ref(module_ref, resolved_concrete_type))
-  # NOTE: nested argument module ref
-  of MRK_NESTED:
-    let arg_module = ? file.find_module(module_ref.module)
-    # NOTE: The module itself where generic is defined can not be used as argument to constraint
-    if arg_module.hash == module.hash:
-      return err(fmt"{module_ref.location} [RE105] module `{module_ref.module.asl}` can not be used as an argument in generic constraints")
-
-    if module_ref.children.len != arg_module.generics.len:
-      return err(fmt"{module_ref.location} [RE106] module `{module_ref.module.asl}` expects `{arg_module.generics.len}` generic types but `{module_ref.children.len}` were given")
-
-    let maybe_user_module = arg_module.user_module
-    if maybe_user_module.is_err:
-      return err(fmt"{module_ref.location} [RE111] module `{module_ref.module.asl}` does not expect generics")
-    # NOTE: Only user modules can be nested
-    var resolved_children: seq[ResolvedModuleRef]
-    for child in module_ref.children:
-      let resolved_child = ? resolve(file, module, generic, child)
-      resolved_children.add(resolved_child)
-
-    var concrete_map: Table[Generic, ResolvedModuleRef]
-    for (child, generic) in zip(resolved_children, arg_module.generics):
-      case child.kind:
-      of RATK_CONCRETE:
-        let child_module = child.concrete_type.module
-        let new_arg_type = ? child_module.module_ref
-        let concrete_defs = ? generic.concrete_function_definitions(new_arg_type)
-        for def in concrete_defs:
-          let maybe_found = child_module.find_function(def)
-          # TODO: Resolve return type as well function definition does not account for return type in hash generation
-          if maybe_found.is_err:
-            return err(fmt"{module_ref.location} [RE107] module `{module_ref.module.asl}` expects `{child_module.name.asl}` to implement `{def.asl}`")
-      of RATK_GENERIC:
-        # NOTE: Handle generic parameters as nested type.
-        let child_type = child.generic_type
-        # NOTE: If the child type's module is same as parent module
-        # Then we only allow generic types within.
-        if child_type.module.hash != arg_module.hash or
-            child_type.generic.hash != generic.hash:
-          return err(fmt"{module_ref.location} [RE108] module `{module_ref.module.asl}` expects generic type `{generic.name.asl}` but found `{child_type.generic.name.asl}`")
-      of RATK_NESTED:
-        let child_module = child.module
-        let child_module_ref = ? child_module.module_ref
-        let concrete_defs = ? generic.concrete_function_definitions(child_module_ref)
-        for def in concrete_defs:
-          let maybe_found = child_module.find_function(def)
-          # TODO: Resolve return type as well, since function definition hash does not account for return type
-          if maybe_found.is_err:
-            return err(fmt"{module_ref.location} [RE110] module `{module_ref.module.asl}` expects `{child.module.name.asl}` to implement `{def.asl}`")
-      concrete_map[generic] = child
-
-    ok(new_resolved_module_ref(module_ref, maybe_user_module.get,
-        resolved_children, concrete_map))
-
-proc resolve(file: ast.File, module: UserModule,
-    module_ref: ModuleRef): Result[ResolvedModuleRef, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE ARG TYPE: {module_ref.location}"
-  # NOTE: leaf argument types
+proc find_function(module_ref: ResolvedModuleRef,
+    def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
   case module_ref.kind:
-  of MRK_SIMPLE:
-    # NOTE: generic argument type
-    let maybe_generic = module.find_generic(module_ref.module)
-    if maybe_generic.is_ok:
-      let generic = maybe_generic.get
-      let resolved_generic_type = new_resolved_generic_module_ref(module, generic)
-      return ok(new_resolved_module_ref(module_ref, resolved_generic_type))
+  of RMRK_NATIVE: module_ref.native_module.find_function(def)
+  of RMRK_GENERIC: module_ref.generic.find_function(def)
+  of RMRK_USER: module_ref.user_module.find_function(def)
 
-    # NOTE: concrete argument type
-    let arg_module = ? file.find_module(module_ref.module)
-    if arg_module.generics.len != 0:
-      return err(fmt"{module_ref.location} [RE112] module `{module_ref.module.asl}` expects `{arg_module.generics.len}` generic types but `0` were given")
-    let resolved_concrete_type = new_resolved_concrete_module_ref(arg_module)
-    ok(new_resolved_module_ref(module_ref, resolved_concrete_type))
-  # NOTE: nested argument type
-  of MRK_NESTED:
-    let arg_module = ? file.find_module(module_ref.module)
-    if module_ref.children.len != arg_module.generics.len:
-      return err(fmt"{module_ref.location} [RE113] module `{module_ref.module.asl}` expects `{arg_module.generics.len}` generic types but `{module_ref.children.len}` were given")
+proc concretize(module_ref: ResolvedModuleRef, concrete_map: Table[TypedGeneric,
+    ResolvedModuleRef]): ResolvedModuleRef =
+  case module_ref.kind:
+  of RMRK_NATIVE: module_ref
+  of RMRK_GENERIC: concrete_map[module_ref.generic]
+  of RMRK_USER:
+    var concretized_children: seq[ResolvedModuleRef]
+    for child in module_ref.children:
+      concretized_children.add(child.concretize(concrete_map))
+    new_resolved_module_ref(module_ref.user_module, concretized_children,
+        module_ref.location)
 
-    let maybe_user_module = arg_module.user_module
-    # NOTE: Only user modules can be nested
-    if maybe_user_module.is_err:
-      return err(fmt"{module_ref.location} [RE118] module `{module_ref.module.asl}` does not expect generics")
+proc hash(module_ref: ResolvedModuleRef): Hash =
+  case module_ref.kind:
+  of RMRK_NATIVE: module_ref.native_module.hash
+  of RMRK_GENERIC: module_ref.generic.hash
+  of RMRK_USER:
+    var acc = module_ref.user_module.hash
+    for child in module_ref.children:
+      acc = acc !& child.hash
+    acc
+
+proc `==`(self: ResolvedModuleRef, other: ResolvedModuleRef): bool =
+  self.hash == other.hash
+
+proc asl(module_ref: ResolvedModuleRef): string =
+  case module_ref.kind:
+  of RMRK_NATIVE: module_ref.native_module.asl
+  of RMRK_GENERIC: module_ref.generic.asl
+  of RMRK_USER:
+    var parent_str = module_ref.user_module.asl
+    var children_args: seq[string]
+    for child in module_ref.children:
+      children_args.add(child.asl)
+    let children_str = children_args.join(", ")
+    fmt"{parent_str}[{children_str}]"
+
+proc resolve_def*(file: TypedFile, module: TypedModule, generic: TypedGeneric,
+    module_ref: TypedModuleRef): Result[ResolvedModuleRef, string] =
+  case module_ref.kind:
+  of TMRK_NATIVE:
+    let untyped_module = ? module_ref.native_module
+    let typed_module = ? file.find_module(untyped_module)
+    ok(new_resolved_module_ref(typed_module, module_ref.location))
+  of TMRK_GENERIC:
+    let untyped_generic = ? module_ref.generic
+    let typed_generic = ? module.find_generic(untyped_generic)
+    if typed_generic != generic:
+      return err(fmt"{module_ref.location} expected generic `{generic.name.asl}` but found `{typed_generic.name.asl}`")
+
+    ok(new_resolved_module_ref(typed_generic, module_ref.location))
+  of TMRK_USER:
+    let untyped_module = ? module_ref.user_module
+    let typed_module = ? file.find_module(untyped_module)
+    if typed_module == module:
+      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
+
+    let children = ? module_ref.children
+    if children.len != typed_module.generics.len:
+      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
     var resolved_children: seq[ResolvedModuleRef]
-    for child in module_ref.children:
-      let resolved_child = ? resolve(file, module, child)
+    for (typed_generic, child) in zip(typed_module.generics, children):
+      let resolved_child = ? resolve_def(file, module, generic, child)
       resolved_children.add(resolved_child)
+      # NOTE: Check that resolved child satifies constraints.
+      for def in typed_generic.concrete_defs(child.self()):
+        discard ? resolved_child.find_function(def)
+    ok(new_resolved_module_ref(typed_module, resolved_children,
+        module_ref.location))
 
-    var concrete_map: Table[Generic, ResolvedModuleRef]
-    for (child, generic) in zip(resolved_children, arg_module.generics):
-      case child.kind:
-      of RATK_CONCRETE:
-        let child_module = child.concrete_type.module
-        let child_arg_type = ? child_module.module_ref
-        let concrete_defs = ? generic.concrete_function_definitions(child_arg_type)
-        for def in concrete_defs:
-          let maybe_found = child_module.find_function(def)
-          # TODO: Resolve return type as well function definition does not account for return type in hash generation
-          if maybe_found.is_err:
-            return err(fmt"{module_ref.location} [RE114] module `{module_ref.module.asl}` expects `{child_module.name.asl}` to implement `{def.asl}`")
-      of RATK_GENERIC:
-        # NOTE: Handle generic parameters as nested type.
-        let child_type = child.generic_type
-        # NOTE: If the child type's module is same as parent module
-        # Then we only allow generic types within.
-        if child_type.module.hash == arg_module.hash:
-          if child_type.generic.hash != generic.hash:
-            return err(fmt"{module_ref.location} [RE115] module `{module_ref.module.asl}` expects generic type `{generic.name.asl}` but found `{child_type.generic.name.asl}`")
-        else:
-          let concrete_defs = ? generic.concrete_function_definitions(
-              child_type.generic.module_ref)
-          for def in concrete_defs:
-            let maybe_found = child_type.generic.find_function(def)
-            # TODO: Resolve return type as well function definition does not account for return type in hash generation
-            if maybe_found.is_err:
-              return err(fmt"{module_ref.location} [RE123] module `{module_ref.module.asl}` expects `{child.module.name.asl}` to implement `{def.asl}`")
-      of RATK_NESTED:
-        let child_module = child.module
-        let child_module_ref = ? child_module.module_ref
-        let concrete_defs = ? generic.concrete_function_definitions(child_module_ref)
-        for def in concrete_defs:
-          let maybe_found = child_module.find_function(def)
-          # TODO: Resolve return type as well function definition does not account for return type in hash generation
-          if maybe_found.is_err:
-            return err(fmt"{module_ref.location} [RE117] module `{module_ref.module.asl}` expects `{child.module.name.asl}` to implement `{def.asl}`")
+proc resolve_def*(file: TypedFile, module: TypedModule,
+    module_ref: TypedModuleRef): Result[ResolvedModuleRef, string] =
+  case module_ref.kind:
+  of TMRK_NATIVE:
+    let untyped_module = ? module_ref.native_module
+    let typed_module = ? file.find_module(untyped_module)
+    ok(new_resolved_module_ref(typed_module, module_ref.location))
+  of TMRK_GENERIC:
+    let untyped_generic = ? module_ref.generic
+    let typed_generic = ? module.find_generic(untyped_generic)
 
-      concrete_map[generic] = child
+    ok(new_resolved_module_ref(typed_generic, module_ref.location))
+  of TMRK_USER:
+    let untyped_module = ? module_ref.user_module
+    let typed_module = ? file.find_module(untyped_module)
 
-    ok(new_resolved_module_ref(module_ref, maybe_user_module.get,
-        resolved_children, concrete_map))
+    let children = ? module_ref.children
+    if children.len != typed_module.generics.len:
+      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
-proc resolve(file: ast.File, module_ref: ModuleRef): Result[
+    var resolved_children: seq[ResolvedModuleRef]
+    for (typed_generic, child) in zip(typed_module.generics, children):
+      let resolved_child = ? resolve_def(file, module, child)
+      resolved_children.add(resolved_child)
+      # NOTE: Check that resolved child satifies constraints.
+      for def in typed_generic.concrete_defs(child.self()):
+        discard ? resolved_child.find_function(def)
+    ok(new_resolved_module_ref(typed_module, resolved_children,
+        module_ref.location))
+
+proc resolve_def*(file: TypedFile, module_ref: TypedModuleRef): Result[
     ResolvedModuleRef, string] =
-  if DEBUG:
-    echo fmt"Resolving ARG TYPE: {module_ref.location}"
-  # NOTE: leaf argument types
   case module_ref.kind:
-  of MRK_SIMPLE:
-    # NOTE: concrete argument type
-    let arg_module = ? file.find_module(module_ref.module)
-    if arg_module.generics.len != 0:
-      return err(fmt"{module_ref.location} [RE119] module `{module_ref.module.asl}` expects `{arg_module.generics.len}` generic types but `{module_ref.children.len}` were given")
-    let resolved_concrete_type = new_resolved_concrete_module_ref(arg_module)
-    ok(new_resolved_module_ref(module_ref, resolved_concrete_type))
-  # NOTE: nested argument type
-  of MRK_NESTED:
-    let arg_module = ? file.find_module(module_ref.module)
-    if module_ref.children.len != arg_module.generics.len:
-      return err(fmt"{module_ref.location} [RE120] module `{module_ref.module.asl}` expects `{arg_module.generics.len}` generic types but `{module_ref.children.len}` were given")
+  of TMRK_NATIVE:
+    let untyped_module = ? module_ref.native_module
+    let typed_module = ? file.find_module(untyped_module)
+    ok(new_resolved_module_ref(typed_module, module_ref.location))
+  of TMRK_GENERIC:
+    err(fmt"{module_ref.location} file level functions do not support generics")
+  of TMRK_USER:
+    let untyped_module = ? module_ref.user_module
+    let typed_module = ? file.find_module(untyped_module)
 
-    let maybe_user_module = arg_module.user_module
-    # NOTE: Only user modules can be nested
-    if maybe_user_module.is_err:
-      return err(fmt"{module_ref.location} [RE124] module `{module_ref.module.asl}` does not expect generics")
+    let children = ? module_ref.children
+    if children.len != typed_module.generics.len:
+      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
     var resolved_children: seq[ResolvedModuleRef]
-    for child in module_ref.children:
-      let resolved_child = ? resolve(file, child)
+    for (typed_generic, child) in zip(typed_module.generics, children):
+      let resolved_child = ? resolve_def(file, child)
       resolved_children.add(resolved_child)
+      # NOTE: Check that resolved child satifies constraints.
+      for def in typed_generic.concrete_defs(child.self()):
+        discard ? resolved_child.find_function(def)
+    ok(new_resolved_module_ref(typed_module, resolved_children,
+        module_ref.location))
 
-    var concrete_map: Table[Generic, ResolvedModuleRef]
-    for (child, generic) in zip(resolved_children, arg_module.generics):
-      case child.kind:
-      of RATK_CONCRETE:
-        let child_module = child.concrete_type.module
-        let new_arg_type = ? child_module.module_ref
-        let concrete_defs = ? generic.concrete_function_definitions(new_arg_type)
-        for def in concrete_defs:
-          let maybe_found = child_module.find_function(def)
-          # TODO: Resolve return type as well function definition does not account for return type in hash generation
-          if maybe_found.is_err:
-            return err(fmt"{module_ref.location} [RE121] module `{module_ref.module.asl}` expects `{child.module.name.asl}` to implement `{def.asl}`")
-      of RATK_GENERIC:
-        # NOTE: File level functions will never have generic as input args so this
-        # branch must always be unreachable unless there is some issue with the code.
-        return err(fmt"{module_ref.location} [RE122] [UNREACHABLE] if you see this error that means something is wrong with the code")
-      of RATK_NESTED:
-        let child_module = child.module
-        let child_module_ref = ? child_module.module_ref
-        let concrete_defs = ? generic.concrete_function_definitions(child_module_ref)
-        for def in concrete_defs:
-          let maybe_found = child_module.find_function(def)
-          # TODO: Resolve return type as well function definition does not account for return type in hash generation
-          if maybe_found.is_err:
-            return err(fmt"{module_ref.location} [RE123] module `{module_ref.module.asl}` expects `{child.module.name.asl}` to implement `{def.asl}`")
+type ResolvedArgumentDefinition = ref object of RootObj
+  name: Identifier
+  module_ref: ResolvedModuleRef
 
-      concrete_map[generic] = child
+proc new_resolved_argument_definition(module_ref: ResolvedModuleRef,
+    name: Identifier): ResolvedArgumentDefinition =
+  ResolvedArgumentDefinition(name: name, module_ref: module_ref)
 
-    ok(new_resolved_module_ref(module_ref, maybe_user_module.get,
-        resolved_children, concrete_map))
+proc concretize(arg: ResolvedArgumentDefinition, concrete_map: Table[
+    TypedGeneric, ResolvedModuleRef]): ResolvedArgumentDefinition =
+  let concretized_module_ref = arg.module_ref.concretize(concrete_map)
+  new_resolved_argument_definition(concretized_module_ref, arg.name)
 
-proc resolve(file: ast.File, module: UserModule, generic: Generic,
-    def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE ARG DEF: {def.location}"
-  let resolved_type = ? resolve(file, module, generic, def.module_ref)
-  if resolved_type.is_struct:
-    ok(new_resolved_argument_definition(def.name, resolved_type, def.location))
-  else:
-    err(fmt"{def.location} [RE125] module `{def.module_ref.module.asl}` is not a struct")
+proc asl(arg: ResolvedArgumentDefinition): string =
+  fmt"{arg.module_ref.asl} {arg.name.asl}"
 
-proc resolve(file: ast.File, module: UserModule,
-    def: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE ARG DEF: {def.location}"
-  let resolved_type = ? resolve(file, module, def.module_ref)
-  if resolved_type.is_struct:
-    ok(new_resolved_argument_definition(def.name, resolved_type, def.location))
-  else:
-    err(fmt"{def.location} [RE126] module `{def.module_ref.module.asl}` is not a struct")
+proc resolve_def(file: TypedFile, module: TypedModule, generic: TypedGeneric,
+    arg: TypedArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_module_ref = ? resolve_def(file, module, generic, arg.module_ref)
+  ? resolved_module_ref.can_be_argument
+  ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
 
-proc resolve(file: ast.File, def: ArgumentDefinition): Result[
+proc resolve_def(file: TypedFile, module: TypedModule,
+    arg: TypedArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_module_ref = ? resolve_def(file, module, arg.module_ref)
+  ? resolved_module_ref.can_be_argument
+  ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
+
+proc resolve_def(file: TypedFile, arg: TypedArgumentDefinition): Result[
     ResolvedArgumentDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving ARG DEF: {def.location}"
-  let resolved_type = ? resolve(file, def.module_ref)
-  if resolved_type.is_struct:
-    ok(new_resolved_argument_definition(def.name, resolved_type, def.location))
-  else:
-    err(fmt"{def.location} [RE127] module `{def.module_ref.module.asl}` is not a struct")
+  let resolved_module_ref = ? resolve_def(file, arg.module_ref)
+  ? resolved_module_ref.can_be_argument
+  ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
 
-proc resolve(file: ast.File, module: UserModule, generic: Generic,
-    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE GENERIC FUNCTION DEF: {def.location}"
+type ResolvedFunctionDefinition = ref object of RootObj
+  name: Identifier
+  args: seq[ResolvedArgumentDefinition]
+  returns: ResolvedModuleRef
+  location: Location
+
+proc new_resolved_function_definition(name: Identifier, args: seq[
+    ResolvedArgumentDefinition], returns: ResolvedModuleRef,
+    location: Location): ResolvedFunctionDefinition =
+  ResolvedFunctionDefinition(name: name, args: args, returns: returns,
+      location: location)
+
+proc arity(def: ResolvedFunctionDefinition): uint = def.args.len.uint
+proc concretize(def: ResolvedFunctionDefinition, concrete_map: Table[
+    TypedGeneric, ResolvedModuleRef]): ResolvedFunctionDefinition =
+  var concretized_args: seq[ResolvedArgumentDefinition]
+  for arg in def.args:
+    concretized_args.add(arg.concretize(concrete_map))
+  let concretized_returns = def.returns.concretize(concrete_map)
+  new_resolved_function_definition(def.name, concretized_args,
+      concretized_returns, def.location)
+
+proc asl(def: ResolvedFunctionDefinition): string =
+  let args = def.args.map_it(it.asl).join(", ")
+  fmt"fn {def.name.asl}({args}): {def.returns.asl}"
+
+proc resolve_def(file: TypedFile, module: TypedModule, generic: TypedGeneric,
+    def: TypedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolved_arg = ? resolve(file, module, generic, arg)
+    let resolved_arg = ? resolve_def(file, module, generic, arg)
     resolved_args.add(resolved_arg)
+  let resolved_returns = ? resolve_def(file, module, generic, def.returns)
+  ok(new_resolved_function_definition(def.name, resolved_args, resolved_returns, def.location))
 
-  let resolved_return_type = ? resolve(file, module, generic, def.returns)
-  if resolved_return_type.is_struct:
-    ok(new_resolved_function_definition(def, resolved_args,
-        resolved_return_type))
-  else:
-    err(fmt"{def.returns.location} [RE128] module `{def.returns.module.asl}` is not a struct")
-
-proc resolve(file: ast.File, module: UserModule,
-    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION DEF: {def.location}"
+proc resolve_def(file: TypedFile, module: TypedModule,
+    def: TypedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolved_arg = ? resolve(file, module, arg)
+    let resolved_arg = ? resolve_def(file, module, arg)
     resolved_args.add(resolved_arg)
+  let resolved_returns = ? resolve_def(file, module, def.returns)
+  ok(new_resolved_function_definition(def.name, resolved_args, resolved_returns, def.location))
 
-  let resolved_return_type = ? resolve(file, module, def.returns)
-  if resolved_return_type.is_struct:
-    ok(new_resolved_function_definition(def, resolved_args,
-        resolved_return_type))
-  else:
-    err(fmt"{def.returns.location} [RE129] module `{def.returns.module.asl}` is not a struct")
-
-proc resolve(file: ast.File, def: FunctionDefinition): Result[
+proc resolve_def(file: TypedFile, def: TypedFunctionDefinition): Result[
     ResolvedFunctionDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION DEF: {def.location}"
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolved_arg = ? resolve(file, arg)
+    let resolved_arg = ? resolve_def(file, arg)
     resolved_args.add(resolved_arg)
+  let resolved_returns = ? resolve_def(file, def.returns)
+  ok(new_resolved_function_definition(def.name, resolved_args, resolved_returns, def.location))
 
-  let resolved_return_type = ? resolve(file, def.returns)
-  if resolved_return_type.is_struct:
-    ok(new_resolved_function_definition(def, resolved_args,
-        resolved_return_type))
+type ResolvedGeneric = ref object of RootObj
+  name: Identifier
+  defs: seq[ResolvedFunctionDefinition]
+  defs_map: Table[Identifier, Table[uint, seq[ResolvedFunctionDefinition]]]
+  location: Location
+
+proc new_resolved_generic(name: Identifier, defs: seq[
+    ResolvedFunctionDefinition], location: Location): ResolvedGeneric =
+  var defs_map: Table[Identifier, Table[uint, seq[ResolvedFunctionDefinition]]]
+  for def in defs:
+    if def.name notin defs_map:
+      defs_map[def.name] = init_table[uint, seq[ResolvedFunctionDefinition]]()
+    if def.arity notin defs_map[def.name]:
+      defs_map[def.name][def.arity] = new_seq[ResolvedFunctionDefinition]()
+    defs_map[def.name][def.arity].add(def)
+  ResolvedGeneric(name: name, defs: defs, defs_map: defs_map,
+      location: location)
+
+proc find_function_defs(generic: ResolvedGeneric, name: Identifier,
+    arity: uint): Result[seq[ResolvedFunctionDefinition], string] =
+  if name notin generic.defs_map:
+    err(fmt"generic `{generic.name.asl}` does not have any constraint named `{name.asl}`")
+  elif arity notin generic.defs_map[name]:
+    err(fmt"generic `{generic.name.asl}` does not have any constraint named `{name.asl}` with arity `{arity}`")
   else:
-    err(fmt"{def.returns.location} [RE130] module `{def.returns.module.asl}` is not a struct")
+    ok(generic.defs_map[name][arity])
 
-proc resolve(file: ast.File, module: UserModule, generic: Generic): Result[
-    ResolvedGeneric, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE GENERIC: {generic.location}"
+proc resolve_def(file: TypedFile, module: TypedModule,
+    generic: TypedGeneric): Result[ResolvedGeneric, string] =
   var resolved_defs: seq[ResolvedFunctionDefinition]
   for def in generic.defs:
-    let resolved_def = ? resolve(file, module, generic, def)
+    let resolved_def = ? resolve_def(file, module, generic, def)
     resolved_defs.add(resolved_def)
-  ok(new_resolved_generic(generic, resolved_defs))
+  ok(new_resolved_generic(generic.name, resolved_defs, generic.location))
 
-proc resolve(file: ast.File, module: UserModule, struct: Struct): Result[
-    ResolvedStruct, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE STRUCT: {struct.location}"
+type
+  ResolvedStructKind = enum
+    RSK_DEFAULT, RSK_NAMED
+  ResolvedStruct = ref object of RootObj
+    location: Location
+    fields: seq[ResolvedArgumentDefinition]
+    fields_map: Table[Identifier, int]
+    case kind: ResolvedStructKind
+    of RSK_DEFAULT: discard
+    of RSK_NAMED: name: Identifier
+
+proc new_resolved_struct(fields: seq[ResolvedArgumentDefinition],
+    location: Location): ResolvedStruct =
+  var fields_map: Table[Identifier, int]
+  for index, field in fields.pairs: fields_map[field.name] = index
+  ResolvedStruct(kind: RSK_DEFAULT, fields: fields, fields_map: fields_map,
+      location: location)
+
+proc new_resolved_struct(name: Identifier, fields: seq[
+    ResolvedArgumentDefinition], location: Location): ResolvedStruct =
+  var fields_map: Table[Identifier, int]
+  for index, field in fields.pairs: fields_map[field.name] = index
+  ResolvedStruct(kind: RSK_NAMED, name: name, fields: fields,
+      fields_map: fields_map, location: location)
+
+proc concretize(struct: ResolvedStruct, concrete_map: Table[TypedGeneric,
+    ResolvedModuleRef]): ResolvedStruct =
+  var concretized_fields: seq[ResolvedArgumentDefinition]
+  for field in struct.fields:
+    concretized_fields.add(field.concretize(concrete_map))
+
+  case struct.kind:
+  of RSK_DEFAULT: new_resolved_struct(concretized_fields, struct.location)
+  of RSK_NAMED: new_resolved_struct(struct.name, concretized_fields,
+      struct.location)
+
+proc find_field_index(struct: ResolvedStruct, field: Identifier): Result[int, string] =
+  if field in struct.fields_map:
+    ok(struct.fields_map[field])
+  else:
+    err(fmt"{field.location} field is not defined in the struct")
+
+proc find_field(struct: ResolvedStruct, field: Identifier): Result[
+    ResolvedArgumentDefinition, string] =
+  let field_index = ? struct.find_field_index(field)
+  ok(struct.fields[field_index])
+
+proc resolve_def(file: TypedFile, module: TypedModule,
+    struct: TypedStruct): Result[ResolvedStruct, string] =
   var resolved_fields: seq[ResolvedArgumentDefinition]
   for field in struct.fields:
-    let resolved_field = ? resolve(file, module, field)
+    let resolved_field = ? resolve_def(file, module, field)
     resolved_fields.add(resolved_field)
-  new_resolved_struct(struct, resolved_fields)
 
-proc resolve(file: ast.File, module: UserModule, fnref: FunctionRef,
-    arity: int): Result[ResolvedFunctionRef, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION REF: {fnref.location}"
-  case fnref.kind:
-  of FRK_LOCAL:
-    let defs = ? file.find_functions(fnref.name, arity)
-    ok(new_resolved_function_ref(fnref, defs))
-  of FRK_MODULE:
-    let fnref_module = ? fnref.module
-    let module_ref = ? resolve(file, module, fnref_module)
-    case module_ref.kind:
-    of RATK_CONCRETE:
-      let defs = ? module_ref.concrete_type.module.find_functions(fnref.name, arity)
-      ok(new_resolved_function_ref(fnref, module_ref, defs))
-    of RATK_GENERIC:
-      let defs = ? module_ref.generic_type.generic.find_functions(fnref.name, arity)
-      ok(new_resolved_function_ref(fnref, module_ref, defs))
-    of RATK_NESTED:
-      let defs = ? module_ref.module.find_functions(fnref.name, arity)
-      ok(new_resolved_function_ref(fnref, module_ref, defs))
+  case struct.kind:
+  of TSK_DEFAULT:
+    ok(new_resolved_struct(resolved_fields, struct.location))
+  of TSK_NAMED:
+    let struct_name = ? struct.name
+    ok(new_resolved_struct(struct_name, resolved_fields, struct.location))
 
-proc resolve(file: ast.File, fnref: FunctionRef, arity: int): Result[
-    ResolvedFunctionRef, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION REF: {fnref.location}"
-  case fnref.kind:
-  of FRK_LOCAL:
-    let defs = ? file.find_functions(fnref.name, arity)
-    ok(new_resolved_function_ref(fnref, defs))
-  of FRK_MODULE:
-    let fnref_module = ? fnref.module
-    let module_ref = ? resolve(file, fnref_module)
-    case module_ref.kind:
-    of RATK_CONCRETE:
-      let defs = ? module_ref.concrete_type.module.find_functions(fnref.name, arity)
-      ok(new_resolved_function_ref(fnref, module_ref, defs))
-    of RATK_GENERIC:
-      let defs = ? module_ref.generic_type.generic.find_functions(fnref.name, arity)
-      ok(new_resolved_function_ref(fnref, module_ref, defs))
-    of RATK_NESTED:
-      let defs = ? module_ref.module.find_functions(fnref.name, arity)
-      ok(new_resolved_function_ref(fnref, module_ref, defs))
+type ResolvedModuleDefinition = ref object of RootObj
+  name: Identifier
+  location: Location
+  generics: seq[ResolvedGeneric]
+  generics_map: Table[TypedGeneric, ResolvedGeneric]
+  structs: seq[ResolvedStruct]
+  default_struct_index: int
+  structs_map: Table[Identifier, ResolvedStruct]
+  function_defs: seq[ResolvedFunctionDefinition]
+  function_defs_map: Table[TypedFunctionDefinition, ResolvedFunctionDefinition]
+  function_signatures_map: Table[Identifier, Table[uint, seq[
+      ResolvedFunctionDefinition]]]
 
-proc safe_parse*[T](input: string): Result[T, string] =
-  when T is SomeSignedInt:
-    var temp: BiggestInt
-    let code = parse_biggest_int(input, temp)
-    if code == 0 or code != input.len:
-      return err("Failed to parse signed int from: " & input)
-    if temp < T.low.BiggestInt or temp > T.high.BiggestInt:
-      return err("Overflow: Value out of range for type " & $T)
-    ok(T(temp))
-  elif T is SomeUnsignedInt:
-    var temp: BiggestUInt
-    let code = parse_biggest_uint(input, temp)
-    if code == 0 or code != input.len:
-      return err("Failed to parse unsigned int from: " & input)
-    if temp < T.low.BiggestUInt or temp > T.high.BiggestUInt:
-      return err("Overflow: Value out of range for type " & $T)
-    ok(T(temp))
-  elif T is SomeFloat:
-    var temp: BiggestFloat
-    let code = parse_biggest_float(input, temp)
-    if code == 0 or code != input.len:
-      return err("Failed to parse float from: " & input)
-    let casted = T(temp)
-    if BiggestFloat(casted) != temp:
-      return err("Precision loss when converting to " & $T)
-    ok(T(temp))
-  else:
-    err("safe_parse only supports signed/unsigned integers and floating-point types")
-
-proc validate_integer_literal[T](module: NativeModule,
-    literal: IntegerLiteral): Result[ResolvedLiteral, string] =
-  let maybe_parsed = safe_parse[T](literal.asl)
-  if maybe_parsed.is_err:
-    err("{literal.location} [RE131] expected integer value between `{T.low}` and `{T.high}` but found `{literal.asl}`")
-  else:
-    let module_ref = ? module.module_ref
-    let concrete_type = new_resolved_concrete_module_ref(new_module(module))
-    let concrete_module = new_resolved_module_ref(module_ref, concrete_type)
-    ok(new_resolved_literal(literal, concrete_module))
-
-proc resolve(module: NativeModule, literal: IntegerLiteral): Result[
-    ResolvedLiteral, string] =
-  case module.name.asl:
-  of "S8": validate_integer_literal[int8](module, literal)
-  of "S16": validate_integer_literal[int16](module, literal)
-  of "S32": validate_integer_literal[int32](module, literal)
-  of "S64": validate_integer_literal[int64](module, literal)
-  of "U8": validate_integer_literal[uint8](module, literal)
-  of "U16": validate_integer_literal[uint16](module, literal)
-  of "U32": validate_integer_literal[uint32](module, literal)
-  of "U64": validate_integer_literal[uint64](module, literal)
-  else: err("{literal.location} [RE132] integer literals are only supported via `S8/S16/S32/S64/U8/U16/U32/U64` native modules")
-
-proc validate_float_literal[T](module: NativeModule,
-    literal: FloatLiteral): Result[ResolvedLiteral, string] =
-  let maybe_parsed = safe_parse[T](literal.asl)
-  if maybe_parsed.is_err:
-    if maybe_parsed.error.starts_with("Precision loss"):
-      err("{literal.location} [RE133] encountered precision loss in float value `{literal.asl}`")
-    else:
-      err("{literal.location} [RE134] expected float value but found `{literal.asl}`")
-  else:
-    let module_ref = ? module.module_ref
-    let concrete_type = new_resolved_concrete_module_ref(new_module(module))
-    let concrete_module = new_resolved_module_ref(module_ref, concrete_type)
-    ok(new_resolved_literal(literal, concrete_module))
-
-proc resolve(module: NativeModule, literal: FloatLiteral): Result[
-    ResolvedLiteral, string] =
-  case module.name.asl:
-  of "F32": validate_float_literal[float32](module, literal)
-  of "F64": validate_float_literal[float64](module, literal)
-  else: err("{literal.location} [RE135] float literals are only supported via `F32/F64` native modules")
-
-proc resolve(module: NativeModule, literal: StringLiteral): Result[
-    ResolvedLiteral, string] =
-  case module.name.asl:
-  of "String":
-    let module_ref = ? module.module_ref
-    let concrete_type = new_resolved_concrete_module_ref(new_module(module))
-    let concrete_module = new_resolved_module_ref(module_ref, concrete_type)
-    ok(new_resolved_literal(literal, concrete_module))
-  else: err("{literal.location} [RE136] string literals are only supported via `String` native module")
-
-proc resolve(module: NativeModule, literal: Literal): Result[ResolvedLiteral, string] =
-  if DEBUG:
-    echo fmt"Resolving LITERAL: {literal.location}"
-  case literal.kind:
-  of LK_INTEGER:
-    let integer_literal = ? literal.integer_literal
-    resolve(module, integer_literal)
-  of LK_FLOAT:
-    let float_literal = ? literal.float_literal
-    resolve(module, float_literal)
-  of LK_STRING:
-    let string_literal = ? literal.string_literal
-    resolve(module, string_literal)
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    arg: Argument, argdef: ResolvedArgumentDefinition): Result[
-    ResolvedArgument, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION CALL ARG: {arg.location}"
-  case arg.kind:
-  of AK_LITERAL:
-    case argdef.module_ref.kind:
-    of RATK_CONCRETE:
-      let argmodule = argdef.module_ref.concrete_type.module
-      case argmodule.kind:
-      of MK_NATIVE:
-        let native_module = ? argmodule.native_module
-        let literal = ? arg.literal
-        let resolved_literal = ? resolve(native_module, literal)
-        ok(new_resolved_argument(arg, resolved_literal))
-      of MK_USER:
-        err(fmt"{arg.location} [RE137] expected argument to be a native type but found user type")
-    of RATK_NESTED:
-      err(fmt"{arg.location} [RE138] expected argument to be a concrete type but found nested type")
-    of RATK_GENERIC:
-      err(fmt"{arg.location} [RE139] expected argument to be a concrete type but found generic")
-  of AK_VARIABLE:
-    let argname = ? arg.variable
-    let actual_argdef = ? scope.get(argname)
-    let actual_type = actual_argdef.module_ref
-    let expected_type = argdef.module_ref
-    if actual_type != expected_type:
-      err(fmt"{arg.location} [RE140] expected argument `{argname.asl}` to be of type `{expected_type.asl}` but found `{actual_type.asl}`")
-    else:
-      ok(new_resolved_argument(arg, actual_argdef))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    arg: Argument, argdef: ResolvedArgumentDefinition): Result[
-    ResolvedArgument, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION CALL ARG: {arg.location}"
-  case arg.kind:
-  of AK_LITERAL:
-    case argdef.module_ref.kind:
-    of RATK_CONCRETE:
-      let argmodule = argdef.module_ref.concrete_type.module
-      case argmodule.kind:
-      of MK_NATIVE:
-        let native_module = ? argmodule.native_module
-        let literal = ? arg.literal
-        let resolved_literal = ? resolve(native_module, literal)
-        ok(new_resolved_argument(arg, resolved_literal))
-      of MK_USER:
-        err(fmt"{arg.location} [RE137] expected argument to be a native type but found user type")
-    of RATK_NESTED:
-      err(fmt"{arg.location} [RE138] expected argument to be a concrete type but found nested type")
-    of RATK_GENERIC:
-      err(fmt"{arg.location} [RE139] expected argument to be a concrete type but found generic")
-  of AK_VARIABLE:
-    let argname = ? arg.variable
-    let actual_argdef = ? scope.get(argname)
-    let actual_type = actual_argdef.module_ref
-    let expected_type = argdef.module_ref
-    if actual_type != expected_type:
-      err(fmt"{arg.location} [RE140] expected argument `{argname.asl}` to be of type `{expected_type.asl}` but found `{actual_type.asl}`")
-    else:
-      ok(new_resolved_argument(arg, actual_argdef))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    def: ResolvedFunctionDefinition, args: seq[Argument]): Result[seq[
-    ResolvedArgument], string] =
-  var resolved_args: seq[ResolvedArgument]
-  for index, (argdef, arg) in zip(def.args, args):
-    let resolved_argument = ? resolve(file, module, scope, arg, argdef)
-    resolved_args.add(resolved_argument)
-  ok(resolved_args)
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    def: ResolvedFunctionDefinition, args: seq[Argument]): Result[seq[
-    ResolvedArgument], string] =
-  var resolved_args: seq[ResolvedArgument]
-  for index, (argdef, arg) in zip(def.args, args):
-    let resolved_argument = ? resolve(file, scope, arg, argdef)
-    resolved_args.add(resolved_argument)
-  ok(resolved_args)
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION CALL: {fncall.location}"
-  let resolved_fnref = ? resolve(file, module, fncall.fnref, fncall.args.len)
-  for def in resolved_fnref.defs:
-    case resolved_fnref.kind
-    of RFRK_MODULE:
-      # NOTE: Will also have to handle the generic calls.
-      let maybe_arg_user_module = resolved_fnref.module_ref.user_module
-      if maybe_arg_user_module.is_ok:
-        let resolved_def = ? resolve(file, maybe_arg_user_module.get, def)
-        let concrete_def = resolved_def.concrete_function_definition(
-            resolved_fnref.module_ref)
-        let maybe_match = resolve(file, module, scope, concrete_def, fncall.args)
-        if maybe_match.is_ok:
-          return ok(new_resolved_function_call(fncall, resolved_fnref,
-              concrete_def, maybe_match.get))
-        # else:
-        #   echo maybe_match.error
-
-      let resolved_def = ? resolve(file, def)
-      let concrete_def = resolved_def.concrete_function_definition(
-            resolved_fnref.module_ref)
-      let maybe_match = resolve(file, module, scope, concrete_def, fncall.args)
-      if maybe_match.is_ok:
-        return ok(new_resolved_function_call(fncall, resolved_fnref,
-            concrete_def, maybe_match.get))
-      # else:
-      #   echo maybe_match.error
-    of RFRK_LOCAL:
-      let resolved_def = ? resolve(file, def)
-      let maybe_match = resolve(file, module, scope, resolved_def, fncall.args)
-      if maybe_match.is_ok:
-        return ok(new_resolved_function_call(fncall, resolved_fnref,
-            resolved_def, maybe_match.get))
-      # else:
-      #   echo maybe_match.error
-
-  case fncall.fnref.kind:
-  of FRK_LOCAL:
-    err(fmt"{fncall.location} [RE141] function `{fncall.fnref.name.asl}` does not exist")
-  of FRK_MODULE:
-    let fnref_module = ? fncall.fnref.module
-    err(fmt"{fncall.location} [RE142] module `{fnref_module.asl}` does not have any function named `{fncall.fnref.name.asl}`")
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION CALL: {fncall.location}"
-  let resolved_fnref = ? resolve(file, fncall.fnref, fncall.args.len)
-  for def in resolved_fnref.defs:
-    case resolved_fnref.kind
-    of RFRK_MODULE:
-      # NOTE: Will also have to handle the generic calls.
-      let maybe_arg_user_module = resolved_fnref.module_ref.user_module
-      if maybe_arg_user_module.is_ok:
-        let resolved_def = ? resolve(file, maybe_arg_user_module.get, def)
-        let concrete_def = resolved_def.concrete_function_definition(
-            resolved_fnref.module_ref)
-        let maybe_match = resolve(file, scope, concrete_def, fncall.args)
-        if maybe_match.is_ok:
-          return ok(new_resolved_function_call(fncall, resolved_fnref,
-              concrete_def, maybe_match.get))
-        # else:
-        #   echo maybe_match.error
-
-      let resolved_def = ? resolve(file, def)
-      let concrete_def = resolved_def.concrete_function_definition(
-            resolved_fnref.module_ref)
-      let maybe_match = resolve(file, scope, concrete_def, fncall.args)
-      if maybe_match.is_ok:
-        return ok(new_resolved_function_call(fncall, resolved_fnref,
-            concrete_def, maybe_match.get))
-      # else:
-      #   echo maybe_match.error
-    of RFRK_LOCAL:
-      let resolved_def = ? resolve(file, def)
-      let maybe_match = resolve(file, scope, resolved_def, fncall.args)
-      if maybe_match.is_ok:
-        return ok(new_resolved_function_call(fncall, resolved_fnref,
-            resolved_def, maybe_match.get))
-      # else:
-      #   echo maybe_match.error
-
-  case fncall.fnref.kind:
-  of FRK_LOCAL:
-    err(fmt"{fncall.location} [RE141] function `{fncall.fnref.name.asl}` does not exist")
-  of FRK_MODULE:
-    let fnref_module = ? fncall.fnref.module
-    err(fmt"{fncall.location} [RE142] module `{fnref_module.asl}` does not have any function named `{fncall.fnref.name.asl}`")
-
-proc resolve(file: ast.File, module: UserModule, struct_ref: StructRef): Result[
-    ResolvedStructRef, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STRUCT REF: {struct_ref.location}"
-  let resolved_module_ref = ? resolve(file, module, struct_ref.module)
-  let resolved_argmodule = ? resolved_module_ref.user_module
-  let struct =
-    case struct_ref.kind:
-    of SRK_DEFAULT: ? resolved_argmodule.find_struct()
-    of SRK_NAMED: ? resolved_argmodule.find_struct( ? struct_ref.struct)
-  let resolved_struct = ? resolve(file, resolved_argmodule, struct)
-  let concrete_struct = ? resolved_struct.concrete_struct(
-      resolved_module_ref.concrete_map)
-  ok(new_resolved_struct_ref(struct_ref, resolved_module_ref, concrete_struct))
-
-proc resolve(file: ast.File, struct_ref: StructRef): Result[
-    ResolvedStructRef, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STRUCT REF: {struct_ref.location}"
-  let resolved_module_ref = ? resolve(file, struct_ref.module)
-  let resolved_argmodule = ? resolved_module_ref.user_module
-  let struct =
-    case struct_ref.kind:
-    of SRK_DEFAULT: ? resolved_argmodule.find_struct()
-    of SRK_NAMED: ? resolved_argmodule.find_struct( ? struct_ref.struct)
-  let resolved_struct = ? resolve(file, resolved_argmodule, struct)
-  let concrete_struct = ? resolved_struct.concrete_struct(
-      resolved_module_ref.concrete_map)
-  ok(new_resolved_struct_ref(struct_ref, resolved_module_ref, concrete_struct))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    init: StructInit): Result[ResolvedStructInit, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION STRUCT INIT: {init.location}"
-  let resolved_struct_ref = ? resolve(file, module, init.struct_ref)
-  var resolved_fields = new_seq[ResolvedArgument](init.args.len)
-  for kwarg in init.args:
-    let field_index = ? resolved_struct_ref.struct.find_field_id(kwarg.name)
-    let field_def = resolved_struct_ref.struct.fields[field_index]
-    resolved_fields[field_index] = ? resolve(file, module, scope, kwarg.value, field_def)
-  ok(new_resolved_struct_init(init, resolved_struct_ref, resolved_fields))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    init: StructInit): Result[ResolvedStructInit, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION STRUCT INIT: {init.location}"
-  let resolved_struct_ref = ? resolve(file, init.struct_ref)
-  var resolved_fields = new_seq[ResolvedArgument](init.args.len)
-  for kwarg in init.args:
-    let field_index = ? resolved_struct_ref.struct.find_field_id(kwarg.name)
-    let field_def = resolved_struct_ref.struct.fields[field_index]
-    resolved_fields[field_index] = ? resolve(file, scope, kwarg.value, field_def)
-  ok(new_resolved_struct_init(init, resolved_struct_ref, resolved_fields))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    init: Initializer): Result[ResolvedInitializer, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION INIT: {init.location}"
-  case init.kind:
-  of IK_LITERAL:
-    let literal_init = ? init.literal
-    echo literal_init.asl
-    err(fmt"{literal_init.location} todo: implement literal init resolution")
-  of IK_STRUCT:
-    let resolved_struct_init = ? resolve(file, module, scope, ? init.struct)
-    ok(new_resolved_initializer(init, resolved_struct_init))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    init: Initializer): Result[ResolvedInitializer, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION INIT: {init.location}"
-  case init.kind:
-  of IK_LITERAL:
-    let literal_init = ? init.literal
-    let resolved_module_ref = ? resolve(file, literal_init.module)
-    let literal_module = ? resolved_module_ref.native_module
-    let resolved_literal = ? resolve(literal_module, literal_init.literal)
-    let resolved_literal_init = new_resolved_literal_init(literal_init, resolved_literal)
-    ok(new_resolved_initializer(init, resolved_literal_init))
-  of IK_STRUCT:
-    let struct = ? init.struct
-    let resolved_struct_init = ? resolve(file, scope, struct)
-    ok(new_resolved_initializer(init, resolved_struct_init))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    struct_get: StructGet): Result[ResolvedStructGet, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION STRUCT GET: {struct_get.location}"
-  let argdef = ? scope.get(struct_get.name)
-  let argmodule = ? argdef.module_ref.user_module
-  let default_struct = ? argmodule.find_struct()
-  let resolved_struct = ? resolve(file, argmodule, default_struct)
-  let concrete_struct = ? resolved_struct.concrete_struct(
-      argdef.module_ref.concrete_map)
-  let field_id = ? concrete_struct.find_field_id(struct_get.field)
-  let resolved_field = concrete_struct.fields[field_id]
-  ok(new_resolved_struct_get(struct_get, argdef.module_ref, resolved_field))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    struct_get: StructGet): Result[ResolvedStructGet, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION STRUCT GET: {struct_get.location}"
-  let argdef = ? scope.get(struct_get.name)
-  let argmodule = ? argdef.module_ref.user_module
-  let default_struct = ? argmodule.find_struct()
-  let resolved_struct = ? resolve(file, argmodule, default_struct)
-  let concrete_struct = ? resolved_struct.concrete_struct(
-      argdef.module_ref.concrete_map)
-  let field_id = ? concrete_struct.find_field_id(struct_get.field)
-  let resolved_field = concrete_struct.fields[field_id]
-  ok(new_resolved_struct_get(struct_get, argdef.module_ref, resolved_field))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    match: Match): Result[ResolvedMatch, string]
-proc resolve(file: ast.File, scope: FunctionScope, match: Match): Result[
-    ResolvedMatch, string]
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    expression: Expression): Result[ResolvedExpression, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
-  case expression.kind:
-  of EK_MATCH:
-    let match = ? expression.match
-    let resolved_function_call = ? resolve(file, module, scope, match)
-    ok(new_resolved_expression(expression, resolved_function_call))
-  of EK_FNCALL:
-    let fncall = ? expression.fncall
-    let resolved_function_call = ? resolve(file, module, scope, fncall)
-    ok(new_resolved_expression(expression, resolved_function_call))
-  of EK_INIT:
-    let init = ? expression.init
-    let resolved_init = ? resolve(file, module, scope, init)
-    ok(new_resolved_expression(expression, resolved_init))
-  of EK_STRUCT_GET:
-    let struct_get = ? expression.struct_get
-    let resolved_struct_get = ? resolve(file, module, scope, struct_get)
-    ok(new_resolved_expression(expression, resolved_struct_get))
-  of EK_VARIABLE:
-    let variable = ? expression.variable
-    let resolved_arg = ? scope.get(variable)
-    ok(new_resolved_expression(expression, resolved_arg))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    expression: Expression): Result[ResolvedExpression, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP STATEMENT EXPRESSION: {expression.location}"
-  case expression.kind:
-  of EK_MATCH:
-    let match = ? expression.match
-    let resolved_function_call = ? resolve(file, scope, match)
-    ok(new_resolved_expression(expression, resolved_function_call))
-  of EK_FNCALL:
-    let fncall = ? expression.fncall
-    let resolved_function_call = ? resolve(file, scope, fncall)
-    ok(new_resolved_expression(expression, resolved_function_call))
-  of EK_INIT:
-    let init = ? expression.init
-    let resolved_init = ? resolve(file, scope, init)
-    ok(new_resolved_expression(expression, resolved_init))
-  of EK_STRUCT_GET:
-    let struct_get = ? expression.struct_get
-    let resolved_struct_get = ? resolve(file, scope, struct_get)
-    ok(new_resolved_expression(expression, resolved_struct_get))
-  of EK_VARIABLE:
-    let variable = ? expression.variable
-    let resolved_arg = ? scope.get(variable)
-    ok(new_resolved_expression(expression, resolved_arg))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    statement: Statement): Result[ResolvedStatement, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP STATEMENT: {statement.location}"
-  let resolved_expression = ? resolve(file, module, scope, statement.expression)
-  let arg = new_resolved_argument_definition(statement.arg,
-      resolved_expression.return_type, statement.location)
-  ok(new_resolved_statement(statement, arg, resolved_expression))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    statement: Statement): Result[ResolvedStatement, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP STATEMENT: {statement.location}"
-  let resolved_expression = ? resolve(file, scope, statement.expression)
-  let arg = new_resolved_argument_definition(statement.arg,
-      resolved_expression.return_type, statement.location)
-  ok(new_resolved_statement(statement, arg, resolved_expression))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    operand: ResolvedArgumentDefinition, pattern: StructPattern): Result[
-    ResolvedStructPattern, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP MATCH CASE DEF STRUCT PATTERN: {pattern.location}"
-  case pattern.kind
-  of SPK_DEFAULT:
-    let operand_module = ? operand.module_ref.user_module
-    let struct = ? operand_module.find_struct()
-    let resolved_struct = ? resolve(file, operand_module, struct)
-    let concrete_struct = ? resolved_struct.concrete_struct(
-        operand.module_ref.concrete_map)
-    var fields: seq[ResolvedArgumentDefinition]
-    for (key, value) in pattern.args:
-      let field_id = ? concrete_struct.find_field_id(key)
-      let resolved_field = concrete_struct.fields[field_id]
-      let value_arg_def = new_resolved_argument_definition(value,
-          resolved_field.module_ref, value.location)
-      fields.add(value_arg_def)
-    ok(new_resolved_struct_pattern(pattern, fields, resolved_struct))
-  of SPK_NAMED:
-    let operand_module = ? operand.module_ref.user_module
-    let struct_name = ? pattern.struct
-    let struct = ? operand_module.find_struct(struct_name)
-    let resolved_struct = ? resolve(file, operand_module, struct)
-    let concrete_struct = ? resolved_struct.concrete_struct(
-        operand.module_ref.concrete_map)
-    var fields: seq[ResolvedArgumentDefinition]
-    for (key, value) in pattern.args:
-      let field_id = ? concrete_struct.find_field_id(key)
-      let resolved_field = concrete_struct.fields[field_id]
-      let value_arg_def = new_resolved_argument_definition(value,
-          resolved_field.module_ref, value.location)
-      fields.add(value_arg_def)
-    ok(new_resolved_struct_pattern(pattern, fields, resolved_struct))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    operand: ResolvedArgumentDefinition, def: CaseDefinition): Result[
-        ResolvedCaseDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP MATCH CASE DEF: {def.location}"
-  case def.pattern.kind:
-  of CPK_LITERAL:
-    let literal = ? def.pattern.literal
-    case literal.kind:
-    of LK_INTEGER:
-      let integer_literal = ? literal.integer_literal
-      case operand.module_ref.kind:
-      of RATK_CONCRETE:
-        let native_module = ? operand.module_ref.native_module
-        let resolved_literal = ? resolve(native_module, integer_literal)
-        let resolved_case_pattern = new_resolved_case_pattern(def.pattern, resolved_literal)
-        ok(new_resolved_case_definition(def, resolved_case_pattern))
-      else:
-        err(fmt"{literal.location} only native modules support literal matching")
-    else:
-      err(fmt"{literal.location} only integer literals supported in case pattern")
-  of CPK_STRUCT:
-    let operand_module = ? operand.module_ref.user_module
-    if operand_module.structs.len < 2:
-      return err("{operand.location} Module `{operand_module.name.asl}` is not a union")
-
-    let pattern = ? def.pattern.struct
-    let resolved_pattern = ? resolve(file, scope, operand, pattern)
-    for field in resolved_pattern.fields:
-      discard ? scope.add(field)
-    let resolved_case_pattern = new_resolved_case_pattern(def.pattern, resolved_pattern)
-    ok(new_resolved_case_definition(def, resolved_case_pattern))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    operand: ResolvedArgumentDefinition, def: CaseDefinition): Result[
-    ResolvedCaseDefinition, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP MATCH CASE DEF: {def.location}"
-  case def.pattern.kind:
-  of CPK_LITERAL:
-    let literal = ? def.pattern.literal
-    case literal.kind:
-    of LK_INTEGER:
-      let integer_literal = ? literal.integer_literal
-      case operand.module_ref.kind:
-      of RATK_CONCRETE:
-        let native_module = ? operand.module_ref.native_module
-        let resolved_literal = ? resolve(native_module, integer_literal)
-        let resolved_case_pattern = new_resolved_case_pattern(def.pattern, resolved_literal)
-        ok(new_resolved_case_definition(def, resolved_case_pattern))
-      else:
-        err(fmt"{literal.location} only native modules support literal matching")
-    else:
-      err(fmt"{literal.location} only integer literals supported in case pattern")
-  of CPK_STRUCT:
-    let operand_module = ? operand.module_ref.user_module
-    if operand_module.structs.len < 2:
-      return err("{operand.location} Module `{operand_module.name.asl}` is not a union")
-
-    let pattern = ? def.pattern.struct
-    let resolved_pattern = ? resolve(file, scope, operand, pattern)
-    for field in resolved_pattern.fields:
-      discard ? scope.add(field)
-    let resolved_case_pattern = new_resolved_case_pattern(def.pattern, resolved_pattern)
-    ok(new_resolved_case_definition(def, resolved_case_pattern))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    operand: ResolvedArgumentDefinition, case_block: Case): Result[ResolvedCase, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP MATCH CASE: {case_block.location}"
-  let resolved_case_def = ? resolve(file, module, scope, operand,
-      case_block.def)
-  var case_block_scope = scope.clone()
-  var resolved_statements: seq[ResolvedStatement]
-  for statement in case_block.statements:
-    let resolved_statement = ? resolve(file, module, case_block_scope, statement)
-    resolved_statements.add(resolved_statement)
-    case_block_scope = ? scope.add(resolved_statement.arg)
-  ok(new_resolved_case(case_block, resolved_case_def, resolved_statements))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    operand: ResolvedArgumentDefinition, case_block: Case): Result[ResolvedCase, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP MATCH CASE: {case_block.location}"
-  let resolved_case_def = ? resolve(file, scope, operand,
-      case_block.def)
-  var case_block_scope = scope.clone()
-  var resolved_statements: seq[ResolvedStatement]
-  for statement in case_block.statements:
-    let resolved_statement = ? resolve(file, case_block_scope, statement)
-    resolved_statements.add(resolved_statement)
-    case_block_scope = ? scope.add(resolved_statement.arg)
-  ok(new_resolved_case(case_block, resolved_case_def, resolved_statements))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    else_block: Else): Result[ResolvedElse, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP MATCH ELSE: {else_block.location}"
-  var else_block_scope = scope.clone()
-  var resolved_statements: seq[ResolvedStatement]
-  for statement in else_block.statements:
-    let resolved_statement = ? resolve(file, module, else_block_scope, statement)
-    resolved_statements.add(resolved_statement)
-    else_block_scope = ? scope.add(resolved_statement.arg)
-  ok(new_resolved_else(else_block, resolved_statements))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    else_block: Else): Result[ResolvedElse, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP MATCH ELSE: {else_block.location}"
-  var else_block_scope = scope.clone()
-  var resolved_statements: seq[ResolvedStatement]
-  for statement in else_block.statements:
-    let resolved_statement = ? resolve(file, else_block_scope, statement)
-    resolved_statements.add(resolved_statement)
-    else_block_scope = ? scope.add(resolved_statement.arg)
-  ok(new_resolved_else(else_block, resolved_statements))
-
-proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-    match: Match): Result[ResolvedMatch, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION STEP MATCH: {match.location}"
-  let operand_def = ? scope.get(match.def.operand)
-
-  case match.kind:
-  of MK_CASE_ONLY:
-    var resolved_case_blocks: seq[ResolvedCase]
-    for case_block in match.case_blocks:
-      let resolved_case_block = ? resolve(file, module, scope, operand_def, case_block)
-      resolved_case_blocks.add(resolved_case_block)
-    # TODO: Validate uniqueness of case block patterns so that they don't overlap
-    for resolved_case_block in resolved_case_blocks:
-      if resolved_case_block.return_type != resolved_case_blocks[0].return_type:
-        return err(fmt"{resolved_case_block.location} case block return type does not match with else block return type at {resolved_case_blocks[0].location}")
-    ok(new_resolved_match(match, resolved_case_blocks))
-  of MK_COMPLETE:
-    var resolved_case_blocks: seq[ResolvedCase]
-    for case_block in match.case_blocks:
-      let resolved_case_block = ? resolve(file, module, scope, operand_def, case_block)
-      resolved_case_blocks.add(resolved_case_block)
-    let else_block = ? match.else_block
-    let resolved_else_block = ? resolve(file, module, scope, else_block)
-    # TODO: Validate uniqueness of case block patterns so that they don't overlap
-    for resolved_case_block in resolved_case_blocks:
-      if resolved_case_block.return_type != resolved_else_block.return_type:
-        return err(fmt"{resolved_case_block.location} case block return type does not match with else block return type at {resolved_else_block.location}")
-    ok(new_resolved_match(match, resolved_case_blocks, resolved_else_block))
-
-proc resolve(file: ast.File, scope: FunctionScope,
-    match: Match): Result[ResolvedMatch, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION STEP MATCH: {match.location}"
-  let operand_def = ? scope.get(match.def.operand)
-
-  case match.kind:
-  of MK_CASE_ONLY:
-    var resolved_case_blocks: seq[ResolvedCase]
-    for case_block in match.case_blocks:
-      let resolved_case_block = ? resolve(file, scope, operand_def, case_block)
-      resolved_case_blocks.add(resolved_case_block)
-    # TODO: Validate uniqueness of case block patterns so that they don't overlap
-    for resolved_case_block in resolved_case_blocks:
-      if resolved_case_block.return_type != resolved_case_blocks[0].return_type:
-        return err(fmt"{resolved_case_block.location} case block return type does not match with else block return type at {resolved_case_blocks[0].location}")
-    ok(new_resolved_match(match, resolved_case_blocks))
-  of MK_COMPLETE:
-    var resolved_case_blocks: seq[ResolvedCase]
-    for case_block in match.case_blocks:
-      let resolved_case_block = ? resolve(file, scope, operand_def, case_block)
-      resolved_case_blocks.add(resolved_case_block)
-    let else_block = ? match.else_block
-    let resolved_else_block = ? resolve(file, scope, else_block)
-    # TODO: Validate uniqueness of case block patterns so that they don't overlap
-    for resolved_case_block in resolved_case_blocks:
-      if resolved_case_block.return_type != resolved_else_block.return_type:
-        return err(fmt"{resolved_case_block.location} case block return type does not match with else block return type at {resolved_else_block.location}")
-    ok(new_resolved_match(match, resolved_case_blocks, resolved_else_block))
-
-# proc resolve(file: ast.File, module: UserModule, scope: FunctionScope,
-#     step: FunctionStep): Result[ResolvedFunctionStep, string] =
-#   if DEBUG:
-#     echo fmt"Resolving MODULE FUNCTION STEP: {step.location}"
-#   case step.kind:
-#   of FSK_STATEMENT:
-#     let statement = ? step.statement
-#     let resolved_statement = ? resolve(file, module, scope, statement)
-#     ok(new_resolved_function_step(step, resolved_statement))
-#   of FSK_MATCH:
-#     let match = ? step.match
-#     let resolved_match = ? resolve(file, module, scope, match)
-#     ok(new_resolved_function_step(step, resolved_match))
-
-# proc resolve(file: ast.File, scope: FunctionScope,
-#     step: FunctionStep): Result[ResolvedFunctionStep, string] =
-#   if DEBUG:
-#     echo fmt"Resolving FUNCTION STEP: {step.location}"
-#   case step.kind:
-#   of FSK_STATEMENT:
-#     let statement = ? step.statement
-#     let resolved_statement = ? resolve(file, scope, statement)
-#     ok(new_resolved_function_step(step, resolved_statement))
-#   of FSK_MATCH:
-#     let match = ? step.match
-#     let resolved_match = ? resolve(file, scope, match)
-#     ok(new_resolved_function_step(step, resolved_match))
-
-proc resolve(file: ast.File, module: UserModule, function: Function): Result[
-    ResolvedFunction, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE FUNCTION: {function.location}"
-  let resolved_function_def = ? resolve(file, module, function.def)
-  var scope = FunctionScope()
-  for arg in resolved_function_def.args:
-    scope = ? scope.add(arg)
-
-  var resolved_steps: seq[ResolvedStatement]
-  for step in function.steps:
-    let resolved_step = ? resolve(file, module, scope, step)
-    resolved_steps.add(resolved_step)
-    scope = ? scope.add(resolved_step.arg)
-
-  let fn_return_type = resolved_steps[^1].arg.module_ref
-  if fn_return_type != resolved_function_def.returns:
-    let step_location = function.steps[^1].location
-    return err(fmt"{step_location} expected function to return `{resolved_function_def.returns.asl}`")
-
-  ok(new_resolved_function(function, resolved_function_def, resolved_steps))
-
-proc resolve(file: ast.File, function: Function): Result[ResolvedFunction, string] =
-  if DEBUG:
-    echo fmt"Resolving FUNCTION: {function.location}"
-  let resolved_function_def = ? resolve(file, function.def)
-  var scope = FunctionScope()
-  for arg in resolved_function_def.args:
-    scope = ? scope.add(arg)
-  var resolved_steps: seq[ResolvedStatement]
-  for step in function.steps:
-    let resolved_step = ? resolve(file, scope, step)
-    resolved_steps.add(resolved_step)
-    scope = ? scope.add(resolved_step.arg)
-
-  let fn_return_type = resolved_steps[^1].arg.module_ref
-  if fn_return_type != resolved_function_def.returns:
-    let step_location = function.steps[^1].location
-    return err(fmt"{step_location} expected function to return `{resolved_function_def.returns.asl}`")
-
-  ok(new_resolved_function(function, resolved_function_def, resolved_steps))
-
-proc resolve(file: ast.File, module: UserModule): Result[
-    ResolvedModule, string] =
-  if DEBUG:
-    echo fmt"Resolving MODULE: {module.location}"
+proc new_resolved_module_definition(
+    name: Identifier,
+    generics: seq[(TypedGeneric, ResolvedGeneric)],
+    structs: seq[ResolvedStruct],
+    function_defs: seq[(TypedFunctionDefinition, ResolvedFunctionDefinition)],
+    location: Location): ResolvedModuleDefinition =
+  var generics_map: Table[TypedGeneric, ResolvedGeneric]
   var resolved_generics: seq[ResolvedGeneric]
-  for generic in module.generics:
-    let resolved_generic = ? resolve(file, module, generic)
+  for (typed_generic, resolved_generic) in generics:
+    generics_map[typed_generic] = resolved_generic
     resolved_generics.add(resolved_generic)
 
+  var default_struct_index = -1
+  var structs_map: Table[Identifier, ResolvedStruct]
   var resolved_structs: seq[ResolvedStruct]
-  for struct in module.structs:
-    let resolved_struct = ? resolve(file, module, struct)
+  for index, resolved_struct in structs.pairs:
     resolved_structs.add(resolved_struct)
+    case resolved_struct.kind:
+    of RSK_DEFAULT: default_struct_index = index
+    of RSK_NAMED: structs_map[resolved_struct.name] = resolved_struct
 
+  var function_defs_map: Table[TypedFunctionDefinition, ResolvedFunctionDefinition]
+  var resolved_function_defs: seq[ResolvedFunctionDefinition]
+  var function_signatures_map: Table[Identifier, Table[uint,
+      seq[ResolvedFunctionDefinition]]]
+  for (typed_function_def, resolved_function_def) in function_defs:
+    function_defs_map[typed_function_def] = resolved_function_def
+    resolved_function_defs.add(resolved_function_def)
+
+    if resolved_function_def.name notin function_signatures_map:
+      function_signatures_map[resolved_function_def.name] = init_table[uint,
+          seq[ResolvedFunctionDefinition]]()
+    if resolved_function_def.arity notin function_signatures_map[
+        resolved_function_def.name]:
+      function_signatures_map[resolved_function_def.name][
+          resolved_function_def.arity] = new_seq[ResolvedFunctionDefinition]()
+    function_signatures_map[resolved_function_def.name][
+        resolved_function_def.arity].add(resolved_function_def)
+
+  ResolvedModuleDefinition(
+    name: name, location: location,
+    generics: resolved_generics, generics_map: generics_map,
+    structs: resolved_structs, structs_map: structs_map,
+    function_defs: resolved_function_defs, function_defs_map: function_defs_map,
+    function_signatures_map: function_signatures_map
+  )
+
+proc find_generic(module_def: ResolvedModuleDefinition,
+    generic: TypedGeneric): Result[ResolvedGeneric, string] =
+  if generic notin module_def.generics_map:
+    err(fmt"module `{module_def.name.asl}` does not have any generic named `{generic.name.asl}`")
+  else:
+    ok(module_def.generics_map[generic])
+
+proc find_struct(module_def: ResolvedModuleDefinition): Result[ResolvedStruct, string] =
+  if module_def.default_struct_index == -1:
+    err(fmt"module `{module_def.name.asl}` does not have a default struct")
+  else:
+    ok(module_def.structs[module_def.default_struct_index])
+
+proc find_struct(module_def: ResolvedModuleDefinition,
+    name: Identifier): Result[ResolvedStruct, string] =
+  if name notin module_def.structs_map:
+    err(fmt"module `{module_def.name.asl}` does not have struct named `{name.asl}`")
+  else:
+    ok(module_def.structs_map[name])
+
+proc find_function_def(module_def: ResolvedModuleDefinition,
+    function_def: TypedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+  if function_def notin module_def.function_defs_map:
+    err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
+  else:
+    ok(module_def.function_defs_map[function_def])
+
+proc find_function_defs(module_def: ResolvedModuleDefinition,
+    name: Identifier, arity: uint): Result[seq[
+    ResolvedFunctionDefinition], string] =
+  if name notin module_def.function_signatures_map:
+    err(fmt"module `{module_def.name.asl}` does not have any function named `{name.asl}`")
+  elif arity notin module_def.function_signatures_map[name]:
+    err(fmt"module `{module_def.name.asl}` does not have any function named `{name.asl}` with arity `{arity}`")
+  else:
+    ok(module_def.function_signatures_map[name][arity])
+
+proc resolve_def(file: TypedFile, module: TypedModule): Result[
+    ResolvedModuleDefinition, string] =
+  var generics: seq[(TypedGeneric, ResolvedGeneric)]
+  for generic in module.generics:
+    let resolved_generic = ? resolve_def(file, module, generic)
+    generics.add((generic, resolved_generic))
+
+  var structs: seq[ResolvedStruct]
+  for struct in module.structs:
+    let resolved_struct = ? resolve_def(file, module, struct)
+    structs.add(resolved_struct)
+
+  var function_defs: seq[(TypedFunctionDefinition,
+      ResolvedFunctionDefinition)]
+  for function in module.functions:
+    let resolved_def = ? resolve_def(file, module, function.def)
+    function_defs.add((function.def, resolved_def))
+
+  ok(new_resolved_module_definition(module.name, generics, structs,
+      function_defs, module.location))
+
+type ResolvedNativeFunctionDefinition = ref object of RootObj
+  native: string
+  def: ResolvedFunctionDefinition
+
+proc new_resolved_native_function_definition(native: string,
+    def: ResolvedFunctionDefinition): ResolvedNativeFunctionDefinition =
+  ResolvedNativeFunctionDefinition(native: native, def: def)
+
+proc name*(def: ResolvedNativeFunctionDefinition): Identifier = def.def.name
+proc arity*(def: ResolvedNativeFunctionDefinition): uint = def.def.arity.uint
+
+proc resolve_def(file: TypedFile, function: TypedNativeFunction): Result[
+    ResolvedNativeFunctionDefinition, string] =
+  let resolved_def = ? resolve_def(file, function.def)
+  ok(new_resolved_native_function_definition(function.native, resolved_def))
+
+type ResolvedNativeModuleDefinition = ref object of RootObj
+  name: Identifier
+  functions: seq[ResolvedNativeFunctionDefinition]
+  function_signatures_map: Table[Identifier, Table[uint, seq[
+      ResolvedNativeFunctionDefinition]]]
+
+proc new_resolved_native_module_definition(name: Identifier, functions: seq[
+    ResolvedNativeFunctionDefinition]): ResolvedNativeModuleDefinition =
+  var function_signatures_map: Table[Identifier, Table[uint, seq[
+      ResolvedNativeFunctionDefinition]]]
+  for function in functions:
+    if function.name notin function_signatures_map:
+      function_signatures_map[function.name] = init_table[uint, seq[
+          ResolvedNativeFunctionDefinition]]()
+    if function.arity notin function_signatures_map[function.name]:
+      function_signatures_map[function.name][function.arity] = new_seq[
+          ResolvedNativeFunctionDefinition]()
+    function_signatures_map[function.name][function.arity].add(function)
+  ResolvedNativeModuleDefinition(name: name, functions: functions,
+      function_signatures_map: function_signatures_map)
+
+proc find_function_defs(module_def: ResolvedNativeModuleDefinition,
+    name: Identifier, arity: uint): Result[seq[
+    ResolvedNativeFunctionDefinition], string] =
+  if name notin module_def.function_signatures_map:
+    err(fmt"native module `{module_def.name.asl}` does not have any function named `{name.asl}`")
+  elif arity notin module_def.function_signatures_map[name]:
+    err(fmt"native module `{module_def.name.asl}` does not have any function named `{name.asl}` with arity `{arity}`")
+  else:
+    ok(module_def.function_signatures_map[name][arity])
+
+proc resolve_def(file: TypedFile, def: TypedNativeModule): Result[
+    ResolvedNativeModuleDefinition, string] =
+  var resolved_functions: seq[ResolvedNativeFunctionDefinition]
+  for function in def.functions:
+    let resolved_function = ? resolve_def(file, function)
+    resolved_functions.add(resolved_function)
+  ok(new_resolved_native_module_definition(def.name, resolved_functions))
+
+type ResolvedFileDefinition = ref object of RootObj
+  native_modules: seq[ResolvedNativeModuleDefinition]
+  native_modules_map: Table[TypedNativeModule, ResolvedNativeModuleDefinition]
+  modules: seq[ResolvedModuleDefinition]
+  modules_map: Table[TypedModule, ResolvedModuleDefinition]
+  function_defs: seq[ResolvedFunctionDefinition]
+  function_defs_map: Table[TypedFunctionDefinition, ResolvedFunctionDefinition]
+  function_signatures_map: Table[Identifier, Table[uint,
+      seq[ResolvedFunctionDefinition]]]
+
+proc new_resolved_file_definition(
+    native_modules: seq[(TypedNativeModule, ResolvedNativeModuleDefinition)],
+    modules: seq[(TypedModule, ResolvedModuleDefinition)],
+    function_defs: seq[(TypedFunctionDefinition,
+        ResolvedFunctionDefinition)]): ResolvedFileDefinition =
+  var native_modules_map: Table[TypedNativeModule, ResolvedNativeModuleDefinition]
+  var resolved_native_modules: seq[ResolvedNativeModuleDefinition]
+  for (typed_module, resolved_module) in native_modules:
+    native_modules_map[typed_module] = resolved_module
+    resolved_native_modules.add(resolved_module)
+
+  var modules_map: Table[TypedModule, ResolvedModuleDefinition]
+  var resolved_modules: seq[ResolvedModuleDefinition]
+  for (typed_module, resolved_module) in modules:
+    modules_map[typed_module] = resolved_module
+    resolved_modules.add(resolved_module)
+
+  var function_defs_map: Table[TypedFunctionDefinition, ResolvedFunctionDefinition]
+  var function_signatures_map: Table[Identifier, Table[uint,
+      seq[ResolvedFunctionDefinition]]]
+  var resolved_function_defs: seq[ResolvedFunctionDefinition]
+  for (typed_function_def, resolved_function_def) in function_defs:
+    function_defs_map[typed_function_def] = resolved_function_def
+    resolved_function_defs.add(resolved_function_def)
+
+    if resolved_function_def.name notin function_signatures_map:
+      function_signatures_map[resolved_function_def.name] = init_table[uint,
+          seq[ResolvedFunctionDefinition]]()
+    if resolved_function_def.arity notin function_signatures_map[
+        resolved_function_def.name]:
+      function_signatures_map[resolved_function_def.name][
+          resolved_function_def.arity] = new_seq[ResolvedFunctionDefinition]()
+    function_signatures_map[resolved_function_def.name][
+          resolved_function_def.arity].add(resolved_function_def)
+
+  ResolvedFileDefinition(
+    native_modules: resolved_native_modules,
+    native_modules_map: native_modules_map,
+    modules: resolved_modules, modules_map: modules_map,
+    function_defs: resolved_function_defs, function_defs_map: function_defs_map,
+    function_signatures_map: function_signatures_map
+  )
+
+proc find_module_def(file_def: ResolvedFileDefinition,
+    module: TypedNativeModule): Result[ResolvedNativeModuleDefinition, string] =
+  if module in file_def.native_modules_map:
+    ok(file_def.native_modules_map[module])
+  else:
+    err(fmt"module `{module.name.asl}` not found in resolved file definition")
+
+proc find_module_def(file_def: ResolvedFileDefinition,
+    module: TypedModule): Result[ResolvedModuleDefinition, string] =
+  if module in file_def.modules_map:
+    ok(file_def.modules_map[module])
+  else:
+    err(fmt"module `{module.name.asl}` not found in resolved file definition")
+
+proc find_function_def(file_def: ResolvedFileDefinition,
+    def: TypedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+  if def in file_def.function_defs_map:
+    ok(file_def.function_defs_map[def])
+  else:
+    err(fmt"def `{def.name.asl}` not found in resolved file definition")
+
+proc find_function_defs(file_def: ResolvedFileDefinition, name: Identifier,
+    arity: uint): Result[seq[ResolvedFunctionDefinition], string] =
+  if name notin file_def.function_signatures_map:
+    err(fmt"function `{name.asl}` not found in resolved file definition")
+  elif arity notin file_def.function_signatures_map[name]:
+    err(fmt"function `{name.asl}` with arity `{arity}` not found in resolved file definition")
+  else:
+    ok(file_def.function_signatures_map[name][arity])
+
+proc resolve_def(file: TypedFile): Result[ResolvedFileDefinition, string] =
+  var native_modules: seq[(TypedNativeModule, ResolvedNativeModuleDefinition)]
+  for module in file.native_modules:
+    let resolved_module_def = ? resolve_def(file, module)
+    native_modules.add((module, resolved_module_def))
+
+  var modules: seq[(TypedModule, ResolvedModuleDefinition)]
+  for module in file.modules:
+    let resolved_module_def = ? resolve_def(file, module)
+    modules.add((module, resolved_module_def))
+
+  var function_defs: seq[(TypedFunctionDefinition, ResolvedFunctionDefinition)]
+  for function in file.functions:
+    let resolved_function_def = ? resolve_def(file, function.def)
+    function_defs.add((function.def, resolved_function_def))
+
+  ok(new_resolved_file_definition(native_modules, modules, function_defs))
+
+type FunctionScope = ref object of RootObj
+  table: Table[Identifier, ResolvedModuleRef]
+
+proc get(scope: FunctionScope, name: Identifier): Result[ResolvedModuleRef, string] =
+  if name notin scope.table:
+    return err(fmt"{name.location} argument `{name.asl}` is not present in the scope")
+  ok(scope.table[name])
+
+proc set(scope: FunctionScope, arg: ResolvedArgumentDefinition): Result[
+    FunctionScope, string] =
+  scope.table[arg.name] = arg.module_ref
+  ok(scope)
+
+proc clone(scope: FunctionScope): FunctionScope =
+  var table: Table[Identifier, ResolvedModuleRef]
+  for name, module_ref in scope.table:
+    table[name] = module_ref
+  FunctionScope(table: table)
+
+type
+  ResolvedFunctionRefKind = enum
+    RFRK_LOCAL, RFRK_MODULE
+  ResolvedFunctionRef = ref object of RootObj
+    name: Identifier
+    defs: seq[ResolvedFunctionDefinition]
+    case kind: ResolvedFunctionRefKind
+    of RFRK_LOCAL: discard
+    of RFRK_MODULE: module_ref: ResolvedModuleRef
+
+proc new_resolved_function_ref(name: Identifier, defs: seq[
+    ResolvedFunctionDefinition]): ResolvedFunctionRef =
+  ResolvedFunctionRef(kind: RFRK_LOCAL, name: name, defs: defs)
+
+proc new_resolved_function_ref(module_ref: ResolvedModuleRef, name: Identifier,
+    defs: seq[ResolvedFunctionDefinition]): ResolvedFunctionRef =
+  ResolvedFunctionRef(kind: RFRK_MODULE, module_ref: module_ref, name: name, defs: defs)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    fnref: TypedFunctionRef): Result[ResolvedFunctionRef, string] =
+  case fnref.kind:
+  of TFRK_LOCAL:
+    let resolved_function_defs = ? file_def.find_function_defs(fnref.name, fnref.arity)
+    ok(new_resolved_function_ref(fnref.name, resolved_function_defs))
+  of TFRK_MODULE:
+    let typed_module_ref = ? fnref.module_ref
+    let resolved_module_ref = ? resolve_def(file, module, typed_module_ref)
+    case resolved_module_ref.kind:
+    of RMRK_NATIVE:
+      let typed_native_module = resolved_module_ref.native_module
+      let resolved_native_module_def = ? file_def.find_module_def(typed_native_module)
+      let resolved_native_function_defs = ? resolved_native_module_def.find_function_defs(
+          fnref.name, fnref.arity)
+      let resolved_function_defs = resolved_native_function_defs.map_it(it.def)
+      ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
+          resolved_function_defs))
+    of RMRK_GENERIC:
+      let typed_generic = resolved_module_ref.generic
+      let resolved_generic = ? module_def.find_generic(typed_generic)
+      let resolved_function_defs = ? resolved_generic.find_function_defs(
+          fnref.name, fnref.arity)
+      ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
+          resolved_function_defs))
+    of RMRK_USER:
+      let typed_user_module = resolved_module_ref.user_module
+      let resolved_user_module_def = ? file_def.find_module_def(typed_user_module)
+      let resolved_function_defs = ? resolved_user_module_def.find_function_defs(
+          fnref.name, fnref.arity)
+      var concrete_function_defs = resolved_function_defs.map_it(it.concretize(
+          resolved_module_ref.concrete_map))
+      ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
+          concrete_function_defs))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    fnref: TypedFunctionRef): Result[ResolvedFunctionRef, string] =
+  case fnref.kind:
+  of TFRK_LOCAL:
+    let resolved_function_defs = ? file_def.find_function_defs(fnref.name, fnref.arity)
+    ok(new_resolved_function_ref(fnref.name, resolved_function_defs))
+  of TFRK_MODULE:
+    let typed_module_ref = ? fnref.module_ref
+    let resolved_module_ref = ? resolve_def(file, typed_module_ref)
+    case resolved_module_ref.kind:
+    of RMRK_GENERIC:
+      err("{fnref.location} local function calls do not support generics")
+    of RMRK_NATIVE:
+      let typed_native_module = resolved_module_ref.native_module
+      let resolved_native_module_def = ? file_def.find_module_def(typed_native_module)
+      let resolved_native_function_defs = ? resolved_native_module_def.find_function_defs(
+          fnref.name, fnref.arity)
+      let resolved_function_defs = resolved_native_function_defs.map_it(it.def)
+      ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
+          resolved_function_defs))
+    of RMRK_USER:
+      let typed_user_module = resolved_module_ref.user_module
+      let resolved_user_module_def = ? file_def.find_module_def(typed_user_module)
+      let resolved_function_defs = ? resolved_user_module_def.find_function_defs(
+          fnref.name, fnref.arity)
+      var concrete_function_defs = resolved_function_defs.map_it(it.concretize(
+          resolved_module_ref.concrete_map))
+      ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
+          concrete_function_defs))
+
+type
+  ResolvedArgumentKind = enum
+    RAK_VARIABLE, RAK_LITERAL
+  ResolvedArgument = ref object of RootObj
+    module_ref: ResolvedModuleRef
+    case kind: ResolvedArgumentKind
+    of RAK_LITERAL: literal: Literal
+    of RAK_VARIABLE: variable: Identifier
+
+proc new_resolved_argument(module_ref: ResolvedModuleRef,
+    variable: Identifier): ResolvedArgument =
+  ResolvedArgument(kind: RAK_VARIABLE, module_ref: module_ref,
+      variable: variable)
+
+proc new_resolved_argument(module_ref: ResolvedModuleRef,
+    literal: Literal): ResolvedArgument =
+  ResolvedArgument(kind: RAK_LITERAL, module_ref: module_ref, literal: literal)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, args: seq[Argument], argdefs: seq[
+    ResolvedArgumentDefinition]): Result[seq[ResolvedArgument], string] =
+  var resolved_args: seq[ResolvedArgument]
+  for (arg, def) in zip(args, argdefs):
+    case arg.kind:
+    of AK_VARIABLE:
+      let variable = ? arg.variable
+      let arg_module_ref = ? scope.get(variable)
+      if arg_module_ref != def.module_ref:
+        return err(fmt"{arg.location} expected `{variable.asl}` to be of type `{def.module_ref.asl}` but found `{arg_module_ref.asl}`")
+      resolved_args.add(new_resolved_argument(arg_module_ref, variable))
+    of AK_LITERAL:
+      let literal = ? arg.literal
+      case def.module_ref.kind:
+      of RMRK_NATIVE:
+        let native_module = def.module_ref.native_module
+        ? native_module.validate(literal)
+        resolved_args.add(new_resolved_argument(def.module_ref, literal))
+      else:
+        return err(fmt"{literal.location} module `{def.module_ref.asl}` does not support literals")
+  ok(resolved_args)
+
+type ResolvedFunctionCall = ref object of RootObj
+  fnref: ResolvedFunctionRef
+  def: ResolvedFunctionDefinition
+  args: seq[ResolvedArgument]
+
+proc new_resolved_function_call(fnref: ResolvedFunctionRef,
+    def: ResolvedFunctionDefinition, args: seq[
+    ResolvedArgument]): ResolvedFunctionCall =
+  ResolvedFunctionCall(fnref: fnref, def: def, args: args)
+
+proc returns(fncall: ResolvedFunctionCall): ResolvedModuleRef =
+  fncall.def.returns
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, fncall: TypedFunctionCall): Result[
+        ResolvedFunctionCall, string] =
+  let resolved_function_ref = ? resolve(file_def, file, module_def, module, fncall.fnref)
+  var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
+  for function_def in resolved_function_ref.defs:
+    let maybe_resolved_args = resolve(file_def, file, scope, fncall.args,
+        function_def.args)
+    if maybe_resolved_args.is_ok:
+      return ok(new_resolved_function_call(resolved_function_ref, function_def,
+          maybe_resolved_args.get))
+    error_message.add(function_def.asl)
+  err(error_message.join("\n"))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, fncall: TypedFunctionCall): Result[
+    ResolvedFunctionCall, string] =
+  let resolved_function_ref = ? resolve(file_def, file, fncall.fnref)
+  var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
+  for function_def in resolved_function_ref.defs:
+    let maybe_resolved_args = resolve(file_def, file, scope, fncall.args,
+        function_def.args)
+    if maybe_resolved_args.is_ok:
+      return ok(new_resolved_function_call(resolved_function_ref, function_def,
+          maybe_resolved_args.get))
+    error_message.add(function_def.asl)
+  err(error_message.join("\n"))
+
+type ResolvedStructRef = ref object of RootObj
+  module_ref: ResolvedModuleRef
+  struct: ResolvedStruct
+
+proc new_resolved_struct_ref(module_ref: ResolvedModuleRef,
+    struct: ResolvedStruct): ResolvedStructRef =
+  ResolvedStructRef(module_ref: module_ref, struct: struct)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, struct_ref: TypedStructRef): Result[ResolvedStructRef, string] =
+  let resolved_module_ref = ? resolve_def(file, module, struct_ref.module_ref)
+  case resolved_module_ref.kind:
+  of RMRK_NATIVE:
+    err(fmt"{struct_ref.location} native module `{resolved_module_ref.native_module.name.asl}` is not a struct")
+  of RMRK_GENERIC:
+    err(fmt"{struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
+  of RMRK_USER:
+    let typed_module = resolved_module_ref.user_module
+    let resolved_module_def = ? file_def.find_module_def(typed_module)
+    case struct_ref.kind:
+    of TSRK_DEFAULT:
+      let maybe_struct = resolved_module_def.find_struct()
+      if maybe_struct.is_ok:
+        let resolved_struct = maybe_struct.get
+        let resolved_concretized_struct = resolved_struct.concretize(
+            resolved_module_ref.concrete_map)
+        ok(new_resolved_struct_ref(resolved_module_ref,
+            resolved_concretized_struct))
+      else:
+        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+    of TSRK_NAMED:
+      let struct_name = ? struct_ref.name
+      let maybe_struct = resolved_module_def.find_struct(struct_name)
+      if maybe_struct.is_ok:
+        let resolved_struct = maybe_struct.get
+        let resolved_concretized_struct = resolved_struct.concretize(
+            resolved_module_ref.concrete_map)
+        ok(new_resolved_struct_ref(resolved_module_ref,
+            resolved_concretized_struct))
+      else:
+        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, struct_ref: TypedStructRef): Result[ResolvedStructRef, string] =
+  let resolved_module_ref = ? resolve_def(file, struct_ref.module_ref)
+  case resolved_module_ref.kind:
+  of RMRK_NATIVE:
+    err(fmt"{struct_ref.location} native module `{resolved_module_ref.native_module.name.asl}` is not a struct")
+  of RMRK_GENERIC:
+    err(fmt"{struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
+  of RMRK_USER:
+    let typed_module = resolved_module_ref.user_module
+    let resolved_module_def = ? file_def.find_module_def(typed_module)
+    case struct_ref.kind:
+    of TSRK_DEFAULT:
+      let maybe_struct = resolved_module_def.find_struct()
+      if maybe_struct.is_ok:
+        let resolved_struct = maybe_struct.get
+        let resolved_concretized_struct = resolved_struct.concretize(
+            resolved_module_ref.concrete_map)
+        ok(new_resolved_struct_ref(resolved_module_ref,
+            resolved_concretized_struct))
+      else:
+        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+    of TSRK_NAMED:
+      let struct_name = ? struct_ref.name
+      let maybe_struct = resolved_module_def.find_struct(struct_name)
+      if maybe_struct.is_ok:
+        let resolved_struct = maybe_struct.get
+        let resolved_concretized_struct = resolved_struct.concretize(
+            resolved_module_ref.concrete_map)
+        ok(new_resolved_struct_ref(resolved_module_ref,
+            resolved_concretized_struct))
+      else:
+        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
+
+type ResolvedStructInit = ref object of RootObj
+  struct_ref: ResolvedStructRef
+  fields: seq[ResolvedArgument]
+
+proc new_resolved_struct_init(struct_ref: ResolvedStructRef, fields: seq[
+    ResolvedArgument]): ResolvedStructInit =
+  ResolvedStructInit(struct_ref: struct_ref, fields: fields)
+
+proc returns(struct_init: ResolvedStructInit): ResolvedModuleRef =
+  struct_init.struct_ref.module_ref
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, init: TypedStructInit): Result[ResolvedStructInit, string] =
+  let resolved_struct_ref = ? resolve(file_def, file, module_def, module, scope,
+      init.struct_ref)
+
+  var args = new_seq[Argument](resolved_struct_ref.struct.fields.len)
+  var found_field_indices: Hashset[int]
+  for field in init.fields:
+    let resolved_field_index = ? resolved_struct_ref.struct.find_field_index(field.name)
+    found_field_indices.incl(resolved_field_index)
+    args[resolved_field_index] = field.value
+
+  # NOTE: Only a subset of fields are given to initilaizer
+  if found_field_indices.len < resolved_struct_ref.struct.fields.len:
+    return err(fmt"{init.location} struct initializer is missing fields")
+
+  let resolved_fields = ? resolve(file_def, file, scope, args,
+      resolved_struct_ref.struct.fields)
+  ok(new_resolved_struct_init(resolved_struct_ref, resolved_fields))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, init: TypedStructInit): Result[ResolvedStructInit, string] =
+  let resolved_struct_ref = ? resolve(file_def, file, scope, init.struct_ref)
+
+  var args = new_seq[Argument](resolved_struct_ref.struct.fields.len)
+  var found_field_indices: Hashset[int]
+  for field in init.fields:
+    let resolved_field_index = ? resolved_struct_ref.struct.find_field_index(field.name)
+    found_field_indices.incl(resolved_field_index)
+    args[resolved_field_index] = field.value
+
+  # NOTE: Only a subset of fields are given to initilaizer
+  if found_field_indices.len < resolved_struct_ref.struct.fields.len:
+    return err(fmt"{init.location} struct initializer is missing fields")
+
+  let resolved_fields = ? resolve(file_def, file, scope, args,
+      resolved_struct_ref.struct.fields)
+  ok(new_resolved_struct_init(resolved_struct_ref, resolved_fields))
+
+type ResolvedLiteral = ref object of RootObj
+  module_ref: ResolvedModuleRef
+  literal: Literal
+
+proc new_resolved_literal(module_ref: ResolvedModuleRef,
+    literal: Literal): ResolvedLiteral =
+  ResolvedLiteral(module_ref: module_ref, literal: literal)
+
+proc returns(literal: ResolvedLiteral): ResolvedModuleRef =
+  literal.module_ref
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, init: TypedLiteralInit): Result[ResolvedLiteral, string] =
+  let resolved_module_ref = ? resolve_def(file, module, init.module_ref)
+  case resolved_module_ref.kind:
+  of RMRK_GENERIC: err(fmt"{init.location} Generics are not supported via literal initialization")
+  of RMRK_USER: err("{init.location} User modules can not be used to initialize literals")
+  of RMRK_NATIVE:
+    let native_module = resolved_module_ref.native_module
+    ? native_module.validate(init.literal)
+    ok(new_resolved_literal(resolved_module_ref, init.literal))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, init: TypedLiteralInit): Result[ResolvedLiteral, string] =
+  let resolved_module_ref = ? resolve_def(file, init.module_ref)
+  case resolved_module_ref.kind:
+  of RMRK_GENERIC: err(fmt"{init.location} Generics are not supported via literal initialization")
+  of RMRK_USER: err("{init.location} User modules can not be used to initialize literals")
+  of RMRK_NATIVE:
+    let native_module = resolved_module_ref.native_module
+    ? native_module.validate(init.literal)
+    ok(new_resolved_literal(resolved_module_ref, init.literal))
+
+type
+  ResolvedInitializerKind = enum
+    RIK_LITERAL, RIK_STRUCT
+  ResolvedInitializer = ref object of RootObj
+    case kind: ResolvedInitializerKind
+    of RIK_LITERAL: literal: ResolvedLiteral
+    of RIK_STRUCT: struct: ResolvedStructInit
+
+proc new_resolved_initializer(struct: ResolvedStructInit): ResolvedInitializer =
+  ResolvedInitializer(kind: RIK_STRUCT, struct: struct)
+
+proc new_resolved_initializer(literal: ResolvedLiteral): ResolvedInitializer =
+  ResolvedInitializer(kind: RIK_LITERAL, literal: literal)
+
+proc returns(init: ResolvedInitializer): ResolvedModuleRef =
+  case init.kind:
+  of RIK_STRUCT: init.struct.returns
+  of RIK_LITERAL: init.literal.returns
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, init: TypedInitializer): Result[ResolvedInitializer, string] =
+  case init.kind:
+  of TIK_STRUCT:
+    let struct_init = ? init.struct
+    let resolved_struct_init = ? resolve(file_def, file, module_def, module,
+        scope, struct_init)
+    ok(new_resolved_initializer(resolved_struct_init))
+  of TIK_LITERAL:
+    let literal_init = ? init.literal
+    let resolved_literal = ? resolve(file_def, file, module_def, module, scope, literal_init)
+    ok(new_resolved_initializer(resolved_literal))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, init: TypedInitializer): Result[ResolvedInitializer, string] =
+  case init.kind:
+  of TIK_STRUCT:
+    let struct_init = ? init.struct
+    let resolved_struct_init = ? resolve(file_def, file, scope, struct_init)
+    ok(new_resolved_initializer(resolved_struct_init))
+  of TIK_LITERAL:
+    let literal_init = ? init.literal
+    let resolved_literal = ? resolve(file_def, file, scope, literal_init)
+    ok(new_resolved_initializer(resolved_literal))
+
+type ResolvedStructGet = ref object of RootObj
+  variable: ResolvedArgumentDefinition
+  field: ResolvedArgumentDefinition
+
+proc new_resolved_struct_get(variable: ResolvedArgumentDefinition,
+    field: ResolvedArgumentDefinition): ResolvedStructGet =
+  ResolvedStructGet(variable: variable, field: field)
+
+proc returns(struct_get: ResolvedStructGet): ResolvedModuleRef =
+  struct_get.field.module_ref
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, struct_get: TypedStructGet): Result[ResolvedStructGet, string] =
+  let resolved_module_ref = ? scope.get(struct_get.variable)
+  let resolved_variable = new_resolved_argument_definition(resolved_module_ref,
+      struct_get.variable)
+  case resolved_module_ref.kind:
+  of RMRK_NATIVE: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
+  of RMRK_GENERIC: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
+  of RMRK_USER:
+    let typed_module = resolved_module_ref.user_module
+    let resolved_module_def = ? file_def.find_module_def(typed_module)
+    if resolved_module_def.structs.len == 0:
+      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
+    elif resolved_module_def.structs.len > 1:
+      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is a union")
+    else:
+      let maybe_default_struct = resolved_module_def.find_struct()
+      if maybe_default_struct.is_err:
+        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+      else:
+        let resolved_struct = maybe_default_struct.get
+        let resolved_field_module_ref = ? resolved_struct.find_field(
+            struct_get.field)
+        let resolved_field = resolved_field_module_ref.concretize(
+            resolved_module_ref.concrete_map)
+        ok(new_resolved_struct_get(resolved_variable, resolved_field))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, struct_get: TypedStructGet): Result[ResolvedStructGet, string] =
+  let resolved_module_ref = ? scope.get(struct_get.variable)
+  let resolved_variable = new_resolved_argument_definition(resolved_module_ref,
+      struct_get.variable)
+  case resolved_module_ref.kind:
+  of RMRK_NATIVE: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
+  of RMRK_GENERIC: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
+  of RMRK_USER:
+    let typed_module = resolved_module_ref.user_module
+    let resolved_module_def = ? file_def.find_module_def(typed_module)
+    if resolved_module_def.structs.len == 0:
+      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
+    elif resolved_module_def.structs.len > 1:
+      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is a union")
+    else:
+      let maybe_default_struct = resolved_module_def.find_struct()
+      if maybe_default_struct.is_err:
+        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+      else:
+        let resolved_struct = maybe_default_struct.get
+        let resolved_field_module_ref = ? resolved_struct.find_field(
+            struct_get.field)
+        let resolved_field = resolved_field_module_ref.concretize(
+            resolved_module_ref.concrete_map)
+        ok(new_resolved_struct_get(resolved_variable, resolved_field))
+
+type
+  ResolvedStructPatternKind = enum
+    RSPK_DEFAULT, RSPK_NAMED
+  ResolvedStructPattern = ref object of RootObj
+    args: seq[(ResolvedArgumentDefinition, Identifier)]
+    location: Location
+    case kind: ResolvedStructPatternKind
+    of RSPK_DEFAULT: discard
+    of RSPK_NAMED: name: Identifier
+
+proc new_resolved_struct_pattern(args: seq[(ResolvedArgumentDefinition,
+    Identifier)], location: Location): ResolvedStructPattern =
+  ResolvedStructPattern(kind: RSPK_DEFAULT, args: args, location: location)
+
+proc new_resolved_struct_pattern(name: Identifier, args: seq[(
+    ResolvedArgumentDefinition, Identifier)],
+    location: Location): ResolvedStructPattern =
+  ResolvedStructPattern(kind: RSPK_NAMED, name: name, args: args,
+      location: location)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, operand: ResolvedModuleRef,
+    pattern: StructPattern): Result[ResolvedStructPattern, string] =
+  case operand.kind:
+  of RMRK_GENERIC: err(fmt"{pattern.location} match expression does not support generics")
+  of RMRK_NATIVE: err(fmt"{pattern.location} match expression does not support native module in struct pattern matching")
+  of RMRK_USER:
+    let user_module = operand.user_module
+    let resolved_operand_module = ? file_def.find_module_def(user_module)
+    if resolved_operand_module.structs.len == 0:
+      return err(fmt"{pattern.location} module `{resolved_operand_module.name.asl}` is a module and not a union")
+    if resolved_operand_module.structs.len == 1:
+      return err(fmt"{pattern.location} module `{resolved_operand_module.name.asl}` is a struct and not a union")
+
+    case pattern.kind:
+    of SPK_DEFAULT:
+      let resolved_struct = ? resolved_operand_module.find_struct()
+      let concrete_struct = resolved_struct.concretize(operand.concrete_map)
+      var resolved_fields: seq[(ResolvedArgumentDefinition, Identifier)]
+      for (key, value) in pattern.args:
+        let field = ? concrete_struct.find_field(key)
+        let value_arg = new_resolved_argument_definition(field.module_ref, value)
+        resolved_fields.add((value_arg, key))
+      ok(new_resolved_struct_pattern(resolved_fields, pattern.location))
+    of SPK_NAMED:
+      let struct_name = ? pattern.struct
+      let resolved_struct = ? resolved_operand_module.find_struct(struct_name)
+      let concrete_struct = resolved_struct.concretize(operand.concrete_map)
+      var resolved_fields: seq[(ResolvedArgumentDefinition, Identifier)]
+      for (key, value) in pattern.args:
+        let field = ? concrete_struct.find_field(key)
+        let value_arg = new_resolved_argument_definition(field.module_ref, value)
+        resolved_fields.add((value_arg, key))
+      ok(new_resolved_struct_pattern(struct_name, resolved_fields,
+          pattern.location))
+
+type
+  ResolvedCasePatternKind = enum
+    RCPK_LITERAL, RCPK_STRUCT
+  ResolvedCasePattern = ref object of RootObj
+    location: Location
+    case kind: ResolvedCasePatternKind
+    of RCPK_LITERAL:
+      native_module: TypedNativeModule
+      literal: Literal
+    of RCPK_STRUCT:
+      struct: ResolvedStructPattern
+
+proc new_resolved_case_pattern(native_module: TypedNativeModule,
+    literal: Literal, location: Location): ResolvedCasePattern =
+  ResolvedCasePattern(kind: RCPK_LITERAL, native_module: native_module,
+      literal: literal, location: location)
+
+proc new_resolved_case_pattern(struct: ResolvedStructPattern,
+    location: Location): ResolvedCasePattern =
+  ResolvedCasePattern(kind: RCPK_STRUCT, struct: struct, location: location)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, operand: ResolvedModuleRef,
+    pattern: CasePattern): Result[ResolvedCasePattern, string] =
+  case pattern.kind:
+  of CPK_LITERAL:
+    let literal = ? pattern.literal
+    case operand.kind:
+    of RMRK_GENERIC:
+      err(fmt"{pattern.location} match expression does not support generic operands")
+    of RMRK_USER:
+      err(fmt"{pattern.location} expected a struct pattern but found literal")
+    of RMRK_NATIVE:
+      let native_module = operand.native_module
+      case native_module.name.asl:
+      of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64":
+        ? native_module.validate(literal)
+        ok(new_resolved_case_pattern(native_module, literal, pattern.location))
+      else:
+        err(fmt"{pattern.location} only integer literals are supported in the case pattern")
+  of CPK_STRUCT:
+    let struct = ? pattern.struct
+    let resolved_struct_pattern = ? resolve(file_def, file, scope, operand, struct)
+    ok(new_resolved_case_pattern(resolved_struct_pattern, pattern.location))
+
+type ResolvedVariable = ref object of RootObj
+  module_ref: ResolvedModuleRef
+  name: Identifier
+
+proc new_resolved_variable(module_ref: ResolvedModuleRef,
+    name: Identifier): ResolvedVariable =
+  ResolvedVariable(module_ref: module_ref, name: name)
+
+proc returns(variable: ResolvedVariable): ResolvedModuleRef =
+  variable.module_ref
+
+proc resolve(scope: FunctionScope, variable: TypedVariable): Result[
+    ResolvedVariable, string] =
+  let resolved_module_ref = ? scope.get(variable.name)
+  ok(new_resolved_variable(resolved_module_ref, variable.name))
+
+type
+  ResolvedExpressionKind = enum
+    REK_MATCH, REK_FNCALL, REK_INIT, REK_STRUCT_GET, REK_VARIABLE
+  ResolvedExpression = ref object of RootObj
+    case kind: ResolvedExpressionKind
+    of REK_MATCH: match: ResolvedMatch
+    of REK_FNCALL: fncall: ResolvedFunctionCall
+    of REK_INIT: init: ResolvedInitializer
+    of REK_STRUCT_GET: struct_get: ResolvedStructGet
+    of REK_VARIABLE: variable: ResolvedVariable
+  ResolvedStatement = ref object of RootObj
+    arg: Identifier
+    expression: ResolvedExpression
+  ResolvedCase = ref object of RootObj
+    pattern: ResolvedCasePattern
+    statements: seq[ResolvedStatement]
+    location: Location
+  ResolvedElse = ref object of RootObj
+    location: Location
+    statements: seq[ResolvedStatement]
+  ResolvedMatchKind = enum
+    RMK_CASE_ONLY, RMK_COMPLETE
+  ResolvedMatch = ref object of RootObj
+    location: Location
+    operand: ResolvedArgumentDefinition
+    case_blocks: seq[ResolvedCase]
+    case kind: ResolvedMatchKind
+    of RMK_CASE_ONLY: discard
+    of RMK_COMPLETE: else_block: ResolvedElse
+
+proc new_resolved_expression(match: ResolvedMatch): ResolvedExpression =
+  ResolvedExpression(kind: REK_MATCH, match: match)
+
+proc new_resolved_expression(fncall: ResolvedFunctionCall): ResolvedExpression =
+  ResolvedExpression(kind: REK_FNCALL, fncall: fncall)
+
+proc new_resolved_expression(init: ResolvedInitializer): ResolvedExpression =
+  ResolvedExpression(kind: REK_INIT, init: init)
+
+proc new_resolved_expression(struct_get: ResolvedStructGet): ResolvedExpression =
+  ResolvedExpression(kind: REK_STRUCT_GET, struct_get: struct_get)
+
+proc new_resolved_expression(variable: ResolvedVariable): ResolvedExpression =
+  ResolvedExpression(kind: REK_VARIABLE, variable: variable)
+
+proc returns(match: ResolvedMatch): ResolvedModuleRef
+
+proc returns(expression: ResolvedExpression): ResolvedModuleRef =
+  case expression.kind:
+  of REK_MATCH: expression.match.returns
+  of REK_FNCALL: expression.fncall.returns
+  of REK_INIT: expression.init.returns
+  of REK_STRUCT_GET: expression.struct_get.returns
+  of REK_VARIABLE: expression.variable.returns
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, match: TypedMatch): Result[ResolvedMatch, string]
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, expression: TypedExpression): Result[
+        ResolvedExpression, string] =
+  case expression.kind:
+  of TEK_FNCALL:
+    let fncall = ? expression.fncall
+    let resolved_function_call = ? resolve(file_def, file, module_def, module,
+        scope, fncall)
+    ok(new_resolved_expression(resolved_function_call))
+  of TEK_INIT:
+    let init = ? expression.init
+    let resolved_init = ? resolve(file_def, file, module_def, module, scope, init)
+    ok(new_resolved_expression(resolved_init))
+  of TEK_STRUCT_GET:
+    let struct_get = ? expression.struct_get
+    let resolved_struct_get = ? resolve(file_def, file, module_def, module,
+        scope, struct_get)
+    ok(new_resolved_expression(resolved_struct_get))
+  of TEK_VARIABLE:
+    let variable = ? expression.variable
+    let resolved_variable = ? resolve(scope, variable)
+    ok(new_resolved_expression(resolved_variable))
+  of TEK_MATCH:
+    let match = ? expression.match
+    let resolved_match = ? resolve(file_def, file, module_def, module, scope, match)
+    ok(new_resolved_expression(resolved_match))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, match: TypedMatch): Result[ResolvedMatch, string]
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, expression: TypedExpression): Result[
+    ResolvedExpression, string] =
+  case expression.kind:
+  of TEK_FNCALL:
+    let fncall = ? expression.fncall
+    let resolved_function_call = ? resolve(file_def, file, scope, fncall)
+    ok(new_resolved_expression(resolved_function_call))
+  of TEK_INIT:
+    let init = ? expression.init
+    let resolved_init = ? resolve(file_def, file, scope, init)
+    ok(new_resolved_expression(resolved_init))
+  of TEK_STRUCT_GET:
+    let struct_get = ? expression.struct_get
+    let resolved_struct_get = ? resolve(file_def, file, scope, struct_get)
+    ok(new_resolved_expression(resolved_struct_get))
+  of TEK_VARIABLE:
+    let variable = ? expression.variable
+    let resolved_variable = ? resolve(scope, variable)
+    ok(new_resolved_expression(resolved_variable))
+  of TEK_MATCH:
+    let match = ? expression.match
+    let resolved_match = ? resolve(file_def, file, scope, match)
+    ok(new_resolved_expression(resolved_match))
+
+# Statement
+proc new_resolved_statement(arg: Identifier,
+    expression: ResolvedExpression): ResolvedStatement =
+  ResolvedStatement(arg: arg, expression: expression)
+
+proc returns(statement: ResolvedStatement): ResolvedModuleRef =
+  statement.expression.returns
+
+proc return_arg(statement: ResolvedStatement): ResolvedArgumentDefinition =
+  new_resolved_argument_definition(statement.expression.returns, statement.arg)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+        scope: FunctionScope, statement: TypedStatement): Result[
+            ResolvedStatement, string] =
+  let resolved_expression = ? resolve(file_def, file, module_def, module, scope,
+      statement.expression)
+  ok(new_resolved_statement(statement.arg, resolved_expression))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, statement: TypedStatement): Result[ResolvedStatement, string] =
+  let resolved_expression = ? resolve(file_def, file, scope,
+      statement.expression)
+  ok(new_resolved_statement(statement.arg, resolved_expression))
+
+# Case
+proc new_resolved_case(pattern: ResolvedCasePattern, statements: seq[
+    ResolvedStatement], location: Location): ResolvedCase =
+  ResolvedCase(pattern: pattern, statements: statements, location: location)
+
+proc returns(case_block: ResolvedCase): ResolvedModuleRef =
+  case_block.statements[^1].returns
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, operand: ResolvedModuleRef,
+    case_block: TypedCase): Result[ResolvedCase, string] =
+  var case_scope = scope.clone()
+  let resolved_case_pattern = ? resolve(file_def, file, scope, operand,
+      case_block.pattern)
+
+  case resolved_case_pattern.kind:
+  of RCPK_LITERAL: discard
+  of RCPK_STRUCT:
+    let resolved_struct_pattern = resolved_case_pattern.struct
+    for (field, name) in resolved_struct_pattern.args:
+      case_scope = ? case_scope.set(field)
+
+  var resolved_statements: seq[ResolvedStatement]
+  for statement in case_block.statements:
+    let resolved_statement = ? resolve(file_def, file, module_def, module,
+        case_scope, statement)
+    resolved_statements.add(resolved_statement)
+    case_scope = ? case_scope.set(resolved_statement.return_arg)
+  ok(new_resolved_case(resolved_case_pattern, resolved_statements,
+      case_block.location))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, operand: ResolvedModuleRef,
+    case_block: TypedCase): Result[ResolvedCase, string] =
+  var case_scope = scope.clone()
+  let resolved_case_pattern = ? resolve(file_def, file, scope, operand,
+      case_block.pattern)
+  case resolved_case_pattern.kind:
+  of RCPK_LITERAL: discard
+  of RCPK_STRUCT:
+    let resolved_struct_pattern = resolved_case_pattern.struct
+    for (field, name) in resolved_struct_pattern.args:
+      case_scope = ? case_scope.set(field)
+
+  var resolved_statements: seq[ResolvedStatement]
+  for statement in case_block.statements:
+    let resolved_statement = ? resolve(file_def, file, case_scope, statement)
+    resolved_statements.add(resolved_statement)
+    case_scope = ? case_scope.set(resolved_statement.return_arg)
+  ok(new_resolved_case(resolved_case_pattern, resolved_statements,
+      case_block.location))
+
+# Else
+proc new_resolved_else(statements: seq[ResolvedStatement],
+    location: Location): ResolvedElse =
+  ResolvedElse(statements: statements, location: location)
+
+proc returns(else_block: ResolvedElse): ResolvedModuleRef =
+  else_block.statements[^1].returns
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, else_block: TypedElse): Result[ResolvedElse, string] =
+  var else_scope = scope.clone()
+  var resolved_statements: seq[ResolvedStatement]
+  for statement in else_block.statements:
+    let resolved_statement = ? resolve(file_def, file, module_def, module,
+        else_scope, statement)
+    resolved_statements.add(resolved_statement)
+    else_scope = ? else_scope.set(resolved_statement.return_arg)
+  ok(new_resolved_else(resolved_statements, else_block.location))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, else_block: TypedElse): Result[ResolvedElse, string] =
+  var else_scope = scope.clone()
+  var resolved_statements: seq[ResolvedStatement]
+  for statement in else_block.statements:
+    let resolved_statement = ? resolve(file_def, file, else_scope, statement)
+    resolved_statements.add(resolved_statement)
+    else_scope = ? else_scope.set(resolved_statement.return_arg)
+  ok(new_resolved_else(resolved_statements, else_block.location))
+
+# Match
+proc new_resolved_match(operand: ResolvedArgumentDefinition, case_blocks: seq[
+    ResolvedCase], else_block: ResolvedElse,
+    location: Location): ResolvedMatch =
+  ResolvedMatch(kind: RMK_COMPLETE, operand: operand, case_blocks: case_blocks,
+      else_block: else_block, location: location)
+
+proc new_resolved_match(operand: ResolvedArgumentDefinition, case_blocks: seq[
+    ResolvedCase], location: Location): ResolvedMatch =
+  ResolvedMatch(kind: RMK_CASE_ONLY, operand: operand, case_blocks: case_blocks,
+      location: location)
+
+proc returns(match: ResolvedMatch): ResolvedModuleRef =
+  match.case_blocks[0].returns
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+    scope: FunctionScope, match: TypedMatch): Result[ResolvedMatch, string] =
+  let resolved_operand_module_ref = ? scope.get(match.operand)
+  let resolved_operand = new_resolved_argument_definition(
+      resolved_operand_module_ref, match.operand)
+  case match.kind:
+  of TMK_CASE_ONLY:
+    var resolved_case_blocks: seq[ResolvedCase]
+    for case_block in match.case_blocks:
+      let resolved_case_block = ? resolve(file_def, file, module_def, module,
+          scope, resolved_operand_module_ref, case_block)
+      resolved_case_blocks.add(resolved_case_block)
+
+      # NOTE: Ensure all the case block returns type is same.
+      for case_block in resolved_case_blocks:
+        if case_block.returns != resolved_case_blocks[0].returns:
+          return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+    ok(new_resolved_match(resolved_operand, resolved_case_blocks,
+        match.location))
+  of TMK_COMPLETE:
+    var resolved_case_blocks: seq[ResolvedCase]
+    for case_block in match.case_blocks:
+      let resolved_case_block = ? resolve(file_def, file, module_def, module,
+          scope, resolved_operand_module_ref, case_block)
+      resolved_case_blocks.add(resolved_case_block)
+    # TODO: Apply uniqueness checks for case blocks
+
+    let else_block = ? match.else_block
+    let resolved_else_block = ? resolve(file_def, file, module_def, module,
+        scope, else_block)
+
+    # NOTE: Ensure all the case block returns type is same.
+    for case_block in resolved_case_blocks:
+      if case_block.returns != resolved_else_block.returns:
+        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+    ok(new_resolved_match(resolved_operand, resolved_case_blocks,
+        resolved_else_block, match.location))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    scope: FunctionScope, match: TypedMatch): Result[ResolvedMatch, string] =
+  let resolved_operand_module_ref = ? scope.get(match.operand)
+  let resolved_operand = new_resolved_argument_definition(
+      resolved_operand_module_ref, match.operand)
+  case match.kind:
+  of TMK_CASE_ONLY:
+    var resolved_case_blocks: seq[ResolvedCase]
+    for case_block in match.case_blocks:
+      let resolved_case_block = ? resolve(file_def, file, scope,
+          resolved_operand_module_ref, case_block)
+      resolved_case_blocks.add(resolved_case_block)
+
+      # NOTE: Ensure all the case block returns type is same.
+      for case_block in resolved_case_blocks:
+        if case_block.returns != resolved_case_blocks[0].returns:
+          return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+    ok(new_resolved_match(resolved_operand, resolved_case_blocks,
+        match.location))
+  of TMK_COMPLETE:
+    var resolved_case_blocks: seq[ResolvedCase]
+    for case_block in match.case_blocks:
+      let resolved_case_block = ? resolve(file_def, file, scope,
+          resolved_operand_module_ref, case_block)
+      resolved_case_blocks.add(resolved_case_block)
+    # TODO: Apply uniqueness checks for case blocks
+
+    let else_block = ? match.else_block
+    let resolved_else_block = ? resolve(file_def, file, scope, else_block)
+
+    # NOTE: Ensure all the case block returns type is same.
+    for case_block in resolved_case_blocks:
+      if case_block.returns != resolved_else_block.returns:
+        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+    ok(new_resolved_match(resolved_operand, resolved_case_blocks,
+        resolved_else_block, match.location))
+
+type ResolvedFunction = ref object of RootObj
+  def: ResolvedFunctionDefinition
+  steps: seq[ResolvedStatement]
+
+proc new_resolved_function(def: ResolvedFunctionDefinition, steps: seq[
+    ResolvedStatement]): ResolvedFunction =
+  ResolvedFunction(def: def, steps: steps)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule,
+        function: TypedFunction): Result[ResolvedFunction, string] =
+  var scope = FunctionScope()
+  let resolved_function_def = ? module_def.find_function_def(function.def)
+  for arg in resolved_function_def.args:
+    scope = ? scope.set(arg)
+
+  var resolved_steps: seq[ResolvedStatement]
+  for step in function.steps:
+    let resolved_function_step = ? resolve(file_def, file, module_def, module,
+        scope, step)
+    resolved_steps.add(resolved_function_step)
+    scope = ? scope.set(resolved_function_step.return_arg)
+  ok(new_resolved_function(resolved_function_def, resolved_steps))
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    function: TypedFunction): Result[ResolvedFunction, string] =
+  var scope = FunctionScope()
+  let resolved_function_def = ? file_def.find_function_def(function.def)
+  for arg in resolved_function_def.args:
+    scope = ? scope.set(arg)
+
+  var resolved_steps: seq[ResolvedStatement]
+  for step in function.steps:
+    let resolved_function_step = ? resolve(file_def, file, scope, step)
+    resolved_steps.add(resolved_function_step)
+    scope = ? scope.set(resolved_function_step.return_arg)
+  ok(new_resolved_function(resolved_function_def, resolved_steps))
+
+type ResolvedModule = ref object of RootObj
+  def: ResolvedModuleDefinition
+  functions: seq[ResolvedFunction]
+
+proc new_resolved_module(def: ResolvedModuleDefinition, functions: seq[
+    ResolvedFunction]): ResolvedModule =
+  ResolvedModule(def: def, functions: functions)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
+    module_def: ResolvedModuleDefinition, module: TypedModule): Result[
+        ResolvedModule, string] =
   var resolved_functions: seq[ResolvedFunction]
   for function in module.functions:
-    let resolved_function = ? resolve(file, module, function)
+    let resolved_function = ? resolve(file_def, file, module_def, module, function)
     resolved_functions.add(resolved_function)
+  ok(new_resolved_module(module_def, resolved_functions))
 
-  ok(new_resolved_module(module, resolved_generics, resolved_structs,
-      resolved_functions))
+type ResolvedFile = ref object of RootObj
+  modules: seq[ResolvedModule]
+  functions: seq[ResolvedFunction]
 
-proc resolve*(file: ast.File): Result[ResolvedFile, string] =
+proc new_resolved_file(modules: seq[ResolvedModule], functions: seq[
+    ResolvedFunction]): ResolvedFile =
+  ResolvedFile(modules: modules, functions: functions)
+
+proc resolve(file_def: ResolvedFileDefinition, file: TypedFile): Result[
+    ResolvedFile, string] =
   var resolved_modules: seq[ResolvedModule]
-  for module in file.user_modules:
-    let resolved_module = ? resolve(file, module)
+  for module in file.modules:
+    let module_def = ? file_def.find_module_def(module)
+    let resolved_module = ? resolve(file_def, file, module_def, module)
     resolved_modules.add(resolved_module)
 
   var resolved_functions: seq[ResolvedFunction]
   for function in file.functions:
-    let resolved_function = ? resolve(file, function)
+    let resolved_function = ? resolve(file_def, file, function)
     resolved_functions.add(resolved_function)
+  ok(new_resolved_file(resolved_modules, resolved_functions))
 
-  ok(new_resolved_file(file, resolved_modules, resolved_functions))
+proc resolve*(file: TypedFile): Result[void, string] =
+  let resolved_file_def = ? resolve_def(file)
+  let resolved_file = ? resolve(resolved_file_def, file)
+  ok()

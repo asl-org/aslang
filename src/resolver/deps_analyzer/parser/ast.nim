@@ -404,7 +404,13 @@ proc new_argument*(literal: Literal): Argument =
 proc new_argument*(variable: Identifier): Argument =
   Argument(kind: AK_VARIABLE, variable: variable)
 
+proc location*(arg: Argument): Location =
+  case arg.kind:
+  of AK_LITERAL: arg.literal.location
+  of AK_VARIABLE: arg.variable.location
+
 proc kind*(arg: Argument): ArgumentKind = arg.kind
+
 proc variable*(arg: Argument): Result[Identifier, string] =
   case arg.kind:
   of AK_LITERAL: err("{arg.location} [PE118] expected argument to be a variable but found literal `{arg.literal.asl}`")
@@ -415,12 +421,7 @@ proc literal*(arg: Argument): Result[Literal, string] =
   of AK_LITERAL: ok(arg.literal)
   of AK_VARIABLE: err("{arg.location} [PE119] expected argument to be a literal but found variable `{arg.variable.asl}`")
 
-proc location*(arg: Argument): Location =
-  case arg.kind:
-  of AK_LITERAL: arg.literal.location
-  of AK_VARIABLE: arg.variable.location
-
-proc asl(arg: Argument): string =
+proc asl*(arg: Argument): string =
   case arg.kind:
   of AK_LITERAL: arg.literal.asl
   of AK_VARIABLE: arg.variable.asl
@@ -512,7 +513,7 @@ proc location(kwarg: KeywordArgument): Location =
 proc name*(kwarg: KeywordArgument): Identifier = kwarg.name
 proc value*(kwarg: KeywordArgument): Argument = kwarg.value
 
-proc asl(kwarg: KeywordArgument): string =
+proc asl*(kwarg: KeywordArgument): string =
   fmt"{kwarg.name.asl}: {kwarg.value.asl}"
 
 type
@@ -630,9 +631,10 @@ type
   StructPatternKind* = enum
     SPK_DEFAULT, SPK_NAMED
   StructPattern* = ref object of RootObj
+    location: Location
     args: seq[(Identifier, Identifier)]
     case kind: StructPatternKind
-    of SPK_DEFAULT: location: Location
+    of SPK_DEFAULT: discard
     of SPK_NAMED: struct: Identifier
 
 proc new_struct_pattern*(args: seq[(Identifier, Identifier)],
@@ -661,15 +663,12 @@ proc new_struct_pattern*(struct: Identifier, pattern: StructPattern): Result[
     StructPattern, string] =
   case pattern.kind:
   of SPK_DEFAULT:
-    ok(StructPattern(kind: SPK_NAMED, struct: struct, args: pattern.args))
+    ok(StructPattern(kind: SPK_NAMED, location: struct.location, struct: struct,
+        args: pattern.args))
   of SPK_NAMED:
     err(fmt"{struct.location} [PE129] [UNREACHABLE] named struct pattern can not be converted to another named struct pattern")
 
-proc location*(pattern: StructPattern): Location =
-  case pattern.kind:
-  of SPK_DEFAULT: pattern.location
-  of SPK_NAMED: pattern.struct.location
-
+proc location*(pattern: StructPattern): Location = pattern.location
 proc kind*(pattern: StructPattern): StructPatternKind = pattern.kind
 proc args*(pattern: StructPattern): seq[(Identifier, Identifier)] = pattern.args
 proc struct*(pattern: StructPattern): Result[Identifier, string] =
