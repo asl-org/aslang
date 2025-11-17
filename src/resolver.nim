@@ -1,8 +1,5 @@
 import results, sequtils, strformat, tables, hashes, strutils, sets
 
-import resolver/resolved_ast
-export resolved_ast
-
 import resolver/deps_analyzer
 export deps_analyzer
 
@@ -1117,6 +1114,11 @@ proc new_resolved_struct_pattern(name: Identifier, args: seq[(
   ResolvedStructPattern(kind: RSPK_NAMED, name: name, args: args,
       location: location)
 
+proc hash(pattern: ResolvedStructPattern): Hash =
+  case pattern.kind:
+  of RSPK_DEFAULT: "".hash
+  of RSPK_NAMED: pattern.name.asl.hash
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     scope: FunctionScope, operand: ResolvedModuleRef,
     pattern: StructPattern): Result[ResolvedStructPattern, string] =
@@ -1173,6 +1175,14 @@ proc new_resolved_case_pattern(native_module: TypedNativeModule,
 proc new_resolved_case_pattern(struct: ResolvedStructPattern,
     location: Location): ResolvedCasePattern =
   ResolvedCasePattern(kind: RCPK_STRUCT, struct: struct, location: location)
+
+proc hash(pattern: ResolvedCasePattern): Hash =
+  case pattern.kind:
+  of RCPK_LITERAL: pattern.literal.asl.hash
+  of RCPK_STRUCT: pattern.struct.hash
+
+proc `==`(self: ResolvedCasePattern, other: ResolvedCasePattern): bool =
+  self.hash == other.hash
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     scope: FunctionScope, operand: ResolvedModuleRef,
@@ -1466,10 +1476,30 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
           scope, resolved_operand_module_ref, case_block)
       resolved_case_blocks.add(resolved_case_block)
 
+    var unique_patterns: Table[ResolvedCasePattern, ResolvedCase]
+    for case_block in resolved_case_blocks:
       # NOTE: Ensure all the case block returns type is same.
-      for case_block in resolved_case_blocks:
-        if case_block.returns != resolved_case_blocks[0].returns:
-          return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+      if case_block.returns != resolved_case_blocks[0].returns:
+        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+      # NOTE: Detect duplicate patterns
+      if case_block.pattern in unique_patterns:
+        let prev_case_block = unique_patterns[case_block.pattern]
+        return err(fmt"{case_block.location} duplicate case block found at `{prev_case_block.location}`")
+      else:
+        unique_patterns[case_block.pattern] = case_block
+
+    # NOTE: Make sure all the cases are covered
+    case resolved_operand_module_ref.kind:
+    of RMRK_GENERIC:
+      return err(fmt"{match.location} match expression does not support generic operands")
+    of RMRK_NATIVE:
+      return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+    of RMRK_USER:
+      let user_module = resolved_operand_module_ref.user_module
+      let resolved_operand_module = ? file_def.find_module_def(user_module)
+      if unique_patterns.len < resolved_operand_module.structs.len:
+        return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
 
     ok(new_resolved_match(resolved_operand, resolved_case_blocks,
         match.location))
@@ -1479,16 +1509,33 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
       let resolved_case_block = ? resolve(file_def, file, module_def, module,
           scope, resolved_operand_module_ref, case_block)
       resolved_case_blocks.add(resolved_case_block)
-    # TODO: Apply uniqueness checks for case blocks
 
     let else_block = ? match.else_block
     let resolved_else_block = ? resolve(file_def, file, module_def, module,
         scope, else_block)
 
-    # NOTE: Ensure all the case block returns type is same.
+    var unique_patterns: Table[ResolvedCasePattern, ResolvedCase]
     for case_block in resolved_case_blocks:
       if case_block.returns != resolved_else_block.returns:
         return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+      # NOTE: Detect duplicate patterns
+      if case_block.pattern in unique_patterns:
+        let prev_case_block = unique_patterns[case_block.pattern]
+        return err(fmt"{case_block.location} duplicate case block found at `{prev_case_block.location}`")
+      else:
+        unique_patterns[case_block.pattern] = case_block
+
+    # NOTE: Make sure all the cases are covered
+    case resolved_operand_module_ref.kind:
+    of RMRK_GENERIC:
+      return err(fmt"{match.location} match expression does not support generic operands")
+    of RMRK_NATIVE: discard
+    of RMRK_USER:
+      let user_module = resolved_operand_module_ref.user_module
+      let resolved_operand_module = ? file_def.find_module_def(user_module)
+      if unique_patterns.len == resolved_operand_module.structs.len:
+        return err(fmt"{match.location} match expression already covers all cases, else block is not required")
 
     ok(new_resolved_match(resolved_operand, resolved_case_blocks,
         resolved_else_block, match.location))
@@ -1506,10 +1553,29 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
           resolved_operand_module_ref, case_block)
       resolved_case_blocks.add(resolved_case_block)
 
-      # NOTE: Ensure all the case block returns type is same.
-      for case_block in resolved_case_blocks:
-        if case_block.returns != resolved_case_blocks[0].returns:
-          return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+    var unique_patterns: Table[ResolvedCasePattern, ResolvedCase]
+    for case_block in resolved_case_blocks:
+      if case_block.returns != resolved_case_blocks[0].returns:
+        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+      # NOTE: Detect duplicate patterns
+      if case_block.pattern in unique_patterns:
+        let prev_case_block = unique_patterns[case_block.pattern]
+        return err(fmt"{case_block.location} duplicate case block found at `{prev_case_block.location}`")
+      else:
+        unique_patterns[case_block.pattern] = case_block
+
+    # NOTE: Make sure all the cases are covered
+    case resolved_operand_module_ref.kind:
+    of RMRK_GENERIC:
+      return err(fmt"{match.location} match expression does not support generic operands")
+    of RMRK_NATIVE:
+      return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+    of RMRK_USER:
+      let user_module = resolved_operand_module_ref.user_module
+      let resolved_operand_module = ? file_def.find_module_def(user_module)
+      if unique_patterns.len < resolved_operand_module.structs.len:
+        return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
 
     ok(new_resolved_match(resolved_operand, resolved_case_blocks,
         match.location))
@@ -1519,15 +1585,32 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
       let resolved_case_block = ? resolve(file_def, file, scope,
           resolved_operand_module_ref, case_block)
       resolved_case_blocks.add(resolved_case_block)
-    # TODO: Apply uniqueness checks for case blocks
 
     let else_block = ? match.else_block
     let resolved_else_block = ? resolve(file_def, file, scope, else_block)
 
-    # NOTE: Ensure all the case block returns type is same.
+    var unique_patterns: Table[ResolvedCasePattern, ResolvedCase]
     for case_block in resolved_case_blocks:
       if case_block.returns != resolved_else_block.returns:
         return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+
+      # NOTE: Detect duplicate patterns
+      if case_block.pattern in unique_patterns:
+        let prev_case_block = unique_patterns[case_block.pattern]
+        return err(fmt"{case_block.location} duplicate case block found at `{prev_case_block.location}`")
+      else:
+        unique_patterns[case_block.pattern] = case_block
+
+    # NOTE: Make sure all the cases are covered
+    case resolved_operand_module_ref.kind:
+    of RMRK_GENERIC:
+      return err(fmt"{match.location} match expression does not support generic operands")
+    of RMRK_NATIVE: discard
+    of RMRK_USER:
+      let user_module = resolved_operand_module_ref.user_module
+      let resolved_operand_module = ? file_def.find_module_def(user_module)
+      if unique_patterns.len == resolved_operand_module.structs.len:
+        return err(fmt"{match.location} match expression already covers all cases, else block is not required")
 
     ok(new_resolved_match(resolved_operand, resolved_case_blocks,
         resolved_else_block, match.location))
