@@ -1,8 +1,5 @@
 import results, sequtils, strformat, tables, hashes, strutils, sets
 
-import resolver/resolved_ast
-export resolved_ast
-
 import resolver/deps_analyzer
 export deps_analyzer
 

@@ -647,7 +647,7 @@ proc module_deps(function: TypedFunction): HashSet[UserModule] =
 proc def*(function: TypedFunction): TypedFunctionDefinition = function.def
 proc steps*(function: TypedFunction): seq[TypedStatement] = function.steps
 
-proc assign_type(file: ast.File, optional_module: Option[UserModule],
+proc assign_type(file: parser.File, optional_module: Option[UserModule],
     module_name: Identifier): Result[TypedModuleRef, string] =
   # NOTE: For handling generics that are only defined in a module
   if optional_module.is_some:
@@ -666,7 +666,7 @@ proc assign_type(file: ast.File, optional_module: Option[UserModule],
     let user_module = ? arg_module.user_module
     ok(new_typed_module_ref(user_module, module_name.location))
 
-proc assign_type(file: ast.File, optional_module: Option[UserModule],
+proc assign_type(file: parser.File, optional_module: Option[UserModule],
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
   case module_ref.kind:
   of MRK_SIMPLE: assign_type(file, optional_module, module_ref.module)
@@ -679,29 +679,30 @@ proc assign_type(file: ast.File, optional_module: Option[UserModule],
       typed_children.add(typed_child)
     ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
   assign_type(file, some(module), module_ref)
 
-proc assign_type(file: ast.File, module_ref: ModuleRef): Result[TypedModuleRef, string] =
+proc assign_type(file: parser.File, module_ref: ModuleRef): Result[
+    TypedModuleRef, string] =
   assign_type(file, none(UserModule), module_ref)
 
-proc assign_type(file: ast.File, module: UserModule, generic: Generic,
+proc assign_type(file: parser.File, module: UserModule, generic: Generic,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
-proc assign_type(file: ast.File, arg: ArgumentDefinition): Result[
+proc assign_type(file: parser.File, arg: ArgumentDefinition): Result[
     TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
-proc assign_type(file: ast.File, module: UserModule, generic: Generic,
+proc assign_type(file: parser.File, module: UserModule, generic: Generic,
     def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
   var typed_args: seq[TypedArgumentDefinition]
   for arg in def.args:
@@ -710,7 +711,7 @@ proc assign_type(file: ast.File, module: UserModule, generic: Generic,
   let typed_return = ? assign_type(file, module, def.returns)
   ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
   var typed_args: seq[TypedArgumentDefinition]
   for arg in def.args:
@@ -719,7 +720,7 @@ proc assign_type(file: ast.File, module: UserModule,
   let typed_return = ? assign_type(file, module, def.returns)
   ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
 
-proc assign_type(file: ast.File, def: FunctionDefinition): Result[
+proc assign_type(file: parser.File, def: FunctionDefinition): Result[
     TypedFunctionDefinition, string] =
   var typed_args: seq[TypedArgumentDefinition]
   for arg in def.args:
@@ -728,40 +729,41 @@ proc assign_type(file: ast.File, def: FunctionDefinition): Result[
   let typed_return = ? assign_type(file, def.returns)
   ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     init: LiteralInit): Result[TypedLiteralInit, string] =
   let module_ref = ? assign_type(file, module, init.module)
   ok(new_typed_literal_init(module_ref, init.literal))
 
-proc assign_type(file: ast.File, init: LiteralInit): Result[
+proc assign_type(file: parser.File, init: LiteralInit): Result[
     TypedLiteralInit, string] =
   let module_ref = ? assign_type(file, init.module)
   ok(new_typed_literal_init(module_ref, init.literal))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     struct_ref: StructRef): Result[TypedStructRef, string] =
   let module_ref = ? assign_type(file, module, struct_ref.module)
   case struct_ref.kind:
   of SRK_DEFAULT: ok(new_typed_struct_ref(module_ref))
   of SRK_NAMED: ok(new_typed_struct_ref(module_ref, ? struct_ref.struct))
 
-proc assign_type(file: ast.File, struct_ref: StructRef): Result[TypedStructRef, string] =
+proc assign_type(file: parser.File, struct_ref: StructRef): Result[
+    TypedStructRef, string] =
   let module_ref = ? assign_type(file, struct_ref.module)
   case struct_ref.kind:
   of SRK_DEFAULT: ok(new_typed_struct_ref(module_ref))
   of SRK_NAMED: ok(new_typed_struct_ref(module_ref, ? struct_ref.struct))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     init: StructInit): Result[TypedStructInit, string] =
   let struct_ref = ? assign_type(file, module, init.struct_ref)
   ok(new_typed_struct_init(struct_ref, init.args))
 
-proc assign_type(file: ast.File, init: StructInit): Result[
+proc assign_type(file: parser.File, init: StructInit): Result[
     TypedStructInit, string] =
   let struct_ref = ? assign_type(file, init.struct_ref)
   ok(new_typed_struct_init(struct_ref, init.args))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     init: Initializer): Result[TypedInitializer, string] =
   case init.kind:
   of IK_LITERAL:
@@ -773,7 +775,7 @@ proc assign_type(file: ast.File, module: UserModule,
     let typed_struct_init = ? assign_type(file, module, struct_init)
     ok(new_typed_initializer(typed_struct_init))
 
-proc assign_type(file: ast.File, init: Initializer): Result[
+proc assign_type(file: parser.File, init: Initializer): Result[
     TypedInitializer, string] =
   case init.kind:
   of IK_LITERAL:
@@ -785,7 +787,7 @@ proc assign_type(file: ast.File, init: Initializer): Result[
     let typed_struct_init = ? assign_type(file, struct_init)
     ok(new_typed_initializer(typed_struct_init))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     fnref: FunctionRef, arity: uint): Result[TypedFunctionRef, string] =
   case fnref.kind:
   of FRK_LOCAL:
@@ -794,7 +796,7 @@ proc assign_type(file: ast.File, module: UserModule,
     let module_ref = ? assign_type(file, module, ? fnref.module)
     ok(new_typed_function_ref(module_ref, fnref.name, arity))
 
-proc assign_type(file: ast.File, fnref: FunctionRef, arity: uint): Result[
+proc assign_type(file: parser.File, fnref: FunctionRef, arity: uint): Result[
     TypedFunctionRef, string] =
   case fnref.kind:
   of FRK_LOCAL:
@@ -803,21 +805,21 @@ proc assign_type(file: ast.File, fnref: FunctionRef, arity: uint): Result[
     let module_ref = ? assign_type(file, ? fnref.module)
     ok(new_typed_function_ref(module_ref, fnref.name, arity))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     fncall: FunctionCall): Result[TypedFunctionCall, string] =
   let fnref = ? assign_type(file, module, fncall.fnref, fncall.args.len.uint)
   ok(new_typed_function_call(fnref, fncall.args))
 
-proc assign_type(file: ast.File, fncall: FunctionCall): Result[
+proc assign_type(file: parser.File, fncall: FunctionCall): Result[
     TypedFunctionCall, string] =
   let fnref = ? assign_type(file, fncall.fnref, fncall.args.len.uint)
   ok(new_typed_function_call(fnref, fncall.args))
 
 # Forward Declaration needed due to cyclic dependencies
-proc assign_type(file: ast.File, module: UserModule, match: Match): Result[
+proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
     TypedMatch, string]
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     expression: Expression): Result[TypedExpression, string] =
   case expression.kind:
   of EK_MATCH:
@@ -843,10 +845,10 @@ proc assign_type(file: ast.File, module: UserModule,
     ok(new_typed_expression(typed_variable))
 
 # Forward Declaration needed due to cyclic dependencies
-proc assign_type(file: ast.File, match: Match): Result[
+proc assign_type(file: parser.File, match: Match): Result[
     TypedMatch, string]
 
-proc assign_type(file: ast.File, expression: Expression): Result[
+proc assign_type(file: parser.File, expression: Expression): Result[
     TypedExpression, string] =
   case expression.kind:
   of EK_MATCH:
@@ -871,17 +873,17 @@ proc assign_type(file: ast.File, expression: Expression): Result[
     let typed_variable = new_typed_variable(variable)
     ok(new_typed_expression(typed_variable))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     statement: Statement): Result[TypedStatement, string] =
   let typed_expression = ? assign_type(file, module, statement.expression)
   ok(new_typed_statement(statement.arg, typed_expression))
 
-proc assign_type(file: ast.File, statement: Statement): Result[
+proc assign_type(file: parser.File, statement: Statement): Result[
     TypedStatement, string] =
   let typed_expression = ? assign_type(file, statement.expression)
   ok(new_typed_statement(statement.arg, typed_expression))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     case_block: Case): Result[TypedCase, string] =
   var typed_statements: seq[TypedStatement]
   for statement in case_block.statements:
@@ -890,7 +892,7 @@ proc assign_type(file: ast.File, module: UserModule,
   ok(new_typed_case(case_block.def.pattern, typed_statements,
       case_block.def.location))
 
-proc assign_type(file: ast.File, case_block: Case): Result[
+proc assign_type(file: parser.File, case_block: Case): Result[
     TypedCase, string] =
   var typed_statements: seq[TypedStatement]
   for statement in case_block.statements:
@@ -899,7 +901,7 @@ proc assign_type(file: ast.File, case_block: Case): Result[
   ok(new_typed_case(case_block.def.pattern, typed_statements,
       case_block.def.location))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     else_block: Else): Result[TypedElse, string] =
   var typed_statements: seq[TypedStatement]
   for statement in else_block.statements:
@@ -907,7 +909,7 @@ proc assign_type(file: ast.File, module: UserModule,
     typed_statements.add(typed_statement)
   ok(new_typed_else(typed_statements, else_block.location))
 
-proc assign_type(file: ast.File, else_block: Else): Result[
+proc assign_type(file: parser.File, else_block: Else): Result[
     TypedElse, string] =
   var typed_statements: seq[TypedStatement]
   for statement in else_block.statements:
@@ -915,7 +917,7 @@ proc assign_type(file: ast.File, else_block: Else): Result[
     typed_statements.add(typed_statement)
   ok(new_typed_else(typed_statements, else_block.location))
 
-proc assign_type(file: ast.File, module: UserModule, match: Match): Result[
+proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
     TypedMatch, string] =
   var typed_cases: seq[TypedCase]
   for case_block in match.case_blocks:
@@ -932,7 +934,7 @@ proc assign_type(file: ast.File, module: UserModule, match: Match): Result[
     ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
         typed_else, match.def.location))
 
-proc assign_type(file: ast.File, match: Match): Result[
+proc assign_type(file: parser.File, match: Match): Result[
     TypedMatch, string] =
   var typed_cases: seq[TypedCase]
   for case_block in match.case_blocks:
@@ -949,7 +951,7 @@ proc assign_type(file: ast.File, match: Match): Result[
     ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
         typed_else, match.def.location))
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     function: Function): Result[TypedFunction, string] =
   let typed_def = ? assign_type(file, module, function.def)
   var typed_steps: seq[TypedStatement]
@@ -958,7 +960,7 @@ proc assign_type(file: ast.File, module: UserModule,
     typed_steps.add(typed_step)
   ok(new_typed_function(typed_def, typed_steps))
 
-proc assign_type(file: ast.File, function: Function): Result[
+proc assign_type(file: parser.File, function: Function): Result[
     TypedFunction, string] =
   let typed_def = ? assign_type(file, function.def)
   var typed_steps: seq[TypedStatement]
@@ -1008,7 +1010,7 @@ proc find_function*(generic: TypedGeneric,
   else:
     err("failed to find function `{def.asl}`")
 
-proc assign_type(file: ast.File, module: UserModule,
+proc assign_type(file: parser.File, module: UserModule,
     generic: Generic): Result[TypedGeneric, string] =
   var typed_defs: seq[TypedFunctionDefinition]
   for def in generic.defs:
@@ -1016,7 +1018,7 @@ proc assign_type(file: ast.File, module: UserModule,
     typed_defs.add(typed_def)
   ok(new_typed_generic(generic, typed_defs, generic.location))
 
-proc assign_type(file: ast.File, module: UserModule, struct: Struct): Result[
+proc assign_type(file: parser.File, module: UserModule, struct: Struct): Result[
     TypedStruct, string] =
   var module_set: HashSet[UserModule]
   var typed_fields: seq[TypedArgumentDefinition]
@@ -1088,7 +1090,7 @@ proc find_function*(module: TypedModule, def: TypedFunctionDefinition): Result[
   else:
     err("failed to find function `{def.asl}`")
 
-proc assign_type(file: ast.File, module: UserModule): Result[TypedModule, string] =
+proc assign_type(file: parser.File, module: UserModule): Result[TypedModule, string] =
   var generic_pairs: seq[(Generic, TypedGeneric)]
   for generic in module.generics:
     let typed_generic = ? assign_type(file, module, generic)
@@ -1117,7 +1119,7 @@ proc new_typed_native_function(native: string,
 proc native*(function: TypedNativeFunction): string = function.native
 proc def*(function: TypedNativeFunction): TypedFunctionDefinition = function.def
 
-proc assign_type(file: ast.File, module: NativeModule,
+proc assign_type(file: parser.File, module: NativeModule,
     function: NativeFunction): Result[TypedNativeFunction, string] =
   let typed_def = ? assign_type(file, function.def)
   ok(new_typed_native_function(function.native, typed_def))
@@ -1180,7 +1182,7 @@ proc validate*(module: TypedNativeModule, literal: Literal): Result[void, string
     let string_literal = ? literal.string_literal
     validate(module, string_literal)
 
-proc assign_type(file: ast.File, module: NativeModule): Result[
+proc assign_type(file: parser.File, module: NativeModule): Result[
     TypedNativeModule, string] =
   var typed_functions: seq[TypedNativeFunction]
   for function in module.functions:
@@ -1233,7 +1235,7 @@ proc find_module*(file: TypedFile, module: NativeModule): Result[
   else:
     err("failed to find native module `{module.name.asl}`")
 
-proc assign_type*(file: ast.File): Result[TypedFile, string] =
+proc assign_type*(file: parser.File): Result[TypedFile, string] =
   var native_modules: seq[(NativeModule, TypedNativeModule)]
   for module in file.native_modules:
     let typed_module = ? assign_type(file, module)
