@@ -282,10 +282,10 @@ proc new_signed_integer*(sign: Token, unsigned_integer: UnsignedIntegerLiteral):
     SignedIntegerLiteral, string] =
   case sign.kind:
   of TK_PLUS:
-    ok(SignedIntegerLiteral(kind: SIK_NEGATIVE, value: unsigned_integer.value,
+    ok(SignedIntegerLiteral(kind: SIK_POSITIVE, value: unsigned_integer.value,
         location: sign.location))
   of TK_MINUS:
-    ok(SignedIntegerLiteral(kind: SIK_POSITIVE, value: unsigned_integer.value,
+    ok(SignedIntegerLiteral(kind: SIK_NEGATIVE, value: unsigned_integer.value,
         location: sign.location))
   else:
     return err(fmt"{sign.location} [PE113] expected a sign `+` or `-` but found {sign.value}")
@@ -827,10 +827,10 @@ proc asl(match: Match, indent: string): seq[string]
 proc asl(expression: Expression, indent: string): seq[string] =
   case expression.kind:
   of EK_MATCH: expression.match.asl(indent)
-  of EK_FNCALL: @[indent & expression.fncall.asl]
-  of EK_INIT: @[indent & expression.init.asl]
-  of EK_STRUCT_GET: @[indent & expression.struct_get.asl]
-  of EK_VARIABLE: @[indent & expression.variable.asl]
+  of EK_FNCALL: @[expression.fncall.asl]
+  of EK_INIT: @[expression.init.asl]
+  of EK_STRUCT_GET: @[expression.struct_get.asl]
+  of EK_VARIABLE: @[expression.variable.asl]
 
 proc kind*(expression: Expression): ExpressionKind = expression.kind
 
@@ -895,7 +895,8 @@ proc asl*(case_block: Case, indent: string): seq[string] =
 
   var statements: seq[string]
   for statement in case_block.statements:
-    statements.add(statement.asl(indent))
+    for line in statement.asl(indent):
+      statements.add(indent & line)
 
   return (@[header] & statements)
 
@@ -914,7 +915,8 @@ proc asl*(else_block: Else, indent: string): seq[string] =
 
   var statements: seq[string]
   for statement in else_block.statements:
-    statements.add(statement.asl(indent))
+    for line in statement.asl(indent):
+      statements.add(indent & line)
 
   return (@[header] & statements)
 

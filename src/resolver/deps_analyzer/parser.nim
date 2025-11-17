@@ -371,7 +371,7 @@ proc literal_spec(parser: Parser): Result[Literal, string] =
 
   let maybe_float = parser.expect(float_spec)
   if maybe_float.is_ok:
-    return ok(new_literal(maybe_integer.get))
+    return ok(new_literal(maybe_float.get))
 
   let maybe_string = parser.expect(string_spec)
   if maybe_string.is_ok:
@@ -763,4 +763,6 @@ proc file_spec(parser: Parser): Result[ast.File, string] =
   new_file(parser.path, modules, functions, parser.indent)
 
 proc parse*(path: string, tokens: seq[Token]): Result[ast.File, string] =
-  Parser(path: path, tokens: tokens, indent: INDENT_SIZE).expect(file_spec)
+  let parser = Parser(path: path, tokens: tokens, indent: INDENT_SIZE)
+  let file = ? parser.expect(file_spec)
+  ok(file)
