@@ -238,6 +238,84 @@ proc identifier_spec(parser: Parser): Result[Identifier, string] =
   new_identifier(name, location)
 
 type
+  StructDefinitionKind* = enum
+    SDK_DEFAULT, SDK_NAMED
+  StructDefinition* = ref object of RootObj
+    location: Location
+    case kind: StructDefinitionKind
+    of SDK_DEFAULT: discard
+    of SDK_NAMED: name: Identifier
+
+proc new_struct_definition*(location: Location): StructDefinition =
+  StructDefinition(kind: SDK_DEFAULT, location: location)
+
+proc new_struct_definition*(name: Identifier,
+    location: Location): StructDefinition =
+  StructDefinition(kind: SDK_NAMED, name: name, location: location)
+
+proc kind*(def: StructDefinition): StructDefinitionKind = def.kind
+
+proc name(def: StructDefinition): Result[Identifier, string] =
+  case def.kind:
+  of SDK_DEFAULT: err(fmt"{def.location} expected a named struct but found anonymous struct")
+  of SDK_NAMED: ok(def.name)
+
+proc asl(def: StructDefinition): string =
+  case def.kind:
+  of SDK_DEFAULT: "struct:"
+  of SDK_NAMED: fmt"struct {def.name.asl}:"
+
+type UserModuleDefinition* = ref object of RootObj
+  name: Identifier
+  location: Location
+
+proc new_module_definition*(name: Identifier,
+    location: Location): UserModuleDefinition =
+  UserModuleDefinition(name: name, location: location)
+
+proc location*(def: UserModuleDefinition): Location =
+  def.location
+
+proc asl(def: UserModuleDefinition): string =
+  fmt"module {def.name.asl}:"
+
+proc hash(def: UserModuleDefinition): Hash =
+  def.location.hash
+
+# module spec
+proc module_definition_spec(parser: Parser): Result[UserModuleDefinition, string] =
+  let module_keyword = ? parser.expect(module_keyword_spec)
+  discard ? parser.expect(strict_space_spec)
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  ok(new_module_definition(name, module_keyword.location))
+
+proc struct_default_definition_spec(parser: Parser): Result[
+    StructDefinition, string] =
+  let struct_keyword = ? parser.expect(struct_keyword_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  ok(new_struct_definition(struct_keyword.location))
+
+proc struct_named_definition_spec(parser: Parser): Result[
+    StructDefinition, string] =
+  let struct_keyword = ? parser.expect(struct_keyword_spec)
+  discard ? parser.expect(strict_space_spec)
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  ok(new_struct_definition(name, struct_keyword.location))
+
+proc struct_definition_spec(parser: Parser): Result[
+    StructDefinition, string] =
+  let maybe_struct_default_def = parser.expect(struct_default_definition_spec)
+  if maybe_struct_default_def.is_ok:
+    maybe_struct_default_def
+  else:
+    parser.expect(struct_named_definition_spec)
+
+type
   ModuleRefKind* = enum
     MRK_SIMPLE, MRK_NESTED
   ModuleRef* = ref object of RootObj
@@ -307,6 +385,26 @@ proc hash(module_ref: ModuleRef): Hash =
       acc = acc !& hash(child)
   return acc
 
+proc module_ref_spec(parser: Parser): Result[ModuleRef, string] =
+  let module_ref = ? parser.expect(identifier_spec)
+
+  var maybe_open_square_bracket = parser.expect(open_square_bracket_spec)
+  if maybe_open_square_bracket.is_err:
+    return ok(new_module_ref(module_ref))
+
+  var children: seq[ModuleRef]
+  discard ? parser.expect(optional_space_spec)
+  children.add( ? parser.expect(module_ref_spec))
+  discard ? parser.expect(optional_space_spec)
+
+  while parser.expect(comma_spec).is_ok:
+    discard ? parser.expect(optional_space_spec)
+    children.add( ? parser.expect(module_ref_spec))
+    discard ? parser.expect(optional_space_spec)
+
+  discard ? parser.expect(close_square_bracket_spec)
+  new_module_ref(module_ref, children)
+
 type ArgumentDefinition* = ref object of RootObj
   name: Identifier
   module_ref: ModuleRef
@@ -334,33 +432,19 @@ proc asl(def: ArgumentDefinition): string =
 proc name*(def: ArgumentDefinition): Identifier = def.name
 proc hash(def: ArgumentDefinition): Hash = hash(def.module_ref)
 
-type
-  StructDefinitionKind* = enum
-    SDK_DEFAULT, SDK_NAMED
-  StructDefinition* = ref object of RootObj
-    location: Location
-    case kind: StructDefinitionKind
-    of SDK_DEFAULT: discard
-    of SDK_NAMED: name: Identifier
+proc argument_definition_spec(parser: Parser): Result[
+    ArgumentDefinition, string] =
+  let module_ref = ? parser.expect(module_ref_spec)
+  discard ? parser.expect(strict_space_spec)
+  let name = ? parser.expect(identifier_spec)
+  ok(new_argument_definition(name, module_ref))
 
-proc new_struct_definition*(location: Location): StructDefinition =
-  StructDefinition(kind: SDK_DEFAULT, location: location)
-
-proc new_struct_definition*(name: Identifier,
-    location: Location): StructDefinition =
-  StructDefinition(kind: SDK_NAMED, name: name, location: location)
-
-proc kind*(def: StructDefinition): StructDefinitionKind = def.kind
-
-proc name(def: StructDefinition): Result[Identifier, string] =
-  case def.kind:
-  of SDK_DEFAULT: err(fmt"{def.location} expected a named struct but found anonymous struct")
-  of SDK_NAMED: ok(def.name)
-
-proc asl(def: StructDefinition): string =
-  case def.kind:
-  of SDK_DEFAULT: "struct:"
-  of SDK_NAMED: fmt"struct {def.name.asl}:"
+# TODO: Fix this later.
+proc struct_field_definition_spec(parser: Parser, indent: int): Result[
+    ArgumentDefinition, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let field = ? parser.expect(argument_definition_spec)
+  ok(field)
 
 type Struct* = ref object of RootObj
   def: StructDefinition
@@ -404,6 +488,24 @@ proc asl(struct: Struct, indent: string): seq[string] =
     fields.add(indent & field.asl)
 
   return (@[header] & fields)
+
+proc struct_spec(parser: Parser, indent: int): Result[Struct, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let def = ? parser.expect(struct_definition_spec)
+  discard ? parser.expect(strict_empty_line_spec)
+
+  var fields: seq[ArgumentDefinition]
+  # NOTE: struct must always at least have 1 field.
+  fields.add( ? parser.expect(struct_field_definition_spec, indent + 1))
+  discard ? parser.expect(strict_empty_line_spec)
+
+  var maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
+  while maybe_field.is_ok:
+    fields.add(maybe_field.get)
+    discard ? parser.expect(strict_empty_line_spec)
+    maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
+
+  new_struct(def, fields)
 
 type FunctionDefinition* = ref object of RootObj
   name: Identifier
@@ -462,6 +564,42 @@ proc hash(def: FunctionDefinition): Hash =
     acc = acc !& hash(arg)
   return acc
 
+proc argument_definition_list_spec(parser: Parser): Result[seq[
+    ArgumentDefinition], string] =
+  var argdefs: seq[ArgumentDefinition]
+  discard ? parser.expect(open_paren_bracket_spec)
+  discard ? parser.expect(optional_space_spec)
+  # NOTE: Every function must have an input argument
+  argdefs.add( ? parser.expect(argument_definition_spec))
+  discard ? parser.expect(optional_space_spec)
+
+  while parser.expect(comma_spec).is_ok:
+    discard ? parser.expect(optional_space_spec)
+    argdefs.add( ? parser.expect(argument_definition_spec))
+    discard ? parser.expect(optional_space_spec)
+
+  discard ? parser.expect(close_paren_bracket_spec)
+  ok(argdefs)
+
+proc function_definition_spec(parser: Parser, indent: int): Result[
+    FunctionDefinition, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let fn_keyword = ? parser.expect(fn_keyword_spec)
+
+  discard ? parser.expect(strict_space_spec)
+  let name = ? parser.expect(identifier_spec)
+
+  discard ? parser.expect(optional_space_spec)
+  let args = ? parser.expect(argument_definition_list_spec)
+
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+
+  discard ? parser.expect(optional_space_spec)
+  let returns = ? parser.expect(module_ref_spec)
+
+  new_function_definition(name, args, returns, fn_keyword.location)
+
 type UnsignedIntegerLiteral* = ref object of RootObj
   value: string
   location: Location
@@ -471,6 +609,11 @@ proc new_unsigned_integer*(digits: Token): UnsignedIntegerLiteral =
 
 proc asl(unsigned_integer: UnsignedIntegerLiteral): string =
   unsigned_integer.value
+
+proc unsigned_integer_spec(parser: Parser): Result[UnsignedIntegerLiteral, string] =
+  # TODO: Support underscore separated values as integers as well.
+  let int_value_token = ? parser.token_spec_util(TK_DIGITS)
+  ok(new_unsigned_integer(int_value_token))
 
 type
   SignedIntegerLiteralKind* = enum
@@ -499,6 +642,18 @@ proc asl(signed_integer: SignedIntegerLiteral): string =
     of SIK_NEGATIVE: "-"
   return sign & signed_integer.value
 
+proc sign_spec(parser: Parser): Result[Token, string] =
+  let maybe_plus = parser.token_spec_util(TK_PLUS)
+  if maybe_plus.is_ok:
+    maybe_plus
+  else:
+    parser.token_spec_util(TK_MINUS)
+
+proc signed_integer_spec(parser: Parser): Result[SignedIntegerLiteral, string] =
+  var sign = ? parser.expect(sign_spec)
+  let unsigned_intvalue = ? parser.expect(unsigned_integer_spec)
+  new_signed_integer(sign, unsigned_intvalue)
+
 type
   IntegerLiteralKind* = enum
     ILK_SIGNED, ILK_UNSIGNED
@@ -507,10 +662,10 @@ type
     of ILK_SIGNED: signed: SignedIntegerLiteral
     of ILK_UNSIGNED: unsigned: UnsignedIntegerLiteral
 
-proc new_integer*(signed: SignedIntegerLiteral): IntegerLiteral =
+proc new_integer_literal*(signed: SignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ILK_SIGNED, signed: signed)
 
-proc new_integer*(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
+proc new_integer_literal*(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ILK_UNSIGNED, unsigned: unsigned)
 
 proc location(integer: IntegerLiteral): Location =
@@ -523,22 +678,38 @@ proc asl*(integer: IntegerLiteral): string =
   of ILK_SIGNED: integer.signed.asl
   of ILK_UNSIGNED: integer.unsigned.asl
 
+proc integer_spec(parser: Parser): Result[IntegerLiteral, string] =
+  let maybe_unsigned_integer = parser.expect(unsigned_integer_spec)
+  if maybe_unsigned_integer.is_ok:
+    ok(new_integer_literal(maybe_unsigned_integer.get))
+  else:
+    let signed_integer = ? parser.expect(signed_integer_spec)
+    ok(new_integer_literal(signed_integer))
+
 type FloatLiteral* = ref object of RootObj
   value: string
   location: Location
 
-proc new_float*(first: IntegerLiteral, second: UnsignedIntegerLiteral): FloatLiteral =
+proc new_float_literal*(first: IntegerLiteral,
+    second: UnsignedIntegerLiteral): FloatLiteral =
   let value = first.asl & "." & second.asl
   FloatLiteral(value: value, location: first.location)
 
 proc asl*(float_literal: FloatLiteral): string =
   float_literal.value
 
+proc float_spec(parser: Parser): Result[FloatLiteral, string] =
+  # TODO: Improve float parsing to support scientific notation as well.
+  let first = ? parser.expect(integer_spec)
+  discard ? parser.expect(dot_spec)
+  let second = ? parser.expect(unsigned_integer_spec)
+  ok(new_float_literal(first, second))
+
 type StringLiteral* = ref object of RootObj
   value: string
   location: Location
 
-proc new_string*(token: Token): Result[StringLiteral, string] =
+proc new_string_literal*(token: Token): Result[StringLiteral, string] =
   case token.kind:
   of TK_STRING:
     ok(StringLiteral(value: token.value, location: token.location))
@@ -547,6 +718,10 @@ proc new_string*(token: Token): Result[StringLiteral, string] =
 
 proc asl*(string_literal: StringLiteral): string =
   string_literal.value
+
+proc string_spec(parser: Parser): Result[StringLiteral, string] =
+  let token = ? parser.token_spec_util(TK_STRING)
+  new_string_literal(token)
 
 type
   LiteralKind* = enum
@@ -592,6 +767,19 @@ proc asl*(literal: Literal): string =
   of LK_FLOAT: literal.float_literal.asl
   of LK_STRING: literal.string_literal.asl
 
+proc literal_spec(parser: Parser): Result[Literal, string] =
+  let maybe_integer = parser.expect(integer_spec)
+  if maybe_integer.is_ok:
+    return ok(new_literal(maybe_integer.get))
+
+  let maybe_float = parser.expect(float_spec)
+  if maybe_float.is_ok:
+    return ok(new_literal(maybe_float.get))
+
+  let maybe_string = parser.expect(string_spec)
+  if maybe_string.is_ok:
+    return ok(new_literal(maybe_string.get))
+
 type
   ArgumentKind* = enum
     AK_LITERAL, AK_VARIABLE
@@ -628,6 +816,14 @@ proc asl*(arg: Argument): string =
   of AK_LITERAL: arg.literal.asl
   of AK_VARIABLE: arg.variable.asl
 
+proc argument_spec(parser: Parser): Result[Argument, string] =
+  let maybe_identifier = parser.expect(identifier_spec)
+  if maybe_identifier.is_ok:
+    ok(new_argument(maybe_identifier.get))
+  else:
+    let literal = ? parser.expect(literal_spec)
+    ok(new_argument(literal))
+
 type
   FunctionRefKind* = enum
     FRK_LOCAL, FRK_MODULE
@@ -660,6 +856,40 @@ proc module*(fnref: FunctionRef): Result[ModuleRef, string] =
   of FRK_LOCAL: err("{fnref.location} expected a module function call but found local function call")
   of FRK_MODULE: ok(fnref.module)
 
+proc function_ref_local_spec(parser: Parser): Result[FunctionRef, string] =
+  let name = ? parser.expect(identifier_spec)
+  ok(new_function_ref(name))
+
+proc function_ref_module_spec(parser: Parser): Result[FunctionRef, string] =
+  let module_ref = ? parser.expect(module_ref_spec)
+  discard ? parser.expect(dot_spec)
+  let name = ? parser.expect(identifier_spec)
+  ok(new_function_ref(name, module_ref))
+
+proc function_ref_spec(parser: Parser): Result[FunctionRef, string] =
+  let maybe_module_fnref = parser.expect(function_ref_module_spec)
+  if maybe_module_fnref.is_ok:
+    maybe_module_fnref
+  else:
+    parser.expect(function_ref_local_spec)
+
+proc argument_list_spec(parser: Parser): Result[seq[Argument], string] =
+  discard ? parser.expect(open_paren_bracket_spec)
+
+  var args: seq[Argument]
+  discard ? parser.expect(optional_space_spec)
+  # NOTE: every function call must have at least one argument
+  args.add( ? parser.expect(argument_spec))
+  discard ? parser.expect(optional_space_spec)
+
+  while parser.expect(comma_spec).is_ok:
+    discard ? parser.expect(optional_space_spec)
+    args.add( ? parser.expect(argument_spec))
+    discard ? parser.expect(optional_space_spec)
+
+  discard ? parser.expect(close_paren_bracket_spec)
+  ok(args)
+
 type FunctionCall* = ref object of RootObj
   fnref: FunctionRef
   args: seq[Argument]
@@ -686,6 +916,11 @@ proc asl*(fncall: FunctionCall): string =
   let args_str = args.join(", ")
   fmt"{fncall.fnref.asl}({args_str})"
 
+proc function_call_spec(parser: Parser): Result[FunctionCall, string] =
+  let fnref = ? parser.expect(function_ref_spec)
+  let args = ? parser.expect(argument_list_spec)
+  new_function_call(fnref, args)
+
 type LiteralInit* = ref object of RootObj
   module: ModuleRef
   literal: Literal
@@ -702,21 +937,11 @@ proc literal*(init: LiteralInit): Literal = init.literal
 proc asl*(init: LiteralInit): string =
   fmt"{init.module.asl} {init.literal.asl}"
 
-type KeywordArgument* = ref object of RootObj
-  name: Identifier
-  value: Argument
-
-proc new_keyword_argument*(name: Identifier, value: Argument): KeywordArgument =
-  KeywordArgument(name: name, value: value)
-
-proc location(kwarg: KeywordArgument): Location =
-  kwarg.name.location
-
-proc name*(kwarg: KeywordArgument): Identifier = kwarg.name
-proc value*(kwarg: KeywordArgument): Argument = kwarg.value
-
-proc asl*(kwarg: KeywordArgument): string =
-  fmt"{kwarg.name.asl}: {kwarg.value.asl}"
+proc literal_init_spec(parser: Parser): Result[LiteralInit, string] =
+  let module_ref = ? parser.expect(module_ref_spec)
+  discard ? parser.expect(strict_space_spec)
+  let literal = ? parser.expect(literal_spec)
+  ok(new_literal_init(module_ref, literal))
 
 type
   StructRefKind* = enum
@@ -747,6 +972,58 @@ proc asl(struct_ref: StructRef): string =
   case struct_ref.kind:
   of SRK_DEFAULT: struct_ref.module.asl
   of SRK_NAMED: fmt"{struct_ref.module.asl}.{struct_ref.struct.asl}"
+
+proc struct_ref_spec(parser: Parser): Result[StructRef, string] =
+  let module = ? parser.expect(module_ref_spec)
+
+  let maybe_dot = parser.expect(dot_spec)
+  if maybe_dot.is_err:
+    return ok(new_struct_ref(module))
+
+  let struct = ? parser.expect(identifier_spec)
+  ok(new_struct_ref(module, struct))
+
+type KeywordArgument* = ref object of RootObj
+  name: Identifier
+  value: Argument
+
+proc new_keyword_argument*(name: Identifier, value: Argument): KeywordArgument =
+  KeywordArgument(name: name, value: value)
+
+proc location(kwarg: KeywordArgument): Location =
+  kwarg.name.location
+
+proc name*(kwarg: KeywordArgument): Identifier = kwarg.name
+proc value*(kwarg: KeywordArgument): Argument = kwarg.value
+
+proc asl*(kwarg: KeywordArgument): string =
+  fmt"{kwarg.name.asl}: {kwarg.value.asl}"
+
+proc keyword_argument_spec(parser: Parser): Result[KeywordArgument, string] =
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  discard ? parser.expect(optional_space_spec)
+  let value = ? parser.expect(argument_spec)
+  ok(new_keyword_argument(name, value))
+
+proc keyword_argument_list_spec(parser: Parser): Result[seq[KeywordArgument], string] =
+  var args: seq[KeywordArgument]
+  discard ? parser.expect(open_curly_bracket_spec)
+
+  discard ? parser.expect(optional_space_spec)
+  # NOTE: every struct init must have at least one keyword argument
+  args.add( ? parser.expect(keyword_argument_spec))
+  discard ? parser.expect(optional_space_spec)
+  var maybe_comma = parser.expect(comma_spec)
+  while maybe_comma.is_ok:
+    discard ? parser.expect(optional_space_spec)
+    args.add( ? parser.expect(keyword_argument_spec))
+    discard ? parser.expect(optional_space_spec)
+    maybe_comma = parser.expect(comma_spec)
+
+  discard ? parser.expect(close_curly_bracket_spec)
+  ok(args)
 
 type StructInit* = ref object of RootObj
   struct_ref: StructRef
@@ -780,6 +1057,12 @@ proc asl*(init: StructInit): string =
   for arg in init.args:
     args.add(arg.asl)
   [init.struct_ref.asl, "{", args.join(", "), "}"].join(" ")
+
+proc struct_init_spec(parser: Parser): Result[StructInit, string] =
+  let struct_ref = ? parser.expect(struct_ref_spec)
+  discard ? parser.expect(optional_space_spec)
+  let kwargs = ? parser.expect(keyword_argument_list_spec)
+  new_struct_init(struct_ref, kwargs)
 
 type
   InitializerKind* = enum
@@ -815,6 +1098,14 @@ proc asl(init: Initializer): string =
   of IK_LITERAL: init.literal.asl
   of IK_STRUCT: init.struct.asl
 
+proc initializer_spec(parser: Parser): Result[Initializer, string] =
+  let maybe_literal_init = parser.expect(literal_init_spec)
+  if maybe_literal_init.is_ok:
+    ok(new_initializer(maybe_literal_init.get))
+  else:
+    let struct_init = ? parser.expect(struct_init_spec)
+    ok(new_initializer(struct_init))
+
 type StructGet* = ref object of RootObj
   name: Identifier
   field: Identifier
@@ -828,6 +1119,68 @@ proc field*(struct_get: StructGet): Identifier = struct_get.field
 
 proc asl*(struct_get: StructGet): string =
   fmt"{struct_get.name.asl}.{struct_get.field.asl}"
+
+proc struct_get_spec(parser: Parser): Result[StructGet, string] =
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(dot_spec)
+  let field = ? parser.expect(identifier_spec)
+  ok(new_struct_get(name, field))
+
+type
+  MatchDefinitionKind* = enum
+    MDK_DEFAULT, MDK_ASSIGNED
+  MatchDefinition* = ref object of RootObj
+    kind: MatchDefinitionKind
+    operand: Identifier
+    arg: Identifier
+
+proc new_match_definition*(operand: Identifier,
+    location: Location): Result[MatchDefinition, string] =
+  let arg = ? new_identifier(fmt"__asl__arg__{location.hash.to_hex}__", location)
+  ok(MatchDefinition(kind: MDK_DEFAULT, arg: arg, operand: operand))
+
+proc new_match_definition*(def: MatchDefinition,
+    arg: Identifier): MatchDefinition =
+  MatchDefinition(kind: MDK_ASSIGNED, arg: arg, operand: def.operand)
+
+proc location*(def: MatchDefinition): Location = def.arg.location
+proc operand*(def: MatchDefinition): Identifier = def.operand
+proc arg*(def: MatchDefinition): Identifier = def.arg
+
+proc asl(def: MatchDefinition): string =
+  case def.kind:
+  of MDK_DEFAULT: fmt"match {def.operand.asl}:"
+  of MDK_ASSIGNED: fmt"{def.arg.asl} = match {def.operand.asl}:"
+
+proc match_definition_default_spec(parser: Parser): Result[
+    MatchDefinition, string] =
+  let match_keyword = ? parser.expect(match_keyword_spec)
+  discard ? parser.expect(strict_space_spec)
+  let operand = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  new_match_definition(operand, match_keyword.location)
+
+proc match_definition_spec(parser: Parser): Result[MatchDefinition, string] =
+  let maybe_match_def_default = parser.expect(match_definition_default_spec)
+  if maybe_match_def_default.is_ok:
+    return maybe_match_def_default
+
+  let arg = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(equal_spec)
+  discard ? parser.expect(optional_space_spec)
+  let match_def_default = ? parser.expect(match_definition_default_spec)
+  ok(new_match_definition(match_def_default, arg))
+
+proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
+    Identifier), string] =
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  discard ? parser.expect(optional_space_spec)
+  let value = ? parser.expect(identifier_spec)
+  ok((name, value))
 
 type
   StructPatternKind* = enum
@@ -887,6 +1240,36 @@ proc asl*(pattern: StructPattern): string =
   of SPK_DEFAULT: "{ " & args.join(", ") & " }"
   of SPK_NAMED: pattern.struct.asl & " { " & args.join(", ") & " }"
 
+proc struct_pattern_default_spec(parser: Parser): Result[StructPattern, string] =
+  let open_curly = ? parser.expect(open_curly_bracket_spec)
+  discard ? parser.expect(optional_space_spec)
+
+  var keywords: seq[(Identifier, Identifier)]
+  keywords.add( ? parser.expect(keyword_value_identifier_spec))
+  discard ? parser.expect(optional_space_spec)
+  var maybe_comma = parser.expect(comma_spec)
+  while maybe_comma.is_ok:
+    discard ? parser.expect(optional_space_spec)
+    keywords.add( ? parser.expect(keyword_value_identifier_spec))
+    discard ? parser.expect(optional_space_spec)
+    maybe_comma = parser.expect(comma_spec)
+
+  discard ? parser.expect(close_curly_bracket_spec)
+  new_struct_pattern(keywords, open_curly.location)
+
+proc struct_pattern_named_spec(parser: Parser): Result[StructPattern, string] =
+  let struct = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  let struct_pattern_default = ? parser.expect(struct_pattern_default_spec)
+  new_struct_pattern(struct, struct_pattern_default)
+
+proc struct_pattern_spec(parser: Parser): Result[StructPattern, string] =
+  let maybe_struct_pattern_named = parser.expect(struct_pattern_named_spec)
+  if maybe_struct_pattern_named.is_ok:
+    maybe_struct_pattern_named
+  else:
+    parser.expect(struct_pattern_default_spec)
+
 type
   CasePatternKind* = enum
     CPK_LITERAL, CPK_STRUCT
@@ -921,6 +1304,14 @@ proc asl(pattern: CasePattern): string =
   of CPK_LITERAL: pattern.literal.asl
   of CPK_STRUCT: pattern.struct.asl
 
+proc case_pattern_spec(parser: Parser): Result[CasePattern, string] =
+  let maybe_struct_pattern = parser.expect(struct_pattern_spec)
+  if maybe_struct_pattern.is_ok:
+    ok(new_case_pattern(maybe_struct_pattern.get))
+  else:
+    let literal = ? parser.expect(literal_spec)
+    ok(new_case_pattern(literal))
+
 type CaseDefinition* = ref object of RootObj
   pattern: CasePattern
   location: Location
@@ -935,31 +1326,14 @@ proc pattern*(def: CaseDefinition): CasePattern = def.pattern
 proc asl(def: CaseDefinition): string =
   fmt"case {def.pattern.asl}:"
 
-type
-  MatchDefinitionKind* = enum
-    MDK_DEFAULT, MDK_ASSIGNED
-  MatchDefinition* = ref object of RootObj
-    kind: MatchDefinitionKind
-    operand: Identifier
-    arg: Identifier
-
-proc new_match_definition*(operand: Identifier,
-    location: Location): Result[MatchDefinition, string] =
-  let arg = ? new_identifier(fmt"__asl__arg__{location.hash.to_hex}__", location)
-  ok(MatchDefinition(kind: MDK_DEFAULT, arg: arg, operand: operand))
-
-proc new_match_definition*(def: MatchDefinition,
-    arg: Identifier): MatchDefinition =
-  MatchDefinition(kind: MDK_ASSIGNED, arg: arg, operand: def.operand)
-
-proc location*(def: MatchDefinition): Location = def.arg.location
-proc operand*(def: MatchDefinition): Identifier = def.operand
-proc arg*(def: MatchDefinition): Identifier = def.arg
-
-proc asl(def: MatchDefinition): string =
-  case def.kind:
-  of MDK_DEFAULT: fmt"match {def.operand.asl}:"
-  of MDK_ASSIGNED: fmt"{def.arg.asl} = match {def.operand.asl}:"
+proc case_definition_spec(parser: Parser): Result[CaseDefinition, string] =
+  let case_keyword = ? parser.expect(case_keyword_spec)
+  discard ? parser.expect(space_spec)
+  discard ? parser.expect(optional_space_spec)
+  let pattern = ? parser.expect(case_pattern_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  ok(new_case_definition(pattern, case_keyword.location))
 
 # This block is together due to match <-> expression cyclic dependency by design
 type
@@ -1008,8 +1382,6 @@ proc new_expression*(struct_get: StructGet): Expression =
 proc new_expression*(variable: Identifier): Expression =
   Expression(kind: EK_VARIABLE, variable: variable)
 
-# Expression
-
 # Forward declaration needed due to match <-> expression cyclic dependency by design
 proc location*(match: Match): Location
 
@@ -1021,6 +1393,7 @@ proc location*(expression: Expression): Location =
   of EK_STRUCT_GET: expression.struct_get.location
   of EK_VARIABLE: expression.variable.location
 
+# Forward declaration needed due to match <-> expression cyclic dependency by design
 proc asl(match: Match, indent: string): seq[string]
 
 proc asl(expression: Expression, indent: string): seq[string] =
@@ -1058,6 +1431,29 @@ proc variable*(expression: Expression): Result[Identifier, string] =
   of EK_VARIABLE: ok(expression.variable)
   else: err(fmt"{expression.location} expression is not a variable")
 
+# Forward declaration needed due to match <-> expression cyclic dependency
+proc match_spec(parser: Parser, indent: int): Result[Match, string]
+
+proc expression_spec(parser: Parser, indent: int): Result[Expression, string] =
+  let maybe_match = parser.expect(match_spec, indent)
+  if maybe_match.is_ok:
+    return ok(new_expression(maybe_match.get))
+
+  let maybe_fncall = parser.expect(function_call_spec)
+  if maybe_fncall.is_ok:
+    return ok(new_expression(maybe_fncall.get))
+
+  let maybe_init = parser.expect(initializer_spec)
+  if maybe_init.is_ok:
+    return ok(new_expression(maybe_init.get))
+
+  let maybe_struct_get = parser.expect(struct_get_spec)
+  if maybe_struct_get.is_ok:
+    return ok(new_expression(maybe_struct_get.get))
+
+  let variable = ? parser.expect(identifier_spec)
+  ok(new_expression(variable))
+
 # Statement
 proc new_statement*(expression: Expression): Statement =
   let arg = new_identifier(expression.location)
@@ -1077,6 +1473,23 @@ proc asl*(statement: Statement, indent: string): seq[string] =
   of SK_USER: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
   return lines
 
+proc assignment_spec(parser: Parser): Result[Identifier, string] =
+  let arg = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(equal_spec)
+  discard ? parser.expect(optional_space_spec)
+  ok(arg)
+
+proc statement_spec(parser: Parser, indent: int): Result[Statement, string] =
+  discard ? parser.expect(indent_spec, indent)
+
+  let maybe_assignment = parser.expect(assignment_spec)
+  let expression = ? parser.expect(expression_spec, indent)
+  if maybe_assignment.is_ok:
+    ok(new_statement(maybe_assignment.get, expression))
+  else:
+    ok(new_statement(expression))
+
 # Case
 proc new_case*(def: CaseDefinition, statements: seq[Statement]): Result[Case, string] =
   if statements.len == 0:
@@ -1091,13 +1504,23 @@ proc statements*(case_block: Case): seq[Statement] = case_block.statements
 
 proc asl*(case_block: Case, indent: string): seq[string] =
   let header = case_block.def.asl
-
   var statements: seq[string]
   for statement in case_block.statements:
     for line in statement.asl(indent):
       statements.add(indent & line)
-
   return (@[header] & statements)
+
+proc case_spec(parser: Parser, indent: int): Result[Case, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let case_def = ? parser.expect(case_definition_spec)
+  discard ? parser.expect(optional_empty_line_spec)
+  var statements: seq[Statement]
+  var maybe_statement = parser.expect(statement_spec, indent + 1)
+  while maybe_statement.is_ok:
+    statements.add(maybe_statement.get)
+    discard ? parser.expect(optional_empty_line_spec)
+    maybe_statement = parser.expect(statement_spec, indent + 1)
+  new_case(case_def, statements)
 
 # Else
 proc new_else*(statements: seq[Statement], location: Location): Result[Else, string] =
@@ -1118,6 +1541,23 @@ proc asl*(else_block: Else, indent: string): seq[string] =
       statements.add(indent & line)
 
   return (@[header] & statements)
+
+proc else_spec(parser: Parser, indent: int): Result[Else, string] =
+  discard ? parser.expect(indent_spec, indent)
+
+  let else_def = ? parser.expect(else_keyword_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  discard ? parser.expect(optional_empty_line_spec)
+
+  var statements: seq[Statement]
+  var maybe_statement = parser.expect(statement_spec, indent + 1)
+  while maybe_statement.is_ok:
+    statements.add(maybe_statement.get)
+    discard ? parser.expect(optional_empty_line_spec)
+    maybe_statement = parser.expect(statement_spec, indent + 1)
+
+  new_else(statements, else_def.location)
 
 # Match
 proc new_match*(def: MatchDefinition, case_blocks: seq[Case]): Result[Match, string] =
@@ -1160,636 +1600,6 @@ proc asl(match: Match, indent: string): seq[string] =
       lines.add(indent & line)
 
   return (@[header] & lines)
-
-type UserModuleDefinition* = ref object of RootObj
-  name: Identifier
-  location: Location
-
-proc new_module_definition*(name: Identifier,
-    location: Location): UserModuleDefinition =
-  UserModuleDefinition(name: name, location: location)
-
-proc location*(def: UserModuleDefinition): Location =
-  def.location
-
-proc asl(def: UserModuleDefinition): string =
-  fmt"module {def.name.asl}:"
-
-proc hash(def: UserModuleDefinition): Hash =
-  def.location.hash
-
-type NativeFunction* = ref object of RootObj
-  def: FunctionDefinition
-  native: string
-
-proc new_native_function(native: string, returns: string, name: string,
-    args: seq[string]): Result[NativeFunction, string] =
-  var argdefs: seq[ArgumentDefinition]
-  for index, arg in args.pairs:
-    let argid = ? new_identifier(arg, new_location())
-    let module_ref = new_module_ref(argid)
-    let argname = ? new_identifier(fmt"__asl__arg__{index}__", Location())
-    let argdef = new_argument_definition(argname, module_ref)
-    argdefs.add(argdef)
-
-  var def = ? new_function_definition(
-    ? new_identifier(name, Location()), # name
-    argdefs,
-    new_module_ref( ? new_identifier(returns, Location())), # return type
-    Location()
-  )
-
-  ok(NativeFunction(def: def, native: native))
-
-proc name(function: NativeFunction): Identifier =
-  function.def.name
-
-proc def*(function: NativeFunction): FunctionDefinition =
-  function.def
-
-proc native*(function: NativeFunction): string = function.native
-
-type NativeModule* = ref object of RootObj
-  name: Identifier
-  functions: seq[NativeFunction]
-  functions_map: Table[Identifier, seq[int]]
-  function_defs_hash_map: Table[Hash, int]
-
-proc new_native_module(name: string, functions: seq[
-    NativeFunction]): Result[NativeModule, string] =
-  let name = ? new_identifier(name, Location())
-  var functions_map: Table[Identifier, seq[int]]
-  var function_defs_hash_map: Table[Hash, int]
-  for index, function in functions.pairs:
-    let def_hash = function.def.hash
-    if def_hash in function_defs_hash_map:
-      return err(fmt"[PE157] Native function `{function.name.asl}` is defined twice")
-    function_defs_hash_map[def_hash] = index
-
-    if function.name notin functions_map:
-      functions_map[function.name] = new_seq[int]()
-    functions_map[function.name].add(index)
-
-  ok(NativeModule(name: name, functions: functions,
-      functions_map: functions_map,
-      function_defs_hash_map: function_defs_hash_map))
-
-proc hash*(module: NativeModule): Hash =
-  module.name.hash
-
-proc name*(module: NativeModule): Identifier =
-  module.name
-
-proc functions*(module: NativeModule): seq[NativeFunction] =
-  module.functions
-
-proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
-  ok(new_module_ref(module.name))
-
-proc find_functions*(module: NativeModule, name: Identifier,
-    argcount: int): Result[seq[FunctionDefinition], string] =
-  if name notin module.functions_map:
-    return err(fmt"[PE158] {name.location} module `{module.name.asl}` does not have any function named `{name.asl}`")
-
-  var defs: seq[FunctionDefinition]
-  for index in module.functions_map[name]:
-    if module.functions[index].def.args.len == argcount:
-      defs.add(module.functions[index].def)
-  ok(defs)
-
-proc find_function(module: NativeModule, def: FunctionDefinition): Result[
-    FunctionDefinition, string] =
-  let def_hash = def.hash
-  if def_hash notin module.function_defs_hash_map:
-    err(fmt"{def.location} [PE159] module `{module.name.asl}` does not have any function named `{def.name.asl}`")
-  else:
-    ok(module.functions[module.function_defs_hash_map[def_hash]].def)
-
-proc native_modules(): Result[seq[NativeModule], string] =
-  ok(@[
-    ? new_native_module("S8", @[
-      ? new_native_function("S8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S8_read_Pointer", "S8", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("S8_write_Pointer", "Pointer", "write", @["S8",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("S16", @[
-      ? new_native_function("S16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S16_read_Pointer", "S16", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("S16_write_Pointer", "Pointer", "write", @["S16",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("S32", @[
-      ? new_native_function("S32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S32_read_Pointer", "S32", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("S32_write_Pointer", "Pointer", "write", @["S32",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("S64", @[
-      ? new_native_function("S64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S64_read_Pointer", "S64", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("S64_write_Pointer", "Pointer", "write", @["S64",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("U8", @[
-      ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U8_read_Pointer", "U8", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("U8_write_Pointer", "Pointer", "write", @["U8",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("U16", @[
-      ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U16_read_Pointer", "U16", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("U16_write_Pointer", "Pointer", "write", @["U16",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("U32", @[
-      ? new_native_function("U32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U32_read_Pointer", "U32", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("U32_write_Pointer", "Pointer", "write", @["U32",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("U64", @[
-      ? new_native_function("U64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U64_read_Pointer", "U64", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("U64_write_Pointer", "Pointer", "write", @["U64",
-          "Pointer", "U64"]),
-      ? new_native_function("U64_compare", "S8", "compare", @["U64", "U64"]),
-      ? new_native_function("U64_add", "U64", "add", @["U64", "U64"]),
-    ]),
-    ? new_native_module("F32", @[
-      ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F32_read_Pointer", "F32", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("F32_write_Pointer", "Pointer", "write", @["F32",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("F64", @[
-      ? new_native_function("F64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F64_read_Pointer", "F64", "read", @["Pointer",
-          "U64"]),
-      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["F64",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("String", @[
-      ? new_native_function("String_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("String_read_Pointer", "String", "read", @[
-          "Pointer", "U64"]),
-      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["String",
-          "Pointer", "U64"]),
-    ]),
-    ? new_native_module("Pointer", @[
-      ? new_native_function("Pointer_byte_size", "U64", "byte_size", @[
-          "U64"]),
-      ? new_native_function("Pointer_read_Pointer", "Pointer", "read", @[
-          "Pointer", "U64"]),
-      ? new_native_function("Pointer_write_Pointer", "Pointer", "write", @[
-          "Pointer", "Pointer", "U64"]),
-    ]),
-    ? new_native_module("System", @[
-      ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
-      ? new_native_function("System_free", "Pointer", "free", @["Pointer"]),
-      ? new_native_function("System_print_U8", "U64", "print", @["U8"]),
-      ? new_native_function("System_print_U64", "U64", "print", @["U64"]),
-      ? new_native_function("System_print_S32", "U64", "print", @["S32"]),
-      ? new_native_function("System_print_S64", "U64", "print", @["S64"]),
-    ])
-  ])
-
-# module spec
-proc module_definition_spec(parser: Parser): Result[UserModuleDefinition, string] =
-  let module_keyword = ? parser.expect(module_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
-  let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  ok(new_module_definition(name, module_keyword.location))
-
-proc struct_default_definition_spec(parser: Parser): Result[
-    StructDefinition, string] =
-  let struct_keyword = ? parser.expect(struct_keyword_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  ok(new_struct_definition(struct_keyword.location))
-
-proc struct_named_definition_spec(parser: Parser): Result[
-    StructDefinition, string] =
-  let struct_keyword = ? parser.expect(struct_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
-  let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  ok(new_struct_definition(name, struct_keyword.location))
-
-proc struct_definition_spec(parser: Parser): Result[
-    StructDefinition, string] =
-  let maybe_struct_default_def = parser.expect(struct_default_definition_spec)
-  if maybe_struct_default_def.is_ok:
-    maybe_struct_default_def
-  else:
-    parser.expect(struct_named_definition_spec)
-
-proc module_ref_spec(parser: Parser): Result[ModuleRef, string] =
-  let module_ref = ? parser.expect(identifier_spec)
-
-  var maybe_open_square_bracket = parser.expect(open_square_bracket_spec)
-  if maybe_open_square_bracket.is_err:
-    return ok(new_module_ref(module_ref))
-
-  var children: seq[ModuleRef]
-  discard ? parser.expect(optional_space_spec)
-  children.add( ? parser.expect(module_ref_spec))
-  discard ? parser.expect(optional_space_spec)
-
-  while parser.expect(comma_spec).is_ok:
-    discard ? parser.expect(optional_space_spec)
-    children.add( ? parser.expect(module_ref_spec))
-    discard ? parser.expect(optional_space_spec)
-
-  discard ? parser.expect(close_square_bracket_spec)
-  new_module_ref(module_ref, children)
-
-proc argument_definition_spec(parser: Parser): Result[
-    ArgumentDefinition, string] =
-  let module_ref = ? parser.expect(module_ref_spec)
-  discard ? parser.expect(strict_space_spec)
-  let name = ? parser.expect(identifier_spec)
-  ok(new_argument_definition(name, module_ref))
-
-# TODO: Fix this later.
-proc struct_field_definition_spec(parser: Parser, indent: int): Result[
-    ArgumentDefinition, string] =
-  discard ? parser.expect(indent_spec, indent)
-  let field = ? parser.expect(argument_definition_spec)
-  ok(field)
-
-proc struct_spec(parser: Parser, indent: int): Result[Struct, string] =
-  discard ? parser.expect(indent_spec, indent)
-  let def = ? parser.expect(struct_definition_spec)
-  discard ? parser.expect(strict_empty_line_spec)
-
-  var fields: seq[ArgumentDefinition]
-  # NOTE: struct must always at least have 1 field.
-  fields.add( ? parser.expect(struct_field_definition_spec, indent + 1))
-  discard ? parser.expect(strict_empty_line_spec)
-
-  var maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
-  while maybe_field.is_ok:
-    fields.add(maybe_field.get)
-    discard ? parser.expect(strict_empty_line_spec)
-    maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
-
-  new_struct(def, fields)
-
-proc argument_definition_list_spec(parser: Parser): Result[seq[
-    ArgumentDefinition], string] =
-  var argdefs: seq[ArgumentDefinition]
-  discard ? parser.expect(open_paren_bracket_spec)
-  discard ? parser.expect(optional_space_spec)
-  # NOTE: Every function must have an input argument
-  argdefs.add( ? parser.expect(argument_definition_spec))
-  discard ? parser.expect(optional_space_spec)
-
-  while parser.expect(comma_spec).is_ok:
-    discard ? parser.expect(optional_space_spec)
-    argdefs.add( ? parser.expect(argument_definition_spec))
-    discard ? parser.expect(optional_space_spec)
-
-  discard ? parser.expect(close_paren_bracket_spec)
-  ok(argdefs)
-
-proc function_definition_spec(parser: Parser, indent: int): Result[
-    FunctionDefinition, string] =
-  discard ? parser.expect(indent_spec, indent)
-  let fn_keyword = ? parser.expect(fn_keyword_spec)
-
-  discard ? parser.expect(strict_space_spec)
-  let name = ? parser.expect(identifier_spec)
-
-  discard ? parser.expect(optional_space_spec)
-  let args = ? parser.expect(argument_definition_list_spec)
-
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-
-  discard ? parser.expect(optional_space_spec)
-  let returns = ? parser.expect(module_ref_spec)
-
-  new_function_definition(name, args, returns, fn_keyword.location)
-
-proc sign_spec(parser: Parser): Result[Token, string] =
-  let maybe_plus = parser.token_spec_util(TK_PLUS)
-  if maybe_plus.is_ok:
-    maybe_plus
-  else:
-    parser.token_spec_util(TK_MINUS)
-
-proc unsigned_integer_spec(parser: Parser): Result[UnsignedIntegerLiteral, string] =
-  # TODO: Support underscore separated values as integers as well.
-  let int_value_token = ? parser.token_spec_util(TK_DIGITS)
-  ok(new_unsigned_integer(int_value_token))
-
-proc signed_integer_spec(parser: Parser): Result[SignedIntegerLiteral, string] =
-  var sign = ? parser.expect(sign_spec)
-  let unsigned_intvalue = ? parser.expect(unsigned_integer_spec)
-  new_signed_integer(sign, unsigned_intvalue)
-
-proc integer_spec(parser: Parser): Result[IntegerLiteral, string] =
-  let maybe_unsigned_integer = parser.expect(unsigned_integer_spec)
-  if maybe_unsigned_integer.is_ok:
-    ok(new_integer(maybe_unsigned_integer.get))
-  else:
-    let signed_integer = ? parser.expect(signed_integer_spec)
-    ok(new_integer(signed_integer))
-
-proc float_spec(parser: Parser): Result[FloatLiteral, string] =
-  # TODO: Improve float parsing to support scientific notation as well.
-  let first = ? parser.expect(integer_spec)
-  discard ? parser.expect(dot_spec)
-  let second = ? parser.expect(unsigned_integer_spec)
-  ok(new_float(first, second))
-
-proc string_spec(parser: Parser): Result[StringLiteral, string] =
-  let token = ? parser.token_spec_util(TK_STRING)
-  new_string(token)
-
-proc literal_spec(parser: Parser): Result[Literal, string] =
-  let maybe_integer = parser.expect(integer_spec)
-  if maybe_integer.is_ok:
-    return ok(new_literal(maybe_integer.get))
-
-  let maybe_float = parser.expect(float_spec)
-  if maybe_float.is_ok:
-    return ok(new_literal(maybe_float.get))
-
-  let maybe_string = parser.expect(string_spec)
-  if maybe_string.is_ok:
-    return ok(new_literal(maybe_string.get))
-
-proc argument_spec(parser: Parser): Result[Argument, string] =
-  let maybe_identifier = parser.expect(identifier_spec)
-  if maybe_identifier.is_ok:
-    ok(new_argument(maybe_identifier.get))
-  else:
-    let literal = ? parser.expect(literal_spec)
-    ok(new_argument(literal))
-
-proc function_ref_local_spec(parser: Parser): Result[FunctionRef, string] =
-  let name = ? parser.expect(identifier_spec)
-  ok(new_function_ref(name))
-
-proc function_ref_module_spec(parser: Parser): Result[FunctionRef, string] =
-  let module_ref = ? parser.expect(module_ref_spec)
-  discard ? parser.expect(dot_spec)
-  let name = ? parser.expect(identifier_spec)
-  ok(new_function_ref(name, module_ref))
-
-proc function_ref_spec(parser: Parser): Result[FunctionRef, string] =
-  let maybe_module_fnref = parser.expect(function_ref_module_spec)
-  if maybe_module_fnref.is_ok:
-    maybe_module_fnref
-  else:
-    parser.expect(function_ref_local_spec)
-
-proc argument_list_spec(parser: Parser): Result[seq[Argument], string] =
-  discard ? parser.expect(open_paren_bracket_spec)
-
-  var args: seq[Argument]
-  discard ? parser.expect(optional_space_spec)
-  # NOTE: every function call must have at least one argument
-  args.add( ? parser.expect(argument_spec))
-  discard ? parser.expect(optional_space_spec)
-
-  while parser.expect(comma_spec).is_ok:
-    discard ? parser.expect(optional_space_spec)
-    args.add( ? parser.expect(argument_spec))
-    discard ? parser.expect(optional_space_spec)
-
-  discard ? parser.expect(close_paren_bracket_spec)
-  ok(args)
-
-proc function_call_spec(parser: Parser): Result[FunctionCall, string] =
-  let fnref = ? parser.expect(function_ref_spec)
-  let args = ? parser.expect(argument_list_spec)
-  new_function_call(fnref, args)
-
-proc literal_init_spec(parser: Parser): Result[LiteralInit, string] =
-  let module_ref = ? parser.expect(module_ref_spec)
-  discard ? parser.expect(strict_space_spec)
-  let literal = ? parser.expect(literal_spec)
-  ok(new_literal_init(module_ref, literal))
-
-proc keyword_argument_spec(parser: Parser): Result[KeywordArgument, string] =
-  let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  discard ? parser.expect(optional_space_spec)
-  let value = ? parser.expect(argument_spec)
-  ok(new_keyword_argument(name, value))
-
-proc struct_ref_spec(parser: Parser): Result[StructRef, string] =
-  let module = ? parser.expect(module_ref_spec)
-
-  let maybe_dot = parser.expect(dot_spec)
-  if maybe_dot.is_err:
-    return ok(new_struct_ref(module))
-
-  let struct = ? parser.expect(identifier_spec)
-  ok(new_struct_ref(module, struct))
-
-proc keyword_argument_list_spec(parser: Parser): Result[seq[KeywordArgument], string] =
-  var args: seq[KeywordArgument]
-  discard ? parser.expect(open_curly_bracket_spec)
-
-  discard ? parser.expect(optional_space_spec)
-  # NOTE: every struct init must have at least one keyword argument
-  args.add( ? parser.expect(keyword_argument_spec))
-  discard ? parser.expect(optional_space_spec)
-  var maybe_comma = parser.expect(comma_spec)
-  while maybe_comma.is_ok:
-    discard ? parser.expect(optional_space_spec)
-    args.add( ? parser.expect(keyword_argument_spec))
-    discard ? parser.expect(optional_space_spec)
-    maybe_comma = parser.expect(comma_spec)
-
-  discard ? parser.expect(close_curly_bracket_spec)
-  ok(args)
-
-proc struct_init_spec(parser: Parser): Result[StructInit, string] =
-  let struct_ref = ? parser.expect(struct_ref_spec)
-  discard ? parser.expect(optional_space_spec)
-  let kwargs = ? parser.expect(keyword_argument_list_spec)
-  new_struct_init(struct_ref, kwargs)
-
-proc initializer_spec(parser: Parser): Result[Initializer, string] =
-  let maybe_literal_init = parser.expect(literal_init_spec)
-  if maybe_literal_init.is_ok:
-    ok(new_initializer(maybe_literal_init.get))
-  else:
-    let struct_init = ? parser.expect(struct_init_spec)
-    ok(new_initializer(struct_init))
-
-proc struct_get_spec(parser: Parser): Result[StructGet, string] =
-  let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(dot_spec)
-  let field = ? parser.expect(identifier_spec)
-  ok(new_struct_get(name, field))
-
-proc match_definition_default_spec(parser: Parser): Result[
-    MatchDefinition, string] =
-  let match_keyword = ? parser.expect(match_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
-  let operand = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  new_match_definition(operand, match_keyword.location)
-
-proc match_definition_spec(parser: Parser): Result[MatchDefinition, string] =
-  let maybe_match_def_default = parser.expect(match_definition_default_spec)
-  if maybe_match_def_default.is_ok:
-    return maybe_match_def_default
-
-  let arg = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(equal_spec)
-  discard ? parser.expect(optional_space_spec)
-  let match_def_default = ? parser.expect(match_definition_default_spec)
-  ok(new_match_definition(match_def_default, arg))
-
-proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
-    Identifier), string] =
-  let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  discard ? parser.expect(optional_space_spec)
-  let value = ? parser.expect(identifier_spec)
-  ok((name, value))
-
-proc struct_pattern_default_spec(parser: Parser): Result[StructPattern, string] =
-  let open_curly = ? parser.expect(open_curly_bracket_spec)
-  discard ? parser.expect(optional_space_spec)
-
-  var keywords: seq[(Identifier, Identifier)]
-  keywords.add( ? parser.expect(keyword_value_identifier_spec))
-  discard ? parser.expect(optional_space_spec)
-  var maybe_comma = parser.expect(comma_spec)
-  while maybe_comma.is_ok:
-    discard ? parser.expect(optional_space_spec)
-    keywords.add( ? parser.expect(keyword_value_identifier_spec))
-    discard ? parser.expect(optional_space_spec)
-    maybe_comma = parser.expect(comma_spec)
-
-  discard ? parser.expect(close_curly_bracket_spec)
-  new_struct_pattern(keywords, open_curly.location)
-
-proc struct_pattern_named_spec(parser: Parser): Result[StructPattern, string] =
-  let struct = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  let struct_pattern_default = ? parser.expect(struct_pattern_default_spec)
-  new_struct_pattern(struct, struct_pattern_default)
-
-proc struct_pattern_spec(parser: Parser): Result[StructPattern, string] =
-  let maybe_struct_pattern_named = parser.expect(struct_pattern_named_spec)
-  if maybe_struct_pattern_named.is_ok:
-    maybe_struct_pattern_named
-  else:
-    parser.expect(struct_pattern_default_spec)
-
-proc case_pattern_spec(parser: Parser): Result[CasePattern, string] =
-  let maybe_struct_pattern = parser.expect(struct_pattern_spec)
-  if maybe_struct_pattern.is_ok:
-    ok(new_case_pattern(maybe_struct_pattern.get))
-  else:
-    let literal = ? parser.expect(literal_spec)
-    ok(new_case_pattern(literal))
-
-proc case_definition_spec(parser: Parser): Result[CaseDefinition, string] =
-  let case_keyword = ? parser.expect(case_keyword_spec)
-  discard ? parser.expect(space_spec)
-  discard ? parser.expect(optional_space_spec)
-  let pattern = ? parser.expect(case_pattern_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  ok(new_case_definition(pattern, case_keyword.location))
-
-# Forward declaration needed due to match <-> expression cyclic dependency
-proc match_spec(parser: Parser, indent: int): Result[Match, string]
-
-proc expression_spec(parser: Parser, indent: int): Result[Expression, string] =
-  let maybe_match = parser.expect(match_spec, indent)
-  if maybe_match.is_ok:
-    return ok(new_expression(maybe_match.get))
-
-  let maybe_fncall = parser.expect(function_call_spec)
-  if maybe_fncall.is_ok:
-    return ok(new_expression(maybe_fncall.get))
-
-  let maybe_init = parser.expect(initializer_spec)
-  if maybe_init.is_ok:
-    return ok(new_expression(maybe_init.get))
-
-  let maybe_struct_get = parser.expect(struct_get_spec)
-  if maybe_struct_get.is_ok:
-    return ok(new_expression(maybe_struct_get.get))
-
-  let variable = ? parser.expect(identifier_spec)
-  ok(new_expression(variable))
-
-proc assignment_spec(parser: Parser): Result[Identifier, string] =
-  let arg = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(equal_spec)
-  discard ? parser.expect(optional_space_spec)
-  ok(arg)
-
-proc statement_spec(parser: Parser, indent: int): Result[Statement, string] =
-  discard ? parser.expect(indent_spec, indent)
-
-  let maybe_assignment = parser.expect(assignment_spec)
-  let expression = ? parser.expect(expression_spec, indent)
-  if maybe_assignment.is_ok:
-    ok(new_statement(maybe_assignment.get, expression))
-  else:
-    ok(new_statement(expression))
-
-proc case_spec(parser: Parser, indent: int): Result[Case, string] =
-  discard ? parser.expect(indent_spec, indent)
-  let case_def = ? parser.expect(case_definition_spec)
-  discard ? parser.expect(optional_empty_line_spec)
-
-  var statements: seq[Statement]
-  var maybe_statement = parser.expect(statement_spec, indent + 1)
-  while maybe_statement.is_ok:
-    statements.add(maybe_statement.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_statement = parser.expect(statement_spec, indent + 1)
-
-  new_case(case_def, statements)
-
-proc else_spec(parser: Parser, indent: int): Result[Else, string] =
-  discard ? parser.expect(indent_spec, indent)
-
-  let else_def = ? parser.expect(else_keyword_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  discard ? parser.expect(optional_empty_line_spec)
-
-  var statements: seq[Statement]
-  var maybe_statement = parser.expect(statement_spec, indent + 1)
-  while maybe_statement.is_ok:
-    statements.add(maybe_statement.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_statement = parser.expect(statement_spec, indent + 1)
-
-  new_else(statements, else_def.location)
 
 proc match_spec(parser: Parser, indent: int): Result[Match, string] =
   let match_def = ? parser.expect(match_definition_spec)
@@ -2157,6 +1967,192 @@ proc asl(module: UserModule, indent: string): seq[string] =
     lines.add("\n")
 
   return (@[header] & lines)
+
+type NativeFunction* = ref object of RootObj
+  def: FunctionDefinition
+  native: string
+
+proc new_native_function(native: string, returns: string, name: string,
+    args: seq[string]): Result[NativeFunction, string] =
+  var argdefs: seq[ArgumentDefinition]
+  for index, arg in args.pairs:
+    let argid = ? new_identifier(arg, new_location())
+    let module_ref = new_module_ref(argid)
+    let argname = ? new_identifier(fmt"__asl__arg__{index}__", Location())
+    let argdef = new_argument_definition(argname, module_ref)
+    argdefs.add(argdef)
+
+  var def = ? new_function_definition(
+    ? new_identifier(name, Location()), # name
+    argdefs,
+    new_module_ref( ? new_identifier(returns, Location())), # return type
+    Location()
+  )
+
+  ok(NativeFunction(def: def, native: native))
+
+proc name(function: NativeFunction): Identifier =
+  function.def.name
+
+proc def*(function: NativeFunction): FunctionDefinition =
+  function.def
+
+proc native*(function: NativeFunction): string = function.native
+
+type NativeModule* = ref object of RootObj
+  name: Identifier
+  functions: seq[NativeFunction]
+  functions_map: Table[Identifier, seq[int]]
+  function_defs_hash_map: Table[Hash, int]
+
+proc new_native_module(name: string, functions: seq[
+    NativeFunction]): Result[NativeModule, string] =
+  let name = ? new_identifier(name, Location())
+  var functions_map: Table[Identifier, seq[int]]
+  var function_defs_hash_map: Table[Hash, int]
+  for index, function in functions.pairs:
+    let def_hash = function.def.hash
+    if def_hash in function_defs_hash_map:
+      return err(fmt"[PE157] Native function `{function.name.asl}` is defined twice")
+    function_defs_hash_map[def_hash] = index
+
+    if function.name notin functions_map:
+      functions_map[function.name] = new_seq[int]()
+    functions_map[function.name].add(index)
+
+  ok(NativeModule(name: name, functions: functions,
+      functions_map: functions_map,
+      function_defs_hash_map: function_defs_hash_map))
+
+proc hash*(module: NativeModule): Hash =
+  module.name.hash
+
+proc name*(module: NativeModule): Identifier =
+  module.name
+
+proc functions*(module: NativeModule): seq[NativeFunction] =
+  module.functions
+
+proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
+  ok(new_module_ref(module.name))
+
+proc find_functions*(module: NativeModule, name: Identifier,
+    argcount: int): Result[seq[FunctionDefinition], string] =
+  if name notin module.functions_map:
+    return err(fmt"[PE158] {name.location} module `{module.name.asl}` does not have any function named `{name.asl}`")
+
+  var defs: seq[FunctionDefinition]
+  for index in module.functions_map[name]:
+    if module.functions[index].def.args.len == argcount:
+      defs.add(module.functions[index].def)
+  ok(defs)
+
+proc find_function(module: NativeModule, def: FunctionDefinition): Result[
+    FunctionDefinition, string] =
+  let def_hash = def.hash
+  if def_hash notin module.function_defs_hash_map:
+    err(fmt"{def.location} [PE159] module `{module.name.asl}` does not have any function named `{def.name.asl}`")
+  else:
+    ok(module.functions[module.function_defs_hash_map[def_hash]].def)
+
+proc native_modules(): Result[seq[NativeModule], string] =
+  ok(@[
+    ? new_native_module("S8", @[
+      ? new_native_function("S8_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S8_read_Pointer", "S8", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S8_write_Pointer", "Pointer", "write", @["S8",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("S16", @[
+      ? new_native_function("S16_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S16_read_Pointer", "S16", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S16_write_Pointer", "Pointer", "write", @["S16",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("S32", @[
+      ? new_native_function("S32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S32_read_Pointer", "S32", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S32_write_Pointer", "Pointer", "write", @["S32",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("S64", @[
+      ? new_native_function("S64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("S64_read_Pointer", "S64", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("S64_write_Pointer", "Pointer", "write", @["S64",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U8", @[
+      ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U8_read_Pointer", "U8", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U8_write_Pointer", "Pointer", "write", @["U8",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U16", @[
+      ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U16_read_Pointer", "U16", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U16_write_Pointer", "Pointer", "write", @["U16",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U32", @[
+      ? new_native_function("U32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U32_read_Pointer", "U32", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U32_write_Pointer", "Pointer", "write", @["U32",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("U64", @[
+      ? new_native_function("U64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("U64_read_Pointer", "U64", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("U64_write_Pointer", "Pointer", "write", @["U64",
+          "Pointer", "U64"]),
+      ? new_native_function("U64_compare", "S8", "compare", @["U64", "U64"]),
+      ? new_native_function("U64_add", "U64", "add", @["U64", "U64"]),
+    ]),
+    ? new_native_module("F32", @[
+      ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("F32_read_Pointer", "F32", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("F32_write_Pointer", "Pointer", "write", @["F32",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("F64", @[
+      ? new_native_function("F64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("F64_read_Pointer", "F64", "read", @["Pointer",
+          "U64"]),
+      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["F64",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("String", @[
+      ? new_native_function("String_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_native_function("String_read_Pointer", "String", "read", @[
+          "Pointer", "U64"]),
+      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["String",
+          "Pointer", "U64"]),
+    ]),
+    ? new_native_module("Pointer", @[
+      ? new_native_function("Pointer_byte_size", "U64", "byte_size", @[
+          "U64"]),
+      ? new_native_function("Pointer_read_Pointer", "Pointer", "read", @[
+          "Pointer", "U64"]),
+      ? new_native_function("Pointer_write_Pointer", "Pointer", "write", @[
+          "Pointer", "Pointer", "U64"]),
+    ]),
+    ? new_native_module("System", @[
+      ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
+      ? new_native_function("System_free", "Pointer", "free", @["Pointer"]),
+      ? new_native_function("System_print_U8", "U64", "print", @["U8"]),
+      ? new_native_function("System_print_U64", "U64", "print", @["U64"]),
+      ? new_native_function("System_print_S32", "U64", "print", @["S32"]),
+      ? new_native_function("System_print_S64", "U64", "print", @["S64"]),
+    ])
+  ])
 
 type
   ModuleKind* = enum
