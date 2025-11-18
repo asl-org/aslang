@@ -2331,6 +2331,7 @@ proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
       functions_map: functions_map, indent: indent))
 
 proc path*(file: File): string = file.path
+proc indent*(file: File): int = file.indent
 proc native_modules*(file: File): seq[NativeModule] = file.native_modules
 proc user_modules*(file: File): seq[UserModule] = file.user_modules
 proc functions*(file: File): seq[Function] = file.functions
