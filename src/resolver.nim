@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, hashes, strutils, sets
+import results, sequtils, strformat, tables, hashes, strutils, sets, re
 
 import resolver/deps_analyzer
 export deps_analyzer
@@ -81,11 +81,14 @@ proc asl(module_ref: ResolvedModuleRef): string =
   of RMRK_GENERIC: module_ref.generic.asl
   of RMRK_USER:
     var parent_str = module_ref.user_module.asl
-    var children_args: seq[string]
-    for child in module_ref.children:
-      children_args.add(child.asl)
-    let children_str = children_args.join(", ")
-    fmt"{parent_str}[{children_str}]"
+    if module_ref.children.len == 0:
+      parent_str
+    else:
+      var children_args: seq[string]
+      for child in module_ref.children:
+        children_args.add(child.asl)
+      let children_str = children_args.join(", ")
+      fmt"{parent_str}[{children_str}]"
 
 proc resolve_def*(file: TypedFile, module: TypedModule, generic: TypedGeneric,
     module_ref: TypedModuleRef): Result[ResolvedModuleRef, string] =
@@ -292,6 +295,15 @@ proc find_function_defs(generic: ResolvedGeneric, name: Identifier,
   else:
     ok(generic.defs_map[name][arity])
 
+proc asl(generic: ResolvedGeneric, indent: string): seq[string] =
+  if generic.defs.len == 0:
+    @[fmt"generic {generic.name.asl}"]
+  else:
+    var lines = @[fmt"generic {generic.name.asl}:"]
+    for def in generic.defs:
+      lines.add(indent & def.asl)
+    lines
+
 proc resolve_def(file: TypedFile, module: TypedModule,
     generic: TypedGeneric): Result[ResolvedGeneric, string] =
   var resolved_defs: seq[ResolvedFunctionDefinition]
@@ -346,6 +358,17 @@ proc find_field(struct: ResolvedStruct, field: Identifier): Result[
     ResolvedArgumentDefinition, string] =
   let field_index = ? struct.find_field_index(field)
   ok(struct.fields[field_index])
+
+proc asl(struct: ResolvedStruct, indent: string): seq[string] =
+  var lines =
+    case struct.kind:
+    of RSK_DEFAULT: @["struct:"]
+    of RSK_NAMED: @[fmt"struct {struct.name.asl}:"]
+
+  for field in struct.fields:
+    lines.add(indent & field.asl)
+
+  lines
 
 proc resolve_def(file: TypedFile, module: TypedModule,
     struct: TypedStruct): Result[ResolvedStruct, string] =
@@ -457,6 +480,18 @@ proc find_function_defs(module_def: ResolvedModuleDefinition,
     err(fmt"module `{module_def.name.asl}` does not have any function named `{name.asl}` with arity `{arity}`")
   else:
     ok(module_def.function_signatures_map[name][arity])
+
+proc asl(def: ResolvedModuleDefinition, indent: string): seq[string] =
+  var lines: seq[string]
+  for generic in def.generics:
+    lines.add(generic.asl(indent))
+
+  if def.generics.len > 0:
+    lines.add("\n")
+
+  for struct in def.structs:
+    lines.add(struct.asl(indent))
+  lines
 
 proc resolve_def(file: TypedFile, module: TypedModule): Result[
     ResolvedModuleDefinition, string] =
@@ -672,6 +707,11 @@ proc new_resolved_function_ref(module_ref: ResolvedModuleRef, name: Identifier,
     defs: seq[ResolvedFunctionDefinition]): ResolvedFunctionRef =
   ResolvedFunctionRef(kind: RFRK_MODULE, module_ref: module_ref, name: name, defs: defs)
 
+proc asl(fnref: ResolvedFunctionRef): string =
+  case fnref.kind:
+  of RFRK_LOCAL: fmt"{fnref.name.asl}"
+  of RFRK_MODULE: fmt"{fnref.module_ref.asl}.{fnref.name.asl}"
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
     fnref: TypedFunctionRef): Result[ResolvedFunctionRef, string] =
@@ -756,6 +796,11 @@ proc new_resolved_argument(module_ref: ResolvedModuleRef,
     literal: Literal): ResolvedArgument =
   ResolvedArgument(kind: RAK_LITERAL, module_ref: module_ref, literal: literal)
 
+proc asl(arg: ResolvedArgument): string =
+  case arg.kind:
+  of RAK_LITERAL: arg.literal.asl
+  of RAK_VARIABLE: arg.variable.asl
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     scope: FunctionScope, args: seq[Argument], argdefs: seq[
     ResolvedArgumentDefinition]): Result[seq[ResolvedArgument], string] =
@@ -791,6 +836,10 @@ proc new_resolved_function_call(fnref: ResolvedFunctionRef,
 
 proc returns(fncall: ResolvedFunctionCall): ResolvedModuleRef =
   fncall.def.returns
+
+proc asl(fncall: ResolvedFunctionCall): string =
+  let args_str = fncall.args.map_it(it.asl).join(", ")
+  fncall.fnref.asl & "(" & args_str & ")"
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
@@ -828,6 +877,13 @@ type ResolvedStructRef = ref object of RootObj
 proc new_resolved_struct_ref(module_ref: ResolvedModuleRef,
     struct: ResolvedStruct): ResolvedStructRef =
   ResolvedStructRef(module_ref: module_ref, struct: struct)
+
+proc asl(struct_ref: ResolvedStructRef): string =
+  let suffix =
+    case struct_ref.struct.kind:
+    of RSK_DEFAULT: ""
+    of RSK_NAMED: fmt".{struct_ref.struct.name.asl}"
+  fmt"{struct_ref.module_ref.asl}{suffix}"
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
@@ -909,6 +965,14 @@ proc new_resolved_struct_init(struct_ref: ResolvedStructRef, fields: seq[
 proc returns(struct_init: ResolvedStructInit): ResolvedModuleRef =
   struct_init.struct_ref.module_ref
 
+proc asl(struct_init: ResolvedStructInit): string =
+  var args: seq[string]
+  for (field_def, field_arg) in zip(struct_init.struct_ref.struct.fields,
+      struct_init.fields):
+    args.add(fmt"{field_def.name.asl}: {field_arg.asl}")
+  let args_str = args.join(", ")
+  struct_init.struct_ref.asl & " { " & args_str & " }"
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
     scope: FunctionScope, init: TypedStructInit): Result[ResolvedStructInit, string] =
@@ -960,6 +1024,9 @@ proc new_resolved_literal(module_ref: ResolvedModuleRef,
 proc returns(literal: ResolvedLiteral): ResolvedModuleRef =
   literal.module_ref
 
+proc asl(literal: ResolvedLiteral): string =
+  fmt"{literal.module_ref.asl} {literal.literal.asl}"
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
     scope: FunctionScope, init: TypedLiteralInit): Result[ResolvedLiteral, string] =
@@ -1002,6 +1069,11 @@ proc returns(init: ResolvedInitializer): ResolvedModuleRef =
   of RIK_STRUCT: init.struct.returns
   of RIK_LITERAL: init.literal.returns
 
+proc asl(init: ResolvedInitializer): string =
+  case init.kind:
+  of RIK_LITERAL: init.literal.asl
+  of RIK_STRUCT: init.struct.asl
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
     scope: FunctionScope, init: TypedInitializer): Result[ResolvedInitializer, string] =
@@ -1038,6 +1110,9 @@ proc new_resolved_struct_get(variable: ResolvedArgumentDefinition,
 
 proc returns(struct_get: ResolvedStructGet): ResolvedModuleRef =
   struct_get.field.module_ref
+
+proc asl(struct_get: ResolvedStructGet): string =
+  fmt"{struct_get.variable.name.asl}.{struct_get.field.name.asl}"
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
@@ -1119,6 +1194,19 @@ proc hash(pattern: ResolvedStructPattern): Hash =
   of RSPK_DEFAULT: "".hash
   of RSPK_NAMED: pattern.name.asl.hash
 
+proc asl(struct_pattern: ResolvedStructPattern): string =
+  let prefix =
+    case struct_pattern.kind:
+    of RSPK_DEFAULT: ""
+    of RSPK_NAMED: fmt"{struct_pattern.name.asl} "
+
+  var args: seq[string]
+  for (field, name) in struct_pattern.args:
+    args.add(fmt"{name.asl}: {field.name.asl}")
+
+  let args_str = args.join(", ")
+  prefix & "{ " & args_str & " }"
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     scope: FunctionScope, operand: ResolvedModuleRef,
     pattern: StructPattern): Result[ResolvedStructPattern, string] =
@@ -1184,6 +1272,11 @@ proc hash(pattern: ResolvedCasePattern): Hash =
 proc `==`(self: ResolvedCasePattern, other: ResolvedCasePattern): bool =
   self.hash == other.hash
 
+proc asl(case_pattern: ResolvedCasePattern): string =
+  case case_pattern.kind:
+  of RCPK_LITERAL: case_pattern.literal.asl
+  of RCPK_STRUCT: case_pattern.struct.asl
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     scope: FunctionScope, operand: ResolvedModuleRef,
     pattern: CasePattern): Result[ResolvedCasePattern, string] =
@@ -1218,6 +1311,9 @@ proc new_resolved_variable(module_ref: ResolvedModuleRef,
 
 proc returns(variable: ResolvedVariable): ResolvedModuleRef =
   variable.module_ref
+
+proc asl(variable: ResolvedVariable): string =
+  variable.name.asl
 
 proc resolve(scope: FunctionScope, variable: TypedVariable): Result[
     ResolvedVariable, string] =
@@ -1278,6 +1374,16 @@ proc returns(expression: ResolvedExpression): ResolvedModuleRef =
   of REK_INIT: expression.init.returns
   of REK_STRUCT_GET: expression.struct_get.returns
   of REK_VARIABLE: expression.variable.returns
+
+proc asl(match: ResolvedMatch, indent: string): seq[string]
+
+proc asl(expression: ResolvedExpression, indent: string): seq[string] =
+  case expression.kind:
+  of REK_MATCH: expression.match.asl(indent)
+  of REK_FNCALL: @[expression.fncall.asl]
+  of REK_INIT: @[expression.init.asl]
+  of REK_STRUCT_GET: @[expression.struct_get.asl]
+  of REK_VARIABLE: @[expression.variable.asl]
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
@@ -1350,6 +1456,11 @@ proc returns(statement: ResolvedStatement): ResolvedModuleRef =
 proc return_arg(statement: ResolvedStatement): ResolvedArgumentDefinition =
   new_resolved_argument_definition(statement.expression.returns, statement.arg)
 
+proc asl(statement: ResolvedStatement, indent: string): seq[string] =
+  var lines = statement.expression.asl(indent)
+  lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
+  lines
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
         scope: FunctionScope, statement: TypedStatement): Result[
@@ -1371,6 +1482,13 @@ proc new_resolved_case(pattern: ResolvedCasePattern, statements: seq[
 
 proc returns(case_block: ResolvedCase): ResolvedModuleRef =
   case_block.statements[^1].returns
+
+proc asl(case_block: ResolvedCase, indent: string): seq[string] =
+  var lines = @[fmt"case {case_block.pattern.asl}:"]
+  for statement in case_block.statements:
+    for line in statement.asl(indent):
+      lines.add(indent & line)
+  lines
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
@@ -1425,6 +1543,13 @@ proc new_resolved_else(statements: seq[ResolvedStatement],
 proc returns(else_block: ResolvedElse): ResolvedModuleRef =
   else_block.statements[^1].returns
 
+proc asl(else_block: ResolvedElse, indent: string): seq[string] =
+  var lines = @["else:"]
+  for statement in else_block.statements:
+    for line in statement.asl(indent):
+      lines.add(indent & line)
+  lines
+
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
     scope: FunctionScope, else_block: TypedElse): Result[ResolvedElse, string] =
@@ -1461,6 +1586,20 @@ proc new_resolved_match(operand: ResolvedArgumentDefinition, case_blocks: seq[
 
 proc returns(match: ResolvedMatch): ResolvedModuleRef =
   match.case_blocks[0].returns
+
+proc asl(match: ResolvedMatch, indent: string): seq[string] =
+  var lines = @[fmt"match {match.operand.name.asl}:"]
+  for case_block in match.case_blocks:
+    for line in case_block.asl(indent):
+      lines.add(indent & line)
+
+  case match.kind:
+  of RMK_CASE_ONLY: discard
+  of RMK_COMPLETE:
+    for line in match.else_block.asl(indent):
+      lines.add(indent & line)
+
+  lines
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
@@ -1615,13 +1754,20 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     ok(new_resolved_match(resolved_operand, resolved_case_blocks,
         resolved_else_block, match.location))
 
-type ResolvedFunction = ref object of RootObj
+type ResolvedFunction* = ref object of RootObj
   def: ResolvedFunctionDefinition
   steps: seq[ResolvedStatement]
 
 proc new_resolved_function(def: ResolvedFunctionDefinition, steps: seq[
     ResolvedStatement]): ResolvedFunction =
   ResolvedFunction(def: def, steps: steps)
+
+proc asl(function: ResolvedFunction, indent: string): seq[string] =
+  var lines = @[function.def.asl]
+  for statement in function.steps:
+    for line in statement.asl(indent):
+      lines.add(indent & line)
+  lines
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule,
@@ -1653,13 +1799,24 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     scope = ? scope.set(resolved_function_step.return_arg)
   ok(new_resolved_function(resolved_function_def, resolved_steps))
 
-type ResolvedModule = ref object of RootObj
+type ResolvedModule* = ref object of RootObj
   def: ResolvedModuleDefinition
   functions: seq[ResolvedFunction]
 
 proc new_resolved_module(def: ResolvedModuleDefinition, functions: seq[
     ResolvedFunction]): ResolvedModule =
   ResolvedModule(def: def, functions: functions)
+
+proc asl(module: ResolvedModule, indent: string): seq[string] =
+  var lines = @[fmt"module {module.def.name.asl}:"]
+  for line in module.def.asl(indent):
+    lines.add(indent & line)
+  lines.add("\n")
+  for function in module.functions:
+    for line in function.asl(indent):
+      lines.add(indent & line)
+    lines.add("\n")
+  lines
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     module_def: ResolvedModuleDefinition, module: TypedModule): Result[
@@ -1670,13 +1827,27 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile,
     resolved_functions.add(resolved_function)
   ok(new_resolved_module(module_def, resolved_functions))
 
-type ResolvedFile = ref object of RootObj
+type ResolvedFile* = ref object of RootObj
+  path: string
+  indent: int
   modules: seq[ResolvedModule]
   functions: seq[ResolvedFunction]
 
-proc new_resolved_file(modules: seq[ResolvedModule], functions: seq[
-    ResolvedFunction]): ResolvedFile =
-  ResolvedFile(modules: modules, functions: functions)
+proc new_resolved_file(path: string, indent: int, modules: seq[ResolvedModule],
+    functions: seq[ResolvedFunction]): ResolvedFile =
+  ResolvedFile(path: path, indent: indent, modules: modules,
+      functions: functions)
+
+proc asl*(file: ResolvedFile): string =
+  let indent = " ".repeat(file.indent)
+  var lines: seq[string]
+  for module in file.modules:
+    lines.add(module.asl(indent))
+    lines.add("\n")
+  for function in file.functions:
+    lines.add(function.asl(indent))
+    lines.add("\n")
+  lines.map_it(it.strip(leading = false)).join("\n").replace(re"\n{3,}", "\n\n")
 
 proc resolve(file_def: ResolvedFileDefinition, file: TypedFile): Result[
     ResolvedFile, string] =
@@ -1690,9 +1861,10 @@ proc resolve(file_def: ResolvedFileDefinition, file: TypedFile): Result[
   for function in file.functions:
     let resolved_function = ? resolve(file_def, file, function)
     resolved_functions.add(resolved_function)
-  ok(new_resolved_file(resolved_modules, resolved_functions))
+  ok(new_resolved_file(file.path, file.indent, resolved_modules,
+      resolved_functions))
 
-proc resolve*(file: TypedFile): Result[void, string] =
+proc resolve*(file: TypedFile): Result[ResolvedFile, string] =
   let resolved_file_def = ? resolve_def(file)
   let resolved_file = ? resolve(resolved_file_def, file)
-  ok()
+  ok(resolved_file)

@@ -6,33 +6,36 @@ export parser
 
 # NOTE: Cycle detection algo
 proc detect_cycle[T](graph: Table[T, HashSet[T]], node: T,
-    visited: var OrderedSet[T], ancestors: var OrderedSet[T]): Result[
-    OrderedSet[T], OrderedSet[T]] =
+    visited: var OrderedSet[T], ancestors: var OrderedSet[T], stack: var seq[
+    T]): Result[seq[T], OrderedSet[T]] =
   if node in ancestors: return err(ancestors)
-  if node in visited: return ok(visited)
+  if node in visited: return ok(stack)
   visited.incl(node)
   ancestors.incl(node)
+  stack.add(node)
   for child in graph[node]:
     # NOTE: Graph may have self cycles since a module can
     # depend on itself for recursive dependencies. Other
     # than that no circular dependencies are allowed.
     if child == node: continue
-    visited = ? detect_cycle(graph, child, visited, ancestors)
+    stack = ? detect_cycle(graph, child, visited, ancestors, stack)
   ancestors.excl(node)
-  ok(visited)
+  ok(stack)
 
 # NOTE: weird api
 # "ok" returns topologicaly sorted nodes basically module resolution order
 # "error" returns the cycle in order of nodes as they come up.
 proc detect_cycle[T](graph: Table[T, HashSet[T]]): Result[seq[T], seq[T]] =
   var visited: OrderedSet[T]
+  var ordered_nodes: seq[T]
   for node in graph.keys:
     if node notin visited:
       var ancestors: OrderedSet[T]
-      let maybe_dag = detect_cycle(graph, node, visited, ancestors)
+      var stack: seq[T]
+      let maybe_dag = detect_cycle(graph, node, visited, ancestors, stack)
       if maybe_dag.is_err: return err(maybe_dag.error.to_seq)
-      visited = maybe_dag.get
-  ok(visited.to_seq.reversed)
+      ordered_nodes.add(maybe_dag.get.reversed)
+  ok(ordered_nodes)
 
 # Numeric literal parser utility
 proc safe_parse*[T](input: string): Result[void, string] =
@@ -1199,25 +1202,28 @@ proc find_function*(module: TypedNativeModule,
 
 type TypedFile* = ref object of RootObj
   name: string
+  indent: int
   native_modules: seq[TypedNativeModule]
   native_modules_map: Table[NativeModule, TypedNativeModule]
   modules: seq[TypedModule]
   modules_map: Table[UserModule, TypedModule]
   functions: seq[TypedFunction]
 
-proc new_typed_file(name: string, native_modules: seq[(NativeModule,
-    TypedNativeModule)], modules: seq[TypedModule], modules_map: Table[
-
-UserModule, TypedModule], functions: seq[TypedFunction]): TypedFile =
+proc new_typed_file(name: string, indent: int, native_modules: seq[(
+    NativeModule, TypedNativeModule)], modules: seq[TypedModule],
+    modules_map: Table[UserModule, TypedModule], functions: seq[
+    TypedFunction]): TypedFile =
   var native_modules_map: Table[NativeModule, TypedNativeModule]
   var typed_native_modules: seq[TypedNativeModule]
   for (native_module, typed_native_module) in native_modules:
     native_modules_map[native_module] = typed_native_module
     typed_native_modules.add(typed_native_module)
-  TypedFile(name: name, native_modules: typed_native_modules,
+  TypedFile(name: name, indent: indent, native_modules: typed_native_modules,
       native_modules_map: native_modules_map, modules: modules,
       modules_map: modules_map, functions: functions)
 
+proc path*(file: TypedFile): string = file.name
+proc indent*(file: TypedFile): int = file.indent
 proc native_modules*(file: TypedFile): seq[
     TypedNativeModule] = file.native_modules
 proc modules*(file: TypedFile): seq[TypedModule] = file.modules
@@ -1245,7 +1251,8 @@ proc assign_type*(file: parser.File): Result[TypedFile, string] =
   var modules_map: Table[UserModule, TypedModule]
   for module in file.user_modules:
     let typed_module = ? assign_type(file, module)
-    module_graph[module] = typed_module.module_deps
+    let module_deps = typed_module.module_deps
+    module_graph[module] = module_deps
     modules_map[module] = typed_module
 
   # NOTE: Cycle detection and Topologically sort based on module dependencies.
@@ -1267,5 +1274,5 @@ proc assign_type*(file: parser.File): Result[TypedFile, string] =
     let typed_function = ? assign_type(file, function)
     typed_functions.add(typed_function)
 
-  ok(new_typed_file(file.path, native_modules, typed_modules, modules_map,
-      typed_functions))
+  ok(new_typed_file(file.path, file.indent, native_modules, typed_modules,
+      modules_map, typed_functions))

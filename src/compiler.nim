@@ -25,5 +25,6 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)
   let typed_file = ? assign_type(file)
-  ? resolve(typed_file)
+  let resolved_file = ? resolve(typed_file)
+  echo resolved_file.asl
   ok()

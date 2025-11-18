@@ -2084,6 +2084,18 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "U64"]),
       ? new_native_function("S64_write_Pointer", "Pointer", "write", @["S64",
           "Pointer", "U64"]),
+      ? new_native_function("S64_add_S64", "S64", "add", @["S64", "S64"]),
+      ? new_native_function("S64_subtract_S64", "S64", "subtract", @["S64",
+          "S64"]),
+      ? new_native_function("S64_multiply_S64", "S64", "multiply", @["S64",
+          "S64"]),
+      ? new_native_function("S64_remainder_S64", "S64", "remainder", @["S64",
+          "S64"]),
+      ? new_native_function("S64_quotient_S64", "S64", "quotient", @["S64",
+          "S64"]),
+      ? new_native_function("S64_compare_S64", "S8", "compare", @["S64",
+          "S64"]),
+      ? new_native_function("S64_cast_U8", "S64", "from", @["U8"]),
     ]),
     ? new_native_module("U8", @[
       ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
@@ -2091,6 +2103,15 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "U64"]),
       ? new_native_function("U8_write_Pointer", "Pointer", "write", @["U8",
           "Pointer", "U64"]),
+      ? new_native_function("U8_lshift_U8", "U8", "lshift", @["U8",
+          "U64"]),
+      ? new_native_function("U8_rshift_U8", "U8", "rshift", @["U8",
+          "U64"]),
+      ? new_native_function("U8_and_U8", "U8", "and", @["U8",
+          "U8"]),
+      ? new_native_function("U8_or_U8", "U8", "or", @["U8",
+          "U8"]),
+      ? new_native_function("U8_not_U8", "U8", "not", @["U8"]),
     ]),
     ? new_native_module("U16", @[
       ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
@@ -2112,8 +2133,17 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "U64"]),
       ? new_native_function("U64_write_Pointer", "Pointer", "write", @["U64",
           "Pointer", "U64"]),
-      ? new_native_function("U64_compare", "S8", "compare", @["U64", "U64"]),
-      ? new_native_function("U64_add", "U64", "add", @["U64", "U64"]),
+      ? new_native_function("U64_add_U64", "U64", "add", @["U64", "U64"]),
+      ? new_native_function("U64_subtract_U64", "U64", "subtract", @["U64",
+          "U64"]),
+      ? new_native_function("U64_multiply_U64", "U64", "multiply", @["U64",
+          "U64"]),
+      ? new_native_function("U64_remainder_U64", "U64", "remainder", @["U64",
+          "U64"]),
+      ? new_native_function("U64_quotient_U64", "U64", "quotient", @["U64",
+          "U64"]),
+      ? new_native_function("U64_compare_U64", "S8", "compare", @["U64",
+          "U64"]),
     ]),
     ? new_native_module("F32", @[
       ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),
@@ -2331,6 +2361,7 @@ proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
       functions_map: functions_map, indent: indent))
 
 proc path*(file: File): string = file.path
+proc indent*(file: File): int = file.indent
 proc native_modules*(file: File): seq[NativeModule] = file.native_modules
 proc user_modules*(file: File): seq[UserModule] = file.user_modules
 proc functions*(file: File): seq[Function] = file.functions
