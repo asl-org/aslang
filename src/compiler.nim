@@ -1,6 +1,7 @@
 import results, strformat, unicode
 
 import resolver
+import codegen
 
 proc write_file_safe(filename: string, content: string): Result[void, string] =
   try:
@@ -26,5 +27,5 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let file = ? parse(filename, tokens)
   let typed_file = ? assign_type(file)
   let resolved_file = ? resolve(typed_file)
-  echo resolved_file.asl
+  echo generate(resolved_file)
   ok()
