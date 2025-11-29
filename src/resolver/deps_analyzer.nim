@@ -1249,13 +1249,13 @@ type TypedFile* = ref object of RootObj
   indent: int
   native_modules: seq[TypedNativeModule]
   native_modules_map: Table[NativeModule, TypedNativeModule]
-  modules: seq[TypedUserModule]
-  modules_map: Table[UserModule, TypedUserModule]
+  user_modules: seq[TypedUserModule]
+  user_modules_map: Table[UserModule, TypedUserModule]
   functions: seq[TypedFunction]
 
 proc new_typed_file(name: string, indent: int, native_modules: seq[(
-    NativeModule, TypedNativeModule)], modules: seq[TypedUserModule],
-    modules_map: Table[UserModule, TypedUserModule], functions: seq[
+    NativeModule, TypedNativeModule)], user_modules: seq[TypedUserModule],
+    user_modules_map: Table[UserModule, TypedUserModule], functions: seq[
     TypedFunction]): TypedFile =
   var native_modules_map: Table[NativeModule, TypedNativeModule]
   var typed_native_modules: seq[TypedNativeModule]
@@ -1263,18 +1263,19 @@ proc new_typed_file(name: string, indent: int, native_modules: seq[(
     native_modules_map[native_module] = typed_native_module
     typed_native_modules.add(typed_native_module)
   TypedFile(name: name, indent: indent, native_modules: typed_native_modules,
-      native_modules_map: native_modules_map, modules: modules,
-      modules_map: modules_map, functions: functions)
+      native_modules_map: native_modules_map, user_modules: user_modules,
+      user_modules_map: user_modules_map, functions: functions)
 
 proc path*(file: TypedFile): string = file.name
 proc indent*(file: TypedFile): int = file.indent
 proc native_modules*(file: TypedFile): seq[
     TypedNativeModule] = file.native_modules
-proc modules*(file: TypedFile): seq[TypedUserModule] = file.modules
+proc user_modules*(file: TypedFile): seq[TypedUserModule] = file.user_modules
 proc functions*(file: TypedFile): seq[TypedFunction] = file.functions
-proc find_module*(file: TypedFile, module: UserModule): Result[TypedUserModule, string] =
-  if module in file.modules_map:
-    ok(file.modules_map[module])
+proc find_module*(file: TypedFile, module: UserModule): Result[
+    TypedUserModule, string] =
+  if module in file.user_modules_map:
+    ok(file.user_modules_map[module])
   else:
     err("failed to find module `{module.name.asl}`")
 

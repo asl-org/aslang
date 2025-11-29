@@ -1705,34 +1705,6 @@ proc hash*(generic: Generic): Hash =
 proc `==`*(self: Generic, other: Generic): bool =
   self.hash == other.hash
 
-proc find_function*(generic: Generic, def: FunctionDefinition): Result[
-    FunctionDefinition, string] =
-  case generic.kind:
-  of GK_DEFAULT:
-    err(fmt"{def.location} [PE137] generic `{generic.name.asl}` does not have any constraint named `{def.name.asl}`")
-  of GK_CONSTRAINED:
-    let def_hash = def.hash
-    if def_hash notin generic.defs_hash_map:
-      err(fmt"{def.location} [PE138] generic `{generic.name.asl}` does not have any constraint named `{def.name.asl}`")
-    else:
-      ok(generic.defs[generic.defs_hash_map[def_hash]])
-
-proc find_functions*(generic: Generic, name: Identifier, arity: int): Result[
-    seq[FunctionDefinition], string] =
-  case generic.kind:
-  of GK_DEFAULT:
-    err(fmt"{name.location} [PE139] generic `{generic.name.asl}` does not have any function named `{name.asl}`")
-  of GK_CONSTRAINED:
-    if name notin generic.defs_map:
-      err(fmt"{name.location} [PE140] generic `{generic.name.asl}` does not have any function named `{name.asl}`")
-    elif arity notin generic.defs_map[name]:
-      err(fmt"{name.location} [PE141] generic `{generic.name.asl}` does not have any function with arity `{arity}`")
-    else:
-      var defs: seq[FunctionDefinition]
-      for index in generic.defs_map[name][arity]:
-        defs.add(generic.defs[index])
-      ok(defs)
-
 proc generic_default_spec(parser: Parser, indent: int): Result[Generic, string] =
   discard ? parser.expect(indent_spec, indent)
   let generic_keyword = ? parser.expect(generic_keyword_spec)
@@ -1867,44 +1839,6 @@ proc module_ref*(module: UserModule): Result[ModuleRef, string] =
   else:
     ok(new_module_ref(module.name))
 
-proc find_struct*(module: UserModule): Result[Struct, string] =
-  if module.default_struct_index == -1: # No struct block is defined
-    err(fmt"[PE171] module `{module.name.asl}` does not have a default struct")
-  else:
-    ok(module.structs[module.default_struct_index])
-
-proc find_struct*(module: UserModule, name: Identifier): Result[Struct, string] =
-  if name notin module.structs_map:
-    err(fmt"{name.location} [PE151] module `{module.name.asl}` does not have a struct named `{name.asl}`")
-  else:
-    ok(module.structs[module.structs_map[name]])
-
-proc find_field*(module: UserModule, field: Identifier): Result[ModuleRef, string] =
-  if module.default_struct_index == -1: # No struct block is defined
-    err(fmt"{field.location} [PE151] module `{module.name.asl}` does not have a default struct")
-  else:
-    let struct = module.structs[module.default_struct_index]
-    struct.find_field(field)
-
-proc find_functions*(module: UserModule, name: Identifier,
-    argcount: int): Result[seq[FunctionDefinition], string] =
-  if name notin module.functions_map:
-    return err(fmt"{name.location} [PE152] module `{module.name.asl}` does not have any function named `{name.asl}`")
-
-  var defs: seq[FunctionDefinition]
-  for index in module.functions_map[name]:
-    if module.functions[index].def.args.len == argcount:
-      defs.add(module.functions[index].def)
-  ok(defs)
-
-proc find_function*(module: UserModule, def: FunctionDefinition): Result[
-    FunctionDefinition, string] =
-  let def_hash = def.hash
-  if def_hash notin module.function_defs_hash_map:
-    err(fmt"{def.location} [PE153] module `{module.name.asl}` does not have any function named `{def.name.asl}`")
-  else:
-    ok(module.functions[module.function_defs_hash_map[def_hash]].def)
-
 proc find_generic*(module: UserModule, name: Identifier): Result[Generic, string] =
   if name notin module.generics_map:
     err(fmt"{name.location} [PE154] module `{module.name.asl}` does not have any generic named `{name.asl}`")
@@ -1991,30 +1925,30 @@ proc native_modules(): Result[seq[NativeModule], string] =
   ok(@[
     ? new_native_module("S8", @[
       ? new_native_function("S8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S8_read_Pointer", "S8", "read", @["Pointer",
+      ? new_native_function("S8_read", "S8", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S8_write_Pointer", "Pointer", "write", @["S8",
+      ? new_native_function("S8_write", "Pointer", "write", @["S8",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S16", @[
       ? new_native_function("S16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S16_read_Pointer", "S16", "read", @["Pointer",
+      ? new_native_function("S16_read", "S16", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S16_write_Pointer", "Pointer", "write", @["S16",
+      ? new_native_function("S16_write", "Pointer", "write", @["S16",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S32", @[
       ? new_native_function("S32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S32_read_Pointer", "S32", "read", @["Pointer",
+      ? new_native_function("S32_read", "S32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S32_write_Pointer", "Pointer", "write", @["S32",
+      ? new_native_function("S32_write", "Pointer", "write", @["S32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S64", @[
       ? new_native_function("S64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S64_read_Pointer", "S64", "read", @["Pointer",
+      ? new_native_function("S64_read", "S64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S64_write_Pointer", "Pointer", "write", @["S64",
+      ? new_native_function("S64_write", "Pointer", "write", @["S64",
           "Pointer", "U64"]),
       ? new_native_function("S64_add_S64", "S64", "add", @["S64", "S64"]),
       ? new_native_function("S64_subtract_S64", "S64", "subtract", @["S64",
@@ -2031,9 +1965,9 @@ proc native_modules(): Result[seq[NativeModule], string] =
     ]),
     ? new_native_module("U8", @[
       ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U8_read_Pointer", "U8", "read", @["Pointer",
+      ? new_native_function("U8_read", "U8", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U8_write_Pointer", "Pointer", "write", @["U8",
+      ? new_native_function("U8_write", "Pointer", "write", @["U8",
           "Pointer", "U64"]),
       ? new_native_function("U8_lshift_U8", "U8", "lshift", @["U8",
           "U64"]),
@@ -2047,23 +1981,23 @@ proc native_modules(): Result[seq[NativeModule], string] =
     ]),
     ? new_native_module("U16", @[
       ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U16_read_Pointer", "U16", "read", @["Pointer",
+      ? new_native_function("U16_read", "U16", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U16_write_Pointer", "Pointer", "write", @["U16",
+      ? new_native_function("U16_write", "Pointer", "write", @["U16",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("U32", @[
       ? new_native_function("U32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U32_read_Pointer", "U32", "read", @["Pointer",
+      ? new_native_function("U32_read", "U32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U32_write_Pointer", "Pointer", "write", @["U32",
+      ? new_native_function("U32_write", "Pointer", "write", @["U32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("U64", @[
       ? new_native_function("U64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U64_read_Pointer", "U64", "read", @["Pointer",
+      ? new_native_function("U64_read", "U64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U64_write_Pointer", "Pointer", "write", @["U64",
+      ? new_native_function("U64_write", "Pointer", "write", @["U64",
           "Pointer", "U64"]),
       ? new_native_function("U64_add_U64", "U64", "add", @["U64", "U64"]),
       ? new_native_function("U64_subtract_U64", "U64", "subtract", @["U64",
@@ -2079,36 +2013,40 @@ proc native_modules(): Result[seq[NativeModule], string] =
     ]),
     ? new_native_module("F32", @[
       ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F32_read_Pointer", "F32", "read", @["Pointer",
+      ? new_native_function("F32_read", "F32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("F32_write_Pointer", "Pointer", "write", @["F32",
+      ? new_native_function("F32_write", "Pointer", "write", @["F32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("F64", @[
       ? new_native_function("F64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F64_read_Pointer", "F64", "read", @["Pointer",
+      ? new_native_function("F64_read", "F64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["F64",
+      ? new_native_function("F64_write", "Pointer", "write", @["F64",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("String", @[
       ? new_native_function("String_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("String_read_Pointer", "String", "read", @[
+      ? new_native_function("String_read", "String", "read", @[
           "Pointer", "U64"]),
-      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["String",
+      ? new_native_function("F64_write", "Pointer", "write", @["String",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("Pointer", @[
       ? new_native_function("Pointer_byte_size", "U64", "byte_size", @[
           "U64"]),
-      ? new_native_function("Pointer_read_Pointer", "Pointer", "read", @[
+      ? new_native_function("Pointer_read", "Pointer", "read", @[
           "Pointer", "U64"]),
-      ? new_native_function("Pointer_write_Pointer", "Pointer", "write", @[
+      ? new_native_function("Pointer_write", "Pointer", "write", @[
           "Pointer", "Pointer", "U64"]),
     ]),
     ? new_native_module("System", @[
       ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
       ? new_native_function("System_free", "Pointer", "free", @["Pointer"]),
+      ? new_native_function("System_box_U8", "Pointer", "box", @["U8"]),
+      ? new_native_function("System_box_U64", "Pointer", "box", @["U64"]),
+      ? new_native_function("System_box_S32", "Pointer", "box", @["S32"]),
+      ? new_native_function("System_box_S64", "Pointer", "box", @["S64"]),
       ? new_native_function("System_print_U8", "U64", "print", @["U8"]),
       ? new_native_function("System_print_U64", "U64", "print", @["U64"]),
       ? new_native_function("System_print_S32", "U64", "print", @["S32"]),
