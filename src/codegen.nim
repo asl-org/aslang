@@ -1,4 +1,4 @@
-import strformat, strutils, tables, sequtils
+import strformat, strutils, tables, sequtils, results
 
 import resolver
 
@@ -49,7 +49,7 @@ proc generic_function(
   name: string,
   args: seq[(string, string, string, bool)],
   returns: (string, bool),
-  impls: seq[(string, string)]): (seq[string], seq[string]) =
+  impls: seq[(uint64, string, string)]): (seq[string], seq[string]) =
   # prefix: fmt"{module}_{generic}"
   var c_code: seq[string]
   var c_defs: seq[string]
@@ -77,7 +77,7 @@ proc generic_function(
   c_code.add(fmt"switch(__asl_impl_id)")
   c_code.add("{")
 
-  for id, (impl_name, impl_type) in impls.pairs:
+  for (id, impl_name, impl_type) in impls:
     c_code.add(fmt"case {id}: // {impl_name}")
     c_code.add("{")
 
@@ -98,14 +98,10 @@ proc generic_function(
   return (c_defs, c_code)
 
 proc generate(prefix: string, generic: ResolvedGeneric, impls: seq[
-    TypedModule]): (seq[string], seq[string]) =
-  var impl_name_types: seq[(string, string)]
+    ResolvedModuleDefinition]): (seq[string], seq[string]) =
+  var impl_name_types: seq[(uint64, string, string)]
   for impl in impls:
-    let impl_type =
-      case impl.kind:
-      of TMK_NATIVE: impl.name.asl
-      of TMK_USER: "Pointer"
-    impl_name_types.add((impl.name.asl, impl_type))
+    impl_name_types.add((impl.id, impl.c_name, impl.c_type))
 
   var c_code: seq[string]
   var c_defs: seq[string]
@@ -226,7 +222,7 @@ proc generate(struct: ResolvedStruct, module: string, id: uint64): (seq[string],
   union_init(prefix, id, args)
 
 proc generate(module: ResolvedUserModuleDefinition, generic_impls: seq[seq[
-    TypedModule]]): (seq[string], seq[string]) =
+    ResolvedModuleDefinition]]): (seq[string], seq[string]) =
   var c_code: seq[string]
   var c_defs: seq[string]
   for index, generic in module.generics.pairs:
@@ -262,19 +258,20 @@ proc generate(module: ResolvedUserModuleDefinition, generic_impls: seq[seq[
   return (c_defs, c_code)
 
 proc generate(file: ResolvedFileDefinition, generic_impls: Table[
-    TypedUserModule, seq[seq[TypedModule]]]): (seq[string], seq[string]) =
+    TypedUserModule, seq[seq[ResolvedModuleDefinition]]]): (seq[string], seq[string]) =
   var c_code: seq[string]
   var c_defs: seq[string]
   for module in file.user_modules:
     let generics = generic_impls.get_or_default(module.module, new_seq[seq[
-        TypedModule]]())
+        ResolvedModuleDefinition]]())
     let (c_def, c_impl) = module.generate(generics)
     c_defs.add(c_def)
     c_code.add(c_impl)
   return (c_defs, c_code)
 
-proc generate*(file: ResolvedFile): string =
-  let (defs, code) = file.def.generate(file.generic_impls)
+proc generate*(file: ResolvedFile): Result[string, string] =
+  let generic_impls = ? file.generic_impls
+  let (defs, code) = file.def.generate(generic_impls)
   let c_code = @[defs.join("\n"), code.join("\n")].join("\n\n")
   let c_file = @[
     "#include \"runtime.h\"",
@@ -284,4 +281,4 @@ proc generate*(file: ResolvedFile): string =
     "return start(argc);",
     "}"
   ].join("\n")
-  return c_file
+  return ok(c_file)

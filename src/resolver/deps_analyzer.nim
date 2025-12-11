@@ -1216,6 +1216,14 @@ proc new_typed_module*(user_module: TypedUserModule): TypedModule =
   TypedModule(kind: TMK_USER, user_module: user_module)
 
 proc kind*(impl: TypedModule): TypedModuleKind = impl.kind
+proc native*(impl: TypedModule): Result[TypedNativeModule, string] =
+  case impl.kind:
+  of TMK_NATIVE: ok(impl.native_module)
+  else: err("[INTERNAL] - expected a native module")
+proc user*(impl: TypedModule): Result[TypedUserModule, string] =
+  case impl.kind:
+  of TMK_USER: ok(impl.user_module)
+  else: err("[INTERNAL] - expected a user module")
 proc name*(impl: TypedModule): Identifier =
   case impl.kind:
   of TMK_NATIVE: impl.native_module.name

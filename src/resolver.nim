@@ -704,6 +704,35 @@ proc resolve_def(file: TypedFile, id: uint64, def: TypedNativeModule): Result[
     resolved_functions.add(resolved_function)
   ok(new_resolved_native_module_definition(id, def.name, resolved_functions))
 
+type
+  ResolvedModuleDefinitionKind* = enum
+    RMDK_NATIVE, RMDK_USER
+  ResolvedModuleDefinition* = ref object of RootObj
+    case kind: ResolvedModuleDefinitionKind
+    of RMDK_NATIVE: native: ResolvedNativeModuleDefinition
+    of RMDK_USER: user: ResolvedUserModuleDefinition
+
+proc new_resolved_module_definition(native: ResolvedNativeModuleDefinition): ResolvedModuleDefinition =
+  ResolvedModuleDefinition(kind: RMDK_NATIVE, native: native)
+
+proc new_resolved_module_definition(user: ResolvedUserModuleDefinition): ResolvedModuleDefinition =
+  ResolvedModuleDefinition(kind: RMDK_USER, user: user)
+
+proc id*(def: ResolvedModuleDefinition): uint64 =
+  case def.kind:
+  of RMDK_NATIVE: def.native.id
+  of RMDK_USER: def.user.id
+
+proc c_name*(def: ResolvedModuleDefinition): string =
+  case def.kind:
+  of RMDK_NATIVE: def.native.name.asl
+  of RMDK_USER: def.user.name.asl
+
+proc c_type*(def: ResolvedModuleDefinition): string =
+  case def.kind:
+  of RMDK_NATIVE: def.native.name.asl
+  of RMDK_USER: "Pointer"
+
 type ResolvedFileDefinition* = ref object of RootObj
   file: TypedFile
   native_modules: seq[ResolvedNativeModuleDefinition]
@@ -787,6 +816,18 @@ proc find_module_def(file_def: ResolvedFileDefinition,
     ok(file_def.user_modules_map[module])
   else:
     err(fmt"module `{module.name.asl}` not found in resolved file definition")
+
+proc find_module_def(file_def: ResolvedFileDefinition,
+    module: TypedModule): Result[ResolvedModuleDefinition, string] =
+  case module.kind:
+  of TMK_NATIVE:
+    let typed_native_module = ? module.native
+    let resolved_native_module_def = ? file_def.find_module_def(typed_native_module)
+    ok(new_resolved_module_definition(resolved_native_module_def))
+  of TMK_USER:
+    let typed_user_module = ? module.user
+    let resolved_user_module_def = ? file_def.find_module_def(typed_user_module)
+    ok(new_resolved_module_definition(resolved_user_module_def))
 
 proc find_function_def(file_def: ResolvedFileDefinition,
     def: TypedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
@@ -2095,8 +2136,8 @@ proc def*(file: ResolvedFile): ResolvedFileDefinition = file.def
 proc user_modules*(file: ResolvedFile): seq[
     ResolvedUserModule] = file.user_modules
 proc functions*(file: ResolvedFile): seq[ResolvedFunction] = file.functions
-proc generic_impls*(file: ResolvedFile): Table[TypedUserModule, seq[seq[
-    TypedModule]]] =
+proc generic_impls*(file: ResolvedFile): Result[Table[TypedUserModule, seq[seq[
+    ResolvedModuleDefinition]]], string] =
   var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
   impl_set = impl_set.merge(file.def.generic_impls)
   for module in file.user_modules: impl_set = impl_set.merge(
@@ -2105,10 +2146,17 @@ proc generic_impls*(file: ResolvedFile): Table[TypedUserModule, seq[seq[
       function.generic_impls)
 
   # Assign index to module for each generic
-  var impl_map: Table[TypedUserModule, seq[seq[TypedModule]]]
+  var impl_map: Table[TypedUserModule, seq[seq[ResolvedModuleDefinition]]]
   for module, generics in impl_set.pairs:
-    impl_map[module] = generics.map_it(it.to_seq)
-  return impl_map
+    var resolved_children: seq[seq[ResolvedModuleDefinition]]
+    for impls in generics:
+      var resolved_module_defs: seq[ResolvedModuleDefinition]
+      for impl in impls:
+        let resolved_module_def = ? file.def.find_module_def(impl)
+        resolved_module_defs.add(resolved_module_def)
+      resolved_children.add(resolved_module_defs)
+    impl_map[module] = resolved_children
+  return ok(impl_map)
 
 proc asl*(file: ResolvedFile): string =
   let indent = " ".repeat(file.indent)

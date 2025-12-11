@@ -27,5 +27,5 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let file = ? parse(filename, tokens)
   let typed_file = ? assign_type(file)
   let resolved_file = ? resolve(typed_file)
-  echo generate(resolved_file)
-  ok()
+  let code = ? generate(resolved_file)
+  write_file_safe("sample.c", code)
