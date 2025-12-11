@@ -71,7 +71,6 @@ fn start(U8 seed): U8
   arr = Array[U8].init(8)
   Array[U8].set(arr, 0, 1)
   Array[U8].set(arr, 1, 2)
-
   print(arr)
 
   exit_success

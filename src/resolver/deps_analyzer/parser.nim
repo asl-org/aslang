@@ -194,7 +194,7 @@ proc new_identifier(name: string, location: Location): Result[Identifier, string
     return err(fmt"{location} [PE102] identifier length `{name.len}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
   ok(Identifier(name: name, location: location))
 
-proc new_identifier(name: string): Result[Identifier, string] =
+proc new_identifier*(name: string): Result[Identifier, string] =
   new_identifier(name, Location())
 
 proc new_identifier(location: Location): Identifier =
@@ -512,17 +512,10 @@ proc new_function_definition*(name: Identifier, args: seq[ArgumentDefinition],
   ok(FunctionDefinition(name: name, args: args, returns: returns,
       location: location))
 
-proc location*(def: FunctionDefinition): Location =
-  def.location
-
-proc name*(def: FunctionDefinition): Identifier =
-  def.name
-
-proc args*(def: FunctionDefinition): seq[ArgumentDefinition] =
-  def.args
-
-proc returns*(def: FunctionDefinition): ModuleRef =
-  def.returns
+proc location*(def: FunctionDefinition): Location = def.location
+proc name*(def: FunctionDefinition): Identifier = def.name
+proc args*(def: FunctionDefinition): seq[ArgumentDefinition] = def.args
+proc returns*(def: FunctionDefinition): ModuleRef = def.returns
 
 proc asl*(def: FunctionDefinition): string =
   var args: seq[string]

@@ -136,8 +136,8 @@ proc struct_init(prefix: string, args: seq[(string, string)]): (seq[string],
   var c_code: seq[string]
   var c_defs: seq[string]
   var arg_def_str = args.map_it(fmt"{it[0]} {it[1]}").join(", ")
-  c_defs.add(fmt"Pointer {prefix}_default({arg_def_str});")
-  c_code.add(fmt"Pointer {prefix}_default({arg_def_str})")
+  c_defs.add(fmt"Pointer {prefix}_default_init({arg_def_str});")
+  c_code.add(fmt"Pointer {prefix}_default_init({arg_def_str})")
   c_code.add("{")
 
   var offset_expr = "0";
@@ -164,8 +164,8 @@ proc union_init(prefix: string, id: uint64, args: seq[(string, string)]): (seq[
   var c_code: seq[string]
   var c_defs: seq[string]
   var arg_def_str = args.map_it(fmt"{it[0]} {it[1]}").join(", ")
-  c_defs.add(fmt"Pointer {prefix}_default({arg_def_str});")
-  c_code.add(fmt"Pointer {prefix}_default({arg_def_str})")
+  c_defs.add(fmt"Pointer {prefix}_default_init({arg_def_str});")
+  c_code.add(fmt"Pointer {prefix}_default_init({arg_def_str})")
   c_code.add("{")
 
   var offset_expr = "0";
