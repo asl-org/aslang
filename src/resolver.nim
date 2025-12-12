@@ -431,6 +431,12 @@ proc fields*(struct: ResolvedStruct): seq[
     ResolvedArgumentDefinition] = struct.fields
 proc kind*(struct: ResolvedStruct): ResolvedStructKind = struct.kind
 proc name*(struct: ResolvedStruct): Identifier = struct.name
+proc c_args*(struct: ResolvedStruct): seq[(string, string)] =
+  struct.fields.map_it((it.c_type, it.c_name))
+proc c_name*(struct: ResolvedStruct): string =
+  case struct.kind:
+  of RSK_DEFAULT: "default"
+  of RSK_NAMED: struct.name.asl
 
 proc concretize(struct: ResolvedStruct, concrete_map: Table[TypedGeneric,
     ResolvedModuleRef]): ResolvedStruct =
