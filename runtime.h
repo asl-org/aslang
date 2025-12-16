@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <string.h>
 #include <stdlib.h>
 
 /** NOTE: Needed for UNREACHABLE Macro */
@@ -34,7 +35,9 @@ typedef void *Pointer;
 /** NOTE: System calls fall under System module */
 Pointer System_allocate(U64 bytes)
 {
-  return malloc(bytes);
+  Pointer ptr = malloc(bytes);
+  memset(ptr, 0, bytes);
+  return ptr;
 }
 
 /** NOTE: Macro for generating {Type}_byte_size function for Native Types.
@@ -119,3 +122,8 @@ BASIC_OPS(Pointer)
 #undef BYTE_SIZE
 #undef POINTER_READ
 #undef POINTER_WRITE
+
+S8 U64_compare_U64(U64 x, U64 y)
+{
+  return (x < y) ? -1 : (x > y ? 1 : 0);
+}

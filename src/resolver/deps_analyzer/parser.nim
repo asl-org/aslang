@@ -198,7 +198,7 @@ proc new_identifier*(name: string): Result[Identifier, string] =
   new_identifier(name, Location())
 
 proc new_identifier(location: Location): Identifier =
-  let name = fmt"__asl__arg__{location.hash.to_hex}__"
+  let name = fmt"__asl_arg_{location.hash.to_hex}"
   Identifier(name: name, location: location)
 
 proc location*(identifier: Identifier): Location =

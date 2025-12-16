@@ -1,12 +1,13 @@
-import results, sequtils, strformat, tables, hashes, strutils, sets, re, options
+import results, sequtils, strformat, tables, hashes, strutils, sets, re,
+    options, algorithm
 
 import resolver/deps_analyzer
 export deps_analyzer
 
 type
-  ResolvedModuleRefKind* = enum
+  ResolvedModuleRefKind = enum
     RMRK_NATIVE, RMRK_USER, RMRK_GENERIC
-  ResolvedModuleRef* = ref object of RootObj
+  ResolvedModuleRef = ref object of RootObj
     location: Location
     case kind: ResolvedModuleRefKind
     of RMRK_NATIVE: native_module: TypedNativeModule
@@ -14,6 +15,7 @@ type
     of RMRK_USER:
       user_module: TypedUserModule
       children: seq[ResolvedModuleRef]
+      impls: seq[seq[TypedFunctionDefinition]]
       concrete_map: Table[TypedGeneric, ResolvedModuleRef]
 
 proc new_resolved_module_ref(native_module: TypedNativeModule,
@@ -27,26 +29,20 @@ proc new_resolved_module_ref(generic: TypedGeneric,
       location: location)
 
 proc new_resolved_module_ref(user_module: TypedUserModule, children: seq[
-    ResolvedModuleRef], location: Location): ResolvedModuleRef =
+    ResolvedModuleRef], impls: seq[seq[TypedFunctionDefinition]],
+        location: Location): ResolvedModuleRef =
   var concrete_map: Table[TypedGeneric, ResolvedModuleRef]
   for (generic, child) in zip(user_module.generics, children):
     concrete_map[generic] = child
   ResolvedModuleRef(kind: RMRK_USER, user_module: user_module,
-      concrete_map: concrete_map, children: children, location: location)
+      concrete_map: concrete_map, children: children, impls: impls,
+      location: location)
 
-proc kind*(module_ref: ResolvedModuleRef): ResolvedModuleRefKind = module_ref.kind
-proc native_module*(module_ref: ResolvedModuleRef): TypedNativeModule = module_ref.native_module
-proc user_module*(module_ref: ResolvedModuleRef): TypedUserModule = module_ref.user_module
-proc generic*(module_ref: ResolvedModuleRef): TypedGeneric = module_ref.generic
-proc asl_type*(module_ref: ResolvedModuleRef): string =
+proc name(module_ref: ResolvedModuleRef): string =
   case module_ref.kind:
   of RMRK_NATIVE: module_ref.native_module.name.asl
   of RMRK_USER: module_ref.user_module.name.asl
   of RMRK_GENERIC: module_ref.generic.name.asl
-proc c_type*(module_ref: ResolvedModuleRef): string =
-  case module_ref.kind:
-  of RMRK_NATIVE: module_ref.native_module.name.asl
-  else: "Pointer"
 
 proc can_be_argument(module_ref: ResolvedModuleRef): Result[void, string] =
   case module_ref.kind:
@@ -74,7 +70,7 @@ proc concretize(module_ref: ResolvedModuleRef, concrete_map: Table[TypedGeneric,
     for child in module_ref.children:
       concretized_children.add(child.concretize(concrete_map))
     new_resolved_module_ref(module_ref.user_module, concretized_children,
-        module_ref.location)
+        module_ref.impls, module_ref.location)
 
 proc hash(module_ref: ResolvedModuleRef): Hash =
   case module_ref.kind:
@@ -88,26 +84,6 @@ proc hash(module_ref: ResolvedModuleRef): Hash =
 
 proc `==`(self: ResolvedModuleRef, other: ResolvedModuleRef): bool =
   self.hash == other.hash
-
-proc generic_impls(module_ref: ResolvedModuleRef): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  case module_ref.kind:
-  of RMRK_NATIVE: discard
-  of RMRK_GENERIC: discard
-  of RMRK_USER:
-    if module_ref.children.len > 0:
-      var generics: seq[HashSet[TypedModule]]
-      for index, child in module_ref.children.pairs:
-        generics.add(init_hashset[TypedModule]())
-        case child.kind:
-        of RMRK_NATIVE: generics[index].incl(new_typed_module(
-            child.native_module))
-        of RMRK_GENERIC: discard
-        of RMRK_USER: generics[index].incl(new_typed_module(
-            child.user_module))
-      impl_set[module_ref.user_module] = generics
-  return impl_set
 
 proc asl(module_ref: ResolvedModuleRef): string =
   case module_ref.kind:
@@ -124,7 +100,22 @@ proc asl(module_ref: ResolvedModuleRef): string =
       let children_str = children_args.join(", ")
       fmt"{parent_str}[{children_str}]"
 
-proc resolve_def*(file: TypedFile, module: TypedUserModule,
+proc byte_size(module_ref: ResolvedModuleRef): uint64 =
+  case module_ref.kind:
+  of RMRK_NATIVE:
+    case module_ref.native_module.name.asl:
+    of "U8", "S8": 1
+    of "U16", "S16": 2
+    of "U32", "S32", "F32": 4
+    else: 8
+  else: 8
+
+proc c(module_ref: ResolvedModuleRef): string =
+  case module_ref.kind:
+  of RMRK_NATIVE: module_ref.native_module.name.asl
+  else: "Pointer"
+
+proc resolve_def(file: TypedFile, module: TypedUserModule,
     generic: TypedGeneric, module_ref: TypedModuleRef): Result[
         ResolvedModuleRef, string] =
   case module_ref.kind:
@@ -150,16 +141,19 @@ proc resolve_def*(file: TypedFile, module: TypedUserModule,
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
     var resolved_children: seq[ResolvedModuleRef]
+    var matching_impls: seq[seq[TypedFunctionDefinition]]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, generic, child)
       resolved_children.add(resolved_child)
       # NOTE: Check that resolved child satifies constraints.
+      var generic_impls: seq[TypedFunctionDefinition]
       for def in typed_generic.concrete_defs(child.self()):
-        discard ? resolved_child.find_function(def)
-    ok(new_resolved_module_ref(typed_module, resolved_children,
+        generic_impls.add( ? resolved_child.find_function(def))
+      matching_impls.add(generic_impls)
+    ok(new_resolved_module_ref(typed_module, resolved_children, matching_impls,
         module_ref.location))
 
-proc resolve_def*(file: TypedFile, module: TypedUserModule,
+proc resolve_def(file: TypedFile, module: TypedUserModule,
     module_ref: TypedModuleRef): Result[ResolvedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
@@ -180,16 +174,19 @@ proc resolve_def*(file: TypedFile, module: TypedUserModule,
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
     var resolved_children: seq[ResolvedModuleRef]
+    var matching_impls: seq[seq[TypedFunctionDefinition]]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, child)
       resolved_children.add(resolved_child)
       # NOTE: Check that resolved child satifies constraints.
+      var generic_impls: seq[TypedFunctionDefinition]
       for def in typed_generic.concrete_defs(child.self()):
-        discard ? resolved_child.find_function(def)
-    ok(new_resolved_module_ref(typed_module, resolved_children,
+        generic_impls.add( ? resolved_child.find_function(def))
+      matching_impls.add(generic_impls)
+    ok(new_resolved_module_ref(typed_module, resolved_children, matching_impls,
         module_ref.location))
 
-proc resolve_def*(file: TypedFile, module_ref: TypedModuleRef): Result[
+proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
     ResolvedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
@@ -207,13 +204,16 @@ proc resolve_def*(file: TypedFile, module_ref: TypedModuleRef): Result[
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
     var resolved_children: seq[ResolvedModuleRef]
+    var matching_impls: seq[seq[TypedFunctionDefinition]]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, child)
       resolved_children.add(resolved_child)
       # NOTE: Check that resolved child satifies constraints.
+      var generic_impls: seq[TypedFunctionDefinition]
       for def in typed_generic.concrete_defs(child.self()):
-        discard ? resolved_child.find_function(def)
-    ok(new_resolved_module_ref(typed_module, resolved_children,
+        generic_impls.add( ? resolved_child.find_function(def))
+      matching_impls.add(generic_impls)
+    ok(new_resolved_module_ref(typed_module, resolved_children, matching_impls,
         module_ref.location))
 
 type ResolvedArgumentDefinition = ref object of RootObj
@@ -235,18 +235,14 @@ proc concretize(arg: ResolvedArgumentDefinition, concrete_map: Table[
   let concretized_module_ref = arg.module_ref.concretize(concrete_map)
   new_resolved_argument_definition(concretized_module_ref, arg.name)
 
-proc module_ref*(arg: ResolvedArgumentDefinition): ResolvedModuleRef = arg.module_ref
-proc name*(arg: ResolvedArgumentDefinition): Identifier = arg.name
-proc c_name*(arg: ResolvedArgumentDefinition): string = arg.name.asl
-proc c_type*(arg: ResolvedArgumentDefinition): string = arg.module_ref.c_type
-proc asl_type*(arg: ResolvedArgumentDefinition): string = arg.module_ref.asl_type
-
-proc generic_impls(arg: ResolvedArgumentDefinition): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  arg.module_ref.generic_impls
-
 proc asl(arg: ResolvedArgumentDefinition): string =
   fmt"{arg.module_ref.asl} {arg.name.asl}"
+
+proc c(arg: ResolvedArgumentDefinition): string =
+  fmt"{arg.module_ref.c} {arg.name.asl}"
+
+proc byte_size(arg: ResolvedArgumentDefinition): uint64 =
+  arg.module_ref.byte_size
 
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     generic: TypedGeneric, arg: TypedArgumentDefinition): Result[
@@ -267,32 +263,21 @@ proc resolve_def(file: TypedFile, arg: TypedArgumentDefinition): Result[
   ? resolved_module_ref.can_be_argument
   ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
 
-type ResolvedFunctionDefinition* = ref object of RootObj
+type ResolvedFunctionDefinition = ref object of RootObj
   name: Identifier
   args: seq[ResolvedArgumentDefinition]
   returns: ResolvedModuleRef
+  prefix: string
+  generics: uint64
   location: Location
 
-proc new_resolved_function_definition(name: Identifier, args: seq[
-    ResolvedArgumentDefinition], returns: ResolvedModuleRef,
-    location: Location): ResolvedFunctionDefinition =
-  ResolvedFunctionDefinition(name: name, args: args, returns: returns,
-      location: location)
+proc new_resolved_function_definition(name: Identifier,
+    args: seq[ResolvedArgumentDefinition], returns: ResolvedModuleRef,
+    location: Location, prefix: string = "",
+        generics: uint64 = 0): ResolvedFunctionDefinition =
+  ResolvedFunctionDefinition(name: name, args: args,
+      returns: returns, location: location, prefix: prefix, generics: generics)
 
-proc name*(def: ResolvedFunctionDefinition): Identifier = def.name
-proc args*(def: ResolvedFunctionDefinition): seq[
-    ResolvedArgumentDefinition] = def.args
-proc returns*(def: ResolvedFunctionDefinition): ResolvedModuleRef = def.returns
-proc accepts_generic*(def: ResolvedFunctionDefinition): bool =
-  for arg in def.args:
-    case arg.module_ref.kind:
-    of RMRK_GENERIC: return true
-    else: discard
-  return false
-proc returns_generic*(def: ResolvedFunctionDefinition): bool =
-  case def.returns.kind:
-  of RMRK_GENERIC: true
-  else: false
 proc arity(def: ResolvedFunctionDefinition): uint = def.args.len.uint
 proc concretize(def: ResolvedFunctionDefinition, concrete_map: Table[
     TypedGeneric, ResolvedModuleRef]): ResolvedFunctionDefinition =
@@ -303,16 +288,23 @@ proc concretize(def: ResolvedFunctionDefinition, concrete_map: Table[
   new_resolved_function_definition(def.name, concretized_args,
       concretized_returns, def.location)
 
-proc generic_impls(def: ResolvedFunctionDefinition): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for arg in def.args: impl_set = impl_set.merge(arg.generic_impls())
-  impl_set = impl_set.merge(def.returns.generic_impls())
-  return impl_set
-
-proc asl*(def: ResolvedFunctionDefinition): string =
+proc asl(def: ResolvedFunctionDefinition): string =
   let args = def.args.map_it(it.asl).join(", ")
   fmt"fn {def.name.asl}({args}): {def.returns.asl}"
+
+proc c_name(def: ResolvedFunctionDefinition): string =
+  if def.prefix == "":
+    fmt"{def.name.asl}_{def.location.hash.to_hex}"
+  else:
+    fmt"{def.prefix}_{def.name.asl}_{def.location.hash.to_hex}"
+
+proc c(def: ResolvedFunctionDefinition): string =
+  let generic_args = if def.generics > 0: ((0.uint64)..<(def.generics)).map_it(
+      fmt"U64 __asl_impl_id_{it}") else: @[]
+  let args = generic_args & def.args.map_it(it.c)
+  let args_str = args.join(", ")
+
+  fmt"{def.returns.c} {def.c_name}({args_str});"
 
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     generic: TypedGeneric, def: TypedFunctionDefinition): Result[
@@ -322,7 +314,9 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     let resolved_arg = ? resolve_def(file, module, generic, arg)
     resolved_args.add(resolved_arg)
   let resolved_returns = ? resolve_def(file, module, generic, def.returns)
-  ok(new_resolved_function_definition(def.name, resolved_args, resolved_returns, def.location))
+  ok(new_resolved_function_definition(def.name, resolved_args,
+      resolved_returns, def.location, fmt"{module.name.asl}_{generic.name.asl}",
+      module.generics.len.uint64))
 
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     def: TypedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
@@ -331,7 +325,9 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     let resolved_arg = ? resolve_def(file, module, arg)
     resolved_args.add(resolved_arg)
   let resolved_returns = ? resolve_def(file, module, def.returns)
-  ok(new_resolved_function_definition(def.name, resolved_args, resolved_returns, def.location))
+  ok(new_resolved_function_definition(def.name, resolved_args,
+      resolved_returns, def.location, module.name.asl,
+      module.generics.len.uint64))
 
 proc resolve_def(file: TypedFile, def: TypedFunctionDefinition): Result[
     ResolvedFunctionDefinition, string] =
@@ -342,7 +338,7 @@ proc resolve_def(file: TypedFile, def: TypedFunctionDefinition): Result[
   let resolved_returns = ? resolve_def(file, def.returns)
   ok(new_resolved_function_definition(def.name, resolved_args, resolved_returns, def.location))
 
-type ResolvedGeneric* = ref object of RootObj
+type ResolvedGeneric = ref object of RootObj
   generic: TypedGeneric
   defs: seq[ResolvedFunctionDefinition]
   defs_map: Table[Identifier, Table[uint, seq[ResolvedFunctionDefinition]]]
@@ -360,15 +356,7 @@ proc new_resolved_generic(generic: TypedGeneric, defs: seq[
   ResolvedGeneric(generic: generic, defs: defs, defs_map: defs_map,
       location: location)
 
-proc generic*(generic: ResolvedGeneric): TypedGeneric = generic.generic
-proc name*(generic: ResolvedGeneric): Identifier = generic.generic.name
-proc defs*(generic: ResolvedGeneric): seq[
-    ResolvedFunctionDefinition] = generic.defs
-proc is_value*(generic: ResolvedGeneric): bool =
-  var is_value = false
-  for def in generic.defs:
-    is_value = is_value or def.accepts_generic or def.returns_generic
-  return is_value
+proc name(generic: ResolvedGeneric): Identifier = generic.generic.name
 
 proc find_function_defs(generic: ResolvedGeneric, name: Identifier,
     arity: uint): Result[seq[ResolvedFunctionDefinition], string] =
@@ -379,12 +367,6 @@ proc find_function_defs(generic: ResolvedGeneric, name: Identifier,
   else:
     ok(generic.defs_map[name][arity])
 
-proc generic_impls(generic: ResolvedGeneric): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for def in generic.defs: impl_set = impl_set.merge(def.generic_impls())
-  return impl_set
-
 proc asl(generic: ResolvedGeneric, indent: string): seq[string] =
   if generic.defs.len == 0:
     @[fmt"generic {generic.name.asl}"]
@@ -393,6 +375,13 @@ proc asl(generic: ResolvedGeneric, indent: string): seq[string] =
     for def in generic.defs:
       lines.add(indent & def.asl)
     lines
+
+proc c(generic: ResolvedGeneric, prefix: string): seq[string] =
+  var lines: seq[string]
+  for def in generic.defs:
+    lines.add(def.c)
+  # TODO: provide implementation of generic calls
+  return lines
 
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     generic: TypedGeneric): Result[ResolvedGeneric, string] =
@@ -403,9 +392,10 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
   ok(new_resolved_generic(generic, resolved_defs, generic.location))
 
 type
-  ResolvedStructKind* = enum
+  ResolvedStructKind = enum
     RSK_DEFAULT, RSK_NAMED
-  ResolvedStruct* = ref object of RootObj
+  ResolvedStruct = ref object of RootObj
+    struct: TypedStruct
     location: Location
     fields: seq[ResolvedArgumentDefinition]
     fields_map: Table[Identifier, int]
@@ -413,30 +403,21 @@ type
     of RSK_DEFAULT: discard
     of RSK_NAMED: name: Identifier
 
-proc new_resolved_struct(fields: seq[ResolvedArgumentDefinition],
-    location: Location): ResolvedStruct =
-  var fields_map: Table[Identifier, int]
-  for index, field in fields.pairs: fields_map[field.name] = index
-  ResolvedStruct(kind: RSK_DEFAULT, fields: fields, fields_map: fields_map,
-      location: location)
-
-proc new_resolved_struct(name: Identifier, fields: seq[
+proc new_resolved_struct(struct: TypedStruct, fields: seq[
     ResolvedArgumentDefinition], location: Location): ResolvedStruct =
   var fields_map: Table[Identifier, int]
   for index, field in fields.pairs: fields_map[field.name] = index
-  ResolvedStruct(kind: RSK_NAMED, name: name, fields: fields,
+  ResolvedStruct(kind: RSK_DEFAULT, struct: struct, fields: fields,
       fields_map: fields_map, location: location)
 
-proc fields*(struct: ResolvedStruct): seq[
-    ResolvedArgumentDefinition] = struct.fields
-proc kind*(struct: ResolvedStruct): ResolvedStructKind = struct.kind
-proc name*(struct: ResolvedStruct): Identifier = struct.name
-proc c_args*(struct: ResolvedStruct): seq[(string, string)] =
-  struct.fields.map_it((it.c_type, it.c_name))
-proc c_name*(struct: ResolvedStruct): string =
-  case struct.kind:
-  of RSK_DEFAULT: "default"
-  of RSK_NAMED: struct.name.asl
+proc new_resolved_struct(struct: TypedStruct, name: Identifier, fields: seq[
+    ResolvedArgumentDefinition], location: Location): ResolvedStruct =
+  var fields_map: Table[Identifier, int]
+  for index, field in fields.pairs: fields_map[field.name] = index
+  ResolvedStruct(kind: RSK_NAMED, struct: struct, name: name, fields: fields,
+      fields_map: fields_map, location: location)
+
+proc id(struct: ResolvedStruct): uint64 = struct.struct.id
 
 proc concretize(struct: ResolvedStruct, concrete_map: Table[TypedGeneric,
     ResolvedModuleRef]): ResolvedStruct =
@@ -445,9 +426,10 @@ proc concretize(struct: ResolvedStruct, concrete_map: Table[TypedGeneric,
     concretized_fields.add(field.concretize(concrete_map))
 
   case struct.kind:
-  of RSK_DEFAULT: new_resolved_struct(concretized_fields, struct.location)
-  of RSK_NAMED: new_resolved_struct(struct.name, concretized_fields,
+  of RSK_DEFAULT: new_resolved_struct(struct.struct, concretized_fields,
       struct.location)
+  of RSK_NAMED: new_resolved_struct(struct.struct, struct.name,
+      concretized_fields, struct.location)
 
 proc find_field_index(struct: ResolvedStruct, field: Identifier): Result[int, string] =
   if field in struct.fields_map:
@@ -460,12 +442,6 @@ proc find_field(struct: ResolvedStruct, field: Identifier): Result[
   let field_index = ? struct.find_field_index(field)
   ok(struct.fields[field_index])
 
-proc generic_impls(struct: ResolvedStruct): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for field in struct.fields: impl_set = impl_set.merge(field.generic_impls())
-  return impl_set
-
 proc asl(struct: ResolvedStruct, indent: string): seq[string] =
   var lines =
     case struct.kind:
@@ -475,7 +451,51 @@ proc asl(struct: ResolvedStruct, indent: string): seq[string] =
   for field in struct.fields:
     lines.add(indent & field.asl)
 
-  lines
+  return lines
+
+proc c(struct: ResolvedStruct, prefix: string): seq[string] =
+  let sub_prefix =
+    case struct.kind:
+    of RSK_DEFAULT: fmt"{prefix}"
+    of RSK_NAMED: fmt"{prefix}_{struct.name.asl}"
+
+  # NOTE: sort fields for efficient packing of bytes
+  let fields = struct.fields.sorted(proc(a,
+      b: ResolvedArgumentDefinition): int =
+    if a.byte_size > b.byte_size: -1
+    elif b.byte_size > a.byte_size: 1
+    else: 0
+  )
+
+  var lines: seq[string]
+  var offset: uint64 = 0
+  for field in fields:
+    lines.add(fmt"{field.module_ref.c} {sub_prefix}_get_{field.name.asl}(Pointer __asl_ptr);")
+    lines.add(fmt"{field.module_ref.c} {sub_prefix}_get_{field.name.asl}(Pointer __asl_ptr)")
+    lines.add("{")
+    lines.add(fmt"return {field.module_ref.c}_read(__asl_ptr, {offset});")
+    lines.add("}")
+
+    lines.add(fmt"Pointer {sub_prefix}_set_{field.name.asl}(Pointer __asl_ptr, {field.c});")
+    lines.add(fmt"Pointer {sub_prefix}_set_{field.name.asl}(Pointer __asl_ptr, {field.c})")
+    lines.add("{")
+    lines.add(fmt"return {field.module_ref.c}_write({field.name.asl}, __asl_ptr, {offset});")
+    lines.add("}")
+
+    offset += field.byte_size
+
+  # NOTE: maintain field order in the init call
+  let args_str = struct.fields.map_it(it.c).join(", ")
+  lines.add(fmt"Pointer {sub_prefix}_init({args_str});")
+  lines.add(fmt"Pointer {sub_prefix}_init({args_str})")
+  lines.add("{")
+  lines.add(fmt"Pointer __asl_ptr = System_allocate({offset});")
+  for field in struct.fields:
+    lines.add(fmt"__asl_ptr = {sub_prefix}_set_{field.name.asl}(__asl_ptr, {field.name.asl});")
+
+  lines.add("return __asl_ptr;")
+  lines.add("}")
+  return lines
 
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     struct: TypedStruct): Result[ResolvedStruct, string] =
@@ -486,13 +506,13 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
 
   case struct.kind:
   of TSK_DEFAULT:
-    ok(new_resolved_struct(resolved_fields, struct.location))
+    ok(new_resolved_struct(struct, resolved_fields, struct.location))
   of TSK_NAMED:
     let struct_name = ? struct.name
-    ok(new_resolved_struct(struct_name, resolved_fields, struct.location))
+    ok(new_resolved_struct(struct, struct_name, resolved_fields,
+        struct.location))
 
-type ResolvedUserModuleDefinition* = ref object of RootObj
-  id: uint64
+type ResolvedUserModuleDefinition = ref object of RootObj
   module: TypedUserModule
   generics: seq[ResolvedGeneric]
   generics_map: Table[TypedGeneric, ResolvedGeneric]
@@ -504,7 +524,7 @@ type ResolvedUserModuleDefinition* = ref object of RootObj
   function_signatures_map: Table[Identifier, Table[uint, seq[
       ResolvedFunctionDefinition]]]
 
-proc new_resolved_user_module_definition(id: uint64, module: TypedUserModule,
+proc new_resolved_user_module_definition(module: TypedUserModule,
     generics: seq[(TypedGeneric, ResolvedGeneric)], structs: seq[
         ResolvedStruct],
     function_defs: seq[(TypedFunctionDefinition,
@@ -543,23 +563,14 @@ proc new_resolved_user_module_definition(id: uint64, module: TypedUserModule,
         resolved_function_def.arity].add(resolved_function_def)
 
   ResolvedUserModuleDefinition(
-    id: id, module: module,
-    generics: resolved_generics, generics_map: generics_map,
+    module: module, generics: resolved_generics, generics_map: generics_map,
     structs: resolved_structs, structs_map: structs_map,
     function_defs: resolved_function_defs, function_defs_map: function_defs_map,
     function_signatures_map: function_signatures_map
   )
 
-proc id*(module_def: ResolvedUserModuleDefinition): uint64 = module_def.id
-proc name*(module_def: ResolvedUserModuleDefinition): Identifier = module_def.module.name
-proc location*(module_def: ResolvedUserModuleDefinition): Location = module_def.module.location
-proc module*(module_def: ResolvedUserModuleDefinition): TypedUserModule = module_def.module
-proc generics*(module_def: ResolvedUserModuleDefinition): seq[
-    ResolvedGeneric] = module_def.generics
-proc structs*(module_def: ResolvedUserModuleDefinition): seq[
-    ResolvedStruct] = module_def.structs
-proc functions*(module_def: ResolvedUserModuleDefinition): seq[
-    ResolvedFunctionDefinition] = module_def.function_defs
+proc id(module_def: ResolvedUserModuleDefinition): uint64 = module_def.id
+proc name(module_def: ResolvedUserModuleDefinition): Identifier = module_def.module.name
 
 proc find_generic(module_def: ResolvedUserModuleDefinition,
     generic: TypedGeneric): Result[ResolvedGeneric, string] =
@@ -599,15 +610,6 @@ proc find_function_defs(module_def: ResolvedUserModuleDefinition,
   else:
     ok(module_def.function_signatures_map[name][arity])
 
-proc generic_impls(def: ResolvedUserModuleDefinition): Table[TypedUserModule,
-    seq[HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for generic in def.generics: impl_set = impl_set.merge(generic.generic_impls())
-  for struct in def.structs: impl_set = impl_set.merge(struct.generic_impls())
-  for function in def.function_defs: impl_set = impl_set.merge(
-      function.generic_impls())
-  return impl_set
-
 proc asl(def: ResolvedUserModuleDefinition, indent: string): seq[string] =
   var lines: seq[string]
   for generic in def.generics:
@@ -618,9 +620,85 @@ proc asl(def: ResolvedUserModuleDefinition, indent: string): seq[string] =
 
   for struct in def.structs:
     lines.add(struct.asl(indent))
-  lines
+  return lines
 
-proc resolve_def(file: TypedFile, id: uint64, module: TypedUserModule): Result[
+proc c(def: ResolvedUserModuleDefinition): seq[string] =
+  var lines: seq[string]
+  for generic in def.generics:
+    lines.add(generic.c(def.name.asl))
+
+  if def.structs.len > 0:
+    # internal functions for structs
+    # byte size
+    lines.add(fmt"U64 {def.name.asl}_byte_size(U64 items);")
+    lines.add(fmt"U64 {def.name.asl}_byte_size(U64 items)")
+    lines.add("{")
+    lines.add("return Pointer_byte_size(items);")
+    lines.add("}")
+    # read
+    lines.add(fmt"Pointer {def.name.asl}_read(Pointer __asl_ptr, U64 offset);")
+    lines.add(fmt"Pointer {def.name.asl}_read(Pointer __asl_ptr, U64 offset)")
+    lines.add("{")
+    lines.add("return Pointer_read(__asl_ptr, offset);")
+    lines.add("}")
+    # write
+    lines.add(fmt"Pointer {def.name.asl}_write(Pointer value, Pointer __asl_ptr, U64 offset);")
+    lines.add(fmt"Pointer {def.name.asl}_write(Pointer value, Pointer __asl_ptr, U64 offset)")
+    lines.add("{")
+    lines.add("return Pointer_write(value, __asl_ptr, offset);")
+    lines.add("}")
+
+    # struct
+    if def.structs.len == 1:
+      let struct = def.structs[0]
+      lines.add(struct.c(def.name.asl))
+    # union
+    else:
+      for struct in def.structs:
+        lines.add(struct.c(def.name.asl))
+      # union branch id getter
+      lines.add(fmt"U64 {def.name.asl}_get_id(Pointer __asl_ptr);")
+      lines.add(fmt"U64 {def.name.asl}_get_id(Pointer __asl_ptr)")
+      lines.add("{")
+      lines.add(fmt"return U64_read(__asl_ptr, 0);")
+      lines.add("}")
+
+      # union branch id setter
+      lines.add(fmt"Pointer {def.name.asl}_set_id(Pointer __asl_ptr, U64 id);")
+      lines.add(fmt"Pointer {def.name.asl}_set_id(Pointer __asl_ptr, U64 id)")
+      lines.add("{")
+      lines.add(fmt"return U64_write(id, __asl_ptr, 0);")
+      lines.add("}")
+
+      # union branch value getter
+      lines.add(fmt"Pointer {def.name.asl}_get_value(Pointer __asl_ptr);")
+      lines.add(fmt"Pointer {def.name.asl}_get_value(Pointer __asl_ptr)")
+      lines.add("{")
+      lines.add(fmt"return Pointer_read(__asl_ptr, 8);")
+      lines.add("}")
+
+      # union branch value setter
+      lines.add(fmt"Pointer {def.name.asl}_set_value(Pointer __asl_ptr, Pointer value);")
+      lines.add(fmt"Pointer {def.name.asl}_set_value(Pointer __asl_ptr, Pointer value)")
+      lines.add("{")
+      lines.add(fmt"return Pointer_write(value, __asl_ptr, 8);")
+      lines.add("}")
+
+      lines.add(fmt"Pointer {def.name.asl}_init(U64 id, Pointer value);")
+      lines.add(fmt"Pointer {def.name.asl}_init(U64 id, Pointer value)")
+      lines.add("{")
+      lines.add("Pointer __asl_ptr = System_allocate(16);")
+      lines.add(fmt"__asl_ptr = {def.name.asl}_set_id(__asl_ptr, id);")
+      lines.add(fmt"__asl_ptr = {def.name.asl}_set_value(__asl_ptr, value);")
+      lines.add("return __asl_ptr;")
+      lines.add("}")
+
+  # TODO: Understand that function can not have same name so use function id as prefix
+  lines.add(def.function_defs.map_it(it.c))
+
+  return lines
+
+proc resolve_def(file: TypedFile, module: TypedUserModule): Result[
     ResolvedUserModuleDefinition, string] =
   var generics: seq[(TypedGeneric, ResolvedGeneric)]
   for generic in module.generics:
@@ -638,7 +716,7 @@ proc resolve_def(file: TypedFile, id: uint64, module: TypedUserModule): Result[
     let resolved_def = ? resolve_def(file, module, function.def)
     function_defs.add((function.def, resolved_def))
 
-  ok(new_resolved_user_module_definition(id, module, generics, structs,
+  ok(new_resolved_user_module_definition(module, generics, structs,
       function_defs))
 
 type ResolvedNativeFunctionDefinition = ref object of RootObj
@@ -649,12 +727,8 @@ proc new_resolved_native_function_definition(native: string,
     def: ResolvedFunctionDefinition): ResolvedNativeFunctionDefinition =
   ResolvedNativeFunctionDefinition(native: native, def: def)
 
-proc name*(def: ResolvedNativeFunctionDefinition): Identifier = def.def.name
-proc arity*(def: ResolvedNativeFunctionDefinition): uint = def.def.arity.uint
-
-proc generic_impls(function: ResolvedNativeFunctionDefinition): Table[
-    TypedUserModule, seq[HashSet[TypedModule]]] =
-  function.def.generic_impls
+proc name(def: ResolvedNativeFunctionDefinition): Identifier = def.def.name
+proc arity(def: ResolvedNativeFunctionDefinition): uint = def.def.arity.uint
 
 proc resolve_def(file: TypedFile, function: TypedNativeFunction): Result[
     ResolvedNativeFunctionDefinition, string] =
@@ -662,14 +736,15 @@ proc resolve_def(file: TypedFile, function: TypedNativeFunction): Result[
   ok(new_resolved_native_function_definition(function.native, resolved_def))
 
 type ResolvedNativeModuleDefinition = ref object of RootObj
-  id: uint64
+  module: TypedNativeModule
   name: Identifier
   functions: seq[ResolvedNativeFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint, seq[
       ResolvedNativeFunctionDefinition]]]
 
-proc new_resolved_native_module_definition(id: uint64, name: Identifier,
-    functions: seq[ResolvedNativeFunctionDefinition]): ResolvedNativeModuleDefinition =
+proc new_resolved_native_module_definition(module: TypedNativeModule,
+    name: Identifier, functions: seq[
+    ResolvedNativeFunctionDefinition]): ResolvedNativeModuleDefinition =
   var function_signatures_map: Table[Identifier, Table[uint, seq[
       ResolvedNativeFunctionDefinition]]]
   for function in functions:
@@ -680,17 +755,10 @@ proc new_resolved_native_module_definition(id: uint64, name: Identifier,
       function_signatures_map[function.name][function.arity] = new_seq[
           ResolvedNativeFunctionDefinition]()
     function_signatures_map[function.name][function.arity].add(function)
-  ResolvedNativeModuleDefinition(id: id, name: name, functions: functions,
-      function_signatures_map: function_signatures_map)
+  ResolvedNativeModuleDefinition(module: module, name: name,
+      functions: functions, function_signatures_map: function_signatures_map)
 
-proc id*(module_def: ResolvedNativeModuleDefinition): uint64 = module_def.id
-
-proc generic_impls(module: ResolvedNativeModuleDefinition): Table[
-    TypedUserModule, seq[HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for function in module.functions: impl_set = impl_set.merge(
-      function.generic_impls())
-  return impl_set
+proc id(module_def: ResolvedNativeModuleDefinition): uint64 = module_def.id
 
 proc find_function_defs(module_def: ResolvedNativeModuleDefinition,
     name: Identifier, arity: uint): Result[seq[
@@ -702,44 +770,15 @@ proc find_function_defs(module_def: ResolvedNativeModuleDefinition,
   else:
     ok(module_def.function_signatures_map[name][arity])
 
-proc resolve_def(file: TypedFile, id: uint64, def: TypedNativeModule): Result[
+proc resolve_def(file: TypedFile, def: TypedNativeModule): Result[
     ResolvedNativeModuleDefinition, string] =
   var resolved_functions: seq[ResolvedNativeFunctionDefinition]
   for function in def.functions:
     let resolved_function = ? resolve_def(file, function)
     resolved_functions.add(resolved_function)
-  ok(new_resolved_native_module_definition(id, def.name, resolved_functions))
+  ok(new_resolved_native_module_definition(def, def.name, resolved_functions))
 
-type
-  ResolvedModuleDefinitionKind* = enum
-    RMDK_NATIVE, RMDK_USER
-  ResolvedModuleDefinition* = ref object of RootObj
-    case kind: ResolvedModuleDefinitionKind
-    of RMDK_NATIVE: native: ResolvedNativeModuleDefinition
-    of RMDK_USER: user: ResolvedUserModuleDefinition
-
-proc new_resolved_module_definition(native: ResolvedNativeModuleDefinition): ResolvedModuleDefinition =
-  ResolvedModuleDefinition(kind: RMDK_NATIVE, native: native)
-
-proc new_resolved_module_definition(user: ResolvedUserModuleDefinition): ResolvedModuleDefinition =
-  ResolvedModuleDefinition(kind: RMDK_USER, user: user)
-
-proc id*(def: ResolvedModuleDefinition): uint64 =
-  case def.kind:
-  of RMDK_NATIVE: def.native.id
-  of RMDK_USER: def.user.id
-
-proc c_name*(def: ResolvedModuleDefinition): string =
-  case def.kind:
-  of RMDK_NATIVE: def.native.name.asl
-  of RMDK_USER: def.user.name.asl
-
-proc c_type*(def: ResolvedModuleDefinition): string =
-  case def.kind:
-  of RMDK_NATIVE: def.native.name.asl
-  of RMDK_USER: "Pointer"
-
-type ResolvedFileDefinition* = ref object of RootObj
+type ResolvedFileDefinition = ref object of RootObj
   file: TypedFile
   native_modules: seq[ResolvedNativeModuleDefinition]
   native_modules_map: Table[TypedNativeModule, ResolvedNativeModuleDefinition]
@@ -792,22 +831,6 @@ proc new_resolved_file_definition(file: TypedFile, native_modules: seq[(
       function_defs_map: function_defs_map,
       function_signatures_map: function_signatures_map)
 
-proc file*(def: ResolvedFileDefinition): TypedFile = def.file
-proc user_modules*(def: ResolvedFileDefinition): seq[
-    ResolvedUserModuleDefinition] = def.user_modules
-proc functions*(def: ResolvedFileDefinition): seq[
-    ResolvedFunctionDefinition] = def.function_defs
-
-proc generic_impls(file: ResolvedFileDefinition): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for module in file.native_modules: impl_set = impl_set.merge(
-      module.generic_impls())
-  for module in file.user_modules: impl_set = impl_set.merge(
-      module.generic_impls())
-  for function in file.functions:
-    impl_set = impl_set.merge(function.generic_impls())
-  return impl_set
 
 proc find_module_def(file_def: ResolvedFileDefinition,
     module: TypedNativeModule): Result[ResolvedNativeModuleDefinition, string] =
@@ -822,18 +845,6 @@ proc find_module_def(file_def: ResolvedFileDefinition,
     ok(file_def.user_modules_map[module])
   else:
     err(fmt"module `{module.name.asl}` not found in resolved file definition")
-
-proc find_module_def(file_def: ResolvedFileDefinition,
-    module: TypedModule): Result[ResolvedModuleDefinition, string] =
-  case module.kind:
-  of TMK_NATIVE:
-    let typed_native_module = ? module.native
-    let resolved_native_module_def = ? file_def.find_module_def(typed_native_module)
-    ok(new_resolved_module_definition(resolved_native_module_def))
-  of TMK_USER:
-    let typed_user_module = ? module.user
-    let resolved_user_module_def = ? file_def.find_module_def(typed_user_module)
-    ok(new_resolved_module_definition(resolved_user_module_def))
 
 proc find_function_def(file_def: ResolvedFileDefinition,
     def: TypedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
@@ -851,16 +862,23 @@ proc find_function_defs(file_def: ResolvedFileDefinition, name: Identifier,
   else:
     ok(file_def.function_signatures_map[name][arity])
 
+proc c(file: ResolvedFileDefinition): seq[string] =
+  var lines: seq[string]
+  for module in file.user_modules:
+    lines.add(module.c)
+  for fndef in file.function_defs:
+    lines.add(fndef.c)
+  return lines
+
 proc resolve_def(file: TypedFile): Result[ResolvedFileDefinition, string] =
   var native_modules: seq[(TypedNativeModule, ResolvedNativeModuleDefinition)]
-  for id, module in file.native_modules.pairs:
-    let resolved_module_def = ? resolve_def(file, id.uint64, module)
+  for module in file.native_modules:
+    let resolved_module_def = ? resolve_def(file, module)
     native_modules.add((module, resolved_module_def))
 
-  let offset = file.native_modules.len.uint64
   var modules: seq[(TypedUserModule, ResolvedUserModuleDefinition)]
-  for id, module in file.user_modules.pairs:
-    let resolved_module_def = ? resolve_def(file, offset + id.uint64, module)
+  for module in file.user_modules:
+    let resolved_module_def = ? resolve_def(file, module)
     modules.add((module, resolved_module_def))
 
   var function_defs: seq[(TypedFunctionDefinition, ResolvedFunctionDefinition)]
@@ -880,6 +898,8 @@ proc get(scope: FunctionScope, name: Identifier): Result[ResolvedModuleRef, stri
 
 proc set(scope: FunctionScope, arg: ResolvedArgumentDefinition): Result[
     FunctionScope, string] =
+  if arg.name in scope.table:
+    return err(fmt"{arg.location} argument `{arg.name.asl}` can not be mutated")
   scope.table[arg.name] = arg.module_ref
   ok(scope)
 
@@ -894,31 +914,35 @@ type
     RFRK_LOCAL, RFRK_MODULE
   ResolvedFunctionRef = ref object of RootObj
     name: Identifier
-    defs: seq[ResolvedFunctionDefinition]
+    concrete_defs: seq[ResolvedFunctionDefinition]
+    original_defs: seq[ResolvedFunctionDefinition]
     case kind: ResolvedFunctionRefKind
     of RFRK_LOCAL: discard
     of RFRK_MODULE: module_ref: ResolvedModuleRef
 
-proc new_resolved_function_ref(name: Identifier, defs: seq[
+proc new_resolved_function_ref(name: Identifier, original_defs: seq[
+    ResolvedFunctionDefinition], concrete_defs: seq[
     ResolvedFunctionDefinition]): ResolvedFunctionRef =
-  ResolvedFunctionRef(kind: RFRK_LOCAL, name: name, defs: defs)
+  ResolvedFunctionRef(kind: RFRK_LOCAL, name: name,
+      original_defs: original_defs, concrete_defs: concrete_defs)
 
 proc new_resolved_function_ref(module_ref: ResolvedModuleRef, name: Identifier,
-    defs: seq[ResolvedFunctionDefinition]): ResolvedFunctionRef =
-  ResolvedFunctionRef(kind: RFRK_MODULE, module_ref: module_ref, name: name, defs: defs)
+    original_defs: seq[ResolvedFunctionDefinition], concrete_defs: seq[
+    ResolvedFunctionDefinition]): ResolvedFunctionRef =
+  ResolvedFunctionRef(kind: RFRK_MODULE, module_ref: module_ref, name: name,
+      original_defs: original_defs, concrete_defs: concrete_defs)
+
+proc location(fnref: ResolvedFunctionRef): Location =
+  fnref.location
+
+proc defs(fnref: ResolvedFunctionRef): seq[(ResolvedFunctionDefinition,
+    ResolvedFunctionDefinition)] =
+  zip(fnref.original_defs, fnref.concrete_defs)
 
 proc asl(fnref: ResolvedFunctionRef): string =
   case fnref.kind:
   of RFRK_LOCAL: fmt"{fnref.name.asl}"
   of RFRK_MODULE: fmt"{fnref.module_ref.asl}.{fnref.name.asl}"
-
-proc generic_impls(fnref: ResolvedFunctionRef): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  case fnref.kind:
-  of RFRK_LOCAL: discard
-  of RFRK_MODULE: impl_set = impl_set.merge(fnref.module_ref.generic_impls)
-  return impl_set
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, fnref: TypedFunctionRef): Result[
@@ -926,7 +950,8 @@ proc resolve(file_def: ResolvedFileDefinition,
   case fnref.kind:
   of TFRK_LOCAL:
     let resolved_function_defs = ? file_def.find_function_defs(fnref.name, fnref.arity)
-    ok(new_resolved_function_ref(fnref.name, resolved_function_defs))
+    ok(new_resolved_function_ref(fnref.name, resolved_function_defs,
+        resolved_function_defs))
   of TFRK_MODULE:
     let typed_module_ref = ? fnref.module_ref
     let resolved_module_ref = ? resolve_def(file_def.file, module_def.module, typed_module_ref)
@@ -938,30 +963,31 @@ proc resolve(file_def: ResolvedFileDefinition,
           fnref.name, fnref.arity)
       let resolved_function_defs = resolved_native_function_defs.map_it(it.def)
       ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
-          resolved_function_defs))
+          resolved_function_defs, resolved_function_defs))
     of RMRK_GENERIC:
       let typed_generic = resolved_module_ref.generic
       let resolved_generic = ? module_def.find_generic(typed_generic)
       let resolved_function_defs = ? resolved_generic.find_function_defs(
           fnref.name, fnref.arity)
       ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
-          resolved_function_defs))
+          resolved_function_defs, resolved_function_defs))
     of RMRK_USER:
       let typed_user_module = resolved_module_ref.user_module
       let resolved_user_module_def = ? file_def.find_module_def(typed_user_module)
       let resolved_function_defs = ? resolved_user_module_def.find_function_defs(
           fnref.name, fnref.arity)
-      var concrete_function_defs = resolved_function_defs.map_it(it.concretize(
+      let concrete_function_defs = resolved_function_defs.map_it(it.concretize(
           resolved_module_ref.concrete_map))
       ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
-          concrete_function_defs))
+          resolved_function_defs, concrete_function_defs))
 
 proc resolve(file_def: ResolvedFileDefinition, fnref: TypedFunctionRef): Result[
     ResolvedFunctionRef, string] =
   case fnref.kind:
   of TFRK_LOCAL:
     let resolved_function_defs = ? file_def.find_function_defs(fnref.name, fnref.arity)
-    ok(new_resolved_function_ref(fnref.name, resolved_function_defs))
+    ok(new_resolved_function_ref(fnref.name, resolved_function_defs,
+        resolved_function_defs))
   of TFRK_MODULE:
     let typed_module_ref = ? fnref.module_ref
     let resolved_module_ref = ? resolve_def(file_def.file, typed_module_ref)
@@ -975,7 +1001,7 @@ proc resolve(file_def: ResolvedFileDefinition, fnref: TypedFunctionRef): Result[
           fnref.name, fnref.arity)
       let resolved_function_defs = resolved_native_function_defs.map_it(it.def)
       ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
-          resolved_function_defs))
+          resolved_function_defs, resolved_function_defs))
     of RMRK_USER:
       let typed_user_module = resolved_module_ref.user_module
       let resolved_user_module_def = ? file_def.find_module_def(typed_user_module)
@@ -984,7 +1010,7 @@ proc resolve(file_def: ResolvedFileDefinition, fnref: TypedFunctionRef): Result[
       var concrete_function_defs = resolved_function_defs.map_it(it.concretize(
           resolved_module_ref.concrete_map))
       ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
-          concrete_function_defs))
+          resolved_function_defs, concrete_function_defs))
 
 type
   ResolvedArgumentKind = enum
@@ -1004,14 +1030,17 @@ proc new_resolved_argument(module_ref: ResolvedModuleRef,
     literal: Literal): ResolvedArgument =
   ResolvedArgument(kind: RAK_LITERAL, module_ref: module_ref, literal: literal)
 
+proc location(arg: ResolvedArgument): Location =
+  case arg.kind:
+  of RAK_LITERAL: arg.literal.location
+  of RAK_VARIABLE: arg.variable.location
+
 proc asl(arg: ResolvedArgument): string =
   case arg.kind:
   of RAK_LITERAL: arg.literal.asl
   of RAK_VARIABLE: arg.variable.asl
 
-proc generic_impls(arg: ResolvedArgument): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]] =
-  arg.module_ref.generic_impls
+proc c(arg: ResolvedArgument): string = arg.asl
 
 proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope, args: seq[
     Argument], argdefs: seq[ResolvedArgumentDefinition]): Result[seq[
@@ -1038,63 +1067,125 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope, args: seq[
 
 type ResolvedFunctionCall = ref object of RootObj
   fnref: ResolvedFunctionRef
-  def: ResolvedFunctionDefinition
+  concrete_def: ResolvedFunctionDefinition
+  original_def: ResolvedFunctionDefinition
   args: seq[ResolvedArgument]
 
 proc new_resolved_function_call(fnref: ResolvedFunctionRef,
-    def: ResolvedFunctionDefinition, args: seq[
-    ResolvedArgument]): ResolvedFunctionCall =
-  ResolvedFunctionCall(fnref: fnref, def: def, args: args)
+    original_def: ResolvedFunctionDefinition,
+        concrete_def: ResolvedFunctionDefinition,
+    args: seq[ResolvedArgument]): ResolvedFunctionCall =
+  ResolvedFunctionCall(fnref: fnref, original_def: original_def,
+      concrete_def: concrete_def, args: args)
+
+proc location(fncall: ResolvedFunctionCall): Location =
+  fncall.fnref.location
 
 proc returns(fncall: ResolvedFunctionCall): ResolvedModuleRef =
-  fncall.def.returns
+  fncall.concrete_def.returns
 
 proc asl(fncall: ResolvedFunctionCall): string =
   let args_str = fncall.args.map_it(it.asl).join(", ")
   fncall.fnref.asl & "(" & args_str & ")"
 
-proc generic_impls(fncall: ResolvedFunctionCall): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  impl_set = impl_set.merge(fncall.fnref.generic_impls)
-  impl_set = impl_set.merge(fncall.def.generic_impls)
-  for arg in fncall.args: impl_set = impl_set.merge(arg.generic_impls)
-  return impl_set
+proc c(fncall: ResolvedFunctionCall, result_arg: string): seq[string] =
+  var lines: seq[string]
+  case fncall.fnref.kind:
+  of RFRK_LOCAL:
+    let args = fncall.args.map_it(it.c).join(", ")
+    lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args});")
+  of RFRK_MODULE:
+    let module_ref = fncall.fnref.module_ref
+    case module_ref.kind:
+    of RMRK_GENERIC:
+      let args = fncall.args.map_it(it.c).join(", ")
+      let impl_id = fmt"__asl_impl_id_{module_ref.generic.id}"
+      lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({impl_id}, {args});")
+    of RMRK_NATIVE:
+      let args = fncall.args.map_it(it.c).join(", ")
+      let name = fmt"{module_ref.name}_{fncall.original_def.name.asl}"
+      lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {name}({args});")
+    of RMRK_USER:
+      var new_args: seq[string]
+      for child in module_ref.children:
+        case child.kind:
+        of RMRK_GENERIC:
+          new_args.add(fmt"__asl_impl_id_{child.generic.id}")
+        of RMRK_NATIVE:
+          let arg = fmt"__asl_impl_id_{child.location.hash.to_hex}"
+          lines.add(fmt"U64 {arg} = {child.native_module.id};")
+          new_args.add(arg)
+        of RMRK_USER:
+          let arg = fmt"__asl_impl_id_{child.location.hash.to_hex}"
+          lines.add(fmt"U64 {arg} = {child.user_module.id};")
+          new_args.add(arg)
+
+      for index in 0..<fncall.args.len:
+        let original_def = fncall.original_def.args[index]
+        let concrete_def = fncall.concrete_def.args[index]
+        let arg = fncall.args[index]
+
+        case original_def.module_ref.kind:
+        of RMRK_GENERIC:
+          case concrete_def.module_ref.kind:
+          of RMRK_GENERIC: new_args.add(arg.asl)
+          else:
+            let arg_name = fmt"__asl_arg_{arg.location.hash.to_hex}"
+            lines.add("// HERE")
+            lines.add(fmt"Pointer {arg_name} = System_box_{concrete_def.module_ref.c}({arg.c});")
+            new_args.add(arg_name)
+        else: new_args.add(arg.asl)
+
+      let args_str = new_args.join(", ")
+      case fncall.original_def.returns.kind:
+      of RMRK_GENERIC:
+        case fncall.concrete_def.returns.kind:
+        of RMRK_GENERIC:
+          lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args_str});")
+        else:
+          let arg_name = fmt"__asl_arg_{fncall.location.hash.to_hex}"
+          lines.add(fmt"{fncall.original_def.returns.c} {arg_name} = {fncall.original_def.c_name}({args_str});")
+          lines.add(fmt"{fncall.concrete_def.returns.c} {result_arg} = {fncall.concrete_def.returns.c}_read({arg_name}, 0);")
+      else:
+        lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args_str});")
+
+  return lines
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
     fncall: TypedFunctionCall): Result[ResolvedFunctionCall, string] =
   let resolved_function_ref = ? resolve(file_def, module_def, fncall.fnref)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
-  for function_def in resolved_function_ref.defs:
+  for (original_def, concrete_def) in resolved_function_ref.defs:
     let maybe_resolved_args = resolve(file_def, scope,
-        fncall.args, function_def.args)
+        fncall.args, concrete_def.args)
     if maybe_resolved_args.is_ok:
-      return ok(new_resolved_function_call(resolved_function_ref, function_def,
-          maybe_resolved_args.get))
-    error_message.add(function_def.asl)
+      return ok(new_resolved_function_call(resolved_function_ref, original_def,
+          concrete_def, maybe_resolved_args.get))
+    error_message.add(concrete_def.asl)
   err(error_message.join("\n"))
 
 proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     fncall: TypedFunctionCall): Result[ResolvedFunctionCall, string] =
   let resolved_function_ref = ? resolve(file_def, fncall.fnref)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
-  for function_def in resolved_function_ref.defs:
+  for (original_def, concrete_def) in resolved_function_ref.defs:
     let maybe_resolved_args = resolve(file_def, scope, fncall.args,
-        function_def.args)
+        concrete_def.args)
     if maybe_resolved_args.is_ok:
-      return ok(new_resolved_function_call(resolved_function_ref, function_def,
-          maybe_resolved_args.get))
-    error_message.add(function_def.asl)
+      return ok(new_resolved_function_call(resolved_function_ref, original_def,
+          concrete_def, maybe_resolved_args.get))
+    error_message.add(concrete_def.asl)
   err(error_message.join("\n"))
 
 type ResolvedStructRef = ref object of RootObj
   module_ref: ResolvedModuleRef
+  origin: ResolvedStruct
   struct: ResolvedStruct
 
 proc new_resolved_struct_ref(module_ref: ResolvedModuleRef,
-    struct: ResolvedStruct): ResolvedStructRef =
-  ResolvedStructRef(module_ref: module_ref, struct: struct)
+    origin: ResolvedStruct, struct: ResolvedStruct): ResolvedStructRef =
+  ResolvedStructRef(module_ref: module_ref, origin: origin, struct: struct)
 
 proc asl(struct_ref: ResolvedStructRef): string =
   let suffix =
@@ -1103,9 +1194,10 @@ proc asl(struct_ref: ResolvedStructRef): string =
     of RSK_NAMED: fmt".{struct_ref.struct.name.asl}"
   fmt"{struct_ref.module_ref.asl}{suffix}"
 
-proc generic_impls(struct_ref: ResolvedStructRef): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  struct_ref.module_ref.generic_impls
+proc c(struct_ref: ResolvedStructRef): string =
+  case struct_ref.struct.kind:
+  of RSK_DEFAULT: fmt"{struct_ref.module_ref.name}"
+  of RSK_NAMED: fmt"{struct_ref.module_ref.name}_{struct_ref.struct.name.asl}"
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -1127,7 +1219,7 @@ proc resolve(file_def: ResolvedFileDefinition,
         let resolved_struct = maybe_struct.get
         let resolved_concretized_struct = resolved_struct.concretize(
             resolved_module_ref.concrete_map)
-        ok(new_resolved_struct_ref(resolved_module_ref,
+        ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
         err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
@@ -1138,7 +1230,7 @@ proc resolve(file_def: ResolvedFileDefinition,
         let resolved_struct = maybe_struct.get
         let resolved_concretized_struct = resolved_struct.concretize(
             resolved_module_ref.concrete_map)
-        ok(new_resolved_struct_ref(resolved_module_ref,
+        ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
         err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
@@ -1161,7 +1253,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         let resolved_struct = maybe_struct.get
         let resolved_concretized_struct = resolved_struct.concretize(
             resolved_module_ref.concrete_map)
-        ok(new_resolved_struct_ref(resolved_module_ref,
+        ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
         err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
@@ -1172,7 +1264,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         let resolved_struct = maybe_struct.get
         let resolved_concretized_struct = resolved_struct.concretize(
             resolved_module_ref.concrete_map)
-        ok(new_resolved_struct_ref(resolved_module_ref,
+        ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
         err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
@@ -1196,13 +1288,26 @@ proc asl(struct_init: ResolvedStructInit): string =
   let args_str = args.join(", ")
   struct_init.struct_ref.asl & " { " & args_str & " }"
 
-proc generic_impls(struct_init: ResolvedStructInit): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  impl_set = impl_set.merge(struct_init.struct_ref.generic_impls)
-  for field in struct_init.fields: impl_set = impl_set.merge(
-      field.generic_impls)
-  return impl_set
+proc c(struct_init: ResolvedStructInit, result_arg: string): seq[string] =
+  var lines: seq[string]
+  var args: seq[string]
+  for index in 0..<struct_init.fields.len:
+    let original_field = struct_init.struct_ref.origin.fields[index]
+    let concrete_field = struct_init.struct_ref.struct.fields[index]
+    let arg = struct_init.fields[index]
+    case original_field.module_ref.kind:
+    of RMRK_GENERIC:
+      case concrete_field.module_ref.kind:
+      of RMRK_GENERIC: args.add(arg.c)
+      else:
+        let arg_name = fmt"__asl_arg_{concrete_field.location.hash.to_hex}"
+        lines.add(fmt"Pointer {arg_name} = System_box_{concrete_field.module_ref.c}({arg.c});")
+        args.add(arg_name)
+    else: args.add(arg.c)
+
+  let args_str = args.join(", ")
+  lines.add(fmt"Pointer {result_arg} = {struct_init.struct_ref.c}_init({args_str});")
+  return lines
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -1258,9 +1363,8 @@ proc returns(literal: ResolvedLiteral): ResolvedModuleRef =
 proc asl(literal: ResolvedLiteral): string =
   fmt"{literal.module_ref.asl} {literal.literal.asl}"
 
-proc generic_impls(literal: ResolvedLiteral): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  literal.module_ref.generic_impls
+proc c(literal: ResolvedLiteral, result_arg: string): string =
+  fmt"{literal.module_ref.c} {result_arg} = {literal.literal.asl};"
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -1310,11 +1414,10 @@ proc asl(init: ResolvedInitializer): string =
   of RIK_LITERAL: init.literal.asl
   of RIK_STRUCT: init.struct.asl
 
-proc generic_impls(init: ResolvedInitializer): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+proc c(init: ResolvedInitializer, result_arg: string): seq[string] =
   case init.kind:
-  of RIK_LITERAL: init.literal.generic_impls
-  of RIK_STRUCT: init.struct.generic_impls
+  of RIK_LITERAL: @[init.literal.c(result_arg)]
+  of RIK_STRUCT: init.struct.c(result_arg)
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -1355,12 +1458,8 @@ proc returns(struct_get: ResolvedStructGet): ResolvedModuleRef =
 proc asl(struct_get: ResolvedStructGet): string =
   fmt"{struct_get.variable.name.asl}.{struct_get.field.name.asl}"
 
-proc generic_impls(struct_get: ResolvedStructGet): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  impl_set = impl_set.merge(struct_get.variable.generic_impls)
-  impl_set = impl_set.merge(struct_get.field.generic_impls)
-  return impl_set
+proc c(struct_get: ResolvedStructGet, result_arg: string): string =
+  fmt"{struct_get.field.module_ref.c} {result_arg} = {struct_get.variable.module_ref.name}_get_{struct_get.field.name.asl}({struct_get.variable.name.asl});"
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -1421,17 +1520,19 @@ type
   ResolvedStructPatternKind = enum
     RSPK_DEFAULT, RSPK_NAMED
   ResolvedStructPattern = ref object of RootObj
+    id: uint64
     args: seq[(ResolvedArgumentDefinition, Identifier)]
     location: Location
     case kind: ResolvedStructPatternKind
     of RSPK_DEFAULT: discard
     of RSPK_NAMED: name: Identifier
 
-proc new_resolved_struct_pattern(args: seq[(ResolvedArgumentDefinition,
-    Identifier)], location: Location): ResolvedStructPattern =
+proc new_resolved_struct_pattern(id: uint64, args: seq[(
+    ResolvedArgumentDefinition, Identifier)],
+    location: Location): ResolvedStructPattern =
   ResolvedStructPattern(kind: RSPK_DEFAULT, args: args, location: location)
 
-proc new_resolved_struct_pattern(name: Identifier, args: seq[(
+proc new_resolved_struct_pattern(id: uint64, name: Identifier, args: seq[(
     ResolvedArgumentDefinition, Identifier)],
     location: Location): ResolvedStructPattern =
   ResolvedStructPattern(kind: RSPK_NAMED, name: name, args: args,
@@ -1441,13 +1542,6 @@ proc hash(pattern: ResolvedStructPattern): Hash =
   case pattern.kind:
   of RSPK_DEFAULT: "".hash
   of RSPK_NAMED: pattern.name.asl.hash
-
-proc generic_impls(pattern: ResolvedStructPattern): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for (argdef, _) in pattern.args: impl_set = impl_set.merge(
-      argdef.generic_impls)
-  return impl_set
 
 proc asl(struct_pattern: ResolvedStructPattern): string =
   let prefix =
@@ -1485,7 +1579,8 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         let field = ? concrete_struct.find_field(key)
         let value_arg = new_resolved_argument_definition(field.module_ref, value)
         resolved_fields.add((value_arg, key))
-      ok(new_resolved_struct_pattern(resolved_fields, pattern.location))
+      ok(new_resolved_struct_pattern(resolved_struct.id, resolved_fields,
+          pattern.location))
     of SPK_NAMED:
       let struct_name = ? pattern.struct
       let resolved_struct = ? resolved_operand_module.find_struct(struct_name)
@@ -1495,8 +1590,8 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         let field = ? concrete_struct.find_field(key)
         let value_arg = new_resolved_argument_definition(field.module_ref, value)
         resolved_fields.add((value_arg, key))
-      ok(new_resolved_struct_pattern(struct_name, resolved_fields,
-          pattern.location))
+      ok(new_resolved_struct_pattern(resolved_struct.id, struct_name,
+          resolved_fields, pattern.location))
 
 type
   ResolvedCasePatternKind = enum
@@ -1526,14 +1621,6 @@ proc hash(pattern: ResolvedCasePattern): Hash =
 
 proc `==`(self: ResolvedCasePattern, other: ResolvedCasePattern): bool =
   self.hash == other.hash
-
-proc generic_impls(pattern: ResolvedCasePattern): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  case pattern.kind:
-  of RCPK_LITERAL: discard
-  of RCPK_STRUCT: impl_set = impl_set.merge(pattern.struct.generic_impls)
-  return impl_set
 
 proc asl(case_pattern: ResolvedCasePattern): string =
   case case_pattern.kind:
@@ -1581,7 +1668,7 @@ type
     of REK_STRUCT_GET: struct_get: ResolvedStructGet
     of REK_VARIABLE: variable: ResolvedArgumentDefinition
   ResolvedStatement = ref object of RootObj
-    arg: Identifier
+    arg: ResolvedArgumentDefinition
     expression: ResolvedExpression
   ResolvedCase = ref object of RootObj
     pattern: ResolvedCasePattern
@@ -1635,17 +1722,15 @@ proc asl(expression: ResolvedExpression, indent: string): seq[string] =
   of REK_STRUCT_GET: @[expression.struct_get.asl]
   of REK_VARIABLE: @[expression.variable.asl]
 
-proc generic_impls(match: ResolvedMatch): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]]
+proc c(match: ResolvedMatch, result_arg: ResolvedArgumentDefinition): seq[string]
 
-proc generic_impls(expression: ResolvedExpression): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+proc c(expression: ResolvedExpression, result_arg: ResolvedArgumentDefinition): seq[string] =
   case expression.kind:
-  of REK_MATCH: expression.match.generic_impls
-  of REK_FNCALL: expression.fncall.generic_impls
-  of REK_INIT: expression.init.generic_impls
-  of REK_STRUCT_GET: expression.struct_get.generic_impls
-  of REK_VARIABLE: expression.variable.generic_impls
+  of REK_MATCH: expression.match.c(result_arg)
+  of REK_FNCALL: expression.fncall.c(result_arg.name.asl)
+  of REK_INIT: expression.init.c(result_arg.name.asl)
+  of REK_STRUCT_GET: @[expression.struct_get.c(result_arg.name.asl)]
+  of REK_VARIABLE: @[fmt"{expression.variable.module_ref.c} {result_arg.name.asl} = {expression.variable.name.asl};"]
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -1704,35 +1789,36 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     ok(new_resolved_expression(resolved_match))
 
 # Statement
-proc new_resolved_statement(arg: Identifier,
+proc new_resolved_statement(arg: ResolvedArgumentDefinition,
     expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(arg: arg, expression: expression)
 
 proc returns(statement: ResolvedStatement): ResolvedModuleRef =
   statement.expression.returns
 
-proc return_arg(statement: ResolvedStatement): ResolvedArgumentDefinition =
-  new_resolved_argument_definition(statement.expression.returns, statement.arg)
-
-proc generic_impls(statement: ResolvedStatement): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] = statement.expression.generic_impls
-
 proc asl(statement: ResolvedStatement, indent: string): seq[string] =
   var lines = statement.expression.asl(indent)
   lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
   lines
+
+proc c(statement: ResolvedStatement): seq[string] =
+  statement.expression.c(statement.arg)
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
     statement: TypedStatement): Result[ResolvedStatement, string] =
   let resolved_expression = ? resolve(file_def, module_def, scope,
       statement.expression)
-  ok(new_resolved_statement(statement.arg, resolved_expression))
+  let resolved_arg = new_resolved_argument_definition(
+      resolved_expression.returns, statement.arg)
+  ok(new_resolved_statement(resolved_arg, resolved_expression))
 
 proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     statement: TypedStatement): Result[ResolvedStatement, string] =
   let resolved_expression = ? resolve(file_def, scope, statement.expression)
-  ok(new_resolved_statement(statement.arg, resolved_expression))
+  let resolved_arg = new_resolved_argument_definition(
+      resolved_expression.returns, statement.arg)
+  ok(new_resolved_statement(resolved_arg, resolved_expression))
 
 # Case
 proc new_resolved_case(pattern: ResolvedCasePattern, statements: seq[
@@ -1742,20 +1828,49 @@ proc new_resolved_case(pattern: ResolvedCasePattern, statements: seq[
 proc returns(case_block: ResolvedCase): ResolvedModuleRef =
   case_block.statements[^1].returns
 
-proc generic_impls(case_block: ResolvedCase): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  impl_set = impl_set.merge(case_block.pattern.generic_impls)
-  for statement in case_block.statements:
-    impl_set = impl_set.merge(statement.generic_impls)
-  return impl_set
-
 proc asl(case_block: ResolvedCase, indent: string): seq[string] =
   var lines = @[fmt"case {case_block.pattern.asl}:"]
   for statement in case_block.statements:
     for line in statement.asl(indent):
       lines.add(indent & line)
   lines
+
+proc c(case_block: ResolvedCase, operand: ResolvedArgumentDefinition,
+    result_arg: string, first: bool = false): seq[string] =
+  var lines: seq[string]
+  let conditional = if first: "if" else: "else if"
+  case case_block.pattern.kind:
+  of RCPK_LITERAL:
+    let literal = case_block.pattern.literal
+    case literal.kind:
+    of LK_FLOAT: discard # UNREACHABLE
+    of LK_INTEGER:
+      lines.add(fmt"{conditional}({operand.name.asl} == {literal.asl})")
+      lines.add("{")
+    of LK_STRING:
+      lines.add(fmt"{conditional}(String_compare({operand.name.asl}, {literal.asl}) == 0)")
+      lines.add("{")
+  of RCPK_STRUCT:
+    let struct_id = case_block.pattern.struct.id
+    let id_call = fmt"{operand.module_ref.name}_get_id({operand.name.asl})"
+    lines.add(fmt"{conditional}({id_call} == {struct_id})")
+    lines.add("{")
+
+    let prefix =
+      case case_block.pattern.struct.kind:
+      of RSPK_DEFAULT: operand.module_ref.name
+      of RSPK_NAMED: fmt"{operand.module_ref.name}_{case_block.pattern.struct.name.asl}"
+
+    for (field, key) in case_block.pattern.struct.args:
+      lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
+
+  for statement in case_block.statements:
+    lines.add(statement.c)
+  let last_statement = case_block.statements[^1].arg.name.asl
+  lines.add(fmt"{result_arg} = {last_statement};")
+  lines.add("}")
+
+  return lines
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -1775,7 +1890,7 @@ proc resolve(file_def: ResolvedFileDefinition,
   for statement in case_block.statements:
     let resolved_statement = ? resolve(file_def, module_def, case_scope, statement)
     resolved_statements.add(resolved_statement)
-    case_scope = ? case_scope.set(resolved_statement.return_arg)
+    case_scope = ? case_scope.set(resolved_statement.arg)
   ok(new_resolved_case(resolved_case_pattern, resolved_statements,
       case_block.location))
 
@@ -1795,7 +1910,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
   for statement in case_block.statements:
     let resolved_statement = ? resolve(file_def, case_scope, statement)
     resolved_statements.add(resolved_statement)
-    case_scope = ? case_scope.set(resolved_statement.return_arg)
+    case_scope = ? case_scope.set(resolved_statement.arg)
   ok(new_resolved_case(resolved_case_pattern, resolved_statements,
       case_block.location))
 
@@ -1807,18 +1922,21 @@ proc new_resolved_else(statements: seq[ResolvedStatement],
 proc returns(else_block: ResolvedElse): ResolvedModuleRef =
   else_block.statements[^1].returns
 
-proc generic_impls(else_block: ResolvedElse): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for statement in else_block.statements: impl_set = impl_set.merge(
-      statement.generic_impls)
-  return impl_set
-
 proc asl(else_block: ResolvedElse, indent: string): seq[string] =
   var lines = @["else:"]
   for statement in else_block.statements:
     for line in statement.asl(indent):
       lines.add(indent & line)
+  return lines
+
+proc c(else_block: ResolvedElse, result_arg: string): seq[string] =
+  var lines: seq[string]
+  lines.add("else {")
+  for statement in else_block.statements:
+    lines.add(statement.c)
+  let last_arg = else_block.statements[^1].arg.name.asl
+  lines.add(fmt"{result_arg} = {last_arg};")
+  lines.add("}")
   return lines
 
 proc resolve(file_def: ResolvedFileDefinition,
@@ -1829,7 +1947,7 @@ proc resolve(file_def: ResolvedFileDefinition,
   for statement in else_block.statements:
     let resolved_statement = ? resolve(file_def, module_def, else_scope, statement)
     resolved_statements.add(resolved_statement)
-    else_scope = ? else_scope.set(resolved_statement.return_arg)
+    else_scope = ? else_scope.set(resolved_statement.arg)
   ok(new_resolved_else(resolved_statements, else_block.location))
 
 proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
@@ -1839,7 +1957,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
   for statement in else_block.statements:
     let resolved_statement = ? resolve(file_def, else_scope, statement)
     resolved_statements.add(resolved_statement)
-    else_scope = ? else_scope.set(resolved_statement.return_arg)
+    else_scope = ? else_scope.set(resolved_statement.arg)
   ok(new_resolved_else(resolved_statements, else_block.location))
 
 # Match
@@ -1857,17 +1975,6 @@ proc new_resolved_match(operand: ResolvedArgumentDefinition, case_blocks: seq[
 proc returns(match: ResolvedMatch): ResolvedModuleRef =
   match.case_blocks[0].returns
 
-proc generic_impls(match: ResolvedMatch): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for case_block in match.case_blocks: impl_set = impl_set.merge(
-      case_block.generic_impls)
-
-  case match.kind:
-  of RMK_CASE_ONLY: discard
-  of RMK_COMPLETE: impl_set = impl_set.merge(match.else_block.generic_impls)
-  return impl_set
-
 proc asl(match: ResolvedMatch, indent: string): seq[string] =
   var lines = @[fmt"match {match.operand.name.asl}:"]
   for case_block in match.case_blocks:
@@ -1881,6 +1988,16 @@ proc asl(match: ResolvedMatch, indent: string): seq[string] =
       lines.add(indent & line)
 
   lines
+
+proc c(match: ResolvedMatch, result_arg: ResolvedArgumentDefinition): seq[string] =
+  var lines: seq[string]
+  lines.add(fmt"{result_arg.c};")
+  for index, case_block in match.case_blocks:
+    lines.add(case_block.c(match.operand, result_arg.name.asl, index == 0))
+  case match.kind:
+  of RMK_CASE_ONLY: discard
+  of RMK_COMPLETE: lines.add(match.else_block.c(result_arg.name.asl))
+  return lines
 
 proc resolve(file_def: ResolvedFileDefinition,
     module_def: ResolvedUserModuleDefinition, scope: FunctionScope,
@@ -2034,7 +2151,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     ok(new_resolved_match(resolved_operand, resolved_case_blocks,
         resolved_else_block, match.location))
 
-type ResolvedFunction* = ref object of RootObj
+type ResolvedFunction = ref object of RootObj
   def: ResolvedFunctionDefinition
   steps: seq[ResolvedStatement]
 
@@ -2042,21 +2159,25 @@ proc new_resolved_function(def: ResolvedFunctionDefinition, steps: seq[
     ResolvedStatement]): ResolvedFunction =
   ResolvedFunction(def: def, steps: steps)
 
-proc name*(function: ResolvedFunction): Identifier =
-  function.def.name
+proc statements(function: ResolvedFunction): seq[ResolvedStatement] =
+  function.steps
 
-proc generic_impls(function: ResolvedFunction): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  impl_set = impl_set.merge(function.def.generic_impls)
-  for step in function.steps: impl_set = impl_set.merge(step.generic_impls)
-  return impl_set
-
-proc asl*(function: ResolvedFunction, indent: string): seq[string] =
+proc asl(function: ResolvedFunction, indent: string): seq[string] =
   var lines = @[function.def.asl]
   for statement in function.steps:
     for line in statement.asl(indent):
       lines.add(indent & line)
+  return lines
+
+proc c(function: ResolvedFunction): seq[string] =
+  var lines: seq[string]
+  lines.add(function.def.c.replace(";", ""))
+  lines.add("{")
+  for statement in function.statements:
+    lines.add(statement.c)
+  let last_arg = function.statements[^1].arg.name.asl
+  lines.add(fmt"return {last_arg};")
+  lines.add("}")
   return lines
 
 proc resolve(file_def: ResolvedFileDefinition,
@@ -2070,7 +2191,7 @@ proc resolve(file_def: ResolvedFileDefinition,
   for step in function.steps:
     let resolved_function_step = ? resolve(file_def, module_def, scope, step)
     resolved_steps.add(resolved_function_step)
-    scope = ? scope.set(resolved_function_step.return_arg)
+    scope = ? scope.set(resolved_function_step.arg)
   ok(new_resolved_function(resolved_function_def, resolved_steps))
 
 proc resolve(file_def: ResolvedFileDefinition, function: TypedFunction): Result[
@@ -2084,10 +2205,10 @@ proc resolve(file_def: ResolvedFileDefinition, function: TypedFunction): Result[
   for step in function.steps:
     let resolved_function_step = ? resolve(file_def, scope, step)
     resolved_steps.add(resolved_function_step)
-    scope = ? scope.set(resolved_function_step.return_arg)
+    scope = ? scope.set(resolved_function_step.arg)
   ok(new_resolved_function(resolved_function_def, resolved_steps))
 
-type ResolvedUserModule* = ref object of RootObj
+type ResolvedUserModule = ref object of RootObj
   def: ResolvedUserModuleDefinition
   functions: seq[ResolvedFunction]
 
@@ -2095,20 +2216,7 @@ proc new_resolved_user_module(def: ResolvedUserModuleDefinition, functions: seq[
     ResolvedFunction]): ResolvedUserModule =
   ResolvedUserModule(def: def, functions: functions)
 
-proc name*(module: ResolvedUserModule): Identifier = module.def.name
-proc def*(module: ResolvedUserModule): ResolvedUserModuleDefinition = module.def
-proc functions*(module: ResolvedUserModule): seq[
-    ResolvedFunction] = module.functions
-
-proc generic_impls(module: ResolvedUserModule): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  impl_set = impl_set.merge(module.def.generic_impls)
-  for function in module.functions: impl_set = impl_set.merge(
-      function.generic_impls)
-  return impl_set
-
-proc asl*(module: ResolvedUserModule, indent: string): seq[string] =
+proc asl(module: ResolvedUserModule, indent: string): seq[string] =
   var lines = @[fmt"module {module.def.name.asl}:"]
   for line in module.def.asl(indent):
     lines.add(indent & line)
@@ -2117,6 +2225,12 @@ proc asl*(module: ResolvedUserModule, indent: string): seq[string] =
     for line in function.asl(indent):
       lines.add(indent & line)
     lines.add("\n")
+  return lines
+
+proc c(module: ResolvedUserModule): seq[string] =
+  var lines: seq[string]
+  for function in module.functions:
+    lines.add(function.c)
   return lines
 
 proc resolve(file_def: ResolvedFileDefinition,
@@ -2136,33 +2250,7 @@ proc new_resolved_file(def: ResolvedFileDefinition, user_modules: seq[
     ResolvedUserModule], functions: seq[ResolvedFunction]): ResolvedFile =
   ResolvedFile(def: def, user_modules: user_modules, functions: functions)
 
-proc path*(file: ResolvedFile): string = file.def.file.path
-proc indent*(file: ResolvedFile): int = file.def.file.indent
-proc def*(file: ResolvedFile): ResolvedFileDefinition = file.def
-proc user_modules*(file: ResolvedFile): seq[
-    ResolvedUserModule] = file.user_modules
-proc functions*(file: ResolvedFile): seq[ResolvedFunction] = file.functions
-proc generic_impls*(file: ResolvedFile): Result[Table[TypedUserModule, seq[seq[
-    ResolvedModuleDefinition]]], string] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  impl_set = impl_set.merge(file.def.generic_impls)
-  for module in file.user_modules: impl_set = impl_set.merge(
-      module.generic_impls)
-  for function in file.functions: impl_set = impl_set.merge(
-      function.generic_impls)
-
-  # Assign index to module for each generic
-  var impl_map: Table[TypedUserModule, seq[seq[ResolvedModuleDefinition]]]
-  for module, generics in impl_set.pairs:
-    var resolved_children: seq[seq[ResolvedModuleDefinition]]
-    for impls in generics:
-      var resolved_module_defs: seq[ResolvedModuleDefinition]
-      for impl in impls:
-        let resolved_module_def = ? file.def.find_module_def(impl)
-        resolved_module_defs.add(resolved_module_def)
-      resolved_children.add(resolved_module_defs)
-    impl_map[module] = resolved_children
-  return ok(impl_map)
+proc indent(file: ResolvedFile): int = file.def.file.indent
 
 proc asl*(file: ResolvedFile): string =
   let indent = " ".repeat(file.indent)
@@ -2174,6 +2262,15 @@ proc asl*(file: ResolvedFile): string =
     lines.add(function.asl(indent))
     lines.add("\n")
   lines.map_it(it.strip(leading = false)).join("\n").replace(re"\n{3,}", "\n\n")
+
+proc c*(file: ResolvedFile): string =
+  var lines: seq[string]
+  lines.add(file.def.c)
+  for module in file.user_modules:
+    lines.add(module.c)
+  for function in file.functions:
+    lines.add(function.c)
+  return lines.join("\n")
 
 proc resolve(file_def: ResolvedFileDefinition): Result[ResolvedFile, string] =
   var resolved_user_modules: seq[ResolvedUserModule]
