@@ -2041,9 +2041,16 @@ proc native_modules(): Result[seq[NativeModule], string] =
       ? new_native_function("System_box_S32", "Pointer", "box", @["S32"]),
       ? new_native_function("System_box_S64", "Pointer", "box", @["S64"]),
       ? new_native_function("System_print_U8", "U64", "print", @["U8"]),
+      ? new_native_function("System_print_U16", "U64", "print", @["U16"]),
+      ? new_native_function("System_print_U32", "U64", "print", @["U32"]),
       ? new_native_function("System_print_U64", "U64", "print", @["U64"]),
+      ? new_native_function("System_print_S8", "U64", "print", @["S8"]),
+      ? new_native_function("System_print_S16", "U64", "print", @["S16"]),
       ? new_native_function("System_print_S32", "U64", "print", @["S32"]),
       ? new_native_function("System_print_S64", "U64", "print", @["S64"]),
+      ? new_native_function("System_print_F32", "U64", "print", @["F32"]),
+      ? new_native_function("System_print_F64", "U64", "print", @["F64"]),
+      ? new_native_function("System_print_String", "U64", "print", @["String"]),
     ])
   ])
 

@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 /** NOTE: Needed for UNREACHABLE Macro */
@@ -39,6 +40,34 @@ Pointer System_allocate(U64 bytes)
   memset(ptr, 0, bytes);
   return ptr;
 }
+
+/** NOTE: Macro for generating System_print_{Type} function for Native Types.
+ *
+ * U64 System_print_U8(U8 value) {
+ *    return printf("%u\n", value);
+ * }
+ *
+ */
+
+#define PRINT(TYPE, SPEC)             \
+  U64 System_print_##TYPE(TYPE value) \
+  {                                   \
+    return printf(SPEC, value);       \
+  }
+
+PRINT(U8, "%hhu\n")
+PRINT(U16, "%hu\n")
+PRINT(U32, "%u\n")
+PRINT(U64, "%llu\n")
+PRINT(S8, "%hhd\n")
+PRINT(S16, "%hd\n")
+PRINT(S32, "%d\n")
+PRINT(S64, "%lld\n")
+PRINT(F32, "%f\n")
+PRINT(F64, "%lf\n")
+PRINT(String, "%s\n")
+
+#undef PRINT
 
 /** NOTE: Macro for generating {Type}_byte_size function for Native Types.
  *
@@ -126,4 +155,9 @@ BASIC_OPS(Pointer)
 S8 U64_compare_U64(U64 x, U64 y)
 {
   return (x < y) ? -1 : (x > y ? 1 : 0);
+}
+
+U64 U64_add_U64(U64 x, U64 y)
+{
+  return x + y;
 }

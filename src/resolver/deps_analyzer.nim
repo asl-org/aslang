@@ -1321,14 +1321,16 @@ proc merge*(
 type TypedFile* = ref object of RootObj
   name: string
   indent: int
+  maybe_start_def: Option[TypedFunctionDefinition]
   native_modules: seq[TypedNativeModule]
   native_modules_map: Table[NativeModule, TypedNativeModule]
   user_modules: seq[TypedUserModule]
   user_modules_map: Table[UserModule, TypedUserModule]
   functions: seq[TypedFunction]
 
-proc new_typed_file(name: string, indent: int, native_modules: seq[(
-    NativeModule, TypedNativeModule)], user_modules: seq[TypedUserModule],
+proc new_typed_file(name: string, indent: int, maybe_start_def: Option[
+    TypedFunctionDefinition], native_modules: seq[(NativeModule,
+        TypedNativeModule)], user_modules: seq[TypedUserModule],
     user_modules_map: Table[UserModule, TypedUserModule], functions: seq[
     TypedFunction]): TypedFile =
   var native_modules_map: Table[NativeModule, TypedNativeModule]
@@ -1336,12 +1338,19 @@ proc new_typed_file(name: string, indent: int, native_modules: seq[(
   for (native_module, typed_native_module) in native_modules:
     native_modules_map[native_module] = typed_native_module
     typed_native_modules.add(typed_native_module)
-  TypedFile(name: name, indent: indent, native_modules: typed_native_modules,
-      native_modules_map: native_modules_map, user_modules: user_modules,
+  TypedFile(name: name, indent: indent, maybe_start_def: maybe_start_def,
+      native_modules: typed_native_modules,
+      native_modules_map: native_modules_map,
+      user_modules: user_modules,
       user_modules_map: user_modules_map, functions: functions)
 
 proc path*(file: TypedFile): string = file.name
 proc indent*(file: TypedFile): int = file.indent
+proc start_def*(file: TypedFile): Result[TypedFunctionDefinition, string] =
+  if file.maybe_start_def.is_some:
+    ok(file.maybe_start_def.get)
+  else:
+    err(fmt"{file.path} failed to find `start` function")
 proc native_modules*(file: TypedFile): seq[
     TypedNativeModule] = file.native_modules
 proc user_modules*(file: TypedFile): seq[TypedUserModule] = file.user_modules
@@ -1389,18 +1398,19 @@ proc assign_type*(file: parser.File): Result[TypedFile, string] =
   for module in module_resolution_order:
     typed_modules.add(modules_map[module])
 
-  var start_function_present = false
-  let start_function_def = ? make_typed_function_def(file, "start", @[("U8",
-      "seed")], "U8")
+  var maybe_start_def: Option[TypedFunctionDefinition]
+  let maybe_start_def_def = ? make_typed_function_def(file, "start", @[(
+      "U8", "seed")], "U8")
 
   var typed_functions: seq[TypedFunction]
   for function in file.functions:
     let typed_function = ? assign_type(file, function)
     typed_functions.add(typed_function)
-    start_function_present = start_function_present or (typed_function.def == start_function_def)
+    if typed_function.def == maybe_start_def_def:
+      maybe_start_def = some(typed_function.def)
 
-  if not start_function_present:
+  if maybe_start_def.is_none:
     return err(fmt"{file.path} failed to find `start` function")
 
-  ok(new_typed_file(file.path, file.indent, native_modules, typed_modules,
-      modules_map, typed_functions))
+  ok(new_typed_file(file.path, file.indent, maybe_start_def,
+      native_modules, typed_modules, modules_map, typed_functions))
