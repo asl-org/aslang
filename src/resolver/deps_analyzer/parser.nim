@@ -1954,7 +1954,7 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "S64"]),
       ? new_native_function("S64_compare_S64", "S8", "compare", @["S64",
           "S64"]),
-      ? new_native_function("S64_cast_U8", "S64", "from", @["U8"]),
+      ? new_native_function("S64_from_U8", "S64", "from", @["U8"]),
     ]),
     ? new_native_module("U8", @[
       ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
@@ -1970,7 +1970,7 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "U8"]),
       ? new_native_function("U8_or_U8", "U8", "or", @["U8",
           "U8"]),
-      ? new_native_function("U8_not_U8", "U8", "not", @["U8"]),
+      ? new_native_function("U8_not", "U8", "not", @["U8"]),
     ]),
     ? new_native_module("U16", @[
       ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
@@ -2035,7 +2035,7 @@ proc native_modules(): Result[seq[NativeModule], string] =
     ]),
     ? new_native_module("System", @[
       ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
-      ? new_native_function("System_free", "Pointer", "free", @["Pointer"]),
+      ? new_native_function("System_free", "U64", "free", @["Pointer"]),
       ? new_native_function("System_box_U8", "Pointer", "box", @["U8"]),
       ? new_native_function("System_box_U64", "Pointer", "box", @["U64"]),
       ? new_native_function("System_box_S32", "Pointer", "box", @["S32"]),

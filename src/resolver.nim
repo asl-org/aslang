@@ -5,6 +5,9 @@ import resolver/deps_analyzer
 export deps_analyzer
 
 type
+  ResolvedImpl = ref object of RootObj
+    module_ref: ResolvedModuleRef
+    defs: seq[TypedFunctionDefinition]
   ResolvedModuleRefKind = enum
     RMRK_NATIVE, RMRK_USER, RMRK_GENERIC
   ResolvedModuleRef = ref object of RootObj
@@ -14,10 +17,42 @@ type
     of RMRK_GENERIC: generic: TypedGeneric
     of RMRK_USER:
       user_module: TypedUserModule
-      children: seq[ResolvedModuleRef]
-      impls: seq[seq[TypedFunctionDefinition]]
+      impls: seq[ResolvedImpl]
       concrete_map: Table[TypedGeneric, ResolvedModuleRef]
 
+# ResolvedImpl
+proc new_resolved_impl(module_ref: ResolvedModuleRef, defs: seq[
+    TypedFunctionDefinition]): ResolvedImpl =
+  ResolvedImpl(module_ref: module_ref, defs: defs)
+
+# NOTE: Needed due to cyclic dependency between ResolvedModuleRef and ResolvedImpl
+proc hash(module_ref: ResolvedModuleRef): Hash
+
+proc hash(impl: ResolvedImpl): Hash =
+  case impl.module_ref.kind:
+  of RMRK_GENERIC: impl.module_ref.generic.hash
+  of RMRK_NATIVE: impl.module_ref.native_module.hash
+  of RMRK_USER: impl.module_ref.user_module.hash
+
+proc `==`(self: ResolvedImpl, other: ResolvedImpl): bool =
+  self.hash == other.hash
+
+proc merge*(
+  impl_set_1: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]],
+  impl_set_2: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
+): Table[TypedUserModule, seq[HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
+  for (module, generics) in impl_set_1.pairs:
+    impl_set[module] = generics
+  for (module, generics) in impl_set_2.pairs:
+    if module in impl_set:
+      for index, generic in generics.pairs:
+        impl_set[module][index].incl(generic)
+    else:
+      impl_set[module] = generics
+  return impl_set
+
+# ResolvedModuleRef
 proc new_resolved_module_ref(native_module: TypedNativeModule,
     location: Location): ResolvedModuleRef =
   ResolvedModuleRef(kind: RMRK_NATIVE, native_module: native_module,
@@ -28,15 +63,13 @@ proc new_resolved_module_ref(generic: TypedGeneric,
   ResolvedModuleRef(kind: RMRK_GENERIC, generic: generic,
       location: location)
 
-proc new_resolved_module_ref(user_module: TypedUserModule, children: seq[
-    ResolvedModuleRef], impls: seq[seq[TypedFunctionDefinition]],
-        location: Location): ResolvedModuleRef =
+proc new_resolved_module_ref(user_module: TypedUserModule, impls: seq[
+    ResolvedImpl], location: Location): ResolvedModuleRef =
   var concrete_map: Table[TypedGeneric, ResolvedModuleRef]
-  for (generic, child) in zip(user_module.generics, children):
-    concrete_map[generic] = child
+  for (generic, impl) in zip(user_module.generics, impls):
+    concrete_map[generic] = impl.module_ref
   ResolvedModuleRef(kind: RMRK_USER, user_module: user_module,
-      concrete_map: concrete_map, children: children, impls: impls,
-      location: location)
+      concrete_map: concrete_map, impls: impls, location: location)
 
 proc name(module_ref: ResolvedModuleRef): string =
   case module_ref.kind:
@@ -66,11 +99,12 @@ proc concretize(module_ref: ResolvedModuleRef, concrete_map: Table[TypedGeneric,
   of RMRK_NATIVE: module_ref
   of RMRK_GENERIC: concrete_map[module_ref.generic]
   of RMRK_USER:
-    var concretized_children: seq[ResolvedModuleRef]
-    for child in module_ref.children:
-      concretized_children.add(child.concretize(concrete_map))
-    new_resolved_module_ref(module_ref.user_module, concretized_children,
-        module_ref.impls, module_ref.location)
+    var concretized_impls: seq[ResolvedImpl]
+    for impl in module_ref.impls:
+      let concrete_module_ref = impl.module_ref.concretize(concrete_map)
+      concretized_impls.add(new_resolved_impl(concrete_module_ref, impl.defs))
+    new_resolved_module_ref(module_ref.user_module, concretized_impls,
+        module_ref.location)
 
 proc hash(module_ref: ResolvedModuleRef): Hash =
   case module_ref.kind:
@@ -78,30 +112,28 @@ proc hash(module_ref: ResolvedModuleRef): Hash =
   of RMRK_GENERIC: module_ref.generic.hash
   of RMRK_USER:
     var acc = module_ref.user_module.hash
-    for child in module_ref.children:
-      acc = acc !& child.hash
+    for impl in module_ref.impls:
+      acc = acc !& impl.module_ref.hash
     acc
 
 proc `==`(self: ResolvedModuleRef, other: ResolvedModuleRef): bool =
   self.hash == other.hash
 
 proc generic_impls(module_ref: ResolvedModuleRef): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   case module_ref.kind:
   of RMRK_NATIVE: discard
   of RMRK_GENERIC: discard
   of RMRK_USER:
-    if module_ref.children.len > 0:
-      var generics: seq[HashSet[TypedModule]]
-      for index, child in module_ref.children.pairs:
-        generics.add(init_hashset[TypedModule]())
-        case child.kind:
-        of RMRK_NATIVE: generics[index].incl(new_typed_module(
-            child.native_module))
+    if module_ref.impls.len > 0:
+      var generics: seq[HashSet[ResolvedImpl]]
+      for index, impl in module_ref.impls.pairs:
+        generics.add(init_hashset[ResolvedImpl]())
+        case impl.module_ref.kind:
+        of RMRK_NATIVE: generics[index].incl(impl)
         of RMRK_GENERIC: discard
-        of RMRK_USER: generics[index].incl(new_typed_module(
-            child.user_module))
+        of RMRK_USER: generics[index].incl(impl)
       impl_set[module_ref.user_module] = generics
   return impl_set
 
@@ -111,13 +143,10 @@ proc asl(module_ref: ResolvedModuleRef): string =
   of RMRK_GENERIC: module_ref.generic.asl
   of RMRK_USER:
     var parent_str = module_ref.user_module.asl
-    if module_ref.children.len == 0:
+    if module_ref.impls.len == 0:
       parent_str
     else:
-      var children_args: seq[string]
-      for child in module_ref.children:
-        children_args.add(child.asl)
-      let children_str = children_args.join(", ")
+      let children_str = module_ref.impls.map_it(it.module_ref.asl).join(", ")
       fmt"{parent_str}[{children_str}]"
 
 proc byte_size(module_ref: ResolvedModuleRef): uint64 =
@@ -160,18 +189,16 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
-    var resolved_children: seq[ResolvedModuleRef]
-    var matching_impls: seq[seq[TypedFunctionDefinition]]
+    var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, generic, child)
-      resolved_children.add(resolved_child)
       # NOTE: Check that resolved child satifies constraints.
-      var generic_impls: seq[TypedFunctionDefinition]
+      var constraint_defs: seq[TypedFunctionDefinition]
       for def in typed_generic.concrete_defs(child.self()):
-        generic_impls.add( ? resolved_child.find_function(def))
-      matching_impls.add(generic_impls)
-    ok(new_resolved_module_ref(typed_module, resolved_children, matching_impls,
-        module_ref.location))
+        constraint_defs.add( ? resolved_child.find_function(def))
+      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      impls.add(resolved_impl)
+    ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     module_ref: TypedModuleRef): Result[ResolvedModuleRef, string] =
@@ -193,18 +220,16 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
-    var resolved_children: seq[ResolvedModuleRef]
-    var matching_impls: seq[seq[TypedFunctionDefinition]]
+    var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, child)
-      resolved_children.add(resolved_child)
       # NOTE: Check that resolved child satifies constraints.
-      var generic_impls: seq[TypedFunctionDefinition]
+      var constraint_defs: seq[TypedFunctionDefinition]
       for def in typed_generic.concrete_defs(child.self()):
-        generic_impls.add( ? resolved_child.find_function(def))
-      matching_impls.add(generic_impls)
-    ok(new_resolved_module_ref(typed_module, resolved_children, matching_impls,
-        module_ref.location))
+        constraint_defs.add( ? resolved_child.find_function(def))
+      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      impls.add(resolved_impl)
+    ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
 proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
     ResolvedModuleRef, string] =
@@ -223,18 +248,16 @@ proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
 
-    var resolved_children: seq[ResolvedModuleRef]
-    var matching_impls: seq[seq[TypedFunctionDefinition]]
+    var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, child)
-      resolved_children.add(resolved_child)
       # NOTE: Check that resolved child satifies constraints.
-      var generic_impls: seq[TypedFunctionDefinition]
+      var constraint_defs: seq[TypedFunctionDefinition]
       for def in typed_generic.concrete_defs(child.self()):
-        generic_impls.add( ? resolved_child.find_function(def))
-      matching_impls.add(generic_impls)
-    ok(new_resolved_module_ref(typed_module, resolved_children, matching_impls,
-        module_ref.location))
+        constraint_defs.add( ? resolved_child.find_function(def))
+      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      impls.add(resolved_impl)
+    ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
 type ResolvedArgumentDefinition = ref object of RootObj
   name: Identifier
@@ -259,7 +282,7 @@ proc byte_size(arg: ResolvedArgumentDefinition): uint64 =
   arg.module_ref.byte_size
 
 proc generic_impls(arg: ResolvedArgumentDefinition): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+    HashSet[ResolvedImpl]]] =
   arg.module_ref.generic_impls
 
 proc asl(arg: ResolvedArgumentDefinition): string =
@@ -313,8 +336,8 @@ proc concretize(def: ResolvedUserFunctionDefinition, concrete_map: Table[
       concretized_returns, def.location)
 
 proc generic_impls(def: ResolvedUserFunctionDefinition): Table[TypedUserModule,
-    seq[HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    seq[HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for arg in def.args: impl_set = impl_set.merge(arg.generic_impls())
   impl_set = impl_set.merge(def.returns.generic_impls())
   return impl_set
@@ -392,8 +415,8 @@ proc new_resolved_generic(generic: TypedGeneric, defs: seq[
 proc name(generic: ResolvedGeneric): Identifier = generic.generic.name
 
 proc generic_impls(generic: ResolvedGeneric): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for def in generic.defs: impl_set = impl_set.merge(def.generic_impls())
   return impl_set
 
@@ -459,8 +482,8 @@ proc new_resolved_struct(struct: TypedStruct, name: Identifier, fields: seq[
 proc id(struct: ResolvedStruct): uint64 = struct.struct.id
 
 proc generic_impls(struct: ResolvedStruct): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for field in struct.fields: impl_set = impl_set.merge(field.generic_impls())
   return impl_set
 
@@ -617,10 +640,14 @@ proc new_resolved_user_module_definition(module: TypedUserModule,
 
 proc id(module_def: ResolvedUserModuleDefinition): uint64 = module_def.id
 proc name(module_def: ResolvedUserModuleDefinition): Identifier = module_def.module.name
+proc hash(module_def: ResolvedUserModuleDefinition): Hash = module_def.module.hash
+proc `==`(self: ResolvedUserModuleDefinition,
+    other: ResolvedUserModuleDefinition): bool =
+  self.hash == other.hash
 
 proc generic_impls(def: ResolvedUserModuleDefinition): Table[TypedUserModule,
-    seq[HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    seq[HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for generic in def.generics: impl_set = impl_set.merge(generic.generic_impls())
   for struct in def.structs: impl_set = impl_set.merge(struct.generic_impls())
   for function in def.function_defs: impl_set = impl_set.merge(
@@ -786,7 +813,7 @@ proc new_resolved_native_function_definition(native: string,
 proc name(def: ResolvedNativeFunctionDefinition): Identifier = def.def.name
 proc arity(def: ResolvedNativeFunctionDefinition): uint = def.def.arity.uint
 proc generic_impls(function: ResolvedNativeFunctionDefinition): Table[
-    TypedUserModule, seq[HashSet[TypedModule]]] =
+    TypedUserModule, seq[HashSet[ResolvedImpl]]] =
   function.def.generic_impls
 
 proc resolve_def(file: TypedFile, function: TypedNativeFunction): Result[
@@ -796,13 +823,13 @@ proc resolve_def(file: TypedFile, function: TypedNativeFunction): Result[
 
 type ResolvedNativeModuleDefinition = ref object of RootObj
   module: TypedNativeModule
-  name: Identifier
   functions: seq[ResolvedNativeFunctionDefinition]
+  function_defs_map: Table[TypedFunctionDefinition, ResolvedNativeFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint, seq[
       ResolvedNativeFunctionDefinition]]]
 
 proc new_resolved_native_module_definition(module: TypedNativeModule,
-    name: Identifier, functions: seq[
+    functions: seq[
     ResolvedNativeFunctionDefinition]): ResolvedNativeModuleDefinition =
   var function_signatures_map: Table[Identifier, Table[uint, seq[
       ResolvedNativeFunctionDefinition]]]
@@ -814,17 +841,31 @@ proc new_resolved_native_module_definition(module: TypedNativeModule,
       function_signatures_map[function.name][function.arity] = new_seq[
           ResolvedNativeFunctionDefinition]()
     function_signatures_map[function.name][function.arity].add(function)
-  ResolvedNativeModuleDefinition(module: module, name: name,
-      functions: functions, function_signatures_map: function_signatures_map)
 
-proc id(module_def: ResolvedNativeModuleDefinition): uint64 = module_def.id
+  var function_defs_map: Table[TypedFunctionDefinition, ResolvedNativeFunctionDefinition]
+  for (typed_function, resolved_function) in zip(module.functions, functions):
+    function_defs_map[typed_function.def] = resolved_function
+  ResolvedNativeModuleDefinition(module: module, functions: functions,
+      function_defs_map: function_defs_map,
+      function_signatures_map: function_signatures_map)
+
+proc id(module_def: ResolvedNativeModuleDefinition): uint64 = module_def.module.id
+proc name(module_def: ResolvedNativeModuleDefinition): Identifier = module_def.module.name
 
 proc generic_impls(module: ResolvedNativeModuleDefinition): Table[
-    TypedUserModule, seq[HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    TypedUserModule, seq[HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for function in module.functions: impl_set = impl_set.merge(
       function.generic_impls())
   return impl_set
+
+proc find_function_def(module_def: ResolvedNativeModuleDefinition,
+    function_def: TypedFunctionDefinition): Result[
+        ResolvedNativeFunctionDefinition, string] =
+  if function_def notin module_def.function_defs_map:
+    err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
+  else:
+    ok(module_def.function_defs_map[function_def])
 
 proc find_function_defs(module_def: ResolvedNativeModuleDefinition,
     name: Identifier, arity: uint): Result[seq[
@@ -842,7 +883,7 @@ proc resolve_def(file: TypedFile, def: TypedNativeModule): Result[
   for function in def.functions:
     let resolved_function = ? resolve_def(file, function)
     resolved_functions.add(resolved_function)
-  ok(new_resolved_native_module_definition(def, def.name, resolved_functions))
+  ok(new_resolved_native_module_definition(def, resolved_functions))
 
 type
   ResolvedModuleDefinitionKind = enum
@@ -862,6 +903,11 @@ proc id(def: ResolvedModuleDefinition): uint64 =
   case def.kind:
   of RMDK_NATIVE: def.native.id
   of RMDK_USER: def.user.id
+
+proc name(def: ResolvedModuleDefinition): Identifier =
+  case def.kind:
+  of RMDK_NATIVE: def.native.name
+  of RMDK_USER: def.user.name
 
 type ResolvedFileDefinition = ref object of RootObj
   file: TypedFile
@@ -918,8 +964,8 @@ proc new_resolved_file_definition(file: TypedFile, native_modules: seq[(
       function_signatures_map: function_signatures_map)
 
 proc generic_impls(file: ResolvedFileDefinition): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for module in file.native_modules: impl_set = impl_set.merge(
       module.generic_impls())
   for module in file.user_modules: impl_set = impl_set.merge(
@@ -949,18 +995,6 @@ proc find_module_def(file_def: ResolvedFileDefinition,
     ok(file_def.user_modules_map[module])
   else:
     err(fmt"module `{module.name.asl}` not found in resolved file definition")
-
-proc find_module_def(file_def: ResolvedFileDefinition,
-    module: TypedModule): Result[ResolvedModuleDefinition, string] =
-  case module.kind:
-  of TMK_NATIVE:
-    let typed_native_module = ? module.native
-    let native_module_def = ? file_def.find_module_def(typed_native_module)
-    ok(new_resolved_module_definition(native_module_def))
-  of TMK_USER:
-    let typed_user_module = ? module.user
-    let user_module_def = ? file_def.find_module_def(typed_user_module)
-    ok(new_resolved_module_definition(user_module_def))
 
 proc find_function_def(file_def: ResolvedFileDefinition,
     def: TypedFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
@@ -1043,7 +1077,7 @@ proc returns(def: ResolvedFunctionDefinition): ResolvedModuleRef =
   of RFDK_USER: def.user.returns
 
 proc generic_impls(def: ResolvedFunctionDefinition): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+    HashSet[ResolvedImpl]]] =
   case def.kind:
   of RFDK_NATIVE: def.native.def.generic_impls
   of RFDK_USER: def.user.generic_impls
@@ -1089,8 +1123,8 @@ proc defs(fnref: ResolvedFunctionRef): seq[(ResolvedFunctionDefinition,
   zip(fnref.original_defs, fnref.concrete_defs)
 
 proc generic_impls(fnref: ResolvedFunctionRef): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   case fnref.kind:
   of RFRK_LOCAL: discard
   of RFRK_MODULE: impl_set = impl_set.merge(fnref.module_ref.generic_impls)
@@ -1209,7 +1243,7 @@ proc location(arg: ResolvedArgument): Location =
   of RAK_VARIABLE: arg.variable.location
 
 proc generic_impls(arg: ResolvedArgument): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]] =
+    ResolvedImpl]]] =
   arg.module_ref.generic_impls
 
 proc asl(arg: ResolvedArgument): string =
@@ -1262,8 +1296,8 @@ proc returns(fncall: ResolvedFunctionCall): ResolvedModuleRef =
   fncall.concrete_def.returns
 
 proc generic_impls(fncall: ResolvedFunctionCall): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   impl_set = impl_set.merge(fncall.fnref.generic_impls)
   impl_set = impl_set.merge(fncall.concrete_def.generic_impls)
   for arg in fncall.args: impl_set = impl_set.merge(arg.generic_impls)
@@ -1291,7 +1325,8 @@ proc c(fncall: ResolvedFunctionCall, result_arg: string): seq[string] =
       lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args});")
     of RMRK_USER:
       var new_args: seq[string]
-      for child in module_ref.children:
+      for impl in module_ref.impls:
+        let child = impl.module_ref
         case child.kind:
         of RMRK_GENERIC:
           new_args.add(fmt"__asl_impl_id_{child.generic.id}")
@@ -1345,6 +1380,7 @@ proc resolve(file_def: ResolvedFileDefinition,
     if maybe_resolved_args.is_ok:
       return ok(new_resolved_function_call(resolved_function_ref, original_def,
           concrete_def, maybe_resolved_args.get))
+
     error_message.add(concrete_def.asl)
   err(error_message.join("\n"))
 
@@ -1358,6 +1394,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     if maybe_resolved_args.is_ok:
       return ok(new_resolved_function_call(resolved_function_ref, original_def,
           concrete_def, maybe_resolved_args.get))
+
     error_message.add(concrete_def.asl)
   err(error_message.join("\n"))
 
@@ -1371,7 +1408,7 @@ proc new_resolved_struct_ref(module_ref: ResolvedModuleRef,
   ResolvedStructRef(module_ref: module_ref, origin: origin, struct: struct)
 
 proc generic_impls(struct_ref: ResolvedStructRef): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+    HashSet[ResolvedImpl]]] =
   struct_ref.module_ref.generic_impls
 
 proc asl(struct_ref: ResolvedStructRef): string =
@@ -1468,8 +1505,8 @@ proc returns(struct_init: ResolvedStructInit): ResolvedModuleRef =
   struct_init.struct_ref.module_ref
 
 proc generic_impls(struct_init: ResolvedStructInit): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   impl_set = impl_set.merge(struct_init.struct_ref.generic_impls)
   for field in struct_init.fields: impl_set = impl_set.merge(
       field.generic_impls)
@@ -1556,7 +1593,7 @@ proc returns(literal: ResolvedLiteral): ResolvedModuleRef =
   literal.module_ref
 
 proc generic_impls(literal: ResolvedLiteral): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+    HashSet[ResolvedImpl]]] =
   literal.module_ref.generic_impls
 
 proc asl(literal: ResolvedLiteral): string =
@@ -1609,7 +1646,7 @@ proc returns(init: ResolvedInitializer): ResolvedModuleRef =
   of RIK_LITERAL: init.literal.returns
 
 proc generic_impls(init: ResolvedInitializer): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+    HashSet[ResolvedImpl]]] =
   case init.kind:
   of RIK_LITERAL: init.literal.generic_impls
   of RIK_STRUCT: init.struct.generic_impls
@@ -1661,8 +1698,8 @@ proc returns(struct_get: ResolvedStructGet): ResolvedModuleRef =
   struct_get.field.module_ref
 
 proc generic_impls(struct_get: ResolvedStructGet): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   impl_set = impl_set.merge(struct_get.variable.generic_impls)
   impl_set = impl_set.merge(struct_get.field.generic_impls)
   return impl_set
@@ -1760,8 +1797,8 @@ proc hash(pattern: ResolvedStructPattern): Hash =
   of RSPK_NAMED: pattern.name.asl.hash
 
 proc generic_impls(pattern: ResolvedStructPattern): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for (argdef, _) in pattern.args: impl_set = impl_set.merge(
       argdef.generic_impls)
   return impl_set
@@ -1846,8 +1883,8 @@ proc `==`(self: ResolvedCasePattern, other: ResolvedCasePattern): bool =
   self.hash == other.hash
 
 proc generic_impls(pattern: ResolvedCasePattern): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   case pattern.kind:
   of RCPK_LITERAL: discard
   of RCPK_STRUCT: impl_set = impl_set.merge(pattern.struct.generic_impls)
@@ -1944,10 +1981,10 @@ proc returns(expression: ResolvedExpression): ResolvedModuleRef =
   of REK_VARIABLE: expression.variable.module_ref
 
 proc generic_impls(match: ResolvedMatch): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]]
+    ResolvedImpl]]]
 
 proc generic_impls(expression: ResolvedExpression): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
+    HashSet[ResolvedImpl]]] =
   case expression.kind:
   of REK_MATCH: expression.match.generic_impls
   of REK_FNCALL: expression.fncall.generic_impls
@@ -2040,7 +2077,7 @@ proc returns(statement: ResolvedStatement): ResolvedModuleRef =
   statement.expression.returns
 
 proc generic_impls(statement: ResolvedStatement): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] = statement.expression.generic_impls
+    HashSet[ResolvedImpl]]] = statement.expression.generic_impls
 
 proc asl(statement: ResolvedStatement, indent: string): seq[string] =
   var lines = statement.expression.asl(indent)
@@ -2075,8 +2112,8 @@ proc returns(case_block: ResolvedCase): ResolvedModuleRef =
   case_block.statements[^1].returns
 
 proc generic_impls(case_block: ResolvedCase): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   impl_set = impl_set.merge(case_block.pattern.generic_impls)
   for statement in case_block.statements:
     impl_set = impl_set.merge(statement.generic_impls)
@@ -2191,8 +2228,8 @@ proc returns(else_block: ResolvedElse): ResolvedModuleRef =
   else_block.statements[^1].returns
 
 proc generic_impls(else_block: ResolvedElse): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for statement in else_block.statements: impl_set = impl_set.merge(
       statement.generic_impls)
   return impl_set
@@ -2251,8 +2288,8 @@ proc returns(match: ResolvedMatch): ResolvedModuleRef =
   match.case_blocks[0].returns
 
 proc generic_impls(match: ResolvedMatch): Table[TypedUserModule, seq[HashSet[
-    TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   for case_block in match.case_blocks: impl_set = impl_set.merge(
       case_block.generic_impls)
 
@@ -2449,8 +2486,8 @@ proc statements(function: ResolvedFunction): seq[ResolvedStatement] =
   function.steps
 
 proc generic_impls(function: ResolvedFunction): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   impl_set = impl_set.merge(function.def.generic_impls)
   for step in function.steps: impl_set = impl_set.merge(step.generic_impls)
   return impl_set
@@ -2510,8 +2547,8 @@ proc new_resolved_user_module(def: ResolvedUserModuleDefinition, functions: seq[
   ResolvedUserModule(def: def, functions: functions)
 
 proc generic_impls(module: ResolvedUserModule): Table[TypedUserModule, seq[
-    HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+    HashSet[ResolvedImpl]]] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   impl_set = impl_set.merge(module.def.generic_impls)
   for function in module.functions: impl_set = impl_set.merge(
       function.generic_impls)
@@ -2528,8 +2565,47 @@ proc asl(module: ResolvedUserModule, indent: string): seq[string] =
     lines.add("\n")
   return lines
 
-proc c(module: ResolvedUserModule): seq[string] =
+proc c(module: ResolvedUserModule, generic_impls: seq[seq[(
+    ResolvedModuleDefinition, seq[ResolvedFunctionDefinition])]]): seq[string] =
   var lines: seq[string]
+  for gen_index, (generic, impls) in zip(module.def.generics, generic_impls):
+    for def_index, def in generic.defs:
+      lines.add(def.c.replace(";", ""))
+      lines.add("{")
+      lines.add(fmt"switch(__asl_impl_id_{gen_index})")
+      lines.add("{")
+
+      for (impl_module, impl_functions) in impls:
+        lines.add(fmt"case {impl_module.id}:")
+        lines.add("{")
+        let impl_fn = impl_functions[def_index]
+        var new_args: seq[string]
+        for arg_index, (def_arg, impl_arg) in zip(def.args, impl_fn.args):
+          case def_arg.module_ref.kind:
+          of RMRK_GENERIC:
+            case impl_arg.module_ref.kind:
+            of RMRK_GENERIC: new_args.add(def_arg.name.asl)
+            else:
+              let arg_name = fmt"__asl_arg_{arg_index}"
+              lines.add(fmt"{impl_arg.module_ref.c} {arg_name} = {impl_arg.module_ref.c}_read({def_arg.name.asl}, 0);")
+              new_args.add(arg_name)
+          else:
+            new_args.add(def_arg.name.asl)
+
+        let args_str = new_args.join(", ")
+        lines.add(fmt"{impl_fn.returns.c} __asl_result = {impl_fn.c_name}({args_str});")
+
+        case def.returns.kind:
+        of RMRK_GENERIC:
+          lines.add(fmt"return System_box_{impl_fn.returns.c}(__asl_result);")
+        else:
+          lines.add("return __asl_result;")
+
+        lines.add("}")
+      lines.add("}")
+      lines.add("UNREACHABLE();")
+      lines.add("}")
+
   for function in module.functions:
     lines.add(function.c)
   return lines
@@ -2556,9 +2632,10 @@ proc new_resolved_file(def: ResolvedFileDefinition,
 
 proc indent(file: ResolvedFile): int = file.def.file.indent
 
-proc generic_impls*(file: ResolvedFile): Result[Table[TypedUserModule, seq[seq[
-    ResolvedModuleDefinition]]], string] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
+proc generic_impls*(file: ResolvedFile): Result[Table[
+    ResolvedUserModuleDefinition, seq[seq[(ResolvedModuleDefinition, seq[
+    ResolvedFunctionDefinition])]]], string] =
+  var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
   impl_set = impl_set.merge(file.def.generic_impls)
   for module in file.user_modules: impl_set = impl_set.merge(
       module.generic_impls)
@@ -2566,16 +2643,42 @@ proc generic_impls*(file: ResolvedFile): Result[Table[TypedUserModule, seq[seq[
       function.generic_impls)
 
   # Assign index to module for each generic
-  var impl_map: Table[TypedUserModule, seq[seq[ResolvedModuleDefinition]]]
-  for module, generics in impl_set.pairs:
-    var resolved_children: seq[seq[ResolvedModuleDefinition]]
-    for impls in generics:
-      var resolved_module_defs: seq[ResolvedModuleDefinition]
+  var impl_map: Table[ResolvedUserModuleDefinition, seq[seq[(
+      ResolvedModuleDefinition, seq[ResolvedFunctionDefinition])]]]
+  for module, children in impl_set.pairs:
+    var resolved_children: seq[seq[(ResolvedModuleDefinition, seq[
+        ResolvedFunctionDefinition])]]
+    for impls in children:
+      var resolved_impls: seq[(ResolvedModuleDefinition, seq[
+          ResolvedFunctionDefinition])]
       for impl in impls:
-        let resolved_module_def = ? file.def.find_module_def(impl)
-        resolved_module_defs.add(resolved_module_def)
-      resolved_children.add(resolved_module_defs)
-    impl_map[module] = resolved_children
+        case impl.module_ref.kind:
+        of RMRK_GENERIC:
+          echo "[INTERNAL ERROR] - If you see this something is seriously wrong"
+        of RMRK_NATIVE:
+          let native_module_def = ? file.def.find_module_def(
+              impl.module_ref.native_module)
+          var resolved_function_defs: seq[ResolvedFunctionDefinition]
+          for def in impl.defs:
+            let resolved_function_def = ? native_module_def.find_function_def(def)
+            resolved_function_defs.add(new_resolved_function_definition(resolved_function_def))
+          let resolved_module_def = new_resolved_module_definition(native_module_def)
+          resolved_impls.add((resolved_module_def,
+              resolved_function_defs))
+        of RMRK_USER:
+          let user_module_def = ? file.def.find_module_def(
+              impl.module_ref.user_module)
+          var resolved_function_defs: seq[ResolvedFunctionDefinition]
+          for def in impl.defs:
+            let resolved_function_def = ? user_module_def.find_function_def(def)
+            resolved_function_defs.add(new_resolved_function_definition(resolved_function_def))
+          let resolved_module_def = new_resolved_module_definition(user_module_def)
+          resolved_impls.add((resolved_module_def,
+              resolved_function_defs))
+      resolved_children.add(resolved_impls)
+
+    let resolved_user_module_def = ? file.def.find_module_def(module)
+    impl_map[resolved_user_module_def] = resolved_children
   return ok(impl_map)
 
 proc asl*(file: ResolvedFile): string =
@@ -2589,15 +2692,18 @@ proc asl*(file: ResolvedFile): string =
     lines.add("\n")
   lines.map_it(it.strip(leading = false)).join("\n").replace(re"\n{3,}", "\n\n")
 
-proc c*(file: ResolvedFile): string =
+proc c*(file: ResolvedFile): Result[string, string] =
   var lines: seq[string]
   lines.add(file.def.c)
+
+  let generic_impls = ? file.generic_impls
   for module in file.user_modules:
-    lines.add(module.c)
+    let impls = generic_impls.get_or_default(module.def, @[])
+    lines.add(module.c(impls))
   for function in file.functions:
     lines.add(function.c)
 
-  @[
+  let code = @[
     "#include \"runtime.h\"\n",
     lines.join("\n"),
     "\n",
@@ -2605,6 +2711,7 @@ proc c*(file: ResolvedFile): string =
     fmt"return {file.start_function_def.c_name}(argc);",
     "}"
   ].join("\n")
+  ok(code)
 
 proc resolve(file_def: ResolvedFileDefinition,
     start_function_def: ResolvedUserFunctionDefinition): Result[ResolvedFile, string] =

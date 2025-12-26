@@ -41,6 +41,13 @@ Pointer System_allocate(U64 bytes)
   return ptr;
 }
 
+U64 System_free(Pointer ptr)
+{
+  U64 size = sizeof(ptr);
+  free(ptr);
+  return size;
+}
+
 /** NOTE: Macro for generating System_print_{Type} function for Native Types.
  *
  * U64 System_print_U8(U8 value) {
@@ -152,6 +159,31 @@ BASIC_OPS(Pointer)
 #undef POINTER_READ
 #undef POINTER_WRITE
 
+U8 U8_and_U8(U8 x, U8 y)
+{
+  return x & y;
+}
+
+U8 U8_or_U8(U8 x, U8 y)
+{
+  return x | y;
+}
+
+U8 U8_not(U8 x)
+{
+  return ~x;
+}
+
+U8 U8_lshift_U8(U8 x, U64 y)
+{
+  return x << y;
+}
+
+U8 U8_rshift_U8(U8 x, U64 y)
+{
+  return x >> y;
+}
+
 S8 U64_compare_U64(U64 x, U64 y)
 {
   return (x < y) ? -1 : (x > y ? 1 : 0);
@@ -160,4 +192,54 @@ S8 U64_compare_U64(U64 x, U64 y)
 U64 U64_add_U64(U64 x, U64 y)
 {
   return x + y;
+}
+
+U64 U64_multiply_U64(U64 x, U64 y)
+{
+  return x * y;
+}
+
+U64 U64_quotient_U64(U64 x, U64 y)
+{
+  return x / y;
+}
+
+U64 U64_remainder_U64(U64 x, U64 y)
+{
+  return x % y;
+}
+
+S64 S64_add_S64(S64 x, S64 y)
+{
+  return x + y;
+}
+
+S64 S64_subtract_S64(S64 x, S64 y)
+{
+  return x - y;
+}
+
+S64 S64_multiply_S64(S64 x, S64 y)
+{
+  return x * y;
+}
+
+S64 S64_quotient_S64(S64 x, S64 y)
+{
+  return x / y;
+}
+
+S64 S64_remainder_S64(S64 x, S64 y)
+{
+  return x % y;
+}
+
+S8 S64_compare_S64(S64 x, S64 y)
+{
+  return (x < y) ? -1 : (x > y ? 1 : 0);
+}
+
+S64 S64_from_U8(U8 x)
+{
+  return (S64)x;
 }

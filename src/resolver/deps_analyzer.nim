@@ -1267,57 +1267,6 @@ proc find_function*(module: TypedNativeModule,
   else:
     err(fmt"failed to find function `{def.asl}`")
 
-type
-  TypedModuleKind* = enum
-    TMK_NATIVE, TMK_USER
-  TypedModule* = ref object of RootObj
-    case kind: TypedModuleKind
-    of TMK_NATIVE: native_module: TypedNativeModule
-    of TMK_USER: user_module: TypedUserModule
-
-proc new_typed_module*(native_module: TypedNativeModule): TypedModule =
-  TypedModule(kind: TMK_NATIVE, native_module: native_module)
-
-proc new_typed_module*(user_module: TypedUserModule): TypedModule =
-  TypedModule(kind: TMK_USER, user_module: user_module)
-
-proc kind*(impl: TypedModule): TypedModuleKind = impl.kind
-proc native*(impl: TypedModule): Result[TypedNativeModule, string] =
-  case impl.kind:
-  of TMK_NATIVE: ok(impl.native_module)
-  else: err("[INTERNAL] - expected a native module")
-proc user*(impl: TypedModule): Result[TypedUserModule, string] =
-  case impl.kind:
-  of TMK_USER: ok(impl.user_module)
-  else: err("[INTERNAL] - expected a user module")
-proc name*(impl: TypedModule): Identifier =
-  case impl.kind:
-  of TMK_NATIVE: impl.native_module.name
-  of TMK_USER: impl.user_module.name
-
-proc hash*(impl: TypedModule): Hash =
-  case impl.kind:
-  of TMK_NATIVE: impl.native_module.hash
-  of TMK_USER: impl.user_module.hash
-
-proc `==`*(self: TypedModule, other: TypedModule): bool =
-  self.hash == other.hash
-
-proc merge*(
-  impl_set_1: Table[TypedUserModule, seq[HashSet[TypedModule]]],
-  impl_set_2: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-): Table[TypedUserModule, seq[HashSet[TypedModule]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[TypedModule]]]
-  for (module, generics) in impl_set_1.pairs:
-    impl_set[module] = generics
-  for (module, generics) in impl_set_2.pairs:
-    if module in impl_set:
-      for index, generic in generics.pairs:
-        impl_set[module][index].incl(generic)
-    else:
-      impl_set[module] = generics
-  return impl_set
-
 type TypedFile* = ref object of RootObj
   name: string
   indent: int
