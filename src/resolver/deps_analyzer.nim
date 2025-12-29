@@ -38,7 +38,7 @@ proc detect_cycle[T](graph: Table[T, HashSet[T]]): Result[seq[T], seq[T]] =
   ok(ordered_nodes)
 
 # Numeric literal parser utility
-proc safe_parse*[T](input: string): Result[void, string] =
+proc safe_parse[T](input: string): Result[void, string] =
   when T is SomeSignedInt:
     var temp: BiggestInt
     let code = parse_biggest_int(input, temp)
@@ -81,22 +81,22 @@ type
     of TMRK_GENERIC:
       generic: Generic
 
-proc new_typed_module_ref*(native_module: NativeModule,
+proc new_typed_module_ref(native_module: NativeModule,
     location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_NATIVE, native_module: native_module,
       location: location)
 
-proc new_typed_module_ref*(user_module: UserModule,
+proc new_typed_module_ref(user_module: UserModule,
     location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_USER, user_module: user_module, location: location)
 
-proc new_typed_module_ref*(user_module: UserModule, children: seq[
+proc new_typed_module_ref(user_module: UserModule, children: seq[
     TypedModuleRef], location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_USER, user_module: user_module, children: children,
       location: location)
 
-proc new_typed_module_ref*(module: UserModule,
-    generic: Generic, location: Location): TypedModuleRef =
+proc new_typed_module_ref(generic: Generic,
+    location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_GENERIC, generic: generic,
       location: location)
 
@@ -145,13 +145,12 @@ proc self*(module_ref: TypedModuleRef): TypedModuleRef =
   of TMRK_USER:
     var child_module_refs: seq[TypedModuleRef]
     for generic in module_ref.user_module.generics:
-      let child_module_ref = new_typed_module_ref(module_ref.user_module,
-          generic, module_ref.location)
+      let child_module_ref = new_typed_module_ref(generic, module_ref.location)
       child_module_refs.add(child_module_ref)
     new_typed_module_ref(module_ref.user_module, child_module_refs,
         module_ref.location)
 
-proc asl*(module_ref: TypedModuleRef): string =
+proc asl(module_ref: TypedModuleRef): string =
   case module_ref.kind:
   of TMRK_NATIVE: module_ref.native_module.name.asl
   of TMRK_GENERIC: module_ref.generic.name.asl
@@ -187,6 +186,21 @@ proc generic*(module_ref: TypedModuleRef): Result[Generic, string] =
   of TMRK_GENERIC: ok(module_ref.generic)
   else: err(fmt"{module_ref.location} expected a generic")
 
+# NOTE: This is a utility function to internally add some function definitions
+# like `byte_size`, `read`, `write`
+proc make_typed_module_ref(file: parser.File, module_name: string): Result[
+    TypedModuleRef, string] =
+  let module_id = ? new_identifier(module_name)
+  let module = ? file.find_module(module_id)
+  case module.kind:
+  of MK_NATIVE:
+    let native_module = ? module.native_module
+    ok(new_typed_module_ref(native_module, Location()))
+  of MK_USER:
+    let user_module = ? module.user_module
+    let user_module_ref = new_typed_module_ref(user_module, Location())
+    ok(user_module_ref.self)
+
 type TypedArgumentDefinition* = ref object of RootObj
   name: Identifier
   module_ref: TypedModuleRef
@@ -210,6 +224,14 @@ proc location*(arg: TypedArgumentDefinition): Location = arg.module_ref.location
 proc name*(arg: TypedArgumentDefinition): Identifier = arg.name
 proc module_ref*(arg: TypedArgumentDefinition): TypedModuleRef = arg.module_ref
 proc asl*(arg: TypedArgumentDefinition): string = fmt"{arg.module_ref.asl} {arg.name.asl}"
+
+# NOTE: This is a utility function to internally add some function definitions
+# like `byte_size`, `read`, `write`
+proc make_typed_arg_def(file: parser.File, module_name: string,
+    arg_name: string): Result[TypedArgumentDefinition, string] =
+  let arg_module_ref = ? make_typed_module_ref(file, module_name)
+  let arg_name_id = ? new_identifier(arg_name)
+  ok(new_typed_argument_definition(arg_module_ref, arg_name_id))
 
 type TypedFunctionDefinition* = ref object of RootObj
   name: Identifier
@@ -263,23 +285,37 @@ proc concretize(def: TypedFunctionDefinition, generic: Generic,
   let concrete_returns = def.returns.concretize(generic, module_ref)
   new_typed_function_definition(def.name, concrete_args, concrete_returns, def.location)
 
+# NOTE: This is a utility function to internally add some function definitions
+# like `byte_size`, `read`, `write`
+proc make_typed_function_def(file: parser.File, name: string, args: seq[(string,
+    string)], returns: string): Result[TypedFunctionDefinition, string] =
+  let name_id = ? new_identifier(name)
+  let returns_module_ref = ? make_typed_module_ref(file, returns)
+  var typed_arg_defs: seq[TypedArgumentDefinition]
+  for (arg_module, arg_name) in args:
+    typed_arg_defs.add( ? make_typed_arg_def(file, arg_module, arg_name))
+  ok(new_typed_function_definition(name_id, typed_arg_defs, returns_module_ref,
+      Location()))
+
 type
   TypedStructKind* = enum
     TSK_DEFAULT, TSK_NAMED
   TypedStruct* = ref object of RootObj
+    id: uint64
     fields: seq[TypedArgumentDefinition]
     location: Location
     case kind: TypedStructKind
     of TSK_DEFAULT: discard
     of TSK_NAMED: name: Identifier
 
-proc new_typed_struct(fields: seq[TypedArgumentDefinition],
+proc new_typed_struct(id: uint64, fields: seq[TypedArgumentDefinition],
     location: Location): TypedStruct =
-  TypedStruct(kind: TSK_DEFAULT, fields: fields, location: location)
+  TypedStruct(kind: TSK_DEFAULT, id: id, fields: fields, location: location)
 
-proc new_typed_struct(name: Identifier, fields: seq[TypedArgumentDefinition],
-    location: Location): TypedStruct =
-  TypedStruct(kind: TSK_NAMED, name: name, fields: fields, location: location)
+proc new_typed_struct(id: uint64, name: Identifier, fields: seq[
+    TypedArgumentDefinition], location: Location): TypedStruct =
+  TypedStruct(kind: TSK_NAMED, id: id, name: name, fields: fields,
+      location: location)
 
 proc module_deps(struct: TypedStruct): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
@@ -287,6 +323,7 @@ proc module_deps(struct: TypedStruct): HashSet[UserModule] =
     module_set.incl(field.module_deps)
   module_set
 
+proc id*(struct: TypedStruct): uint64 = struct.id
 proc hash*(struct: TypedStruct): Hash = struct.location.hash
 proc `==`*(self: TypedStruct, other: TypedStruct): bool = self.hash == other.hash
 
@@ -460,7 +497,7 @@ type TypedVariable* = ref object of RootObj
 proc new_typed_variable(name: Identifier): TypedVariable =
   TypedVariable(name: name)
 
-proc location(variable: TypedVariable): Location = variable.name.location
+proc location*(variable: TypedVariable): Location = variable.name.location
 proc name*(variable: TypedVariable): Identifier = variable.name
 proc module_deps(variable: TypedVariable): HashSet[UserModule] = init_hashset[
     UserModule]()
@@ -637,9 +674,6 @@ proc new_typed_function(def: TypedFunctionDefinition, steps: seq[
     TypedStatement]): TypedFunction =
   TypedFunction(def: def, steps: steps)
 
-# proc location(function: TypedFunction): Location =
-#   function.def.location
-
 proc module_deps(function: TypedFunction): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
   module_set.incl(function.def.module_deps)
@@ -657,7 +691,7 @@ proc assign_type(file: parser.File, optional_module: Option[UserModule],
     let module = optional_module.get
     let maybe_arg_generic = module.find_generic(module_name)
     if maybe_arg_generic.is_ok:
-      return ok(new_typed_module_ref(module, maybe_arg_generic.get,
+      return ok(new_typed_module_ref(maybe_arg_generic.get,
           module_name.location))
 
   let arg_module = ? file.find_module(module_name)
@@ -973,16 +1007,17 @@ proc assign_type(file: parser.File, function: Function): Result[
   ok(new_typed_function(typed_def, typed_steps))
 
 type TypedGeneric* = ref object of RootObj
+  id: uint64
   generic: Generic
   defs: seq[TypedFunctionDefinition]
   defs_map: Table[TypedFunctionDefinition, TypedFunctionDefinition]
   location: Location
 
-proc new_typed_generic(generic: Generic, defs: seq[TypedFunctionDefinition],
-    location: Location): TypedGeneric =
+proc new_typed_generic(id: uint64, generic: Generic, defs: seq[
+    TypedFunctionDefinition], location: Location): TypedGeneric =
   var defs_map: Table[TypedFunctionDefinition, TypedFunctionDefinition]
   for def in defs: defs_map[def] = def
-  TypedGeneric(generic: generic, defs: defs, defs_map: defs_map,
+  TypedGeneric(id: id, generic: generic, defs: defs, defs_map: defs_map,
       location: location)
 
 proc module_deps(generic: TypedGeneric): HashSet[UserModule] =
@@ -991,6 +1026,7 @@ proc module_deps(generic: TypedGeneric): HashSet[UserModule] =
     module_set.incl(def.module_deps)
   module_set
 
+proc id*(generic: TypedGeneric): uint64 = generic.id
 proc location*(generic: TypedGeneric): Location = generic.location
 proc name*(generic: TypedGeneric): Identifier = generic.generic.name
 proc defs*(generic: TypedGeneric): seq[TypedFunctionDefinition] = generic.defs
@@ -1011,18 +1047,18 @@ proc find_function*(generic: TypedGeneric,
   if def in generic.defs_map:
     ok(generic.defs_map[def])
   else:
-    err("failed to find function `{def.asl}`")
+    err(fmt"failed to find function `{def.asl}`")
 
 proc assign_type(file: parser.File, module: UserModule,
-    generic: Generic): Result[TypedGeneric, string] =
+    generic: Generic, id: uint64): Result[TypedGeneric, string] =
   var typed_defs: seq[TypedFunctionDefinition]
   for def in generic.defs:
     let typed_def = ? assign_type(file, module, generic, def)
     typed_defs.add(typed_def)
-  ok(new_typed_generic(generic, typed_defs, generic.location))
+  ok(new_typed_generic(id, generic, typed_defs, generic.location))
 
-proc assign_type(file: parser.File, module: UserModule, struct: Struct): Result[
-    TypedStruct, string] =
+proc assign_type(file: parser.File, module: UserModule, struct: Struct,
+    id: uint64): Result[TypedStruct, string] =
   var module_set: HashSet[UserModule]
   var typed_fields: seq[TypedArgumentDefinition]
   for field in struct.fields:
@@ -1031,12 +1067,13 @@ proc assign_type(file: parser.File, module: UserModule, struct: Struct): Result[
     module_set.incl(typed_field.module_deps)
   case struct.def.kind:
   of SDK_DEFAULT:
-    ok(new_typed_struct(typed_fields, struct.location))
+    ok(new_typed_struct(id, typed_fields, struct.location))
   of SDK_NAMED:
     let struct_name = ? struct.name
-    ok(new_typed_struct(struct_name, typed_fields, struct.location))
+    ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
 
-type TypedModule* = ref object of RootObj
+type TypedUserModule* = ref object of RootObj
+  id: uint64
   name: Identifier
   location: Location
   generics: seq[TypedGeneric]
@@ -1044,10 +1081,15 @@ type TypedModule* = ref object of RootObj
   structs: seq[TypedStruct]
   functions_map: Table[TypedFunctionDefinition, TypedFunction]
   functions: seq[TypedFunction]
+  # NOTE: This map contains some auto generated function definitions like
+  # `byte_size`, `read`, `write`. The codegenerator should generate the
+  # function body for these corresponding internal functions.
+  internal_functions_map: Table[TypedFunctionDefinition, TypedFunctionDefinition]
 
-proc new_typed_module(name: Identifier, generic_pairs: seq[(Generic,
-    TypedGeneric)], structs: seq[TypedStruct], functions: seq[TypedFunction],
-    location: Location): TypedModule =
+proc new_typed_user_module(id: uint64, name: Identifier, generic_pairs: seq[(
+    Generic, TypedGeneric)], structs: seq[TypedStruct], functions: seq[
+    TypedFunction], internal_functions: seq[TypedFunctionDefinition],
+    location: Location): TypedUserModule =
   var generics: seq[TypedGeneric]
   var generics_map: Table[Generic, TypedGeneric]
   for (generic, typed_generic) in generic_pairs:
@@ -1057,11 +1099,15 @@ proc new_typed_module(name: Identifier, generic_pairs: seq[(Generic,
   var functions_map: Table[TypedFunctionDefinition, TypedFunction]
   for function in functions: functions_map[function.def] = function
 
-  TypedModule(name: name, location: location, generics: generics,
-      generics_map: generics_map, structs: structs, functions: functions,
-      functions_map: functions_map)
+  var internal_functions_map: Table[TypedFunctionDefinition, TypedFunctionDefinition]
+  for internal_function in internal_functions:
+    internal_functions_map[internal_function] = internal_function
 
-proc module_deps(module: TypedModule): HashSet[UserModule] =
+  TypedUserModule(id: id, name: name, location: location, generics: generics,
+      generics_map: generics_map, structs: structs, functions: functions,
+      functions_map: functions_map, internal_functions_map: internal_functions_map)
+
+proc module_deps(module: TypedUserModule): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
   for generic in module.generics:
     module_set.incl(generic.module_deps)
@@ -1071,45 +1117,64 @@ proc module_deps(module: TypedModule): HashSet[UserModule] =
     module_set.incl(function.module_deps)
   module_set
 
-proc location*(module: TypedModule): Location = module.location
-proc name*(module: TypedModule): Identifier = module.name
-proc generics*(module: TypedModule): seq[TypedGeneric] = module.generics
-proc structs*(module: TypedModule): seq[TypedStruct] = module.structs
-proc functions*(module: TypedModule): seq[TypedFunction] = module.functions
-proc hash*(module: TypedModule): Hash = module.location.hash
-proc `==`*(self: TypedModule, other: TypedModule): bool = self.hash == other.hash
-proc asl*(module: TypedModule): string = module.name.asl
+proc id*(module: TypedUserModule): uint64 = module.id
+proc location*(module: TypedUserModule): Location = module.location
+proc name*(module: TypedUserModule): Identifier = module.name
+proc generics*(module: TypedUserModule): seq[TypedGeneric] = module.generics
+proc structs*(module: TypedUserModule): seq[TypedStruct] = module.structs
+proc functions*(module: TypedUserModule): seq[TypedFunction] = module.functions
+proc hash*(module: TypedUserModule): Hash = module.location.hash
+proc `==`*(self: TypedUserModule, other: TypedUserModule): bool = self.hash == other.hash
+proc asl*(module: TypedUserModule): string = module.name.asl
 
-proc find_generic*(module: TypedModule, generic: Generic): Result[TypedGeneric, string] =
+proc find_generic*(module: TypedUserModule, generic: Generic): Result[
+    TypedGeneric, string] =
   if generic in module.generics_map:
     ok(module.generics_map[generic])
   else:
     err("failed to find generic `{generic.name.asl}`")
 
-proc find_function*(module: TypedModule, def: TypedFunctionDefinition): Result[
-    TypedFunctionDefinition, string] =
+proc find_function*(module: TypedUserModule,
+    def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
   if def in module.functions_map:
     ok(module.functions_map[def].def)
+  elif def in module.internal_functions_map:
+    ok(module.internal_functions_map[def])
   else:
-    err("failed to find function `{def.asl}`")
+    err(fmt"2 - failed to find function `{def.asl}`")
 
-proc assign_type(file: parser.File, module: UserModule): Result[TypedModule, string] =
+proc assign_type(file: parser.File, module: UserModule, id: uint64): Result[
+    TypedUserModule, string] =
   var generic_pairs: seq[(Generic, TypedGeneric)]
-  for generic in module.generics:
-    let typed_generic = ? assign_type(file, module, generic)
+  for index, generic in module.generics:
+    let typed_generic = ? assign_type(file, module, generic, index.uint64)
     generic_pairs.add((generic, typed_generic))
 
   var typed_structs: seq[TypedStruct]
-  for struct in module.structs:
-    let typed_struct = ? assign_type(file, module, struct)
+  for index, struct in module.structs:
+    let typed_struct = ? assign_type(file, module, struct, index.uint64)
     typed_structs.add(typed_struct)
 
   var typed_functions: seq[TypedFunction]
   for function in module.functions:
     let typed_function = ? assign_type(file, module, function)
     typed_functions.add(typed_function)
-  ok(new_typed_module(module.name, generic_pairs, typed_structs,
-      typed_functions, module.location))
+
+  # NOTE: This internal functions are injected in every user defined module
+  # since they are pointers under the hood and to make the array implementation
+  # work every module needs to have `byte_size`, `read` and `write` functions
+  # but adding them before codegen is hard in case of `read` and `write` because
+  # there is no conversion utility between module and pointers.
+  var internal_functions: seq[TypedFunctionDefinition]
+  internal_functions.add( ? make_typed_function_def(file, "byte_size", @[("U64",
+      "items")], "U64"))
+  internal_functions.add( ? make_typed_function_def(file, "read", @[(
+      "Pointer", "ptr"), ("U64", "offset")], module.name.asl))
+  internal_functions.add( ? make_typed_function_def(file, "write", @[(
+      module.name.asl, "item"), ("Pointer", "ptr"), ("U64", "offset")], "Pointer"))
+
+  ok(new_typed_user_module(id, module.name, generic_pairs, typed_structs,
+      typed_functions, internal_functions, module.location))
 
 type TypedNativeFunction* = ref object of RootObj
   native: string
@@ -1128,21 +1193,23 @@ proc assign_type(file: parser.File, module: NativeModule,
   ok(new_typed_native_function(function.native, typed_def))
 
 type TypedNativeModule* = ref object of RootObj
+  id: uint64
   name: Identifier
   functions: seq[TypedNativeFunction]
   functions_map: Table[TypedFunctionDefinition, TypedNativeFunction]
 
 proc new_typed_native_module(name: Identifier, functions: seq[
-    TypedNativeFunction]): TypedNativeModule =
+    TypedNativeFunction], id: uint64): TypedNativeModule =
   var functions_map: Table[TypedFunctionDefinition, TypedNativeFunction]
   for function in functions: functions_map[function.def] = function
-  TypedNativeModule(name: name, functions: functions,
+  TypedNativeModule(id: id, name: name, functions: functions,
       functions_map: functions_map)
 
 proc name*(module: TypedNativeModule): Identifier = module.name
 proc functions*(module: TypedNativeModule): seq[
     TypedNativeFunction] = module.functions
 
+proc id*(module: TypedNativeModule): uint64 = module.id
 proc hash*(module: TypedNativeModule): Hash = module.name.hash
 proc `==`*(self: TypedNativeModule, other: TypedNativeModule): bool = self.hash == other.hash
 proc asl*(module: TypedNativeModule): string = module.name.asl
@@ -1185,52 +1252,62 @@ proc validate*(module: TypedNativeModule, literal: Literal): Result[void, string
     let string_literal = ? literal.string_literal
     validate(module, string_literal)
 
-proc assign_type(file: parser.File, module: NativeModule): Result[
+proc assign_type(file: parser.File, module: NativeModule, id: uint64): Result[
     TypedNativeModule, string] =
   var typed_functions: seq[TypedNativeFunction]
   for function in module.functions:
     let typed_function = ? assign_type(file, module, function)
     typed_functions.add(typed_function)
-  ok(new_typed_native_module(module.name, typed_functions))
+  ok(new_typed_native_module(module.name, typed_functions, id))
 
 proc find_function*(module: TypedNativeModule,
     def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
   if def in module.functions_map:
     ok(module.functions_map[def].def)
   else:
-    err("failed to find function `{def.asl}`")
+    err(fmt"failed to find function `{def.asl}`")
 
 type TypedFile* = ref object of RootObj
   name: string
   indent: int
+  maybe_start_def: Option[TypedFunctionDefinition]
   native_modules: seq[TypedNativeModule]
   native_modules_map: Table[NativeModule, TypedNativeModule]
-  modules: seq[TypedModule]
-  modules_map: Table[UserModule, TypedModule]
+  user_modules: seq[TypedUserModule]
+  user_modules_map: Table[UserModule, TypedUserModule]
   functions: seq[TypedFunction]
 
-proc new_typed_file(name: string, indent: int, native_modules: seq[(
-    NativeModule, TypedNativeModule)], modules: seq[TypedModule],
-    modules_map: Table[UserModule, TypedModule], functions: seq[
+proc new_typed_file(name: string, indent: int, maybe_start_def: Option[
+    TypedFunctionDefinition], native_modules: seq[(NativeModule,
+        TypedNativeModule)], user_modules: seq[TypedUserModule],
+    user_modules_map: Table[UserModule, TypedUserModule], functions: seq[
     TypedFunction]): TypedFile =
   var native_modules_map: Table[NativeModule, TypedNativeModule]
   var typed_native_modules: seq[TypedNativeModule]
   for (native_module, typed_native_module) in native_modules:
     native_modules_map[native_module] = typed_native_module
     typed_native_modules.add(typed_native_module)
-  TypedFile(name: name, indent: indent, native_modules: typed_native_modules,
-      native_modules_map: native_modules_map, modules: modules,
-      modules_map: modules_map, functions: functions)
+  TypedFile(name: name, indent: indent, maybe_start_def: maybe_start_def,
+      native_modules: typed_native_modules,
+      native_modules_map: native_modules_map,
+      user_modules: user_modules,
+      user_modules_map: user_modules_map, functions: functions)
 
 proc path*(file: TypedFile): string = file.name
 proc indent*(file: TypedFile): int = file.indent
+proc start_def*(file: TypedFile): Result[TypedFunctionDefinition, string] =
+  if file.maybe_start_def.is_some:
+    ok(file.maybe_start_def.get)
+  else:
+    err(fmt"{file.path} failed to find `start` function")
 proc native_modules*(file: TypedFile): seq[
     TypedNativeModule] = file.native_modules
-proc modules*(file: TypedFile): seq[TypedModule] = file.modules
+proc user_modules*(file: TypedFile): seq[TypedUserModule] = file.user_modules
 proc functions*(file: TypedFile): seq[TypedFunction] = file.functions
-proc find_module*(file: TypedFile, module: UserModule): Result[TypedModule, string] =
-  if module in file.modules_map:
-    ok(file.modules_map[module])
+proc find_module*(file: TypedFile, module: UserModule): Result[
+    TypedUserModule, string] =
+  if module in file.user_modules_map:
+    ok(file.user_modules_map[module])
   else:
     err("failed to find module `{module.name.asl}`")
 
@@ -1243,14 +1320,15 @@ proc find_module*(file: TypedFile, module: NativeModule): Result[
 
 proc assign_type*(file: parser.File): Result[TypedFile, string] =
   var native_modules: seq[(NativeModule, TypedNativeModule)]
-  for module in file.native_modules:
-    let typed_module = ? assign_type(file, module)
+  for index, module in file.native_modules:
+    let typed_module = ? assign_type(file, module, index.uint64)
     native_modules.add((module, typed_module))
 
   var module_graph: Table[UserModule, HashSet[UserModule]]
-  var modules_map: Table[UserModule, TypedModule]
-  for module in file.user_modules:
-    let typed_module = ? assign_type(file, module)
+  var modules_map: Table[UserModule, TypedUserModule]
+  let offset = file.native_modules.len
+  for index, module in file.user_modules:
+    let typed_module = ? assign_type(file, module, (offset + index).uint64)
     let module_deps = typed_module.module_deps
     module_graph[module] = module_deps
     modules_map[module] = typed_module
@@ -1265,14 +1343,23 @@ proc assign_type*(file: parser.File): Result[TypedFile, string] =
     return err(message.join("\n"))
 
   let module_resolution_order = maybe_module_order.get
-  var typed_modules: seq[TypedModule]
+  var typed_modules: seq[TypedUserModule]
   for module in module_resolution_order:
     typed_modules.add(modules_map[module])
+
+  var maybe_start_def: Option[TypedFunctionDefinition]
+  let maybe_start_def_def = ? make_typed_function_def(file, "start", @[(
+      "U8", "seed")], "U8")
 
   var typed_functions: seq[TypedFunction]
   for function in file.functions:
     let typed_function = ? assign_type(file, function)
     typed_functions.add(typed_function)
+    if typed_function.def == maybe_start_def_def:
+      maybe_start_def = some(typed_function.def)
 
-  ok(new_typed_file(file.path, file.indent, native_modules, typed_modules,
-      modules_map, typed_functions))
+  if maybe_start_def.is_none:
+    return err(fmt"{file.path} failed to find `start` function")
+
+  ok(new_typed_file(file.path, file.indent, maybe_start_def,
+      native_modules, typed_modules, modules_map, typed_functions))

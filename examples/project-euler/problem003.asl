@@ -3,6 +3,14 @@ module Bitset:
     Pointer ptr
     U64 size
 
+  fn init(U64 size): Bitset
+    ptr = System.allocate(size)
+    Bitset { ptr: ptr, size: size }
+
+  fn free(Bitset bitset): U64
+    ptr = bitset.ptr
+    System.free(ptr)
+
   fn get(Bitset bitset, U64 bit): S64
     ptr = bitset.ptr
     size = bitset.size
@@ -114,13 +122,11 @@ module Bitset:
 
 fn start(U8 seed): U8
   exit_success = U8 0
-  size = U64 1000001
-  ptr = System.allocate(size)
-  bitset = Bitset { ptr: ptr, size: size }
+  bitset = Bitset.init(1000001)
 
   ans = Bitset.solve(bitset, 2, 0)
   System.print(ans)
 
   # _x = Bitset_free(bitset)
-  System.free(ptr)
+  Bitset.free(bitset)
   exit_success

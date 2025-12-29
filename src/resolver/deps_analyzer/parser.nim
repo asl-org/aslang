@@ -186,7 +186,7 @@ type Identifier* = ref object of RootObj
   name: string
   location: Location
 
-proc new_identifier*(name: string, location: Location): Result[Identifier, string] =
+proc new_identifier(name: string, location: Location): Result[Identifier, string] =
   if name.len == 0:
     return err(fmt"{location} [PE101] [UNREACHABLE] empty string can not be an identifier.")
 
@@ -194,8 +194,11 @@ proc new_identifier*(name: string, location: Location): Result[Identifier, strin
     return err(fmt"{location} [PE102] identifier length `{name.len}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
   ok(Identifier(name: name, location: location))
 
+proc new_identifier*(name: string): Result[Identifier, string] =
+  new_identifier(name, Location())
+
 proc new_identifier(location: Location): Identifier =
-  let name = fmt"__asl__arg__{location.hash.to_hex}__"
+  let name = fmt"__asl_arg_{location.hash.to_hex}"
   Identifier(name: name, location: location)
 
 proc location*(identifier: Identifier): Location =
@@ -237,6 +240,32 @@ proc identifier_spec(parser: Parser): Result[Identifier, string] =
 
   new_identifier(name, location)
 
+type UserModuleDefinition* = ref object of RootObj
+  name: Identifier
+  location: Location
+
+proc new_module_definition*(name: Identifier,
+    location: Location): UserModuleDefinition =
+  UserModuleDefinition(name: name, location: location)
+
+proc location*(def: UserModuleDefinition): Location =
+  def.location
+
+proc asl(def: UserModuleDefinition): string =
+  fmt"module {def.name.asl}:"
+
+proc hash(def: UserModuleDefinition): Hash =
+  def.location.hash
+
+# module spec
+proc module_definition_spec(parser: Parser): Result[UserModuleDefinition, string] =
+  let module_keyword = ? parser.expect(module_keyword_spec)
+  discard ? parser.expect(strict_space_spec)
+  let name = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  ok(new_module_definition(name, module_keyword.location))
+
 type
   StructDefinitionKind* = enum
     SDK_DEFAULT, SDK_NAMED
@@ -264,32 +293,6 @@ proc asl(def: StructDefinition): string =
   case def.kind:
   of SDK_DEFAULT: "struct:"
   of SDK_NAMED: fmt"struct {def.name.asl}:"
-
-type UserModuleDefinition* = ref object of RootObj
-  name: Identifier
-  location: Location
-
-proc new_module_definition*(name: Identifier,
-    location: Location): UserModuleDefinition =
-  UserModuleDefinition(name: name, location: location)
-
-proc location*(def: UserModuleDefinition): Location =
-  def.location
-
-proc asl(def: UserModuleDefinition): string =
-  fmt"module {def.name.asl}:"
-
-proc hash(def: UserModuleDefinition): Hash =
-  def.location.hash
-
-# module spec
-proc module_definition_spec(parser: Parser): Result[UserModuleDefinition, string] =
-  let module_keyword = ? parser.expect(module_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
-  let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  ok(new_module_definition(name, module_keyword.location))
 
 proc struct_default_definition_spec(parser: Parser): Result[
     StructDefinition, string] =
@@ -337,22 +340,6 @@ proc new_module_ref*(module: Identifier, children: seq[
 
 proc location*(module_ref: ModuleRef): Location =
   module_ref.module.location
-
-proc concrete_module_ref(module_ref: ModuleRef, generic: Identifier,
-    concrete: ModuleRef): Result[ModuleRef, string] =
-  case module_ref.kind:
-  of MRK_SIMPLE:
-    if module_ref.module == generic: ok(concrete)
-    else: ok(module_ref)
-  of MRK_NESTED:
-    if module_ref.module == generic:
-      err(fmt"{module_ref.location} [PE105] generic `{generic.asl}` can not be used as a nested module ref")
-    else:
-      var new_children: seq[ModuleRef]
-      for child in module_ref.children:
-        let new_child = ? child.concrete_module_ref(generic, concrete)
-        new_children.add(new_child)
-      new_module_ref(module_ref.module, new_children)
 
 proc module*(module_ref: ModuleRef): Identifier =
   module_ref.module
@@ -409,14 +396,9 @@ type ArgumentDefinition* = ref object of RootObj
   name: Identifier
   module_ref: ModuleRef
 
-proc new_argument_definition*(name: Identifier,
-    module_ref: ModuleRef): ArgumentDefinition =
+proc new_argument_definition*(module_ref: ModuleRef,
+    name: Identifier): ArgumentDefinition =
   ArgumentDefinition(name: name, module_ref: module_ref)
-
-proc concrete_module_ref(def: ArgumentDefinition, generic: Identifier,
-    concrete: ModuleRef): Result[ArgumentDefinition, string] =
-  let new_module_ref = ? def.module_ref.concrete_module_ref(generic, concrete)
-  ok(new_argument_definition(def.name, new_module_ref))
 
 proc module_ref*(def: ArgumentDefinition): ModuleRef =
   def.module_ref
@@ -437,7 +419,7 @@ proc argument_definition_spec(parser: Parser): Result[
   let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(strict_space_spec)
   let name = ? parser.expect(identifier_spec)
-  ok(new_argument_definition(name, module_ref))
+  ok(new_argument_definition(module_ref, name))
 
 # TODO: Fix this later.
 proc struct_field_definition_spec(parser: Parser, indent: int): Result[
@@ -530,26 +512,10 @@ proc new_function_definition*(name: Identifier, args: seq[ArgumentDefinition],
   ok(FunctionDefinition(name: name, args: args, returns: returns,
       location: location))
 
-proc concrete_module_ref(def: FunctionDefinition, generic: Identifier,
-    concrete: ModuleRef): Result[FunctionDefinition, string] =
-  var new_args: seq[ArgumentDefinition]
-  for arg in def.args:
-    let new_arg = ? arg.concrete_module_ref(generic, concrete)
-    new_args.add(new_arg)
-  let new_return_module_ref = ? def.returns.concrete_module_ref(generic, concrete)
-  new_function_definition(def.name, new_args, new_return_module_ref, def.location)
-
-proc location*(def: FunctionDefinition): Location =
-  def.location
-
-proc name*(def: FunctionDefinition): Identifier =
-  def.name
-
-proc args*(def: FunctionDefinition): seq[ArgumentDefinition] =
-  def.args
-
-proc returns*(def: FunctionDefinition): ModuleRef =
-  def.returns
+proc location*(def: FunctionDefinition): Location = def.location
+proc name*(def: FunctionDefinition): Identifier = def.name
+proc args*(def: FunctionDefinition): seq[ArgumentDefinition] = def.args
+proc returns*(def: FunctionDefinition): ModuleRef = def.returns
 
 proc asl*(def: FunctionDefinition): string =
   var args: seq[string]
@@ -1136,7 +1102,7 @@ type
 
 proc new_match_definition*(operand: Identifier,
     location: Location): Result[MatchDefinition, string] =
-  let arg = ? new_identifier(fmt"__asl__arg__{location.hash.to_hex}__", location)
+  let arg = new_identifier(location)
   ok(MatchDefinition(kind: MDK_DEFAULT, arg: arg, operand: operand))
 
 proc new_match_definition*(def: MatchDefinition,
@@ -1699,18 +1665,6 @@ proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
   ok(Generic(kind: GK_CONSTRAINED, name: name, defs: defs, defs_map: defs_map,
       defs_hash_map: defs_hash_map, location: location))
 
-proc concrete_function_definitions*(generic: Generic,
-    concrete: ModuleRef): Result[seq[FunctionDefinition], string] =
-  var concrete_function_defs: seq[FunctionDefinition]
-  case generic.kind:
-  of GK_DEFAULT:
-    ok(concrete_function_defs)
-  of GK_CONSTRAINED:
-    for def in generic.defs:
-      let new_def = ? def.concrete_module_ref(generic.name, concrete)
-      concrete_function_defs.add(new_def)
-    ok(concrete_function_defs)
-
 proc module_ref*(generic: Generic): ModuleRef =
   new_module_ref(generic.name)
 
@@ -1743,34 +1697,6 @@ proc hash*(generic: Generic): Hash =
 
 proc `==`*(self: Generic, other: Generic): bool =
   self.hash == other.hash
-
-proc find_function*(generic: Generic, def: FunctionDefinition): Result[
-    FunctionDefinition, string] =
-  case generic.kind:
-  of GK_DEFAULT:
-    err(fmt"{def.location} [PE137] generic `{generic.name.asl}` does not have any constraint named `{def.name.asl}`")
-  of GK_CONSTRAINED:
-    let def_hash = def.hash
-    if def_hash notin generic.defs_hash_map:
-      err(fmt"{def.location} [PE138] generic `{generic.name.asl}` does not have any constraint named `{def.name.asl}`")
-    else:
-      ok(generic.defs[generic.defs_hash_map[def_hash]])
-
-proc find_functions*(generic: Generic, name: Identifier, arity: int): Result[
-    seq[FunctionDefinition], string] =
-  case generic.kind:
-  of GK_DEFAULT:
-    err(fmt"{name.location} [PE139] generic `{generic.name.asl}` does not have any function named `{name.asl}`")
-  of GK_CONSTRAINED:
-    if name notin generic.defs_map:
-      err(fmt"{name.location} [PE140] generic `{generic.name.asl}` does not have any function named `{name.asl}`")
-    elif arity notin generic.defs_map[name]:
-      err(fmt"{name.location} [PE141] generic `{generic.name.asl}` does not have any function with arity `{arity}`")
-    else:
-      var defs: seq[FunctionDefinition]
-      for index in generic.defs_map[name][arity]:
-        defs.add(generic.defs[index])
-      ok(defs)
 
 proc generic_default_spec(parser: Parser, indent: int): Result[Generic, string] =
   discard ? parser.expect(indent_spec, indent)
@@ -1906,44 +1832,6 @@ proc module_ref*(module: UserModule): Result[ModuleRef, string] =
   else:
     ok(new_module_ref(module.name))
 
-proc find_struct*(module: UserModule): Result[Struct, string] =
-  if module.default_struct_index == -1: # No struct block is defined
-    err(fmt"[PE171] module `{module.name.asl}` does not have a default struct")
-  else:
-    ok(module.structs[module.default_struct_index])
-
-proc find_struct*(module: UserModule, name: Identifier): Result[Struct, string] =
-  if name notin module.structs_map:
-    err(fmt"{name.location} [PE151] module `{module.name.asl}` does not have a struct named `{name.asl}`")
-  else:
-    ok(module.structs[module.structs_map[name]])
-
-proc find_field*(module: UserModule, field: Identifier): Result[ModuleRef, string] =
-  if module.default_struct_index == -1: # No struct block is defined
-    err(fmt"{field.location} [PE151] module `{module.name.asl}` does not have a default struct")
-  else:
-    let struct = module.structs[module.default_struct_index]
-    struct.find_field(field)
-
-proc find_functions*(module: UserModule, name: Identifier,
-    argcount: int): Result[seq[FunctionDefinition], string] =
-  if name notin module.functions_map:
-    return err(fmt"{name.location} [PE152] module `{module.name.asl}` does not have any function named `{name.asl}`")
-
-  var defs: seq[FunctionDefinition]
-  for index in module.functions_map[name]:
-    if module.functions[index].def.args.len == argcount:
-      defs.add(module.functions[index].def)
-  ok(defs)
-
-proc find_function*(module: UserModule, def: FunctionDefinition): Result[
-    FunctionDefinition, string] =
-  let def_hash = def.hash
-  if def_hash notin module.function_defs_hash_map:
-    err(fmt"{def.location} [PE153] module `{module.name.asl}` does not have any function named `{def.name.asl}`")
-  else:
-    ok(module.functions[module.function_defs_hash_map[def_hash]].def)
-
 proc find_generic*(module: UserModule, name: Identifier): Result[Generic, string] =
   if name notin module.generics_map:
     err(fmt"{name.location} [PE154] module `{module.name.asl}` does not have any generic named `{name.asl}`")
@@ -1951,8 +1839,7 @@ proc find_generic*(module: UserModule, name: Identifier): Result[Generic, string
     ok(module.generics[module.generics_map[name]])
 
 proc asl(module: UserModule, indent: string): seq[string] =
-  let header = module.def.asl
-  var lines: seq[string]
+  var lines = @[module.def.asl]
   for generic in module.generics:
     for line in generic.asl(indent):
       lines.add(indent & line)
@@ -1966,7 +1853,7 @@ proc asl(module: UserModule, indent: string): seq[string] =
       lines.add(indent & line)
     lines.add("\n")
 
-  return (@[header] & lines)
+  return lines
 
 type NativeFunction* = ref object of RootObj
   def: FunctionDefinition
@@ -1974,29 +1861,26 @@ type NativeFunction* = ref object of RootObj
 
 proc new_native_function(native: string, returns: string, name: string,
     args: seq[string]): Result[NativeFunction, string] =
-  var argdefs: seq[ArgumentDefinition]
-  for index, arg in args.pairs:
-    let argid = ? new_identifier(arg, new_location())
-    let module_ref = new_module_ref(argid)
-    let argname = ? new_identifier(fmt"__asl__arg__{index}__", Location())
-    let argdef = new_argument_definition(argname, module_ref)
-    argdefs.add(argdef)
+  var arg_defs: seq[ArgumentDefinition]
+  for index, module in args.pairs:
+    let module_id = ? new_identifier(module)
+    let module_ref = new_module_ref(module_id)
+
+    let arg_id = ? new_identifier(fmt"__asl__arg__{index}__")
+    let arg_def = new_argument_definition(module_ref, arg_id)
+    arg_defs.add(arg_def)
 
   var def = ? new_function_definition(
-    ? new_identifier(name, Location()), # name
-    argdefs,
-    new_module_ref( ? new_identifier(returns, Location())), # return type
+    ? new_identifier(name),                             # name
+    arg_defs,
+    new_module_ref( ? new_identifier(returns)),         # return type
     Location()
   )
 
   ok(NativeFunction(def: def, native: native))
 
-proc name(function: NativeFunction): Identifier =
-  function.def.name
-
-proc def*(function: NativeFunction): FunctionDefinition =
-  function.def
-
+proc name(function: NativeFunction): Identifier = function.def.name
+proc def*(function: NativeFunction): FunctionDefinition = function.def
 proc native*(function: NativeFunction): string = function.native
 
 type NativeModule* = ref object of RootObj
@@ -2007,21 +1891,15 @@ type NativeModule* = ref object of RootObj
 
 proc new_native_module(name: string, functions: seq[
     NativeFunction]): Result[NativeModule, string] =
-  let name = ? new_identifier(name, Location())
-  var functions_map: Table[Identifier, seq[int]]
+  let name = ? new_identifier(name)
   var function_defs_hash_map: Table[Hash, int]
   for index, function in functions.pairs:
     let def_hash = function.def.hash
     if def_hash in function_defs_hash_map:
-      return err(fmt"[PE157] Native function `{function.name.asl}` is defined twice")
+      return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
     function_defs_hash_map[def_hash] = index
 
-    if function.name notin functions_map:
-      functions_map[function.name] = new_seq[int]()
-    functions_map[function.name].add(index)
-
   ok(NativeModule(name: name, functions: functions,
-      functions_map: functions_map,
       function_defs_hash_map: function_defs_hash_map))
 
 proc hash*(module: NativeModule): Hash =
@@ -2036,53 +1914,34 @@ proc functions*(module: NativeModule): seq[NativeFunction] =
 proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
   ok(new_module_ref(module.name))
 
-proc find_functions*(module: NativeModule, name: Identifier,
-    argcount: int): Result[seq[FunctionDefinition], string] =
-  if name notin module.functions_map:
-    return err(fmt"[PE158] {name.location} module `{module.name.asl}` does not have any function named `{name.asl}`")
-
-  var defs: seq[FunctionDefinition]
-  for index in module.functions_map[name]:
-    if module.functions[index].def.args.len == argcount:
-      defs.add(module.functions[index].def)
-  ok(defs)
-
-proc find_function(module: NativeModule, def: FunctionDefinition): Result[
-    FunctionDefinition, string] =
-  let def_hash = def.hash
-  if def_hash notin module.function_defs_hash_map:
-    err(fmt"{def.location} [PE159] module `{module.name.asl}` does not have any function named `{def.name.asl}`")
-  else:
-    ok(module.functions[module.function_defs_hash_map[def_hash]].def)
-
 proc native_modules(): Result[seq[NativeModule], string] =
   ok(@[
     ? new_native_module("S8", @[
       ? new_native_function("S8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S8_read_Pointer", "S8", "read", @["Pointer",
+      ? new_native_function("S8_read", "S8", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S8_write_Pointer", "Pointer", "write", @["S8",
+      ? new_native_function("S8_write", "Pointer", "write", @["S8",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S16", @[
       ? new_native_function("S16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S16_read_Pointer", "S16", "read", @["Pointer",
+      ? new_native_function("S16_read", "S16", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S16_write_Pointer", "Pointer", "write", @["S16",
+      ? new_native_function("S16_write", "Pointer", "write", @["S16",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S32", @[
       ? new_native_function("S32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S32_read_Pointer", "S32", "read", @["Pointer",
+      ? new_native_function("S32_read", "S32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S32_write_Pointer", "Pointer", "write", @["S32",
+      ? new_native_function("S32_write", "Pointer", "write", @["S32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S64", @[
       ? new_native_function("S64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S64_read_Pointer", "S64", "read", @["Pointer",
+      ? new_native_function("S64_read", "S64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S64_write_Pointer", "Pointer", "write", @["S64",
+      ? new_native_function("S64_write", "Pointer", "write", @["S64",
           "Pointer", "U64"]),
       ? new_native_function("S64_add_S64", "S64", "add", @["S64", "S64"]),
       ? new_native_function("S64_subtract_S64", "S64", "subtract", @["S64",
@@ -2095,13 +1954,13 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "S64"]),
       ? new_native_function("S64_compare_S64", "S8", "compare", @["S64",
           "S64"]),
-      ? new_native_function("S64_cast_U8", "S64", "from", @["U8"]),
+      ? new_native_function("S64_from_U8", "S64", "from", @["U8"]),
     ]),
     ? new_native_module("U8", @[
       ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U8_read_Pointer", "U8", "read", @["Pointer",
+      ? new_native_function("U8_read", "U8", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U8_write_Pointer", "Pointer", "write", @["U8",
+      ? new_native_function("U8_write", "Pointer", "write", @["U8",
           "Pointer", "U64"]),
       ? new_native_function("U8_lshift_U8", "U8", "lshift", @["U8",
           "U64"]),
@@ -2111,27 +1970,27 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "U8"]),
       ? new_native_function("U8_or_U8", "U8", "or", @["U8",
           "U8"]),
-      ? new_native_function("U8_not_U8", "U8", "not", @["U8"]),
+      ? new_native_function("U8_not", "U8", "not", @["U8"]),
     ]),
     ? new_native_module("U16", @[
       ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U16_read_Pointer", "U16", "read", @["Pointer",
+      ? new_native_function("U16_read", "U16", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U16_write_Pointer", "Pointer", "write", @["U16",
+      ? new_native_function("U16_write", "Pointer", "write", @["U16",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("U32", @[
       ? new_native_function("U32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U32_read_Pointer", "U32", "read", @["Pointer",
+      ? new_native_function("U32_read", "U32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U32_write_Pointer", "Pointer", "write", @["U32",
+      ? new_native_function("U32_write", "Pointer", "write", @["U32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("U64", @[
       ? new_native_function("U64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U64_read_Pointer", "U64", "read", @["Pointer",
+      ? new_native_function("U64_read", "U64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U64_write_Pointer", "Pointer", "write", @["U64",
+      ? new_native_function("U64_write", "Pointer", "write", @["U64",
           "Pointer", "U64"]),
       ? new_native_function("U64_add_U64", "U64", "add", @["U64", "U64"]),
       ? new_native_function("U64_subtract_U64", "U64", "subtract", @["U64",
@@ -2147,40 +2006,51 @@ proc native_modules(): Result[seq[NativeModule], string] =
     ]),
     ? new_native_module("F32", @[
       ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F32_read_Pointer", "F32", "read", @["Pointer",
+      ? new_native_function("F32_read", "F32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("F32_write_Pointer", "Pointer", "write", @["F32",
+      ? new_native_function("F32_write", "Pointer", "write", @["F32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("F64", @[
       ? new_native_function("F64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F64_read_Pointer", "F64", "read", @["Pointer",
+      ? new_native_function("F64_read", "F64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["F64",
+      ? new_native_function("F64_write", "Pointer", "write", @["F64",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("String", @[
       ? new_native_function("String_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("String_read_Pointer", "String", "read", @[
+      ? new_native_function("String_read", "String", "read", @[
           "Pointer", "U64"]),
-      ? new_native_function("F64_write_Pointer", "Pointer", "write", @["String",
+      ? new_native_function("F64_write", "Pointer", "write", @["String",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("Pointer", @[
       ? new_native_function("Pointer_byte_size", "U64", "byte_size", @[
           "U64"]),
-      ? new_native_function("Pointer_read_Pointer", "Pointer", "read", @[
+      ? new_native_function("Pointer_read", "Pointer", "read", @[
           "Pointer", "U64"]),
-      ? new_native_function("Pointer_write_Pointer", "Pointer", "write", @[
+      ? new_native_function("Pointer_write", "Pointer", "write", @[
           "Pointer", "Pointer", "U64"]),
     ]),
     ? new_native_module("System", @[
       ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
-      ? new_native_function("System_free", "Pointer", "free", @["Pointer"]),
+      ? new_native_function("System_free", "U64", "free", @["Pointer"]),
+      ? new_native_function("System_box_U8", "Pointer", "box", @["U8"]),
+      ? new_native_function("System_box_U64", "Pointer", "box", @["U64"]),
+      ? new_native_function("System_box_S32", "Pointer", "box", @["S32"]),
+      ? new_native_function("System_box_S64", "Pointer", "box", @["S64"]),
       ? new_native_function("System_print_U8", "U64", "print", @["U8"]),
+      ? new_native_function("System_print_U16", "U64", "print", @["U16"]),
+      ? new_native_function("System_print_U32", "U64", "print", @["U32"]),
       ? new_native_function("System_print_U64", "U64", "print", @["U64"]),
+      ? new_native_function("System_print_S8", "U64", "print", @["S8"]),
+      ? new_native_function("System_print_S16", "U64", "print", @["S16"]),
       ? new_native_function("System_print_S32", "U64", "print", @["S32"]),
       ? new_native_function("System_print_S64", "U64", "print", @["S64"]),
+      ? new_native_function("System_print_F32", "U64", "print", @["F32"]),
+      ? new_native_function("System_print_F64", "U64", "print", @["F64"]),
+      ? new_native_function("System_print_String", "U64", "print", @["String"]),
     ])
   ])
 
@@ -2238,61 +2108,33 @@ proc location(module: Module): Location =
   of MK_NATIVE: Location()
   of MK_USER: module.user.location
 
-proc is_struct*(module: Module): bool =
-  case module.kind:
-  of MK_NATIVE: true
-  of MK_USER: module.user.is_struct
-
-proc find_field*(module: Module, field: Identifier): Result[ModuleRef, string] =
-  case module.kind:
-  of MK_NATIVE: err(fmt"{field.location} [PE162] module `{field.asl}` does not have a struct block")
-  of MK_USER: module.user.find_field(field)
-
-proc find_functions*(module: Module, name: Identifier, argcount: int): Result[
-    seq[FunctionDefinition], string] =
-  case module.kind:
-  of MK_NATIVE: module.native.find_functions(name, argcount)
-  of MK_USER: module.user.find_functions(name, argcount)
-
-proc find_function*(module: Module, def: FunctionDefinition): Result[
-    FunctionDefinition, string] =
-  case module.kind:
-  of MK_NATIVE: module.native.find_function(def)
-  of MK_USER: module.user.find_function(def)
-
 proc module_spec(parser: Parser, indent: int): Result[UserModule, string] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
 
   var generics: seq[Generic]
-  while parser.can_parse():
+  discard ? parser.expect(optional_empty_line_spec)
+  var maybe_generic = parser.expect(generic_spec, indent + 1)
+  while maybe_generic.is_ok:
+    generics.add(maybe_generic.get)
     discard ? parser.expect(optional_empty_line_spec)
-
-    let maybe_generic = parser.expect(generic_spec, indent + 1)
-    if maybe_generic.is_ok:
-      generics.add(maybe_generic.get)
-    else:
-      break
+    maybe_generic = parser.expect(generic_spec, indent + 1)
 
   var structs: seq[Struct]
-  while parser.can_parse():
+  discard ? parser.expect(optional_empty_line_spec)
+  var maybe_struct = parser.expect(struct_spec, indent + 1)
+  while maybe_struct.is_ok:
+    structs.add(maybe_struct.get)
     discard ? parser.expect(optional_empty_line_spec)
-
-    let maybe_struct = parser.expect(struct_spec, indent + 1)
-    if maybe_struct.is_ok:
-      structs.add(maybe_struct.get)
-    else:
-      break
+    maybe_struct = parser.expect(struct_spec, indent + 1)
 
   var functions: seq[Function]
-  while parser.can_parse():
+  discard ? parser.expect(optional_empty_line_spec)
+  var maybe_function = parser.expect(function_spec, indent + 1)
+  while maybe_function.is_ok:
+    functions.add(maybe_function.get)
     discard ? parser.expect(optional_empty_line_spec)
-
-    let maybe_function = parser.expect(function_spec, indent + 1)
-    if maybe_function.is_ok:
-      functions.add(maybe_function.get)
-    else:
-      break
+    maybe_function = parser.expect(function_spec, indent + 1)
 
   new_user_module(def, generics, structs, functions)
 
@@ -2304,12 +2146,11 @@ type File* = ref object of RootObj
   native_modules: seq[NativeModule]
   user_modules: seq[UserModule]
   functions: seq[Function]
-  functions_map: Table[Identifier, seq[int]]
 
-proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
-    Function], indent: int): Result[File, string] =
+proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
+    functions: seq[Function]): Result[File, string] =
   if functions.len + user_modules.len == 0:
-    return err(fmt"{path} [PE163] file can not be empty")
+    return err(fmt"{path} [PE163] expected file to have at least a function or module")
 
   # NOTE: Build index to enable module look by name
   var modules: seq[Module]
@@ -2317,26 +2158,25 @@ proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
   var native_modules: seq[NativeModule]
 
   for native_module in ( ? native_modules()):
+    if native_module.name in modules_map:
+      return err(fmt"[INTERNAL] - Native module `{native_module.name.asl} is defined twice")
     native_modules.add(native_module)
     let module = new_module(native_module)
-    if module.name in modules_map:
-      return err(fmt"[PE164] Native module `{module.name.asl} is defined twice")
     modules_map[module.name] = modules.len
     modules.add(module)
 
   for user_module in user_modules:
-    # NOTE: Validation for module name collisions
-    let module = new_module(user_module)
-    if module.name in modules_map:
+    if user_module.name in modules_map:
       let predefined_module_location = modules[modules_map[
-          module.name]].location
-      return err(fmt"{module.location} [PE165] module `{module.name.asl}` is already defined at {predefined_module_location}")
+          user_module.name]].location
+      return err(fmt"{user_module.location} [PE165] module `{user_module.name.asl}` is already defined at {predefined_module_location}")
+
+    let module = new_module(user_module)
     modules_map[module.name] = modules.len
     modules.add(module)
 
   # NOTE: Build index to enable function look up by definition
   var function_defs_hash_map: Table[Hash, int]
-  var functions_map: Table[Identifier, seq[int]]
   for index, function in functions:
     # NOTE: Validate module and function name collisions
     if function.name in modules_map:
@@ -2351,14 +2191,9 @@ proc new_file*(path: string, user_modules: seq[UserModule], functions: seq[
       return err(fmt"{function.location} [PE167] function `{function.name.asl}` is already defined at {predefined_function_location}")
     function_defs_hash_map[def_hash] = index
 
-    if function.name notin functions_map:
-      functions_map[function.name] = new_seq[int]()
-    functions_map[function.name].add(index)
-
-  ok(File(path: path, native_modules: native_modules, modules: modules,
-      modules_map: modules_map, user_modules: user_modules,
-      functions: functions,
-      functions_map: functions_map, indent: indent))
+  ok(File(path: path, indent: indent, native_modules: native_modules,
+      user_modules: user_modules, modules: modules, modules_map: modules_map,
+      functions: functions))
 
 proc path*(file: File): string = file.path
 proc indent*(file: File): int = file.indent
@@ -2389,17 +2224,6 @@ proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
   else:
     err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")
 
-proc find_functions*(file: File, name: Identifier, argcount: int): Result[seq[
-    FunctionDefinition], string] =
-  if name notin file.functions_map:
-    return err(fmt"{name.location} [PE169] file `{file.path}` does not have any function named `{name.asl}`")
-
-  var defs: seq[FunctionDefinition]
-  for index in file.functions_map[name]:
-    if file.functions[index].def.args.len == argcount:
-      defs.add(file.functions[index].def)
-  ok(defs)
-
 proc file_spec(parser: Parser): Result[File, string] =
   var modules: seq[UserModule]
   var functions: seq[Function]
@@ -2419,7 +2243,7 @@ proc file_spec(parser: Parser): Result[File, string] =
     let token = ? parser.peek()
     return err(fmt"{token.location} expected a module or function but found {token.value}")
 
-  new_file(parser.path, modules, functions, parser.indent)
+  new_file(parser.path, parser.indent, modules, functions)
 
 proc parse*(path: string, tokens: seq[Token]): Result[File, string] =
   let parser = Parser(path: path, tokens: tokens, indent: INDENT_SIZE)
