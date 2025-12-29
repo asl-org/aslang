@@ -1,6 +1,13 @@
-import results, strformat, unicode
+import results, strformat, unicode, os, osproc
 
 import resolver
+
+proc remove_file_safe(filename: string): Result[void, string] =
+  try:
+    remove_file(filename)
+    ok()
+  except OSError as e:
+    err(fmt"Failed to delete output file '{filename}': {e.msg}")
 
 proc write_file_safe(filename: string, content: string): Result[void, string] =
   try:
@@ -27,4 +34,13 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let typed_file = ? assign_type(file)
   let resolved_file = ? resolve(typed_file)
   let code = ? resolved_file.c()
-  write_file_safe("sample.c", code)
+
+  let output_file = filename.change_file_ext("c")
+  ? write_file_safe(output_file, code)
+  let exit_code = exec_cmd(fmt"gcc -O3 {output_file} -o {output} -I .")
+  if exit_code == 0:
+    ? remove_file_safe(output_file)
+    ok()
+  else:
+    err(fmt"Compilation Error exit code {exit_code}")
+

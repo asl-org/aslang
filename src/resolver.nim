@@ -498,7 +498,8 @@ proc asl(struct: ResolvedStruct, indent: string): seq[string] =
 
   return lines
 
-proc c(struct: ResolvedStruct, prefix: string, default_offset: uint64 = 0): seq[string] =
+proc c(struct: ResolvedStruct, prefix: string, id: Option[uint64] = none(
+    uint64)): seq[string] =
   let sub_prefix =
     case struct.kind:
     of RSK_DEFAULT: fmt"{prefix}"
@@ -513,7 +514,8 @@ proc c(struct: ResolvedStruct, prefix: string, default_offset: uint64 = 0): seq[
   )
 
   var lines: seq[string]
-  var offset: uint64 = default_offset
+  # if id is some then it is a union branch so offset for id
+  var offset: uint64 = if id.is_some: 8 else: 0
   for field in fields:
     lines.add(fmt"{field.module_ref.c} {sub_prefix}_get_{field.name.asl}(Pointer __asl_ptr);")
     lines.add(fmt"{field.module_ref.c} {sub_prefix}_get_{field.name.asl}(Pointer __asl_ptr)")
@@ -535,6 +537,12 @@ proc c(struct: ResolvedStruct, prefix: string, default_offset: uint64 = 0): seq[
   lines.add(fmt"Pointer {sub_prefix}_init({args_str})")
   lines.add("{")
   lines.add(fmt"Pointer __asl_ptr = System_allocate({offset});")
+
+  # NOTE: if id is some that means it is union branch initializer so add id
+  # Also note that we are using `prefix` instead of `sub_prefix`
+  if id.is_some:
+    lines.add(fmt"__asl_ptr = {prefix}_set_id(__asl_ptr, {id.get});")
+
   for field in struct.fields:
     lines.add(fmt"__asl_ptr = {sub_prefix}_set_{field.name.asl}(__asl_ptr, {field.name.asl});")
 
@@ -698,8 +706,6 @@ proc c(def: ResolvedUserModuleDefinition): seq[string] =
       lines.add(struct.c(def.name.asl))
     # union
     else:
-      for struct in def.structs:
-        lines.add(struct.c(def.name.asl, 8))
       # union branch id getter
       lines.add(fmt"U64 {def.name.asl}_get_id(Pointer __asl_ptr);")
       lines.add(fmt"U64 {def.name.asl}_get_id(Pointer __asl_ptr)")
@@ -713,29 +719,8 @@ proc c(def: ResolvedUserModuleDefinition): seq[string] =
       lines.add("{")
       lines.add(fmt"return U64_write(id, __asl_ptr, 0);")
       lines.add("}")
-
-      # union branch value getter
-      lines.add(fmt"Pointer {def.name.asl}_get_value(Pointer __asl_ptr);")
-      lines.add(fmt"Pointer {def.name.asl}_get_value(Pointer __asl_ptr)")
-      lines.add("{")
-      lines.add(fmt"return Pointer_read(__asl_ptr, 8);")
-      lines.add("}")
-
-      # union branch value setter
-      lines.add(fmt"Pointer {def.name.asl}_set_value(Pointer __asl_ptr, Pointer value);")
-      lines.add(fmt"Pointer {def.name.asl}_set_value(Pointer __asl_ptr, Pointer value)")
-      lines.add("{")
-      lines.add(fmt"return Pointer_write(value, __asl_ptr, 8);")
-      lines.add("}")
-
-      lines.add(fmt"Pointer {def.name.asl}_init(U64 id, Pointer value);")
-      lines.add(fmt"Pointer {def.name.asl}_init(U64 id, Pointer value)")
-      lines.add("{")
-      lines.add("Pointer __asl_ptr = System_allocate(16);")
-      lines.add(fmt"__asl_ptr = {def.name.asl}_set_id(__asl_ptr, id);")
-      lines.add(fmt"__asl_ptr = {def.name.asl}_set_value(__asl_ptr, value);")
-      lines.add("return __asl_ptr;")
-      lines.add("}")
+      for index, struct in def.structs:
+        lines.add(struct.c(def.name.asl, some(index.uint64)))
 
   # TODO: Understand that function can not have same name so use function id as prefix
   lines.add(def.function_defs.map_it(it.c))
@@ -903,11 +888,6 @@ proc id(def: ResolvedModuleDefinition): uint64 =
   case def.kind:
   of RMDK_NATIVE: def.native.id
   of RMDK_USER: def.user.id
-
-proc name(def: ResolvedModuleDefinition): Identifier =
-  case def.kind:
-  of RMDK_NATIVE: def.native.name
-  of RMDK_USER: def.user.name
 
 type ResolvedFileDefinition = ref object of RootObj
   file: TypedFile

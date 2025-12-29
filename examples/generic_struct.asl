@@ -156,11 +156,11 @@ fn start(U8 seed): U8
   size = arr.size
   System.print(size)
   # Pointer __asl_temp_arg_0 = Array_set(arr, 0, 1)
-  # Array[U8].set(arr, 0, 1)
+  Array[U8].set(arr, 0, 1)
   # Pointer __asl_temp_arg_1 = Array_set(arr, 0, 2)
-  # Array[U8].set(arr, 1, 2)
+  Array[U8].set(arr, 1, 2)
   # U64 __asl_temp_arg_2 = print(arr)
-  # print(arr)
+  print(arr)
   # U64 __asl_temp_arg_3 = exit_success
   exit_success
   # return __asl_temp_arg_3

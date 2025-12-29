@@ -194,6 +194,11 @@ U64 U64_add_U64(U64 x, U64 y)
   return x + y;
 }
 
+U64 U64_subtract_U64(U64 x, U64 y)
+{
+  return x - y;
+}
+
 U64 U64_multiply_U64(U64 x, U64 y)
 {
   return x * y;
