@@ -75,6 +75,7 @@ type
     case kind: TypedModuleRefKind
     of TMRK_NATIVE:
       native_module: NativeModule
+      native_children: seq[TypedModuleRef]
     of TMRK_USER:
       user_module: UserModule
       children: seq[TypedModuleRef]
@@ -94,6 +95,11 @@ proc new_typed_module_ref(user_module: UserModule, children: seq[
     TypedModuleRef], location: Location): TypedModuleRef =
   TypedModuleRef(kind: TMRK_USER, user_module: user_module, children: children,
       location: location)
+
+proc new_typed_module_ref(native_module: NativeModule, children: seq[
+    TypedModuleRef], location: Location): TypedModuleRef =
+  TypedModuleRef(kind: TMRK_NATIVE, native_module: native_module,
+      native_children: children, location: location)
 
 proc new_typed_module_ref(generic: Generic,
     location: Location): TypedModuleRef =
@@ -150,7 +156,7 @@ proc self*(module_ref: TypedModuleRef): TypedModuleRef =
     new_typed_module_ref(module_ref.user_module, child_module_refs,
         module_ref.location)
 
-proc asl(module_ref: TypedModuleRef): string =
+proc asl*(module_ref: TypedModuleRef): string =
   case module_ref.kind:
   of TMRK_NATIVE: module_ref.native_module.name.asl
   of TMRK_GENERIC: module_ref.generic.name.asl
@@ -179,6 +185,7 @@ proc user_module*(module_ref: TypedModuleRef): Result[UserModule, string] =
 proc children*(module_ref: TypedModuleRef): Result[seq[TypedModuleRef], string] =
   case module_ref.kind:
   of TMRK_USER: ok(module_ref.children)
+  of TMRK_NATIVE: ok(module_ref.native_children)
   else: err(fmt"{module_ref.location} expected a nested module ref")
 
 proc generic*(module_ref: TypedModuleRef): Result[Generic, string] =
@@ -703,20 +710,76 @@ proc assign_type(file: parser.File, optional_module: Option[UserModule],
     let user_module = ? arg_module.user_module
     ok(new_typed_module_ref(user_module, module_name.location))
 
+proc assign_type(file: parser.File, optional_module: Option[NativeModule],
+    module_name: Identifier): Result[TypedModuleRef, string] =
+  # NOTE: For handling generics that are only defined in a module
+  if optional_module.is_some:
+    let module = optional_module.get
+    let maybe_arg_generic = module.find_generic(module_name)
+    if maybe_arg_generic.is_ok:
+      return ok(new_typed_module_ref(maybe_arg_generic.get,
+          module_name.location))
+
+  let arg_module = ? file.find_module(module_name)
+  case arg_module.kind:
+  of MK_NATIVE:
+    let native_module = ? arg_module.native_module
+    ok(new_typed_module_ref(native_module, module_name.location))
+  of MK_USER:
+    let user_module = ? arg_module.user_module
+    ok(new_typed_module_ref(user_module, module_name.location))
+
 proc assign_type(file: parser.File, optional_module: Option[UserModule],
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
   case module_ref.kind:
   of MRK_SIMPLE: assign_type(file, optional_module, module_ref.module)
   of MRK_NESTED:
     let arg_module = ? file.find_module(module_ref.module)
-    let user_module = ? arg_module.user_module
-    var typed_children: seq[TypedModuleRef]
-    for child in module_ref.children:
-      let typed_child = ? assign_type(file, optional_module, child)
-      typed_children.add(typed_child)
-    ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
+    case arg_module.kind:
+    of MK_NATIVE:
+      let native_module = ? arg_module.native_module
+      var typed_children: seq[TypedModuleRef]
+      for child in module_ref.children:
+        let typed_child = ? assign_type(file, optional_module, child)
+        typed_children.add(typed_child)
+      ok(new_typed_module_ref(native_module, typed_children,
+          module_ref.location))
+    of MK_USER:
+      let user_module = ? arg_module.user_module
+      var typed_children: seq[TypedModuleRef]
+      for child in module_ref.children:
+        let typed_child = ? assign_type(file, optional_module, child)
+        typed_children.add(typed_child)
+      ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
+
+proc assign_type(file: parser.File, optional_module: Option[NativeModule],
+    module_ref: ModuleRef): Result[TypedModuleRef, string] =
+  case module_ref.kind:
+  of MRK_SIMPLE: assign_type(file, optional_module, module_ref.module)
+  of MRK_NESTED:
+    let arg_module = ? file.find_module(module_ref.module)
+    case arg_module.kind:
+    of MK_NATIVE:
+      let native_module = ? arg_module.native_module
+      var typed_children: seq[TypedModuleRef]
+      for child in module_ref.children:
+        let typed_child = ? assign_type(file, optional_module, child)
+        typed_children.add(typed_child)
+      ok(new_typed_module_ref(native_module, typed_children,
+          module_ref.location))
+    of MK_USER:
+      let user_module = ? arg_module.user_module
+      var typed_children: seq[TypedModuleRef]
+      for child in module_ref.children:
+        let typed_child = ? assign_type(file, optional_module, child)
+        typed_children.add(typed_child)
+      ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
 
 proc assign_type(file: parser.File, module: UserModule,
+    module_ref: ModuleRef): Result[TypedModuleRef, string] =
+  assign_type(file, some(module), module_ref)
+
+proc assign_type(file: parser.File, module: NativeModule,
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
   assign_type(file, some(module), module_ref)
 
@@ -729,7 +792,17 @@ proc assign_type(file: parser.File, module: UserModule, generic: Generic,
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
+proc assign_type(file: parser.File, module: NativeModule, generic: Generic,
+    arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
+  let typed_arg = ? assign_type(file, module, arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
+
 proc assign_type(file: parser.File, module: UserModule,
+    arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
+  let typed_arg = ? assign_type(file, module, arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
+
+proc assign_type(file: parser.File, module: NativeModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
@@ -740,6 +813,15 @@ proc assign_type(file: parser.File, arg: ArgumentDefinition): Result[
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, module: UserModule, generic: Generic,
+    def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
+  var typed_args: seq[TypedArgumentDefinition]
+  for arg in def.args:
+    let typed_arg = ? assign_type(file, module, generic, arg)
+    typed_args.add(typed_arg)
+  let typed_return = ? assign_type(file, module, def.returns)
+  ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
+
+proc assign_type(file: parser.File, module: NativeModule, generic: Generic,
     def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
   var typed_args: seq[TypedArgumentDefinition]
   for arg in def.args:
@@ -1057,14 +1139,33 @@ proc assign_type(file: parser.File, module: UserModule,
     typed_defs.add(typed_def)
   ok(new_typed_generic(id, generic, typed_defs, generic.location))
 
+proc assign_type(file: parser.File, module: NativeModule,
+    generic: Generic, id: uint64): Result[TypedGeneric, string] =
+  var typed_defs: seq[TypedFunctionDefinition]
+  for def in generic.defs:
+    let typed_def = ? assign_type(file, module, generic, def)
+    typed_defs.add(typed_def)
+  ok(new_typed_generic(id, generic, typed_defs, generic.location))
+
 proc assign_type(file: parser.File, module: UserModule, struct: Struct,
     id: uint64): Result[TypedStruct, string] =
-  var module_set: HashSet[UserModule]
   var typed_fields: seq[TypedArgumentDefinition]
   for field in struct.fields:
     let typed_field = ? assign_type(file, module, field)
     typed_fields.add(typed_field)
-    module_set.incl(typed_field.module_deps)
+  case struct.def.kind:
+  of SDK_DEFAULT:
+    ok(new_typed_struct(id, typed_fields, struct.location))
+  of SDK_NAMED:
+    let struct_name = ? struct.name
+    ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
+
+proc assign_type(file: parser.File, module: NativeModule, struct: Struct,
+    id: uint64): Result[TypedStruct, string] =
+  var typed_fields: seq[TypedArgumentDefinition]
+  for field in struct.fields:
+    let typed_field = ? assign_type(file, module, field)
+    typed_fields.add(typed_field)
   case struct.def.kind:
   of SDK_DEFAULT:
     ok(new_typed_struct(id, typed_fields, struct.location))
@@ -1195,17 +1296,31 @@ proc assign_type(file: parser.File, module: NativeModule,
 type TypedNativeModule* = ref object of RootObj
   id: uint64
   name: Identifier
+  generics: seq[TypedGeneric]
+  generics_map: Table[Generic, TypedGeneric]
+  structs: seq[TypedStruct]
   functions: seq[TypedNativeFunction]
   functions_map: Table[TypedFunctionDefinition, TypedNativeFunction]
 
-proc new_typed_native_module(name: Identifier, functions: seq[
-    TypedNativeFunction], id: uint64): TypedNativeModule =
+proc new_typed_native_module(name: Identifier, generic_pairs: seq[(Generic,
+    TypedGeneric)], structs: seq[TypedStruct], functions: seq[
+        TypedNativeFunction],
+    id: uint64): TypedNativeModule =
+  var generics: seq[TypedGeneric]
+  var generics_map: Table[Generic, TypedGeneric]
+  for (generic, typed_generic) in generic_pairs:
+    generics.add(typed_generic)
+    generics_map[generic] = typed_generic
+
   var functions_map: Table[TypedFunctionDefinition, TypedNativeFunction]
   for function in functions: functions_map[function.def] = function
-  TypedNativeModule(id: id, name: name, functions: functions,
+  TypedNativeModule(id: id, name: name, generics: generics, structs: structs,
+      generics_map: generics_map, functions: functions,
       functions_map: functions_map)
 
 proc name*(module: TypedNativeModule): Identifier = module.name
+proc generics*(module: TypedNativeModule): seq[TypedGeneric] = module.generics
+proc structs*(module: TypedNativeModule): seq[TypedStruct] = module.structs
 proc functions*(module: TypedNativeModule): seq[
     TypedNativeFunction] = module.functions
 
@@ -1213,6 +1328,20 @@ proc id*(module: TypedNativeModule): uint64 = module.id
 proc hash*(module: TypedNativeModule): Hash = module.name.hash
 proc `==`*(self: TypedNativeModule, other: TypedNativeModule): bool = self.hash == other.hash
 proc asl*(module: TypedNativeModule): string = module.name.asl
+
+proc find_generic*(module: TypedNativeModule, generic: Generic): Result[
+    TypedGeneric, string] =
+  if generic in module.generics_map:
+    ok(module.generics_map[generic])
+  else:
+    err("failed to find generic `{generic.name.asl}`")
+
+proc find_function*(module: TypedNativeModule,
+    def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
+  if def in module.functions_map:
+    ok(module.functions_map[def].def)
+  else:
+    err(fmt"failed to find function `{def.asl}`")
 
 proc validate(module: TypedNativeModule,
     integer_literal: IntegerLiteral): Result[void, string] =
@@ -1254,18 +1383,22 @@ proc validate*(module: TypedNativeModule, literal: Literal): Result[void, string
 
 proc assign_type(file: parser.File, module: NativeModule, id: uint64): Result[
     TypedNativeModule, string] =
+  var typed_generics: seq[(Generic, TypedGeneric)]
+  for index, generic in module.generics:
+    let typed_generic = ? assign_type(file, module, generic, index.uint64)
+    typed_generics.add((generic, typed_generic))
+
+  var typed_structs: seq[TypedStruct]
+  for index, struct in module.structs:
+    let typed_struct = ? assign_type(file, module, struct, index.uint64)
+    typed_structs.add(typed_struct)
+
   var typed_functions: seq[TypedNativeFunction]
   for function in module.functions:
     let typed_function = ? assign_type(file, module, function)
     typed_functions.add(typed_function)
-  ok(new_typed_native_module(module.name, typed_functions, id))
-
-proc find_function*(module: TypedNativeModule,
-    def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
-  if def in module.functions_map:
-    ok(module.functions_map[def].def)
-  else:
-    err(fmt"failed to find function `{def.asl}`")
+  ok(new_typed_native_module(module.name, typed_generics, typed_structs,
+      typed_functions, id))
 
 type TypedFile* = ref object of RootObj
   name: string

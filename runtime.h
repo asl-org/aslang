@@ -248,3 +248,78 @@ S64 S64_from_U8(U8 x)
 {
   return (S64)x;
 }
+
+S32 Error_get_code(Pointer error)
+{
+  return S32_read(error, 0);
+}
+
+Pointer Error_set_code(Pointer error, S32 code)
+{
+  return S32_write(code, error, 0);
+}
+
+String Error_get_message(Pointer error)
+{
+  return String_read(error, 4);
+}
+
+Pointer Error_set_message(Pointer error, String message)
+{
+  return String_write(message, error, 4);
+}
+
+Pointer Error_init(S32 code, String message)
+{
+  Pointer ptr = System_allocate(12);
+  ptr = Error_set_code(ptr, code);
+  ptr = Error_set_message(ptr, message);
+  return ptr;
+}
+
+U64 Status_get_id(Pointer status)
+{
+  return U64_read(status, 0);
+}
+
+Pointer Status_set_id(Pointer status, U64 id)
+{
+  return U64_write(id, status, 0);
+}
+
+Pointer Status_Ok_get_value(Pointer status)
+{
+  return Pointer_read(status, 8);
+}
+
+Pointer Status_Ok_set_value(Pointer status, Pointer value)
+{
+  return Pointer_write(value, status, 8);
+}
+
+Pointer Status_Ok_init(Pointer value)
+{
+  Pointer ptr = System_allocate(16);
+  ptr = Status_set_id(ptr, 0);
+  ptr = Status_Ok_set_value(ptr, value);
+  return ptr;
+}
+
+Pointer Status_Err_get_error(Pointer status)
+{
+  return Pointer_read(status, 8);
+}
+
+Pointer Status_Err_set_error(Pointer status, Pointer error)
+{
+  return Pointer_write(error, status, 8);
+}
+
+Pointer Status_Err_init(Pointer error)
+{
+
+  Pointer ptr = System_allocate(16);
+  ptr = Status_set_id(ptr, 1);
+  ptr = Status_Err_set_error(ptr, error);
+  return ptr;
+}
