@@ -339,7 +339,21 @@ proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_module = ? file.find_module(untyped_module)
-    ok(new_resolved_module_ref(typed_module, module_ref.location))
+
+    let children = ? module_ref.children
+    if children.len != typed_module.generics.len:
+      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
+
+    var impls: seq[ResolvedImpl]
+    for (typed_generic, child) in zip(typed_module.generics, children):
+      let resolved_child = ? resolve_def(file, child)
+      # NOTE: Check that resolved child satifies constraints.
+      var constraint_defs: seq[TypedFunctionDefinition]
+      for def in typed_generic.concrete_defs(child.self()):
+        constraint_defs.add( ? resolved_child.find_function(def))
+      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      impls.add(resolved_impl)
+    ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
     err(fmt"{module_ref.location} file level functions do not support generics")
   of TMRK_USER:
@@ -1631,7 +1645,7 @@ proc resolve(file_def: ResolvedFileDefinition,
       else:
         err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
   of RMRK_GENERIC:
-    err(fmt"{struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
+    err(fmt"1 {struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
   of RMRK_USER:
     let typed_module = resolved_module_ref.user_module
     let resolved_module_def = ? file_def.find_module_def(typed_module)
@@ -1663,9 +1677,32 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
   let resolved_module_ref = ? resolve_def(file_def.file, struct_ref.module_ref)
   case resolved_module_ref.kind:
   of RMRK_NATIVE:
-    err(fmt"{struct_ref.location} native module `{resolved_module_ref.native_module.name.asl}` is not a struct")
+    let typed_module = resolved_module_ref.native_module
+    let resolved_module_def = ? file_def.find_module_def(typed_module)
+    case struct_ref.kind:
+    of TSRK_DEFAULT:
+      let maybe_struct = resolved_module_def.find_struct()
+      if maybe_struct.is_ok:
+        let resolved_struct = maybe_struct.get
+        let resolved_concretized_struct = resolved_struct.concretize(
+            resolved_module_ref.native_concrete_map)
+        ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
+            resolved_concretized_struct))
+      else:
+        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+    of TSRK_NAMED:
+      let struct_name = ? struct_ref.name
+      let maybe_struct = resolved_module_def.find_struct(struct_name)
+      if maybe_struct.is_ok:
+        let resolved_struct = maybe_struct.get
+        let resolved_concretized_struct = resolved_struct.concretize(
+            resolved_module_ref.native_concrete_map)
+        ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
+            resolved_concretized_struct))
+      else:
+        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
   of RMRK_GENERIC:
-    err(fmt"{struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
+    err(fmt"2 {struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
   of RMRK_USER:
     let typed_module = resolved_module_ref.user_module
     let resolved_module_def = ? file_def.find_module_def(typed_module)
@@ -1916,13 +1953,13 @@ proc resolve(file_def: ResolvedFileDefinition,
   let resolved_variable = new_resolved_argument_definition(resolved_module_ref,
       struct_get.variable)
   case resolved_module_ref.kind:
-  of RMRK_NATIVE: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
-  of RMRK_GENERIC: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
+  of RMRK_NATIVE: err(fmt"3 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
+  of RMRK_GENERIC: err(fmt"4 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
   of RMRK_USER:
     let typed_module = resolved_module_ref.user_module
     let resolved_module_def = ? file_def.find_module_def(typed_module)
     if resolved_module_def.structs.len == 0:
-      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
+      err(fmt"5 {struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
     elif resolved_module_def.structs.len > 1:
       err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is a union")
     else:
@@ -1943,15 +1980,15 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
   let resolved_variable = new_resolved_argument_definition(resolved_module_ref,
       struct_get.variable)
   case resolved_module_ref.kind:
-  of RMRK_NATIVE: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
-  of RMRK_GENERIC: err(fmt"{struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
+  of RMRK_NATIVE: err(fmt"6 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
+  of RMRK_GENERIC: err(fmt"7 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
   of RMRK_USER:
     let typed_module = resolved_module_ref.user_module
     let resolved_module_def = ? file_def.find_module_def(typed_module)
     if resolved_module_def.structs.len == 0:
-      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
+      err(fmt"8 {struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
     elif resolved_module_def.structs.len > 1:
-      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is a union")
+      err(fmt"9 {struct_get.location} module `{resolved_module_def.name.asl}` is a union")
     else:
       let maybe_default_struct = resolved_module_def.find_struct()
       if maybe_default_struct.is_err:
