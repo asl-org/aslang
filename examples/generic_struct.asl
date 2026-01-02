@@ -1,30 +1,3 @@
-module Error:
-  # Pointer Error_init(S32 code, String message)
-  struct:
-    # S32 Error_get_code(Pointer __asl_ptr)
-    # Pointer Error_set_code(Pointer __asl_ptr, S32 code)
-    S32 code
-    # String Error_get_message(Pointer __asl_ptr)
-    # String Error_set_message(Pointer __asl_ptr, String message)
-    String message
-
-module Status:
-  generic Value
-
-  # for union branch id
-  # Pointer Status_get_id(Pointer __asl_ptr)
-
-  # Pointer Status_Ok_init(Pointer value)
-  struct Ok:
-    # Pointer Status_Ok_get_value(Pointer __asl_ptr)
-    # Pointer Status_Ok_set_value(Pointer __asl_ptr, Pointer value)
-    Value value
-  # Pointer Status_Err_init(Pointer error)
-  struct Err:
-    # Pointer Status_Err_get_error(Pointer __asl_ptr)
-    # Pointer Status_Err_set_error(Pointer __asl_ptr, Pointer error)
-    Error error
-
 module Array:
   generic Item:
     # U64 Array_Item_byte_size(U64 __asl_impl_id_0, U64 items)

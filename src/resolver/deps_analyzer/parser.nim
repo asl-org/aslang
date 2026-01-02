@@ -338,6 +338,10 @@ proc new_module_ref*(module: Identifier, children: seq[
     return err(fmt"{module.location} [PE104] a nested module ref only supports upto `{MAX_TYPE_CHILDREN_COUNT}` children types but `{children.len}` were given")
   ok(ModuleRef(kind: MRK_NESTED, module: module, children: children))
 
+proc new_module_ref(module: string): Result[ModuleRef, string] =
+  let module_id = ? new_identifier(module)
+  ok(new_module_ref(module_id))
+
 proc location*(module_ref: ModuleRef): Location =
   module_ref.module.location
 
@@ -399,6 +403,12 @@ type ArgumentDefinition* = ref object of RootObj
 proc new_argument_definition*(module_ref: ModuleRef,
     name: Identifier): ArgumentDefinition =
   ArgumentDefinition(name: name, module_ref: module_ref)
+
+proc new_argument_definition(module_ref: string, name: string): Result[
+    ArgumentDefinition, string] =
+  let module_ref_id = ? new_module_ref(module_ref)
+  let name_id = ? new_identifier(name)
+  ok(new_argument_definition(module_ref_id, name_id))
 
 proc module_ref*(def: ArgumentDefinition): ModuleRef =
   def.module_ref
@@ -1885,6 +1895,9 @@ proc native*(function: NativeFunction): string = function.native
 
 type NativeModule* = ref object of RootObj
   name: Identifier
+  generics: seq[Generic]
+  generics_map: Table[Identifier, int]
+  structs: seq[Struct]
   functions: seq[NativeFunction]
   functions_map: Table[Identifier, seq[int]]
   function_defs_hash_map: Table[Hash, int]
@@ -1902,17 +1915,80 @@ proc new_native_module(name: string, functions: seq[
   ok(NativeModule(name: name, functions: functions,
       function_defs_hash_map: function_defs_hash_map))
 
+proc new_native_module(name: string, generics: seq[Generic], structs: seq[
+    Struct], functions: seq[NativeFunction]): Result[NativeModule, string] =
+  if generics.len + structs.len + functions.len == 0:
+    return err(fmt"[INTERNAL ERROR] module can not be empty")
+
+  if generics.len > 0 and structs.len + functions.len == 0:
+    return err(fmt"[INTERNAL ERROR] module can not only contain generics")
+
+  var generics_map: Table[Identifier, int]
+  for index, generic in generics:
+    if generic.name in generics_map:
+      let predefined_generic_location = generics[generics_map[
+          generic.name]].location
+      return err(fmt"{generic.location} [PE144] generic `{generic.name.asl}` is already defined at {predefined_generic_location}")
+    generics_map[generic.name] = index
+
+  let name = ? new_identifier(name)
+  var function_defs_hash_map: Table[Hash, int]
+  for index, function in functions.pairs:
+    let def_hash = function.def.hash
+    if def_hash in function_defs_hash_map:
+      return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
+    function_defs_hash_map[def_hash] = index
+
+  ok(NativeModule(name: name, structs: structs, generics: generics,
+      generics_map: generics_map, functions: functions,
+      function_defs_hash_map: function_defs_hash_map))
+
 proc hash*(module: NativeModule): Hash =
   module.name.hash
 
 proc name*(module: NativeModule): Identifier =
   module.name
 
+proc generics*(module: NativeModule): seq[Generic] =
+  module.generics
+
+proc structs*(module: NativeModule): seq[Struct] =
+  module.structs
+
 proc functions*(module: NativeModule): seq[NativeFunction] =
   module.functions
 
 proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
   ok(new_module_ref(module.name))
+
+proc find_generic*(module: NativeModule, name: Identifier): Result[Generic, string] =
+  if name notin module.generics_map:
+    err(fmt"{name.location} [PE154] module `{module.name.asl}` does not have any generic named `{name.asl}`")
+  else:
+    ok(module.generics[module.generics_map[name]])
+
+proc new_native_error_module(): Result[NativeModule, string] =
+  let code_arg = ? new_argument_definition("S32", "code")
+  let message_arg = ? new_argument_definition("String", "message")
+  let struct = ? new_struct(new_struct_definition(Location()), @[code_arg, message_arg])
+
+  var generics: seq[Generic]
+  var functions: seq[NativeFunction]
+  new_native_module("Error", generics, @[struct], functions)
+
+proc new_native_status_module(): Result[NativeModule, string] =
+  let generic = new_generic( ? new_identifier("Value"), Location())
+
+  let value_arg = ? new_argument_definition("Value", "value")
+  let ok_branch = new_struct_definition( ? new_identifier("Ok"), Location())
+  let ok_struct = ? new_struct(ok_branch, @[value_arg])
+
+  let err_arg = ? new_argument_definition("Error", "error")
+  let err_branch = new_struct_definition( ? new_identifier("Err"), Location())
+  let err_struct = ? new_struct(err_branch, @[err_arg])
+
+  var functions: seq[NativeFunction]
+  new_native_module("Status", @[generic], @[ok_struct, err_struct], functions)
 
 proc native_modules(): Result[seq[NativeModule], string] =
   ok(@[
@@ -2033,6 +2109,8 @@ proc native_modules(): Result[seq[NativeModule], string] =
       ? new_native_function("Pointer_write", "Pointer", "write", @[
           "Pointer", "Pointer", "U64"]),
     ]),
+    ? new_native_error_module(),
+    ? new_native_status_module(),
     ? new_native_module("System", @[
       ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
       ? new_native_function("System_free", "U64", "free", @["Pointer"]),
