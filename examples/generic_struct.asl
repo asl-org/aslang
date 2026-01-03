@@ -1,3 +1,4 @@
+
 fn print(Array[U8] arr, U64 index): U64
   element = Array[U8].get(arr, index)
   match element:

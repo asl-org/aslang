@@ -965,10 +965,17 @@ proc generic_impls(function: ResolvedNativeFunctionDefinition): Table[
     TypedUserModule, seq[HashSet[ResolvedImpl]]] =
   function.def.generic_impls
 
-proc resolve_def(file: TypedFile, function: TypedNativeFunction): Result[
-    ResolvedNativeFunctionDefinition, string] =
-  let resolved_def = ? resolve_def(file, function.def)
-  ok(new_resolved_native_function_definition(function.native, resolved_def))
+proc resolve_def(file: TypedFile, module: TypedNativeModule,
+    native_fn: TypedNativeFunction): Result[ResolvedNativeFunctionDefinition, string] =
+  var resolved_args: seq[ResolvedArgumentDefinition]
+  for arg in native_fn.def.args:
+    let resolved_arg = ? resolve_def(file, module, arg)
+    resolved_args.add(resolved_arg)
+  let resolved_returns = ? resolve_def(file, module, native_fn.def.returns)
+  let resolved_def = new_resolved_function_definition(native_fn.def.name,
+      resolved_args, resolved_returns, native_fn.def.location, module.name.asl,
+      module.generics.len.uint64)
+  ok(new_resolved_native_function_definition(native_fn.native, resolved_def))
 
 type ResolvedNativeModuleDefinition = ref object of RootObj
   module: TypedNativeModule
@@ -1075,7 +1082,7 @@ proc resolve_def(file: TypedFile, def: TypedNativeModule): Result[
 
   var resolved_functions: seq[ResolvedNativeFunctionDefinition]
   for function in def.functions:
-    let resolved_function = ? resolve_def(file, function)
+    let resolved_function = ? resolve_def(file, def, function)
     resolved_functions.add(resolved_function)
   ok(new_resolved_native_module_definition(def, resolved_generics,
       resolved_structs, resolved_functions))
@@ -1393,8 +1400,13 @@ proc resolve(file_def: ResolvedFileDefinition, fnref: TypedFunctionRef): Result[
           fnref.name, fnref.arity)
       let resolved_function_defs = resolved_native_function_defs.map_it(
         new_resolved_function_definition(it))
+
+      var concrete_function_defs = resolved_native_function_defs.map_it(
+          it.def.concretize(resolved_module_ref.native_concrete_map))
+      let resolved_concrete_function_defs = concrete_function_defs.map_it(
+          new_resolved_function_definition(it))
       ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
-          resolved_function_defs, resolved_function_defs))
+          resolved_function_defs, resolved_concrete_function_defs))
     of RMRK_USER:
       let typed_user_module = resolved_module_ref.user_module
       let resolved_user_module_def = ? file_def.find_module_def(typed_user_module)
@@ -1511,8 +1523,50 @@ proc c(fncall: ResolvedFunctionCall, result_arg: string): seq[string] =
       let impl_id = fmt"__asl_impl_id_{module_ref.generic.id}"
       lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({impl_id}, {args});")
     of RMRK_NATIVE:
-      let args = fncall.args.map_it(it.c).join(", ")
-      lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args});")
+      var new_args: seq[string]
+      for impl in module_ref.native_impls:
+        let child = impl.module_ref
+        case child.kind:
+        of RMRK_GENERIC:
+          new_args.add(fmt"__asl_impl_id_{child.generic.id}")
+        of RMRK_NATIVE:
+          let arg = fmt"__asl_impl_id_{child.location.hash.to_hex}"
+          lines.add(fmt"U64 {arg} = {child.native_module.id};")
+          new_args.add(arg)
+        of RMRK_USER:
+          let arg = fmt"__asl_impl_id_{child.location.hash.to_hex}"
+          lines.add(fmt"U64 {arg} = {child.user_module.id};")
+          new_args.add(arg)
+
+      for index in 0..<fncall.args.len:
+        let original_def = fncall.original_def.args[index]
+        let concrete_def = fncall.concrete_def.args[index]
+        let arg = fncall.args[index]
+
+        case original_def.module_ref.kind:
+        of RMRK_GENERIC:
+          case concrete_def.module_ref.kind:
+          of RMRK_GENERIC: new_args.add(arg.asl)
+          else:
+            let arg_name = fmt"__asl_arg_{arg.location.hash.to_hex}"
+            lines.add(fmt"Pointer {arg_name} = System_box_{concrete_def.module_ref.c}({arg.c});")
+            new_args.add(arg_name)
+        else: new_args.add(arg.asl)
+
+      let args_str = new_args.join(", ")
+      case fncall.original_def.returns.kind:
+      of RMRK_GENERIC:
+        case fncall.concrete_def.returns.kind:
+        of RMRK_GENERIC:
+          lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args_str});")
+        else:
+          let arg_name = fmt"__asl_arg_{fncall.location.hash.to_hex}"
+          lines.add(fmt"{fncall.original_def.returns.c} {arg_name} = {fncall.original_def.c_name}({args_str});")
+          lines.add(fmt"{fncall.concrete_def.returns.c} {result_arg} = {fncall.concrete_def.returns.c}_read({arg_name}, 0);")
+      else:
+        lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args_str});")
+      # let args = fncall.args.map_it(it.c).join(", ")
+      # lines.add(fmt"{fncall.original_def.returns.c} {result_arg} = {fncall.original_def.c_name}({args});")
     of RMRK_USER:
       var new_args: seq[string]
       for impl in module_ref.impls:
@@ -1953,7 +2007,24 @@ proc resolve(file_def: ResolvedFileDefinition,
   let resolved_variable = new_resolved_argument_definition(resolved_module_ref,
       struct_get.variable)
   case resolved_module_ref.kind:
-  of RMRK_NATIVE: err(fmt"3 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
+  of RMRK_NATIVE:
+    let typed_module = resolved_module_ref.native_module
+    let resolved_module_def = ? file_def.find_module_def(typed_module)
+    if resolved_module_def.structs.len == 0:
+      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
+    elif resolved_module_def.structs.len > 1:
+      err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` is a union")
+    else:
+      let maybe_default_struct = resolved_module_def.find_struct()
+      if maybe_default_struct.is_err:
+        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+      else:
+        let resolved_struct = maybe_default_struct.get
+        let resolved_field_module_ref = ? resolved_struct.find_field(
+            struct_get.field)
+        let resolved_field = resolved_field_module_ref.concretize(
+            resolved_module_ref.native_concrete_map)
+        ok(new_resolved_struct_get(resolved_variable, resolved_field))
   of RMRK_GENERIC: err(fmt"4 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
   of RMRK_USER:
     let typed_module = resolved_module_ref.user_module
@@ -1980,7 +2051,24 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
   let resolved_variable = new_resolved_argument_definition(resolved_module_ref,
       struct_get.variable)
   case resolved_module_ref.kind:
-  of RMRK_NATIVE: err(fmt"6 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but native module")
+  of RMRK_NATIVE:
+    let typed_module = resolved_module_ref.native_module
+    let resolved_module_def = ? file_def.find_module_def(typed_module)
+    if resolved_module_def.structs.len == 0:
+      err(fmt"8 {struct_get.location} module `{resolved_module_def.name.asl}` is not a struct")
+    elif resolved_module_def.structs.len > 1:
+      err(fmt"9 {struct_get.location} module `{resolved_module_def.name.asl}` is a union")
+    else:
+      let maybe_default_struct = resolved_module_def.find_struct()
+      if maybe_default_struct.is_err:
+        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+      else:
+        let resolved_struct = maybe_default_struct.get
+        let resolved_field_module_ref = ? resolved_struct.find_field(
+            struct_get.field)
+        let resolved_field = resolved_field_module_ref.concretize(
+            resolved_module_ref.native_concrete_map)
+        ok(new_resolved_struct_get(resolved_variable, resolved_field))
   of RMRK_GENERIC: err(fmt"7 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
   of RMRK_USER:
     let typed_module = resolved_module_ref.user_module
