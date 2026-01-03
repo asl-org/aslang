@@ -323,3 +323,159 @@ Pointer Status_Err_init(Pointer error)
   ptr = Status_Err_set_error(ptr, error);
   return ptr;
 }
+
+U64 byte_size(U64 impl_id)
+{
+  switch (impl_id)
+  {
+  case 0:
+    return 1; // S8
+  case 1:
+    return 2; // S16
+  case 2:
+    return 3; // S32
+  case 3:
+    return 4; // S64
+  case 4:
+    return 1; // U8
+  case 5:
+    return 2; // U16
+  case 6:
+    return 3; // U32
+  case 7:
+    return 4; // U64
+  case 8:
+    return 3; // F32
+  case 9:
+    return 4; // F64
+  default:
+    return 4; // Pointer types
+  }
+  UNREACHABLE();
+}
+
+Pointer byte_read(U64 impl_id, Pointer data, U64 offset)
+{
+  switch (impl_id)
+  {
+  case 0:
+    return System_box_S8(S8_read(data, offset)); // S8
+  case 1:
+    return System_box_S16(S16_read(data, offset)); // S16
+  case 2:
+    return System_box_S32(S32_read(data, offset)); // S32
+  case 3:
+    return System_box_S64(S64_read(data, offset)); // S64
+  case 4:
+    return System_box_U8(U8_read(data, offset)); // U8
+  case 5:
+    return System_box_U16(U16_read(data, offset)); // U16
+  case 6:
+    return System_box_U32(U32_read(data, offset)); // U32
+  case 7:
+    return System_box_U64(U64_read(data, offset)); // U64
+  case 8:
+    return System_box_F32(F32_read(data, offset)); // F32
+  case 9:
+    return System_box_F64(F64_read(data, offset)); // F64
+  default:
+    return System_box_Pointer(Pointer_read(data, offset)); // Pointer types
+  }
+  UNREACHABLE();
+}
+
+Pointer byte_write(U64 impl_id, Pointer data, U64 offset, Pointer value)
+{
+  switch (impl_id)
+  {
+  case 0:
+    return S8_write(S8_read(value, 0), data, offset); // S8
+  case 1:
+    return S16_write(S16_read(value, 0), data, offset); // S16
+  case 2:
+    return S32_write(S32_read(value, 0), data, offset); // S32
+  case 3:
+    return S64_write(S64_read(value, 0), data, offset); // S64
+  case 4:
+    return U8_write(U8_read(value, 0), data, offset); // U8
+  case 5:
+    return U16_write(U16_read(value, 0), data, offset); // U16
+  case 6:
+    return U32_write(U32_read(value, 0), data, offset); // U32
+  case 7:
+    return U64_write(U64_read(value, 0), data, offset); // U64
+  case 8:
+    return F32_write(F32_read(value, 0), data, offset); // F32
+  case 9:
+    return F64_write(F64_read(value, 0), data, offset); // F64
+  default:
+    return Pointer_write(Pointer_read(value, 0), data, offset); // Pointer types
+  }
+  UNREACHABLE();
+}
+
+U64 Array_get_size(Pointer ptr)
+{
+  return U64_read(ptr, 0);
+}
+
+Pointer Array_set_size(Pointer ptr, U64 size)
+{
+  return U64_write(size, ptr, 0);
+}
+
+Pointer Array_get_data(Pointer ptr)
+{
+  return Pointer_read(ptr, 8);
+}
+
+Pointer Array_set_data(Pointer ptr, Pointer data)
+{
+  return Pointer_write(data, ptr, 8);
+}
+
+Pointer Array_init(U64 impl_id, U64 size)
+{
+  Pointer ptr = System_allocate(16); // U64 size + Pointer data
+  ptr = Array_set_size(ptr, size);
+
+  U64 bytes = size * byte_size(impl_id);
+  Pointer data = System_allocate(bytes);
+  ptr = Array_set_data(ptr, data);
+
+  return ptr;
+}
+
+Pointer Array_get(U64 impl_id, Pointer arr, U64 index)
+{
+  if (index >= Array_get_size(arr))
+  {
+    Pointer err = Error_init(1, "Index out of Bounds");
+    Pointer status = Status_Err_init(err);
+    return status;
+  }
+
+  U64 offset = index * byte_size(impl_id);
+  Pointer data = Array_get_data(arr);
+  Pointer value = byte_read(impl_id, data, offset);
+
+  Pointer status = Status_Ok_init(value);
+  return status;
+}
+
+Pointer Array_set(U64 impl_id, Pointer arr, U64 index, Pointer value)
+{
+  if (index >= Array_get_size(arr))
+  {
+    Pointer err = Error_init(1, "Index out of Bounds");
+    Pointer status = Status_Err_init(err);
+    return status;
+  }
+
+  U64 offset = index * byte_size(impl_id);
+  Pointer data = Array_get_data(arr);
+  data = byte_write(impl_id, data, offset, value);
+
+  Pointer status = Status_Ok_init(data);
+  return status;
+}

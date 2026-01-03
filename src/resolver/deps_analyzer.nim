@@ -839,6 +839,15 @@ proc assign_type(file: parser.File, module: UserModule,
   let typed_return = ? assign_type(file, module, def.returns)
   ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
 
+proc assign_type(file: parser.File, module: NativeModule,
+    def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
+  var typed_args: seq[TypedArgumentDefinition]
+  for arg in def.args:
+    let typed_arg = ? assign_type(file, module, arg)
+    typed_args.add(typed_arg)
+  let typed_return = ? assign_type(file, module, def.returns)
+  ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
+
 proc assign_type(file: parser.File, def: FunctionDefinition): Result[
     TypedFunctionDefinition, string] =
   var typed_args: seq[TypedArgumentDefinition]
@@ -1290,7 +1299,7 @@ proc def*(function: TypedNativeFunction): TypedFunctionDefinition = function.def
 
 proc assign_type(file: parser.File, module: NativeModule,
     function: NativeFunction): Result[TypedNativeFunction, string] =
-  let typed_def = ? assign_type(file, function.def)
+  let typed_def = ? assign_type(file, module, function.def)
   ok(new_typed_native_function(function.native, typed_def))
 
 type TypedNativeModule* = ref object of RootObj
