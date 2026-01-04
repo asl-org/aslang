@@ -1,132 +1,124 @@
 module Bitset:
   struct:
-    Pointer ptr
-    U64 size
+    Array[U8] arr
 
   fn init(U64 size): Bitset
-    ptr = System.allocate(size)
-    Bitset { ptr: ptr, size: size }
+    arr_size = div_ceil(size, 8)
+    arr = Array[U8].init(arr_size)
+    Bitset { arr: arr }
 
-  fn free(Bitset bitset): U64
-    ptr = bitset.ptr
-    System.free(ptr)
-
-  fn get(Bitset bitset, U64 bit): S64
-    ptr = bitset.ptr
-    size = bitset.size
-    op = U64.compare(bit, size)
-    _ = match op:
-      case -1:
-        byte = U64.quotient(bit, 8)
+  fn get(Bitset bitset, U64 bit): Status[U8]
+    arr = bitset.arr
+    arr_index = U64.quotient(bit, 8)
+    status = Array[U8].get(arr, arr_index)
+    match status:
+      case Ok { value: value }:
         offset = U64.remainder(bit, 8)
-        data = U8.read(ptr, byte)
-
-        bdata = U8.rshift(data, offset)
-        res = U8.and(bdata, 1)
-        S64.from(res)
+        temp = U8.rshift(value, offset)
+        res = U8.and(temp, 1)
+        Status[U8].Ok { value: res }
       else:
-        S64 -1
+        status
 
-  fn set(Bitset bitset, U64 bit): S64
-    ptr = bitset.ptr
-    size = bitset.size
-    op = U64.compare(bit, size)
-    _ = match op:
-      case -1:
-        byte = U64.quotient(bit, 8)
+  fn set(Bitset bitset, U64 bit): Status[Bitset]
+    arr = bitset.arr
+    arr_index = U64.quotient(bit, 8)
+    get_status = Array[U8].get(arr, arr_index)
+    match get_status:
+      case Ok { value: value }:
         offset = U64.remainder(bit, 8)
-        data = U8.read(ptr, byte)
         mask = U8.lshift(1, offset)
-        res = U8.or(data, mask)
-        U8.write(res, ptr, byte)
-        S64.from(res)
+        new_value = U8.or(value, mask)
+        set_status = Array[U8].set(arr, arr_index, new_value)
+        match set_status:
+          case Ok { value: _ }:
+            Status[Bitset].Ok { value: bitset }
+          else:
+            set_status
       else:
-        S64 -1
+        get_status
 
-  fn clear(Bitset bitset, U64 bit): S64
-    ptr = bitset.ptr
-    size = bitset.size
-    op = U64.compare(bit, size)
-    _ = match op:
-      case -1:
-        byte = U64.quotient(bit, 8)
+  fn clear(Bitset bitset, U64 bit): Status[Bitset]
+    arr = bitset.arr
+    arr_index = U64.quotient(bit, 8)
+    get_status = Array[U8].get(arr, arr_index)
+    match get_status:
+      case Ok { value: value }:
         offset = U64.remainder(bit, 8)
-        data = U8.read(ptr, byte)
-
         mask = U8.lshift(1, offset)
-        imask = U8.not(mask)
-        res = U8.and(data, imask)
-        U8.write(res, ptr, byte)
-        S64.from(res)
+        inv_mask = U8.not(mask)
+        new_value = U8.and(value, inv_mask)
+        set_status = Array[U8].set(arr, arr_index, new_value)
+        match set_status:
+          case Ok { value: _ }:
+            Status[Bitset].Ok { value: bitset }
+          else:
+            set_status
       else:
-        S64 -1
+        get_status
 
-  fn toggle(Bitset bitset, U64 bit): S64
-    data = Bitset.get(bitset, bit)
-    _ = match data:
-      case 0:
-        Bitset.set(bitset, bit)
-      case 1:
-        Bitset.clear(bitset, bit)
+  fn toggle(Bitset bitset, U64 bit): Status[Bitset]
+    status = Bitset.get(bitset, bit)
+    match status:
+      case Ok { value: value }:
+        match value:
+          case 0:
+            Bitset.set(bitset, bit)
+          else:
+            Bitset.clear(bitset, bit)
       else:
-        S64 -1
+        status
 
-  fn max(U64 a, U64 b): U64
-    op = U64.compare(a, b)
-    _ = match op:
-      case 1:
-        a
-      else:
-        b
+fn div_ceil(U64 a, U64 b): U64
+  c = U64.add(a, b)
+  d = U64.subtract(c, 1)
+  U64.quotient(d, b)
 
-  fn mark_non_prime(Bitset bitset, U64 j, U64 i): Pointer
-    ptr = bitset.ptr
-    size = bitset.size
-    op = U64.compare(j, size)
-    _ = match op:
-      case -1:
-        Bitset.set(bitset, j)
-        k = U64.add(j, i)
-        Bitset.mark_non_prime(bitset, k, i)
-      else:
-        ptr
+fn max(U64 a, U64 b): U64
+  op = U64.compare(a, b)
+  _ = match op:
+    case 1:
+      a
+    else:
+      b
 
-  fn update_ans(U64 i, U64 ans): U64
-    r = U64.remainder(600851475143, i)
-    _ = match r:
-      case 0:
-        Bitset.max(ans, i)
-      else:
-        ans
+fn mark_non_prime(Bitset bitset, U64 j, U64 i): Status[U8]
+  status = Bitset.get(bitset, j)
+  match status:
+    case Ok { value: value }:
+      Bitset.set(bitset, j)
+      k = U64.add(j, i)
+      mark_non_prime(bitset, k, i)
+    else:
+      status
 
-  fn handle_prime(Bitset bitset, U64 i, U64 ans): U64
-    op = Bitset.get(bitset, i)
-    _ = match op:
-      case 0:
-        j = U64.multiply(i, 2)
-        Bitset.mark_non_prime(bitset, j, i)
-        Bitset.update_ans(i, ans)
-      else:
-        ans
+fn update_ans(U64 i, U64 ans): U64
+  r = U64.remainder(600851475143, i)
+  match r:
+    case 0:
+      max(ans, i)
+    else:
+      ans
 
-  fn solve(Bitset bitset, U64 start, U64 ans): U64
-    size = bitset.size
-    op = U64.compare(start, size)
-    _ = match op:
-      case -1:
-        res = Bitset.handle_prime(bitset, start, ans)
-        next_start = U64.add(start, 1)
-        Bitset.solve(bitset, next_start, res)
-      else:
-        ans
+fn solve(Bitset bitset, U64 start, U64 ans): U64
+  status = Bitset.get(bitset, start)
+  match status:
+    case Ok { value: value }:
+      next_start = U64.add(start, 1)
+      match value:
+        case 0:
+          mark_non_prime(bitset, start, start)
+          new_ans = update_ans(start, ans)
+          solve(bitset, next_start, new_ans)
+        else:
+          solve(bitset, next_start, ans)
+    else:
+      ans
 
 fn start(U8 seed): U8
-  exit_success = U8 0
   bitset = Bitset.init(1000001)
 
-  ans = Bitset.solve(bitset, 2, 0)
+  ans = solve(bitset, 2, 0)
   System.print(ans)
 
-  # _x = Bitset_free(bitset)
-  Bitset.free(bitset)
-  exit_success
+  exit_success = U8 0

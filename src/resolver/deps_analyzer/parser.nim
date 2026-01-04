@@ -2085,6 +2085,7 @@ proc native_modules(): Result[seq[NativeModule], string] =
       ? new_native_function("S64_compare_S64", "S8", "compare", @["S64",
           "S64"]),
       ? new_native_function("S64_from_U8", "S64", "from", @["U8"]),
+      ? new_native_function("S64_from_U64", "S64", "from", @["U64"]),
     ]),
     ? new_native_module("U8", @[
       ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
@@ -2101,6 +2102,7 @@ proc native_modules(): Result[seq[NativeModule], string] =
       ? new_native_function("U8_or_U8", "U8", "or", @["U8",
           "U8"]),
       ? new_native_function("U8_not", "U8", "not", @["U8"]),
+      ? new_native_function("U8_from_U64", "U8", "from", @["U64"]),
     ]),
     ? new_native_module("U16", @[
       ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
@@ -2133,6 +2135,15 @@ proc native_modules(): Result[seq[NativeModule], string] =
           "U64"]),
       ? new_native_function("U64_compare_U64", "S8", "compare", @["U64",
           "U64"]),
+      ? new_native_function("U64_lshift_U64", "U64", "lshift", @["U64",
+          "U64"]),
+      ? new_native_function("U64_rshift_U64", "U64", "rshift", @["U64",
+          "U64"]),
+      ? new_native_function("U64_and_U64", "U64", "and", @["U64",
+          "U64"]),
+      ? new_native_function("U64_or_U64", "U64", "or", @["U64",
+          "U64"]),
+      ? new_native_function("U64_not", "U64", "not", @["U64"]),
     ]),
     ? new_native_module("F32", @[
       ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),

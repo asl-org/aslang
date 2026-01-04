@@ -1347,14 +1347,27 @@ proc resolve(file_def: ResolvedFileDefinition,
     let resolved_module_ref = ? resolve_def(file_def.file, module_def.module, typed_module_ref)
     case resolved_module_ref.kind:
     of RMRK_NATIVE:
+      # let typed_native_module = resolved_module_ref.native_module
+      # let resolved_native_module_def = ? file_def.find_module_def(typed_native_module)
+      # let resolved_native_function_defs = ? resolved_native_module_def.find_function_defs(
+      #     fnref.name, fnref.arity)
+      # let resolved_function_defs = resolved_native_function_defs.map_it(
+      #   new_resolved_function_definition(it))
+      # ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
+      #     resolved_function_defs, resolved_function_defs))
+
       let typed_native_module = resolved_module_ref.native_module
       let resolved_native_module_def = ? file_def.find_module_def(typed_native_module)
       let resolved_native_function_defs = ? resolved_native_module_def.find_function_defs(
           fnref.name, fnref.arity)
       let resolved_function_defs = resolved_native_function_defs.map_it(
-        new_resolved_function_definition(it))
+          new_resolved_function_definition(it))
+      let concrete_function_defs = resolved_native_function_defs.map_it(
+          it.def.concretize(resolved_module_ref.native_concrete_map))
+      let resolved_concrete_function_defs = concrete_function_defs.map_it(
+          new_resolved_function_definition(it))
       ok(new_resolved_function_ref(resolved_module_ref, fnref.name,
-          resolved_function_defs, resolved_function_defs))
+          resolved_function_defs, resolved_concrete_function_defs))
     of RMRK_GENERIC:
       let typed_generic = resolved_module_ref.generic
       let resolved_generic = ? module_def.find_generic(typed_generic)
@@ -1624,8 +1637,9 @@ proc resolve(file_def: ResolvedFileDefinition,
     if maybe_resolved_args.is_ok:
       return ok(new_resolved_function_call(resolved_function_ref, original_def,
           concrete_def, maybe_resolved_args.get))
-
-    error_message.add(concrete_def.asl)
+    else:
+      error_message.add(maybe_resolved_args.error)
+      error_message.add(concrete_def.asl)
   err(error_message.join("\n"))
 
 proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
@@ -2695,7 +2709,7 @@ proc resolve(file_def: ResolvedFileDefinition,
     for case_block in resolved_case_blocks:
       # NOTE: Ensure all the case block returns type is same.
       if case_block.returns != resolved_case_blocks[0].returns:
-        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+        return err(fmt"{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_case_blocks[0].returns.asl}`")
 
       # NOTE: Detect duplicate patterns
       if case_block.pattern in unique_patterns:
@@ -2709,7 +2723,10 @@ proc resolve(file_def: ResolvedFileDefinition,
     of RMRK_GENERIC:
       return err(fmt"{match.location} match expression does not support generic operands")
     of RMRK_NATIVE:
-      return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+      let native_module = resolved_operand_module_ref.native_module
+      let resolved_operand_module = ? file_def.find_module_def(native_module)
+      if unique_patterns.len < resolved_operand_module.structs.len:
+        return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
     of RMRK_USER:
       let user_module = resolved_operand_module_ref.user_module
       let resolved_operand_module = ? file_def.find_module_def(user_module)
@@ -2731,7 +2748,7 @@ proc resolve(file_def: ResolvedFileDefinition,
     var unique_patterns: Table[ResolvedCasePattern, ResolvedCase]
     for case_block in resolved_case_blocks:
       if case_block.returns != resolved_else_block.returns:
-        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+        return err(fmt"{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
 
       # NOTE: Detect duplicate patterns
       if case_block.pattern in unique_patterns:
@@ -2770,7 +2787,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     var unique_patterns: Table[ResolvedCasePattern, ResolvedCase]
     for case_block in resolved_case_blocks:
       if case_block.returns != resolved_case_blocks[0].returns:
-        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+        return err(fmt"{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_case_blocks[0].returns.asl}`")
 
       # NOTE: Detect duplicate patterns
       if case_block.pattern in unique_patterns:
@@ -2784,7 +2801,10 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     of RMRK_GENERIC:
       return err(fmt"{match.location} match expression does not support generic operands")
     of RMRK_NATIVE:
-      return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+      let native_module = resolved_operand_module_ref.native_module
+      let resolved_operand_module = ? file_def.find_module_def(native_module)
+      if unique_patterns.len < resolved_operand_module.structs.len:
+        return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
     of RMRK_USER:
       let user_module = resolved_operand_module_ref.user_module
       let resolved_operand_module = ? file_def.find_module_def(user_module)
@@ -2806,7 +2826,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     var unique_patterns: Table[ResolvedCasePattern, ResolvedCase]
     for case_block in resolved_case_blocks:
       if case_block.returns != resolved_else_block.returns:
-        return err("{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
+        return err(fmt"{case_block.location} returns `{case_block.returns.asl}` but expected `{resolved_else_block.returns.asl}`")
 
       # NOTE: Detect duplicate patterns
       if case_block.pattern in unique_patterns:
