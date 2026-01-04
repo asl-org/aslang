@@ -174,14 +174,39 @@ U8 U8_not(U8 x)
   return ~x;
 }
 
-U8 U8_lshift_U8(U8 x, U64 y)
+U8 U8_lshift_U8(U8 x, U8 y)
 {
   return x << y;
 }
 
-U8 U8_rshift_U8(U8 x, U64 y)
+U8 U8_rshift_U8(U8 x, U8 y)
 {
   return x >> y;
+}
+
+U64 U64_lshift_U64(U64 x, U64 y)
+{
+  return x << y;
+}
+
+U64 U64_rshift_U64(U64 x, U64 y)
+{
+  return x >> y;
+}
+
+U64 U64_and_U64(U64 x, U64 y)
+{
+  return x & y;
+}
+
+U64 U64_or_U64(U64 x, U64 y)
+{
+  return x | y;
+}
+
+U64 U64_not(U64 x)
+{
+  return ~x;
 }
 
 S8 U64_compare_U64(U64 x, U64 y)
@@ -212,6 +237,11 @@ U64 U64_quotient_U64(U64 x, U64 y)
 U64 U64_remainder_U64(U64 x, U64 y)
 {
   return x % y;
+}
+
+U8 U8_from_U64(U64 x)
+{
+  return (U8)x;
 }
 
 S64 S64_add_S64(S64 x, S64 y)
@@ -245,6 +275,11 @@ S8 S64_compare_S64(S64 x, S64 y)
 }
 
 S64 S64_from_U8(U8 x)
+{
+  return (S64)x;
+}
+
+S64 S64_from_U64(U64 x)
 {
   return (S64)x;
 }
