@@ -1298,9 +1298,9 @@ proc native*(function: TypedNativeFunction): string = function.native
 proc def*(function: TypedNativeFunction): TypedFunctionDefinition = function.def
 
 proc assign_type(file: parser.File, module: NativeModule,
-    function: NativeFunction): Result[TypedNativeFunction, string] =
+    function: ExternFunction): Result[TypedNativeFunction, string] =
   let typed_def = ? assign_type(file, module, function.def)
-  ok(new_typed_native_function(function.native, typed_def))
+  ok(new_typed_native_function(function.extern, typed_def))
 
 type TypedNativeModule* = ref object of RootObj
   id: uint64
