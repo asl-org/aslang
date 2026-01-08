@@ -1865,12 +1865,12 @@ proc asl(module: UserModule, indent: string): seq[string] =
 
   return lines
 
-type NativeFunction* = ref object of RootObj
+type ExternFunction* = ref object of RootObj
   def: FunctionDefinition
-  native: string
+  extern: string
 
-proc new_native_function(native: string, returns: string, name: string,
-    args: seq[string]): Result[NativeFunction, string] =
+proc new_extern_function(extern: string, returns: string, name: string,
+    args: seq[string]): Result[ExternFunction, string] =
   var arg_defs: seq[ArgumentDefinition]
   for index, module in args.pairs:
     let module_id = ? new_identifier(module)
@@ -1887,23 +1887,23 @@ proc new_native_function(native: string, returns: string, name: string,
     Location()
   )
 
-  ok(NativeFunction(def: def, native: native))
+  ok(ExternFunction(def: def, extern: extern))
 
-proc name(function: NativeFunction): Identifier = function.def.name
-proc def*(function: NativeFunction): FunctionDefinition = function.def
-proc native*(function: NativeFunction): string = function.native
+proc name(function: ExternFunction): Identifier = function.def.name
+proc def*(function: ExternFunction): FunctionDefinition = function.def
+proc extern*(function: ExternFunction): string = function.extern
 
 type NativeModule* = ref object of RootObj
   name: Identifier
   generics: seq[Generic]
   generics_map: Table[Identifier, int]
   structs: seq[Struct]
-  functions: seq[NativeFunction]
+  functions: seq[ExternFunction]
   functions_map: Table[Identifier, seq[int]]
   function_defs_hash_map: Table[Hash, int]
 
 proc new_native_module(name: string, functions: seq[
-    NativeFunction]): Result[NativeModule, string] =
+    ExternFunction]): Result[NativeModule, string] =
   let name = ? new_identifier(name)
   var function_defs_hash_map: Table[Hash, int]
   for index, function in functions.pairs:
@@ -1916,7 +1916,7 @@ proc new_native_module(name: string, functions: seq[
       function_defs_hash_map: function_defs_hash_map))
 
 proc new_native_module(name: string, generics: seq[Generic], structs: seq[
-    Struct], functions: seq[NativeFunction]): Result[NativeModule, string] =
+    Struct], functions: seq[ExternFunction]): Result[NativeModule, string] =
   if generics.len + structs.len + functions.len == 0:
     return err(fmt"[INTERNAL ERROR] module can not be empty")
 
@@ -1955,7 +1955,7 @@ proc generics*(module: NativeModule): seq[Generic] =
 proc structs*(module: NativeModule): seq[Struct] =
   module.structs
 
-proc functions*(module: NativeModule): seq[NativeFunction] =
+proc functions*(module: NativeModule): seq[ExternFunction] =
   module.functions
 
 proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
@@ -1973,7 +1973,7 @@ proc new_native_error_module(): Result[NativeModule, string] =
   let struct = ? new_struct(new_struct_definition(Location()), @[code_arg, message_arg])
 
   var generics: seq[Generic]
-  var functions: seq[NativeFunction]
+  var functions: seq[ExternFunction]
   new_native_module("Error", generics, @[struct], functions)
 
 proc new_native_status_module(): Result[NativeModule, string] =
@@ -1987,7 +1987,7 @@ proc new_native_status_module(): Result[NativeModule, string] =
   let err_branch = new_struct_definition( ? new_identifier("Err"), Location())
   let err_struct = ? new_struct(err_branch, @[err_arg])
 
-  var functions: seq[NativeFunction]
+  var functions: seq[ExternFunction]
   new_native_module("Status", @[generic], @[ok_struct, err_struct], functions)
 
 proc new_native_array_module(): Result[NativeModule, string] =
@@ -2024,21 +2024,21 @@ proc new_native_array_module(): Result[NativeModule, string] =
   let array_init_fn_name = ? new_identifier("init")
   let array_init_fn_def = ? new_function_definition(array_init_fn_name, @[
       size_arg_def], array_item_module_ref, Location())
-  let array_init_native_fn = NativeFunction(def: array_init_fn_def,
-      native: "Array_init")
+  let array_init_native_fn = ExternFunction(def: array_init_fn_def,
+      extern: "Array_init")
 
   let array_get_fn_name = ? new_identifier("get")
   let array_get_fn_def = ? new_function_definition(array_get_fn_name, @[
       array_item_arg_def, index_arg_def], status_item_module_ref, Location())
-  let array_get_native_fn = NativeFunction(def: array_get_fn_def,
-      native: "Array_get")
+  let array_get_native_fn = ExternFunction(def: array_get_fn_def,
+      extern: "Array_get")
 
   let array_set_fn_name = ? new_identifier("set")
   let array_set_fn_def = ? new_function_definition(array_set_fn_name, @[
       array_item_arg_def, index_arg_def, item_arg_def], status_array_module_ref,
       Location())
-  let array_set_native_fn = NativeFunction(def: array_set_fn_def,
-      native: "Array_set")
+  let array_set_native_fn = ExternFunction(def: array_set_fn_def,
+      extern: "Array_set")
 
   new_native_module("Array", @[generic], @[struct], @[
     array_init_native_fn, array_get_native_fn, array_set_native_fn
@@ -2047,154 +2047,154 @@ proc new_native_array_module(): Result[NativeModule, string] =
 proc native_modules(): Result[seq[NativeModule], string] =
   ok(@[
     ? new_native_module("S8", @[
-      ? new_native_function("S8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S8_read", "S8", "read", @["Pointer",
+      ? new_extern_function("S8_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("S8_read", "S8", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S8_write", "Pointer", "write", @["S8",
+      ? new_extern_function("S8_write", "Pointer", "write", @["S8",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S16", @[
-      ? new_native_function("S16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S16_read", "S16", "read", @["Pointer",
+      ? new_extern_function("S16_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("S16_read", "S16", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S16_write", "Pointer", "write", @["S16",
+      ? new_extern_function("S16_write", "Pointer", "write", @["S16",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S32", @[
-      ? new_native_function("S32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S32_read", "S32", "read", @["Pointer",
+      ? new_extern_function("S32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("S32_read", "S32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S32_write", "Pointer", "write", @["S32",
+      ? new_extern_function("S32_write", "Pointer", "write", @["S32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("S64", @[
-      ? new_native_function("S64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("S64_read", "S64", "read", @["Pointer",
+      ? new_extern_function("S64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("S64_read", "S64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("S64_write", "Pointer", "write", @["S64",
+      ? new_extern_function("S64_write", "Pointer", "write", @["S64",
           "Pointer", "U64"]),
-      ? new_native_function("S64_add_S64", "S64", "add", @["S64", "S64"]),
-      ? new_native_function("S64_subtract_S64", "S64", "subtract", @["S64",
+      ? new_extern_function("S64_add_S64", "S64", "add", @["S64", "S64"]),
+      ? new_extern_function("S64_subtract_S64", "S64", "subtract", @["S64",
           "S64"]),
-      ? new_native_function("S64_multiply_S64", "S64", "multiply", @["S64",
+      ? new_extern_function("S64_multiply_S64", "S64", "multiply", @["S64",
           "S64"]),
-      ? new_native_function("S64_remainder_S64", "S64", "remainder", @["S64",
+      ? new_extern_function("S64_remainder_S64", "S64", "remainder", @["S64",
           "S64"]),
-      ? new_native_function("S64_quotient_S64", "S64", "quotient", @["S64",
+      ? new_extern_function("S64_quotient_S64", "S64", "quotient", @["S64",
           "S64"]),
-      ? new_native_function("S64_compare_S64", "S8", "compare", @["S64",
+      ? new_extern_function("S64_compare_S64", "S8", "compare", @["S64",
           "S64"]),
-      ? new_native_function("S64_from_U8", "S64", "from", @["U8"]),
-      ? new_native_function("S64_from_U64", "S64", "from", @["U64"]),
+      ? new_extern_function("S64_from_U8", "S64", "from", @["U8"]),
+      ? new_extern_function("S64_from_U64", "S64", "from", @["U64"]),
     ]),
     ? new_native_module("U8", @[
-      ? new_native_function("U8_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U8_read", "U8", "read", @["Pointer",
+      ? new_extern_function("U8_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("U8_read", "U8", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U8_write", "Pointer", "write", @["U8",
+      ? new_extern_function("U8_write", "Pointer", "write", @["U8",
           "Pointer", "U64"]),
-      ? new_native_function("U8_lshift_U8", "U8", "lshift", @["U8",
+      ? new_extern_function("U8_lshift_U8", "U8", "lshift", @["U8",
           "U64"]),
-      ? new_native_function("U8_rshift_U8", "U8", "rshift", @["U8",
+      ? new_extern_function("U8_rshift_U8", "U8", "rshift", @["U8",
           "U64"]),
-      ? new_native_function("U8_and_U8", "U8", "and", @["U8",
+      ? new_extern_function("U8_and_U8", "U8", "and", @["U8",
           "U8"]),
-      ? new_native_function("U8_or_U8", "U8", "or", @["U8",
+      ? new_extern_function("U8_or_U8", "U8", "or", @["U8",
           "U8"]),
-      ? new_native_function("U8_not", "U8", "not", @["U8"]),
-      ? new_native_function("U8_from_U64", "U8", "from", @["U64"]),
+      ? new_extern_function("U8_not", "U8", "not", @["U8"]),
+      ? new_extern_function("U8_from_U64", "U8", "from", @["U64"]),
     ]),
     ? new_native_module("U16", @[
-      ? new_native_function("U16_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U16_read", "U16", "read", @["Pointer",
+      ? new_extern_function("U16_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("U16_read", "U16", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U16_write", "Pointer", "write", @["U16",
+      ? new_extern_function("U16_write", "Pointer", "write", @["U16",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("U32", @[
-      ? new_native_function("U32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U32_read", "U32", "read", @["Pointer",
+      ? new_extern_function("U32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("U32_read", "U32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U32_write", "Pointer", "write", @["U32",
+      ? new_extern_function("U32_write", "Pointer", "write", @["U32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("U64", @[
-      ? new_native_function("U64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("U64_read", "U64", "read", @["Pointer",
+      ? new_extern_function("U64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("U64_read", "U64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("U64_write", "Pointer", "write", @["U64",
+      ? new_extern_function("U64_write", "Pointer", "write", @["U64",
           "Pointer", "U64"]),
-      ? new_native_function("U64_add_U64", "U64", "add", @["U64", "U64"]),
-      ? new_native_function("U64_subtract_U64", "U64", "subtract", @["U64",
+      ? new_extern_function("U64_add_U64", "U64", "add", @["U64", "U64"]),
+      ? new_extern_function("U64_subtract_U64", "U64", "subtract", @["U64",
           "U64"]),
-      ? new_native_function("U64_multiply_U64", "U64", "multiply", @["U64",
+      ? new_extern_function("U64_multiply_U64", "U64", "multiply", @["U64",
           "U64"]),
-      ? new_native_function("U64_remainder_U64", "U64", "remainder", @["U64",
+      ? new_extern_function("U64_remainder_U64", "U64", "remainder", @["U64",
           "U64"]),
-      ? new_native_function("U64_quotient_U64", "U64", "quotient", @["U64",
+      ? new_extern_function("U64_quotient_U64", "U64", "quotient", @["U64",
           "U64"]),
-      ? new_native_function("U64_compare_U64", "S8", "compare", @["U64",
+      ? new_extern_function("U64_compare_U64", "S8", "compare", @["U64",
           "U64"]),
-      ? new_native_function("U64_lshift_U64", "U64", "lshift", @["U64",
+      ? new_extern_function("U64_lshift_U64", "U64", "lshift", @["U64",
           "U64"]),
-      ? new_native_function("U64_rshift_U64", "U64", "rshift", @["U64",
+      ? new_extern_function("U64_rshift_U64", "U64", "rshift", @["U64",
           "U64"]),
-      ? new_native_function("U64_and_U64", "U64", "and", @["U64",
+      ? new_extern_function("U64_and_U64", "U64", "and", @["U64",
           "U64"]),
-      ? new_native_function("U64_or_U64", "U64", "or", @["U64",
+      ? new_extern_function("U64_or_U64", "U64", "or", @["U64",
           "U64"]),
-      ? new_native_function("U64_not", "U64", "not", @["U64"]),
+      ? new_extern_function("U64_not", "U64", "not", @["U64"]),
     ]),
     ? new_native_module("F32", @[
-      ? new_native_function("F32_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F32_read", "F32", "read", @["Pointer",
+      ? new_extern_function("F32_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("F32_read", "F32", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("F32_write", "Pointer", "write", @["F32",
+      ? new_extern_function("F32_write", "Pointer", "write", @["F32",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("F64", @[
-      ? new_native_function("F64_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("F64_read", "F64", "read", @["Pointer",
+      ? new_extern_function("F64_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("F64_read", "F64", "read", @["Pointer",
           "U64"]),
-      ? new_native_function("F64_write", "Pointer", "write", @["F64",
+      ? new_extern_function("F64_write", "Pointer", "write", @["F64",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("String", @[
-      ? new_native_function("String_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_native_function("String_read", "String", "read", @[
+      ? new_extern_function("String_byte_size", "U64", "byte_size", @["U64"]),
+      ? new_extern_function("String_read", "String", "read", @[
           "Pointer", "U64"]),
-      ? new_native_function("F64_write", "Pointer", "write", @["String",
+      ? new_extern_function("F64_write", "Pointer", "write", @["String",
           "Pointer", "U64"]),
     ]),
     ? new_native_module("Pointer", @[
-      ? new_native_function("Pointer_byte_size", "U64", "byte_size", @[
+      ? new_extern_function("Pointer_byte_size", "U64", "byte_size", @[
           "U64"]),
-      ? new_native_function("Pointer_read", "Pointer", "read", @[
+      ? new_extern_function("Pointer_read", "Pointer", "read", @[
           "Pointer", "U64"]),
-      ? new_native_function("Pointer_write", "Pointer", "write", @[
+      ? new_extern_function("Pointer_write", "Pointer", "write", @[
           "Pointer", "Pointer", "U64"]),
     ]),
     ? new_native_error_module(),
     ? new_native_status_module(),
     ? new_native_array_module(),
     ? new_native_module("System", @[
-      ? new_native_function("System_allocate", "Pointer", "allocate", @["U64"]),
-      ? new_native_function("System_free", "U64", "free", @["Pointer"]),
-      ? new_native_function("System_box_U8", "Pointer", "box", @["U8"]),
-      ? new_native_function("System_box_U64", "Pointer", "box", @["U64"]),
-      ? new_native_function("System_box_S32", "Pointer", "box", @["S32"]),
-      ? new_native_function("System_box_S64", "Pointer", "box", @["S64"]),
-      ? new_native_function("System_print_U8", "U64", "print", @["U8"]),
-      ? new_native_function("System_print_U16", "U64", "print", @["U16"]),
-      ? new_native_function("System_print_U32", "U64", "print", @["U32"]),
-      ? new_native_function("System_print_U64", "U64", "print", @["U64"]),
-      ? new_native_function("System_print_S8", "U64", "print", @["S8"]),
-      ? new_native_function("System_print_S16", "U64", "print", @["S16"]),
-      ? new_native_function("System_print_S32", "U64", "print", @["S32"]),
-      ? new_native_function("System_print_S64", "U64", "print", @["S64"]),
-      ? new_native_function("System_print_F32", "U64", "print", @["F32"]),
-      ? new_native_function("System_print_F64", "U64", "print", @["F64"]),
-      ? new_native_function("System_print_String", "U64", "print", @["String"]),
+      ? new_extern_function("System_allocate", "Pointer", "allocate", @["U64"]),
+      ? new_extern_function("System_free", "U64", "free", @["Pointer"]),
+      ? new_extern_function("System_box_U8", "Pointer", "box", @["U8"]),
+      ? new_extern_function("System_box_U64", "Pointer", "box", @["U64"]),
+      ? new_extern_function("System_box_S32", "Pointer", "box", @["S32"]),
+      ? new_extern_function("System_box_S64", "Pointer", "box", @["S64"]),
+      ? new_extern_function("System_print_U8", "U64", "print", @["U8"]),
+      ? new_extern_function("System_print_U16", "U64", "print", @["U16"]),
+      ? new_extern_function("System_print_U32", "U64", "print", @["U32"]),
+      ? new_extern_function("System_print_U64", "U64", "print", @["U64"]),
+      ? new_extern_function("System_print_S8", "U64", "print", @["S8"]),
+      ? new_extern_function("System_print_S16", "U64", "print", @["S16"]),
+      ? new_extern_function("System_print_S32", "U64", "print", @["S32"]),
+      ? new_extern_function("System_print_S64", "U64", "print", @["S64"]),
+      ? new_extern_function("System_print_F32", "U64", "print", @["F32"]),
+      ? new_extern_function("System_print_F64", "U64", "print", @["F64"]),
+      ? new_extern_function("System_print_String", "U64", "print", @["String"]),
     ])
   ])
 

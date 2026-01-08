@@ -3,6 +3,29 @@ import results, strformat, hashes
 const MAX_DIGITS_LENGTH = 256
 const MAX_STRING_LENGTH = 1 shl 16
 
+# OPERATORS
+const PLUS_OP = '+'
+const MINUS_OP = '-'
+const COMMA_OP = ','
+const DOT_OP = '.'
+const COLON_OP = ':'
+const EQUAL_OP = '='
+const BACK_SLASH_OP = '\\'
+const OPEN_PAREN_OP = '('
+const CLOSE_PAREN_OP = ')'
+const OPEN_CURLY_OP = '{'
+const CLOSE_CURLY_OP = '}'
+const OPEN_SQUARE_OP = '['
+const CLOSE_SQUARE_OP = ']'
+
+const SPACE = ' '
+const NEW_LINE = '\n'
+
+const UNDERSCORE = '_'
+const DOUBLE_QUOTE = '"'
+const HASHTAG = '#'
+
+
 type Location* = object
   filename: string
   line: int = 1
@@ -60,82 +83,82 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
 
   while index < content.len:
     case content[index]:
-    of '+':
+    of PLUS_OP:
       let token = new_token(TK_PLUS, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '-':
+    of MINUS_OP:
       let token = new_token(TK_MINUS, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of ',':
+    of COMMA_OP:
       let token = new_token(TK_COMMA, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '.':
+    of DOT_OP:
       let token = new_token(TK_DOT, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of ':':
+    of COLON_OP:
       let token = new_token(TK_COLON, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '=':
+    of EQUAL_OP:
       let token = new_token(TK_EQUAL, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '\\':
+    of BACK_SLASH_OP:
       let token = new_token(TK_BACK_SLASH, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '(':
+    of OPEN_PAREN_OP:
       let token = new_token(TK_OPEN_PAREN, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of ')':
+    of CLOSE_PAREN_OP:
       let token = new_token(TK_CLOSE_PAREN, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '{':
+    of OPEN_CURLY_OP:
       let token = new_token(TK_OPEN_CURLY, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '}':
+    of CLOSE_CURLY_OP:
       let token = new_token(TK_CLOSE_CURLY, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '[':
+    of OPEN_SQUARE_OP:
       let token = new_token(TK_OPEN_SQUARE, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of ']':
+    of CLOSE_SQUARE_OP:
       let token = new_token(TK_CLOSE_SQUARE, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of ' ':
+    of SPACE:
       let token = new_token(TK_SPACE, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '\n':
+    of NEW_LINE:
       let token = new_token(TK_NEW_LINE, $content[index], location)
       index += 1
       location = location.update(token.value)
       tokens.add(token)
-    of '"':
+    of DOUBLE_QUOTE:
       let start = index
 
       index += 1 # move past double quote
@@ -161,7 +184,7 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
 
       let token = new_token(TK_STRING, content.substr(start, index - 1), location)
       tokens.add(token)
-    of '#':
+    of HASHTAG:
       let start = index
       # consume everything up until newline
       while index < content.len and content[index] != '\n': index += 1
@@ -185,7 +208,7 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
       let token = new_token(TK_ALPHABETS, content.substr(start, index - 1), location)
       location = location.update(token.value)
       tokens.add(token)
-    of '_':
+    of UNDERSCORE:
       let token = new_token(TK_UNDERSCORE, $content[index], location)
       index += 1
       location = location.update(token.value)
