@@ -138,6 +138,14 @@ proc hash(module_ref: ResolvedModuleRef): Hash =
 proc `==`(self: ResolvedModuleRef, other: ResolvedModuleRef): bool =
   self.hash == other.hash
 
+# Helper to create impl from resolved child and constraints
+proc create_impl_from_child(typed_generic: TypedGeneric, child: TypedModuleRef,
+    resolved_child: ResolvedModuleRef): Result[ResolvedImpl, string] =
+  var constraint_defs: seq[TypedFunctionDefinition]
+  for def in typed_generic.concrete_defs(child.self()):
+    constraint_defs.add( ? resolved_child.find_function(def))
+  ok(new_resolved_impl(resolved_child, constraint_defs))
+
 proc generic_impls(module_ref: ResolvedModuleRef): Table[TypedUserModule, seq[
     HashSet[ResolvedImpl]]] =
   var impl_set: Table[TypedUserModule, seq[HashSet[ResolvedImpl]]]
@@ -218,11 +226,7 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, generic, child)
-      # NOTE: Check that resolved child satifies constraints.
-      var constraint_defs: seq[TypedFunctionDefinition]
-      for def in typed_generic.concrete_defs(child.self()):
-        constraint_defs.add( ? resolved_child.find_function(def))
-      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
       impls.add(resolved_impl)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
@@ -266,7 +270,6 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_module = ? file.find_module(untyped_module)
-
     let children = ? module_ref.children
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
@@ -274,22 +277,16 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, child)
-      # NOTE: Check that resolved child satifies constraints.
-      var constraint_defs: seq[TypedFunctionDefinition]
-      for def in typed_generic.concrete_defs(child.self()):
-        constraint_defs.add( ? resolved_child.find_function(def))
-      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
       impls.add(resolved_impl)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
     let untyped_generic = ? module_ref.generic
     let typed_generic = ? module.find_generic(untyped_generic)
-
     ok(new_resolved_module_ref(typed_generic, module_ref.location))
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
     let typed_module = ? file.find_module(untyped_module)
-
     let children = ? module_ref.children
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
@@ -297,11 +294,7 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, child)
-      # NOTE: Check that resolved child satifies constraints.
-      var constraint_defs: seq[TypedFunctionDefinition]
-      for def in typed_generic.concrete_defs(child.self()):
-        constraint_defs.add( ? resolved_child.find_function(def))
-      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
       impls.add(resolved_impl)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
@@ -318,20 +311,28 @@ proc resolve_def(file: TypedFile, module: TypedNativeModule,
     var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, child)
-      # NOTE: Check that resolved child satifies constraints.
-      var constraint_defs: seq[TypedFunctionDefinition]
-      for def in typed_generic.concrete_defs(child.self()):
-        constraint_defs.add( ? resolved_child.find_function(def))
-      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
       impls.add(resolved_impl)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
     let untyped_generic = ? module_ref.generic
     let typed_generic = ? module.find_generic(untyped_generic)
-
     ok(new_resolved_module_ref(typed_generic, module_ref.location))
   of TMRK_USER:
     err("[INTERNAL ERROR] - Native Modules can not depend on User Modules")
+
+# Helper to process module children at file level (no module context)
+proc process_module_children_file_level(file: TypedFile, typed_module: TypedNativeModule | TypedUserModule,
+    children: seq[TypedModuleRef], location: Location): Result[seq[ResolvedImpl], string] =
+  if children.len != typed_module.generics.len:
+    return err(fmt"{location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
+
+  var impls: seq[ResolvedImpl]
+  for (typed_generic, child) in zip(typed_module.generics, children):
+    let resolved_child = ? resolve_def(file, child)
+    let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
+    impls.add(resolved_impl)
+  ok(impls)
 
 proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
     ResolvedModuleRef, string] =
@@ -339,40 +340,16 @@ proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_module = ? file.find_module(untyped_module)
-
     let children = ? module_ref.children
-    if children.len != typed_module.generics.len:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
-
-    var impls: seq[ResolvedImpl]
-    for (typed_generic, child) in zip(typed_module.generics, children):
-      let resolved_child = ? resolve_def(file, child)
-      # NOTE: Check that resolved child satifies constraints.
-      var constraint_defs: seq[TypedFunctionDefinition]
-      for def in typed_generic.concrete_defs(child.self()):
-        constraint_defs.add( ? resolved_child.find_function(def))
-      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
-      impls.add(resolved_impl)
+    let impls = ? process_module_children_file_level(file, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
     err(fmt"{module_ref.location} file level functions do not support generics")
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
     let typed_module = ? file.find_module(untyped_module)
-
     let children = ? module_ref.children
-    if children.len != typed_module.generics.len:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
-
-    var impls: seq[ResolvedImpl]
-    for (typed_generic, child) in zip(typed_module.generics, children):
-      let resolved_child = ? resolve_def(file, child)
-      # NOTE: Check that resolved child satifies constraints.
-      var constraint_defs: seq[TypedFunctionDefinition]
-      for def in typed_generic.concrete_defs(child.self()):
-        constraint_defs.add( ? resolved_child.find_function(def))
-      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
-      impls.add(resolved_impl)
+    let impls = ? process_module_children_file_level(file, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
 type ResolvedArgumentDefinition = ref object of RootObj
