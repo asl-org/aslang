@@ -407,37 +407,53 @@ proc asl(arg: ResolvedArgumentDefinition): string =
 proc c(arg: ResolvedArgumentDefinition): string =
   fmt"{arg.module_ref.c} {arg.name.asl}"
 
-proc resolve_def(file: TypedFile, module: TypedUserModule,
-    generic: TypedGeneric, arg: TypedArgumentDefinition): Result[
-        ResolvedArgumentDefinition, string] =
-  let resolved_module_ref = ? resolve_def(file, module, generic, arg.module_ref)
+# Helper for resolving TypedArgumentDefinition with TypedUserModule
+proc resolve_argument_definition_user(file: TypedFile, arg: TypedArgumentDefinition,
+    module: TypedUserModule, generic: Option[TypedGeneric]): Result[ResolvedArgumentDefinition, string] =
+  let resolved_module_ref = if generic.is_some:
+    ? resolve_def(file, module, generic.get, arg.module_ref)
+  else:
+    ? resolve_def(file, module, arg.module_ref)
   ? resolved_module_ref.can_be_argument
   ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
 
-proc resolve_def(file: TypedFile, module: TypedNativeModule,
-    generic: TypedGeneric, arg: TypedArgumentDefinition): Result[
-        ResolvedArgumentDefinition, string] =
-  let resolved_module_ref = ? resolve_def(file, module, generic, arg.module_ref)
+# Helper for resolving TypedArgumentDefinition with TypedNativeModule
+proc resolve_argument_definition_native(file: TypedFile, arg: TypedArgumentDefinition,
+    module: TypedNativeModule, generic: Option[TypedGeneric]): Result[ResolvedArgumentDefinition, string] =
+  let resolved_module_ref = if generic.is_some:
+    ? resolve_def(file, module, generic.get, arg.module_ref)
+  else:
+    ? resolve_def(file, module, arg.module_ref)
   ? resolved_module_ref.can_be_argument
   ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
 
-proc resolve_def(file: TypedFile, module: TypedUserModule,
-    arg: TypedArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  let resolved_module_ref = ? resolve_def(file, module, arg.module_ref)
-  ? resolved_module_ref.can_be_argument
-  ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
-
-proc resolve_def(file: TypedFile, module: TypedNativeModule,
-    arg: TypedArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  let resolved_module_ref = ? resolve_def(file, module, arg.module_ref)
-  ? resolved_module_ref.can_be_argument
-  ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
-
-proc resolve_def(file: TypedFile, arg: TypedArgumentDefinition): Result[
-    ResolvedArgumentDefinition, string] =
+# Helper for resolving TypedArgumentDefinition without module
+proc resolve_argument_definition_no_module(file: TypedFile, arg: TypedArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
   let resolved_module_ref = ? resolve_def(file, arg.module_ref)
   ? resolved_module_ref.can_be_argument
   ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
+
+proc resolve_def(file: TypedFile, module: TypedUserModule,
+    generic: TypedGeneric, arg: TypedArgumentDefinition): Result[
+        ResolvedArgumentDefinition, string] =
+  resolve_argument_definition_user(file, arg, module, some(generic))
+
+proc resolve_def(file: TypedFile, module: TypedNativeModule,
+    generic: TypedGeneric, arg: TypedArgumentDefinition): Result[
+        ResolvedArgumentDefinition, string] =
+  resolve_argument_definition_native(file, arg, module, some(generic))
+
+proc resolve_def(file: TypedFile, module: TypedUserModule,
+    arg: TypedArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  resolve_argument_definition_user(file, arg, module, none(TypedGeneric))
+
+proc resolve_def(file: TypedFile, module: TypedNativeModule,
+    arg: TypedArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  resolve_argument_definition_native(file, arg, module, none(TypedGeneric))
+
+proc resolve_def(file: TypedFile, arg: TypedArgumentDefinition): Result[
+    ResolvedArgumentDefinition, string] =
+  resolve_argument_definition_no_module(file, arg)
 
 type ResolvedUserFunctionDefinition = ref object of RootObj
   name: Identifier
@@ -489,49 +505,80 @@ proc c(def: ResolvedUserFunctionDefinition): string =
 
   fmt"{def.returns.c} {def.c_name}({args_str});"
 
-proc resolve_def(file: TypedFile, module: TypedUserModule,
-    generic: TypedGeneric, def: TypedFunctionDefinition): Result[
-        ResolvedUserFunctionDefinition, string] =
+# Helper for resolving TypedFunctionDefinition with TypedUserModule
+proc resolve_function_definition_user(file: TypedFile, def: TypedFunctionDefinition,
+    module: TypedUserModule, generic: Option[TypedGeneric]): Result[ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolved_arg = ? resolve_def(file, module, generic, arg)
+    let resolved_arg = if generic.is_some:
+      ? resolve_def(file, module, generic.get, arg)
+    else:
+      ? resolve_def(file, module, arg)
     resolved_args.add(resolved_arg)
-  let resolved_returns = ? resolve_def(file, module, generic, def.returns)
-  ok(new_resolved_function_definition(def.name, resolved_args,
-      resolved_returns, def.location, fmt"{module.name.asl}_{generic.name.asl}",
-      module.generics.len.uint64))
 
-proc resolve_def(file: TypedFile, module: TypedNativeModule,
-    generic: TypedGeneric, def: TypedFunctionDefinition): Result[
-        ResolvedUserFunctionDefinition, string] =
+  let resolved_returns = if generic.is_some:
+    ? resolve_def(file, module, generic.get, def.returns)
+  else:
+    ? resolve_def(file, module, def.returns)
+
+  let prefix = if generic.is_some:
+    fmt"{module.name.asl}_{generic.get.name.asl}"
+  else:
+    module.name.asl
+
+  ok(new_resolved_function_definition(def.name, resolved_args,
+      resolved_returns, def.location, prefix, module.generics.len.uint64))
+
+# Helper for resolving TypedFunctionDefinition with TypedNativeModule
+proc resolve_function_definition_native(file: TypedFile, def: TypedFunctionDefinition,
+    module: TypedNativeModule, generic: Option[TypedGeneric]): Result[ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolved_arg = ? resolve_def(file, module, generic, arg)
+    let resolved_arg = if generic.is_some:
+      ? resolve_def(file, module, generic.get, arg)
+    else:
+      ? resolve_def(file, module, arg)
     resolved_args.add(resolved_arg)
-  let resolved_returns = ? resolve_def(file, module, generic, def.returns)
-  ok(new_resolved_function_definition(def.name, resolved_args,
-      resolved_returns, def.location, fmt"{module.name.asl}_{generic.name.asl}",
-      module.generics.len.uint64))
 
-proc resolve_def(file: TypedFile, module: TypedUserModule,
-    def: TypedFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
-  var resolved_args: seq[ResolvedArgumentDefinition]
-  for arg in def.args:
-    let resolved_arg = ? resolve_def(file, module, arg)
-    resolved_args.add(resolved_arg)
-  let resolved_returns = ? resolve_def(file, module, def.returns)
-  ok(new_resolved_function_definition(def.name, resolved_args,
-      resolved_returns, def.location, module.name.asl,
-      module.generics.len.uint64))
+  let resolved_returns = if generic.is_some:
+    ? resolve_def(file, module, generic.get, def.returns)
+  else:
+    ? resolve_def(file, module, def.returns)
 
-proc resolve_def(file: TypedFile, def: TypedFunctionDefinition): Result[
-    ResolvedUserFunctionDefinition, string] =
+  let prefix = if generic.is_some:
+    fmt"{module.name.asl}_{generic.get.name.asl}"
+  else:
+    module.name.asl
+
+  ok(new_resolved_function_definition(def.name, resolved_args,
+      resolved_returns, def.location, prefix, module.generics.len.uint64))
+
+# Helper for resolving TypedFunctionDefinition without module
+proc resolve_function_definition_no_module(file: TypedFile, def: TypedFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let resolved_arg = ? resolve_def(file, arg)
     resolved_args.add(resolved_arg)
   let resolved_returns = ? resolve_def(file, def.returns)
   ok(new_resolved_function_definition(def.name, resolved_args, resolved_returns, def.location))
+
+proc resolve_def(file: TypedFile, module: TypedUserModule,
+    generic: TypedGeneric, def: TypedFunctionDefinition): Result[
+        ResolvedUserFunctionDefinition, string] =
+  resolve_function_definition_user(file, def, module, some(generic))
+
+proc resolve_def(file: TypedFile, module: TypedNativeModule,
+    generic: TypedGeneric, def: TypedFunctionDefinition): Result[
+        ResolvedUserFunctionDefinition, string] =
+  resolve_function_definition_native(file, def, module, some(generic))
+
+proc resolve_def(file: TypedFile, module: TypedUserModule,
+    def: TypedFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
+  resolve_function_definition_user(file, def, module, none(TypedGeneric))
+
+proc resolve_def(file: TypedFile, def: TypedFunctionDefinition): Result[
+    ResolvedUserFunctionDefinition, string] =
+  resolve_function_definition_no_module(file, def)
 
 type ResolvedGeneric = ref object of RootObj
   generic: TypedGeneric
@@ -586,21 +633,31 @@ proc find_function_defs(generic: ResolvedGeneric, name: Identifier,
   else:
     ok(generic.defs_map[name][arity])
 
-proc resolve_def(file: TypedFile, module: TypedUserModule,
-    generic: TypedGeneric): Result[ResolvedGeneric, string] =
+# Helper for resolving TypedGeneric with TypedUserModule
+proc resolve_generic_user(file: TypedFile, generic: TypedGeneric,
+    module: TypedUserModule): Result[ResolvedGeneric, string] =
   var resolved_defs: seq[ResolvedUserFunctionDefinition]
   for def in generic.defs:
     let resolved_def = ? resolve_def(file, module, generic, def)
     resolved_defs.add(resolved_def)
   ok(new_resolved_generic(generic, resolved_defs, generic.location))
 
-proc resolve_def(file: TypedFile, module: TypedNativeModule,
-    generic: TypedGeneric): Result[ResolvedGeneric, string] =
+# Helper for resolving TypedGeneric with TypedNativeModule
+proc resolve_generic_native(file: TypedFile, generic: TypedGeneric,
+    module: TypedNativeModule): Result[ResolvedGeneric, string] =
   var resolved_defs: seq[ResolvedUserFunctionDefinition]
   for def in generic.defs:
     let resolved_def = ? resolve_def(file, module, generic, def)
     resolved_defs.add(resolved_def)
   ok(new_resolved_generic(generic, resolved_defs, generic.location))
+
+proc resolve_def(file: TypedFile, module: TypedUserModule,
+    generic: TypedGeneric): Result[ResolvedGeneric, string] =
+  resolve_generic_user(file, generic, module)
+
+proc resolve_def(file: TypedFile, module: TypedNativeModule,
+    generic: TypedGeneric): Result[ResolvedGeneric, string] =
+  resolve_generic_native(file, generic, module)
 
 type
   ResolvedStructKind = enum
@@ -722,8 +779,9 @@ proc find_field(struct: ResolvedStruct, field: Identifier): Result[
   let field_index = ? struct.find_field_index(field)
   ok(struct.fields[field_index])
 
-proc resolve_def(file: TypedFile, module: TypedUserModule,
-    struct: TypedStruct): Result[ResolvedStruct, string] =
+# Helper for resolving TypedStruct with TypedUserModule
+proc resolve_struct_user(file: TypedFile, struct: TypedStruct,
+    module: TypedUserModule): Result[ResolvedStruct, string] =
   var resolved_fields: seq[ResolvedArgumentDefinition]
   for field in struct.fields:
     let resolved_field = ? resolve_def(file, module, field)
@@ -736,21 +794,30 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     let struct_name = ? struct.name
     ok(new_resolved_struct(struct, struct_name, resolved_fields,
         struct.location))
+
+# Helper for resolving TypedStruct with TypedNativeModule
+proc resolve_struct_native(file: TypedFile, struct: TypedStruct,
+    module: TypedNativeModule): Result[ResolvedStruct, string] =
+  var resolved_fields: seq[ResolvedArgumentDefinition]
+  for field in struct.fields:
+    let resolved_field = ? resolve_def(file, module, field)
+    resolved_fields.add(resolved_field)
+
+  case struct.kind:
+  of TSK_DEFAULT:
+    ok(new_resolved_struct(struct, resolved_fields, struct.location))
+  of TSK_NAMED:
+    let struct_name = ? struct.name
+    ok(new_resolved_struct(struct, struct_name, resolved_fields,
+        struct.location))
+
+proc resolve_def(file: TypedFile, module: TypedUserModule,
+    struct: TypedStruct): Result[ResolvedStruct, string] =
+  resolve_struct_user(file, struct, module)
 
 proc resolve_def(file: TypedFile, module: TypedNativeModule,
     struct: TypedStruct): Result[ResolvedStruct, string] =
-  var resolved_fields: seq[ResolvedArgumentDefinition]
-  for field in struct.fields:
-    let resolved_field = ? resolve_def(file, module, field)
-    resolved_fields.add(resolved_field)
-
-  case struct.kind:
-  of TSK_DEFAULT:
-    ok(new_resolved_struct(struct, resolved_fields, struct.location))
-  of TSK_NAMED:
-    let struct_name = ? struct.name
-    ok(new_resolved_struct(struct, struct_name, resolved_fields,
-        struct.location))
+  resolve_struct_native(file, struct, module)
 
 type ResolvedUserModuleDefinition = ref object of RootObj
   module: TypedUserModule
