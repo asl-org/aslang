@@ -787,30 +787,49 @@ proc assign_type(file: parser.File, module_ref: ModuleRef): Result[
     TypedModuleRef, string] =
   assign_type(file, none(UserModule), module_ref)
 
-proc assign_type(file: parser.File, module: UserModule, generic: Generic,
-    arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
+# Helper for ArgumentDefinition processing with UserModule
+proc process_argument_definition_user(file: parser.File,
+    arg: ArgumentDefinition,
+
+module: UserModule): Result[TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
+
+# Helper for ArgumentDefinition processing with NativeModule
+proc process_argument_definition_native(file: parser.File,
+    arg: ArgumentDefinition,
+
+module: NativeModule): Result[TypedArgumentDefinition, string] =
+  let typed_arg = ? assign_type(file, module, arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
+
+# Helper for ArgumentDefinition processing without module
+proc process_argument_definition_no_module(file: parser.File,
+    arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
+  let typed_arg = ? assign_type(file, arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
+
+proc assign_type(file: parser.File, module: UserModule, generic: Generic,
+    arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
+  # Note: generic parameter is not used, delegate to non-generic version
+  process_argument_definition_user(file, arg, module)
 
 proc assign_type(file: parser.File, module: NativeModule, generic: Generic,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  let typed_arg = ? assign_type(file, module, arg.module_ref)
-  ok(new_typed_argument_definition(typed_arg, arg.name))
+  # Note: generic parameter is not used, delegate to non-generic version
+  process_argument_definition_native(file, arg, module)
 
 proc assign_type(file: parser.File, module: UserModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  let typed_arg = ? assign_type(file, module, arg.module_ref)
-  ok(new_typed_argument_definition(typed_arg, arg.name))
+  process_argument_definition_user(file, arg, module)
 
 proc assign_type(file: parser.File, module: NativeModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  let typed_arg = ? assign_type(file, module, arg.module_ref)
-  ok(new_typed_argument_definition(typed_arg, arg.name))
+  process_argument_definition_native(file, arg, module)
 
 proc assign_type(file: parser.File, arg: ArgumentDefinition): Result[
     TypedArgumentDefinition, string] =
-  let typed_arg = ? assign_type(file, arg.module_ref)
-  ok(new_typed_argument_definition(typed_arg, arg.name))
+  process_argument_definition_no_module(file, arg)
 
 # Helper function to process function definition with UserModule
 proc process_function_definition_user(file: parser.File,
@@ -953,33 +972,43 @@ proc assign_type(file: parser.File, init: Initializer): Result[
     TypedInitializer, string] =
   process_initializer(file, init, none(UserModule))
 
-proc assign_type(file: parser.File, module: UserModule,
-    fnref: FunctionRef, arity: uint): Result[TypedFunctionRef, string] =
+# Helper for FunctionRef processing
+proc process_function_ref(file: parser.File, fnref: FunctionRef, arity: uint,
+    module: Option[UserModule]): Result[TypedFunctionRef, string] =
   case fnref.kind:
   of FRK_LOCAL:
     ok(new_typed_function_ref(fnref.name, arity))
   of FRK_MODULE:
-    let module_ref = ? assign_type(file, module, ? fnref.module)
+    let module_ref = if module.is_some:
+      ? assign_type(file, module.get, ? fnref.module)
+    else:
+      ? assign_type(file, ? fnref.module)
     ok(new_typed_function_ref(module_ref, fnref.name, arity))
+
+proc assign_type(file: parser.File, module: UserModule,
+    fnref: FunctionRef, arity: uint): Result[TypedFunctionRef, string] =
+  process_function_ref(file, fnref, arity, some(module))
 
 proc assign_type(file: parser.File, fnref: FunctionRef, arity: uint): Result[
     TypedFunctionRef, string] =
-  case fnref.kind:
-  of FRK_LOCAL:
-    ok(new_typed_function_ref(fnref.name, arity))
-  of FRK_MODULE:
-    let module_ref = ? assign_type(file, ? fnref.module)
-    ok(new_typed_function_ref(module_ref, fnref.name, arity))
+  process_function_ref(file, fnref, arity, none(UserModule))
+
+# Helper for FunctionCall processing
+proc process_function_call(file: parser.File, fncall: FunctionCall,
+    module: Option[UserModule]): Result[TypedFunctionCall, string] =
+  let fnref = if module.is_some:
+    ? assign_type(file, module.get, fncall.fnref, fncall.args.len.uint)
+  else:
+    ? assign_type(file, fncall.fnref, fncall.args.len.uint)
+  ok(new_typed_function_call(fnref, fncall.args))
 
 proc assign_type(file: parser.File, module: UserModule,
     fncall: FunctionCall): Result[TypedFunctionCall, string] =
-  let fnref = ? assign_type(file, module, fncall.fnref, fncall.args.len.uint)
-  ok(new_typed_function_call(fnref, fncall.args))
+  process_function_call(file, fncall, some(module))
 
 proc assign_type(file: parser.File, fncall: FunctionCall): Result[
     TypedFunctionCall, string] =
-  let fnref = ? assign_type(file, fncall.fnref, fncall.args.len.uint)
-  ok(new_typed_function_call(fnref, fncall.args))
+  process_function_call(file, fncall, none(UserModule))
 
 # Forward Declaration needed due to cyclic dependencies
 proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
@@ -1163,47 +1192,67 @@ proc find_function*(generic: TypedGeneric,
   else:
     err(fmt"failed to find function `{def.asl}`")
 
-proc assign_type(file: parser.File, module: UserModule,
-    generic: Generic, id: uint64): Result[TypedGeneric, string] =
+# Helper for generic processing with UserModule
+proc process_generic_user(file: parser.File, generic: Generic, id: uint64,
+    module: UserModule): Result[TypedGeneric, string] =
   var typed_defs: seq[TypedFunctionDefinition]
   for def in generic.defs:
     let typed_def = ? assign_type(file, module, generic, def)
     typed_defs.add(typed_def)
   ok(new_typed_generic(id, generic, typed_defs, generic.location))
+
+# Helper for generic processing with NativeModule
+proc process_generic_native(file: parser.File, generic: Generic, id: uint64,
+    module: NativeModule): Result[TypedGeneric, string] =
+  var typed_defs: seq[TypedFunctionDefinition]
+  for def in generic.defs:
+    let typed_def = ? assign_type(file, module, generic, def)
+    typed_defs.add(typed_def)
+  ok(new_typed_generic(id, generic, typed_defs, generic.location))
+
+proc assign_type(file: parser.File, module: UserModule,
+    generic: Generic, id: uint64): Result[TypedGeneric, string] =
+  process_generic_user(file, generic, id, module)
 
 proc assign_type(file: parser.File, module: NativeModule,
     generic: Generic, id: uint64): Result[TypedGeneric, string] =
-  var typed_defs: seq[TypedFunctionDefinition]
-  for def in generic.defs:
-    let typed_def = ? assign_type(file, module, generic, def)
-    typed_defs.add(typed_def)
-  ok(new_typed_generic(id, generic, typed_defs, generic.location))
+  process_generic_native(file, generic, id, module)
+
+# Helper for struct processing with UserModule
+proc process_struct_user(file: parser.File, struct: Struct, id: uint64,
+    module: UserModule): Result[TypedStruct, string] =
+  var typed_fields: seq[TypedArgumentDefinition]
+  for field in struct.fields:
+    let typed_field = ? assign_type(file, module, field)
+    typed_fields.add(typed_field)
+  case struct.def.kind:
+  of SDK_DEFAULT:
+    ok(new_typed_struct(id, typed_fields, struct.location))
+  of SDK_NAMED:
+    let struct_name = ? struct.name
+    ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
+
+# Helper for struct processing with NativeModule
+proc process_struct_native(file: parser.File, struct: Struct, id: uint64,
+    module: NativeModule): Result[TypedStruct, string] =
+  var typed_fields: seq[TypedArgumentDefinition]
+  for field in struct.fields:
+    let typed_field = ? assign_type(file, module, field)
+    typed_fields.add(typed_field)
+  case struct.def.kind:
+  of SDK_DEFAULT:
+    ok(new_typed_struct(id, typed_fields, struct.location))
+  of SDK_NAMED:
+    let struct_name = ? struct.name
+    ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
 
 proc assign_type(file: parser.File, module: UserModule, struct: Struct,
     id: uint64): Result[TypedStruct, string] =
-  var typed_fields: seq[TypedArgumentDefinition]
-  for field in struct.fields:
-    let typed_field = ? assign_type(file, module, field)
-    typed_fields.add(typed_field)
-  case struct.def.kind:
-  of SDK_DEFAULT:
-    ok(new_typed_struct(id, typed_fields, struct.location))
-  of SDK_NAMED:
-    let struct_name = ? struct.name
-    ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
+  process_struct_user(file, struct, id, module)
 
 proc assign_type(file: parser.File, module: NativeModule, struct: Struct,
     id: uint64): Result[TypedStruct, string] =
-  var typed_fields: seq[TypedArgumentDefinition]
-  for field in struct.fields:
-    let typed_field = ? assign_type(file, module, field)
-    typed_fields.add(typed_field)
-  case struct.def.kind:
-  of SDK_DEFAULT:
-    ok(new_typed_struct(id, typed_fields, struct.location))
-  of SDK_NAMED:
-    let struct_name = ? struct.name
-    ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
+  process_struct_native(file, struct, id, module)
 
 type TypedUserModule* = ref object of RootObj
   id: uint64
