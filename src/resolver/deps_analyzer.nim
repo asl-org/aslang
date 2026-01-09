@@ -947,49 +947,34 @@ proc assign_type(file: parser.File, fncall: FunctionCall): Result[
 proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
     TypedMatch, string]
 
-proc assign_type(file: parser.File, module: UserModule,
-    expression: Expression): Result[TypedExpression, string] =
-  case expression.kind:
-  of EK_MATCH:
-    let match = ? expression.match
-    let typed_match = ? assign_type(file, module, match)
-    ok(new_typed_expression(typed_match))
-  of EK_FNCALL:
-    let fncall = ? expression.fncall
-    let typed_fncall = ? assign_type(file, module, fncall)
-    ok(new_typed_expression(typed_fncall))
-  of EK_INIT:
-    let init = ? expression.init
-    let typed_init = ? assign_type(file, module, init)
-    ok(new_typed_expression(typed_init))
-  of EK_STRUCT_GET:
-    let struct_get = ? expression.struct_get
-    let typed_struct_get = new_typed_struct_get(struct_get.name,
-        struct_get.field)
-    ok(new_typed_expression(typed_struct_get))
-  of EK_VARIABLE:
-    let variable = ? expression.variable
-    let typed_variable = new_typed_variable(variable)
-    ok(new_typed_expression(typed_variable))
-
 # Forward Declaration needed due to cyclic dependencies
 proc assign_type(file: parser.File, match: Match): Result[
     TypedMatch, string]
 
-proc assign_type(file: parser.File, expression: Expression): Result[
-    TypedExpression, string] =
+# Helper function to handle expression case statement with optional module
+proc assign_type_expression_helper(file: parser.File, expression: Expression,
+    module: Option[UserModule]): Result[TypedExpression, string] =
   case expression.kind:
   of EK_MATCH:
     let match = ? expression.match
-    let typed_match = ? assign_type(file, match)
+    let typed_match = if module.is_some:
+      ? assign_type(file, module.get, match)
+    else:
+      ? assign_type(file, match)
     ok(new_typed_expression(typed_match))
   of EK_FNCALL:
     let fncall = ? expression.fncall
-    let typed_fncall = ? assign_type(file, fncall)
+    let typed_fncall = if module.is_some:
+      ? assign_type(file, module.get, fncall)
+    else:
+      ? assign_type(file, fncall)
     ok(new_typed_expression(typed_fncall))
   of EK_INIT:
     let init = ? expression.init
-    let typed_init = ? assign_type(file, init)
+    let typed_init = if module.is_some:
+      ? assign_type(file, module.get, init)
+    else:
+      ? assign_type(file, init)
     ok(new_typed_expression(typed_init))
   of EK_STRUCT_GET:
     let struct_get = ? expression.struct_get
@@ -1000,6 +985,14 @@ proc assign_type(file: parser.File, expression: Expression): Result[
     let variable = ? expression.variable
     let typed_variable = new_typed_variable(variable)
     ok(new_typed_expression(typed_variable))
+
+proc assign_type(file: parser.File, module: UserModule,
+    expression: Expression): Result[TypedExpression, string] =
+  assign_type_expression_helper(file, expression, some(module))
+
+proc assign_type(file: parser.File, expression: Expression): Result[
+    TypedExpression, string] =
+  assign_type_expression_helper(file, expression, none(UserModule))
 
 proc assign_type(file: parser.File, module: UserModule,
     statement: Statement): Result[TypedStatement, string] =
@@ -1011,90 +1004,82 @@ proc assign_type(file: parser.File, statement: Statement): Result[
   let typed_expression = ? assign_type(file, statement.expression)
   ok(new_typed_statement(statement.arg, typed_expression))
 
+# Helper function to process statements with optional module
+proc process_statements(file: parser.File, statements: seq[Statement],
+    module: Option[UserModule]): Result[seq[TypedStatement], string] =
+  var typed_statements: seq[TypedStatement]
+  for statement in statements:
+    let typed_statement = if module.is_some:
+      ? assign_type(file, module.get, statement)
+    else:
+      ? assign_type(file, statement)
+    typed_statements.add(typed_statement)
+  ok(typed_statements)
+
 proc assign_type(file: parser.File, module: UserModule,
     case_block: Case): Result[TypedCase, string] =
-  var typed_statements: seq[TypedStatement]
-  for statement in case_block.statements:
-    let typed_statement = ? assign_type(file, module, statement)
-    typed_statements.add(typed_statement)
+  let typed_statements = ? process_statements(file, case_block.statements, some(module))
   ok(new_typed_case(case_block.def.pattern, typed_statements,
       case_block.def.location))
 
 proc assign_type(file: parser.File, case_block: Case): Result[
     TypedCase, string] =
-  var typed_statements: seq[TypedStatement]
-  for statement in case_block.statements:
-    let typed_statement = ? assign_type(file, statement)
-    typed_statements.add(typed_statement)
+  let typed_statements = ? process_statements(file, case_block.statements, none(UserModule))
   ok(new_typed_case(case_block.def.pattern, typed_statements,
       case_block.def.location))
 
 proc assign_type(file: parser.File, module: UserModule,
     else_block: Else): Result[TypedElse, string] =
-  var typed_statements: seq[TypedStatement]
-  for statement in else_block.statements:
-    let typed_statement = ? assign_type(file, module, statement)
-    typed_statements.add(typed_statement)
+  let typed_statements = ? process_statements(file, else_block.statements, some(module))
   ok(new_typed_else(typed_statements, else_block.location))
 
 proc assign_type(file: parser.File, else_block: Else): Result[
     TypedElse, string] =
-  var typed_statements: seq[TypedStatement]
-  for statement in else_block.statements:
-    let typed_statement = ? assign_type(file, statement)
-    typed_statements.add(typed_statement)
+  let typed_statements = ? process_statements(file, else_block.statements, none(UserModule))
   ok(new_typed_else(typed_statements, else_block.location))
+
+# Helper function to process match with optional module
+proc process_match(file: parser.File, match: Match,
+    module: Option[UserModule]): Result[TypedMatch, string] =
+  var typed_cases: seq[TypedCase]
+  for case_block in match.case_blocks:
+    let typed_case = if module.is_some:
+      ? assign_type(file, module.get, case_block)
+    else:
+      ? assign_type(file, case_block)
+    typed_cases.add(typed_case)
+
+  case match.kind:
+  of MK_CASE_ONLY:
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        match.def.location))
+  of MK_COMPLETE:
+    let else_block = ? match.else_block
+    let typed_else = if module.is_some:
+      ? assign_type(file, module.get, else_block)
+    else:
+      ? assign_type(file, else_block)
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        typed_else, match.def.location))
 
 proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
     TypedMatch, string] =
-  var typed_cases: seq[TypedCase]
-  for case_block in match.case_blocks:
-    let typed_case = ? assign_type(file, module, case_block)
-    typed_cases.add(typed_case)
-
-  case match.kind:
-  of MK_CASE_ONLY:
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
-        match.def.location))
-  of MK_COMPLETE:
-    let else_block = ? match.else_block
-    let typed_else = ? assign_type(file, module, else_block)
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
-        typed_else, match.def.location))
+  process_match(file, match, some(module))
 
 proc assign_type(file: parser.File, match: Match): Result[
     TypedMatch, string] =
-  var typed_cases: seq[TypedCase]
-  for case_block in match.case_blocks:
-    let typed_case = ? assign_type(file, case_block)
-    typed_cases.add(typed_case)
-
-  case match.kind:
-  of MK_CASE_ONLY:
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
-        match.def.location))
-  of MK_COMPLETE:
-    let else_block = ? match.else_block
-    let typed_else = ? assign_type(file, else_block)
-    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
-        typed_else, match.def.location))
+  process_match(file, match, none(UserModule))
 
 proc assign_type(file: parser.File, module: UserModule,
     function: Function): Result[TypedFunction, string] =
   let typed_def = ? assign_type(file, module, function.def)
-  var typed_steps: seq[TypedStatement]
-  for step in function.steps:
-    let typed_step = ? assign_type(file, module, step)
-    typed_steps.add(typed_step)
+  let typed_steps = ? process_statements(file, function.steps, some(module))
   ok(new_typed_function(typed_def, typed_steps))
 
 proc assign_type(file: parser.File, function: Function): Result[
     TypedFunction, string] =
   let typed_def = ? assign_type(file, function.def)
-  var typed_steps: seq[TypedStatement]
-  for step in function.steps:
-    let typed_step = ? assign_type(file, step)
-    typed_steps.add(typed_step)
+  let typed_steps = ? process_statements(file, function.steps, none(UserModule))
   ok(new_typed_function(typed_def, typed_steps))
 
 type TypedGeneric* = ref object of RootObj
