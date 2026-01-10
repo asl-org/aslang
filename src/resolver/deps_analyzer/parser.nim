@@ -2209,7 +2209,7 @@ type
 proc new_module*(native: NativeModule): Module =
   Module(kind: MK_NATIVE, native: native)
 
-proc new_module(user: UserModule): Module =
+proc new_module*(user: UserModule): Module =
   Module(kind: MK_USER, user: user)
 
 proc kind*(module: Module): ModuleKind = module.kind
