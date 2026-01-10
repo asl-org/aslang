@@ -685,16 +685,18 @@ proc module_deps(function: TypedFunction): HashSet[UserModule] =
 proc def*(function: TypedFunction): TypedFunctionDefinition = function.def
 proc steps*(function: TypedFunction): seq[TypedStatement] = function.steps
 
-# Generic helper for assign_type with optional module (works with both UserModule and NativeModule)
-proc assign_type_optional_module[T](file: parser.File, optional_module: Option[
-    T], module_name: Identifier): Result[TypedModuleRef, string] =
-  # NOTE: For handling generics that are only defined in a module
-  if optional_module.is_some:
-    let module = optional_module.get
-    let maybe_arg_generic = module.find_generic(module_name)
-    if maybe_arg_generic.is_ok:
-      return ok(new_typed_module_ref(maybe_arg_generic.get,
-          module_name.location))
+# Main helpers using Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    module_name: Identifier): Result[TypedModuleRef, string] =
+  let maybe_arg_generic = case module.kind:
+    of parser.MK_USER:
+      let user_module = ? module.user_module
+      user_module.find_generic(module_name)
+    of parser.MK_NATIVE:
+      let native_module = ? module.native_module
+      native_module.find_generic(module_name)
+  if maybe_arg_generic.is_ok:
+    return ok(new_typed_module_ref(maybe_arg_generic.get, module_name.location))
 
   let arg_module = ? file.find_module(module_name)
   case arg_module.kind:
@@ -705,19 +707,15 @@ proc assign_type_optional_module[T](file: parser.File, optional_module: Option[
     let user_module = ? arg_module.user_module
     ok(new_typed_module_ref(user_module, module_name.location))
 
-proc assign_type(file: parser.File, optional_module: Option[UserModule],
-    module_name: Identifier): Result[TypedModuleRef, string] =
-  assign_type_optional_module(file, optional_module, module_name)
+# Forward declaration for no-module variant
+proc assign_type(file: parser.File, module_name: Identifier): Result[
+    TypedModuleRef, string]
 
-proc assign_type(file: parser.File, optional_module: Option[NativeModule],
-    module_name: Identifier): Result[TypedModuleRef, string] =
-  assign_type_optional_module(file, optional_module, module_name)
-
-# Generic helper for assign_type with optional module and module_ref (works with both UserModule and NativeModule)
-proc assign_type_optional_module_ref[T](file: parser.File,
-    optional_module: Option[T], module_ref: ModuleRef): Result[TypedModuleRef, string] =
+proc assign_type(file: parser.File, module: parser.Module,
+    module_ref: ModuleRef): Result[TypedModuleRef, string] =
   case module_ref.kind:
-  of MRK_SIMPLE: assign_type(file, optional_module, module_ref.module)
+  of MRK_SIMPLE:
+    assign_type(file, module, module_ref.module)
   of MRK_NESTED:
     let arg_module = ? file.find_module(module_ref.module)
     case arg_module.kind:
@@ -725,7 +723,7 @@ proc assign_type_optional_module_ref[T](file: parser.File,
       let native_module = ? arg_module.native_module
       var typed_children: seq[TypedModuleRef]
       for child in module_ref.children:
-        let typed_child = ? assign_type(file, optional_module, child)
+        let typed_child = ? assign_type(file, module, child)
         typed_children.add(typed_child)
       ok(new_typed_module_ref(native_module, typed_children,
           module_ref.location))
@@ -733,47 +731,54 @@ proc assign_type_optional_module_ref[T](file: parser.File,
       let user_module = ? arg_module.user_module
       var typed_children: seq[TypedModuleRef]
       for child in module_ref.children:
-        let typed_child = ? assign_type(file, optional_module, child)
+        let typed_child = ? assign_type(file, module, child)
         typed_children.add(typed_child)
       ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
-
-# Helper to convert Module to Option[UserModule] for assign_type_optional_module_ref
-proc to_option_user_module(module: parser.Module): Option[UserModule] =
-  case module.kind:
-  of parser.MK_USER:
-    let user_module = module.user_module
-    if user_module.is_ok: some(user_module.get)
-    else: none(UserModule)
-  of parser.MK_NATIVE: none(UserModule)
-
-proc assign_type(file: parser.File, optional_module: Option[UserModule],
-    module_ref: ModuleRef): Result[TypedModuleRef, string] =
-  assign_type_optional_module_ref(file, optional_module, module_ref)
-
-proc assign_type(file: parser.File, optional_module: Option[NativeModule],
-    module_ref: ModuleRef): Result[TypedModuleRef, string] =
-  assign_type_optional_module_ref(file, optional_module, module_ref)
-
-# Main function accepting Module type - delegates to UserModule version since assign_type_optional_module_ref works with UserModule
-proc assign_type(file: parser.File, module: parser.Module,
-    module_ref: ModuleRef): Result[TypedModuleRef, string] =
-  assign_type(file, to_option_user_module(module), module_ref)
 
 # Keep UserModule/NativeModule versions as thin wrappers that convert to Module
 proc assign_type(file: parser.File, module: UserModule,
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
-  # Use the Module-based version - need to create Module wrapper
-  # Since new_module(user) is not exported, we'll just call the Option version directly
-  assign_type(file, some(module), module_ref)
+  assign_type(file, parser.new_module(module), module_ref)
 
 proc assign_type(file: parser.File, module: NativeModule,
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
-  # Call the Option[NativeModule] version
-  assign_type(file, some(module), module_ref)
+  assign_type(file, parser.new_module(module), module_ref)
 
 proc assign_type(file: parser.File, module_ref: ModuleRef): Result[
     TypedModuleRef, string] =
-  assign_type(file, none(UserModule), module_ref)
+  case module_ref.kind:
+  of MRK_SIMPLE:
+    assign_type(file, module_ref.module)
+  of MRK_NESTED:
+    let arg_module = ? file.find_module(module_ref.module)
+    case arg_module.kind:
+    of MK_NATIVE:
+      let native_module = ? arg_module.native_module
+      var typed_children: seq[TypedModuleRef]
+      for child in module_ref.children:
+        let typed_child = ? assign_type(file, child)
+        typed_children.add(typed_child)
+      ok(new_typed_module_ref(native_module, typed_children,
+          module_ref.location))
+    of MK_USER:
+      let user_module = ? arg_module.user_module
+      var typed_children: seq[TypedModuleRef]
+      for child in module_ref.children:
+        let typed_child = ? assign_type(file, child)
+        typed_children.add(typed_child)
+      ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
+
+# No-module context for module name
+proc assign_type(file: parser.File, module_name: Identifier): Result[
+    TypedModuleRef, string] =
+  let arg_module = ? file.find_module(module_name)
+  case arg_module.kind:
+  of MK_NATIVE:
+    let native_module = ? arg_module.native_module
+    ok(new_typed_module_ref(native_module, module_name.location))
+  of MK_USER:
+    let user_module = ? arg_module.user_module
+    ok(new_typed_module_ref(user_module, module_name.location))
 
 # Helper for ArgumentDefinition processing with Module
 proc process_argument_definition_module(file: parser.File,
@@ -803,51 +808,32 @@ proc assign_type(file: parser.File, module: parser.Module,
 proc assign_type(file: parser.File, module: UserModule, generic: Generic,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
   # Note: generic parameter is not used, call Module version directly
-  # Convert UserModule to Module by using Option path
-  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  let typed_arg = ? assign_type(file, parser.new_module(module), arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, module: NativeModule, generic: Generic,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
   # Note: generic parameter is not used, call Module version directly
-  # Use Option[NativeModule] path directly
-  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  let typed_arg = ? assign_type(file, parser.new_module(module), arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, module: UserModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  # Use Option[UserModule] path - convert to Module first via helper
-  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  let typed_arg = ? assign_type(file, parser.new_module(module), arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, module: NativeModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  # Use Option[NativeModule] path directly
-  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  let typed_arg = ? assign_type(file, parser.new_module(module), arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, arg: ArgumentDefinition): Result[
     TypedArgumentDefinition, string] =
   process_argument_definition_no_module(file, arg)
 
-# Helper function to process function definition with UserModule
-proc process_function_definition_user(file: parser.File,
-    def: FunctionDefinition, module: UserModule, generic: Option[
-        Generic]): Result[TypedFunctionDefinition, string] =
-  var typed_args: seq[TypedArgumentDefinition]
-  for arg in def.args:
-    let typed_arg = if generic.is_some:
-      ? assign_type(file, module, generic.get, arg)
-    else:
-      ? assign_type(file, module, arg)
-    typed_args.add(typed_arg)
-
-  let typed_return = ? assign_type(file, module, def.returns)
-  ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
-
-# Helper function to process function definition with NativeModule
-proc process_function_definition_native(file: parser.File,
-    def: FunctionDefinition, module: NativeModule, generic: Option[
+# Helper function to process function definition with Module
+proc process_function_definition_module(file: parser.File,
+    def: FunctionDefinition, module: parser.Module, generic: Option[
         Generic]): Result[TypedFunctionDefinition, string] =
   var typed_args: seq[TypedArgumentDefinition]
   for arg in def.args:
@@ -871,21 +857,31 @@ proc process_function_definition_no_module(file: parser.File,
   let typed_return = ? assign_type(file, def.returns)
   ok(new_typed_function_definition(def.name, typed_args, typed_return, def.location))
 
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module, generic: Generic,
+    def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
+  process_function_definition_module(file, def, module, some(generic))
+
+proc assign_type(file: parser.File, module: parser.Module,
+    def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
+  process_function_definition_module(file, def, module, none(Generic))
+
+# Keep UserModule and NativeModule versions as thin wrappers
 proc assign_type(file: parser.File, module: UserModule, generic: Generic,
     def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
-  process_function_definition_user(file, def, module, some(generic))
+  assign_type(file, parser.new_module(module), generic, def)
 
 proc assign_type(file: parser.File, module: NativeModule, generic: Generic,
     def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
-  process_function_definition_native(file, def, module, some(generic))
+  assign_type(file, parser.new_module(module), generic, def)
 
 proc assign_type(file: parser.File, module: UserModule,
     def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
-  process_function_definition_user(file, def, module, none(Generic))
+  assign_type(file, parser.new_module(module), def)
 
 proc assign_type(file: parser.File, module: NativeModule,
     def: FunctionDefinition): Result[TypedFunctionDefinition, string] =
-  process_function_definition_native(file, def, module, none(Generic))
+  assign_type(file, parser.new_module(module), def)
 
 proc assign_type(file: parser.File, def: FunctionDefinition): Result[
     TypedFunctionDefinition, string] =
@@ -1074,6 +1070,10 @@ proc assign_type(file: parser.File, fncall: FunctionCall): Result[
   process_function_call_no_module(file, fncall)
 
 # Forward Declaration needed due to cyclic dependencies
+proc assign_type(file: parser.File, module: parser.Module,
+    match: Match): Result[TypedMatch, string]
+
+# Forward Declaration needed due to cyclic dependencies
 proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
     TypedMatch, string]
 
@@ -1081,30 +1081,21 @@ proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
 proc assign_type(file: parser.File, match: Match): Result[
     TypedMatch, string]
 
-# Helper function to handle expression case statement with optional module
-proc assign_type_expression_helper(file: parser.File, expression: Expression,
-    module: Option[UserModule]): Result[TypedExpression, string] =
+# Helper function to handle expression case statement with Module
+proc assign_type_expression_module(file: parser.File, expression: Expression,
+    module: parser.Module): Result[TypedExpression, string] =
   case expression.kind:
   of EK_MATCH:
     let match = ? expression.match
-    let typed_match = if module.is_some:
-      ? assign_type(file, module.get, match)
-    else:
-      ? assign_type(file, match)
+    let typed_match = ? assign_type(file, module, match)
     ok(new_typed_expression(typed_match))
   of EK_FNCALL:
     let fncall = ? expression.fncall
-    let typed_fncall = if module.is_some:
-      ? assign_type(file, module.get, fncall)
-    else:
-      ? assign_type(file, fncall)
+    let typed_fncall = ? assign_type(file, module, fncall)
     ok(new_typed_expression(typed_fncall))
   of EK_INIT:
     let init = ? expression.init
-    let typed_init = if module.is_some:
-      ? assign_type(file, module.get, init)
-    else:
-      ? assign_type(file, init)
+    let typed_init = ? assign_type(file, module, init)
     ok(new_typed_expression(typed_init))
   of EK_STRUCT_GET:
     let struct_get = ? expression.struct_get
@@ -1116,67 +1107,124 @@ proc assign_type_expression_helper(file: parser.File, expression: Expression,
     let typed_variable = new_typed_variable(variable)
     ok(new_typed_expression(typed_variable))
 
+# Helper function to handle expression case statement without module
+proc assign_type_expression_no_module(file: parser.File,
+    expression: Expression): Result[TypedExpression, string] =
+  case expression.kind:
+  of EK_MATCH:
+    let match = ? expression.match
+    let typed_match = ? assign_type(file, match)
+    ok(new_typed_expression(typed_match))
+  of EK_FNCALL:
+    let fncall = ? expression.fncall
+    let typed_fncall = ? assign_type(file, fncall)
+    ok(new_typed_expression(typed_fncall))
+  of EK_INIT:
+    let init = ? expression.init
+    let typed_init = ? assign_type(file, init)
+    ok(new_typed_expression(typed_init))
+  of EK_STRUCT_GET:
+    let struct_get = ? expression.struct_get
+    let typed_struct_get = new_typed_struct_get(struct_get.name,
+        struct_get.field)
+    ok(new_typed_expression(typed_struct_get))
+  of EK_VARIABLE:
+    let variable = ? expression.variable
+    let typed_variable = new_typed_variable(variable)
+    ok(new_typed_expression(typed_variable))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    expression: Expression): Result[TypedExpression, string] =
+  assign_type_expression_module(file, expression, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     expression: Expression): Result[TypedExpression, string] =
-  assign_type_expression_helper(file, expression, some(module))
+  assign_type(file, parser.new_module(module), expression)
 
 proc assign_type(file: parser.File, expression: Expression): Result[
     TypedExpression, string] =
-  assign_type_expression_helper(file, expression, none(UserModule))
+  assign_type_expression_no_module(file, expression)
 
-proc assign_type(file: parser.File, module: UserModule,
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
     statement: Statement): Result[TypedStatement, string] =
   let typed_expression = ? assign_type(file, module, statement.expression)
   ok(new_typed_statement(statement.arg, typed_expression))
+
+# Keep UserModule version as thin wrapper that converts to Module
+proc assign_type(file: parser.File, module: UserModule,
+    statement: Statement): Result[TypedStatement, string] =
+  assign_type(file, parser.new_module(module), statement)
 
 proc assign_type(file: parser.File, statement: Statement): Result[
     TypedStatement, string] =
   let typed_expression = ? assign_type(file, statement.expression)
   ok(new_typed_statement(statement.arg, typed_expression))
 
-# Helper function to process statements with optional module
-proc process_statements(file: parser.File, statements: seq[Statement],
-    module: Option[UserModule]): Result[seq[TypedStatement], string] =
+# Helper function to process statements with Module
+proc process_statements_module(file: parser.File, statements: seq[Statement],
+    module: parser.Module): Result[seq[TypedStatement], string] =
   var typed_statements: seq[TypedStatement]
   for statement in statements:
-    let typed_statement = if module.is_some:
-      ? assign_type(file, module.get, statement)
-    else:
-      ? assign_type(file, statement)
+    let typed_statement = ? assign_type(file, module, statement)
     typed_statements.add(typed_statement)
   ok(typed_statements)
 
-proc assign_type(file: parser.File, module: UserModule,
+# Helper function to process statements without module
+proc process_statements_no_module(file: parser.File, statements: seq[
+    Statement]): Result[seq[TypedStatement], string] =
+  var typed_statements: seq[TypedStatement]
+  for statement in statements:
+    let typed_statement = ? assign_type(file, statement)
+    typed_statements.add(typed_statement)
+  ok(typed_statements)
+
+# Main function accepting Module type for Case
+proc assign_type(file: parser.File, module: parser.Module,
     case_block: Case): Result[TypedCase, string] =
-  let typed_statements = ? process_statements(file, case_block.statements, some(module))
+  let typed_statements = ? process_statements_module(file,
+      case_block.statements, module)
   ok(new_typed_case(case_block.def.pattern, typed_statements,
       case_block.def.location))
+
+# Keep UserModule version as thin wrapper that converts to Module
+proc assign_type(file: parser.File, module: UserModule,
+    case_block: Case): Result[TypedCase, string] =
+  assign_type(file, parser.new_module(module), case_block)
 
 proc assign_type(file: parser.File, case_block: Case): Result[
     TypedCase, string] =
-  let typed_statements = ? process_statements(file, case_block.statements, none(UserModule))
+  let typed_statements = ? process_statements_no_module(file,
+      case_block.statements)
   ok(new_typed_case(case_block.def.pattern, typed_statements,
       case_block.def.location))
 
+# Main function accepting Module type for Else
+proc assign_type(file: parser.File, module: parser.Module,
+    else_block: Else): Result[TypedElse, string] =
+  let typed_statements = ? process_statements_module(file,
+      else_block.statements, module)
+  ok(new_typed_else(typed_statements, else_block.location))
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     else_block: Else): Result[TypedElse, string] =
-  let typed_statements = ? process_statements(file, else_block.statements, some(module))
-  ok(new_typed_else(typed_statements, else_block.location))
+  assign_type(file, parser.new_module(module), else_block)
 
 proc assign_type(file: parser.File, else_block: Else): Result[
     TypedElse, string] =
-  let typed_statements = ? process_statements(file, else_block.statements, none(UserModule))
+  let typed_statements = ? process_statements_no_module(file,
+      else_block.statements)
   ok(new_typed_else(typed_statements, else_block.location))
 
-# Helper function to process match with optional module
-proc process_match(file: parser.File, match: Match,
-    module: Option[UserModule]): Result[TypedMatch, string] =
+# Helper function to process match with Module
+proc process_match_module(file: parser.File, match: Match,
+    module: parser.Module): Result[TypedMatch, string] =
   var typed_cases: seq[TypedCase]
   for case_block in match.case_blocks:
-    let typed_case = if module.is_some:
-      ? assign_type(file, module.get, case_block)
-    else:
-      ? assign_type(file, case_block)
+    let typed_case = ? assign_type(file, module, case_block)
     typed_cases.add(typed_case)
 
   case match.kind:
@@ -1185,31 +1233,58 @@ proc process_match(file: parser.File, match: Match,
         match.def.location))
   of MK_COMPLETE:
     let else_block = ? match.else_block
-    let typed_else = if module.is_some:
-      ? assign_type(file, module.get, else_block)
-    else:
-      ? assign_type(file, else_block)
+    let typed_else = ? assign_type(file, module, else_block)
     ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
         typed_else, match.def.location))
 
+# Helper function to process match without module
+proc process_match_no_module(file: parser.File, match: Match): Result[
+    TypedMatch, string] =
+  var typed_cases: seq[TypedCase]
+  for case_block in match.case_blocks:
+    let typed_case = ? assign_type(file, case_block)
+    typed_cases.add(typed_case)
+
+  case match.kind:
+  of MK_CASE_ONLY:
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        match.def.location))
+  of MK_COMPLETE:
+    let else_block = ? match.else_block
+    let typed_else = ? assign_type(file, else_block)
+    ok(new_typed_match(match.def.operand, match.def.arg, typed_cases,
+        typed_else, match.def.location))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    match: Match): Result[TypedMatch, string] =
+  process_match_module(file, match, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
     TypedMatch, string] =
-  process_match(file, match, some(module))
+  assign_type(file, parser.new_module(module), match)
 
 proc assign_type(file: parser.File, match: Match): Result[
     TypedMatch, string] =
-  process_match(file, match, none(UserModule))
+  process_match_no_module(file, match)
 
-proc assign_type(file: parser.File, module: UserModule,
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
     function: Function): Result[TypedFunction, string] =
   let typed_def = ? assign_type(file, module, function.def)
-  let typed_steps = ? process_statements(file, function.steps, some(module))
+  let typed_steps = ? process_statements_module(file, function.steps, module)
   ok(new_typed_function(typed_def, typed_steps))
+
+# Keep UserModule version as thin wrapper that converts to Module
+proc assign_type(file: parser.File, module: UserModule,
+    function: Function): Result[TypedFunction, string] =
+  assign_type(file, parser.new_module(module), function)
 
 proc assign_type(file: parser.File, function: Function): Result[
     TypedFunction, string] =
   let typed_def = ? assign_type(file, function.def)
-  let typed_steps = ? process_statements(file, function.steps, none(UserModule))
+  let typed_steps = ? process_statements_no_module(file, function.steps)
   ok(new_typed_function(typed_def, typed_steps))
 
 type TypedGeneric* = ref object of RootObj
@@ -1253,34 +1328,32 @@ proc find_function*(generic: TypedGeneric,
     err(fmt"failed to find function `{def.asl}`")
 
 # Helper for generic processing with UserModule
-proc process_generic_user(file: parser.File, generic: Generic, id: uint64,
-    module: UserModule): Result[TypedGeneric, string] =
+# Helper for generic processing with Module
+proc process_generic_module(file: parser.File, generic: Generic, id: uint64,
+    module: parser.Module): Result[TypedGeneric, string] =
   var typed_defs: seq[TypedFunctionDefinition]
   for def in generic.defs:
     let typed_def = ? assign_type(file, module, generic, def)
     typed_defs.add(typed_def)
   ok(new_typed_generic(id, generic, typed_defs, generic.location))
 
-# Helper for generic processing with NativeModule
-proc process_generic_native(file: parser.File, generic: Generic, id: uint64,
-    module: NativeModule): Result[TypedGeneric, string] =
-  var typed_defs: seq[TypedFunctionDefinition]
-  for def in generic.defs:
-    let typed_def = ? assign_type(file, module, generic, def)
-    typed_defs.add(typed_def)
-  ok(new_typed_generic(id, generic, typed_defs, generic.location))
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module, generic: Generic,
+    id: uint64): Result[TypedGeneric, string] =
+  process_generic_module(file, generic, id, module)
 
-proc assign_type(file: parser.File, module: UserModule,
-    generic: Generic, id: uint64): Result[TypedGeneric, string] =
-  process_generic_user(file, generic, id, module)
+# Keep UserModule/NativeModule versions as thin wrappers that convert to Module
+proc assign_type(file: parser.File, module: UserModule, generic: Generic,
+    id: uint64): Result[TypedGeneric, string] =
+  assign_type(file, parser.new_module(module), generic, id)
 
-proc assign_type(file: parser.File, module: NativeModule,
-    generic: Generic, id: uint64): Result[TypedGeneric, string] =
-  process_generic_native(file, generic, id, module)
+proc assign_type(file: parser.File, module: NativeModule, generic: Generic,
+    id: uint64): Result[TypedGeneric, string] =
+  assign_type(file, parser.new_module(module), generic, id)
 
-# Helper for struct processing with UserModule
-proc process_struct_user(file: parser.File, struct: Struct, id: uint64,
-    module: UserModule): Result[TypedStruct, string] =
+# Helper for struct processing with Module
+proc process_struct_module(file: parser.File, struct: Struct, id: uint64,
+    module: parser.Module): Result[TypedStruct, string] =
   var typed_fields: seq[TypedArgumentDefinition]
   for field in struct.fields:
     let typed_field = ? assign_type(file, module, field)
@@ -1292,27 +1365,19 @@ proc process_struct_user(file: parser.File, struct: Struct, id: uint64,
     let struct_name = ? struct.name
     ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
 
-# Helper for struct processing with NativeModule
-proc process_struct_native(file: parser.File, struct: Struct, id: uint64,
-    module: NativeModule): Result[TypedStruct, string] =
-  var typed_fields: seq[TypedArgumentDefinition]
-  for field in struct.fields:
-    let typed_field = ? assign_type(file, module, field)
-    typed_fields.add(typed_field)
-  case struct.def.kind:
-  of SDK_DEFAULT:
-    ok(new_typed_struct(id, typed_fields, struct.location))
-  of SDK_NAMED:
-    let struct_name = ? struct.name
-    ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module, struct: Struct,
+    id: uint64): Result[TypedStruct, string] =
+  process_struct_module(file, struct, id, module)
 
+# Keep UserModule/NativeModule versions as thin wrappers that convert to Module
 proc assign_type(file: parser.File, module: UserModule, struct: Struct,
     id: uint64): Result[TypedStruct, string] =
-  process_struct_user(file, struct, id, module)
+  assign_type(file, parser.new_module(module), struct, id)
 
 proc assign_type(file: parser.File, module: NativeModule, struct: Struct,
     id: uint64): Result[TypedStruct, string] =
-  process_struct_native(file, struct, id, module)
+  assign_type(file, parser.new_module(module), struct, id)
 
 type TypedUserModule* = ref object of RootObj
   id: uint64
@@ -1372,7 +1437,7 @@ proc find_generic*(module: TypedUserModule, generic: Generic): Result[
   if generic in module.generics_map:
     ok(module.generics_map[generic])
   else:
-    err("failed to find generic `{generic.name.asl}`")
+    err(fmt"failed to find generic `{generic.name.asl}`")
 
 proc find_function*(module: TypedUserModule,
     def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
@@ -1383,23 +1448,31 @@ proc find_function*(module: TypedUserModule,
   else:
     err(fmt"2 - failed to find function `{def.asl}`")
 
-# Helper to process generics for module assignment
-proc process_module_generics_user(file: parser.File,
-    module: UserModule): Result[seq[(Generic, TypedGeneric)], string] =
+# Helper to process generics for module assignment (Module-based)
+proc process_module_generics_module(file: parser.File,
+    module: parser.Module): Result[seq[(Generic, TypedGeneric)], string] =
   var generic_pairs: seq[(Generic, TypedGeneric)]
-  for index, generic in module.generics:
+  let module_generics = case module.kind:
+    of parser.MK_USER:
+      let user_module = ? module.user_module
+      user_module.generics
+    of parser.MK_NATIVE:
+      let native_module = ? module.native_module
+      native_module.generics
+
+  for index, generic in module_generics:
     let typed_generic = ? assign_type(file, module, generic, index.uint64)
     generic_pairs.add((generic, typed_generic))
   ok(generic_pairs)
 
-# Helper to process generics for module assignment
+# Keep UserModule/NativeModule versions as thin wrappers
+proc process_module_generics_user(file: parser.File,
+    module: UserModule): Result[seq[(Generic, TypedGeneric)], string] =
+  process_module_generics_module(file, parser.new_module(module))
+
 proc process_module_generics_native(file: parser.File,
     module: NativeModule): Result[seq[(Generic, TypedGeneric)], string] =
-  var typed_generics: seq[(Generic, TypedGeneric)]
-  for index, generic in module.generics:
-    let typed_generic = ? assign_type(file, module, generic, index.uint64)
-    typed_generics.add((generic, typed_generic))
-  ok(typed_generics)
+  process_module_generics_module(file, parser.new_module(module))
 
 # Helper to process structs for module assignment
 proc process_module_structs[T](file: parser.File, module: T, structs: seq[
@@ -1499,7 +1572,7 @@ proc find_generic*(module: TypedNativeModule, generic: Generic): Result[
   if generic in module.generics_map:
     ok(module.generics_map[generic])
   else:
-    err("failed to find generic `{generic.name.asl}`")
+    err(fmt"failed to find generic `{generic.name.asl}`")
 
 proc find_function*(module: TypedNativeModule,
     def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
