@@ -1290,17 +1290,45 @@ proc find_function*(module: TypedUserModule,
   else:
     err(fmt"2 - failed to find function `{def.asl}`")
 
-proc assign_type(file: parser.File, module: UserModule, id: uint64): Result[
-    TypedUserModule, string] =
+# Helper to process generics for module assignment
+proc process_module_generics_user(file: parser.File, module: UserModule): Result[seq[(Generic, TypedGeneric)], string] =
   var generic_pairs: seq[(Generic, TypedGeneric)]
   for index, generic in module.generics:
     let typed_generic = ? assign_type(file, module, generic, index.uint64)
     generic_pairs.add((generic, typed_generic))
+  ok(generic_pairs)
 
+# Helper to process generics for module assignment
+proc process_module_generics_native(file: parser.File, module: NativeModule): Result[seq[(Generic, TypedGeneric)], string] =
+  var typed_generics: seq[(Generic, TypedGeneric)]
+  for index, generic in module.generics:
+    let typed_generic = ? assign_type(file, module, generic, index.uint64)
+    typed_generics.add((generic, typed_generic))
+  ok(typed_generics)
+
+# Helper to process structs for module assignment
+proc process_module_structs[T](file: parser.File, module: T, structs: seq[Struct]): Result[seq[TypedStruct], string] =
   var typed_structs: seq[TypedStruct]
-  for index, struct in module.structs:
+  for index, struct in structs:
     let typed_struct = ? assign_type(file, module, struct, index.uint64)
     typed_structs.add(typed_struct)
+  ok(typed_structs)
+
+# Helper to create internal functions for UserModule
+proc create_internal_functions(file: parser.File, module_name: Identifier): Result[seq[TypedFunctionDefinition], string] =
+  var internal_functions: seq[TypedFunctionDefinition]
+  internal_functions.add( ? make_typed_function_def(file, "byte_size", @[("U64",
+      "items")], "U64"))
+  internal_functions.add( ? make_typed_function_def(file, "read", @[(
+      "Pointer", "ptr"), ("U64", "offset")], module_name.asl))
+  internal_functions.add( ? make_typed_function_def(file, "write", @[(
+      module_name.asl, "item"), ("Pointer", "ptr"), ("U64", "offset")], "Pointer"))
+  ok(internal_functions)
+
+proc assign_type(file: parser.File, module: UserModule, id: uint64): Result[
+    TypedUserModule, string] =
+  let generic_pairs = ? process_module_generics_user(file, module)
+  let typed_structs = ? process_module_structs(file, module, module.structs)
 
   var typed_functions: seq[TypedFunction]
   for function in module.functions:
@@ -1312,13 +1340,7 @@ proc assign_type(file: parser.File, module: UserModule, id: uint64): Result[
   # work every module needs to have `byte_size`, `read` and `write` functions
   # but adding them before codegen is hard in case of `read` and `write` because
   # there is no conversion utility between module and pointers.
-  var internal_functions: seq[TypedFunctionDefinition]
-  internal_functions.add( ? make_typed_function_def(file, "byte_size", @[("U64",
-      "items")], "U64"))
-  internal_functions.add( ? make_typed_function_def(file, "read", @[(
-      "Pointer", "ptr"), ("U64", "offset")], module.name.asl))
-  internal_functions.add( ? make_typed_function_def(file, "write", @[(
-      module.name.asl, "item"), ("Pointer", "ptr"), ("U64", "offset")], "Pointer"))
+  let internal_functions = ? create_internal_functions(file, module.name)
 
   ok(new_typed_user_module(id, module.name, generic_pairs, typed_structs,
       typed_functions, internal_functions, module.location))
@@ -1429,15 +1451,8 @@ proc validate*(module: TypedNativeModule, literal: Literal): Result[void, string
 
 proc assign_type(file: parser.File, module: NativeModule, id: uint64): Result[
     TypedNativeModule, string] =
-  var typed_generics: seq[(Generic, TypedGeneric)]
-  for index, generic in module.generics:
-    let typed_generic = ? assign_type(file, module, generic, index.uint64)
-    typed_generics.add((generic, typed_generic))
-
-  var typed_structs: seq[TypedStruct]
-  for index, struct in module.structs:
-    let typed_struct = ? assign_type(file, module, struct, index.uint64)
-    typed_structs.add(typed_struct)
+  let typed_generics = ? process_module_generics_native(file, module)
+  let typed_structs = ? process_module_structs(file, module, module.structs)
 
   var typed_functions: seq[TypedNativeFunction]
   for function in module.functions:
