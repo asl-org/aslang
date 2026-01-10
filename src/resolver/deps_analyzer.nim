@@ -121,6 +121,13 @@ proc concretize(module_ref: TypedModuleRef, generic: Generic,
     new_typed_module_ref(module_ref.user_module, concrete_children,
         module_ref.location)
 
+# Helper function to accumulate module dependencies from a sequence
+proc accumulate_module_deps[T](items: seq[T]): HashSet[UserModule] =
+  var module_set: HashSet[UserModule]
+  for item in items:
+    module_set.incl(item.module_deps)
+  module_set
+
 proc module_deps(module_ref: TypedModuleRef): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
   case module_ref.kind:
@@ -253,9 +260,7 @@ proc new_typed_function_definition(name: Identifier, args: seq[
       location: location)
 
 proc module_deps(def: TypedFunctionDefinition): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for arg in def.args:
-    module_set.incl(arg.module_deps)
+  var module_set = accumulate_module_deps(def.args)
   module_set.incl(def.returns.module_deps)
   module_set
 
@@ -325,10 +330,7 @@ proc new_typed_struct(id: uint64, name: Identifier, fields: seq[
       location: location)
 
 proc module_deps(struct: TypedStruct): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for field in struct.fields:
-    module_set.incl(field.module_deps)
-  module_set
+  accumulate_module_deps(struct.fields)
 
 proc id*(struct: TypedStruct): uint64 = struct.id
 proc hash*(struct: TypedStruct): Hash = struct.location.hash
@@ -624,10 +626,7 @@ proc statements*(case_block: TypedCase): seq[
     TypedStatement] = case_block.statements
 
 proc module_deps(case_block: TypedCase): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for statement in case_block.statements:
-    module_set.incl(statement.module_deps)
-  module_set
+  accumulate_module_deps(case_block.statements)
 
 # Else
 proc new_typed_else(statements: seq[TypedStatement],
@@ -639,10 +638,7 @@ proc statements*(else_block: TypedElse): seq[
     TypedStatement] = else_block.statements
 
 proc module_deps(else_block: TypedElse): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for statement in else_block.statements:
-    module_set.incl(statement.module_deps)
-  module_set
+  accumulate_module_deps(else_block.statements)
 
 # Match
 proc new_typed_match(operand: Identifier, arg: Identifier, case_blocks: seq[
@@ -665,9 +661,7 @@ proc else_block*(match: TypedMatch): Result[TypedElse, string] =
   of TMK_COMPLETE: ok(match.else_block)
 
 proc module_deps(match: TypedMatch): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for case_block in match.case_blocks:
-    module_set.incl(case_block.module_deps)
+  var module_set = accumulate_module_deps(match.case_blocks)
   case match.kind:
   of TMK_CASE_ONLY: discard
   of TMK_COMPLETE: module_set.incl(match.else_block.module_deps)
@@ -684,8 +678,8 @@ proc new_typed_function(def: TypedFunctionDefinition, steps: seq[
 proc module_deps(function: TypedFunction): HashSet[UserModule] =
   var module_set: HashSet[UserModule]
   module_set.incl(function.def.module_deps)
-  for step in function.steps:
-    module_set.incl(step.module_deps)
+  for module in accumulate_module_deps(function.steps):
+    module_set.incl(module)
   module_set
 
 proc def*(function: TypedFunction): TypedFunctionDefinition = function.def
@@ -1140,10 +1134,7 @@ proc new_typed_generic(id: uint64, generic: Generic, defs: seq[
       location: location)
 
 proc module_deps(generic: TypedGeneric): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for def in generic.defs:
-    module_set.incl(def.module_deps)
-  module_set
+  accumulate_module_deps(generic.defs)
 
 proc id*(generic: TypedGeneric): uint64 = generic.id
 proc location*(generic: TypedGeneric): Location = generic.location
@@ -1266,13 +1257,11 @@ proc new_typed_user_module(id: uint64, name: Identifier, generic_pairs: seq[(
       functions_map: functions_map, internal_functions_map: internal_functions_map)
 
 proc module_deps(module: TypedUserModule): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  for generic in module.generics:
-    module_set.incl(generic.module_deps)
-  for struct in module.structs:
-    module_set.incl(struct.module_deps)
-  for function in module.functions:
-    module_set.incl(function.module_deps)
+  var module_set = accumulate_module_deps(module.generics)
+  for m in accumulate_module_deps(module.structs):
+    module_set.incl(m)
+  for m in accumulate_module_deps(module.functions):
+    module_set.incl(m)
   module_set
 
 proc id*(module: TypedUserModule): uint64 = module.id
