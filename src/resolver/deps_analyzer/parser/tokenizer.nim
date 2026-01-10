@@ -3,6 +3,29 @@ import results, strformat, hashes
 const MAX_DIGITS_LENGTH = 256
 const MAX_STRING_LENGTH = 1 shl 16
 
+# OPERATORS
+const PLUS_OP = '+'
+const MINUS_OP = '-'
+const COMMA_OP = ','
+const DOT_OP = '.'
+const COLON_OP = ':'
+const EQUAL_OP = '='
+const BACK_SLASH_OP = '\\'
+const OPEN_PAREN_OP = '('
+const CLOSE_PAREN_OP = ')'
+const OPEN_CURLY_OP = '{'
+const CLOSE_CURLY_OP = '}'
+const OPEN_SQUARE_OP = '['
+const CLOSE_SQUARE_OP = ']'
+
+const SPACE = ' '
+const NEW_LINE = '\n'
+
+const UNDERSCORE = '_'
+const DOUBLE_QUOTE = '"'
+const HASHTAG = '#'
+
+
 type Location* = object
   filename: string
   line: int = 1
@@ -53,6 +76,14 @@ proc location*(token: Token): Location = token.location
 proc hash*(token: Token): Hash =
   hash(token.kind) !& hash(token.value)
 
+# Helper to add a single-character token
+proc add_single_char_token(tokens: var seq[Token], kind: TokenKind, char: char,
+    location: var Location): Location =
+  let token = new_token(kind, $char, location)
+  location = location.update(token.value)
+  tokens.add(token)
+  location
+
 proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
   var index = 0
   var location = new_location(filename)
@@ -60,82 +91,52 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
 
   while index < content.len:
     case content[index]:
-    of '+':
-      let token = new_token(TK_PLUS, $content[index], location)
+    of PLUS_OP:
+      location = add_single_char_token(tokens, TK_PLUS, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '-':
-      let token = new_token(TK_MINUS, $content[index], location)
+    of MINUS_OP:
+      location = add_single_char_token(tokens, TK_MINUS, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of ',':
-      let token = new_token(TK_COMMA, $content[index], location)
+    of COMMA_OP:
+      location = add_single_char_token(tokens, TK_COMMA, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '.':
-      let token = new_token(TK_DOT, $content[index], location)
+    of DOT_OP:
+      location = add_single_char_token(tokens, TK_DOT, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of ':':
-      let token = new_token(TK_COLON, $content[index], location)
+    of COLON_OP:
+      location = add_single_char_token(tokens, TK_COLON, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '=':
-      let token = new_token(TK_EQUAL, $content[index], location)
+    of EQUAL_OP:
+      location = add_single_char_token(tokens, TK_EQUAL, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '\\':
-      let token = new_token(TK_BACK_SLASH, $content[index], location)
+    of BACK_SLASH_OP:
+      location = add_single_char_token(tokens, TK_BACK_SLASH, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '(':
-      let token = new_token(TK_OPEN_PAREN, $content[index], location)
+    of OPEN_PAREN_OP:
+      location = add_single_char_token(tokens, TK_OPEN_PAREN, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of ')':
-      let token = new_token(TK_CLOSE_PAREN, $content[index], location)
+    of CLOSE_PAREN_OP:
+      location = add_single_char_token(tokens, TK_CLOSE_PAREN, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '{':
-      let token = new_token(TK_OPEN_CURLY, $content[index], location)
+    of OPEN_CURLY_OP:
+      location = add_single_char_token(tokens, TK_OPEN_CURLY, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '}':
-      let token = new_token(TK_CLOSE_CURLY, $content[index], location)
+    of CLOSE_CURLY_OP:
+      location = add_single_char_token(tokens, TK_CLOSE_CURLY, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '[':
-      let token = new_token(TK_OPEN_SQUARE, $content[index], location)
+    of OPEN_SQUARE_OP:
+      location = add_single_char_token(tokens, TK_OPEN_SQUARE, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of ']':
-      let token = new_token(TK_CLOSE_SQUARE, $content[index], location)
+    of CLOSE_SQUARE_OP:
+      location = add_single_char_token(tokens, TK_CLOSE_SQUARE, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of ' ':
-      let token = new_token(TK_SPACE, $content[index], location)
+    of SPACE:
+      location = add_single_char_token(tokens, TK_SPACE, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '\n':
-      let token = new_token(TK_NEW_LINE, $content[index], location)
+    of NEW_LINE:
+      location = add_single_char_token(tokens, TK_NEW_LINE, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
-    of '"':
+    of DOUBLE_QUOTE:
       let start = index
 
       index += 1 # move past double quote
@@ -161,7 +162,7 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
 
       let token = new_token(TK_STRING, content.substr(start, index - 1), location)
       tokens.add(token)
-    of '#':
+    of HASHTAG:
       let start = index
       # consume everything up until newline
       while index < content.len and content[index] != '\n': index += 1
@@ -185,11 +186,9 @@ proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
       let token = new_token(TK_ALPHABETS, content.substr(start, index - 1), location)
       location = location.update(token.value)
       tokens.add(token)
-    of '_':
-      let token = new_token(TK_UNDERSCORE, $content[index], location)
+    of UNDERSCORE:
+      location = add_single_char_token(tokens, TK_UNDERSCORE, content[index], location)
       index += 1
-      location = location.update(token.value)
-      tokens.add(token)
     else:
       return err(fmt"[TE104] {location} Unexpected character `{content[index]}` encountered")
 
