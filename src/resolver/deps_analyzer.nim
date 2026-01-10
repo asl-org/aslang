@@ -662,9 +662,8 @@ proc else_block*(match: TypedMatch): Result[TypedElse, string] =
 
 proc module_deps(match: TypedMatch): HashSet[UserModule] =
   var module_set = accumulate_module_deps(match.case_blocks)
-  case match.kind:
-  of TMK_CASE_ONLY: discard
-  of TMK_COMPLETE: module_set.incl(match.else_block.module_deps)
+  if match.kind == TMK_COMPLETE:
+    module_set.incl(match.else_block.module_deps)
   module_set
 
 type TypedFunction* = ref object of RootObj
@@ -676,8 +675,7 @@ proc new_typed_function(def: TypedFunctionDefinition, steps: seq[
   TypedFunction(def: def, steps: steps)
 
 proc module_deps(function: TypedFunction): HashSet[UserModule] =
-  var module_set: HashSet[UserModule]
-  module_set.incl(function.def.module_deps)
+  var module_set = function.def.module_deps
   for module in accumulate_module_deps(function.steps):
     module_set.incl(module)
   module_set
@@ -837,10 +835,9 @@ proc process_function_definition_module(file: parser.File,
         Generic]): Result[TypedFunctionDefinition, string] =
   var typed_args: seq[TypedArgumentDefinition]
   for arg in def.args:
-    let typed_arg = if generic.is_some:
-      ? assign_type(file, module, generic.get, arg)
-    else:
-      ? assign_type(file, module, arg)
+    let typed_arg = case generic.is_some
+    of true: ? assign_type(file, module, generic.get, arg)
+    of false: ? assign_type(file, module, arg)
     typed_args.add(typed_arg)
 
   let typed_return = ? assign_type(file, module, def.returns)
@@ -1416,10 +1413,8 @@ proc new_typed_user_module(id: uint64, name: Identifier, generic_pairs: seq[(
 
 proc module_deps(module: TypedUserModule): HashSet[UserModule] =
   var module_set = accumulate_module_deps(module.generics)
-  for m in accumulate_module_deps(module.structs):
-    module_set.incl(m)
-  for m in accumulate_module_deps(module.functions):
-    module_set.incl(m)
+  module_set.incl(accumulate_module_deps(module.structs))
+  module_set.incl(accumulate_module_deps(module.functions))
   module_set
 
 proc id*(module: TypedUserModule): uint64 = module.id
@@ -1466,14 +1461,6 @@ proc process_module_generics_module(file: parser.File,
   ok(generic_pairs)
 
 # Keep UserModule/NativeModule versions as thin wrappers
-proc process_module_generics_user(file: parser.File,
-    module: UserModule): Result[seq[(Generic, TypedGeneric)], string] =
-  process_module_generics_module(file, parser.new_module(module))
-
-proc process_module_generics_native(file: parser.File,
-    module: NativeModule): Result[seq[(Generic, TypedGeneric)], string] =
-  process_module_generics_module(file, parser.new_module(module))
-
 # Helper to process structs for module assignment
 proc process_module_structs[T](file: parser.File, module: T, structs: seq[
     Struct]): Result[seq[TypedStruct], string] =
@@ -1482,6 +1469,20 @@ proc process_module_structs[T](file: parser.File, module: T, structs: seq[
     let typed_struct = ? assign_type(file, module, struct, index.uint64)
     typed_structs.add(typed_struct)
   ok(typed_structs)
+
+# Helper to compute generics and structs for a Module
+proc process_module_core(file: parser.File, module: parser.Module): Result[
+    (seq[(Generic, TypedGeneric)], seq[TypedStruct]), string] =
+  let generic_pairs = ? process_module_generics_module(file, module)
+  let raw_structs = case module.kind:
+    of parser.MK_USER:
+      let user_module = ? module.user_module
+      user_module.structs
+    of parser.MK_NATIVE:
+      let native_module = ? module.native_module
+      native_module.structs
+  let typed_structs = ? process_module_structs(file, module, raw_structs)
+  ok((generic_pairs, typed_structs))
 
 # Helper to create internal functions for UserModule
 proc create_internal_functions(file: parser.File,
@@ -1497,8 +1498,8 @@ proc create_internal_functions(file: parser.File,
 
 proc assign_type(file: parser.File, module: UserModule, id: uint64): Result[
     TypedUserModule, string] =
-  let generic_pairs = ? process_module_generics_user(file, module)
-  let typed_structs = ? process_module_structs(file, module, module.structs)
+  let (generic_pairs, typed_structs) = ? process_module_core(file,
+      parser.new_module(module))
 
   var typed_functions: seq[TypedFunction]
   for function in module.functions:
@@ -1515,6 +1516,12 @@ proc assign_type(file: parser.File, module: UserModule, id: uint64): Result[
   ok(new_typed_user_module(id, module.name, generic_pairs, typed_structs,
       typed_functions, internal_functions, module.location))
 
+# Module-based wrapper for user modules
+proc assign_type_user_module*(file: parser.File, module: parser.Module,
+    id: uint64): Result[TypedUserModule, string] =
+  let user = ? module.user_module
+  assign_type(file, user, id)
+
 type TypedNativeFunction* = ref object of RootObj
   native: string
   def: TypedFunctionDefinition
@@ -1526,10 +1533,21 @@ proc new_typed_native_function(native: string,
 proc native*(function: TypedNativeFunction): string = function.native
 proc def*(function: TypedNativeFunction): TypedFunctionDefinition = function.def
 
+# Module-based assign for extern functions (expects native module)
+proc assign_type(file: parser.File, module: parser.Module,
+    function: ExternFunction): Result[TypedNativeFunction, string] =
+  case module.kind:
+  of parser.MK_NATIVE:
+    let native = ? module.native_module
+    let typed_def = ? assign_type(file, native, function.def)
+    ok(new_typed_native_function(function.extern, typed_def))
+  of parser.MK_USER:
+    err("extern functions must belong to a native module")
+
+# Thin wrapper for NativeModule
 proc assign_type(file: parser.File, module: NativeModule,
     function: ExternFunction): Result[TypedNativeFunction, string] =
-  let typed_def = ? assign_type(file, module, function.def)
-  ok(new_typed_native_function(function.extern, typed_def))
+  assign_type(file, parser.new_module(module), function)
 
 type TypedNativeModule* = ref object of RootObj
   id: uint64
@@ -1555,6 +1573,91 @@ proc new_typed_native_module(name: Identifier, generic_pairs: seq[(Generic,
   TypedNativeModule(id: id, name: name, generics: generics, structs: structs,
       generics_map: generics_map, functions: functions,
       functions_map: functions_map)
+
+proc assign_type(file: parser.File, module: NativeModule, id: uint64): Result[
+    TypedNativeModule, string] =
+  let (typed_generics, typed_structs) = ? process_module_core(file,
+      parser.new_module(module))
+
+  var typed_functions: seq[TypedNativeFunction]
+  for function in module.functions:
+    let typed_function = ? assign_type(file, module, function)
+    typed_functions.add(typed_function)
+  ok(new_typed_native_module(module.name, typed_generics, typed_structs,
+      typed_functions, id))
+
+# Unified typed module wrapper (moved above for earlier use)
+type TypedModuleKind* = enum
+  TMK_NATIVE, TMK_USER
+
+type TypedModule* = ref object of RootObj
+  case kind: TypedModuleKind
+  of TMK_NATIVE: native: TypedNativeModule
+  of TMK_USER: user: TypedUserModule
+
+proc new_typed_module*(module: TypedUserModule): TypedModule =
+  TypedModule(kind: TMK_USER, user: module)
+
+proc new_typed_module*(module: TypedNativeModule): TypedModule =
+  TypedModule(kind: TMK_NATIVE, native: module)
+
+proc kind*(module: TypedModule): TypedModuleKind = module.kind
+
+proc to_native*(module: TypedModule): Result[TypedNativeModule, string] =
+  if module.kind == TMK_NATIVE:
+    ok(module.native)
+  else:
+    err("expected a typed native module")
+
+proc to_user*(module: TypedModule): Result[TypedUserModule, string] =
+  if module.kind == TMK_USER:
+    ok(module.user)
+  else:
+    err("expected a typed user module")
+
+proc name*(module: TypedModule): Identifier =
+  case module.kind:
+  of TMK_NATIVE: module.native.name
+  of TMK_USER: module.user.name
+
+proc generics*(module: TypedModule): seq[TypedGeneric] =
+  case module.kind:
+  of TMK_NATIVE: module.native.generics
+  of TMK_USER: module.user.generics
+
+proc structs*(module: TypedModule): seq[TypedStruct] =
+  case module.kind:
+  of TMK_NATIVE: module.native.structs
+  of TMK_USER: module.user.structs
+
+proc functions*(module: TypedModule): seq[TypedFunctionDefinition] =
+  case module.kind:
+  of TMK_NATIVE: module.native.functions.map_it(it.def)
+  of TMK_USER: module.user.functions.map_it(it.def)
+
+proc module_deps(module: TypedModule): HashSet[UserModule] =
+  case module.kind:
+  of TMK_NATIVE: init_hashset[UserModule]()
+  of TMK_USER: module.user.module_deps
+
+# Module-based assign_type for modules (returns TypedModule wrapper)
+proc assign_type(file: parser.File, module: parser.Module, id: uint64): Result[
+    TypedModule, string] =
+  case module.kind:
+  of parser.MK_USER:
+    let user = ? module.user_module
+    let typed_user = ? assign_type(file, user, id)
+    ok(new_typed_module(typed_user))
+  of parser.MK_NATIVE:
+    let native = ? module.native_module
+    let typed_native = ? assign_type(file, native, id)
+    ok(new_typed_module(typed_native))
+
+# Module-based wrapper for native modules
+proc assign_type_native_module*(file: parser.File, module: parser.Module,
+    id: uint64): Result[TypedNativeModule, string] =
+  let native = ? module.native_module
+  assign_type(file, native, id)
 
 proc name*(module: TypedNativeModule): Identifier = module.name
 proc generics*(module: TypedNativeModule): seq[TypedGeneric] = module.generics
@@ -1619,18 +1722,6 @@ proc validate*(module: TypedNativeModule, literal: Literal): Result[void, string
     let string_literal = ? literal.string_literal
     validate(module, string_literal)
 
-proc assign_type(file: parser.File, module: NativeModule, id: uint64): Result[
-    TypedNativeModule, string] =
-  let typed_generics = ? process_module_generics_native(file, module)
-  let typed_structs = ? process_module_structs(file, module, module.structs)
-
-  var typed_functions: seq[TypedNativeFunction]
-  for function in module.functions:
-    let typed_function = ? assign_type(file, module, function)
-    typed_functions.add(typed_function)
-  ok(new_typed_native_module(module.name, typed_generics, typed_structs,
-      typed_functions, id))
-
 type TypedFile* = ref object of RootObj
   name: string
   indent: int
@@ -1639,35 +1730,97 @@ type TypedFile* = ref object of RootObj
   native_modules_map: Table[NativeModule, TypedNativeModule]
   user_modules: seq[TypedUserModule]
   user_modules_map: Table[UserModule, TypedUserModule]
+  modules: seq[TypedModule] # unified, but still derived
   functions: seq[TypedFunction]
 
 proc new_typed_file(name: string, indent: int, maybe_start_def: Option[
     TypedFunctionDefinition], native_modules: seq[(NativeModule,
-        TypedNativeModule)], user_modules: seq[TypedUserModule],
-    user_modules_map: Table[UserModule, TypedUserModule], functions: seq[
+        TypedModule)], user_modules: seq[TypedModule],
+    user_modules_map: Table[UserModule, TypedModule], functions: seq[
     TypedFunction]): TypedFile =
   var native_modules_map: Table[NativeModule, TypedNativeModule]
   var typed_native_modules: seq[TypedNativeModule]
-  for (native_module, typed_native_module) in native_modules:
-    native_modules_map[native_module] = typed_native_module
-    typed_native_modules.add(typed_native_module)
+  for (native_module, typed_module) in native_modules:
+    doAssert(typed_module.kind == TMK_NATIVE, "expected native module")
+    let native = typed_module.native
+    native_modules_map[native_module] = native
+    typed_native_modules.add(native)
+  var typed_user_modules: seq[TypedUserModule]
+  for typed_module in user_modules:
+    doAssert(typed_module.kind == TMK_USER, "expected user module")
+    typed_user_modules.add(typed_module.user)
+  var typed_user_modules_map: Table[UserModule, TypedUserModule]
+  for user_module in user_modules_map.keys:
+    let typed_module = user_modules_map[user_module]
+    doAssert(typed_module.kind == TMK_USER, "expected user module")
+    typed_user_modules_map[user_module] = typed_module.user
+
+  var modules: seq[TypedModule]
+  for (native_module, typed_module) in native_modules:
+    modules.add(typed_module)
+  for (user_module, typed_module) in typed_user_modules_map.pairs:
+    let wrapper = new_typed_module(typed_module)
+    modules.add(wrapper)
+
   TypedFile(name: name, indent: indent, maybe_start_def: maybe_start_def,
       native_modules: typed_native_modules,
       native_modules_map: native_modules_map,
-      user_modules: user_modules,
-      user_modules_map: user_modules_map, functions: functions)
+      user_modules: typed_user_modules, user_modules_map: typed_user_modules_map,
+      modules: modules, functions: functions)
 
 proc path*(file: TypedFile): string = file.name
 proc indent*(file: TypedFile): int = file.indent
 proc start_def*(file: TypedFile): Result[TypedFunctionDefinition, string] =
-  if file.maybe_start_def.is_some:
-    ok(file.maybe_start_def.get)
-  else:
-    err(fmt"{file.path} failed to find `start` function")
+  case file.maybe_start_def.is_some
+  of true: ok(file.maybe_start_def.get)
+  of false: err(fmt"{file.path} failed to find `start` function")
 proc native_modules*(file: TypedFile): seq[
     TypedNativeModule] = file.native_modules
 proc user_modules*(file: TypedFile): seq[TypedUserModule] = file.user_modules
 proc functions*(file: TypedFile): seq[TypedFunction] = file.functions
+
+proc get_typed_module*(file: TypedFile, module: parser.Module): Result[
+    TypedModule, string] =
+  case module.kind:
+  of parser.MK_USER:
+    let user = ? module.user_module
+    if user in file.user_modules_map:
+      ok(new_typed_module(file.user_modules_map[user]))
+    else:
+      err("failed to find module `{user.name.asl}`")
+  of parser.MK_NATIVE:
+    let native = ? module.native_module
+    if native in file.native_modules_map:
+      ok(new_typed_module(file.native_modules_map[native]))
+    else:
+      err("failed to find native module `{native.name.asl}`")
+
+# Module lookup by name returning TypedModule
+proc find_module*(file: TypedFile, module_name: Identifier): Result[
+    TypedModule, string] =
+  for m, typed_native in file.native_modules_map.pairs:
+    if m.name == module_name:
+      return ok(new_typed_module(typed_native))
+  for m, typed_user in file.user_modules_map.pairs:
+    if m.name == module_name:
+      return ok(new_typed_module(typed_user))
+  err(fmt"{module_name.location} failed to find module `{module_name.asl}`")
+
+# Module lookup by name returning TypedUserModule
+proc find_user_module*(file: TypedFile, module_name: Identifier): Result[
+    TypedUserModule, string] =
+  for m, typed_user in file.user_modules_map.pairs:
+    if m.name == module_name:
+      return ok(typed_user)
+  err(fmt"{module_name.location} failed to find module `{module_name.asl}`")
+
+# Module lookup by name returning TypedNativeModule
+proc find_native_module*(file: TypedFile, module_name: Identifier): Result[
+    TypedNativeModule, string] =
+  for m, typed_native in file.native_modules_map.pairs:
+    if m.name == module_name:
+      return ok(typed_native)
+  err(fmt"{module_name.location} failed to find native module `{module_name.asl}`")
 proc find_module*(file: TypedFile, module: UserModule): Result[
     TypedUserModule, string] =
   if module in file.user_modules_map:
@@ -1682,17 +1835,32 @@ proc find_module*(file: TypedFile, module: NativeModule): Result[
   else:
     err("failed to find native module `{module.name.asl}`")
 
+# Module-based find that returns TypedModule
+proc find_module*(file: TypedFile, module: parser.Module): Result[
+    TypedModule, string] =
+  case module.kind:
+  of parser.MK_USER:
+    let user = ? module.user_module
+    let typed = ? find_module(file, user)
+    ok(new_typed_module(typed))
+  of parser.MK_NATIVE:
+    let native = ? module.native_module
+    let typed = ? find_module(file, native)
+    ok(new_typed_module(typed))
+
 proc assign_type*(file: parser.File): Result[TypedFile, string] =
-  var native_modules: seq[(NativeModule, TypedNativeModule)]
+  var native_modules: seq[(NativeModule, TypedModule)]
   for index, module in file.native_modules:
-    let typed_module = ? assign_type(file, module, index.uint64)
+    let typed_module = ? assign_type(file, parser.new_module(module),
+        index.uint64)
     native_modules.add((module, typed_module))
 
   var module_graph: Table[UserModule, HashSet[UserModule]]
-  var modules_map: Table[UserModule, TypedUserModule]
+  var modules_map: Table[UserModule, TypedModule]
   let offset = file.native_modules.len
   for index, module in file.user_modules:
-    let typed_module = ? assign_type(file, module, (offset + index).uint64)
+    let typed_module = ? assign_type(file, parser.new_module(module),
+        (offset + index).uint64)
     let module_deps = typed_module.module_deps
     module_graph[module] = module_deps
     modules_map[module] = typed_module
@@ -1707,7 +1875,7 @@ proc assign_type*(file: parser.File): Result[TypedFile, string] =
     return err(message.join("\n"))
 
   let module_resolution_order = maybe_module_order.get
-  var typed_modules: seq[TypedUserModule]
+  var typed_modules: seq[TypedModule]
   for module in module_resolution_order:
     typed_modules.add(modules_map[module])
 
