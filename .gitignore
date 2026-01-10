@@ -24,4 +24,4 @@ Thumbs.db
 
 # Dependencies managed by a package manager (if applicable)
 # For example, if using Nimble to manage dependencies in a 'vendor' directory:
-# vendor/
+.nimble/
