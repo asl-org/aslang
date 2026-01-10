@@ -1594,27 +1594,82 @@ proc match_spec(parser: Parser, indent: int): Result[Match, string] =
 
   return new_match(match_def, cases)
 
-type Function* = ref object of RootObj
+type UserFunction* = ref object of RootObj
   def: FunctionDefinition
   steps: seq[Statement]
+
+type ExternFunction* = ref object of RootObj
+  def: FunctionDefinition
+  extern: string
+
+proc new_extern_function(extern: string, returns: string, name: string,
+    args: seq[string]): Result[ExternFunction, string] =
+  var arg_defs: seq[ArgumentDefinition]
+  for index, module in args.pairs:
+    let module_id = ? new_identifier(module)
+    let module_ref = new_module_ref(module_id)
+
+    let arg_id = ? new_identifier(fmt"__asl__arg__{index}__")
+    let arg_def = new_argument_definition(module_ref, arg_id)
+    arg_defs.add(arg_def)
+
+  var def = ? new_function_definition(
+    ? new_identifier(name),                             # name
+    arg_defs,
+    new_module_ref( ? new_identifier(returns)),         # return type
+    Location()
+  )
+
+  ok(ExternFunction(def: def, extern: extern))
+
+proc name(function: ExternFunction): Identifier = function.def.name
+proc def*(function: ExternFunction): FunctionDefinition = function.def
+proc extern*(function: ExternFunction): string = function.extern
+
+type FunctionKind* = enum
+  FK_USER, FK_EXTERN
+
+type Function* = ref object of RootObj
+  case kind*: FunctionKind
+  of FK_USER:
+    user_func: UserFunction
+  of FK_EXTERN:
+    extern_func: ExternFunction
+
+proc make_user_function(def: FunctionDefinition, steps: seq[
+    Statement]): Function =
+  Function(kind: FK_USER, user_func: UserFunction(def: def, steps: steps))
+
+proc to_function*(extern_func: ExternFunction): Function =
+  Function(kind: FK_EXTERN, extern_func: extern_func)
+
+proc def*(function: Function): FunctionDefinition =
+  case function.kind:
+  of FK_USER: function.user_func.def
+  of FK_EXTERN: function.extern_func.def
+
+proc steps*(function: Function): seq[Statement] =
+  case function.kind:
+  of FK_USER: function.user_func.steps
+  of FK_EXTERN: @[]
+
+proc location*(function: Function): Location = function.def.location
+proc name*(function: Function): Identifier = function.def.name
+proc extern_func*(function: Function): ExternFunction =
+  doAssert function.kind == FK_EXTERN, "expected extern function"
+  function.extern_func
 
 proc new_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
     Function, string] =
   if steps.len == 0:
     return err(fmt"{def.location} [PE134] function `{def.name.asl}` must have at least one statement")
-
-  ok(Function(def: def, steps: steps))
-
-proc location*(function: Function): Location = function.def.location
-proc name*(function: Function): Identifier = function.def.name
-proc def*(function: Function): FunctionDefinition = function.def
-proc steps*(function: Function): seq[Statement] = function.steps
+  ok(make_user_function(def, steps))
 
 proc asl*(function: Function, indent: string): seq[string] =
   let header = function.def.asl
 
   var lines: seq[string]
-  for step in function.steps:
+  for step in steps(function):
     for line in step.asl(indent):
       lines.add(indent & line)
 
@@ -1865,40 +1920,12 @@ proc asl(module: UserModule, indent: string): seq[string] =
 
   return lines
 
-type ExternFunction* = ref object of RootObj
-  def: FunctionDefinition
-  extern: string
-
-proc new_extern_function(extern: string, returns: string, name: string,
-    args: seq[string]): Result[ExternFunction, string] =
-  var arg_defs: seq[ArgumentDefinition]
-  for index, module in args.pairs:
-    let module_id = ? new_identifier(module)
-    let module_ref = new_module_ref(module_id)
-
-    let arg_id = ? new_identifier(fmt"__asl__arg__{index}__")
-    let arg_def = new_argument_definition(module_ref, arg_id)
-    arg_defs.add(arg_def)
-
-  var def = ? new_function_definition(
-    ? new_identifier(name),                             # name
-    arg_defs,
-    new_module_ref( ? new_identifier(returns)),         # return type
-    Location()
-  )
-
-  ok(ExternFunction(def: def, extern: extern))
-
-proc name(function: ExternFunction): Identifier = function.def.name
-proc def*(function: ExternFunction): FunctionDefinition = function.def
-proc extern*(function: ExternFunction): string = function.extern
-
 type NativeModule* = ref object of RootObj
   name: Identifier
   generics: seq[Generic]
   generics_map: Table[Identifier, int]
   structs: seq[Struct]
-  functions: seq[ExternFunction]
+  functions: seq[Function]
   functions_map: Table[Identifier, seq[int]]
   function_defs_hash_map: Table[Hash, int]
 
@@ -1906,13 +1933,15 @@ proc new_native_module(name: string, functions: seq[
     ExternFunction]): Result[NativeModule, string] =
   let name = ? new_identifier(name)
   var function_defs_hash_map: Table[Hash, int]
+  var function_wrappers: seq[Function]
   for index, function in functions.pairs:
     let def_hash = function.def.hash
     if def_hash in function_defs_hash_map:
       return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
     function_defs_hash_map[def_hash] = index
+    function_wrappers.add(to_function(function))
 
-  ok(NativeModule(name: name, functions: functions,
+  ok(NativeModule(name: name, functions: function_wrappers,
       function_defs_hash_map: function_defs_hash_map))
 
 proc new_native_module(name: string, generics: seq[Generic], structs: seq[
@@ -1924,6 +1953,7 @@ proc new_native_module(name: string, generics: seq[Generic], structs: seq[
     return err(fmt"[INTERNAL ERROR] module can not only contain generics")
 
   var generics_map: Table[Identifier, int]
+  var function_wrappers: seq[Function]
   for index, generic in generics:
     if generic.name in generics_map:
       let predefined_generic_location = generics[generics_map[
@@ -1938,9 +1968,10 @@ proc new_native_module(name: string, generics: seq[Generic], structs: seq[
     if def_hash in function_defs_hash_map:
       return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
     function_defs_hash_map[def_hash] = index
+    function_wrappers.add(to_function(function))
 
   ok(NativeModule(name: name, structs: structs, generics: generics,
-      generics_map: generics_map, functions: functions,
+      generics_map: generics_map, functions: function_wrappers,
       function_defs_hash_map: function_defs_hash_map))
 
 proc hash*(module: NativeModule): Hash =
@@ -1956,6 +1987,12 @@ proc structs*(module: NativeModule): seq[Struct] =
   module.structs
 
 proc functions*(module: NativeModule): seq[ExternFunction] =
+  var externs: seq[ExternFunction]
+  for function in module.functions:
+    externs.add(function.extern_func)
+  externs
+
+proc all_functions*(module: NativeModule): seq[Function] =
   module.functions
 
 proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
@@ -2230,7 +2267,60 @@ proc module_ref*(module: Module): Result[ModuleRef, string] =
 proc generics*(module: Module): seq[Generic] =
   case module.kind:
   of MK_USER: module.user.generics
-  of MK_NATIVE: @[]
+  of MK_NATIVE: module.native.generics
+
+proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =
+  case module.kind:
+  of MK_USER:
+    module.user.find_generic(name)
+  of MK_NATIVE:
+    module.native.find_generic(name)
+
+proc user_structs*(module: Module): Result[seq[Struct], string] =
+  let mod_name = case module.kind:
+    of MK_USER: module.user.name
+    of MK_NATIVE: module.native.name
+  case module.kind:
+  of MK_USER: ok(module.user.structs)
+  of MK_NATIVE: err(fmt"[PE161] module `{mod_name.asl}` is not a user module")
+
+proc native_structs*(module: Module): Result[seq[Struct], string] =
+  let mod_name = case module.kind:
+    of MK_USER: module.user.name
+    of MK_NATIVE: module.native.name
+  case module.kind:
+  of MK_NATIVE: ok(module.native.structs)
+  of MK_USER: err(fmt"[PE160] module `{mod_name.asl}` is not a native module")
+
+proc structs*(module: Module): seq[Struct] =
+  case module.kind:
+  of MK_USER: module.user.structs
+  of MK_NATIVE: module.native.structs
+
+proc user_functions*(module: Module): Result[seq[Function], string] =
+  let mod_name = case module.kind:
+    of MK_USER: module.user.name
+    of MK_NATIVE: module.native.name
+  case module.kind:
+  of MK_USER: ok(module.user.functions)
+  of MK_NATIVE: err(fmt"[PE161] module `{mod_name.asl}` is not a user module")
+
+proc native_functions*(module: Module): Result[seq[ExternFunction], string] =
+  let mod_name = case module.kind:
+    of MK_USER: module.user.name
+    of MK_NATIVE: module.native.name
+  case module.kind:
+  of MK_NATIVE:
+    var externs: seq[ExternFunction]
+    for function in module.native.functions:
+      externs.add(function.extern_func)
+    ok(externs)
+  of MK_USER: err(fmt"[PE160] module `{mod_name.asl}` is not a native module")
+
+proc functions*(module: Module): seq[Function] =
+  case module.kind:
+  of MK_NATIVE: module.native.functions
+  of MK_USER: module.user.functions
 
 proc name*(module: Module): Identifier =
   case module.kind:

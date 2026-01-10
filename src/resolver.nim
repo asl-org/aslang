@@ -198,13 +198,28 @@ proc c(module_ref: ResolvedModuleRef): string =
     else: "Pointer"
   else: "Pointer"
 
+# Helper to build impls for module_ref children against a typed module
+proc build_impls_for_children[T](file: TypedFile, module: T,
+    generic: TypedGeneric, typed_module: T, children: seq[TypedModuleRef],
+    location: Location): Result[seq[ResolvedImpl], string] =
+  if children.len != typed_module.generics.len:
+    return err(fmt"{location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
+
+  var impls: seq[ResolvedImpl]
+  for (typed_generic, child) in zip(typed_module.generics, children):
+    let resolved_child = ? resolve_def(file, module, generic, child)
+    let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
+    impls.add(resolved_impl)
+  ok(impls)
+
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     generic: TypedGeneric, module_ref: TypedModuleRef): Result[
         ResolvedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_any.to_native
     ok(new_resolved_module_ref(typed_module, module_ref.location))
   of TMRK_GENERIC:
     let untyped_generic = ? module_ref.generic
@@ -215,19 +230,14 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     ok(new_resolved_module_ref(typed_generic, module_ref.location))
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_any.to_user
     if typed_module == module:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
 
     let children = ? module_ref.children
-    if children.len != typed_module.generics.len:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
-
-    var impls: seq[ResolvedImpl]
-    for (typed_generic, child) in zip(typed_module.generics, children):
-      let resolved_child = ? resolve_def(file, module, generic, child)
-      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
-      impls.add(resolved_impl)
+    let impls = ? build_impls_for_children(file, module, generic, typed_module,
+        children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
 proc resolve_def(file: TypedFile, module: TypedNativeModule,
@@ -236,19 +246,14 @@ proc resolve_def(file: TypedFile, module: TypedNativeModule,
   case module_ref.kind:
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_any.to_native
     if typed_module == module:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
 
     let children = ? module_ref.children
-    if children.len != typed_module.generics.len:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
-
-    var impls: seq[ResolvedImpl]
-    for (typed_generic, child) in zip(typed_module.generics, children):
-      let resolved_child = ? resolve_def(file, module, generic, child)
-      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
-      impls.add(resolved_impl)
+    let impls = ? build_impls_for_children(file, module, generic, typed_module,
+        children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
     let untyped_generic = ? module_ref.generic
@@ -265,7 +270,8 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
   case module_ref.kind:
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_module_any.to_native
     let children = ? module_ref.children
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
@@ -282,7 +288,8 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
     ok(new_resolved_module_ref(typed_generic, module_ref.location))
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_module_any.to_user
     let children = ? module_ref.children
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
@@ -299,7 +306,8 @@ proc resolve_def(file: TypedFile, module: TypedNativeModule,
   case module_ref.kind:
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_module_any.to_native
     let children = ? module_ref.children
     if children.len != typed_module.generics.len:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
@@ -335,7 +343,8 @@ proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
   case module_ref.kind:
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_any.to_native
     let children = ? module_ref.children
     let impls = ? process_module_children_file_level(file, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
@@ -343,7 +352,8 @@ proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
     err(fmt"{module_ref.location} file level functions do not support generics")
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
-    let typed_module = ? file.find_module(untyped_module)
+    let typed_any = ? file.find_module(parser.new_module(untyped_module))
+    let typed_module = ? typed_any.to_user
     let children = ? module_ref.children
     let impls = ? process_module_children_file_level(file, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
@@ -380,23 +390,43 @@ proc asl(arg: ResolvedArgumentDefinition): string =
 proc c(arg: ResolvedArgumentDefinition): string =
   fmt"{arg.module_ref.c} {arg.name.asl}"
 
+# Helper to resolve module_ref with optional generic
+proc resolve_module_ref_with_generic[T](file: TypedFile, module: T,
+    generic: Option[TypedGeneric], module_ref: TypedModuleRef): Result[
+        ResolvedModuleRef, string] =
+  if generic.is_some:
+    resolve_def(file, module, generic.get, module_ref)
+  else:
+    resolve_def(file, module, module_ref)
+
+proc resolve_arg_with_generic[T](file: TypedFile, module: T,
+    generic: Option[TypedGeneric], arg: TypedArgumentDefinition): Result[
+        ResolvedArgumentDefinition, string] =
+  if generic.is_some:
+    resolve_def(file, module, generic.get, arg)
+  else:
+    resolve_def(file, module, arg)
+
+proc function_prefix(module_name: Identifier,
+    generic: Option[TypedGeneric]): string =
+  if generic.is_some:
+    fmt"{module_name.asl}_{generic.get.name.asl}"
+  else:
+    module_name.asl
+
 # Helper for resolving TypedArgumentDefinition with TypedUserModule
 proc resolve_argument_definition_user(file: TypedFile, arg: TypedArgumentDefinition,
     module: TypedUserModule, generic: Option[TypedGeneric]): Result[ResolvedArgumentDefinition, string] =
-  let resolved_module_ref = if generic.is_some:
-    ? resolve_def(file, module, generic.get, arg.module_ref)
-  else:
-    ? resolve_def(file, module, arg.module_ref)
+  let resolved_module_ref = ? resolve_module_ref_with_generic(file, module,
+      generic, arg.module_ref)
   ? resolved_module_ref.can_be_argument
   ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
 
 # Helper for resolving TypedArgumentDefinition with TypedNativeModule
 proc resolve_argument_definition_native(file: TypedFile, arg: TypedArgumentDefinition,
     module: TypedNativeModule, generic: Option[TypedGeneric]): Result[ResolvedArgumentDefinition, string] =
-  let resolved_module_ref = if generic.is_some:
-    ? resolve_def(file, module, generic.get, arg.module_ref)
-  else:
-    ? resolve_def(file, module, arg.module_ref)
+  let resolved_module_ref = ? resolve_module_ref_with_generic(file, module,
+      generic, arg.module_ref)
   ? resolved_module_ref.can_be_argument
   ok(new_resolved_argument_definition(resolved_module_ref, arg.name))
 
@@ -483,21 +513,13 @@ proc resolve_function_definition_user(file: TypedFile, def: TypedFunctionDefinit
     module: TypedUserModule, generic: Option[TypedGeneric]): Result[ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolved_arg = if generic.is_some:
-      ? resolve_def(file, module, generic.get, arg)
-    else:
-      ? resolve_def(file, module, arg)
+    let resolved_arg = ? resolve_arg_with_generic(file, module, generic, arg)
     resolved_args.add(resolved_arg)
 
-  let resolved_returns = if generic.is_some:
-    ? resolve_def(file, module, generic.get, def.returns)
-  else:
-    ? resolve_def(file, module, def.returns)
+  let resolved_returns = ? resolve_module_ref_with_generic(file, module,
+      generic, def.returns)
 
-  let prefix = if generic.is_some:
-    fmt"{module.name.asl}_{generic.get.name.asl}"
-  else:
-    module.name.asl
+  let prefix = function_prefix(module.name, generic)
 
   ok(new_resolved_function_definition(def.name, resolved_args,
       resolved_returns, def.location, prefix, module.generics.len.uint64))
@@ -507,21 +529,13 @@ proc resolve_function_definition_native(file: TypedFile, def: TypedFunctionDefin
     module: TypedNativeModule, generic: Option[TypedGeneric]): Result[ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolved_arg = if generic.is_some:
-      ? resolve_def(file, module, generic.get, arg)
-    else:
-      ? resolve_def(file, module, arg)
+    let resolved_arg = ? resolve_arg_with_generic(file, module, generic, arg)
     resolved_args.add(resolved_arg)
 
-  let resolved_returns = if generic.is_some:
-    ? resolve_def(file, module, generic.get, def.returns)
-  else:
-    ? resolve_def(file, module, def.returns)
+  let resolved_returns = ? resolve_module_ref_with_generic(file, module,
+      generic, def.returns)
 
-  let prefix = if generic.is_some:
-    fmt"{module.name.asl}_{generic.get.name.asl}"
-  else:
-    module.name.asl
+  let prefix = function_prefix(module.name, generic)
 
   ok(new_resolved_function_definition(def.name, resolved_args,
       resolved_returns, def.location, prefix, module.generics.len.uint64))
@@ -752,25 +766,9 @@ proc find_field(struct: ResolvedStruct, field: Identifier): Result[
   let field_index = ? struct.find_field_index(field)
   ok(struct.fields[field_index])
 
-# Helper for resolving TypedStruct with TypedUserModule
-proc resolve_struct_user(file: TypedFile, struct: TypedStruct,
-    module: TypedUserModule): Result[ResolvedStruct, string] =
-  var resolved_fields: seq[ResolvedArgumentDefinition]
-  for field in struct.fields:
-    let resolved_field = ? resolve_def(file, module, field)
-    resolved_fields.add(resolved_field)
-
-  case struct.kind:
-  of TSK_DEFAULT:
-    ok(new_resolved_struct(struct, resolved_fields, struct.location))
-  of TSK_NAMED:
-    let struct_name = ? struct.name
-    ok(new_resolved_struct(struct, struct_name, resolved_fields,
-        struct.location))
-
-# Helper for resolving TypedStruct with TypedNativeModule
-proc resolve_struct_native(file: TypedFile, struct: TypedStruct,
-    module: TypedNativeModule): Result[ResolvedStruct, string] =
+# Helper for resolving TypedStruct with either module kind
+proc resolve_struct_common[T](file: TypedFile, struct: TypedStruct,
+    module: T): Result[ResolvedStruct, string] =
   var resolved_fields: seq[ResolvedArgumentDefinition]
   for field in struct.fields:
     let resolved_field = ? resolve_def(file, module, field)
@@ -786,11 +784,11 @@ proc resolve_struct_native(file: TypedFile, struct: TypedStruct,
 
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     struct: TypedStruct): Result[ResolvedStruct, string] =
-  resolve_struct_user(file, struct, module)
+  resolve_struct_common(file, struct, module)
 
 proc resolve_def(file: TypedFile, module: TypedNativeModule,
     struct: TypedStruct): Result[ResolvedStruct, string] =
-  resolve_struct_native(file, struct, module)
+  resolve_struct_common(file, struct, module)
 
 type ResolvedUserModuleDefinition = ref object of RootObj
   module: TypedUserModule
