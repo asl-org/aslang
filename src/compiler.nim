@@ -2,19 +2,20 @@ import results, strformat, unicode, os, osproc
 
 import resolver
 
-proc remove_file_safe(filename: string): Result[void, string] =
+# Helper to wrap void-returning file operations with error handling
+proc safe_void_operation(operation: proc(), filename: string,
+    operation_name: string): Result[void, string] =
   try:
-    remove_file(filename)
+    operation()
     ok()
   except OSError as e:
-    err(fmt"Failed to delete output file '{filename}': {e.msg}")
+    err(fmt"Failed to {operation_name} file '{filename}': {e.msg}")
+
+proc remove_file_safe(filename: string): Result[void, string] =
+  safe_void_operation(proc() = remove_file(filename), filename, "delete")
 
 proc write_file_safe(filename: string, content: string): Result[void, string] =
-  try:
-    write_file(filename, content)
-    ok()
-  except OSError as e:
-    err(fmt"Failed to write output file '{filename}': {e.msg}")
+  safe_void_operation(proc() = write_file(filename, content), filename, "write")
 
 proc read_file_safe(filename: string): Result[string, string] =
   try:

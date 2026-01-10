@@ -247,11 +247,7 @@ proc resolve_def(file: TypedFile, module: TypedNativeModule,
     var impls: seq[ResolvedImpl]
     for (typed_generic, child) in zip(typed_module.generics, children):
       let resolved_child = ? resolve_def(file, module, generic, child)
-      # NOTE: Check that resolved child satifies constraints.
-      var constraint_defs: seq[TypedFunctionDefinition]
-      for def in typed_generic.concrete_defs(child.self()):
-        constraint_defs.add( ? resolved_child.find_function(def))
-      let resolved_impl = new_resolved_impl(resolved_child, constraint_defs)
+      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
       impls.add(resolved_impl)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
