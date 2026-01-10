@@ -764,14 +764,18 @@ proc assign_type(file: parser.File, module_ref: ModuleRef): Result[
   assign_type(file, none(UserModule), module_ref)
 
 # Helper for ArgumentDefinition processing with UserModule
-proc process_argument_definition_user(file: parser.File, arg: ArgumentDefinition,
-    module: UserModule): Result[TypedArgumentDefinition, string] =
+proc process_argument_definition_user(file: parser.File,
+    arg: ArgumentDefinition,
+
+module: UserModule): Result[TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
 # Helper for ArgumentDefinition processing with NativeModule
-proc process_argument_definition_native(file: parser.File, arg: ArgumentDefinition,
-    module: NativeModule): Result[TypedArgumentDefinition, string] =
+proc process_argument_definition_native(file: parser.File,
+    arg: ArgumentDefinition,
+
+module: NativeModule): Result[TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
