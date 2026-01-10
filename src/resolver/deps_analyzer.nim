@@ -737,6 +737,15 @@ proc assign_type_optional_module_ref[T](file: parser.File,
         typed_children.add(typed_child)
       ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
 
+# Helper to convert Module to Option[UserModule] for assign_type_optional_module_ref
+proc to_option_user_module(module: parser.Module): Option[UserModule] =
+  case module.kind:
+  of parser.MK_USER:
+    let user_module = module.user_module
+    if user_module.is_ok: some(user_module.get)
+    else: none(UserModule)
+  of parser.MK_NATIVE: none(UserModule)
+
 proc assign_type(file: parser.File, optional_module: Option[UserModule],
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
   assign_type_optional_module_ref(file, optional_module, module_ref)
@@ -745,31 +754,31 @@ proc assign_type(file: parser.File, optional_module: Option[NativeModule],
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
   assign_type_optional_module_ref(file, optional_module, module_ref)
 
+# Main function accepting Module type - delegates to UserModule version since assign_type_optional_module_ref works with UserModule
+proc assign_type(file: parser.File, module: parser.Module,
+    module_ref: ModuleRef): Result[TypedModuleRef, string] =
+  assign_type(file, to_option_user_module(module), module_ref)
+
+# Keep UserModule/NativeModule versions as thin wrappers that convert to Module
 proc assign_type(file: parser.File, module: UserModule,
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
+  # Use the Module-based version - need to create Module wrapper
+  # Since new_module(user) is not exported, we'll just call the Option version directly
   assign_type(file, some(module), module_ref)
 
 proc assign_type(file: parser.File, module: NativeModule,
     module_ref: ModuleRef): Result[TypedModuleRef, string] =
+  # Call the Option[NativeModule] version
   assign_type(file, some(module), module_ref)
 
 proc assign_type(file: parser.File, module_ref: ModuleRef): Result[
     TypedModuleRef, string] =
   assign_type(file, none(UserModule), module_ref)
 
-# Helper for ArgumentDefinition processing with UserModule
-proc process_argument_definition_user(file: parser.File,
-    arg: ArgumentDefinition,
-
-module: UserModule): Result[TypedArgumentDefinition, string] =
-  let typed_arg = ? assign_type(file, module, arg.module_ref)
-  ok(new_typed_argument_definition(typed_arg, arg.name))
-
-# Helper for ArgumentDefinition processing with NativeModule
-proc process_argument_definition_native(file: parser.File,
-    arg: ArgumentDefinition,
-
-module: NativeModule): Result[TypedArgumentDefinition, string] =
+# Helper for ArgumentDefinition processing with Module
+proc process_argument_definition_module(file: parser.File,
+    arg: ArgumentDefinition, module: parser.Module): Result[
+        TypedArgumentDefinition, string] =
   let typed_arg = ? assign_type(file, module, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
@@ -779,23 +788,43 @@ proc process_argument_definition_no_module(file: parser.File,
   let typed_arg = ? assign_type(file, arg.module_ref)
   ok(new_typed_argument_definition(typed_arg, arg.name))
 
-proc assign_type(file: parser.File, module: UserModule, generic: Generic,
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module, generic: Generic,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
   # Note: generic parameter is not used, delegate to non-generic version
-  process_argument_definition_user(file, arg, module)
+  process_argument_definition_module(file, arg, module)
+
+proc assign_type(file: parser.File, module: parser.Module,
+    arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
+  process_argument_definition_module(file, arg, module)
+
+# Keep UserModule/NativeModule versions as thin wrappers
+# They convert to Option and call the existing helpers directly
+proc assign_type(file: parser.File, module: UserModule, generic: Generic,
+    arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
+  # Note: generic parameter is not used, call Module version directly
+  # Convert UserModule to Module by using Option path
+  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, module: NativeModule, generic: Generic,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  # Note: generic parameter is not used, delegate to non-generic version
-  process_argument_definition_native(file, arg, module)
+  # Note: generic parameter is not used, call Module version directly
+  # Use Option[NativeModule] path directly
+  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, module: UserModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  process_argument_definition_user(file, arg, module)
+  # Use Option[UserModule] path - convert to Module first via helper
+  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, module: NativeModule,
     arg: ArgumentDefinition): Result[TypedArgumentDefinition, string] =
-  process_argument_definition_native(file, arg, module)
+  # Use Option[NativeModule] path directly
+  let typed_arg = ? assign_type(file, some(module), arg.module_ref)
+  ok(new_typed_argument_definition(typed_arg, arg.name))
 
 proc assign_type(file: parser.File, arg: ArgumentDefinition): Result[
     TypedArgumentDefinition, string] =
@@ -862,123 +891,187 @@ proc assign_type(file: parser.File, def: FunctionDefinition): Result[
     TypedFunctionDefinition, string] =
   process_function_definition_no_module(file, def)
 
-# Helper for LiteralInit processing
-proc process_literal_init(file: parser.File, init: LiteralInit,
-    module: Option[UserModule]): Result[TypedLiteralInit, string] =
-  let module_ref = if module.is_some:
-    ? assign_type(file, module.get, init.module)
-  else:
-    ? assign_type(file, init.module)
+# Helper for LiteralInit processing with Module
+proc process_literal_init_module(file: parser.File, init: LiteralInit,
+    module: parser.Module): Result[TypedLiteralInit, string] =
+  let module_ref = ? assign_type(file, module, init.module)
   ok(new_typed_literal_init(module_ref, init.literal))
 
+# Helper for LiteralInit processing without module
+proc process_literal_init_no_module(file: parser.File,
+    init: LiteralInit): Result[TypedLiteralInit, string] =
+  let module_ref = ? assign_type(file, init.module)
+  ok(new_typed_literal_init(module_ref, init.literal))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    init: LiteralInit): Result[TypedLiteralInit, string] =
+  process_literal_init_module(file, init, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     init: LiteralInit): Result[TypedLiteralInit, string] =
-  process_literal_init(file, init, some(module))
+  assign_type(file, parser.new_module(module), init)
 
 proc assign_type(file: parser.File, init: LiteralInit): Result[
     TypedLiteralInit, string] =
-  process_literal_init(file, init, none(UserModule))
+  process_literal_init_no_module(file, init)
 
-# Helper for StructRef processing
-proc process_struct_ref(file: parser.File, struct_ref: StructRef,
-    module: Option[UserModule]): Result[TypedStructRef, string] =
-  let module_ref = if module.is_some:
-    ? assign_type(file, module.get, struct_ref.module)
-  else:
-    ? assign_type(file, struct_ref.module)
+# Helper for StructRef processing with Module
+proc process_struct_ref_module(file: parser.File, struct_ref: StructRef,
+    module: parser.Module): Result[TypedStructRef, string] =
+  let module_ref = ? assign_type(file, module, struct_ref.module)
   case struct_ref.kind:
   of SRK_DEFAULT: ok(new_typed_struct_ref(module_ref))
   of SRK_NAMED: ok(new_typed_struct_ref(module_ref, ? struct_ref.struct))
 
+# Helper for StructRef processing without module
+proc process_struct_ref_no_module(file: parser.File,
+    struct_ref: StructRef): Result[TypedStructRef, string] =
+  let module_ref = ? assign_type(file, struct_ref.module)
+  case struct_ref.kind:
+  of SRK_DEFAULT: ok(new_typed_struct_ref(module_ref))
+  of SRK_NAMED: ok(new_typed_struct_ref(module_ref, ? struct_ref.struct))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    struct_ref: StructRef): Result[TypedStructRef, string] =
+  process_struct_ref_module(file, struct_ref, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     struct_ref: StructRef): Result[TypedStructRef, string] =
-  process_struct_ref(file, struct_ref, some(module))
+  assign_type(file, parser.new_module(module), struct_ref)
 
 proc assign_type(file: parser.File, struct_ref: StructRef): Result[
     TypedStructRef, string] =
-  process_struct_ref(file, struct_ref, none(UserModule))
+  process_struct_ref_no_module(file, struct_ref)
 
-# Helper for StructInit processing
-proc process_struct_init(file: parser.File, init: StructInit,
-    module: Option[UserModule]): Result[TypedStructInit, string] =
-  let struct_ref = if module.is_some:
-    ? assign_type(file, module.get, init.struct_ref)
-  else:
-    ? assign_type(file, init.struct_ref)
+# Helper for StructInit processing with Module
+proc process_struct_init_module(file: parser.File, init: StructInit,
+    module: parser.Module): Result[TypedStructInit, string] =
+  let struct_ref = ? assign_type(file, module, init.struct_ref)
   ok(new_typed_struct_init(struct_ref, init.args))
 
+# Helper for StructInit processing without module
+proc process_struct_init_no_module(file: parser.File, init: StructInit): Result[
+    TypedStructInit, string] =
+  let struct_ref = ? assign_type(file, init.struct_ref)
+  ok(new_typed_struct_init(struct_ref, init.args))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    init: StructInit): Result[TypedStructInit, string] =
+  process_struct_init_module(file, init, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     init: StructInit): Result[TypedStructInit, string] =
-  process_struct_init(file, init, some(module))
+  assign_type(file, parser.new_module(module), init)
 
 proc assign_type(file: parser.File, init: StructInit): Result[
     TypedStructInit, string] =
-  process_struct_init(file, init, none(UserModule))
+  process_struct_init_no_module(file, init)
 
-# Helper for Initializer processing
-proc process_initializer(file: parser.File, init: Initializer,
-    module: Option[UserModule]): Result[TypedInitializer, string] =
+# Helper for Initializer processing with Module
+proc process_initializer_module(file: parser.File, init: Initializer,
+    module: parser.Module): Result[TypedInitializer, string] =
   case init.kind:
   of IK_LITERAL:
     let literal_init = ? init.literal
-    let typed_literal_init = if module.is_some:
-      ? assign_type(file, module.get, literal_init)
-    else:
-      ? assign_type(file, literal_init)
+    let typed_literal_init = ? assign_type(file, module, literal_init)
     ok(new_typed_initializer(typed_literal_init))
   of IK_STRUCT:
     let struct_init = ? init.struct
-    let typed_struct_init = if module.is_some:
-      ? assign_type(file, module.get, struct_init)
-    else:
-      ? assign_type(file, struct_init)
+    let typed_struct_init = ? assign_type(file, module, struct_init)
     ok(new_typed_initializer(typed_struct_init))
 
+# Helper for Initializer processing without module
+proc process_initializer_no_module(file: parser.File,
+    init: Initializer): Result[TypedInitializer, string] =
+  case init.kind:
+  of IK_LITERAL:
+    let literal_init = ? init.literal
+    let typed_literal_init = ? assign_type(file, literal_init)
+    ok(new_typed_initializer(typed_literal_init))
+  of IK_STRUCT:
+    let struct_init = ? init.struct
+    let typed_struct_init = ? assign_type(file, struct_init)
+    ok(new_typed_initializer(typed_struct_init))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    init: Initializer): Result[TypedInitializer, string] =
+  process_initializer_module(file, init, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     init: Initializer): Result[TypedInitializer, string] =
-  process_initializer(file, init, some(module))
+  assign_type(file, parser.new_module(module), init)
 
 proc assign_type(file: parser.File, init: Initializer): Result[
     TypedInitializer, string] =
-  process_initializer(file, init, none(UserModule))
+  process_initializer_no_module(file, init)
 
-# Helper for FunctionRef processing
-proc process_function_ref(file: parser.File, fnref: FunctionRef, arity: uint,
-    module: Option[UserModule]): Result[TypedFunctionRef, string] =
+# Helper for FunctionRef processing with Module
+proc process_function_ref_module(file: parser.File, fnref: FunctionRef,
+    arity: uint, module: parser.Module): Result[TypedFunctionRef, string] =
   case fnref.kind:
   of FRK_LOCAL:
     ok(new_typed_function_ref(fnref.name, arity))
   of FRK_MODULE:
-    let module_ref = if module.is_some:
-      ? assign_type(file, module.get, ? fnref.module)
-    else:
-      ? assign_type(file, ? fnref.module)
+    let module_ref = ? assign_type(file, module, ? fnref.module)
     ok(new_typed_function_ref(module_ref, fnref.name, arity))
 
+# Helper for FunctionRef processing without module
+proc process_function_ref_no_module(file: parser.File, fnref: FunctionRef,
+    arity: uint): Result[TypedFunctionRef, string] =
+  case fnref.kind:
+  of FRK_LOCAL:
+    ok(new_typed_function_ref(fnref.name, arity))
+  of FRK_MODULE:
+    let module_ref = ? assign_type(file, ? fnref.module)
+    ok(new_typed_function_ref(module_ref, fnref.name, arity))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    fnref: FunctionRef, arity: uint): Result[TypedFunctionRef, string] =
+  process_function_ref_module(file, fnref, arity, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     fnref: FunctionRef, arity: uint): Result[TypedFunctionRef, string] =
-  process_function_ref(file, fnref, arity, some(module))
+  assign_type(file, parser.new_module(module), fnref, arity)
 
 proc assign_type(file: parser.File, fnref: FunctionRef, arity: uint): Result[
     TypedFunctionRef, string] =
-  process_function_ref(file, fnref, arity, none(UserModule))
+  process_function_ref_no_module(file, fnref, arity)
 
-# Helper for FunctionCall processing
-proc process_function_call(file: parser.File, fncall: FunctionCall,
-    module: Option[UserModule]): Result[TypedFunctionCall, string] =
-  let fnref = if module.is_some:
-    ? assign_type(file, module.get, fncall.fnref, fncall.args.len.uint)
-  else:
-    ? assign_type(file, fncall.fnref, fncall.args.len.uint)
+# Helper for FunctionCall processing with Module
+proc process_function_call_module(file: parser.File, fncall: FunctionCall,
+    module: parser.Module): Result[TypedFunctionCall, string] =
+  let fnref = ? assign_type(file, module, fncall.fnref, fncall.args.len.uint)
   ok(new_typed_function_call(fnref, fncall.args))
 
+# Helper for FunctionCall processing without module
+proc process_function_call_no_module(file: parser.File,
+    fncall: FunctionCall): Result[TypedFunctionCall, string] =
+  let fnref = ? assign_type(file, fncall.fnref, fncall.args.len.uint)
+  ok(new_typed_function_call(fnref, fncall.args))
+
+# Main function accepting Module type
+proc assign_type(file: parser.File, module: parser.Module,
+    fncall: FunctionCall): Result[TypedFunctionCall, string] =
+  process_function_call_module(file, fncall, module)
+
+# Keep UserModule version as thin wrapper that converts to Module
 proc assign_type(file: parser.File, module: UserModule,
     fncall: FunctionCall): Result[TypedFunctionCall, string] =
-  process_function_call(file, fncall, some(module))
+  assign_type(file, parser.new_module(module), fncall)
 
 proc assign_type(file: parser.File, fncall: FunctionCall): Result[
     TypedFunctionCall, string] =
-  process_function_call(file, fncall, none(UserModule))
+  process_function_call_no_module(file, fncall)
 
 # Forward Declaration needed due to cyclic dependencies
 proc assign_type(file: parser.File, module: UserModule, match: Match): Result[
@@ -1291,7 +1384,8 @@ proc find_function*(module: TypedUserModule,
     err(fmt"2 - failed to find function `{def.asl}`")
 
 # Helper to process generics for module assignment
-proc process_module_generics_user(file: parser.File, module: UserModule): Result[seq[(Generic, TypedGeneric)], string] =
+proc process_module_generics_user(file: parser.File,
+    module: UserModule): Result[seq[(Generic, TypedGeneric)], string] =
   var generic_pairs: seq[(Generic, TypedGeneric)]
   for index, generic in module.generics:
     let typed_generic = ? assign_type(file, module, generic, index.uint64)
@@ -1299,7 +1393,8 @@ proc process_module_generics_user(file: parser.File, module: UserModule): Result
   ok(generic_pairs)
 
 # Helper to process generics for module assignment
-proc process_module_generics_native(file: parser.File, module: NativeModule): Result[seq[(Generic, TypedGeneric)], string] =
+proc process_module_generics_native(file: parser.File,
+    module: NativeModule): Result[seq[(Generic, TypedGeneric)], string] =
   var typed_generics: seq[(Generic, TypedGeneric)]
   for index, generic in module.generics:
     let typed_generic = ? assign_type(file, module, generic, index.uint64)
@@ -1307,7 +1402,8 @@ proc process_module_generics_native(file: parser.File, module: NativeModule): Re
   ok(typed_generics)
 
 # Helper to process structs for module assignment
-proc process_module_structs[T](file: parser.File, module: T, structs: seq[Struct]): Result[seq[TypedStruct], string] =
+proc process_module_structs[T](file: parser.File, module: T, structs: seq[
+    Struct]): Result[seq[TypedStruct], string] =
   var typed_structs: seq[TypedStruct]
   for index, struct in structs:
     let typed_struct = ? assign_type(file, module, struct, index.uint64)
@@ -1315,7 +1411,8 @@ proc process_module_structs[T](file: parser.File, module: T, structs: seq[Struct
   ok(typed_structs)
 
 # Helper to create internal functions for UserModule
-proc create_internal_functions(file: parser.File, module_name: Identifier): Result[seq[TypedFunctionDefinition], string] =
+proc create_internal_functions(file: parser.File,
+    module_name: Identifier): Result[seq[TypedFunctionDefinition], string] =
   var internal_functions: seq[TypedFunctionDefinition]
   internal_functions.add( ? make_typed_function_def(file, "byte_size", @[("U64",
       "items")], "U64"))
