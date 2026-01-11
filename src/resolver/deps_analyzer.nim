@@ -686,15 +686,11 @@ proc steps*(function: TypedFunction): seq[TypedStatement] = function.steps
 # Main helpers using Module type
 proc assign_type(file: parser.File, module: parser.Module,
     module_name: Identifier): Result[TypedModuleRef, string] =
-  let maybe_arg_generic = case module.kind:
-    of parser.MK_USER:
-      let user_module = ? module.user_module
-      user_module.find_generic(module_name)
-    of parser.MK_NATIVE:
-      let native_module = ? module.native_module
-      native_module.find_generic(module_name)
-  if maybe_arg_generic.is_ok:
-    return ok(new_typed_module_ref(maybe_arg_generic.get, module_name.location))
+  let payload = module.to_payload
+  let gm = payload.generics_map
+  if module_name in gm:
+    let generic = payload.generics[gm[module_name]]
+    return ok(new_typed_module_ref(generic, module_name.location))
 
   let arg_module = ? file.find_module(module_name)
   case arg_module.kind:
@@ -716,21 +712,17 @@ proc assign_type(file: parser.File, module: parser.Module,
     assign_type(file, module, module_ref.module)
   of MRK_NESTED:
     let arg_module = ? file.find_module(module_ref.module)
+    var typed_children: seq[TypedModuleRef]
+    for child in module_ref.children:
+      let typed_child = ? assign_type(file, module, child)
+      typed_children.add(typed_child)
     case arg_module.kind:
     of MK_NATIVE:
       let native_module = ? arg_module.native_module
-      var typed_children: seq[TypedModuleRef]
-      for child in module_ref.children:
-        let typed_child = ? assign_type(file, module, child)
-        typed_children.add(typed_child)
       ok(new_typed_module_ref(native_module, typed_children,
           module_ref.location))
     of MK_USER:
       let user_module = ? arg_module.user_module
-      var typed_children: seq[TypedModuleRef]
-      for child in module_ref.children:
-        let typed_child = ? assign_type(file, module, child)
-        typed_children.add(typed_child)
       ok(new_typed_module_ref(user_module, typed_children, module_ref.location))
 
 # Keep UserModule/NativeModule versions as thin wrappers that convert to Module
@@ -1447,13 +1439,7 @@ proc find_function*(module: TypedUserModule,
 proc process_module_generics_module(file: parser.File,
     module: parser.Module): Result[seq[(Generic, TypedGeneric)], string] =
   var generic_pairs: seq[(Generic, TypedGeneric)]
-  let module_generics = case module.kind:
-    of parser.MK_USER:
-      let user_module = ? module.user_module
-      user_module.generics
-    of parser.MK_NATIVE:
-      let native_module = ? module.native_module
-      native_module.generics
+  let module_generics = module.to_payload.generics
 
   for index, generic in module_generics:
     let typed_generic = ? assign_type(file, module, generic, index.uint64)
@@ -1474,13 +1460,7 @@ proc process_module_structs[T](file: parser.File, module: T, structs: seq[
 proc process_module_core(file: parser.File, module: parser.Module): Result[
     (seq[(Generic, TypedGeneric)], seq[TypedStruct]), string] =
   let generic_pairs = ? process_module_generics_module(file, module)
-  let raw_structs = case module.kind:
-    of parser.MK_USER:
-      let user_module = ? module.user_module
-      user_module.structs
-    of parser.MK_NATIVE:
-      let native_module = ? module.native_module
-      native_module.structs
+  let raw_structs = module.to_payload.structs
   let typed_structs = ? process_module_structs(file, module, raw_structs)
   ok((generic_pairs, typed_structs))
 
