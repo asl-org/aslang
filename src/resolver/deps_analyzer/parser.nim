@@ -1640,7 +1640,7 @@ proc make_user_function(def: FunctionDefinition, steps: seq[
     Statement]): Function =
   Function(kind: FK_USER, user_func: UserFunction(def: def, steps: steps))
 
-proc to_function*(extern_func: ExternFunction): Function =
+proc function*(extern_func: ExternFunction): Function =
   Function(kind: FK_EXTERN, extern_func: extern_func)
 
 proc def*(function: Function): FunctionDefinition =
@@ -1934,14 +1934,19 @@ proc new_native_module(name: string, functions: seq[
   let name = ? new_identifier(name)
   var function_defs_hash_map: Table[Hash, int]
   var function_wrappers: seq[Function]
+  var functions_map: Table[Identifier, seq[int]]
   for index, function in functions.pairs:
     let def_hash = function.def.hash
     if def_hash in function_defs_hash_map:
       return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
     function_defs_hash_map[def_hash] = index
-    function_wrappers.add(to_function(function))
+    if function.name notin functions_map:
+      functions_map[function.name] = new_seq[int]()
+    functions_map[function.name].add(index)
+    function_wrappers.add(function.function)
 
   ok(NativeModule(name: name, functions: function_wrappers,
+      functions_map: functions_map,
       function_defs_hash_map: function_defs_hash_map))
 
 proc new_native_module(name: string, generics: seq[Generic], structs: seq[
@@ -1954,6 +1959,7 @@ proc new_native_module(name: string, generics: seq[Generic], structs: seq[
 
   var generics_map: Table[Identifier, int]
   var function_wrappers: seq[Function]
+  var functions_map: Table[Identifier, seq[int]]
   for index, generic in generics:
     if generic.name in generics_map:
       let predefined_generic_location = generics[generics_map[
@@ -1968,10 +1974,14 @@ proc new_native_module(name: string, generics: seq[Generic], structs: seq[
     if def_hash in function_defs_hash_map:
       return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
     function_defs_hash_map[def_hash] = index
-    function_wrappers.add(to_function(function))
+    if function.name notin functions_map:
+      functions_map[function.name] = new_seq[int]()
+    functions_map[function.name].add(index)
+    function_wrappers.add(function.function)
 
   ok(NativeModule(name: name, structs: structs, generics: generics,
       generics_map: generics_map, functions: function_wrappers,
+      functions_map: functions_map,
       function_defs_hash_map: function_defs_hash_map))
 
 proc hash*(module: NativeModule): Hash =
@@ -2243,6 +2253,45 @@ type
     of MK_NATIVE: native: NativeModule
     of MK_USER: user: UserModule
 
+type ModulePayload* = object
+  name: Identifier
+  generics: seq[Generic]
+  generics_map: Table[Identifier, int]
+  structs: seq[Struct]
+  functions: seq[Function]
+  functions_map: Table[Identifier, seq[int]]
+  function_defs_hash_map: Table[Hash, int]
+
+proc new_module_payload*(name: Identifier, generics: seq[Generic],
+    generics_map: Table[Identifier, int], structs: seq[Struct],
+    functions: seq[Function], functions_map: Table[Identifier, seq[int]],
+    function_defs_hash_map: Table[Hash, int]): ModulePayload =
+  ModulePayload(name: name, generics: generics, generics_map: generics_map,
+      structs: structs, functions: functions, functions_map: functions_map,
+      function_defs_hash_map: function_defs_hash_map)
+
+proc name*(payload: ModulePayload): Identifier = payload.name
+proc generics*(payload: ModulePayload): seq[Generic] = payload.generics
+proc generics_map*(payload: ModulePayload): Table[Identifier,
+    int] = payload.generics_map
+proc structs*(payload: ModulePayload): seq[Struct] = payload.structs
+proc functions*(payload: ModulePayload): seq[Function] = payload.functions
+proc functions_map*(payload: ModulePayload): Table[Identifier, seq[
+    int]] = payload.functions_map
+proc function_defs_hash_map*(payload: ModulePayload): Table[Hash,
+    int] = payload.function_defs_hash_map
+
+proc payload*(module: Module): ModulePayload =
+  case module.kind:
+  of MK_USER:
+    let m = module.user
+    new_module_payload(m.name, m.generics, m.generics_map, m.structs,
+        m.functions, m.functions_map, m.function_defs_hash_map)
+  of MK_NATIVE:
+    let m = module.native
+    new_module_payload(m.name, m.generics, m.generics_map, m.structs,
+        m.functions, m.functions_map, m.function_defs_hash_map)
+
 proc new_module*(native: NativeModule): Module =
   Module(kind: MK_NATIVE, native: native)
 
@@ -2265,67 +2314,56 @@ proc module_ref*(module: Module): Result[ModuleRef, string] =
   of MK_USER: module.user.module_ref
 
 proc generics*(module: Module): seq[Generic] =
-  case module.kind:
-  of MK_USER: module.user.generics
-  of MK_NATIVE: module.native.generics
+  module.payload.generics
 
-proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =
-  case module.kind:
-  of MK_USER:
-    module.user.find_generic(name)
-  of MK_NATIVE:
-    module.native.find_generic(name)
+proc generics_map*(module: Module): Table[Identifier, int] =
+  module.payload.generics_map
 
 proc user_structs*(module: Module): Result[seq[Struct], string] =
-  let mod_name = case module.kind:
-    of MK_USER: module.user.name
-    of MK_NATIVE: module.native.name
   case module.kind:
   of MK_USER: ok(module.user.structs)
-  of MK_NATIVE: err(fmt"[PE161] module `{mod_name.asl}` is not a user module")
+  of MK_NATIVE: err(fmt"[PE161] module `{module.payload.name.asl}` is not a user module")
 
 proc native_structs*(module: Module): Result[seq[Struct], string] =
-  let mod_name = case module.kind:
-    of MK_USER: module.user.name
-    of MK_NATIVE: module.native.name
   case module.kind:
   of MK_NATIVE: ok(module.native.structs)
-  of MK_USER: err(fmt"[PE160] module `{mod_name.asl}` is not a native module")
+  of MK_USER: err(fmt"[PE160] module `{module.payload.name.asl}` is not a native module")
 
 proc structs*(module: Module): seq[Struct] =
-  case module.kind:
-  of MK_USER: module.user.structs
-  of MK_NATIVE: module.native.structs
+  module.payload.structs
 
 proc user_functions*(module: Module): Result[seq[Function], string] =
-  let mod_name = case module.kind:
-    of MK_USER: module.user.name
-    of MK_NATIVE: module.native.name
   case module.kind:
   of MK_USER: ok(module.user.functions)
-  of MK_NATIVE: err(fmt"[PE161] module `{mod_name.asl}` is not a user module")
+  of MK_NATIVE: err(fmt"[PE161] module `{module.payload.name.asl}` is not a user module")
 
 proc native_functions*(module: Module): Result[seq[ExternFunction], string] =
-  let mod_name = case module.kind:
-    of MK_USER: module.user.name
-    of MK_NATIVE: module.native.name
   case module.kind:
   of MK_NATIVE:
     var externs: seq[ExternFunction]
     for function in module.native.functions:
       externs.add(function.extern_func)
     ok(externs)
-  of MK_USER: err(fmt"[PE160] module `{mod_name.asl}` is not a native module")
+  of MK_USER: err(fmt"[PE160] module `{module.payload.name.asl}` is not a native module")
 
 proc functions*(module: Module): seq[Function] =
-  case module.kind:
-  of MK_NATIVE: module.native.functions
-  of MK_USER: module.user.functions
+  module.payload.functions
+
+proc functions_map*(module: Module): Table[Identifier, seq[int]] =
+  module.payload.functions_map
+
+proc function_defs_hash_map*(module: Module): Table[Hash, int] =
+  module.payload.function_defs_hash_map
+
+proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =
+  let payload = module.payload
+  if name notin payload.generics_map:
+    err(fmt"{name.location} [PE154] module `{payload.name.asl}` does not have any generic named `{name.asl}`")
+  else:
+    ok(payload.generics[payload.generics_map[name]])
 
 proc name*(module: Module): Identifier =
-  case module.kind:
-  of MK_NATIVE: module.native.name
-  of MK_USER: module.user.name
+  module.payload.name
 
 proc native_module*(module: Module): Result[NativeModule, string] =
   case module.kind:
@@ -2429,6 +2467,8 @@ proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
       user_modules: user_modules, modules: modules, modules_map: modules_map,
       functions: functions))
 
+proc modules*(file: File): seq[Module] = file.modules
+proc modules_map*(file: File): Table[Identifier, int] = file.modules_map
 proc path*(file: File): string = file.path
 proc indent*(file: File): int = file.indent
 proc native_modules*(file: File): seq[NativeModule] = file.native_modules
@@ -2453,7 +2493,8 @@ proc asl*(file: File): string =
 
 proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
   # NOTE: Somehow `modules_map` table is not behaving as expected when using `in` operator.
-  if module_name in file.modules_map:
+  case module_name in file.modules_map
+  of true:
     ok(file.modules[file.modules_map[module_name]])
   else:
     err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")

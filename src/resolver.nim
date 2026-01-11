@@ -4,6 +4,13 @@ import results, sequtils, strformat, tables, hashes, strutils, sets, re,
 import resolver/deps_analyzer
 export deps_analyzer
 
+# Error message helpers
+proc err_no_default_struct(location: Location, module_name: string): string =
+  fmt"{location} module `{module_name}` does not have a default struct"
+
+proc err_no_named_struct(location: Location, module_name: string, struct_name: string): string =
+  fmt"{location} module `{module_name}` does not have a struct named `{struct_name}`"
+
 type
   ResolvedImpl = ref object of RootObj
     module_ref: ResolvedModuleRef
@@ -198,7 +205,7 @@ proc c(module_ref: ResolvedModuleRef): string =
     else: "Pointer"
   else: "Pointer"
 
-# Helper to build impls for module_ref children against a typed module
+# Helper to build impls for module_ref children against a typed module (with generic context)
 proc build_impls_for_children[T](file: TypedFile, module: T,
     generic: TypedGeneric, typed_module: T, children: seq[TypedModuleRef],
     location: Location): Result[seq[ResolvedImpl], string] =
@@ -212,6 +219,20 @@ proc build_impls_for_children[T](file: TypedFile, module: T,
     impls.add(resolved_impl)
   ok(impls)
 
+# Helper to build impls for module_ref children (no generic context)
+proc build_impls_no_generic[M, T](file: TypedFile, module: M,
+    typed_module: T, children: seq[TypedModuleRef],
+    location: Location): Result[seq[ResolvedImpl], string] =
+  if children.len != typed_module.generics.len:
+    return err(fmt"{location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
+
+  var impls: seq[ResolvedImpl]
+  for (typed_generic, child) in zip(typed_module.generics, children):
+    let resolved_child = ? resolve_def(file, module, child)
+    let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
+    impls.add(resolved_impl)
+  ok(impls)
+
 proc resolve_def(file: TypedFile, module: TypedUserModule,
     generic: TypedGeneric, module_ref: TypedModuleRef): Result[
         ResolvedModuleRef, string] =
@@ -219,7 +240,7 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.to_native
+    let typed_module = ? typed_any.native
     ok(new_resolved_module_ref(typed_module, module_ref.location))
   of TMRK_GENERIC:
     let untyped_generic = ? module_ref.generic
@@ -231,7 +252,7 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
     let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.to_user
+    let typed_module = ? typed_any.user
     if typed_module == module:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
 
@@ -247,7 +268,7 @@ proc resolve_def(file: TypedFile, module: TypedNativeModule,
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.to_native
+    let typed_module = ? typed_any.native
     if typed_module == module:
       return err(fmt"{module_ref.location} module `{typed_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
 
@@ -271,16 +292,9 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_module_any.to_native
+    let typed_module = ? typed_module_any.native
     let children = ? module_ref.children
-    if children.len != typed_module.generics.len:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
-
-    var impls: seq[ResolvedImpl]
-    for (typed_generic, child) in zip(typed_module.generics, children):
-      let resolved_child = ? resolve_def(file, module, child)
-      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
-      impls.add(resolved_impl)
+    let impls = ? build_impls_no_generic(file, module, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
     let untyped_generic = ? module_ref.generic
@@ -289,16 +303,9 @@ proc resolve_def(file: TypedFile, module: TypedUserModule,
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
     let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_module_any.to_user
+    let typed_module = ? typed_module_any.user
     let children = ? module_ref.children
-    if children.len != typed_module.generics.len:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
-
-    var impls: seq[ResolvedImpl]
-    for (typed_generic, child) in zip(typed_module.generics, children):
-      let resolved_child = ? resolve_def(file, module, child)
-      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
-      impls.add(resolved_impl)
+    let impls = ? build_impls_no_generic(file, module, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
 
 proc resolve_def(file: TypedFile, module: TypedNativeModule,
@@ -307,16 +314,9 @@ proc resolve_def(file: TypedFile, module: TypedNativeModule,
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_module_any.to_native
+    let typed_module = ? typed_module_any.native
     let children = ? module_ref.children
-    if children.len != typed_module.generics.len:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
-
-    var impls: seq[ResolvedImpl]
-    for (typed_generic, child) in zip(typed_module.generics, children):
-      let resolved_child = ? resolve_def(file, module, child)
-      let resolved_impl = ? create_impl_from_child(typed_generic, child, resolved_child)
-      impls.add(resolved_impl)
+    let impls = ? build_impls_no_generic(file, module, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
   of TMRK_GENERIC:
     let untyped_generic = ? module_ref.generic
@@ -344,7 +344,7 @@ proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
   of TMRK_NATIVE:
     let untyped_module = ? module_ref.native_module
     let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.to_native
+    let typed_module = ? typed_any.native
     let children = ? module_ref.children
     let impls = ? process_module_children_file_level(file, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
@@ -353,7 +353,7 @@ proc resolve_def(file: TypedFile, module_ref: TypedModuleRef): Result[
   of TMRK_USER:
     let untyped_module = ? module_ref.user_module
     let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.to_user
+    let typed_module = ? typed_any.user
     let children = ? module_ref.children
     let impls = ? process_module_children_file_level(file, typed_module, children, module_ref.location)
     ok(new_resolved_module_ref(typed_module, impls, module_ref.location))
@@ -1738,7 +1738,7 @@ proc resolve(file_def: ResolvedFileDefinition,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_ref.location, resolved_module_def.name.asl))
     of TSRK_NAMED:
       let struct_name = ? struct_ref.name
       let maybe_struct = resolved_module_def.find_struct(struct_name)
@@ -1749,7 +1749,7 @@ proc resolve(file_def: ResolvedFileDefinition,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
+        err(err_no_named_struct(struct_ref.location, resolved_module_def.name.asl, struct_name.asl))
   of RMRK_GENERIC:
     err(fmt"1 {struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
   of RMRK_USER:
@@ -1765,7 +1765,7 @@ proc resolve(file_def: ResolvedFileDefinition,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_ref.location, resolved_module_def.name.asl))
     of TSRK_NAMED:
       let struct_name = ? struct_ref.name
       let maybe_struct = resolved_module_def.find_struct(struct_name)
@@ -1776,7 +1776,7 @@ proc resolve(file_def: ResolvedFileDefinition,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
+        err(err_no_named_struct(struct_ref.location, resolved_module_def.name.asl, struct_name.asl))
 
 proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     struct_ref: TypedStructRef): Result[ResolvedStructRef, string] =
@@ -1795,7 +1795,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_ref.location, resolved_module_def.name.asl))
     of TSRK_NAMED:
       let struct_name = ? struct_ref.name
       let maybe_struct = resolved_module_def.find_struct(struct_name)
@@ -1806,7 +1806,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
+        err(err_no_named_struct(struct_ref.location, resolved_module_def.name.asl, struct_name.asl))
   of RMRK_GENERIC:
     err(fmt"2 {struct_ref.location} generic `{resolved_module_ref.generic.name.asl}` is not a struct")
   of RMRK_USER:
@@ -1822,7 +1822,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_ref.location, resolved_module_def.name.asl))
     of TSRK_NAMED:
       let struct_name = ? struct_ref.name
       let maybe_struct = resolved_module_def.find_struct(struct_name)
@@ -1833,7 +1833,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
         ok(new_resolved_struct_ref(resolved_module_ref, resolved_struct,
             resolved_concretized_struct))
       else:
-        err(fmt"{struct_ref.location} module `{resolved_module_def.name.asl}` does not have a struct named `{struct_name.asl}`")
+        err(err_no_named_struct(struct_ref.location, resolved_module_def.name.asl, struct_name.asl))
 
 type ResolvedStructInit = ref object of RootObj
   struct_ref: ResolvedStructRef
@@ -2069,7 +2069,7 @@ proc resolve(file_def: ResolvedFileDefinition,
     else:
       let maybe_default_struct = resolved_module_def.find_struct()
       if maybe_default_struct.is_err:
-        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_get.location, resolved_module_def.name.asl))
       else:
         let resolved_struct = maybe_default_struct.get
         let resolved_field_module_ref = ? resolved_struct.find_field(
@@ -2088,7 +2088,7 @@ proc resolve(file_def: ResolvedFileDefinition,
     else:
       let maybe_default_struct = resolved_module_def.find_struct()
       if maybe_default_struct.is_err:
-        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_get.location, resolved_module_def.name.asl))
       else:
         let resolved_struct = maybe_default_struct.get
         let resolved_field_module_ref = ? resolved_struct.find_field(
@@ -2113,7 +2113,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     else:
       let maybe_default_struct = resolved_module_def.find_struct()
       if maybe_default_struct.is_err:
-        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_get.location, resolved_module_def.name.asl))
       else:
         let resolved_struct = maybe_default_struct.get
         let resolved_field_module_ref = ? resolved_struct.find_field(
@@ -2132,7 +2132,7 @@ proc resolve(file_def: ResolvedFileDefinition, scope: FunctionScope,
     else:
       let maybe_default_struct = resolved_module_def.find_struct()
       if maybe_default_struct.is_err:
-        err(fmt"{struct_get.location} module `{resolved_module_def.name.asl}` does not have a default struct")
+        err(err_no_default_struct(struct_get.location, resolved_module_def.name.asl))
       else:
         let resolved_struct = maybe_default_struct.get
         let resolved_field_module_ref = ? resolved_struct.find_field(
