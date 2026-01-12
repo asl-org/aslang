@@ -29,10 +29,12 @@ Source (.asl) -> Tokenizer -> Parser -> Deps Analyzer -> Resolver -> Codegen -> 
 - Converts text into tokens (identifiers, keywords, literals, operators)
 - Makes it easier to work with raw text
 
-### 2. Parser (`src/resolver/deps_analyzer/parser.nim`)
+### 2. Parser (`src/resolver/deps_analyzer/parser.nim` + `parser/` submodules)
 - Consumes tokens
 - Produces larger AST blocks: `Module`, `Generic`, `Struct`, `Function`
 - `File` is the top-level block containing all modules
+- **Structure**: `parser.nim` acts as an import/export hub following Nim convention
+- **Submodules**: Broken down into focused modules (see Project Structure below)
 
 ### 3. Deps Analyzer (`src/resolver/deps_analyzer.nim`)
 - Assigns types to identifiers (variables, modules)
@@ -59,9 +61,38 @@ src/
   resolver/
     deps_analyzer.nim        # Type assignment entry point + assign_type logic
     deps_analyzer/
-      parser.nim             # AST parsing (Module, Struct, Function, etc.)
+      parser.nim             # Parser import/export hub + native module initialization
       parser/
+        # Core parsing infrastructure
         tokenizer.nim        # Lexical analysis (Token, Location)
+        core.nim             # Parser type, token specs, space/indent handling
+
+        # Basic AST nodes
+        identifier.nim       # Identifier type and parsing
+        module_ref.nim       # ModuleRef type (recursive, supports generics)
+        literal.nim          # Literal types (Integer, Float, String)
+
+        # Definitions
+        defs.nim             # ArgumentDefinition, FunctionDefinition, StructDefinition
+        struct.nim           # Struct type with fields
+
+        # Expressions and calls
+        arg.nim              # Argument, FunctionRef, FunctionCall
+        initializer.nim      # LiteralInit, StructRef, StructInit, Initializer, StructGet
+
+        # Pattern matching
+        pattern.nim          # MatchDefinition, StructPattern, CasePattern, CaseDefinition
+
+        # Complex expressions (mutually recursive - must stay together)
+        expression.nim       # Expression, Statement, Case, Else, Match
+
+        # Functions and generics
+        function.nim         # UserFunction, ExternFunction, Function (unified)
+        generic.nim          # Generic type with constraints
+
+        # Modules and files
+        module.nim           # UserModuleDefinition, UserModule, NativeModule, Module, ModulePayload
+        file.nim             # File type (top-level container)
 
       # Typed AST types (import hierarchy: file -> module -> expr -> call/init/defs/ref)
       typed_file.nim         # TypedFile - top-level typed container
@@ -80,7 +111,34 @@ examples/                    # Test files (.asl)
   project-euler/             # Project Euler solutions for testing
 ```
 
-### Import Hierarchy
+### Import Hierarchies
+
+#### Parser Layer Import Order
+
+The parser submodules follow a dependency-ordered import pattern:
+
+```
+parser.nim (hub)
+  ├── parser/tokenizer       # No dependencies
+  ├── parser/core            # No dependencies
+  ├── parser/identifier      # Depends on core
+  ├── parser/module_ref      # Depends on identifier, core
+  ├── parser/defs            # Depends on identifier, module_ref, core
+  ├── parser/literal         # Depends on identifier, core
+  ├── parser/struct          # Depends on defs, identifier, module_ref, core
+  ├── parser/arg             # Depends on identifier, module_ref, literal, core
+  ├── parser/initializer     # Depends on identifier, module_ref, literal, arg, core
+  ├── parser/pattern         # Depends on identifier, literal, core
+  ├── parser/expression      # Depends on identifier, arg, initializer, pattern, core
+  ├── parser/generic         # Depends on identifier, module_ref, defs, core
+  ├── parser/function        # Depends on identifier, module_ref, defs, expression, core
+  ├── parser/module          # Depends on identifier, module_ref, defs, struct, generic, function, core
+  └── parser/file            # Depends on module, function, core
+```
+
+**Note**: `parser.nim` acts as an import/export hub. It imports all submodules and re-exports them, following the Nim convention where `<name>.nim` serves as the public interface for a `<name>/` directory.
+
+#### Typed AST Import Hierarchy
 
 The typed AST files follow a chain import pattern where each file imports and re-exports its dependencies:
 
@@ -103,6 +161,8 @@ This allows a single `import deps_analyzer/typed_file; export typed_file` to acc
 - Max 250 lines per file for readability
 - Chain imports/exports - each module imports and re-exports its dependency
 - Functions close to their struct definitions
+- **Parser pattern**: `<name>.nim` acts as import/export hub for `<name>/` directory
+- **Mutually recursive types**: Must be defined together in a single `type` block (e.g., Expression, Statement, Case, Else, Match)
 
 ### Naming Conventions
 - `underscore_case` for all identifiers (never camelCase)
@@ -192,6 +252,53 @@ export typed_ref
 - Minimize inter-module dependencies
 - Export only what is needed (use `*` marker)
 - Handle cyclic type dependencies by grouping in single `type` block
+- **Mutually recursive types**: Define all types together in one `type` block, use forward declarations for procs
+
+```nim
+# Forward declarations for mutually recursive procs
+proc location*(match: Match): Location
+proc asl*(match: Match, indent: string): seq[string]
+proc match_spec*(parser: Parser, indent: int): Result[Match, string]
+
+# Mutually recursive types - all defined together
+type
+  Expression* = ref object of RootObj
+    case kind: ExpressionKind
+    of EK_MATCH: match: Match
+    # ... other variants
+
+  Statement* = ref object of RootObj
+    expression: Expression
+    # ...
+
+  Match* = ref object of RootObj
+    case_blocks: seq[Case]
+    # ...
+
+  Case* = ref object of RootObj
+    statements: seq[Statement]
+    # ...
+
+  Else* = ref object of RootObj
+    statements: seq[Statement]
+    # ...
+```
+
+### Parser Module Structure
+
+The parser follows the Nim convention where `parser.nim` serves as an import/export hub:
+
+- **`parser.nim`**:
+  - Imports and exports all submodules
+  - Contains native module initialization (`native_modules()`, `new_native_error_module()`, etc.)
+  - Contains main `parse()` function
+  - Currently ~285 lines (down from ~793)
+
+- **Submodules** (`parser/` directory):
+  - Each focused on a specific aspect of parsing
+  - All under 250 lines
+  - Organized by dependency order
+  - Export their types and parsing functions
 
 ## Key Types
 
@@ -357,3 +464,9 @@ proc assign_type(file: File, module: NativeModule, id: uint64): Result[TypedNati
 6. Prefer `parser.Module` over `UserModule`/`NativeModule` for internal functions
 7. Use chain exports - Import and re-export dependencies to minimize import statements
 8. Keep files under 250 lines - Split large files following the `<name>.nim` + `<name>/` pattern
+9. **Parser breakdown pattern**: When breaking down parser files:
+   - Extract related types into focused modules (e.g., `parser/literal.nim` for all literal types)
+   - Keep mutually recursive types together (e.g., Expression, Statement, Case, Else, Match)
+   - Order imports by dependency (no dependencies first, then dependent modules)
+   - Update `parser.nim` to import and export all submodules
+   - Keep initialization code (like `native_modules()`) in `parser.nim` if it's specific to the parser
