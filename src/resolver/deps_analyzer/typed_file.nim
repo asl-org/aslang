@@ -26,18 +26,18 @@ proc new_typed_file*(name: string, indent: int, maybe_start_def: Option[
   var native_modules_map: Table[NativeModule, TypedNativeModule]
   var typed_native_modules: seq[TypedNativeModule]
   for (native_module, typed_module) in native_modules:
-    doAssert(typed_module.kind == TMK_NATIVE, "expected native module")
+    do_assert(typed_module.kind == TMK_NATIVE, "expected native module")
     let native = typed_module.native.get
     native_modules_map[native_module] = native
     typed_native_modules.add(native)
   var typed_user_modules: seq[TypedUserModule]
   for typed_module in user_modules:
-    doAssert(typed_module.kind == TMK_USER, "expected user module")
+    do_assert(typed_module.kind == TMK_USER, "expected user module")
     typed_user_modules.add(typed_module.user.get)
   var typed_user_modules_map: Table[UserModule, TypedUserModule]
   for user_module in user_modules_map.keys:
     let typed_module = user_modules_map[user_module]
-    doAssert(typed_module.kind == TMK_USER, "expected user module")
+    do_assert(typed_module.kind == TMK_USER, "expected user module")
     typed_user_modules_map[user_module] = typed_module.user.get
 
   var modules: seq[TypedModule]
@@ -59,7 +59,8 @@ proc start_def*(file: TypedFile): Result[TypedFunctionDefinition, string] =
   case file.maybe_start_def.is_some
   of true: ok(file.maybe_start_def.get)
   of false: err(fmt"{file.path} failed to find `start` function")
-proc native_modules*(file: TypedFile): seq[TypedNativeModule] = file.native_modules
+proc native_modules*(file: TypedFile): seq[
+    TypedNativeModule] = file.native_modules
 proc user_modules*(file: TypedFile): seq[TypedUserModule] = file.user_modules
 proc functions*(file: TypedFile): seq[TypedFunction] = file.functions
 

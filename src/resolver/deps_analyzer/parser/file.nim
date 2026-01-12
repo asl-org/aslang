@@ -106,6 +106,8 @@ proc file_spec*(parser: Parser, native_modules: seq[NativeModule]): Result[File,
     if maybe_module.is_ok:
       modules.add(maybe_module.get)
       continue
+    else:
+      echo maybe_module.error
 
     let maybe_function = parser.expect(function_spec, 0)
     if maybe_function.is_ok:

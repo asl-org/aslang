@@ -11,6 +11,12 @@ type UserFunction* = ref object of RootObj
   def: FunctionDefinition
   steps: seq[Statement]
 
+proc new_user_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
+    UserFunction, string] =
+  if steps.len == 0:
+    return err(fmt"{def.location} [PE134] function `{def.name.asl}` must have at least one statement")
+  ok(UserFunction(def: def, steps: steps))
+
 # =============================================================================
 # ExternFunction
 # =============================================================================
@@ -39,7 +45,8 @@ proc new_extern_function*(extern: string, returns: string, name: string,
 
   ok(ExternFunction(def: def, extern: extern))
 
-proc new_extern_function*(def: FunctionDefinition, extern: string): ExternFunction =
+proc new_extern_function*(def: FunctionDefinition,
+    extern: string): ExternFunction =
   ExternFunction(def: def, extern: extern)
 
 proc name*(function: ExternFunction): Identifier = function.def.name
@@ -60,11 +67,10 @@ type Function* = ref object of RootObj
   of FK_EXTERN:
     extern_func: ExternFunction
 
-proc make_user_function*(def: FunctionDefinition, steps: seq[
-    Statement]): Function =
-  Function(kind: FK_USER, user_func: UserFunction(def: def, steps: steps))
+proc new_function*(user_func: UserFunction): Function =
+  Function(kind: FK_USER, user_func: user_func)
 
-proc function*(extern_func: ExternFunction): Function =
+proc new_function*(extern_func: ExternFunction): Function =
   Function(kind: FK_EXTERN, extern_func: extern_func)
 
 proc def*(function: Function): FunctionDefinition =
@@ -84,12 +90,6 @@ proc extern_func*(function: Function): ExternFunction =
   doAssert function.kind == FK_EXTERN, "expected extern function"
   function.extern_func
 
-proc new_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
-    Function, string] =
-  if steps.len == 0:
-    return err(fmt"{def.location} [PE134] function `{def.name.asl}` must have at least one statement")
-  ok(make_user_function(def, steps))
-
 proc asl*(function: Function, indent: string): seq[string] =
   let header = function.def.asl
 
@@ -100,7 +100,7 @@ proc asl*(function: Function, indent: string): seq[string] =
 
   return (@[header] & lines)
 
-proc function_spec*(parser: Parser, indent: int): Result[Function, string] =
+proc user_function_spec*(parser: Parser, indent: int): Result[UserFunction, string] =
   let def = ? parser.expect(function_definition_spec, indent)
   discard ? parser.expect(strict_empty_line_spec)
 
@@ -115,4 +115,28 @@ proc function_spec*(parser: Parser, indent: int): Result[Function, string] =
     discard ? parser.expect(optional_empty_line_spec)
     maybe_expression = parser.expect(statement_spec, indent + 1)
 
-  new_function(def, steps)
+  new_user_function(def, steps)
+
+proc extern_header_spec(parser: Parser, indent: int): Result[Identifier, string] =
+  discard ? parser.expect(indent_spec, indent)
+  discard ? parser.expect(extern_keyword_spec)
+  discard ? parser.expect(strict_space_spec)
+  let native = ? parser.expect(identifier_spec)
+  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect(colon_spec)
+  ok(native)
+
+proc extern_function_spec*(parser: Parser, indent: int): Result[ExternFunction, string] =
+  let native = ? parser.expect(extern_header_spec, indent)
+  discard ? parser.expect(strict_empty_line_spec)
+  let def = ? parser.expect(function_definition_spec, indent + 1)
+  ok(new_extern_function(def, native.asl))
+
+proc function_spec*(parser: Parser, indent: int): Result[Function, string] =
+  let maybe_user_func = parser.expect(user_function_spec, indent)
+  if maybe_user_func.is_ok:
+    return ok(new_function(maybe_user_func.get))
+
+  let maybe_extern_func = parser.expect(extern_function_spec, indent)
+  if maybe_extern_func.is_ok:
+    return ok(new_function(maybe_extern_func.get))
