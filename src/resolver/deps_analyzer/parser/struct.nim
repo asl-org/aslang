@@ -196,7 +196,7 @@ type
     of DK_UNION: union: Union
     of DK_MULTI_STRUCT: structs: seq[Struct]
 
-proc new_data(): Data =
+proc new_data*(): Data =
   Data(kind: DK_NONE)
 
 proc new_data(union: Union): Data =
