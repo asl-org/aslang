@@ -7,6 +7,7 @@ export tokenizer
 const MAX_IDENTIFIER_LENGTH* = 256
 const MAX_TYPE_CHILDREN_COUNT* = 8
 const MAX_ARGS_LENGTH* = 32
+const MAX_BRANCH_LENGTH* = 256
 
 # parser constants
 const INDENT_SIZE* = 2 # spaces
@@ -76,6 +77,9 @@ proc keyword_spec_util*(parser: Parser, keyword: string): Result[Token, string] 
 # keyword specs
 proc module_keyword_spec*(parser: Parser): Result[Token,
     string] = parser.keyword_spec_util("module")
+
+proc extern_keyword_spec*(parser: Parser): Result[Token,
+    string] = parser.keyword_spec_util("extern")
 
 proc fn_keyword_spec*(parser: Parser): Result[Token,
     string] = parser.keyword_spec_util("fn")

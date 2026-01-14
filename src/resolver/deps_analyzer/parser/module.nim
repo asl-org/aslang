@@ -40,6 +40,7 @@ type UserModule* = ref object of RootObj
   def: UserModuleDefinition
   generics: seq[Generic]
   generics_map: Table[Identifier, int]
+  data: Data
   structs: seq[Struct]
   default_struct_index: int
   structs_map: Table[Identifier, int]
@@ -48,12 +49,12 @@ type UserModule* = ref object of RootObj
   function_defs_hash_map: Table[Hash, int]
 
 proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
-    structs: seq[Struct], functions: seq[Function]): Result[UserModule, string] =
-  if generics.len + structs.len + functions.len == 0:
-    return err(fmt"{def.location} [PE142] module can not be empty")
-
-  if generics.len > 0 and structs.len + functions.len == 0:
-    return err(fmt"{def.location} [PE143] module can not only contain generics")
+    data: Data, functions: seq[Function]): Result[UserModule, string] =
+  if functions.len == 0 and data.kind == DK_NONE:
+    if generics.len == 0:
+      return err(fmt"{def.location} [PE142] module can not be empty")
+    else:
+      return err(fmt"{def.location} [PE143] module can not only contain generics")
 
   var generics_map: Table[Identifier, int]
   for index, generic in generics:
@@ -65,56 +66,223 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
 
   var structs_map: Table[Identifier, int]
   var default_struct_index = -1
-  for index, struct in structs:
-    case struct.def.kind:
-    of SDK_DEFAULT:
-      if default_struct_index == -1:
-        default_struct_index = index
-      else:
-        let predefined_default_struct_location = structs[
-            default_struct_index].location
-        return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
-    of SDK_NAMED:
+  case data.kind:
+  of DK_MULTI_STRUCT:
+    let structs = ? data.structs
+    for index, struct in structs:
+      case struct.def.kind:
+      of SDK_DEFAULT:
+        if default_struct_index == -1:
+          default_struct_index = index
+        else:
+          let predefined_default_struct_location = structs[
+              default_struct_index].location
+          return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
+      of SDK_NAMED:
+        let struct_name = ? struct.name
+        if struct_name in generics_map:
+          let generic = generics[generics_map[struct_name]]
+          return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+
+        if struct_name in structs_map:
+          let predefined_struct_location = structs[structs_map[
+              struct_name]].location
+          return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
+
+        structs_map[struct_name] = index
+
+    var function_defs_hash_map: Table[Hash, int]
+    var functions_map: Table[Identifier, seq[int]]
+    for index, function in functions:
+      if function.name in generics_map:
+        let generic = generics[generics_map[function.name]]
+        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+
+      if function.name in structs_map:
+        let struct = structs[structs_map[function.name]]
+        let struct_name = ? struct.name
+        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
+
+      let def_hash = function.def.hash
+      if def_hash in function_defs_hash_map:
+        let predefined_function_location = functions[function_defs_hash_map[
+            def_hash]].location
+        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+      function_defs_hash_map[def_hash] = index
+
+      if function.name notin functions_map:
+        functions_map[function.name] = new_seq[int]()
+      functions_map[function.name].add(index)
+
+    ok(UserModule(def: def, structs: structs, structs_map: structs_map,
+        default_struct_index: default_struct_index, generics: generics,
+        generics_map: generics_map, functions: functions,
+        functions_map: functions_map,
+        function_defs_hash_map: function_defs_hash_map))
+  of DK_STRUCT:
+    let struct = ? data.struct
+    if struct.def.kind != SDK_DEFAULT:
       let struct_name = ? struct.name
-      if struct_name in generics_map:
-        let generic = generics[generics_map[struct_name]]
-        return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+      return err(fmt"{struct.location} [PE145] expected default struct but found named struct: `{struct_name.asl}`")
+    else:
+      default_struct_index = 0
 
-      if struct_name in structs_map:
-        let predefined_struct_location = structs[structs_map[
-            struct_name]].location
-        return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
+    var function_defs_hash_map: Table[Hash, int]
+    var functions_map: Table[Identifier, seq[int]]
+    for index, function in functions:
+      if function.name in generics_map:
+        let generic = generics[generics_map[function.name]]
+        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
 
-      structs_map[struct_name] = index
+      let def_hash = function.def.hash
+      if def_hash in function_defs_hash_map:
+        let predefined_function_location = functions[function_defs_hash_map[
+            def_hash]].location
+        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+      function_defs_hash_map[def_hash] = index
 
-  var function_defs_hash_map: Table[Hash, int]
-  var functions_map: Table[Identifier, seq[int]]
-  for index, function in functions:
-    if function.name in generics_map:
-      let generic = generics[generics_map[function.name]]
-      return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+      if function.name notin functions_map:
+        functions_map[function.name] = new_seq[int]()
+      functions_map[function.name].add(index)
 
-    if function.name in structs_map:
-      let struct = structs[structs_map[function.name]]
-      let struct_name = ? struct.name
-      return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
+    ok(UserModule(def: def, structs: @[struct], data: data,
+        default_struct_index: 0, generics: generics, generics_map: generics_map,
+        functions: functions, functions_map: functions_map,
+        function_defs_hash_map: function_defs_hash_map))
+  of DK_UNION:
+    let union = ? data.union
+    var function_defs_hash_map: Table[Hash, int]
+    var functions_map: Table[Identifier, seq[int]]
+    for index, function in functions:
+      if function.name in generics_map:
+        let generic = generics[generics_map[function.name]]
+        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
 
-    let def_hash = function.def.hash
-    if def_hash in function_defs_hash_map:
-      let predefined_function_location = functions[function_defs_hash_map[
-          def_hash]].location
-      return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
-    function_defs_hash_map[def_hash] = index
+      let maybe_branch = union.find_branch(function.name)
+      if maybe_branch.is_ok:
+        let branch_name = maybe_branch.get.name
+        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{branch_name.asl}` at {branch_name.location}")
 
-    if function.name notin functions_map:
-      functions_map[function.name] = new_seq[int]()
-    functions_map[function.name].add(index)
+      let def_hash = function.def.hash
+      if def_hash in function_defs_hash_map:
+        let predefined_function_location = functions[function_defs_hash_map[
+            def_hash]].location
+        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+      function_defs_hash_map[def_hash] = index
 
-  ok(UserModule(def: def, structs: structs, structs_map: structs_map,
-      default_struct_index: default_struct_index, generics: generics,
-      generics_map: generics_map, functions: functions,
-      functions_map: functions_map,
-      function_defs_hash_map: function_defs_hash_map))
+      if function.name notin functions_map:
+        functions_map[function.name] = new_seq[int]()
+      functions_map[function.name].add(index)
+
+    ok(UserModule(def: def, data: data,
+        default_struct_index: default_struct_index, generics: generics,
+        generics_map: generics_map, functions: functions,
+        functions_map: functions_map,
+        function_defs_hash_map: function_defs_hash_map))
+  of DK_NONE:
+    let structs: seq[Struct] = @[]
+    for index, struct in structs:
+      case struct.def.kind:
+      of SDK_DEFAULT:
+        if default_struct_index == -1:
+          default_struct_index = index
+        else:
+          let predefined_default_struct_location = structs[
+              default_struct_index].location
+          return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
+      of SDK_NAMED:
+        let struct_name = ? struct.name
+        if struct_name in generics_map:
+          let generic = generics[generics_map[struct_name]]
+          return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+
+        if struct_name in structs_map:
+          let predefined_struct_location = structs[structs_map[
+              struct_name]].location
+          return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
+
+        structs_map[struct_name] = index
+
+    var function_defs_hash_map: Table[Hash, int]
+    var functions_map: Table[Identifier, seq[int]]
+    for index, function in functions:
+      if function.name in generics_map:
+        let generic = generics[generics_map[function.name]]
+        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+
+      if function.name in structs_map:
+        let struct = structs[structs_map[function.name]]
+        let struct_name = ? struct.name
+        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
+
+      let def_hash = function.def.hash
+      if def_hash in function_defs_hash_map:
+        let predefined_function_location = functions[function_defs_hash_map[
+            def_hash]].location
+        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+      function_defs_hash_map[def_hash] = index
+
+      if function.name notin functions_map:
+        functions_map[function.name] = new_seq[int]()
+      functions_map[function.name].add(index)
+
+    ok(UserModule(def: def, structs: structs, structs_map: structs_map,
+        default_struct_index: default_struct_index, generics: generics,
+        generics_map: generics_map, functions: functions,
+        functions_map: functions_map,
+        function_defs_hash_map: function_defs_hash_map))
+  else:
+    let structs = ? data.structs
+    for index, struct in structs:
+      case struct.def.kind:
+      of SDK_DEFAULT:
+        if default_struct_index == -1:
+          default_struct_index = index
+        else:
+          let predefined_default_struct_location = structs[
+              default_struct_index].location
+          return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
+      of SDK_NAMED:
+        let struct_name = ? struct.name
+        if struct_name in generics_map:
+          let generic = generics[generics_map[struct_name]]
+          return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+
+        if struct_name in structs_map:
+          let predefined_struct_location = structs[structs_map[
+              struct_name]].location
+          return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
+
+        structs_map[struct_name] = index
+
+    var function_defs_hash_map: Table[Hash, int]
+    var functions_map: Table[Identifier, seq[int]]
+    for index, function in functions:
+      if function.name in generics_map:
+        let generic = generics[generics_map[function.name]]
+        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+
+      if function.name in structs_map:
+        let struct = structs[structs_map[function.name]]
+        let struct_name = ? struct.name
+        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
+
+      let def_hash = function.def.hash
+      if def_hash in function_defs_hash_map:
+        let predefined_function_location = functions[function_defs_hash_map[
+            def_hash]].location
+        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+      function_defs_hash_map[def_hash] = index
+
+      if function.name notin functions_map:
+        functions_map[function.name] = new_seq[int]()
+      functions_map[function.name].add(index)
+
+    ok(UserModule(def: def, structs: structs, structs_map: structs_map,
+        default_struct_index: default_struct_index, generics: generics,
+        generics_map: generics_map, functions: functions,
+        functions_map: functions_map,
+        function_defs_hash_map: function_defs_hash_map))
 
 proc hash*(module: UserModule): Hash = module.def.hash
 proc `==`*(self: UserModule, other: UserModule): bool = self.hash == other.hash
@@ -156,10 +324,7 @@ proc asl*(module: UserModule, indent: string): seq[string] =
 
   return lines
 
-proc module_spec*(parser: Parser, indent: int): Result[UserModule, string] =
-  discard ? parser.expect(indent_spec, indent)
-  let def = ? parser.expect(module_definition_spec)
-
+proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic], string] =
   var generics: seq[Generic]
   discard ? parser.expect(optional_empty_line_spec)
   var maybe_generic = parser.expect(generic_spec, indent + 1)
@@ -167,15 +332,9 @@ proc module_spec*(parser: Parser, indent: int): Result[UserModule, string] =
     generics.add(maybe_generic.get)
     discard ? parser.expect(optional_empty_line_spec)
     maybe_generic = parser.expect(generic_spec, indent + 1)
+  ok(generics)
 
-  var structs: seq[Struct]
-  discard ? parser.expect(optional_empty_line_spec)
-  var maybe_struct = parser.expect(struct_spec, indent + 1)
-  while maybe_struct.is_ok:
-    structs.add(maybe_struct.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_struct = parser.expect(struct_spec, indent + 1)
-
+proc function_list_spec(parser: Parser, indent: int): Result[seq[Function], string] =
   var functions: seq[Function]
   discard ? parser.expect(optional_empty_line_spec)
   var maybe_function = parser.expect(function_spec, indent + 1)
@@ -183,106 +342,75 @@ proc module_spec*(parser: Parser, indent: int): Result[UserModule, string] =
     functions.add(maybe_function.get)
     discard ? parser.expect(optional_empty_line_spec)
     maybe_function = parser.expect(function_spec, indent + 1)
+  ok(functions)
 
-  new_user_module(def, generics, structs, functions)
+proc module_spec*(parser: Parser, indent: int): Result[UserModule, string] =
+  discard ? parser.expect(indent_spec, indent)
+  let def = ? parser.expect(module_definition_spec)
+  discard ? parser.expect(optional_empty_line_spec)
+  let generics = ? parser.expect(generic_list_spec, indent)
+  discard ? parser.expect(optional_empty_line_spec)
+  let data = ? parser.expect(data_spec, indent)
+  discard ? parser.expect(optional_empty_line_spec)
+  let functions = ? parser.expect(function_list_spec, indent)
+  new_user_module(def, generics, data, functions)
 
 # =============================================================================
 # NativeModule
 # =============================================================================
 
 type NativeModule* = ref object of RootObj
-  name: Identifier
-  generics: seq[Generic]
-  generics_map: Table[Identifier, int]
-  structs: seq[Struct]
-  functions: seq[Function]
-  functions_map: Table[Identifier, seq[int]]
-  function_defs_hash_map: Table[Hash, int]
+  user_module: UserModule
 
 proc new_native_module*(name: string, functions: seq[
     ExternFunction]): Result[NativeModule, string] =
   let name = ? new_identifier(name)
-  var function_defs_hash_map: Table[Hash, int]
-  var function_wrappers: seq[Function]
-  var functions_map: Table[Identifier, seq[int]]
-  for index, function in functions.pairs:
-    let def_hash = function.def.hash
-    if def_hash in function_defs_hash_map:
-      return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
-    function_defs_hash_map[def_hash] = index
-    if function.name notin functions_map:
-      functions_map[function.name] = new_seq[int]()
-    functions_map[function.name].add(index)
-    function_wrappers.add(function.function)
+  let user_module_def = new_module_definition(name, name.location)
+  let user_module_data = new_data()
+  let user_module_functions = functions.map_it(new_function(it))
+  let user_module = ? new_user_module(user_module_def, @[], user_module_data, user_module_functions)
 
-  ok(NativeModule(name: name, functions: function_wrappers,
-      functions_map: functions_map,
-      function_defs_hash_map: function_defs_hash_map))
+  ok(NativeModule(user_module: user_module))
 
 proc new_native_module*(name: string, generics: seq[Generic], structs: seq[
     Struct], functions: seq[ExternFunction]): Result[NativeModule, string] =
-  if generics.len + structs.len + functions.len == 0:
-    return err(fmt"[INTERNAL ERROR] module can not be empty")
-
-  if generics.len > 0 and structs.len + functions.len == 0:
-    return err(fmt"[INTERNAL ERROR] module can not only contain generics")
-
-  var generics_map: Table[Identifier, int]
-  var function_wrappers: seq[Function]
-  var functions_map: Table[Identifier, seq[int]]
-  for index, generic in generics:
-    if generic.name in generics_map:
-      let predefined_generic_location = generics[generics_map[
-          generic.name]].location
-      return err(fmt"{generic.location} [PE144] generic `{generic.name.asl}` is already defined at {predefined_generic_location}")
-    generics_map[generic.name] = index
-
   let name = ? new_identifier(name)
-  var function_defs_hash_map: Table[Hash, int]
-  for index, function in functions.pairs:
-    let def_hash = function.def.hash
-    if def_hash in function_defs_hash_map:
-      return err(fmt"[INTERNAL] - Native function `{function.name.asl}` is defined twice")
-    function_defs_hash_map[def_hash] = index
-    if function.name notin functions_map:
-      functions_map[function.name] = new_seq[int]()
-    functions_map[function.name].add(index)
-    function_wrappers.add(function.function)
+  let user_module_def = new_module_definition(name, name.location)
+  let user_module_data = new_data(structs)
+  let user_module_functions = functions.map_it(new_function(it))
+  let user_module = ? new_user_module(user_module_def, generics,
+      user_module_data, user_module_functions)
 
-  ok(NativeModule(name: name, structs: structs, generics: generics,
-      generics_map: generics_map, functions: function_wrappers,
-      functions_map: functions_map,
-      function_defs_hash_map: function_defs_hash_map))
+  ok(NativeModule(user_module: user_module))
+
+proc name*(module: NativeModule): Identifier =
+  module.user_module.name
 
 proc hash*(module: NativeModule): Hash =
   module.name.hash
 
-proc name*(module: NativeModule): Identifier =
-  module.name
-
 proc generics*(module: NativeModule): seq[Generic] =
-  module.generics
+  module.user_module.generics
 
 proc structs*(module: NativeModule): seq[Struct] =
-  module.structs
+  module.user_module.structs
 
 proc functions*(module: NativeModule): seq[ExternFunction] =
   var externs: seq[ExternFunction]
-  for function in module.functions:
-    externs.add(function.extern_func)
+  for function in module.user_module.functions:
+    case function.kind:
+    of FK_EXTERN: externs.add(function.extern_func)
+    of FK_USER: discard
   externs
 
 proc all_functions*(module: NativeModule): seq[Function] =
-  module.functions
+  module.user_module.functions
 
 proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
   ok(new_module_ref(module.name))
 
 proc find_generic*(module: NativeModule, name: Identifier): Result[Generic, string] =
-  if name notin module.generics_map:
-    err(fmt"{name.location} [PE154] module `{module.name.asl}` does not have any generic named `{name.asl}`")
-  else:
-    ok(module.generics[module.generics_map[name]])
+  module.user_module.find_generic(name)
 
 # =============================================================================
 # Module (Unified)
@@ -336,8 +464,9 @@ proc payload*(module: Module): ModulePayload =
         m.functions, m.functions_map, m.function_defs_hash_map)
   of MK_NATIVE:
     let m = module.native
-    new_module_payload(m.name, m.generics, m.generics_map, m.structs,
-        m.functions, m.functions_map, m.function_defs_hash_map)
+    new_module_payload(m.name, m.generics, m.user_module.generics_map,
+        m.structs, m.user_module.functions, m.user_module.functions_map,
+        m.user_module.function_defs_hash_map)
 
 # =============================================================================
 # Module Accessors
@@ -393,7 +522,7 @@ proc native_functions*(module: Module): Result[seq[ExternFunction], string] =
   of MK_NATIVE:
     var externs: seq[ExternFunction]
     for function in module.native.functions:
-      externs.add(function.extern_func)
+      externs.add(function)
     ok(externs)
   of MK_USER: err(fmt"[PE160] module `{module.payload.name.asl}` is not a native module")
 
