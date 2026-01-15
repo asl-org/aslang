@@ -8,7 +8,9 @@ type Location* = ref object of RootObj
   tail: Cursor
 
 proc new_location*(filename: string, head: Cursor, tail: Cursor): Location =
-  Location(filename: filename, head: head)
+  Location(filename: filename, head: head, tail: tail)
+
+proc tail*(location: Location): Cursor = location.tail
 
 proc `$`*(location: Location): string =
   fmt"{location.filename}:{location.head}"

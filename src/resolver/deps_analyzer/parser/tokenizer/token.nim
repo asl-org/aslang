@@ -1,9 +1,10 @@
-import results, hashes, strformat
+import results, hashes
 
 import cursor
 import constants
 import location
 import spec
+import error
 
 type TokenKind* = enum
   TK_PLUS, TK_MINUS
@@ -37,22 +38,25 @@ type
   TokenSpec = ref object of RootObj
     case kind: TokenSpecKind
     of TSK_STATIC: value: string
-    of TSK_MATCHER: matcher: proc(content: string, start: int): Result[int, string]
+    of TSK_MATCHER: matcher: proc(content: string, start: int): Result[int, TokenizerError]
 
 proc new_token_spec(value: string): TokenSpec =
   TokenSpec(kind: TSK_STATIC, value: value)
 
 proc new_token_spec(matcher: proc(content: string, start: int): Result[int,
-    string]): TokenSpec =
+    TokenizerError]): TokenSpec =
   TokenSpec(kind: TSK_MATCHER, matcher: matcher)
 
-proc match*(spec: TokenSpec, cursor: Cursor, content: string): Result[string, string] =
+proc match*(spec: TokenSpec, cursor: Cursor, content: string): Result[string,
+    TokenizerError] =
   let index =
     case spec.kind:
     of TSK_STATIC:
-      if cursor.index + spec.value.len > content.len: return err("reached eof")
+      if cursor.index + spec.value.len > content.len:
+        return err(err_tokenizer_reached_eof(cursor.index))
       let chunk = content.substr(cursor.index, cursor.index + spec.value.len - 1)
-      if chunk != spec.value: return err(fmt"expected `{spec.value}` found `{chunk}`")
+      if chunk != spec.value:
+        return err(err_tokenizer_expectation_mismatch(cursor.index, spec.value, chunk))
       cursor.index + spec.value.len
     of TSK_MATCHER:
       ? spec.matcher(content, cursor.index)
