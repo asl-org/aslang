@@ -1,7 +1,9 @@
-import results, strformat, hashes
+import results, hashes, strformat
 
+import cursor
 import constants
 import location
+import spec
 
 type TokenKind* = enum
   TK_PLUS, TK_MINUS
@@ -29,123 +31,54 @@ proc location*(token: Token): Location = token.location
 proc hash*(token: Token): Hash =
   hash(token.kind) !& hash(token.value)
 
-# Helper to add a single-character token
-proc add_single_char_token(tokens: var seq[Token], kind: TokenKind, char: char,
-    location: var Location): Location =
-  let token = new_token(kind, $char, location)
-  location = location.update(token.value)
-  tokens.add(token)
-  location
+type
+  TokenSpecKind = enum
+    TSK_STATIC, TSK_MATCHER
+  TokenSpec = ref object of RootObj
+    case kind: TokenSpecKind
+    of TSK_STATIC: value: string
+    of TSK_MATCHER: matcher: proc(content: string, start: int): Result[int, string]
 
-proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
-  var index = 0
-  var location = new_location(filename)
-  var tokens: seq[Token]
+proc new_token_spec(value: string): TokenSpec =
+  TokenSpec(kind: TSK_STATIC, value: value)
 
-  while index < content.len:
-    case content[index]:
-    of PLUS_OP:
-      location = add_single_char_token(tokens, TK_PLUS, content[index], location)
-      index += 1
-    of MINUS_OP:
-      location = add_single_char_token(tokens, TK_MINUS, content[index], location)
-      index += 1
-    of COMMA_OP:
-      location = add_single_char_token(tokens, TK_COMMA, content[index], location)
-      index += 1
-    of DOT_OP:
-      location = add_single_char_token(tokens, TK_DOT, content[index], location)
-      index += 1
-    of COLON_OP:
-      location = add_single_char_token(tokens, TK_COLON, content[index], location)
-      index += 1
-    of EQUAL_OP:
-      location = add_single_char_token(tokens, TK_EQUAL, content[index], location)
-      index += 1
-    of BACK_SLASH_OP:
-      location = add_single_char_token(tokens, TK_BACK_SLASH, content[index], location)
-      index += 1
-    of OPEN_PAREN_OP:
-      location = add_single_char_token(tokens, TK_OPEN_PAREN, content[index], location)
-      index += 1
-    of CLOSE_PAREN_OP:
-      location = add_single_char_token(tokens, TK_CLOSE_PAREN, content[index], location)
-      index += 1
-    of OPEN_CURLY_OP:
-      location = add_single_char_token(tokens, TK_OPEN_CURLY, content[index], location)
-      index += 1
-    of CLOSE_CURLY_OP:
-      location = add_single_char_token(tokens, TK_CLOSE_CURLY, content[index], location)
-      index += 1
-    of OPEN_SQUARE_OP:
-      location = add_single_char_token(tokens, TK_OPEN_SQUARE, content[index], location)
-      index += 1
-    of CLOSE_SQUARE_OP:
-      location = add_single_char_token(tokens, TK_CLOSE_SQUARE, content[index], location)
-      index += 1
-    of SPACE:
-      location = add_single_char_token(tokens, TK_SPACE, content[index], location)
-      index += 1
-    of NEW_LINE:
-      location = add_single_char_token(tokens, TK_NEW_LINE, content[index], location)
-      index += 1
-    of DOUBLE_QUOTE:
-      let start = index
+proc new_token_spec(matcher: proc(content: string, start: int): Result[int,
+    string]): TokenSpec =
+  TokenSpec(kind: TSK_MATCHER, matcher: matcher)
 
-      index += 1 # move past double quote
+proc match*(spec: TokenSpec, cursor: Cursor, content: string): Result[string, string] =
+  let index =
+    case spec.kind:
+    of TSK_STATIC:
+      if cursor.index + spec.value.len > content.len: return err("reached eof")
+      let chunk = content.substr(cursor.index, cursor.index + spec.value.len - 1)
+      if chunk != spec.value: return err(fmt"expected `{spec.value}` found `{chunk}`")
+      cursor.index + spec.value.len
+    of TSK_MATCHER:
+      ? spec.matcher(content, cursor.index)
+  ok(content.substr(cursor.index, index - 1))
 
-      # NOTE: this check is needed because in case it is not present while loop
-      # will be skipped entirely resulting into an invalid string token.
-      if index == content.len:
-        return err(fmt"{location} [TE101] failed to parse malformed string literal")
-
-      while index < content.len:
-        if content[index] == '"':
-          if index > 0 and content[index - 1] == '\\':
-            index += 1
-          else:
-            break
-        else:
-          index += 1
-
-        if index > start + MAX_STRING_LENGTH:
-          return err(fmt"{location} [TE102] string literal exceeded maximum supported length of {MAX_STRING_LENGTH}")
-
-      index += 1 # move past double quote again
-
-      let token = new_token(TK_STRING, content.substr(start, index - 1), location)
-      tokens.add(token)
-    of HASHTAG:
-      let start = index
-      # consume everything up until newline
-      while index < content.len and content[index] != '\n': index += 1
-      let token = new_token(TK_COMMENT, content.substr(start, index - 1), location)
-      location = location.update(token.value)
-      tokens.add(token)
-    of '0'..'9':
-      let start = index
-      while index < content.len and content[index] in '0'..'9':
-        index += 1
-        if index > start + MAX_DIGITS_LENGTH:
-          return err(fmt"{location} [TE103] integer literal exceeded maximum supported length of {MAX_DIGITS_LENGTH}")
-      let token = new_token(TK_DIGITS, content.substr(start, index - 1), location)
-      location = location.update(token.value)
-      tokens.add(token)
-    of 'a'..'z', 'A'..'Z':
-      let start = index
-      while index < content.len and ((content[index] in 'a'..'z') or (content[
-          index] in 'A'..'Z')):
-        index += 1
-      let token = new_token(TK_ALPHABETS, content.substr(start, index - 1), location)
-      location = location.update(token.value)
-      tokens.add(token)
-    of UNDERSCORE:
-      location = add_single_char_token(tokens, TK_UNDERSCORE, content[index], location)
-      index += 1
-    else:
-      return err(fmt"[TE104] {location} Unexpected character `{content[index]}` encountered")
-
-  # NOTE: Adding NEW_LINE Token to indicate end of token stream
-  tokens.add(new_token(TK_NEW_LINE, "\n", location))
-
-  ok(tokens)
+let TOKEN_SPECS* = @[
+  # matcher specs
+  (TK_STRING, new_token_spec(match_string)),
+  (TK_ALPHABETS, new_token_spec(match_alphabet)),
+  (TK_DIGITS, new_token_spec(match_digit)),
+  (TK_COMMENT, new_token_spec(match_comment)),
+  # static specs
+  (TK_PLUS, new_token_spec($PLUS_OP)),
+  (TK_MINUS, new_token_spec($MINUS_OP)),
+  (TK_COMMA, new_token_spec($COMMA_OP)),
+  (TK_DOT, new_token_spec($DOT_OP)),
+  (TK_COLON, new_token_spec($COLON_OP)),
+  (TK_EQUAL, new_token_spec($EQUAL_OP)),
+  (TK_BACK_SLASH, new_token_spec($BACK_SLASH_OP)),
+  (TK_OPEN_PAREN, new_token_spec($OPEN_PAREN_OP)),
+  (TK_CLOSE_PAREN, new_token_spec($CLOSE_PAREN_OP)),
+  (TK_OPEN_CURLY, new_token_spec($OPEN_CURLY_OP)),
+  (TK_CLOSE_CURLY, new_token_spec($CLOSE_CURLY_OP)),
+  (TK_OPEN_SQUARE, new_token_spec($OPEN_SQUARE_OP)),
+  (TK_CLOSE_SQUARE, new_token_spec($CLOSE_SQUARE_OP)),
+  (TK_UNDERSCORE, new_token_spec($UNDERSCORE)),
+  (TK_SPACE, new_token_spec($SPACE)),
+  (TK_NEW_LINE, new_token_spec($NEW_LINE)),
+]

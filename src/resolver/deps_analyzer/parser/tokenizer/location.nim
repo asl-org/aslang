@@ -1,27 +1,17 @@
 import strformat, hashes
 
-import constants
+import cursor
 
-type Location* = object
+type Location* = ref object of RootObj
   filename: string
-  line: int = 1
-  col: int = 1
+  head: Cursor
+  tail: Cursor
 
-proc new_location*(filename: string): Location =
-  Location(filename: filename)
-
-proc update*(location: Location, value: string): Location =
-  var new_location = location
-  for x in value:
-    if x == NEW_LINE:
-      new_location.line += 1
-      new_location.col = 1
-    else:
-      new_location.col += 1
-  return new_location
+proc new_location*(filename: string, head: Cursor, tail: Cursor): Location =
+  Location(filename: filename, head: head)
 
 proc `$`*(location: Location): string =
-  fmt"{location.filename}:{location.line}:{location.col}"
+  fmt"{location.filename}:{location.head}"
 
 proc hash*(location: Location): Hash =
-  hash(location.filename) !& hash(location.line) !& hash(location.col)
+  hash((location.filename, location.head, location.tail))
