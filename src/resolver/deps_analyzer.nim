@@ -71,7 +71,7 @@ proc safe_parse[T](input: string): Result[void, string] =
 # like `byte_size`, `read`, `write`
 proc make_typed_module_ref(file: parser.File, module_name: string): Result[
     TypedModuleRef, string] =
-  let module_id = ? new_identifier(module_name)
+  let module_id = new_identifier(module_name)
   let module = ? file.find_module(module_id)
   case module.kind:
   of MK_NATIVE:
@@ -87,14 +87,14 @@ proc make_typed_module_ref(file: parser.File, module_name: string): Result[
 proc make_typed_arg_def(file: parser.File, module_name: string,
     arg_name: string): Result[TypedArgumentDefinition, string] =
   let arg_module_ref = ? make_typed_module_ref(file, module_name)
-  let arg_name_id = ? new_identifier(arg_name)
+  let arg_name_id = new_identifier(arg_name)
   ok(new_typed_argument_definition(arg_module_ref, arg_name_id))
 
 # NOTE: This is a utility function to internally add some function definitions
 # like `byte_size`, `read`, `write`
 proc make_typed_function_def(file: parser.File, name: string, args: seq[(string,
     string)], returns: string): Result[TypedFunctionDefinition, string] =
-  let name_id = ? new_identifier(name)
+  let name_id = new_identifier(name)
   let returns_module_ref = ? make_typed_module_ref(file, returns)
   var typed_arg_defs: seq[TypedArgumentDefinition]
   for (arg_module, arg_name) in args:
@@ -437,8 +437,13 @@ proc assign_type(file: parser.File, module: parser.Module, struct: Struct,
   for field in struct.fields: typed_fields.add( ? assign_type(file, module, field))
   case struct.def.kind:
   of SDK_DEFAULT: ok(new_typed_struct(id, typed_fields, struct.location))
-  of SDK_NAMED: ok(new_typed_struct(id, ? struct.name, typed_fields,
-      struct.location))
+  of SDK_NAMED:
+    let maybe_struct_name = struct.name
+    if maybe_struct_name.is_ok:
+      let struct_name = maybe_struct_name.get
+      ok(new_typed_struct(id, struct_name, typed_fields, struct.location))
+    else:
+      err($(maybe_struct_name.error))
 
 # Module processing helpers
 proc assign_type_generics(file: parser.File, module: parser.Module): Result[
@@ -611,14 +616,14 @@ proc assign_type*(file: parser.File): Result[TypedFile, string] =
     typed_modules.add(modules_map[module])
 
   var maybe_start_def: Option[TypedFunctionDefinition]
-  let maybe_start_def_def = ? make_typed_function_def(file, "start", @[(
+  let start_def = ? make_typed_function_def(file, "start", @[(
       "U8", "seed")], "U8")
 
   var typed_functions: seq[TypedFunction]
   for function in file.functions:
     let typed_function = ? assign_type(file, function)
     typed_functions.add(typed_function)
-    if typed_function.def == maybe_start_def_def:
+    if typed_function.def == start_def:
       maybe_start_def = some(typed_function.def)
 
   if maybe_start_def.is_none:

@@ -20,7 +20,7 @@ proc location*(unsigned_integer: UnsignedIntegerLiteral): Location =
 proc asl*(unsigned_integer: UnsignedIntegerLiteral): string =
   unsigned_integer.value
 
-proc unsigned_integer_spec*(parser: Parser): Result[UnsignedIntegerLiteral, string] =
+proc unsigned_integer_spec*(parser: Parser): Result[UnsignedIntegerLiteral, ParserError] =
   # TODO: Support underscore separated values as integers as well.
   let int_value_token = ? parser.token_spec_util(TK_DIGITS)
   ok(new_unsigned_integer(int_value_token))
@@ -38,7 +38,7 @@ type
     location: Location
 
 proc new_signed_integer*(sign: Token, unsigned_integer: UnsignedIntegerLiteral): Result[
-    SignedIntegerLiteral, string] =
+    SignedIntegerLiteral, ParserError] =
   case sign.kind:
   of TK_PLUS:
     ok(SignedIntegerLiteral(kind: SIK_POSITIVE, value: unsigned_integer.value,
@@ -47,7 +47,7 @@ proc new_signed_integer*(sign: Token, unsigned_integer: UnsignedIntegerLiteral):
     ok(SignedIntegerLiteral(kind: SIK_NEGATIVE, value: unsigned_integer.value,
         location: sign.location))
   else:
-    return err(fmt"{sign.location} [PE113] expected a sign `+` or `-` but found {sign.value}")
+    return err(err_parser_expected_sign(sign.location, sign.value))
 
 proc location*(signed_integer: SignedIntegerLiteral): Location =
   signed_integer.location
@@ -62,14 +62,19 @@ proc asl*(signed_integer: SignedIntegerLiteral): string =
     of SIK_NEGATIVE: "-"
   return sign & signed_integer.value
 
-proc sign_spec*(parser: Parser): Result[Token, string] =
-  let maybe_plus = parser.token_spec_util(TK_PLUS)
-  if maybe_plus.is_ok:
-    maybe_plus
-  else:
-    parser.token_spec_util(TK_MINUS)
+proc sign_spec*(parser: Parser): Result[Token, ParserError] =
+  var errors: seq[ParserError]
 
-proc signed_integer_spec*(parser: Parser): Result[SignedIntegerLiteral, string] =
+  let maybe_plus = parser.token_spec_util(TK_PLUS)
+  if maybe_plus.is_ok: return maybe_plus
+  else: errors.add(maybe_plus.error)
+
+  let maybe_minus = parser.token_spec_util(TK_MINUS)
+  if maybe_minus.is_ok: return maybe_minus
+
+  err(errors.max())
+
+proc signed_integer_spec*(parser: Parser): Result[SignedIntegerLiteral, ParserError] =
   var sign = ? parser.expect(sign_spec)
   let unsigned_intvalue = ? parser.expect(unsigned_integer_spec)
   new_signed_integer(sign, unsigned_intvalue)
@@ -102,10 +107,11 @@ proc kind*(integer: IntegerLiteral): IntegerLiteralKind = integer.kind
 proc signed*(integer: IntegerLiteral): Result[SignedIntegerLiteral, string] =
   case integer.kind:
   of ILK_SIGNED: ok(integer.signed)
-  of ILK_UNSIGNED: err(fmt"{integer.location} expected signed integer but found unsigned")
+  of ILK_UNSIGNED: err(fmt"[INTERNAL ERROR] expected signed integer but found unsigned")
+
 proc unsigned*(integer: IntegerLiteral): Result[UnsignedIntegerLiteral, string] =
   case integer.kind:
-  of ILK_SIGNED: err(fmt"{integer.location} expected unsigned integer but found signed")
+  of ILK_SIGNED: err(fmt"[INTERNAL ERROR] expected unsigned integer but found signed")
   of ILK_UNSIGNED: ok(integer.unsigned)
 
 proc asl*(integer: IntegerLiteral): string =
@@ -113,13 +119,22 @@ proc asl*(integer: IntegerLiteral): string =
   of ILK_SIGNED: integer.signed.asl
   of ILK_UNSIGNED: integer.unsigned.asl
 
-proc integer_spec*(parser: Parser): Result[IntegerLiteral, string] =
+proc integer_spec*(parser: Parser): Result[IntegerLiteral, ParserError] =
+  var errors: seq[ParserError]
+
   let maybe_unsigned_integer = parser.expect(unsigned_integer_spec)
   if maybe_unsigned_integer.is_ok:
-    ok(new_integer_literal(maybe_unsigned_integer.get))
+    return ok(new_integer_literal(maybe_unsigned_integer.get))
   else:
-    let signed_integer = ? parser.expect(signed_integer_spec)
-    ok(new_integer_literal(signed_integer))
+    errors.add(maybe_unsigned_integer.error)
+
+  let maybe_signed_integer = parser.expect(signed_integer_spec)
+  if maybe_signed_integer.is_ok:
+    return ok(new_integer_literal(maybe_signed_integer.get))
+  else:
+    errors.add(maybe_signed_integer.error)
+
+  err(errors.max())
 
 # =============================================================================
 # FloatLiteral
@@ -140,7 +155,7 @@ proc location*(float_literal: FloatLiteral): Location =
 proc asl*(float_literal: FloatLiteral): string =
   float_literal.value
 
-proc float_spec*(parser: Parser): Result[FloatLiteral, string] =
+proc float_spec*(parser: Parser): Result[FloatLiteral, ParserError] =
   # TODO: Improve float parsing to support scientific notation as well.
   let first = ? parser.expect(integer_spec)
   discard ? parser.expect(dot_spec)
@@ -155,12 +170,8 @@ type StringLiteral* = ref object of RootObj
   value: string
   location: Location
 
-proc new_string_literal*(token: Token): Result[StringLiteral, string] =
-  case token.kind:
-  of TK_STRING:
-    ok(StringLiteral(value: token.value, location: token.location))
-  else:
-    err(fmt"{token.location} [PE114] expected a string found token of type `{token.kind}` with value: `{token.value}`")
+proc new_string_literal*(value: string, location: Location): StringLiteral =
+  StringLiteral(value: value, location: location)
 
 proc location*(string_literal: StringLiteral): Location =
   string_literal.location
@@ -168,9 +179,9 @@ proc location*(string_literal: StringLiteral): Location =
 proc asl*(string_literal: StringLiteral): string =
   string_literal.value
 
-proc string_spec*(parser: Parser): Result[StringLiteral, string] =
+proc string_spec*(parser: Parser): Result[StringLiteral, ParserError] =
   let token = ? parser.token_spec_util(TK_STRING)
-  new_string_literal(token)
+  ok(new_string_literal(token.value, token.location))
 
 # =============================================================================
 # Literal (variant type)
@@ -205,17 +216,17 @@ proc kind*(literal: Literal): LiteralKind = literal.kind
 proc integer_literal*(literal: Literal): Result[IntegerLiteral, string] =
   case literal.kind:
   of LK_INTEGER: ok(literal.integer_literal)
-  else: err(fmt"{literal.location} [PE115] is not an integer")
+  else: err(fmt"[INTERNAL ERROR] is not an integer")
 
 proc float_literal*(literal: Literal): Result[FloatLiteral, string] =
   case literal.kind:
   of LK_FLOAT: ok(literal.float_literal)
-  else: err(fmt"{literal.location} [PE116] is not a float")
+  else: err(fmt"[INTERNAL ERROR] is not a float")
 
 proc string_literal*(literal: Literal): Result[StringLiteral, string] =
   case literal.kind:
   of LK_STRING: ok(literal.string_literal)
-  else: err(fmt"{literal.location} [PE117] is not a string")
+  else: err(fmt"[INTERNAL ERROR] is not a string")
 
 proc asl*(literal: Literal): string =
   case literal.kind:
@@ -223,18 +234,19 @@ proc asl*(literal: Literal): string =
   of LK_FLOAT: literal.float_literal.asl
   of LK_STRING: literal.string_literal.asl
 
-proc literal_spec*(parser: Parser): Result[Literal, string] =
+proc literal_spec*(parser: Parser): Result[Literal, ParserError] =
+  var errors: seq[ParserError]
+
   let maybe_integer = parser.expect(integer_spec)
-  if maybe_integer.is_ok:
-    return ok(new_literal(maybe_integer.get))
+  if maybe_integer.is_ok: return ok(new_literal(maybe_integer.get))
+  else: errors.add(maybe_integer.error)
 
   let maybe_float = parser.expect(float_spec)
-  if maybe_float.is_ok:
-    return ok(new_literal(maybe_float.get))
+  if maybe_float.is_ok: return ok(new_literal(maybe_float.get))
+  else: errors.add(maybe_float.error)
 
   let maybe_string = parser.expect(string_spec)
-  if maybe_string.is_ok:
-    return ok(new_literal(maybe_string.get))
+  if maybe_string.is_ok: return ok(new_literal(maybe_string.get))
+  else: errors.add(maybe_string.error)
 
-  let token = ? parser.peek()
-  err(fmt"{token.location} [PE118] expected a literal (integer, float, or string) but found {token.value}")
+  err(errors.max())

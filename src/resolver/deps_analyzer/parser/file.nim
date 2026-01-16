@@ -17,9 +17,9 @@ type File* = ref object of RootObj
   functions: seq[Function]
 
 proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
-    functions: seq[Function], native_modules: seq[NativeModule]): Result[File, string] =
+    functions: seq[Function], native_modules: seq[NativeModule]): Result[File, ParserError] =
   if functions.len + user_modules.len == 0:
-    return err(fmt"{path} [PE163] expected file to have at least a function or module")
+    return err(err_parser_empty_file(path))
 
   # NOTE: Build index to enable module look by name
   var modules: seq[Module]
@@ -28,7 +28,8 @@ proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
 
   for native_module in native_modules:
     if native_module.name in modules_map:
-      return err(fmt"[INTERNAL] - Native module `{native_module.name.asl} is defined twice")
+      return err(err_parser_native_module_already_defined(
+          native_module.name.asl))
     file_native_modules.add(native_module)
     let module = new_module(native_module)
     modules_map[module.name] = modules.len
@@ -38,7 +39,8 @@ proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
     if user_module.name in modules_map:
       let predefined_module_location = modules[modules_map[
           user_module.name]].location
-      return err(fmt"{user_module.location} [PE165] module `{user_module.name.asl}` is already defined at {predefined_module_location}")
+      return err(err_parseR_module_already_defined(user_module.location,
+          user_module.name.asl, predefined_module_location))
 
     let module = new_module(user_module)
     modules_map[module.name] = modules.len
@@ -50,14 +52,16 @@ proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
     # NOTE: Validate module and function name collisions
     if function.name in modules_map:
       let module = modules[modules_map[function.name]]
-      return err(fmt"{function.location} [PE166] function `{function.name.asl}` conflicts with module `{module.name.asl}` at {module.location}")
+      return err(err_parser_function_module_conflict(function.location,
+          function.name.asl, module.location, module.name.asl))
 
     # NOTE: Validate function definition collisions
     let def_hash = function.def.hash
     if def_hash in function_defs_hash_map:
       let predefined_function_location = functions[function_defs_hash_map[
           def_hash]].location
-      return err(fmt"{function.location} [PE167] function `{function.name.asl}` is already defined at {predefined_function_location}")
+      return err(err_parser_function_already_defined(function.location,
+          function.name.asl, predefined_function_location))
     function_defs_hash_map[def_hash] = index
 
   ok(File(path: path, indent: indent, native_modules: file_native_modules,
@@ -96,23 +100,22 @@ proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
   else:
     err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")
 
-proc file_spec*(parser: Parser, native_modules: seq[NativeModule]): Result[File, string] =
+proc file_spec*(parser: Parser, native_modules: seq[NativeModule]): Result[File, ParserError] =
   var modules: seq[UserModule]
   var functions: seq[Function]
   while parser.can_parse():
+    var errors: seq[ParserError]
     discard ? parser.expect(optional_empty_line_spec)
 
     let maybe_module = parser.expect(module_spec, 0)
-    if maybe_module.is_ok:
-      modules.add(maybe_module.get)
-      continue
+    if maybe_module.is_ok: modules.add(maybe_module.get)
+    else: errors.add(maybe_module.error)
 
     let maybe_function = parser.expect(function_spec, 0)
-    if maybe_function.is_ok:
-      functions.add(maybe_function.get)
-      continue
+    if maybe_function.is_ok: functions.add(maybe_function.get)
+    else: errors.add(maybe_function.error)
 
-    let token = ? parser.peek()
-    return err(fmt"{token.location} expected a module or function but found {token.value}")
+    # NOTE: Error out if the parser failed to parse both module and function
+    if errors.len == 2: return err(errors.max())
 
   new_file(parser.path(), parser.indent(), modules, functions, native_modules)

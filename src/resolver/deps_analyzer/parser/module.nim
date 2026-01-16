@@ -24,7 +24,7 @@ proc asl*(def: UserModuleDefinition): string =
 proc hash*(def: UserModuleDefinition): Hash =
   def.location.hash
 
-proc module_definition_spec*(parser: Parser): Result[UserModuleDefinition, string] =
+proc module_definition_spec*(parser: Parser): Result[UserModuleDefinition, ParserError] =
   let module_keyword = ? parser.expect(module_keyword_spec)
   discard ? parser.expect(strict_space_spec)
   let name = ? parser.expect(identifier_spec)
@@ -49,19 +49,20 @@ type UserModule* = ref object of RootObj
   function_defs_hash_map: Table[Hash, int]
 
 proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
-    data: Data, functions: seq[Function]): Result[UserModule, string] =
+    data: Data, functions: seq[Function]): Result[UserModule, ParserError] =
   if functions.len == 0 and data.kind == DK_NONE:
     if generics.len == 0:
-      return err(fmt"{def.location} [PE142] module can not be empty")
+      return err(err_parser_empty_module(def.location, def.name.asl))
     else:
-      return err(fmt"{def.location} [PE143] module can not only contain generics")
+      return err(err_parser_empty_module_with_generics(def.location, def.name.asl))
 
   var generics_map: Table[Identifier, int]
   for index, generic in generics:
     if generic.name in generics_map:
       let predefined_generic_location = generics[generics_map[
           generic.name]].location
-      return err(fmt"{generic.location} [PE144] generic `{generic.name.asl}` is already defined at {predefined_generic_location}")
+      return err(err_parser_generic_already_defined(generic.location,
+          generic.name.asl, predefined_generic_location))
     generics_map[generic.name] = index
 
   var structs_map: Table[Identifier, int]
@@ -77,17 +78,20 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         else:
           let predefined_default_struct_location = structs[
               default_struct_index].location
-          return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
+          return err(err_parser_struct_already_defined(struct.location,
+              "default", predefined_default_struct_location))
       of SDK_NAMED:
         let struct_name = ? struct.name
         if struct_name in generics_map:
           let generic = generics[generics_map[struct_name]]
-          return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+          return err(err_parser_struct_generic_conflict(struct.location,
+              struct_name.asl, generic.location, generic.name.asl))
 
         if struct_name in structs_map:
           let predefined_struct_location = structs[structs_map[
               struct_name]].location
-          return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
+          return err(err_parser_struct_already_defined(struct.location,
+              struct_name.asl, predefined_struct_location))
 
         structs_map[struct_name] = index
 
@@ -96,18 +100,21 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
     for index, function in functions:
       if function.name in generics_map:
         let generic = generics[generics_map[function.name]]
-        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+        return err(err_parser_function_generic_conflict(function.location,
+            function.name.asl, generic.location, generic.name.asl))
 
       if function.name in structs_map:
         let struct = structs[structs_map[function.name]]
         let struct_name = ? struct.name
-        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
+        return err(err_parser_function_struct_conflict(function.location,
+            function.name.asl, struct.location, struct_name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
         let predefined_function_location = functions[function_defs_hash_map[
             def_hash]].location
-        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+        return err(err_parser_function_already_defined(function.location,
+            function.name.asl, predefined_function_location))
       function_defs_hash_map[def_hash] = index
 
       if function.name notin functions_map:
@@ -123,7 +130,8 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
     let struct = ? data.struct
     if struct.def.kind != SDK_DEFAULT:
       let struct_name = ? struct.name
-      return err(fmt"{struct.location} [PE145] expected default struct but found named struct: `{struct_name.asl}`")
+      return err(err_parser_expected_default_struct(struct.location,
+          struct_name.asl))
     else:
       default_struct_index = 0
 
@@ -132,13 +140,15 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
     for index, function in functions:
       if function.name in generics_map:
         let generic = generics[generics_map[function.name]]
-        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+        return err(err_parser_function_generic_conflict(function.location,
+            function.name.asl, generic.location, generic.name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
         let predefined_function_location = functions[function_defs_hash_map[
             def_hash]].location
-        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+        return err(err_parser_function_already_defined(function.location,
+            function.name.asl, predefined_function_location))
       function_defs_hash_map[def_hash] = index
 
       if function.name notin functions_map:
@@ -156,18 +166,21 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
     for index, function in functions:
       if function.name in generics_map:
         let generic = generics[generics_map[function.name]]
-        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+        return err(err_parser_function_generic_conflict(function.location,
+            function.name.asl, generic.location, generic.name.asl))
 
       let maybe_branch = union.find_branch(function.name)
       if maybe_branch.is_ok:
-        let branch_name = maybe_branch.get.name
-        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{branch_name.asl}` at {branch_name.location}")
+        let branch = maybe_branch.get
+        return err(err_parser_function_union_branch_conflict(function.location,
+            function.name.asl, branch.location, branch.name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
         let predefined_function_location = functions[function_defs_hash_map[
             def_hash]].location
-        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+        return err(err_parser_function_already_defined(function.location,
+            function.name.asl, predefined_function_location))
       function_defs_hash_map[def_hash] = index
 
       if function.name notin functions_map:
@@ -189,17 +202,20 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         else:
           let predefined_default_struct_location = structs[
               default_struct_index].location
-          return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
+          return err(err_parser_struct_already_defined(struct.location,
+              "default", predefined_default_struct_location))
       of SDK_NAMED:
         let struct_name = ? struct.name
         if struct_name in generics_map:
           let generic = generics[generics_map[struct_name]]
-          return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+          return err(err_parser_struct_generic_conflict(struct.location,
+              struct_name.asl, generic.location, generic.name.asl))
 
         if struct_name in structs_map:
           let predefined_struct_location = structs[structs_map[
               struct_name]].location
-          return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
+          return err(err_parser_struct_already_defined(struct.location,
+              struct_name.asl, predefined_struct_location))
 
         structs_map[struct_name] = index
 
@@ -208,18 +224,21 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
     for index, function in functions:
       if function.name in generics_map:
         let generic = generics[generics_map[function.name]]
-        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+        return err(err_parser_function_generic_conflict(function.location,
+            function.name.asl, generic.location, generic.name.asl))
 
       if function.name in structs_map:
         let struct = structs[structs_map[function.name]]
         let struct_name = ? struct.name
-        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
+        return err(err_parser_function_struct_conflict(function.location,
+            function.name.asl, struct.location, struct_name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
         let predefined_function_location = functions[function_defs_hash_map[
             def_hash]].location
-        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+        return err(err_parser_function_already_defined(function.location,
+            function.name.asl, predefined_function_location))
       function_defs_hash_map[def_hash] = index
 
       if function.name notin functions_map:
@@ -241,17 +260,20 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         else:
           let predefined_default_struct_location = structs[
               default_struct_index].location
-          return err(fmt"{struct.location} [PE145] default struct is already defined at {predefined_default_struct_location}")
+          return err(err_parser_struct_already_defined(struct.location,
+              "default", predefined_default_struct_location))
       of SDK_NAMED:
         let struct_name = ? struct.name
         if struct_name in generics_map:
           let generic = generics[generics_map[struct_name]]
-          return err(fmt"{struct.location} [PE146] struct `{struct_name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+          return err(err_parser_struct_generic_conflict(struct.location,
+              struct_name.asl, generic.location, generic.name.asl))
 
         if struct_name in structs_map:
           let predefined_struct_location = structs[structs_map[
               struct_name]].location
-          return err(fmt"{struct.location} [PE147] struct `{struct_name.asl}` is already defined at {predefined_struct_location}")
+          return err(err_parser_struct_already_defined(struct.location,
+              struct_name.asl, predefined_struct_location))
 
         structs_map[struct_name] = index
 
@@ -260,18 +282,21 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
     for index, function in functions:
       if function.name in generics_map:
         let generic = generics[generics_map[function.name]]
-        return err(fmt"{function.location} [PE148] function `{function.name.asl}` name conflicts with generic `{generic.name.asl}` at {generic.location}")
+        return err(err_parser_function_generic_conflict(function.location,
+            function.name.asl, generic.location, generic.name.asl))
 
       if function.name in structs_map:
         let struct = structs[structs_map[function.name]]
         let struct_name = ? struct.name
-        return err(fmt"{function.location} [PE149] function `{function.name.asl}` name conflicts with generic `{struct_name.asl}` at {struct.location}")
+        return err(err_parser_function_struct_conflict(function.location,
+            function.name.asl, struct.location, struct_name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
         let predefined_function_location = functions[function_defs_hash_map[
             def_hash]].location
-        return err(fmt"{function.location} [PE150] function `{function.name.asl}` is already defined at {predefined_function_location}")
+        return err(err_parser_function_already_defined(function.location,
+            function.name.asl, predefined_function_location))
       function_defs_hash_map[def_hash] = index
 
       if function.name notin functions_map:
@@ -294,7 +319,7 @@ proc structs*(module: UserModule): seq[Struct] = module.structs
 proc functions*(module: UserModule): seq[Function] = module.functions
 proc is_struct*(module: UserModule): bool = module.structs.len > 0
 
-proc module_ref*(module: UserModule): Result[ModuleRef, string] =
+proc module_ref*(module: UserModule): Result[ModuleRef, ParserError] =
   if module.generics.len > 0:
     let children = module.generics.map_it(new_module_ref(it.name))
     new_module_ref(module.name, children)
@@ -324,7 +349,7 @@ proc asl*(module: UserModule, indent: string): seq[string] =
 
   return lines
 
-proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic], string] =
+proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic], ParserError] =
   var generics: seq[Generic]
   discard ? parser.expect(optional_empty_line_spec)
   var maybe_generic = parser.expect(generic_spec, indent + 1)
@@ -334,7 +359,7 @@ proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic], string
     maybe_generic = parser.expect(generic_spec, indent + 1)
   ok(generics)
 
-proc function_list_spec(parser: Parser, indent: int): Result[seq[Function], string] =
+proc function_list_spec(parser: Parser, indent: int): Result[seq[Function], ParserError] =
   var functions: seq[Function]
   discard ? parser.expect(optional_empty_line_spec)
   var maybe_function = parser.expect(function_spec, indent + 1)
@@ -344,7 +369,7 @@ proc function_list_spec(parser: Parser, indent: int): Result[seq[Function], stri
     maybe_function = parser.expect(function_spec, indent + 1)
   ok(functions)
 
-proc module_spec*(parser: Parser, indent: int): Result[UserModule, string] =
+proc module_spec*(parser: Parser, indent: int): Result[UserModule, ParserError] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
   discard ? parser.expect(optional_empty_line_spec)
@@ -363,8 +388,8 @@ type NativeModule* = ref object of RootObj
   user_module: UserModule
 
 proc new_native_module*(name: string, functions: seq[
-    ExternFunction]): Result[NativeModule, string] =
-  let name = ? new_identifier(name)
+    ExternFunction]): Result[NativeModule, ParserError] =
+  let name = new_identifier(name)
   let user_module_def = new_module_definition(name, name.location)
   let user_module_data = new_data()
   let user_module_functions = functions.map_it(new_function(it))
@@ -373,8 +398,8 @@ proc new_native_module*(name: string, functions: seq[
   ok(NativeModule(user_module: user_module))
 
 proc new_native_module*(name: string, generics: seq[Generic], structs: seq[
-    Struct], functions: seq[ExternFunction]): Result[NativeModule, string] =
-  let name = ? new_identifier(name)
+    Struct], functions: seq[ExternFunction]): Result[NativeModule, ParserError] =
+  let name = new_identifier(name)
   let user_module_def = new_module_definition(name, name.location)
   let user_module_data = new_data(structs)
   let user_module_functions = functions.map_it(new_function(it))
@@ -406,7 +431,7 @@ proc functions*(module: NativeModule): seq[ExternFunction] =
 proc all_functions*(module: NativeModule): seq[Function] =
   module.user_module.functions
 
-proc module_ref*(module: NativeModule): Result[ModuleRef, string] =
+proc module_ref*(module: NativeModule): Result[ModuleRef, ParserError] =
   ok(new_module_ref(module.name))
 
 proc find_generic*(module: NativeModule, name: Identifier): Result[Generic, string] =
@@ -488,7 +513,7 @@ proc hash*(module: Module): Hash =
 proc `==`*(self: Module, other: Module): bool =
   self.hash == other.hash
 
-proc module_ref*(module: Module): Result[ModuleRef, string] =
+proc module_ref*(module: Module): Result[ModuleRef, ParserError] =
   case module.kind:
   of MK_NATIVE: module.native.module_ref
   of MK_USER: module.user.module_ref

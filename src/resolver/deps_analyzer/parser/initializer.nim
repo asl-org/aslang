@@ -23,7 +23,7 @@ proc literal*(init: LiteralInit): Literal = init.literal
 proc asl*(init: LiteralInit): string =
   fmt"{init.module.asl} {init.literal.asl}"
 
-proc literal_init_spec*(parser: Parser): Result[LiteralInit, string] =
+proc literal_init_spec*(parser: Parser): Result[LiteralInit, ParserError] =
   let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(strict_space_spec)
   let literal = ? parser.expect(literal_spec)
@@ -64,15 +64,15 @@ proc asl*(struct_ref: StructRef): string =
   of SRK_DEFAULT: struct_ref.module.asl
   of SRK_NAMED: fmt"{struct_ref.module.asl}.{struct_ref.struct.asl}"
 
-proc struct_ref_spec*(parser: Parser): Result[StructRef, string] =
+proc struct_ref_spec*(parser: Parser): Result[StructRef, ParserError] =
   let module = ? parser.expect(module_ref_spec)
 
   let maybe_dot = parser.expect(dot_spec)
-  if maybe_dot.is_err:
-    return ok(new_struct_ref(module))
-
-  let struct = ? parser.expect(identifier_spec)
-  ok(new_struct_ref(module, struct))
+  if maybe_dot.is_ok:
+    let struct = ? parser.expect(identifier_spec)
+    ok(new_struct_ref(module, struct))
+  else:
+    ok(new_struct_ref(module))
 
 # =============================================================================
 # KeywordArgument
@@ -94,7 +94,7 @@ proc value*(kwarg: KeywordArgument): Argument = kwarg.value
 proc asl*(kwarg: KeywordArgument): string =
   fmt"{kwarg.name.asl}: {kwarg.value.asl}"
 
-proc keyword_argument_spec*(parser: Parser): Result[KeywordArgument, string] =
+proc keyword_argument_spec*(parser: Parser): Result[KeywordArgument, ParserError] =
   let name = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
@@ -102,7 +102,7 @@ proc keyword_argument_spec*(parser: Parser): Result[KeywordArgument, string] =
   let value = ? parser.expect(argument_spec)
   ok(new_keyword_argument(name, value))
 
-proc keyword_argument_list_spec*(parser: Parser): Result[seq[KeywordArgument], string] =
+proc keyword_argument_list_spec*(parser: Parser): Result[seq[KeywordArgument], ParserError] =
   var args: seq[KeywordArgument]
   discard ? parser.expect(open_curly_bracket_spec)
 
@@ -129,18 +129,19 @@ type StructInit* = ref object of RootObj
   args: seq[KeywordArgument]
 
 proc new_struct_init*(struct_ref: StructRef, args: seq[
-    KeywordArgument]): Result[StructInit, string] =
+    KeywordArgument]): Result[StructInit, ParserError] =
   if args.len == 0:
-    return err(fmt"{struct_ref.location} [PE122] initializer field list can not be empty")
+    return err(err_parser_empty_arg_list(struct_ref.location))
 
   if args.len > MAX_ARGS_LENGTH:
-    return err(fmt"{struct_ref.location} [PE123] initializer field length `{args.len}` exceeded maximum field length `{MAX_ARGS_LENGTH}`")
+    return err(err_parser_arg_list_too_long(struct_ref.location, args.len))
 
   var args_map: Table[Identifier, int]
   for index, arg in args.pairs:
     if arg.name in args_map:
       let predefined_arg_location = args[args_map[arg.name]].location
-      return err(fmt"{arg.location} [PE124] field `{arg.name.asl}` is already defined at {predefined_arg_location}")
+      return err(err_parser_arg_already_defined(arg.location, arg.name.asl,
+          predefined_arg_location))
     args_map[arg.name] = index
 
   ok(StructInit(struct_ref: struct_ref, args: args))
@@ -157,7 +158,7 @@ proc asl*(init: StructInit): string =
     args.add(arg.asl)
   [init.struct_ref.asl, "{", args.join(", "), "}"].join(" ")
 
-proc struct_init_spec*(parser: Parser): Result[StructInit, string] =
+proc struct_init_spec*(parser: Parser): Result[StructInit, ParserError] =
   let struct_ref = ? parser.expect(struct_ref_spec)
   discard ? parser.expect(optional_space_spec)
   let kwargs = ? parser.expect(keyword_argument_list_spec)
@@ -203,13 +204,18 @@ proc asl*(init: Initializer): string =
   of IK_LITERAL: init.literal.asl
   of IK_STRUCT: init.struct.asl
 
-proc initializer_spec*(parser: Parser): Result[Initializer, string] =
+proc initializer_spec*(parser: Parser): Result[Initializer, ParserError] =
+  var errors: seq[ParserError]
   let maybe_literal_init = parser.expect(literal_init_spec)
-  if maybe_literal_init.is_ok:
-    ok(new_initializer(maybe_literal_init.get))
-  else:
-    let struct_init = ? parser.expect(struct_init_spec)
-    ok(new_initializer(struct_init))
+  if maybe_literal_init.is_ok: return ok(new_initializer(
+      maybe_literal_init.get))
+  else: errors.add(maybe_literal_init.error)
+
+  let maybe_struct_init = parser.expect(struct_init_spec)
+  if maybe_struct_init.is_ok: return ok(new_initializer(maybe_struct_init.get))
+  else: errors.add(maybe_struct_init.error)
+
+  err(errors.max())
 
 # =============================================================================
 # StructGet
@@ -229,7 +235,7 @@ proc field*(struct_get: StructGet): Identifier = struct_get.field
 proc asl*(struct_get: StructGet): string =
   fmt"{struct_get.name.asl}.{struct_get.field.asl}"
 
-proc struct_get_spec*(parser: Parser): Result[StructGet, string] =
+proc struct_get_spec*(parser: Parser): Result[StructGet, ParserError] =
   let name = ? parser.expect(identifier_spec)
   discard ? parser.expect(dot_spec)
   let field = ? parser.expect(identifier_spec)

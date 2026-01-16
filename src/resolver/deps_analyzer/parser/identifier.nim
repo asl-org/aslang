@@ -7,16 +7,16 @@ type Identifier* = ref object of RootObj
   name: string
   location: Location
 
-proc new_identifier*(name: string, location: Location): Result[Identifier, string] =
+proc new_identifier*(name: string, location: Location): Result[Identifier, ParserError] =
   if name.len == 0:
-    return err(fmt"{location} [PE101] [UNREACHABLE] empty string can not be an identifier.")
+    return err(err_parser_empty_identifier(location))
 
   if name.len > MAX_IDENTIFIER_LENGTH:
-    return err(fmt"{location} [PE102] identifier length `{name.len}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
+    return err(err_parser_identifier_too_long(location, name.len))
   ok(Identifier(name: name, location: location))
 
-proc new_identifier*(name: string): Result[Identifier, string] =
-  new_identifier(name, Location())
+proc new_identifier*(name: string): Identifier =
+  Identifier(name: name, location: Location())
 
 proc new_identifier*(location: Location): Identifier =
   let name = fmt"__asl_arg_{location.hash.to_hex}"
@@ -35,21 +35,33 @@ proc `==`*(a: Identifier, b: Identifier): bool =
   a.hash == b.hash
 
 # identifier specs
-proc identifier_head_spec*(parser: Parser): Result[Token, string] =
+proc identifier_head_spec*(parser: Parser): Result[Token, ParserError] =
+  var errors: seq[ParserError]
+
   let maybe_underscore = parser.token_spec_util(TK_UNDERSCORE)
-  if maybe_underscore.is_ok:
-    maybe_underscore
-  else:
-    parser.token_spec_util(TK_ALPHABETS)
+  if maybe_underscore.is_ok: return maybe_underscore
+  else: errors.add(maybe_underscore.error)
 
-proc identifier_tail_spec*(parser: Parser): Result[Token, string] =
+  let maybe_alphabet = parser.token_spec_util(TK_ALPHABETS)
+  if maybe_alphabet.is_ok: return maybe_alphabet
+  else: errors.add(maybe_alphabet.error)
+
+  err(errors.max())
+
+proc identifier_tail_spec*(parser: Parser): Result[Token, ParserError] =
+  var errors: seq[ParserError]
+
   let maybe_id_head = parser.expect(identifier_head_spec)
-  if maybe_id_head.is_ok:
-    maybe_id_head
-  else:
-    parser.token_spec_util(TK_DIGITS)
+  if maybe_id_head.is_ok: return maybe_id_head
+  else: errors.add(maybe_id_head.error)
 
-proc identifier_spec*(parser: Parser): Result[Identifier, string] =
+  let maybe_digits = parser.token_spec_util(TK_DIGITS)
+  if maybe_digits.is_ok: return maybe_digits
+  else: errors.add(maybe_digits.error)
+
+  err(errors.max())
+
+proc identifier_spec*(parser: Parser): Result[Identifier, ParserError] =
   let id_head = ? parser.expect(identifier_head_spec)
   var name = id_head.value
   var location = id_head.location

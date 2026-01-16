@@ -47,7 +47,7 @@ export module
 import parser/file
 export file
 
-proc new_native_error_module(): Result[NativeModule, string] =
+proc new_native_error_module(): Result[NativeModule, ParserError] =
   let code_arg = ? new_argument_definition("S32", "code")
   let message_arg = ? new_argument_definition("String", "message")
   let struct = ? new_struct(new_struct_definition(Location()), @[code_arg, message_arg])
@@ -56,64 +56,64 @@ proc new_native_error_module(): Result[NativeModule, string] =
   var functions: seq[ExternFunction]
   new_native_module("Error", generics, @[struct], functions)
 
-proc new_native_status_module(): Result[NativeModule, string] =
-  let generic = new_generic( ? new_identifier("Value"), Location())
+proc new_native_status_module(): Result[NativeModule, ParserError] =
+  let generic = new_generic(new_identifier("Value"), Location())
 
   let value_arg = ? new_argument_definition("Value", "value")
-  let ok_branch = new_struct_definition( ? new_identifier("Ok"), Location())
+  let ok_branch = new_struct_definition(new_identifier("Ok"), Location())
   let ok_struct = ? new_struct(ok_branch, @[value_arg])
 
   let err_arg = ? new_argument_definition("Error", "error")
-  let err_branch = new_struct_definition( ? new_identifier("Err"), Location())
+  let err_branch = new_struct_definition(new_identifier("Err"), Location())
   let err_struct = ? new_struct(err_branch, @[err_arg])
 
   var functions: seq[ExternFunction]
   new_native_module("Status", @[generic], @[ok_struct, err_struct], functions)
 
-proc new_native_array_module(): Result[NativeModule, string] =
-  let generic = new_generic( ? new_identifier("Item"), Location())
+proc new_native_array_module(): Result[NativeModule, ParserError] =
+  let generic = new_generic(new_identifier("Item"), Location())
 
   let size_arg = ? new_argument_definition("U64", "size")
   let struct = ? new_struct(new_struct_definition(Location()), @[size_arg])
 
-  let size_module_ref = new_module_ref( ? new_identifier("U64"))
-  let size_arg_name = ? new_identifier("__asl__arg__size__")
+  let size_module_ref = new_module_ref(new_identifier("U64"))
+  let size_arg_name = new_identifier("__asl__arg__size__")
   let size_arg_def = new_argument_definition(size_module_ref, size_arg_name)
 
-  let index_module_ref = new_module_ref( ? new_identifier("U64"))
-  let index_arg_name = ? new_identifier("__asl__arg__index__")
+  let index_module_ref = new_module_ref(new_identifier("U64"))
+  let index_arg_name = new_identifier("__asl__arg__index__")
   let index_arg_def = new_argument_definition(index_module_ref, index_arg_name)
 
-  let item_generic_name = ? new_identifier("Item")
+  let item_generic_name = new_identifier("Item")
   let item_module_ref = new_module_ref(item_generic_name) # Item
-  let item_arg_name = ? new_identifier(fmt"__asl__arg__item__")
+  let item_arg_name = new_identifier(fmt"__asl__arg__item__")
   let item_arg_def = new_argument_definition(item_module_ref, item_arg_name)
 
-  let array_module_name = ? new_identifier("Array")
+  let array_module_name = new_identifier("Array")
   let array_item_module_ref = ? new_module_ref(array_module_name, @[
       item_module_ref]) # Array[Item]
-  let array_item_arg_name = ? new_identifier(fmt"__asl__arg__array__")
+  let array_item_arg_name = new_identifier(fmt"__asl__arg__array__")
   let array_item_arg_def = new_argument_definition(array_item_module_ref, array_item_arg_name)
 
-  let status_module_name = ? new_identifier("Status")
+  let status_module_name = new_identifier("Status")
   let status_item_module_ref = ? new_module_ref(status_module_name, @[
       item_module_ref]) # Status[Item]
   let status_array_module_ref = ? new_module_ref(status_module_name, @[
       array_item_module_ref]) # Status[Array[Item]]
 
-  let array_init_fn_name = ? new_identifier("init")
+  let array_init_fn_name = new_identifier("init")
   let array_init_fn_def = ? new_function_definition(array_init_fn_name, @[
       size_arg_def], array_item_module_ref, Location())
   let array_init_native_fn = new_extern_function(array_init_fn_def,
       "Array_init")
 
-  let array_get_fn_name = ? new_identifier("get")
+  let array_get_fn_name = new_identifier("get")
   let array_get_fn_def = ? new_function_definition(array_get_fn_name, @[
       array_item_arg_def, index_arg_def], status_item_module_ref, Location())
   let array_get_native_fn = new_extern_function(array_get_fn_def,
       "Array_get")
 
-  let array_set_fn_name = ? new_identifier("set")
+  let array_set_fn_name = new_identifier("set")
   let array_set_fn_def = ? new_function_definition(array_set_fn_name, @[
       array_item_arg_def, index_arg_def, item_arg_def], status_array_module_ref,
       Location())
@@ -124,7 +124,7 @@ proc new_native_array_module(): Result[NativeModule, string] =
     array_init_native_fn, array_get_native_fn, array_set_native_fn
   ])
 
-proc native_modules(): Result[seq[NativeModule], string] =
+proc native_modules(): Result[seq[NativeModule], ParserError] =
   ok(@[
     ? new_native_module("S8", @[
       ? new_extern_function("S8_byte_size", "U64", "byte_size", @["U64"]),
@@ -278,7 +278,11 @@ proc native_modules(): Result[seq[NativeModule], string] =
     ])
   ])
 
-proc parse*(path: string, tokens: seq[Token]): Result[file.File, string] =
-  let parser = new_parser(path, tokens, INDENT_SIZE)
+proc parse(parser: Parser): Result[file.File, ParserError] =
   let native_mods = ? native_modules()
   file_spec(parser, native_mods)
+
+proc parse*(path: string, tokens: seq[Token]): Result[file.File, string] =
+  let maybe_parsed = new_parser(path, tokens, INDENT_SIZE).parse()
+  if maybe_parsed.is_ok: ok(maybe_parsed.get)
+  else: err($(maybe_parsed.error))

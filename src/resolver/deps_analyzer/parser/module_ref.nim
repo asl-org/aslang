@@ -16,16 +16,17 @@ proc new_module_ref*(module: Identifier): ModuleRef =
   ModuleRef(kind: MRK_SIMPLE, module: module)
 
 proc new_module_ref*(module: Identifier, children: seq[
-    ModuleRef]): Result[ModuleRef, string] =
+    ModuleRef]): Result[ModuleRef, ParserError] =
   if children.len == 0:
-    return err(fmt"{module.location} [PE103] nested module refs can not have empty child module ref list")
-  if children.len > MAX_TYPE_CHILDREN_COUNT:
-    return err(fmt"{module.location} [PE104] a nested module ref only supports upto `{MAX_TYPE_CHILDREN_COUNT}` children types but `{children.len}` were given")
-  ok(ModuleRef(kind: MRK_NESTED, module: module, children: children))
+    err(err_parser_empty_generic_list(module.location))
+  elif children.len > MAX_TYPE_CHILDREN_COUNT:
+    err(err_parser_generic_list_too_long(module.location, children.len))
+  else:
+    ok(ModuleRef(kind: MRK_NESTED, module: module, children: children))
 
-proc new_module_ref*(module: string): Result[ModuleRef, string] =
-  let module_id = ? new_identifier(module)
-  ok(new_module_ref(module_id))
+proc new_module_ref*(module: string): ModuleRef =
+  let module_id = new_identifier(module)
+  new_module_ref(module_id)
 
 proc location*(module_ref: ModuleRef): Location =
   module_ref.module.location
@@ -61,12 +62,11 @@ proc hash*(module_ref: ModuleRef): Hash =
       acc = acc !& hash(child)
   return acc
 
-proc module_ref_spec*(parser: Parser): Result[ModuleRef, string] =
+proc module_ref_spec*(parser: Parser): Result[ModuleRef, ParserError] =
   let module_ref = ? parser.expect(identifier_spec)
 
   var maybe_open_square_bracket = parser.expect(open_square_bracket_spec)
-  if maybe_open_square_bracket.is_err:
-    return ok(new_module_ref(module_ref))
+  if maybe_open_square_bracket.is_err: return ok(new_module_ref(module_ref))
 
   var children: seq[ModuleRef]
   discard ? parser.expect(optional_space_spec)

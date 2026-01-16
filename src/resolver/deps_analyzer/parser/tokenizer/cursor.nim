@@ -15,6 +15,13 @@ proc `$`*(cursor: Cursor): string =
 proc hash*(cursor: Cursor): Hash =
   hash((cursor.index, cursor.line, cursor.col))
 
+proc `<`*(self: Cursor, other: Cursor): bool = self.index <
+    other.index
+proc `>`*(self: Cursor, other: Cursor): bool = self.index >
+    other.index
+proc `==`*(self: Cursor, other: Cursor): bool = self.index ==
+    other.index
+
 proc update*(cursor: Cursor, value: string): Cursor =
   var updated = cursor
   for x in value:
