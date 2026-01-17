@@ -21,33 +21,33 @@ bash test.sh
 ## Compilation Pipeline
 
 ```
-Source (.asl) -> Tokenizer -> Parser -> Deps Analyzer -> Resolver -> Codegen -> C Code
+Source (.asl) -> Tokenizer -> Parser -> Deps Analyzer -> Analyzer -> Codegen -> C Code
 ```
 
-### 1. Tokenizer (`src/resolver/deps_analyzer/parser/tokenizer.nim`)
+### 1. Tokenizer (`src/analyzer/deps_analyzer/parser/tokenizer.nim`)
 - Reads raw source files
 - Converts text into tokens (identifiers, keywords, literals, operators)
 - Makes it easier to work with raw text
 
-### 2. Parser (`src/resolver/deps_analyzer/parser.nim` + `parser/` submodules)
+### 2. Parser (`src/analyzer/deps_analyzer/parser.nim` + `parser/` submodules)
 - Consumes tokens
 - Produces larger AST blocks: `Module`, `Generic`, `Struct`, `Function`
 - `File` is the top-level block containing all modules
 - **Structure**: `parser.nim` acts as an import/export hub following Nim convention
 - **Submodules**: Broken down into focused modules (see Project Structure below)
 
-### 3. Deps Analyzer (`src/resolver/deps_analyzer.nim`)
+### 3. Deps Analyzer (`src/analyzer/deps_analyzer.nim`)
 - Assigns types to identifiers (variables, modules)
 - Produces `Typed*` versions of AST nodes (e.g., `TypedModuleRef`, `TypedFunction`)
 - Tracks module dependencies via `module_deps` functions
 
-### 4. Resolver (`src/resolver.nim`)
+### 4. Analyzer (`src/analyzer.nim`)
 - Performs semantic resolution
 - Validates that types follow defined constraints
-- Produces `Resolved*` versions of AST nodes
+- Produces `Analyzed*` versions of AST nodes
 
 ### 5. Codegen (`src/codegen.nim`)
-- Takes resolved AST
+- Takes analyzed AST
 - Performs monomorphization (instantiates generic types with concrete types)
 - Generates pure C code
 
@@ -57,8 +57,8 @@ Source (.asl) -> Tokenizer -> Parser -> Deps Analyzer -> Resolver -> Codegen -> 
 src/
   aslang.nim                 # Entry point
   compiler.nim               # File I/O utilities, compilation orchestration
-  resolver.nim               # Resolution phase (Resolved* types)
-  resolver/
+  analyzer.nim               # Resolution phase (Analyzed* types)
+  analyzer/
     deps_analyzer.nim        # Type assignment entry point + assign_type logic
     deps_analyzer/
       parser.nim             # Parser import/export hub + native module initialization
@@ -321,7 +321,7 @@ The parser follows the Nim convention where `parser.nim` serves as an import/exp
 
 | Type | File | Description |
 |------|------|-------------|
-| `TypedModuleRef` | typed_ref.nim | Reference to a module with resolved children |
+| `TypedModuleRef` | typed_ref.nim | Reference to a module with analyzed children |
 | `TypedArgumentDefinition` | typed_defs.nim | Function argument with type |
 | `TypedFunctionDefinition` | typed_defs.nim | Function signature with typed args and return |
 | `TypedStruct` | typed_defs.nim | Struct with typed fields |
@@ -346,14 +346,14 @@ The parser follows the Nim convention where `parser.nim` serves as an import/exp
 | `TypedModule` | typed_module.nim | Unified variant of `TypedUserModule` or `TypedNativeModule` |
 | `TypedFile` | typed_file.nim | Top-level container for all typed modules and functions |
 
-### Resolver Layer (Resolved AST)
+### Analyzer Layer (Analyzed AST)
 
 | Type | Description |
 |------|-------------|
-| `ResolvedDef` | Fully resolved type definition |
-| `ResolvedImpl` | Generic implementation with concrete type |
-| `ResolvedStruct` | Struct with resolved field types |
-| `ResolvedFunction` | Function with resolved types |
+| `AnalyzedDef` | Fully analyzed type definition |
+| `AnalyzedImpl` | Generic implementation with concrete type |
+| `AnalyzedStruct` | Struct with analyzed field types |
+| `AnalyzedFunction` | Function with analyzed types |
 
 ## Common Patterns
 
