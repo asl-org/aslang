@@ -1,8 +1,8 @@
 # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
 import results, strformat, sets
 
-import resolved_defs
-export resolved_defs
+import defs
+export defs
 
 # =============================================================================
 # ResolvedLiteralInit

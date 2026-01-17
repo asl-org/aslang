@@ -1,8 +1,8 @@
 # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
 import results, strformat, sets
 
-import resolved_init
-export resolved_init
+import initializer
+export initializer
 
 # =============================================================================
 # ResolvedFunctionRef

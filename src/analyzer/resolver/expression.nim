@@ -1,8 +1,8 @@
 # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedFunction
 import results, strformat, sets
 
-import resolved_call
-export resolved_call
+import fncall
+export fncall
 
 # =============================================================================
 # Mutually Recursive Types: Expression, Statement, Case, Else, Match

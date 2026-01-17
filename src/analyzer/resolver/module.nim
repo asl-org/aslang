@@ -1,8 +1,8 @@
 import results, strformat, tables, sets, hashes, sequtils
 
 import parser
-import resolved_expr
-export resolved_expr
+import expression
+export expression
 
 # =============================================================================
 # ResolvedGeneric

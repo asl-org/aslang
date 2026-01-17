@@ -1,8 +1,8 @@
 # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
 import results, strformat, strutils, sets, hashes
 
-import resolved_ref
-export resolved_ref
+import module_ref
+export module_ref
 
 # =============================================================================
 # ResolvedArgumentDefinition

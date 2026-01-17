@@ -59,7 +59,7 @@ src/
   compiler.nim               # File I/O utilities, compilation orchestration
   analyzer.nim               # Resolution phase (Analyzed* types)
   analyzer/
-    resolver.nim        # Type assignment entry point + assign_type logic
+    resolver.nim        # Type assignment entry point + resolve logic
     resolver/
       parser.nim             # Parser import/export hub + native module initialization
       parser/
@@ -435,23 +435,23 @@ When functions need to work with both `UserModule` and `NativeModule`, use `pars
 
 ```nim
 # GOOD: Single function accepting unified type
-proc assign_type(file: File, module: parser.Module, ref: ModuleRef): Result[...] =
+proc resolve(file: File, module: parser.Module, ref: ModuleRef): Result[...] =
   # implementation uses module.payload for common access
 
 # BAD: Thin wrappers that just delegate
-proc assign_type(file: File, module: UserModule, ref: ModuleRef): Result[...] =
-  assign_type(file, parser.new_module(module), ref)  # Don't do this
+proc resolve(file: File, module: UserModule, ref: ModuleRef): Result[...] =
+  resolve(file, parser.new_module(module), ref)  # Don't do this
 
-proc assign_type(file: File, module: NativeModule, ref: ModuleRef): Result[...] =
-  assign_type(file, parser.new_module(module), ref)  # Don't do this
+proc resolve(file: File, module: NativeModule, ref: ModuleRef): Result[...] =
+  resolve(file, parser.new_module(module), ref)  # Don't do this
 ```
 
 Only use specific types (`UserModule`, `NativeModule`) when creating resolved results that require the specific type:
 
 ```nim
 # These need specific types because they create ResolvedUserModule/ResolvedNativeModule
-proc assign_type(file: File, module: UserModule, id: uint64): Result[ResolvedUserModule, string]
-proc assign_type(file: File, module: NativeModule, id: uint64): Result[ResolvedNativeModule, string]
+proc resolve(file: File, module: UserModule, id: uint64): Result[ResolvedUserModule, string]
+proc resolve(file: File, module: NativeModule, id: uint64): Result[ResolvedNativeModule, string]
 ```
 
 ## Refactoring Guidelines
