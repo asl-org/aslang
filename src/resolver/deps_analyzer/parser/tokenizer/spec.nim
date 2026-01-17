@@ -6,18 +6,16 @@ import error
 proc match_string*(content: string, start: int): Result[
     int, TokenizerError] =
   var index = start
-  if index >= content.len:
-    return err(err_tokenizer_reached_eof(index))
+  if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
   if content[index] != DOUBLE_QUOTE:
     return err(err_tokenizer_expectation_mismatch(index, $DOUBLE_QUOTE,
         $content[index]))
 
   index += 1
-  if index >= content.len:
-    return err(err_tokenizer_reached_eof(index))
+  if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
-  while index < content.len and content[index] != DOUBLE_QUOTE:
+  while index < content.len:
     if content[index] == BACK_SLASH_OP:
       if index + 1 >= content.len:
         return err(err_tokenizer_reached_eof(index + 1))
@@ -25,15 +23,19 @@ proc match_string*(content: string, start: int): Result[
         let escape_seq = content.substr(index, index + 1)
         return err(err_tokenizer_unexpected_escape_sequence(index, escape_seq))
       index += 2
+    elif content[index] == DOUBLE_QUOTE:
+      return ok(index + 1)
+    elif content[index] == NEW_LINE:
+      return err(err_tokenizer_new_line_in_string(index))
     else:
       index += 1
-  return ok(index + 1)
+
+  err(err_tokenizer_reached_eof(index))
 
 proc match_comment*(content: string, start: int): Result[
     int, TokenizerError] =
   var index = start
-  if index >= content.len:
-    return err(err_tokenizer_reached_eof(index))
+  if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
   if content[index] != HASHTAG:
     return err(err_tokenizer_expectation_mismatch(index, $HASHTAG, $content[index]))
@@ -46,8 +48,7 @@ proc match_comment*(content: string, start: int): Result[
 proc match_digit*(content: string, start: int): Result[
     int, TokenizerError] =
   var index = start
-  if index >= content.len:
-    return err(err_tokenizer_reached_eof(index))
+  if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
   if not content[index].is_digit:
     return err(err_tokenizer_expectation_mismatch(index, "digit", $content[index]))
@@ -59,8 +60,7 @@ proc match_digit*(content: string, start: int): Result[
 proc match_alphabet*(content: string, start: int): Result[
     int, TokenizerError] =
   var index = start
-  if index >= content.len:
-    return err(err_tokenizer_reached_eof(index))
+  if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
   if not content[index].is_alpha_ascii:
     return err(err_tokenizer_expectation_mismatch(index, "alphabet", $content[index]))

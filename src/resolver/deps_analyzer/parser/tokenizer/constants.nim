@@ -24,4 +24,4 @@ const DOUBLE_QUOTE* = '"'
 const HASHTAG* = '#'
 
 
-const STRING_ESCAPE_SEQS* = @['\\', '\"', 'r', 'n', 't', 'v', 'a', 'b', 'f']
+const STRING_ESCAPE_SEQS* = @['\\', '\"', 'r', 'n', 't', 'b']

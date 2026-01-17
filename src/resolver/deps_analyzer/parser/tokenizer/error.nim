@@ -22,3 +22,6 @@ proc err_tokenizer_expectation_mismatch*(index: int, expected: string,
 proc err_tokenizer_unexpected_escape_sequence*(index: int,
     escape_seq: string): TokenizerError =
   new_tokenizer_error(index, fmt"unexpected string escape sequence encountered: `{escape_seq}`")
+
+proc err_tokenizer_new_line_in_string*(index: int): TokenizerError =
+  new_tokenizer_error(index, fmt"encountered new line character while parsing string literal")
