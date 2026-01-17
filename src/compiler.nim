@@ -1,6 +1,6 @@
 import results, strformat, unicode, os, osproc
 
-import resolver
+import analyzer
 
 # Helper to wrap void-returning file operations with error handling
 proc safe_void_operation(operation: proc(), filename: string,
@@ -32,9 +32,9 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)
-  let typed_file = ? assign_type(file)
-  let resolved_file = ? resolve(typed_file)
-  let code = ? resolved_file.c()
+  let resolved_file = ? assign_type(file)
+  let analyzed_file = ? analyze(resolved_file)
+  let code = ? analyzed_file.c()
 
   let output_file = filename.change_file_ext("c")
   ? write_file_safe(output_file, code)
