@@ -1,8 +1,8 @@
 import results, sequtils, strformat, tables, hashes, strutils, sets, re,
     options, algorithm
 
-import analyzer/deps_analyzer
-export deps_analyzer
+import analyzer/resolver
+export resolver
 
 # Error message helpers
 proc err_no_default_struct(location: Location, module_name: string): string =
@@ -15,25 +15,25 @@ proc err_no_named_struct(location: Location, module_name: string,
 type
   AnalyzedImpl = ref object of RootObj
     module_ref: AnalyzedModuleRef
-    defs: seq[TypedFunctionDefinition]
+    defs: seq[ResolvedFunctionDefinition]
   AnalyzedModuleRefKind = enum
     RMRK_NATIVE, RMRK_USER, RMRK_GENERIC
   AnalyzedModuleRef = ref object of RootObj
     location: Location
     case kind: AnalyzedModuleRefKind
     of RMRK_NATIVE:
-      native_module: TypedNativeModule
-      native_concrete_map: Table[TypedGeneric, AnalyzedModuleRef]
+      native_module: ResolvedNativeModule
+      native_concrete_map: Table[ResolvedGeneric, AnalyzedModuleRef]
       native_impls: seq[AnalyzedImpl]
-    of RMRK_GENERIC: generic: TypedGeneric
+    of RMRK_GENERIC: generic: ResolvedGeneric
     of RMRK_USER:
-      user_module: TypedUserModule
+      user_module: ResolvedUserModule
       impls: seq[AnalyzedImpl]
-      concrete_map: Table[TypedGeneric, AnalyzedModuleRef]
+      concrete_map: Table[ResolvedGeneric, AnalyzedModuleRef]
 
 # AnalyzedImpl
 proc new_analyzed_impl(module_ref: AnalyzedModuleRef, defs: seq[
-    TypedFunctionDefinition]): AnalyzedImpl =
+    ResolvedFunctionDefinition]): AnalyzedImpl =
   AnalyzedImpl(module_ref: module_ref, defs: defs)
 
 # NOTE: Needed due to cyclic dependency between AnalyzedModuleRef and AnalyzedImpl
@@ -49,10 +49,10 @@ proc `==`(self: AnalyzedImpl, other: AnalyzedImpl): bool =
   self.hash == other.hash
 
 proc merge*(
-  impl_set_1: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]],
-  impl_set_2: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
-): Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  impl_set_1: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]],
+  impl_set_2: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
+): Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for (module, generics) in impl_set_1.pairs:
     impl_set[module] = generics
   for (module, generics) in impl_set_2.pairs:
@@ -64,28 +64,28 @@ proc merge*(
   return impl_set
 
 # AnalyzedModuleRef
-proc new_analyzed_module_ref(native_module: TypedNativeModule,
+proc new_analyzed_module_ref(native_module: ResolvedNativeModule,
     location: Location): AnalyzedModuleRef =
   AnalyzedModuleRef(kind: RMRK_NATIVE, native_module: native_module,
       location: location)
 
-proc new_analyzed_module_ref(native_module: TypedNativeModule, impls: seq[
+proc new_analyzed_module_ref(native_module: ResolvedNativeModule, impls: seq[
     AnalyzedImpl], location: Location): AnalyzedModuleRef =
-  var concrete_map: Table[TypedGeneric, AnalyzedModuleRef]
+  var concrete_map: Table[ResolvedGeneric, AnalyzedModuleRef]
   for (generic, impl) in zip(native_module.generics, impls):
     concrete_map[generic] = impl.module_ref
   AnalyzedModuleRef(kind: RMRK_NATIVE, native_module: native_module,
       native_concrete_map: concrete_map, native_impls: impls,
       location: location)
 
-proc new_analyzed_module_ref(generic: TypedGeneric,
+proc new_analyzed_module_ref(generic: ResolvedGeneric,
     location: Location): AnalyzedModuleRef =
   AnalyzedModuleRef(kind: RMRK_GENERIC, generic: generic,
       location: location)
 
-proc new_analyzed_module_ref(user_module: TypedUserModule, impls: seq[
+proc new_analyzed_module_ref(user_module: ResolvedUserModule, impls: seq[
     AnalyzedImpl], location: Location): AnalyzedModuleRef =
-  var concrete_map: Table[TypedGeneric, AnalyzedModuleRef]
+  var concrete_map: Table[ResolvedGeneric, AnalyzedModuleRef]
   for (generic, impl) in zip(user_module.generics, impls):
     concrete_map[generic] = impl.module_ref
   AnalyzedModuleRef(kind: RMRK_USER, user_module: user_module,
@@ -107,14 +107,14 @@ proc can_be_argument(module_ref: AnalyzedModuleRef): Result[void, string] =
     else: err(fmt"{module_ref.location} module `{module.name.asl}` can not be passed as an argument")
 
 proc find_function(module_ref: AnalyzedModuleRef,
-    def: TypedFunctionDefinition): Result[TypedFunctionDefinition, string] =
+    def: ResolvedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   case module_ref.kind:
   of RMRK_NATIVE: module_ref.native_module.find_function(def)
   of RMRK_GENERIC: module_ref.generic.find_function(def)
   of RMRK_USER: module_ref.user_module.find_function(def)
 
-proc concretize(module_ref: AnalyzedModuleRef, concrete_map: Table[TypedGeneric,
-    AnalyzedModuleRef]): AnalyzedModuleRef =
+proc concretize(module_ref: AnalyzedModuleRef, concrete_map: Table[
+    ResolvedGeneric, AnalyzedModuleRef]): AnalyzedModuleRef =
   case module_ref.kind:
   of RMRK_GENERIC:
     concrete_map[module_ref.generic]
@@ -147,16 +147,17 @@ proc `==`(self: AnalyzedModuleRef, other: AnalyzedModuleRef): bool =
   self.hash == other.hash
 
 # Helper to create impl from analyzed child and constraints
-proc create_impl_from_child(typed_generic: TypedGeneric, child: TypedModuleRef,
-    analyzed_child: AnalyzedModuleRef): Result[AnalyzedImpl, string] =
-  var constraint_defs: seq[TypedFunctionDefinition]
-  for def in typed_generic.concrete_defs(child.self()):
+proc create_impl_from_child(resolved_generic: ResolvedGeneric,
+    child: ResolvedModuleRef, analyzed_child: AnalyzedModuleRef): Result[
+        AnalyzedImpl, string] =
+  var constraint_defs: seq[ResolvedFunctionDefinition]
+  for def in resolved_generic.concrete_defs(child.self()):
     constraint_defs.add( ? analyzed_child.find_function(def))
   ok(new_analyzed_impl(analyzed_child, constraint_defs))
 
-proc generic_impls(module_ref: AnalyzedModuleRef): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+proc generic_impls(module_ref: AnalyzedModuleRef): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   case module_ref.kind:
   of RMRK_NATIVE: discard
   of RMRK_GENERIC: discard
@@ -206,165 +207,166 @@ proc c(module_ref: AnalyzedModuleRef): string =
     else: "Pointer"
   else: "Pointer"
 
-# Helper to build impls for module_ref children against a typed module (with generic context)
-proc build_impls_for_children[T](file: TypedFile, module: T,
-    generic: TypedGeneric, typed_module: T, children: seq[TypedModuleRef],
+# Helper to build impls for module_ref children against a resolved module (with generic context)
+proc build_impls_for_children[T](file: ResolvedFile, module: T,
+    generic: ResolvedGeneric, resolved_module: T, children: seq[
+        ResolvedModuleRef],
     location: Location): Result[seq[AnalyzedImpl], string] =
-  if children.len != typed_module.generics.len:
-    return err(fmt"{location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
+  if children.len != resolved_module.generics.len:
+    return err(fmt"{location} module `{resolved_module.name.asl}` expects `{resolved_module.generics.len}` generics but found `{children.len}`")
 
   var impls: seq[AnalyzedImpl]
-  for (typed_generic, child) in zip(typed_module.generics, children):
+  for (resolved_generic, child) in zip(resolved_module.generics, children):
     let analyzed_child = ? analyze_def(file, module, generic, child)
-    let analyzed_impl = ? create_impl_from_child(typed_generic, child, analyzed_child)
+    let analyzed_impl = ? create_impl_from_child(resolved_generic, child, analyzed_child)
     impls.add(analyzed_impl)
   ok(impls)
 
 # Helper to build impls for module_ref children (no generic context)
-proc build_impls_no_generic[M, T](file: TypedFile, module: M,
-    typed_module: T, children: seq[TypedModuleRef],
+proc build_impls_no_generic[M, T](file: ResolvedFile, module: M,
+    resolved_module: T, children: seq[ResolvedModuleRef],
     location: Location): Result[seq[AnalyzedImpl], string] =
-  if children.len != typed_module.generics.len:
-    return err(fmt"{location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
+  if children.len != resolved_module.generics.len:
+    return err(fmt"{location} module `{resolved_module.name.asl}` expects `{resolved_module.generics.len}` generics but found `{children.len}`")
 
   var impls: seq[AnalyzedImpl]
-  for (typed_generic, child) in zip(typed_module.generics, children):
+  for (resolved_generic, child) in zip(resolved_module.generics, children):
     let analyzed_child = ? analyze_def(file, module, child)
-    let analyzed_impl = ? create_impl_from_child(typed_generic, child, analyzed_child)
+    let analyzed_impl = ? create_impl_from_child(resolved_generic, child, analyzed_child)
     impls.add(analyzed_impl)
   ok(impls)
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    generic: TypedGeneric, module_ref: TypedModuleRef): Result[
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    generic: ResolvedGeneric, module_ref: ResolvedModuleRef): Result[
         AnalyzedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
-    let untyped_module = ? module_ref.native_module
-    let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.native
-    ok(new_analyzed_module_ref(typed_module, module_ref.location))
+    let unresolved_module = ? module_ref.native_module
+    let resolved_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_any.native
+    ok(new_analyzed_module_ref(resolved_module, module_ref.location))
   of TMRK_GENERIC:
-    let untyped_generic = ? module_ref.generic
-    let typed_generic = ? module.find_generic(untyped_generic)
-    if typed_generic != generic:
-      return err(fmt"{module_ref.location} expected generic `{generic.name.asl}` but found `{typed_generic.name.asl}`")
+    let unresolved_generic = ? module_ref.generic
+    let resolved_generic = ? module.find_generic(unresolved_generic)
+    if resolved_generic != generic:
+      return err(fmt"{module_ref.location} expected generic `{generic.name.asl}` but found `{resolved_generic.name.asl}`")
 
-    ok(new_analyzed_module_ref(typed_generic, module_ref.location))
+    ok(new_analyzed_module_ref(resolved_generic, module_ref.location))
   of TMRK_USER:
-    let untyped_module = ? module_ref.user_module
-    let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.user
-    if typed_module == module:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
+    let unresolved_module = ? module_ref.user_module
+    let resolved_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_any.user
+    if resolved_module == module:
+      return err(fmt"{module_ref.location} module `{resolved_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
 
     let children = ? module_ref.children
-    let impls = ? build_impls_for_children(file, module, generic, typed_module,
-        children, module_ref.location)
-    ok(new_analyzed_module_ref(typed_module, impls, module_ref.location))
+    let impls = ? build_impls_for_children(file, module, generic,
+        resolved_module, children, module_ref.location)
+    ok(new_analyzed_module_ref(resolved_module, impls, module_ref.location))
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    generic: TypedGeneric, module_ref: TypedModuleRef): Result[
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    generic: ResolvedGeneric, module_ref: ResolvedModuleRef): Result[
         AnalyzedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
-    let untyped_module = ? module_ref.native_module
-    let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.native
-    if typed_module == module:
-      return err(fmt"{module_ref.location} module `{typed_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
+    let unresolved_module = ? module_ref.native_module
+    let resolved_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_any.native
+    if resolved_module == module:
+      return err(fmt"{module_ref.location} module `{resolved_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
 
     let children = ? module_ref.children
-    let impls = ? build_impls_for_children(file, module, generic, typed_module,
-        children, module_ref.location)
-    ok(new_analyzed_module_ref(typed_module, impls, module_ref.location))
+    let impls = ? build_impls_for_children(file, module, generic,
+        resolved_module, children, module_ref.location)
+    ok(new_analyzed_module_ref(resolved_module, impls, module_ref.location))
   of TMRK_GENERIC:
-    let untyped_generic = ? module_ref.generic
-    let typed_generic = ? module.find_generic(untyped_generic)
-    if typed_generic != generic:
-      return err(fmt"{module_ref.location} expected generic `{generic.name.asl}` but found `{typed_generic.name.asl}`")
+    let unresolved_generic = ? module_ref.generic
+    let resolved_generic = ? module.find_generic(unresolved_generic)
+    if resolved_generic != generic:
+      return err(fmt"{module_ref.location} expected generic `{generic.name.asl}` but found `{resolved_generic.name.asl}`")
 
-    ok(new_analyzed_module_ref(typed_generic, module_ref.location))
+    ok(new_analyzed_module_ref(resolved_generic, module_ref.location))
   of TMRK_USER:
     err("[INTERNAL ERROR] - Native Modules can not depend on User Modules")
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    module_ref: TypedModuleRef): Result[AnalyzedModuleRef, string] =
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    module_ref: ResolvedModuleRef): Result[AnalyzedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
-    let untyped_module = ? module_ref.native_module
-    let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_module_any.native
+    let unresolved_module = ? module_ref.native_module
+    let resolved_module_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_module_any.native
     let children = ? module_ref.children
-    let impls = ? build_impls_no_generic(file, module, typed_module, children,
-        module_ref.location)
-    ok(new_analyzed_module_ref(typed_module, impls, module_ref.location))
+    let impls = ? build_impls_no_generic(file, module, resolved_module,
+        children, module_ref.location)
+    ok(new_analyzed_module_ref(resolved_module, impls, module_ref.location))
   of TMRK_GENERIC:
-    let untyped_generic = ? module_ref.generic
-    let typed_generic = ? module.find_generic(untyped_generic)
-    ok(new_analyzed_module_ref(typed_generic, module_ref.location))
+    let unresolved_generic = ? module_ref.generic
+    let resolved_generic = ? module.find_generic(unresolved_generic)
+    ok(new_analyzed_module_ref(resolved_generic, module_ref.location))
   of TMRK_USER:
-    let untyped_module = ? module_ref.user_module
-    let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_module_any.user
+    let unresolved_module = ? module_ref.user_module
+    let resolved_module_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_module_any.user
     let children = ? module_ref.children
-    let impls = ? build_impls_no_generic(file, module, typed_module, children,
-        module_ref.location)
-    ok(new_analyzed_module_ref(typed_module, impls, module_ref.location))
+    let impls = ? build_impls_no_generic(file, module, resolved_module,
+        children, module_ref.location)
+    ok(new_analyzed_module_ref(resolved_module, impls, module_ref.location))
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    module_ref: TypedModuleRef): Result[AnalyzedModuleRef, string] =
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    module_ref: ResolvedModuleRef): Result[AnalyzedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
-    let untyped_module = ? module_ref.native_module
-    let typed_module_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_module_any.native
+    let unresolved_module = ? module_ref.native_module
+    let resolved_module_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_module_any.native
     let children = ? module_ref.children
-    let impls = ? build_impls_no_generic(file, module, typed_module, children,
-        module_ref.location)
-    ok(new_analyzed_module_ref(typed_module, impls, module_ref.location))
+    let impls = ? build_impls_no_generic(file, module, resolved_module,
+        children, module_ref.location)
+    ok(new_analyzed_module_ref(resolved_module, impls, module_ref.location))
   of TMRK_GENERIC:
-    let untyped_generic = ? module_ref.generic
-    let typed_generic = ? module.find_generic(untyped_generic)
-    ok(new_analyzed_module_ref(typed_generic, module_ref.location))
+    let unresolved_generic = ? module_ref.generic
+    let resolved_generic = ? module.find_generic(unresolved_generic)
+    ok(new_analyzed_module_ref(resolved_generic, module_ref.location))
   of TMRK_USER:
     err("[INTERNAL ERROR] - Native Modules can not depend on User Modules")
 
 # Helper to process module children at file level (no module context)
-proc process_module_children_file_level(file: TypedFile,
-    typed_module: TypedNativeModule | TypedUserModule,
+proc process_module_children_file_level(file: ResolvedFile,
+    resolved_module: ResolvedNativeModule | ResolvedUserModule,
 
-children: seq[TypedModuleRef], location: Location): Result[seq[AnalyzedImpl], string] =
-  if children.len != typed_module.generics.len:
-    return err(fmt"{location} module `{typed_module.name.asl}` expects `{typed_module.generics.len}` generics but found `{children.len}`")
+children: seq[ResolvedModuleRef], location: Location): Result[seq[AnalyzedImpl], string] =
+  if children.len != resolved_module.generics.len:
+    return err(fmt"{location} module `{resolved_module.name.asl}` expects `{resolved_module.generics.len}` generics but found `{children.len}`")
 
   var impls: seq[AnalyzedImpl]
-  for (typed_generic, child) in zip(typed_module.generics, children):
+  for (resolved_generic, child) in zip(resolved_module.generics, children):
     let analyzed_child = ? analyze_def(file, child)
-    let analyzed_impl = ? create_impl_from_child(typed_generic, child, analyzed_child)
+    let analyzed_impl = ? create_impl_from_child(resolved_generic, child, analyzed_child)
     impls.add(analyzed_impl)
   ok(impls)
 
-proc analyze_def(file: TypedFile, module_ref: TypedModuleRef): Result[
+proc analyze_def(file: ResolvedFile, module_ref: ResolvedModuleRef): Result[
     AnalyzedModuleRef, string] =
   case module_ref.kind:
   of TMRK_NATIVE:
-    let untyped_module = ? module_ref.native_module
-    let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.native
+    let unresolved_module = ? module_ref.native_module
+    let resolved_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_any.native
     let children = ? module_ref.children
-    let impls = ? process_module_children_file_level(file, typed_module,
+    let impls = ? process_module_children_file_level(file, resolved_module,
         children, module_ref.location)
-    ok(new_analyzed_module_ref(typed_module, impls, module_ref.location))
+    ok(new_analyzed_module_ref(resolved_module, impls, module_ref.location))
   of TMRK_GENERIC:
     err(fmt"{module_ref.location} file level functions do not support generics")
   of TMRK_USER:
-    let untyped_module = ? module_ref.user_module
-    let typed_any = ? file.find_module(parser.new_module(untyped_module))
-    let typed_module = ? typed_any.user
+    let unresolved_module = ? module_ref.user_module
+    let resolved_any = ? file.find_module(parser.new_module(unresolved_module))
+    let resolved_module = ? resolved_any.user
     let children = ? module_ref.children
-    let impls = ? process_module_children_file_level(file, typed_module,
+    let impls = ? process_module_children_file_level(file, resolved_module,
         children, module_ref.location)
-    ok(new_analyzed_module_ref(typed_module, impls, module_ref.location))
+    ok(new_analyzed_module_ref(resolved_module, impls, module_ref.location))
 
 type AnalyzedArgumentDefinition = ref object of RootObj
   name: Identifier
@@ -381,15 +383,15 @@ proc new_analyzed_argument_definition(module_ref: AnalyzedModuleRef,
   new_analyzed_argument_definition(module_ref, name, module_ref.location)
 
 proc concretize(arg: AnalyzedArgumentDefinition, concrete_map: Table[
-    TypedGeneric, AnalyzedModuleRef]): AnalyzedArgumentDefinition =
+    ResolvedGeneric, AnalyzedModuleRef]): AnalyzedArgumentDefinition =
   let concretized_module_ref = arg.module_ref.concretize(concrete_map)
   new_analyzed_argument_definition(concretized_module_ref, arg.name)
 
 proc byte_size(arg: AnalyzedArgumentDefinition): uint64 =
   arg.module_ref.byte_size
 
-proc generic_impls(arg: AnalyzedArgumentDefinition): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
+proc generic_impls(arg: AnalyzedArgumentDefinition): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
   arg.module_ref.generic_impls
 
 proc asl(arg: AnalyzedArgumentDefinition): string =
@@ -399,16 +401,16 @@ proc c(arg: AnalyzedArgumentDefinition): string =
   fmt"{arg.module_ref.c} {arg.name.asl}"
 
 # Helper to analyze module_ref with optional generic
-proc analyze_module_ref_with_generic[T](file: TypedFile, module: T,
-    generic: Option[TypedGeneric], module_ref: TypedModuleRef): Result[
+proc analyze_module_ref_with_generic[T](file: ResolvedFile, module: T,
+    generic: Option[ResolvedGeneric], module_ref: ResolvedModuleRef): Result[
         AnalyzedModuleRef, string] =
   if generic.is_some:
     analyze_def(file, module, generic.get, module_ref)
   else:
     analyze_def(file, module, module_ref)
 
-proc analyze_arg_with_generic[T](file: TypedFile, module: T,
-    generic: Option[TypedGeneric], arg: TypedArgumentDefinition): Result[
+proc analyze_arg_with_generic[T](file: ResolvedFile, module: T,
+    generic: Option[ResolvedGeneric], arg: ResolvedArgumentDefinition): Result[
         AnalyzedArgumentDefinition, string] =
   if generic.is_some:
     analyze_def(file, module, generic.get, arg)
@@ -416,56 +418,56 @@ proc analyze_arg_with_generic[T](file: TypedFile, module: T,
     analyze_def(file, module, arg)
 
 proc function_prefix(module_name: Identifier,
-    generic: Option[TypedGeneric]): string =
+    generic: Option[ResolvedGeneric]): string =
   if generic.is_some:
     fmt"{module_name.asl}_{generic.get.name.asl}"
   else:
     module_name.asl
 
-# Helper for resolving TypedArgumentDefinition with TypedUserModule
-proc analyze_argument_definition_user(file: TypedFile,
-    arg: TypedArgumentDefinition, module: TypedUserModule, generic: Option[
-        TypedGeneric]): Result[AnalyzedArgumentDefinition, string] =
+# Helper for resolving ResolvedArgumentDefinition with ResolvedUserModule
+proc analyze_argument_definition_user(file: ResolvedFile,
+    arg: ResolvedArgumentDefinition, module: ResolvedUserModule,
+        generic: Option[ResolvedGeneric]): Result[AnalyzedArgumentDefinition, string] =
   let analyzed_module_ref = ? analyze_module_ref_with_generic(file, module,
       generic, arg.module_ref)
   ? analyzed_module_ref.can_be_argument
   ok(new_analyzed_argument_definition(analyzed_module_ref, arg.name))
 
-# Helper for resolving TypedArgumentDefinition with TypedNativeModule
-proc analyze_argument_definition_native(file: TypedFile,
-    arg: TypedArgumentDefinition, module: TypedNativeModule, generic: Option[
-        TypedGeneric]): Result[AnalyzedArgumentDefinition, string] =
+# Helper for resolving ResolvedArgumentDefinition with ResolvedNativeModule
+proc analyze_argument_definition_native(file: ResolvedFile,
+    arg: ResolvedArgumentDefinition, module: ResolvedNativeModule,
+        generic: Option[ResolvedGeneric]): Result[AnalyzedArgumentDefinition, string] =
   let analyzed_module_ref = ? analyze_module_ref_with_generic(file, module,
       generic, arg.module_ref)
   ? analyzed_module_ref.can_be_argument
   ok(new_analyzed_argument_definition(analyzed_module_ref, arg.name))
 
-# Helper for resolving TypedArgumentDefinition without module
-proc analyze_argument_definition_no_module(file: TypedFile,
-    arg: TypedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
+# Helper for resolving ResolvedArgumentDefinition without module
+proc analyze_argument_definition_no_module(file: ResolvedFile,
+    arg: ResolvedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
   let analyzed_module_ref = ? analyze_def(file, arg.module_ref)
   ? analyzed_module_ref.can_be_argument
   ok(new_analyzed_argument_definition(analyzed_module_ref, arg.name))
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    generic: TypedGeneric, arg: TypedArgumentDefinition): Result[
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    generic: ResolvedGeneric, arg: ResolvedArgumentDefinition): Result[
         AnalyzedArgumentDefinition, string] =
   analyze_argument_definition_user(file, arg, module, some(generic))
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    generic: TypedGeneric, arg: TypedArgumentDefinition): Result[
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    generic: ResolvedGeneric, arg: ResolvedArgumentDefinition): Result[
         AnalyzedArgumentDefinition, string] =
   analyze_argument_definition_native(file, arg, module, some(generic))
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    arg: TypedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
-  analyze_argument_definition_user(file, arg, module, none(TypedGeneric))
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    arg: ResolvedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
+  analyze_argument_definition_user(file, arg, module, none(ResolvedGeneric))
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    arg: TypedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
-  analyze_argument_definition_native(file, arg, module, none(TypedGeneric))
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    arg: ResolvedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
+  analyze_argument_definition_native(file, arg, module, none(ResolvedGeneric))
 
-proc analyze_def(file: TypedFile, arg: TypedArgumentDefinition): Result[
+proc analyze_def(file: ResolvedFile, arg: ResolvedArgumentDefinition): Result[
     AnalyzedArgumentDefinition, string] =
   analyze_argument_definition_no_module(file, arg)
 
@@ -486,7 +488,7 @@ proc new_analyzed_function_definition(name: Identifier,
 
 proc arity(def: AnalyzedUserFunctionDefinition): uint = def.args.len.uint
 proc concretize(def: AnalyzedUserFunctionDefinition, concrete_map: Table[
-    TypedGeneric, AnalyzedModuleRef]): AnalyzedUserFunctionDefinition =
+    ResolvedGeneric, AnalyzedModuleRef]): AnalyzedUserFunctionDefinition =
   var concretized_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
     concretized_args.add(arg.concretize(concrete_map))
@@ -494,9 +496,9 @@ proc concretize(def: AnalyzedUserFunctionDefinition, concrete_map: Table[
   new_analyzed_function_definition(def.name, concretized_args,
       concretized_returns, def.location)
 
-proc generic_impls(def: AnalyzedUserFunctionDefinition): Table[TypedUserModule,
-    seq[HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+proc generic_impls(def: AnalyzedUserFunctionDefinition): Table[
+    ResolvedUserModule, seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for arg in def.args: impl_set = impl_set.merge(arg.generic_impls())
   impl_set = impl_set.merge(def.returns.generic_impls())
   return impl_set
@@ -519,10 +521,12 @@ proc c(def: AnalyzedUserFunctionDefinition): string =
 
   fmt"{def.returns.c} {def.c_name}({args_str});"
 
-# Helper for resolving TypedFunctionDefinition with TypedUserModule
-proc analyze_function_definition_user(file: TypedFile,
-    def: TypedFunctionDefinition, module: TypedUserModule, generic: Option[
-        TypedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
+# Helper for resolving ResolvedFunctionDefinition with ResolvedUserModule
+proc analyze_function_definition_user(file: ResolvedFile,
+    def: ResolvedFunctionDefinition, module: ResolvedUserModule,
+        generic: Option[
+
+ResolvedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
     let analyzed_arg = ? analyze_arg_with_generic(file, module, generic, arg)
@@ -536,10 +540,12 @@ proc analyze_function_definition_user(file: TypedFile,
   ok(new_analyzed_function_definition(def.name, analyzed_args,
       analyzed_returns, def.location, prefix, module.generics.len.uint64))
 
-# Helper for resolving TypedFunctionDefinition with TypedNativeModule
-proc analyze_function_definition_native(file: TypedFile,
-    def: TypedFunctionDefinition, module: TypedNativeModule, generic: Option[
-        TypedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
+# Helper for resolving ResolvedFunctionDefinition with ResolvedNativeModule
+proc analyze_function_definition_native(file: ResolvedFile,
+    def: ResolvedFunctionDefinition, module: ResolvedNativeModule,
+        generic: Option[
+
+ResolvedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
     let analyzed_arg = ? analyze_arg_with_generic(file, module, generic, arg)
@@ -553,9 +559,9 @@ proc analyze_function_definition_native(file: TypedFile,
   ok(new_analyzed_function_definition(def.name, analyzed_args,
       analyzed_returns, def.location, prefix, module.generics.len.uint64))
 
-# Helper for resolving TypedFunctionDefinition without module
-proc analyze_function_definition_no_module(file: TypedFile,
-    def: TypedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
+# Helper for resolving ResolvedFunctionDefinition without module
+proc analyze_function_definition_no_module(file: ResolvedFile,
+    def: ResolvedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
     let analyzed_arg = ? analyze_def(file, arg)
@@ -563,31 +569,31 @@ proc analyze_function_definition_no_module(file: TypedFile,
   let analyzed_returns = ? analyze_def(file, def.returns)
   ok(new_analyzed_function_definition(def.name, analyzed_args, analyzed_returns, def.location))
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    generic: TypedGeneric, def: TypedFunctionDefinition): Result[
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    generic: ResolvedGeneric, def: ResolvedFunctionDefinition): Result[
         AnalyzedUserFunctionDefinition, string] =
   analyze_function_definition_user(file, def, module, some(generic))
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    generic: TypedGeneric, def: TypedFunctionDefinition): Result[
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    generic: ResolvedGeneric, def: ResolvedFunctionDefinition): Result[
         AnalyzedUserFunctionDefinition, string] =
   analyze_function_definition_native(file, def, module, some(generic))
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    def: TypedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
-  analyze_function_definition_user(file, def, module, none(TypedGeneric))
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    def: ResolvedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
+  analyze_function_definition_user(file, def, module, none(ResolvedGeneric))
 
-proc analyze_def(file: TypedFile, def: TypedFunctionDefinition): Result[
+proc analyze_def(file: ResolvedFile, def: ResolvedFunctionDefinition): Result[
     AnalyzedUserFunctionDefinition, string] =
   analyze_function_definition_no_module(file, def)
 
 type AnalyzedGeneric = ref object of RootObj
-  generic: TypedGeneric
+  generic: ResolvedGeneric
   defs: seq[AnalyzedUserFunctionDefinition]
   defs_map: Table[Identifier, Table[uint, seq[AnalyzedUserFunctionDefinition]]]
   location: Location
 
-proc new_analyzed_generic(generic: TypedGeneric, defs: seq[
+proc new_analyzed_generic(generic: ResolvedGeneric, defs: seq[
     AnalyzedUserFunctionDefinition], location: Location): AnalyzedGeneric =
   var defs_map: Table[Identifier, Table[uint, seq[
       AnalyzedUserFunctionDefinition]]]
@@ -603,9 +609,9 @@ proc new_analyzed_generic(generic: TypedGeneric, defs: seq[
 
 proc name(generic: AnalyzedGeneric): Identifier = generic.generic.name
 
-proc generic_impls(generic: AnalyzedGeneric): Table[TypedUserModule, seq[
+proc generic_impls(generic: AnalyzedGeneric): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for def in generic.defs: impl_set = impl_set.merge(def.generic_impls())
   return impl_set
 
@@ -634,37 +640,37 @@ proc find_function_defs(generic: AnalyzedGeneric, name: Identifier,
   else:
     ok(generic.defs_map[name][arity])
 
-# Helper for resolving TypedGeneric with TypedUserModule
-proc analyze_generic_user(file: TypedFile, generic: TypedGeneric,
-    module: TypedUserModule): Result[AnalyzedGeneric, string] =
+# Helper for resolving ResolvedGeneric with ResolvedUserModule
+proc analyze_generic_user(file: ResolvedFile, generic: ResolvedGeneric,
+    module: ResolvedUserModule): Result[AnalyzedGeneric, string] =
   var analyzed_defs: seq[AnalyzedUserFunctionDefinition]
   for def in generic.defs:
     let analyzed_def = ? analyze_def(file, module, generic, def)
     analyzed_defs.add(analyzed_def)
   ok(new_analyzed_generic(generic, analyzed_defs, generic.location))
 
-# Helper for resolving TypedGeneric with TypedNativeModule
-proc analyze_generic_native(file: TypedFile, generic: TypedGeneric,
-    module: TypedNativeModule): Result[AnalyzedGeneric, string] =
+# Helper for resolving ResolvedGeneric with ResolvedNativeModule
+proc analyze_generic_native(file: ResolvedFile, generic: ResolvedGeneric,
+    module: ResolvedNativeModule): Result[AnalyzedGeneric, string] =
   var analyzed_defs: seq[AnalyzedUserFunctionDefinition]
   for def in generic.defs:
     let analyzed_def = ? analyze_def(file, module, generic, def)
     analyzed_defs.add(analyzed_def)
   ok(new_analyzed_generic(generic, analyzed_defs, generic.location))
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    generic: TypedGeneric): Result[AnalyzedGeneric, string] =
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   analyze_generic_user(file, generic, module)
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    generic: TypedGeneric): Result[AnalyzedGeneric, string] =
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   analyze_generic_native(file, generic, module)
 
 type
   AnalyzedStructKind = enum
     RSK_DEFAULT, RSK_NAMED
   AnalyzedStruct = ref object of RootObj
-    struct: TypedStruct
+    struct: ResolvedStruct
     location: Location
     fields: seq[AnalyzedArgumentDefinition]
     fields_map: Table[Identifier, int]
@@ -672,14 +678,14 @@ type
     of RSK_DEFAULT: discard
     of RSK_NAMED: name: Identifier
 
-proc new_analyzed_struct(struct: TypedStruct, fields: seq[
+proc new_analyzed_struct(struct: ResolvedStruct, fields: seq[
     AnalyzedArgumentDefinition], location: Location): AnalyzedStruct =
   var fields_map: Table[Identifier, int]
   for index, field in fields.pairs: fields_map[field.name] = index
   AnalyzedStruct(kind: RSK_DEFAULT, struct: struct, fields: fields,
       fields_map: fields_map, location: location)
 
-proc new_analyzed_struct(struct: TypedStruct, name: Identifier, fields: seq[
+proc new_analyzed_struct(struct: ResolvedStruct, name: Identifier, fields: seq[
     AnalyzedArgumentDefinition], location: Location): AnalyzedStruct =
   var fields_map: Table[Identifier, int]
   for index, field in fields.pairs: fields_map[field.name] = index
@@ -688,9 +694,9 @@ proc new_analyzed_struct(struct: TypedStruct, name: Identifier, fields: seq[
 
 proc id(struct: AnalyzedStruct): uint64 = struct.struct.id
 
-proc generic_impls(struct: AnalyzedStruct): Table[TypedUserModule, seq[HashSet[
-    AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+proc generic_impls(struct: AnalyzedStruct): Table[ResolvedUserModule, seq[
+    HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for field in struct.fields: impl_set = impl_set.merge(field.generic_impls())
   return impl_set
 
@@ -757,7 +763,7 @@ proc c(struct: AnalyzedStruct, prefix: string, id: Option[uint64] = none(
   lines.add("}")
   return lines
 
-proc concretize(struct: AnalyzedStruct, concrete_map: Table[TypedGeneric,
+proc concretize(struct: AnalyzedStruct, concrete_map: Table[ResolvedGeneric,
     AnalyzedModuleRef]): AnalyzedStruct =
   var concretized_fields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
@@ -780,8 +786,8 @@ proc find_field(struct: AnalyzedStruct, field: Identifier): Result[
   let field_index = ? struct.find_field_index(field)
   ok(struct.fields[field_index])
 
-# Helper for resolving TypedStruct with either module kind
-proc analyze_struct_common[T](file: TypedFile, struct: TypedStruct,
+# Helper for resolving ResolvedStruct with either module kind
+proc analyze_struct_common[T](file: ResolvedFile, struct: ResolvedStruct,
     module: T): Result[AnalyzedStruct, string] =
   var analyzed_fields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
@@ -796,35 +802,35 @@ proc analyze_struct_common[T](file: TypedFile, struct: TypedStruct,
     ok(new_analyzed_struct(struct, struct_name, analyzed_fields,
         struct.location))
 
-proc analyze_def(file: TypedFile, module: TypedUserModule,
-    struct: TypedStruct): Result[AnalyzedStruct, string] =
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
+    struct: ResolvedStruct): Result[AnalyzedStruct, string] =
   analyze_struct_common(file, struct, module)
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    struct: TypedStruct): Result[AnalyzedStruct, string] =
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    struct: ResolvedStruct): Result[AnalyzedStruct, string] =
   analyze_struct_common(file, struct, module)
 
 type AnalyzedUserModuleDefinition = ref object of RootObj
-  module: TypedUserModule
+  module: ResolvedUserModule
   generics: seq[AnalyzedGeneric]
-  generics_map: Table[TypedGeneric, AnalyzedGeneric]
+  generics_map: Table[ResolvedGeneric, AnalyzedGeneric]
   structs: seq[AnalyzedStruct]
   default_struct_index: int
   structs_map: Table[Identifier, AnalyzedStruct]
   function_defs: seq[AnalyzedUserFunctionDefinition]
-  function_defs_map: Table[TypedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint, seq[
       AnalyzedUserFunctionDefinition]]]
 
-proc new_analyzed_user_module_definition(module: TypedUserModule,
-    generics: seq[(TypedGeneric, AnalyzedGeneric)], structs: seq[
+proc new_analyzed_user_module_definition(module: ResolvedUserModule,
+    generics: seq[(ResolvedGeneric, AnalyzedGeneric)], structs: seq[
         AnalyzedStruct],
-    function_defs: seq[(TypedFunctionDefinition,
+    function_defs: seq[(ResolvedFunctionDefinition,
     AnalyzedUserFunctionDefinition)]): AnalyzedUserModuleDefinition =
-  var generics_map: Table[TypedGeneric, AnalyzedGeneric]
+  var generics_map: Table[ResolvedGeneric, AnalyzedGeneric]
   var analyzed_generics: seq[AnalyzedGeneric]
-  for (typed_generic, analyzed_generic) in generics:
-    generics_map[typed_generic] = analyzed_generic
+  for (resolved_generic, analyzed_generic) in generics:
+    generics_map[resolved_generic] = analyzed_generic
     analyzed_generics.add(analyzed_generic)
 
   var default_struct_index = -1
@@ -836,12 +842,12 @@ proc new_analyzed_user_module_definition(module: TypedUserModule,
     of RSK_DEFAULT: default_struct_index = index
     of RSK_NAMED: structs_map[analyzed_struct.name] = analyzed_struct
 
-  var function_defs_map: Table[TypedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
   var analyzed_function_defs: seq[AnalyzedUserFunctionDefinition]
   var function_signatures_map: Table[Identifier, Table[uint,
       seq[AnalyzedUserFunctionDefinition]]]
-  for (typed_function_def, analyzed_function_def) in function_defs:
-    function_defs_map[typed_function_def] = analyzed_function_def
+  for (resolved_function_def, analyzed_function_def) in function_defs:
+    function_defs_map[resolved_function_def] = analyzed_function_def
     analyzed_function_defs.add(analyzed_function_def)
 
     if analyzed_function_def.name notin function_signatures_map:
@@ -869,9 +875,9 @@ proc `==`(self: AnalyzedUserModuleDefinition,
     other: AnalyzedUserModuleDefinition): bool =
   self.hash == other.hash
 
-proc generic_impls(def: AnalyzedUserModuleDefinition): Table[TypedUserModule,
+proc generic_impls(def: AnalyzedUserModuleDefinition): Table[ResolvedUserModule,
     seq[HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for generic in def.generics: impl_set = impl_set.merge(generic.generic_impls())
   for struct in def.structs: impl_set = impl_set.merge(struct.generic_impls())
   for function in def.function_defs: impl_set = impl_set.merge(
@@ -944,7 +950,7 @@ proc c(def: AnalyzedUserModuleDefinition): seq[string] =
   return lines
 
 proc find_generic(module_def: AnalyzedUserModuleDefinition,
-    generic: TypedGeneric): Result[AnalyzedGeneric, string] =
+    generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   if generic notin module_def.generics_map:
     err(fmt"module `{module_def.name.asl}` does not have any generic named `{generic.name.asl}`")
   else:
@@ -965,7 +971,7 @@ proc find_struct(module_def: AnalyzedUserModuleDefinition,
     ok(module_def.structs_map[name])
 
 proc find_function_def(module_def: AnalyzedUserModuleDefinition,
-    function_def: TypedFunctionDefinition): Result[
+    function_def: ResolvedFunctionDefinition): Result[
         AnalyzedUserFunctionDefinition, string] =
   if function_def notin module_def.function_defs_map:
     err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
@@ -982,9 +988,9 @@ proc find_function_defs(module_def: AnalyzedUserModuleDefinition,
   else:
     ok(module_def.function_signatures_map[name][arity])
 
-proc analyze_def(file: TypedFile, module: TypedUserModule): Result[
+proc analyze_def(file: ResolvedFile, module: ResolvedUserModule): Result[
     AnalyzedUserModuleDefinition, string] =
-  var generics: seq[(TypedGeneric, AnalyzedGeneric)]
+  var generics: seq[(ResolvedGeneric, AnalyzedGeneric)]
   for generic in module.generics:
     let analyzed_generic = ? analyze_def(file, module, generic)
     generics.add((generic, analyzed_generic))
@@ -994,7 +1000,7 @@ proc analyze_def(file: TypedFile, module: TypedUserModule): Result[
     let analyzed_struct = ? analyze_def(file, module, struct)
     structs.add(analyzed_struct)
 
-  var function_defs: seq[(TypedFunctionDefinition,
+  var function_defs: seq[(ResolvedFunctionDefinition,
       AnalyzedUserFunctionDefinition)]
   for function in module.functions:
     let analyzed_def = ? analyze_def(file, module, function.def)
@@ -1014,11 +1020,11 @@ proc new_analyzed_native_function_definition(native: string,
 proc name(def: AnalyzedNativeFunctionDefinition): Identifier = def.def.name
 proc arity(def: AnalyzedNativeFunctionDefinition): uint = def.def.arity.uint
 proc generic_impls(function: AnalyzedNativeFunctionDefinition): Table[
-    TypedUserModule, seq[HashSet[AnalyzedImpl]]] =
+    ResolvedUserModule, seq[HashSet[AnalyzedImpl]]] =
   function.def.generic_impls
 
-proc analyze_def(file: TypedFile, module: TypedNativeModule,
-    native_fn: TypedNativeFunction): Result[AnalyzedNativeFunctionDefinition, string] =
+proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
+    native_fn: ResolvedNativeFunction): Result[AnalyzedNativeFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in native_fn.def.args:
     let analyzed_arg = ? analyze_def(file, module, arg)
@@ -1030,25 +1036,25 @@ proc analyze_def(file: TypedFile, module: TypedNativeModule,
   ok(new_analyzed_native_function_definition(native_fn.native, analyzed_def))
 
 type AnalyzedNativeModuleDefinition = ref object of RootObj
-  module: TypedNativeModule
+  module: ResolvedNativeModule
   generics: seq[AnalyzedGeneric]
-  generics_map: Table[TypedGeneric, AnalyzedGeneric]
+  generics_map: Table[ResolvedGeneric, AnalyzedGeneric]
   default_struct_index: int
   structs: seq[AnalyzedStruct]
   structs_map: Table[Identifier, AnalyzedStruct]
   functions: seq[AnalyzedNativeFunctionDefinition]
-  function_defs_map: Table[TypedFunctionDefinition, AnalyzedNativeFunctionDefinition]
+  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedNativeFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint, seq[
       AnalyzedNativeFunctionDefinition]]]
 
-proc new_analyzed_native_module_definition(module: TypedNativeModule,
-    generics: seq[(TypedGeneric, AnalyzedGeneric)], structs: seq[
+proc new_analyzed_native_module_definition(module: ResolvedNativeModule,
+    generics: seq[(ResolvedGeneric, AnalyzedGeneric)], structs: seq[
     AnalyzedStruct], functions: seq[
     AnalyzedNativeFunctionDefinition]): AnalyzedNativeModuleDefinition =
-  var generics_map: Table[TypedGeneric, AnalyzedGeneric]
+  var generics_map: Table[ResolvedGeneric, AnalyzedGeneric]
   var analyzed_generics: seq[AnalyzedGeneric]
-  for (typed_generic, analyzed_generic) in generics:
-    generics_map[typed_generic] = analyzed_generic
+  for (resolved_generic, analyzed_generic) in generics:
+    generics_map[resolved_generic] = analyzed_generic
     analyzed_generics.add(analyzed_generic)
 
   var default_struct_index = -1
@@ -1070,9 +1076,9 @@ proc new_analyzed_native_module_definition(module: TypedNativeModule,
           AnalyzedNativeFunctionDefinition]()
     function_signatures_map[function.name][function.arity].add(function)
 
-  var function_defs_map: Table[TypedFunctionDefinition, AnalyzedNativeFunctionDefinition]
-  for (typed_function, analyzed_function) in zip(module.functions, functions):
-    function_defs_map[typed_function.def] = analyzed_function
+  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedNativeFunctionDefinition]
+  for (resolved_function, analyzed_function) in zip(module.functions, functions):
+    function_defs_map[resolved_function.def] = analyzed_function
   AnalyzedNativeModuleDefinition(module: module, generics: analyzed_generics,
       generics_map: generics_map, structs: structs, structs_map: structs_map,
       functions: functions, function_defs_map: function_defs_map,
@@ -1082,14 +1088,14 @@ proc id(module_def: AnalyzedNativeModuleDefinition): uint64 = module_def.module.
 proc name(module_def: AnalyzedNativeModuleDefinition): Identifier = module_def.module.name
 
 proc generic_impls(module: AnalyzedNativeModuleDefinition): Table[
-    TypedUserModule, seq[HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+    ResolvedUserModule, seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for function in module.functions: impl_set = impl_set.merge(
       function.generic_impls())
   return impl_set
 
 proc find_function_def(module_def: AnalyzedNativeModuleDefinition,
-    function_def: TypedFunctionDefinition): Result[
+    function_def: ResolvedFunctionDefinition): Result[
         AnalyzedNativeFunctionDefinition, string] =
   if function_def notin module_def.function_defs_map:
     err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
@@ -1120,9 +1126,9 @@ proc find_struct(module_def: AnalyzedNativeModuleDefinition,
   else:
     ok(module_def.structs_map[name])
 
-proc analyze_def(file: TypedFile, def: TypedNativeModule): Result[
+proc analyze_def(file: ResolvedFile, def: ResolvedNativeModule): Result[
     AnalyzedNativeModuleDefinition, string] =
-  var analyzed_generics: seq[(TypedGeneric, AnalyzedGeneric)]
+  var analyzed_generics: seq[(ResolvedGeneric, AnalyzedGeneric)]
   for generic in def.generics:
     let analyzed_generic = ? analyze_def(file, def, generic)
     analyzed_generics.add((generic, analyzed_generic))
@@ -1159,39 +1165,39 @@ proc id(def: AnalyzedModuleDefinition): uint64 =
   of RMDK_USER: def.user.id
 
 type AnalyzedFileDefinition = ref object of RootObj
-  file: TypedFile
+  file: ResolvedFile
   native_modules: seq[AnalyzedNativeModuleDefinition]
-  native_modules_map: Table[TypedNativeModule, AnalyzedNativeModuleDefinition]
+  native_modules_map: Table[ResolvedNativeModule, AnalyzedNativeModuleDefinition]
   user_modules: seq[AnalyzedUserModuleDefinition]
-  user_modules_map: Table[TypedUserModule, AnalyzedUserModuleDefinition]
+  user_modules_map: Table[ResolvedUserModule, AnalyzedUserModuleDefinition]
   function_defs: seq[AnalyzedUserFunctionDefinition]
-  function_defs_map: Table[TypedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint,
       seq[AnalyzedUserFunctionDefinition]]]
 
-proc new_analyzed_file_definition(file: TypedFile, native_modules: seq[(
-    TypedNativeModule, AnalyzedNativeModuleDefinition)], user_modules: seq[(
-    TypedUserModule, AnalyzedUserModuleDefinition)], function_defs: seq[(
-    TypedFunctionDefinition,
+proc new_analyzed_file_definition(file: ResolvedFile, native_modules: seq[(
+    ResolvedNativeModule, AnalyzedNativeModuleDefinition)], user_modules: seq[(
+    ResolvedUserModule, AnalyzedUserModuleDefinition)], function_defs: seq[(
+    ResolvedFunctionDefinition,
     AnalyzedUserFunctionDefinition)]): AnalyzedFileDefinition =
-  var native_modules_map: Table[TypedNativeModule, AnalyzedNativeModuleDefinition]
+  var native_modules_map: Table[ResolvedNativeModule, AnalyzedNativeModuleDefinition]
   var analyzed_native_modules: seq[AnalyzedNativeModuleDefinition]
-  for (typed_module, analyzed_module) in native_modules:
-    native_modules_map[typed_module] = analyzed_module
+  for (resolved_module, analyzed_module) in native_modules:
+    native_modules_map[resolved_module] = analyzed_module
     analyzed_native_modules.add(analyzed_module)
 
-  var user_modules_map: Table[TypedUserModule, AnalyzedUserModuleDefinition]
+  var user_modules_map: Table[ResolvedUserModule, AnalyzedUserModuleDefinition]
   var analyzed_user_modules: seq[AnalyzedUserModuleDefinition]
-  for (typed_module, analyzed_user_module) in user_modules:
-    user_modules_map[typed_module] = analyzed_user_module
+  for (resolved_module, analyzed_user_module) in user_modules:
+    user_modules_map[resolved_module] = analyzed_user_module
     analyzed_user_modules.add(analyzed_user_module)
 
-  var function_defs_map: Table[TypedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
   var function_signatures_map: Table[Identifier, Table[uint,
       seq[AnalyzedUserFunctionDefinition]]]
   var analyzed_function_defs: seq[AnalyzedUserFunctionDefinition]
-  for (typed_function_def, analyzed_function_def) in function_defs:
-    function_defs_map[typed_function_def] = analyzed_function_def
+  for (resolved_function_def, analyzed_function_def) in function_defs:
+    function_defs_map[resolved_function_def] = analyzed_function_def
     analyzed_function_defs.add(analyzed_function_def)
 
     if analyzed_function_def.name notin function_signatures_map:
@@ -1212,9 +1218,9 @@ proc new_analyzed_file_definition(file: TypedFile, native_modules: seq[(
       function_defs_map: function_defs_map,
       function_signatures_map: function_signatures_map)
 
-proc generic_impls(file: AnalyzedFileDefinition): Table[TypedUserModule, seq[
+proc generic_impls(file: AnalyzedFileDefinition): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for module in file.native_modules: impl_set = impl_set.merge(
       module.generic_impls())
   for module in file.user_modules: impl_set = impl_set.merge(
@@ -1232,21 +1238,21 @@ proc c(file: AnalyzedFileDefinition): seq[string] =
   return lines
 
 proc find_module_def(file_def: AnalyzedFileDefinition,
-    module: TypedNativeModule): Result[AnalyzedNativeModuleDefinition, string] =
+    module: ResolvedNativeModule): Result[AnalyzedNativeModuleDefinition, string] =
   if module in file_def.native_modules_map:
     ok(file_def.native_modules_map[module])
   else:
     err(fmt"module `{module.name.asl}` not found in analyzed file definition")
 
 proc find_module_def(file_def: AnalyzedFileDefinition,
-    module: TypedUserModule): Result[AnalyzedUserModuleDefinition, string] =
+    module: ResolvedUserModule): Result[AnalyzedUserModuleDefinition, string] =
   if module in file_def.user_modules_map:
     ok(file_def.user_modules_map[module])
   else:
     err(fmt"module `{module.name.asl}` not found in analyzed file definition")
 
 proc find_function_def(file_def: AnalyzedFileDefinition,
-    def: TypedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
+    def: ResolvedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
   if def in file_def.function_defs_map:
     ok(file_def.function_defs_map[def])
   else:
@@ -1261,18 +1267,19 @@ proc find_function_defs(file_def: AnalyzedFileDefinition, name: Identifier,
   else:
     ok(file_def.function_signatures_map[name][arity])
 
-proc analyze_def(file: TypedFile): Result[AnalyzedFileDefinition, string] =
-  var native_modules: seq[(TypedNativeModule, AnalyzedNativeModuleDefinition)]
+proc analyze_def(file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
+  var native_modules: seq[(ResolvedNativeModule,
+      AnalyzedNativeModuleDefinition)]
   for module in file.native_modules:
     let analyzed_module_def = ? analyze_def(file, module)
     native_modules.add((module, analyzed_module_def))
 
-  var modules: seq[(TypedUserModule, AnalyzedUserModuleDefinition)]
+  var modules: seq[(ResolvedUserModule, AnalyzedUserModuleDefinition)]
   for module in file.user_modules:
     let analyzed_module_def = ? analyze_def(file, module)
     modules.add((module, analyzed_module_def))
 
-  var function_defs: seq[(TypedFunctionDefinition,
+  var function_defs: seq[(ResolvedFunctionDefinition,
       AnalyzedUserFunctionDefinition)]
   for function in file.functions:
     let analyzed_function_def = ? analyze_def(file, function.def)
@@ -1325,8 +1332,8 @@ proc returns(def: AnalyzedFunctionDefinition): AnalyzedModuleRef =
   of RFDK_NATIVE: def.native.def.returns
   of RFDK_USER: def.user.returns
 
-proc generic_impls(def: AnalyzedFunctionDefinition): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
+proc generic_impls(def: AnalyzedFunctionDefinition): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
   case def.kind:
   of RFDK_NATIVE: def.native.def.generic_impls
   of RFDK_USER: def.user.generic_impls
@@ -1371,9 +1378,9 @@ proc defs(fnref: AnalyzedFunctionRef): seq[(AnalyzedFunctionDefinition,
     AnalyzedFunctionDefinition)] =
   zip(fnref.original_defs, fnref.concrete_defs)
 
-proc generic_impls(fnref: AnalyzedFunctionRef): Table[TypedUserModule, seq[
+proc generic_impls(fnref: AnalyzedFunctionRef): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   case fnref.kind:
   of RFRK_LOCAL: discard
   of RFRK_MODULE: impl_set = impl_set.merge(fnref.module_ref.generic_impls)
@@ -1385,7 +1392,8 @@ proc asl(fnref: AnalyzedFunctionRef): string =
   of RFRK_MODULE: fmt"{fnref.module_ref.asl}.{fnref.name.asl}"
 
 proc analyze(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedUserModuleDefinition, fnref: TypedFunctionRef): Result[
+    module_def: AnalyzedUserModuleDefinition,
+        fnref: ResolvedFunctionRef): Result[
     AnalyzedFunctionRef, string] =
   case fnref.kind:
   of TFRK_LOCAL:
@@ -1395,12 +1403,12 @@ proc analyze(file_def: AnalyzedFileDefinition,
     ok(new_analyzed_function_ref(fnref.name, analyzed_function_defs,
         analyzed_function_defs))
   of TFRK_MODULE:
-    let typed_module_ref = ? fnref.module_ref
-    let analyzed_module_ref = ? analyze_def(file_def.file, module_def.module, typed_module_ref)
+    let resolved_module_ref = ? fnref.module_ref
+    let analyzed_module_ref = ? analyze_def(file_def.file, module_def.module, resolved_module_ref)
     case analyzed_module_ref.kind:
     of RMRK_NATIVE:
-      # let typed_native_module = analyzed_module_ref.native_module
-      # let analyzed_native_module_def = ? file_def.find_module_def(typed_native_module)
+      # let resolved_native_module = analyzed_module_ref.native_module
+      # let analyzed_native_module_def = ? file_def.find_module_def(resolved_native_module)
       # let analyzed_native_function_defs = ? analyzed_native_module_def.find_function_defs(
       #     fnref.name, fnref.arity)
       # let analyzed_function_defs = analyzed_native_function_defs.map_it(
@@ -1408,8 +1416,8 @@ proc analyze(file_def: AnalyzedFileDefinition,
       # ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
       #     analyzed_function_defs, analyzed_function_defs))
 
-      let typed_native_module = analyzed_module_ref.native_module
-      let analyzed_native_module_def = ? file_def.find_module_def(typed_native_module)
+      let resolved_native_module = analyzed_module_ref.native_module
+      let analyzed_native_module_def = ? file_def.find_module_def(resolved_native_module)
       let analyzed_native_function_defs = ? analyzed_native_module_def.find_function_defs(
           fnref.name, fnref.arity)
       let analyzed_function_defs = analyzed_native_function_defs.map_it(
@@ -1421,8 +1429,8 @@ proc analyze(file_def: AnalyzedFileDefinition,
       ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
           analyzed_function_defs, analyzed_concrete_function_defs))
     of RMRK_GENERIC:
-      let typed_generic = analyzed_module_ref.generic
-      let analyzed_generic = ? module_def.find_generic(typed_generic)
+      let resolved_generic = analyzed_module_ref.generic
+      let analyzed_generic = ? module_def.find_generic(resolved_generic)
       let analyzed_user_function_defs = ? analyzed_generic.find_function_defs(
           fnref.name, fnref.arity)
       let analyzed_function_defs = analyzed_user_function_defs.map_it(
@@ -1430,8 +1438,8 @@ proc analyze(file_def: AnalyzedFileDefinition,
       ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
           analyzed_function_defs, analyzed_function_defs))
     of RMRK_USER:
-      let typed_user_module = analyzed_module_ref.user_module
-      let analyzed_user_module_def = ? file_def.find_module_def(typed_user_module)
+      let resolved_user_module = analyzed_module_ref.user_module
+      let analyzed_user_module_def = ? file_def.find_module_def(resolved_user_module)
       let analyzed_user_function_defs = ? analyzed_user_module_def.find_function_defs(
           fnref.name, fnref.arity)
       let analyzed_function_defs = analyzed_user_function_defs.map_it(
@@ -1443,8 +1451,8 @@ proc analyze(file_def: AnalyzedFileDefinition,
       ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
           analyzed_function_defs, analyzed_concrete_function_defs))
 
-proc analyze(file_def: AnalyzedFileDefinition, fnref: TypedFunctionRef): Result[
-    AnalyzedFunctionRef, string] =
+proc analyze(file_def: AnalyzedFileDefinition,
+    fnref: ResolvedFunctionRef): Result[AnalyzedFunctionRef, string] =
   case fnref.kind:
   of TFRK_LOCAL:
     let analyzed_user_function_defs = ? file_def.find_function_defs(fnref.name, fnref.arity)
@@ -1453,14 +1461,14 @@ proc analyze(file_def: AnalyzedFileDefinition, fnref: TypedFunctionRef): Result[
     ok(new_analyzed_function_ref(fnref.name, analyzed_function_defs,
         analyzed_function_defs))
   of TFRK_MODULE:
-    let typed_module_ref = ? fnref.module_ref
-    let analyzed_module_ref = ? analyze_def(file_def.file, typed_module_ref)
+    let resolved_module_ref = ? fnref.module_ref
+    let analyzed_module_ref = ? analyze_def(file_def.file, resolved_module_ref)
     case analyzed_module_ref.kind:
     of RMRK_GENERIC:
       err("{fnref.location} local function calls do not support generics")
     of RMRK_NATIVE:
-      let typed_native_module = analyzed_module_ref.native_module
-      let analyzed_native_module_def = ? file_def.find_module_def(typed_native_module)
+      let resolved_native_module = analyzed_module_ref.native_module
+      let analyzed_native_module_def = ? file_def.find_module_def(resolved_native_module)
       let analyzed_native_function_defs = ? analyzed_native_module_def.find_function_defs(
           fnref.name, fnref.arity)
       let analyzed_function_defs = analyzed_native_function_defs.map_it(
@@ -1473,8 +1481,8 @@ proc analyze(file_def: AnalyzedFileDefinition, fnref: TypedFunctionRef): Result[
       ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
           analyzed_function_defs, analyzed_concrete_function_defs))
     of RMRK_USER:
-      let typed_user_module = analyzed_module_ref.user_module
-      let analyzed_user_module_def = ? file_def.find_module_def(typed_user_module)
+      let resolved_user_module = analyzed_module_ref.user_module
+      let analyzed_user_module_def = ? file_def.find_module_def(resolved_user_module)
       let analyzed_user_function_defs = ? analyzed_user_module_def.find_function_defs(
           fnref.name, fnref.arity)
       let analyzed_function_defs = analyzed_user_function_defs.map_it(
@@ -1509,8 +1517,8 @@ proc location(arg: AnalyzedArgument): Location =
   of RAK_LITERAL: arg.literal.location
   of RAK_VARIABLE: arg.variable.location
 
-proc generic_impls(arg: AnalyzedArgument): Table[TypedUserModule, seq[HashSet[
-    AnalyzedImpl]]] =
+proc generic_impls(arg: AnalyzedArgument): Table[ResolvedUserModule, seq[
+    HashSet[AnalyzedImpl]]] =
   arg.module_ref.generic_impls
 
 proc asl(arg: AnalyzedArgument): string =
@@ -1562,9 +1570,9 @@ proc location(fncall: AnalyzedFunctionCall): Location =
 proc returns(fncall: AnalyzedFunctionCall): AnalyzedModuleRef =
   fncall.concrete_def.returns
 
-proc generic_impls(fncall: AnalyzedFunctionCall): Table[TypedUserModule, seq[
+proc generic_impls(fncall: AnalyzedFunctionCall): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   impl_set = impl_set.merge(fncall.fnref.generic_impls)
   impl_set = impl_set.merge(fncall.concrete_def.generic_impls)
   for arg in fncall.args: impl_set = impl_set.merge(arg.generic_impls)
@@ -1680,7 +1688,7 @@ proc c(fncall: AnalyzedFunctionCall, result_arg: string): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    fncall: TypedFunctionCall): Result[AnalyzedFunctionCall, string] =
+    fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
   let analyzed_function_ref = ? analyze(file_def, module_def, fncall.fnref)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
   for (original_def, concrete_def) in analyzed_function_ref.defs:
@@ -1695,7 +1703,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
   err(error_message.join("\n"))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    fncall: TypedFunctionCall): Result[AnalyzedFunctionCall, string] =
+    fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
   let analyzed_function_ref = ? analyze(file_def, fncall.fnref)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
   for (original_def, concrete_def) in analyzed_function_ref.defs:
@@ -1717,8 +1725,8 @@ proc new_analyzed_struct_ref(module_ref: AnalyzedModuleRef,
     origin: AnalyzedStruct, struct: AnalyzedStruct): AnalyzedStructRef =
   AnalyzedStructRef(module_ref: module_ref, origin: origin, struct: struct)
 
-proc generic_impls(struct_ref: AnalyzedStructRef): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
+proc generic_impls(struct_ref: AnalyzedStructRef): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
   struct_ref.module_ref.generic_impls
 
 proc asl(struct_ref: AnalyzedStructRef): string =
@@ -1735,13 +1743,13 @@ proc c(struct_ref: AnalyzedStructRef): string =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    struct_ref: TypedStructRef): Result[AnalyzedStructRef, string] =
+    struct_ref: ResolvedStructRef): Result[AnalyzedStructRef, string] =
   let analyzed_module_ref = ? analyze_def(file_def.file, module_def.module,
       struct_ref.module_ref)
   case analyzed_module_ref.kind:
   of RMRK_NATIVE:
-    let typed_module = analyzed_module_ref.native_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.native_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     case struct_ref.kind:
     of TSRK_DEFAULT:
       let maybe_struct = analyzed_module_def.find_struct()
@@ -1769,8 +1777,8 @@ proc analyze(file_def: AnalyzedFileDefinition,
   of RMRK_GENERIC:
     err(fmt"1 {struct_ref.location} generic `{analyzed_module_ref.generic.name.asl}` is not a struct")
   of RMRK_USER:
-    let typed_module = analyzed_module_ref.user_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.user_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     case struct_ref.kind:
     of TSRK_DEFAULT:
       let maybe_struct = analyzed_module_def.find_struct()
@@ -1797,12 +1805,12 @@ proc analyze(file_def: AnalyzedFileDefinition,
             analyzed_module_def.name.asl, struct_name.asl))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    struct_ref: TypedStructRef): Result[AnalyzedStructRef, string] =
+    struct_ref: ResolvedStructRef): Result[AnalyzedStructRef, string] =
   let analyzed_module_ref = ? analyze_def(file_def.file, struct_ref.module_ref)
   case analyzed_module_ref.kind:
   of RMRK_NATIVE:
-    let typed_module = analyzed_module_ref.native_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.native_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     case struct_ref.kind:
     of TSRK_DEFAULT:
       let maybe_struct = analyzed_module_def.find_struct()
@@ -1830,8 +1838,8 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
   of RMRK_GENERIC:
     err(fmt"2 {struct_ref.location} generic `{analyzed_module_ref.generic.name.asl}` is not a struct")
   of RMRK_USER:
-    let typed_module = analyzed_module_ref.user_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.user_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     case struct_ref.kind:
     of TSRK_DEFAULT:
       let maybe_struct = analyzed_module_def.find_struct()
@@ -1868,9 +1876,9 @@ proc new_analyzed_struct_init(struct_ref: AnalyzedStructRef, fields: seq[
 proc returns(struct_init: AnalyzedStructInit): AnalyzedModuleRef =
   struct_init.struct_ref.module_ref
 
-proc generic_impls(struct_init: AnalyzedStructInit): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+proc generic_impls(struct_init: AnalyzedStructInit): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   impl_set = impl_set.merge(struct_init.struct_ref.generic_impls)
   for field in struct_init.fields: impl_set = impl_set.merge(
       field.generic_impls)
@@ -1907,7 +1915,7 @@ proc c(struct_init: AnalyzedStructInit, result_arg: string): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    init: TypedStructInit): Result[AnalyzedStructInit, string] =
+    init: ResolvedStructInit): Result[AnalyzedStructInit, string] =
   let analyzed_struct_ref = ? analyze(file_def, module_def, scope,
       init.struct_ref)
 
@@ -1927,7 +1935,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
   ok(new_analyzed_struct_init(analyzed_struct_ref, analyzed_fields))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    init: TypedStructInit): Result[AnalyzedStructInit, string] =
+    init: ResolvedStructInit): Result[AnalyzedStructInit, string] =
   let analyzed_struct_ref = ? analyze(file_def, scope, init.struct_ref)
 
   var args = new_seq[Argument](analyzed_struct_ref.struct.fields.len)
@@ -1956,7 +1964,7 @@ proc new_analyzed_literal(module_ref: AnalyzedModuleRef,
 proc returns(literal: AnalyzedLiteral): AnalyzedModuleRef =
   literal.module_ref
 
-proc generic_impls(literal: AnalyzedLiteral): Table[TypedUserModule, seq[
+proc generic_impls(literal: AnalyzedLiteral): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
   literal.module_ref.generic_impls
 
@@ -1968,7 +1976,7 @@ proc c(literal: AnalyzedLiteral, result_arg: string): string =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-        init: TypedLiteralInit): Result[AnalyzedLiteral, string] =
+        init: ResolvedLiteralInit): Result[AnalyzedLiteral, string] =
   let analyzed_module_ref = ? analyze_def(file_def.file, module_def.module,
       init.module_ref)
   case analyzed_module_ref.kind:
@@ -1980,7 +1988,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
     ok(new_analyzed_literal(analyzed_module_ref, init.literal))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    init: TypedLiteralInit): Result[AnalyzedLiteral, string] =
+    init: ResolvedLiteralInit): Result[AnalyzedLiteral, string] =
   let analyzed_module_ref = ? analyze_def(file_def.file, init.module_ref)
   case analyzed_module_ref.kind:
   of RMRK_GENERIC: err(fmt"{init.location} Generics are not supported via literal initialization")
@@ -2009,7 +2017,7 @@ proc returns(init: AnalyzedInitializer): AnalyzedModuleRef =
   of RIK_STRUCT: init.struct.returns
   of RIK_LITERAL: init.literal.returns
 
-proc generic_impls(init: AnalyzedInitializer): Table[TypedUserModule, seq[
+proc generic_impls(init: AnalyzedInitializer): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
   case init.kind:
   of RIK_LITERAL: init.literal.generic_impls
@@ -2027,7 +2035,7 @@ proc c(init: AnalyzedInitializer, result_arg: string): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    init: TypedInitializer): Result[AnalyzedInitializer, string] =
+    init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of TIK_STRUCT:
     let struct_init = ? init.struct
@@ -2039,7 +2047,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
     ok(new_analyzed_initializer(analyzed_literal))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    init: TypedInitializer): Result[AnalyzedInitializer, string] =
+    init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of TIK_STRUCT:
     let struct_init = ? init.struct
@@ -2061,9 +2069,9 @@ proc new_analyzed_struct_get(variable: AnalyzedArgumentDefinition,
 proc returns(struct_get: AnalyzedStructGet): AnalyzedModuleRef =
   struct_get.field.module_ref
 
-proc generic_impls(struct_get: AnalyzedStructGet): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+proc generic_impls(struct_get: AnalyzedStructGet): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   impl_set = impl_set.merge(struct_get.variable.generic_impls)
   impl_set = impl_set.merge(struct_get.field.generic_impls)
   return impl_set
@@ -2076,14 +2084,14 @@ proc c(struct_get: AnalyzedStructGet, result_arg: string): string =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    struct_get: TypedStructGet): Result[AnalyzedStructGet, string] =
+    struct_get: ResolvedStructGet): Result[AnalyzedStructGet, string] =
   let analyzed_module_ref = ? scope.get(struct_get.variable)
   let analyzed_variable = new_analyzed_argument_definition(analyzed_module_ref,
       struct_get.variable)
   case analyzed_module_ref.kind:
   of RMRK_NATIVE:
-    let typed_module = analyzed_module_ref.native_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.native_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     if analyzed_module_def.structs.len == 0:
       err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
     elif analyzed_module_def.structs.len > 1:
@@ -2102,8 +2110,8 @@ proc analyze(file_def: AnalyzedFileDefinition,
         ok(new_analyzed_struct_get(analyzed_variable, analyzed_field))
   of RMRK_GENERIC: err(fmt"4 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
   of RMRK_USER:
-    let typed_module = analyzed_module_ref.user_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.user_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     if analyzed_module_def.structs.len == 0:
       err(fmt"5 {struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
     elif analyzed_module_def.structs.len > 1:
@@ -2122,14 +2130,14 @@ proc analyze(file_def: AnalyzedFileDefinition,
         ok(new_analyzed_struct_get(analyzed_variable, analyzed_field))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    struct_get: TypedStructGet): Result[AnalyzedStructGet, string] =
+    struct_get: ResolvedStructGet): Result[AnalyzedStructGet, string] =
   let analyzed_module_ref = ? scope.get(struct_get.variable)
   let analyzed_variable = new_analyzed_argument_definition(analyzed_module_ref,
       struct_get.variable)
   case analyzed_module_ref.kind:
   of RMRK_NATIVE:
-    let typed_module = analyzed_module_ref.native_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.native_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     if analyzed_module_def.structs.len == 0:
       err(fmt"8 {struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
     elif analyzed_module_def.structs.len > 1:
@@ -2148,8 +2156,8 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
         ok(new_analyzed_struct_get(analyzed_variable, analyzed_field))
   of RMRK_GENERIC: err(fmt"7 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
   of RMRK_USER:
-    let typed_module = analyzed_module_ref.user_module
-    let analyzed_module_def = ? file_def.find_module_def(typed_module)
+    let resolved_module = analyzed_module_ref.user_module
+    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
     if analyzed_module_def.structs.len == 0:
       err(fmt"8 {struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
     elif analyzed_module_def.structs.len > 1:
@@ -2198,9 +2206,9 @@ proc hash(pattern: AnalyzedStructPattern): Hash =
   of RSPK_DEFAULT: "".hash
   of RSPK_NAMED: pattern.name.asl.hash
 
-proc generic_impls(pattern: AnalyzedStructPattern): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+proc generic_impls(pattern: AnalyzedStructPattern): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for (argdef, _) in pattern.args: impl_set = impl_set.merge(
       argdef.generic_impls)
   return impl_set
@@ -2293,12 +2301,12 @@ type
     location: Location
     case kind: AnalyzedCasePatternKind
     of RCPK_LITERAL:
-      native_module: TypedNativeModule
+      native_module: ResolvedNativeModule
       literal: Literal
     of RCPK_STRUCT:
       struct: AnalyzedStructPattern
 
-proc new_analyzed_case_pattern(native_module: TypedNativeModule,
+proc new_analyzed_case_pattern(native_module: ResolvedNativeModule,
     literal: Literal, location: Location): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: RCPK_LITERAL, native_module: native_module,
       literal: literal, location: location)
@@ -2315,9 +2323,9 @@ proc hash(pattern: AnalyzedCasePattern): Hash =
 proc `==`(self: AnalyzedCasePattern, other: AnalyzedCasePattern): bool =
   self.hash == other.hash
 
-proc generic_impls(pattern: AnalyzedCasePattern): Table[TypedUserModule, seq[
+proc generic_impls(pattern: AnalyzedCasePattern): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   case pattern.kind:
   of RCPK_LITERAL: discard
   of RCPK_STRUCT: impl_set = impl_set.merge(pattern.struct.generic_impls)
@@ -2352,7 +2360,7 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     let analyzed_struct_pattern = ? analyze(file_def, scope, operand, struct)
     ok(new_analyzed_case_pattern(analyzed_struct_pattern, pattern.location))
 
-proc analyze(scope: FunctionScope, variable: TypedVariable): Result[
+proc analyze(scope: FunctionScope, variable: ResolvedVariable): Result[
     AnalyzedArgumentDefinition, string] =
   let analyzed_module_ref = ? scope.get(variable.name)
   ok(new_analyzed_argument_definition(analyzed_module_ref, variable.name,
@@ -2413,11 +2421,11 @@ proc returns(expression: AnalyzedExpression): AnalyzedModuleRef =
   of REK_STRUCT_GET: expression.struct_get.returns
   of REK_VARIABLE: expression.variable.module_ref
 
-proc generic_impls(match: AnalyzedMatch): Table[TypedUserModule, seq[HashSet[
+proc generic_impls(match: AnalyzedMatch): Table[ResolvedUserModule, seq[HashSet[
     AnalyzedImpl]]]
 
-proc generic_impls(expression: AnalyzedExpression): Table[TypedUserModule, seq[
-    HashSet[AnalyzedImpl]]] =
+proc generic_impls(expression: AnalyzedExpression): Table[ResolvedUserModule,
+    seq[HashSet[AnalyzedImpl]]] =
   case expression.kind:
   of REK_MATCH: expression.match.generic_impls
   of REK_FNCALL: expression.fncall.generic_impls
@@ -2447,11 +2455,11 @@ proc c(expression: AnalyzedExpression, result_arg: AnalyzedArgumentDefinition): 
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    match: TypedMatch): Result[AnalyzedMatch, string]
+    match: ResolvedMatch): Result[AnalyzedMatch, string]
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    expression: TypedExpression): Result[AnalyzedExpression, string] =
+    expression: ResolvedExpression): Result[AnalyzedExpression, string] =
   case expression.kind:
   of TEK_FNCALL:
     let fncall = ? expression.fncall
@@ -2475,10 +2483,10 @@ proc analyze(file_def: AnalyzedFileDefinition,
     ok(new_analyzed_expression(analyzed_match))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    match: TypedMatch): Result[AnalyzedMatch, string]
+    match: ResolvedMatch): Result[AnalyzedMatch, string]
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    expression: TypedExpression): Result[AnalyzedExpression, string] =
+    expression: ResolvedExpression): Result[AnalyzedExpression, string] =
   case expression.kind:
   of TEK_FNCALL:
     let fncall = ? expression.fncall
@@ -2509,7 +2517,7 @@ proc new_analyzed_statement(arg: AnalyzedArgumentDefinition,
 proc returns(statement: AnalyzedStatement): AnalyzedModuleRef =
   statement.expression.returns
 
-proc generic_impls(statement: AnalyzedStatement): Table[TypedUserModule, seq[
+proc generic_impls(statement: AnalyzedStatement): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] = statement.expression.generic_impls
 
 proc asl(statement: AnalyzedStatement, indent: string): seq[string] =
@@ -2522,7 +2530,7 @@ proc c(statement: AnalyzedStatement): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    statement: TypedStatement): Result[AnalyzedStatement, string] =
+    statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   let analyzed_expression = ? analyze(file_def, module_def, scope,
       statement.expression)
   let analyzed_arg = new_analyzed_argument_definition(
@@ -2530,7 +2538,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
   ok(new_analyzed_statement(analyzed_arg, analyzed_expression))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    statement: TypedStatement): Result[AnalyzedStatement, string] =
+    statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   let analyzed_expression = ? analyze(file_def, scope, statement.expression)
   let analyzed_arg = new_analyzed_argument_definition(
       analyzed_expression.returns, statement.arg)
@@ -2544,9 +2552,9 @@ proc new_analyzed_case(pattern: AnalyzedCasePattern, statements: seq[
 proc returns(case_block: AnalyzedCase): AnalyzedModuleRef =
   case_block.statements[^1].returns
 
-proc generic_impls(case_block: AnalyzedCase): Table[TypedUserModule, seq[
+proc generic_impls(case_block: AnalyzedCase): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   impl_set = impl_set.merge(case_block.pattern.generic_impls)
   for statement in case_block.statements:
     impl_set = impl_set.merge(statement.generic_impls)
@@ -2612,7 +2620,7 @@ proc c(case_block: AnalyzedCase, operand: AnalyzedArgumentDefinition,
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    operand: AnalyzedModuleRef, case_block: TypedCase): Result[AnalyzedCase, string] =
+    operand: AnalyzedModuleRef, case_block: ResolvedCase): Result[AnalyzedCase, string] =
   var case_scope = scope.clone()
   let analyzed_case_pattern = ? analyze(file_def, scope, operand,
       case_block.pattern)
@@ -2633,7 +2641,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
       case_block.location))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    operand: AnalyzedModuleRef, case_block: TypedCase): Result[AnalyzedCase, string] =
+    operand: AnalyzedModuleRef, case_block: ResolvedCase): Result[AnalyzedCase, string] =
   var case_scope = scope.clone()
   let analyzed_case_pattern = ? analyze(file_def, scope, operand,
       case_block.pattern)
@@ -2660,9 +2668,9 @@ proc new_analyzed_else(statements: seq[AnalyzedStatement],
 proc returns(else_block: AnalyzedElse): AnalyzedModuleRef =
   else_block.statements[^1].returns
 
-proc generic_impls(else_block: AnalyzedElse): Table[TypedUserModule, seq[
+proc generic_impls(else_block: AnalyzedElse): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for statement in else_block.statements: impl_set = impl_set.merge(
       statement.generic_impls)
   return impl_set
@@ -2686,7 +2694,7 @@ proc c(else_block: AnalyzedElse, result_arg: string): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    else_block: TypedElse): Result[AnalyzedElse, string] =
+    else_block: ResolvedElse): Result[AnalyzedElse, string] =
   var else_scope = scope.clone()
   var analyzed_statements: seq[AnalyzedStatement]
   for statement in else_block.statements:
@@ -2696,7 +2704,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
   ok(new_analyzed_else(analyzed_statements, else_block.location))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    else_block: TypedElse): Result[AnalyzedElse, string] =
+    else_block: ResolvedElse): Result[AnalyzedElse, string] =
   var else_scope = scope.clone()
   var analyzed_statements: seq[AnalyzedStatement]
   for statement in else_block.statements:
@@ -2720,9 +2728,9 @@ proc new_analyzed_match(operand: AnalyzedArgumentDefinition, case_blocks: seq[
 proc returns(match: AnalyzedMatch): AnalyzedModuleRef =
   match.case_blocks[0].returns
 
-proc generic_impls(match: AnalyzedMatch): Table[TypedUserModule, seq[HashSet[
+proc generic_impls(match: AnalyzedMatch): Table[ResolvedUserModule, seq[HashSet[
     AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   for case_block in match.case_blocks: impl_set = impl_set.merge(
       case_block.generic_impls)
 
@@ -2757,7 +2765,7 @@ proc c(match: AnalyzedMatch, result_arg: AnalyzedArgumentDefinition): seq[string
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    match: TypedMatch): Result[AnalyzedMatch, string] =
+    match: ResolvedMatch): Result[AnalyzedMatch, string] =
   let analyzed_operand_module_ref = ? scope.get(match.operand)
   let analyzed_operand = new_analyzed_argument_definition(
       analyzed_operand_module_ref, match.operand)
@@ -2836,7 +2844,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
         analyzed_else_block, match.location))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    match: TypedMatch): Result[AnalyzedMatch, string] =
+    match: ResolvedMatch): Result[AnalyzedMatch, string] =
   let analyzed_operand_module_ref = ? scope.get(match.operand)
   let analyzed_operand = new_analyzed_argument_definition(
       analyzed_operand_module_ref, match.operand)
@@ -2924,9 +2932,9 @@ proc new_analyzed_function(def: AnalyzedUserFunctionDefinition, steps: seq[
 proc statements(function: AnalyzedFunction): seq[AnalyzedStatement] =
   function.steps
 
-proc generic_impls(function: AnalyzedFunction): Table[TypedUserModule, seq[
+proc generic_impls(function: AnalyzedFunction): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   impl_set = impl_set.merge(function.def.generic_impls)
   for step in function.steps: impl_set = impl_set.merge(step.generic_impls)
   return impl_set
@@ -2950,7 +2958,8 @@ proc c(function: AnalyzedFunction): seq[string] =
   return lines
 
 proc analyze(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedUserModuleDefinition, function: TypedFunction): Result[
+    module_def: AnalyzedUserModuleDefinition,
+        function: ResolvedFunction): Result[
     AnalyzedFunction, string] =
   var scope = FunctionScope()
   let analyzed_function_def = ? module_def.find_function_def(function.def)
@@ -2963,8 +2972,8 @@ proc analyze(file_def: AnalyzedFileDefinition,
     scope = ? scope.set(analyzed_function_step.arg)
   ok(new_analyzed_function(analyzed_function_def, analyzed_steps))
 
-proc analyze(file_def: AnalyzedFileDefinition, function: TypedFunction): Result[
-    AnalyzedFunction, string] =
+proc analyze(file_def: AnalyzedFileDefinition,
+    function: ResolvedFunction): Result[AnalyzedFunction, string] =
   var scope = FunctionScope()
   let analyzed_function_def = ? file_def.find_function_def(function.def)
   for arg in analyzed_function_def.args:
@@ -2985,9 +2994,9 @@ proc new_analyzed_user_module(def: AnalyzedUserModuleDefinition, functions: seq[
     AnalyzedFunction]): AnalyzedUserModule =
   AnalyzedUserModule(def: def, functions: functions)
 
-proc generic_impls(module: AnalyzedUserModule): Table[TypedUserModule, seq[
+proc generic_impls(module: AnalyzedUserModule): Table[ResolvedUserModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   impl_set = impl_set.merge(module.def.generic_impls)
   for function in module.functions: impl_set = impl_set.merge(
       function.generic_impls)
@@ -3074,7 +3083,7 @@ proc indent(file: AnalyzedFile): int = file.def.file.indent
 proc generic_impls*(file: AnalyzedFile): Result[Table[
     AnalyzedUserModuleDefinition, seq[seq[(AnalyzedModuleDefinition, seq[
     AnalyzedFunctionDefinition])]]], string] =
-  var impl_set: Table[TypedUserModule, seq[HashSet[AnalyzedImpl]]]
+  var impl_set: Table[ResolvedUserModule, seq[HashSet[AnalyzedImpl]]]
   impl_set = impl_set.merge(file.def.generic_impls)
   for module in file.user_modules: impl_set = impl_set.merge(
       module.generic_impls)
@@ -3167,10 +3176,10 @@ proc analyze(file_def: AnalyzedFileDefinition,
   ok(new_analyzed_file(file_def, start_function_def, analyzed_user_modules,
       analyzed_functions))
 
-proc analyze*(file: TypedFile): Result[AnalyzedFile, string] =
+proc analyze*(file: ResolvedFile): Result[AnalyzedFile, string] =
   let analyzed_file_def = ? analyze_def(file)
-  let typed_start_function_def = ? file.start_def
-  let analyzed_start_function = ? analyzed_file_def.find_function_def(typed_start_function_def)
+  let resolved_start_function_def = ? file.start_def
+  let analyzed_start_function = ? analyzed_file_def.find_function_def(resolved_start_function_def)
 
   let analyzed_file = ? analyze(analyzed_file_def, analyzed_start_function)
   ok(analyzed_file)

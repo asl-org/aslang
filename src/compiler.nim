@@ -32,8 +32,8 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)
-  let typed_file = ? assign_type(file)
-  let analyzed_file = ? analyze(typed_file)
+  let resolved_file = ? assign_type(file)
+  let analyzed_file = ? analyze(resolved_file)
   let code = ? analyzed_file.c()
 
   let output_file = filename.change_file_ext("c")

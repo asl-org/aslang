@@ -24,21 +24,21 @@ bash test.sh
 Source (.asl) -> Tokenizer -> Parser -> Deps Analyzer -> Analyzer -> Codegen -> C Code
 ```
 
-### 1. Tokenizer (`src/analyzer/deps_analyzer/parser/tokenizer.nim`)
+### 1. Tokenizer (`src/analyzer/resolver/parser/tokenizer.nim`)
 - Reads raw source files
 - Converts text into tokens (identifiers, keywords, literals, operators)
 - Makes it easier to work with raw text
 
-### 2. Parser (`src/analyzer/deps_analyzer/parser.nim` + `parser/` submodules)
+### 2. Parser (`src/analyzer/resolver/parser.nim` + `parser/` submodules)
 - Consumes tokens
 - Produces larger AST blocks: `Module`, `Generic`, `Struct`, `Function`
 - `File` is the top-level block containing all modules
 - **Structure**: `parser.nim` acts as an import/export hub following Nim convention
 - **Submodules**: Broken down into focused modules (see Project Structure below)
 
-### 3. Deps Analyzer (`src/analyzer/deps_analyzer.nim`)
+### 3. Deps Analyzer (`src/analyzer/resolver.nim`)
 - Assigns types to identifiers (variables, modules)
-- Produces `Typed*` versions of AST nodes (e.g., `TypedModuleRef`, `TypedFunction`)
+- Produces `Resolved*` versions of AST nodes (e.g., `ResolvedModuleRef`, `ResolvedFunction`)
 - Tracks module dependencies via `module_deps` functions
 
 ### 4. Analyzer (`src/analyzer.nim`)
@@ -59,8 +59,8 @@ src/
   compiler.nim               # File I/O utilities, compilation orchestration
   analyzer.nim               # Resolution phase (Analyzed* types)
   analyzer/
-    deps_analyzer.nim        # Type assignment entry point + assign_type logic
-    deps_analyzer/
+    resolver.nim        # Type assignment entry point + assign_type logic
+    resolver/
       parser.nim             # Parser import/export hub + native module initialization
       parser/
         # Core parsing infrastructure
@@ -94,14 +94,14 @@ src/
         module.nim           # UserModuleDefinition, UserModule, NativeModule, Module, ModulePayload
         file.nim             # File type (top-level container)
 
-      # Typed AST types (import hierarchy: file -> module -> expr -> call/init/defs/ref)
-      typed_file.nim         # TypedFile - top-level typed container
-      typed_module.nim       # TypedGeneric, TypedUserModule, TypedNativeModule, TypedModule
-      typed_expr.nim         # TypedExpression, TypedStatement, TypedCase, TypedElse, TypedMatch, TypedFunction
-      typed_call.nim         # TypedFunctionRef, TypedFunctionCall, TypedStructGet, TypedVariable
-      typed_init.nim         # TypedLiteralInit, TypedStructRef, TypedStructInit, TypedInitializer
-      typed_defs.nim         # TypedArgumentDefinition, TypedFunctionDefinition, TypedStruct
-      typed_ref.nim          # TypedModuleRef
+      # Resolved AST types (import hierarchy: file -> module -> expr -> call/init/defs/ref)
+      resolved_file.nim         # ResolvedFile - top-level resolved container
+      resolved_module.nim       # ResolvedGeneric, ResolvedUserModule, ResolvedNativeModule, ResolvedModule
+      resolved_expr.nim         # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedFunction
+      resolved_call.nim         # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
+      resolved_init.nim         # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
+      resolved_defs.nim         # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
+      resolved_ref.nim          # ResolvedModuleRef
 
 examples/                    # Test files (.asl)
   generic_struct.asl
@@ -138,22 +138,22 @@ parser.nim (hub)
 
 **Note**: `parser.nim` acts as an import/export hub. It imports all submodules and re-exports them, following the Nim convention where `<name>.nim` serves as the public interface for a `<name>/` directory.
 
-#### Typed AST Import Hierarchy
+#### Resolved AST Import Hierarchy
 
-The typed AST files follow a chain import pattern where each file imports and re-exports its dependencies:
+The resolved AST files follow a chain import pattern where each file imports and re-exports its dependencies:
 
 ```
-deps_analyzer.nim
-  └── typed_file.nim         # TypedFile
-        └── typed_module.nim # TypedGeneric, TypedUserModule, TypedNativeModule, TypedModule
-              └── typed_expr.nim  # TypedExpression, TypedStatement, TypedFunction, etc.
-                    ├── typed_call.nim  # TypedFunctionRef, TypedFunctionCall, etc.
-                    ├── typed_init.nim  # TypedLiteralInit, TypedStructInit, etc.
-                    ├── typed_defs.nim  # TypedArgumentDefinition, TypedFunctionDefinition, TypedStruct
-                    └── typed_ref.nim   # TypedModuleRef
+resolver.nim
+  └── resolved_file.nim         # ResolvedFile
+        └── resolved_module.nim # ResolvedGeneric, ResolvedUserModule, ResolvedNativeModule, ResolvedModule
+              └── resolved_expr.nim  # ResolvedExpression, ResolvedStatement, ResolvedFunction, etc.
+                    ├── resolved_call.nim  # ResolvedFunctionRef, ResolvedFunctionCall, etc.
+                    ├── resolved_init.nim  # ResolvedLiteralInit, ResolvedStructInit, etc.
+                    ├── resolved_defs.nim  # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
+                    └── resolved_ref.nim   # ResolvedModuleRef
 ```
 
-This allows a single `import deps_analyzer/typed_file; export typed_file` to access all typed AST types.
+This allows a single `import resolver/resolved_file; export resolved_file` to access all resolved AST types.
 
 ## Coding Conventions
 
@@ -241,11 +241,11 @@ proc do_something(x: X): Result[Y, string] =
 - Place exports immediately after imports
 
 ```nim
-import deps_analyzer/parser
+import resolver/parser
 export parser
 
-import typed_ref
-export typed_ref
+import resolved_ref
+export resolved_ref
 ```
 
 ### Dependency Management
@@ -302,7 +302,7 @@ The parser follows the Nim convention where `parser.nim` serves as an import/exp
 
 ## Key Types
 
-### Parser Layer (Untyped AST)
+### Parser Layer (Unresolved AST)
 
 | Type | Description |
 |------|-------------|
@@ -317,34 +317,34 @@ The parser follows the Nim convention where `parser.nim` serves as an import/exp
 | `UserFunction` | User-defined function |
 | `ExternFunction` | External C function binding |
 
-### Deps Analyzer Layer (Typed AST)
+### Deps Analyzer Layer (Resolved AST)
 
 | Type | File | Description |
 |------|------|-------------|
-| `TypedModuleRef` | typed_ref.nim | Reference to a module with analyzed children |
-| `TypedArgumentDefinition` | typed_defs.nim | Function argument with type |
-| `TypedFunctionDefinition` | typed_defs.nim | Function signature with typed args and return |
-| `TypedStruct` | typed_defs.nim | Struct with typed fields |
-| `TypedLiteralInit` | typed_init.nim | Literal initialization (integers, floats, strings) |
-| `TypedStructRef` | typed_init.nim | Reference to a struct type |
-| `TypedStructInit` | typed_init.nim | Struct instantiation with arguments |
-| `TypedInitializer` | typed_init.nim | Variant of literal or struct initialization |
-| `TypedFunctionRef` | typed_call.nim | Reference to a function |
-| `TypedFunctionCall` | typed_call.nim | Function call with arguments |
-| `TypedStructGet` | typed_call.nim | Field access on a struct |
-| `TypedVariable` | typed_call.nim | Variable reference |
-| `TypedExpression` | typed_expr.nim | Expression variant (match, fncall, init, etc.) |
-| `TypedStatement` | typed_expr.nim | Assignment statement |
-| `TypedCase` | typed_expr.nim | Case block in pattern matching |
-| `TypedElse` | typed_expr.nim | Else block in pattern matching |
-| `TypedMatch` | typed_expr.nim | Pattern matching expression |
-| `TypedFunction` | typed_expr.nim | Function with typed definition and statements |
-| `TypedGeneric` | typed_module.nim | Generic type parameter with function definitions |
-| `TypedUserModule` | typed_module.nim | Typed user-defined module |
-| `TypedNativeModule` | typed_module.nim | Typed native module with extern functions |
-| `TypedNativeFunction` | typed_module.nim | Native function with extern binding |
-| `TypedModule` | typed_module.nim | Unified variant of `TypedUserModule` or `TypedNativeModule` |
-| `TypedFile` | typed_file.nim | Top-level container for all typed modules and functions |
+| `ResolvedModuleRef` | resolved_ref.nim | Reference to a module with analyzed children |
+| `ResolvedArgumentDefinition` | resolved_defs.nim | Function argument with type |
+| `ResolvedFunctionDefinition` | resolved_defs.nim | Function signature with resolved args and return |
+| `ResolvedStruct` | resolved_defs.nim | Struct with resolved fields |
+| `ResolvedLiteralInit` | resolved_init.nim | Literal initialization (integers, floats, strings) |
+| `ResolvedStructRef` | resolved_init.nim | Reference to a struct type |
+| `ResolvedStructInit` | resolved_init.nim | Struct instantiation with arguments |
+| `ResolvedInitializer` | resolved_init.nim | Variant of literal or struct initialization |
+| `ResolvedFunctionRef` | resolved_call.nim | Reference to a function |
+| `ResolvedFunctionCall` | resolved_call.nim | Function call with arguments |
+| `ResolvedStructGet` | resolved_call.nim | Field access on a struct |
+| `ResolvedVariable` | resolved_call.nim | Variable reference |
+| `ResolvedExpression` | resolved_expr.nim | Expression variant (match, fncall, init, etc.) |
+| `ResolvedStatement` | resolved_expr.nim | Assignment statement |
+| `ResolvedCase` | resolved_expr.nim | Case block in pattern matching |
+| `ResolvedElse` | resolved_expr.nim | Else block in pattern matching |
+| `ResolvedMatch` | resolved_expr.nim | Pattern matching expression |
+| `ResolvedFunction` | resolved_expr.nim | Function with resolved definition and statements |
+| `ResolvedGeneric` | resolved_module.nim | Generic type parameter with function definitions |
+| `ResolvedUserModule` | resolved_module.nim | Resolved user-defined module |
+| `ResolvedNativeModule` | resolved_module.nim | Resolved native module with extern functions |
+| `ResolvedNativeFunction` | resolved_module.nim | Native function with extern binding |
+| `ResolvedModule` | resolved_module.nim | Unified variant of `ResolvedUserModule` or `ResolvedNativeModule` |
+| `ResolvedFile` | resolved_file.nim | Top-level container for all resolved modules and functions |
 
 ### Analyzer Layer (Analyzed AST)
 
@@ -388,7 +388,7 @@ proc accumulate_module_deps[T](items: seq[T]): HashSet[UserModule] =
   module_set
 
 # Usage
-proc module_deps(function: TypedFunction): HashSet[UserModule] =
+proc module_deps(function: ResolvedFunction): HashSet[UserModule] =
   var module_set = function.def.module_deps
   module_set.incl(accumulate_module_deps(function.steps))
   module_set
@@ -422,11 +422,11 @@ proc payload*(module: Module): ModulePayload =
   of MK_USER: new_module_payload(module.user_module)
   of MK_NATIVE: new_module_payload(module.native_module)
 
-# Typed layer: TypedModule wraps TypedUserModule and TypedNativeModule
-type TypedModule* = ref object of RootObj
-  case kind: TypedModuleKind
-  of TMK_USER: user: TypedUserModule
-  of TMK_NATIVE: native: TypedNativeModule
+# Resolved layer: ResolvedModule wraps ResolvedUserModule and ResolvedNativeModule
+type ResolvedModule* = ref object of RootObj
+  case kind: ResolvedModuleKind
+  of TMK_USER: user: ResolvedUserModule
+  of TMK_NATIVE: native: ResolvedNativeModule
 ```
 
 ### Avoiding Thin Wrappers
@@ -446,12 +446,12 @@ proc assign_type(file: File, module: NativeModule, ref: ModuleRef): Result[...] 
   assign_type(file, parser.new_module(module), ref)  # Don't do this
 ```
 
-Only use specific types (`UserModule`, `NativeModule`) when creating typed results that require the specific type:
+Only use specific types (`UserModule`, `NativeModule`) when creating resolved results that require the specific type:
 
 ```nim
-# These need specific types because they create TypedUserModule/TypedNativeModule
-proc assign_type(file: File, module: UserModule, id: uint64): Result[TypedUserModule, string]
-proc assign_type(file: File, module: NativeModule, id: uint64): Result[TypedNativeModule, string]
+# These need specific types because they create ResolvedUserModule/ResolvedNativeModule
+proc assign_type(file: File, module: UserModule, id: uint64): Result[ResolvedUserModule, string]
+proc assign_type(file: File, module: NativeModule, id: uint64): Result[ResolvedNativeModule, string]
 ```
 
 ## Refactoring Guidelines
