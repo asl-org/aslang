@@ -93,7 +93,7 @@ proc make_resolved_arg_def(file: parser.File, module_name: string,
 # NOTE: This is a utility function to internally add some function definitions
 # like `byte_size`, `read`, `write`
 proc make_resolved_function_def(file: parser.File, name: string, args: seq[(
-    string, string)], returns: string): Result[ResolvedFunctionDefinition, string] =
+    string, string)], returns: string): Result[ResolvedUserFunctionDefinition, string] =
   let name_id = new_identifier(name)
   let returns_module_ref = ? make_resolved_module_ref(file, returns)
   var resolved_arg_defs: seq[ResolvedArgumentDefinition]
@@ -190,7 +190,7 @@ proc resolve(file: parser.File, arg: ArgumentDefinition): Result[
 
 # FunctionDefinition - with generic and module
 proc resolve(file: parser.File, module: parser.Module, generic: Generic,
-    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+    def: FunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     resolved_args.add( ? resolve(file, module, generic, arg))
@@ -198,7 +198,7 @@ proc resolve(file: parser.File, module: parser.Module, generic: Generic,
   ok(new_resolved_function_definition(def.name, resolved_args, resolved_return, def.location))
 
 proc resolve(file: parser.File, module: parser.Module,
-    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+    def: FunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     resolved_args.add( ? resolve(file, module, arg))
@@ -206,7 +206,7 @@ proc resolve(file: parser.File, module: parser.Module,
   ok(new_resolved_function_definition(def.name, resolved_args, resolved_return, def.location))
 
 proc resolve(file: parser.File, def: FunctionDefinition): Result[
-    ResolvedFunctionDefinition, string] =
+    ResolvedUserFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     resolved_args.add( ? resolve(file, arg))
@@ -273,7 +273,7 @@ proc resolve(file: parser.File, init: Initializer): Result[
 
 # FunctionRef
 proc resolve(file: parser.File, module: parser.Module,
-    fnref: FunctionRef, arity: uint): Result[ResolvedFunctionRef, string] =
+    fnref: FunctionRef, arity: uint): Result[ResolvedUserFunctionRef, string] =
   case fnref.kind:
   of FRK_LOCAL: ok(new_resolved_function_ref(fnref.name, arity))
   of FRK_MODULE:
@@ -281,7 +281,7 @@ proc resolve(file: parser.File, module: parser.Module,
     ok(new_resolved_function_ref(module_ref, fnref.name, arity))
 
 proc resolve(file: parser.File, fnref: FunctionRef, arity: uint): Result[
-    ResolvedFunctionRef, string] =
+    ResolvedUserFunctionRef, string] =
   case fnref.kind:
   of FRK_LOCAL: ok(new_resolved_function_ref(fnref.name, arity))
   of FRK_MODULE:
@@ -290,12 +290,12 @@ proc resolve(file: parser.File, fnref: FunctionRef, arity: uint): Result[
 
 # FunctionCall
 proc resolve(file: parser.File, module: parser.Module,
-    fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
+    fncall: FunctionCall): Result[ResolvedUserFunctionCall, string] =
   let fnref = ? resolve(file, module, fncall.fnref, fncall.args.len.uint)
   ok(new_resolved_function_call(fnref, fncall.args))
 
 proc resolve(file: parser.File, fncall: FunctionCall): Result[
-    ResolvedFunctionCall, string] =
+    ResolvedUserFunctionCall, string] =
   let fnref = ? resolve(file, fncall.fnref, fncall.args.len.uint)
   ok(new_resolved_function_call(fnref, fncall.args))
 
@@ -416,20 +416,32 @@ proc resolve(file: parser.File, match: Match): Result[ResolvedMatch, string] =
 # Function
 proc resolve(file: parser.File, module: parser.Module,
     function: Function): Result[ResolvedFunction, string] =
-  let resolved_def = ? resolve(file, module, function.def)
-  let resolved_steps = ? resolve_statements(file, module, function.steps)
-  ok(new_resolved_function(resolved_def, resolved_steps))
+  case function.kind:
+  of FK_EXTERN:
+    case module.kind:
+    of parser.MK_NATIVE:
+      let resolved_def = ? resolve(file, module, function.def)
+      let native_function = new_resolved_native_function(
+          function.extern_func.extern, resolved_def)
+      ok(new_resolved_function(native_function))
+    of parser.MK_USER:
+      err("extern functions must belong to a native module")
+  of FK_USER:
+    let resolved_def = ? resolve(file, module, function.def)
+    let resolved_steps = ? resolve_statements(file, module, function.steps)
+    let user_function = new_resolved_user_function(resolved_def, resolved_steps)
+    ok(new_resolved_function(user_function))
 
 proc resolve(file: parser.File, function: Function): Result[
-    ResolvedFunction, string] =
+    ResolvedUserFunction, string] =
   let resolved_def = ? resolve(file, function.def)
   let resolved_steps = ? resolve_statements(file, function.steps)
-  ok(new_resolved_function(resolved_def, resolved_steps))
+  ok(new_resolved_user_function(resolved_def, resolved_steps))
 
 # Generic
 proc resolve(file: parser.File, module: parser.Module, generic: Generic,
     id: uint64): Result[ResolvedGeneric, string] =
-  var resolved_defs: seq[ResolvedFunctionDefinition]
+  var resolved_defs: seq[ResolvedUserFunctionDefinition]
   for def in generic.defs: resolved_defs.add( ? resolve(file, module,
       generic, def))
   ok(new_resolved_generic(id, generic, resolved_defs, generic.location))
@@ -464,91 +476,30 @@ proc resolve_structs(file: parser.File, module: parser.Module): Result[
     resolved.add( ? resolve(file, module, s, idx.uint64))
   ok(resolved)
 
-proc resolve_core(file: parser.File, module: parser.Module): Result[
+proc resolve(file: parser.File, module: parser.Module): Result[
     (seq[(Generic, ResolvedGeneric)], seq[ResolvedStruct]), string] =
   ok(( ? resolve_generics(file, module), ? resolve_structs(file, module)))
-
-# Helper to create internal functions for UserModule
-proc create_internal_functions(file: parser.File,
-    module_name: Identifier): Result[seq[ResolvedFunctionDefinition], string] =
-  var internal_functions: seq[ResolvedFunctionDefinition]
-  internal_functions.add( ? make_resolved_function_def(file, "byte_size", @[(
-      "U64", "items")], "U64"))
-  internal_functions.add( ? make_resolved_function_def(file, "read", @[(
-      "Pointer", "ptr"), ("U64", "offset")], module_name.asl))
-  internal_functions.add( ? make_resolved_function_def(file, "write", @[(
-      module_name.asl, "item"), ("Pointer", "ptr"), ("U64", "offset")], "Pointer"))
-  ok(internal_functions)
-
-proc resolve(file: parser.File, module: UserModule, id: uint64): Result[
-    ResolvedUserModule, string] =
-  let mod_wrapper = parser.new_module(module)
-  let (generic_pairs, resolved_structs) = ? resolve_core(file, mod_wrapper)
-
-  var resolved_functions: seq[ResolvedFunction]
-  for function in module.functions:
-    let resolved_function = ? resolve(file, mod_wrapper, function)
-    resolved_functions.add(resolved_function)
-
-  # NOTE: This internal functions are injected in every user defined module
-  # since they are pointers under the hood and to make the array implementation
-  # work every module needs to have `byte_size`, `read` and `write` functions
-  # but adding them before codegen is hard in case of `read` and `write` because
-  # there is no conversion utility between module and pointers.
-  let internal_functions = ? create_internal_functions(file, module.name)
-
-  ok(new_resolved_user_module(id, module.name, generic_pairs, resolved_structs,
-      resolved_functions, internal_functions, module.location))
-
-# Module-based wrapper for user modules
-proc resolve_user_module*(file: parser.File, module: parser.Module,
-    id: uint64): Result[ResolvedUserModule, string] =
-  let user = ? module.user_module
-  resolve(file, user, id)
-
-
-# Module-based assign for extern functions (expects native module)
-proc resolve(file: parser.File, module: parser.Module,
-    function: ExternFunction): Result[ResolvedNativeFunction, string] =
-  case module.kind:
-  of parser.MK_NATIVE:
-    let resolved_def = ? resolve(file, module, function.def)
-    ok(new_resolved_native_function(function.extern, resolved_def))
-  of parser.MK_USER:
-    err("extern functions must belong to a native module")
-
-proc resolve(file: parser.File, module: NativeModule, id: uint64): Result[
-    ResolvedNativeModule, string] =
-  let mod_wrapper = parser.new_module(module)
-  let (resolved_generics, resolved_structs) = ? resolve_core(file, mod_wrapper)
-
-  var resolved_functions: seq[ResolvedNativeFunction]
-  for function in module.functions:
-    let resolved_function = ? resolve(file, mod_wrapper, function)
-    resolved_functions.add(resolved_function)
-  ok(new_resolved_native_module(module.name, resolved_generics,
-      resolved_structs, resolved_functions, id))
-
 
 # Module-based resolve for modules (returns ResolvedModule wrapper)
 proc resolve(file: parser.File, module: parser.Module, id: uint64): Result[
     ResolvedModule, string] =
+  # TODO: Eliminate un-necessary case block once the ExternFunction is evened out.
+  let (resolved_generics, resolved_structs) = ? resolve(file, module)
+  var resolved_functions: seq[ResolvedFunction]
+  for function in module.functions:
+    let resolved_function = ? resolve(file, module, function)
+    resolved_functions.add(resolved_function)
+
   case module.kind:
   of parser.MK_USER:
-    let user = ? module.user_module
-    let resolved_user = ? resolve(file, user, id)
+    let resolved_user = new_resolved_user_module(id, module.name,
+        resolved_generics, resolved_structs, resolved_functions,
+        module.location)
     ok(new_resolved_module(resolved_user))
   of parser.MK_NATIVE:
-    let native = ? module.native_module
-    let resolved_native = ? resolve(file, native, id)
+    let resolved_native = new_resolved_native_module(id, module.name,
+        resolved_generics, resolved_structs, resolved_functions)
     ok(new_resolved_module(resolved_native))
-
-# Module-based wrapper for native modules
-proc resolve_native_module*(file: parser.File, module: parser.Module,
-    id: uint64): Result[ResolvedNativeModule, string] =
-  let native = ? module.native_module
-  resolve(file, native, id)
-
 
 proc validate(module: ResolvedNativeModule,
     integer_literal: IntegerLiteral): Result[void, string] =
@@ -619,11 +570,11 @@ proc resolve*(file: parser.File): Result[ResolvedFile, string] =
   for module in module_resolution_order:
     resolved_modules.add(modules_map[module])
 
-  var maybe_start_def: Option[ResolvedFunctionDefinition]
+  var maybe_start_def: Option[ResolvedUserFunctionDefinition]
   let start_def = ? make_resolved_function_def(file, "start", @[(
       "U8", "seed")], "U8")
 
-  var resolved_functions: seq[ResolvedFunction]
+  var resolved_functions: seq[ResolvedUserFunction]
   for function in file.functions:
     let resolved_function = ? resolve(file, function)
     resolved_functions.add(resolved_function)

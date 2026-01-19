@@ -38,7 +38,7 @@ Source (.asl) -> Tokenizer -> Parser -> Deps Analyzer -> Analyzer -> Codegen -> 
 
 ### 3. Deps Analyzer (`src/analyzer/resolver.nim`)
 - Assigns types to identifiers (variables, modules)
-- Produces `Resolved*` versions of AST nodes (e.g., `ResolvedModuleRef`, `ResolvedFunction`)
+- Produces `Resolved*` versions of AST nodes (e.g., `ResolvedModuleRef`, `ResolvedUserFunction`)
 - Tracks module dependencies via `module_deps` functions
 
 ### 4. Analyzer (`src/analyzer.nim`)
@@ -97,10 +97,10 @@ src/
       # Resolved AST types (import hierarchy: file -> module -> expr -> call/init/defs/ref)
       resolved_file.nim         # ResolvedFile - top-level resolved container
       resolved_module.nim       # ResolvedGeneric, ResolvedUserModule, ResolvedNativeModule, ResolvedModule
-      resolved_expr.nim         # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedFunction
-      resolved_call.nim         # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
+      resolved_expr.nim         # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedUserFunction
+      resolved_call.nim         # ResolvedUserFunctionRef, ResolvedUserFunctionCall, ResolvedStructGet, ResolvedVariable
       resolved_init.nim         # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
-      resolved_defs.nim         # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
+      resolved_defs.nim         # ResolvedArgumentDefinition, ResolvedUserFunctionDefinition, ResolvedStruct
       resolved_ref.nim          # ResolvedModuleRef
 
 examples/                    # Test files (.asl)
@@ -146,10 +146,10 @@ The resolved AST files follow a chain import pattern where each file imports and
 resolver.nim
   └── resolved_file.nim         # ResolvedFile
         └── resolved_module.nim # ResolvedGeneric, ResolvedUserModule, ResolvedNativeModule, ResolvedModule
-              └── resolved_expr.nim  # ResolvedExpression, ResolvedStatement, ResolvedFunction, etc.
-                    ├── resolved_call.nim  # ResolvedFunctionRef, ResolvedFunctionCall, etc.
+              └── resolved_expr.nim  # ResolvedExpression, ResolvedStatement, ResolvedUserFunction, etc.
+                    ├── resolved_call.nim  # ResolvedUserFunctionRef, ResolvedUserFunctionCall, etc.
                     ├── resolved_init.nim  # ResolvedLiteralInit, ResolvedStructInit, etc.
-                    ├── resolved_defs.nim  # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
+                    ├── resolved_defs.nim  # ResolvedArgumentDefinition, ResolvedUserFunctionDefinition, ResolvedStruct
                     └── resolved_ref.nim   # ResolvedModuleRef
 ```
 
@@ -323,14 +323,14 @@ The parser follows the Nim convention where `parser.nim` serves as an import/exp
 |------|------|-------------|
 | `ResolvedModuleRef` | resolved_ref.nim | Reference to a module with analyzed children |
 | `ResolvedArgumentDefinition` | resolved_defs.nim | Function argument with type |
-| `ResolvedFunctionDefinition` | resolved_defs.nim | Function signature with resolved args and return |
+| `ResolvedUserFunctionDefinition` | resolved_defs.nim | Function signature with resolved args and return |
 | `ResolvedStruct` | resolved_defs.nim | Struct with resolved fields |
 | `ResolvedLiteralInit` | resolved_init.nim | Literal initialization (integers, floats, strings) |
 | `ResolvedStructRef` | resolved_init.nim | Reference to a struct type |
 | `ResolvedStructInit` | resolved_init.nim | Struct instantiation with arguments |
 | `ResolvedInitializer` | resolved_init.nim | Variant of literal or struct initialization |
-| `ResolvedFunctionRef` | resolved_call.nim | Reference to a function |
-| `ResolvedFunctionCall` | resolved_call.nim | Function call with arguments |
+| `ResolvedUserFunctionRef` | resolved_call.nim | Reference to a function |
+| `ResolvedUserFunctionCall` | resolved_call.nim | Function call with arguments |
 | `ResolvedStructGet` | resolved_call.nim | Field access on a struct |
 | `ResolvedVariable` | resolved_call.nim | Variable reference |
 | `ResolvedExpression` | resolved_expr.nim | Expression variant (match, fncall, init, etc.) |
@@ -338,7 +338,7 @@ The parser follows the Nim convention where `parser.nim` serves as an import/exp
 | `ResolvedCase` | resolved_expr.nim | Case block in pattern matching |
 | `ResolvedElse` | resolved_expr.nim | Else block in pattern matching |
 | `ResolvedMatch` | resolved_expr.nim | Pattern matching expression |
-| `ResolvedFunction` | resolved_expr.nim | Function with resolved definition and statements |
+| `ResolvedUserFunction` | resolved_expr.nim | Function with resolved definition and statements |
 | `ResolvedGeneric` | resolved_module.nim | Generic type parameter with function definitions |
 | `ResolvedUserModule` | resolved_module.nim | Resolved user-defined module |
 | `ResolvedNativeModule` | resolved_module.nim | Resolved native module with extern functions |
@@ -388,7 +388,7 @@ proc accumulate_module_deps[T](items: seq[T]): HashSet[UserModule] =
   module_set
 
 # Usage
-proc module_deps(function: ResolvedFunction): HashSet[UserModule] =
+proc module_deps(function: ResolvedUserFunction): HashSet[UserModule] =
   var module_set = function.def.module_deps
   module_set.incl(accumulate_module_deps(function.steps))
   module_set

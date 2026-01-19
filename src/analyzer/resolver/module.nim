@@ -10,13 +10,13 @@ export expression
 type ResolvedGeneric* = ref object of RootObj
   id: uint64
   generic: Generic
-  defs: seq[ResolvedFunctionDefinition]
-  defs_map: Table[ResolvedFunctionDefinition, ResolvedFunctionDefinition]
+  defs: seq[ResolvedUserFunctionDefinition]
+  defs_map: Table[ResolvedUserFunctionDefinition, ResolvedUserFunctionDefinition]
   location: Location
 
 proc new_resolved_generic*(id: uint64, generic: Generic, defs: seq[
-    ResolvedFunctionDefinition], location: Location): ResolvedGeneric =
-  var defs_map: Table[ResolvedFunctionDefinition, ResolvedFunctionDefinition]
+    ResolvedUserFunctionDefinition], location: Location): ResolvedGeneric =
+  var defs_map: Table[ResolvedUserFunctionDefinition, ResolvedUserFunctionDefinition]
   for def in defs: defs_map[def] = def
   ResolvedGeneric(id: id, generic: generic, defs: defs, defs_map: defs_map,
       location: location)
@@ -28,21 +28,21 @@ proc id*(generic: ResolvedGeneric): uint64 = generic.id
 proc location*(generic: ResolvedGeneric): Location = generic.location
 proc name*(generic: ResolvedGeneric): Identifier = generic.generic.name
 proc defs*(generic: ResolvedGeneric): seq[
-    ResolvedFunctionDefinition] = generic.defs
+    ResolvedUserFunctionDefinition] = generic.defs
 proc hash*(generic: ResolvedGeneric): Hash = generic.location.hash
 proc `==`*(self: ResolvedGeneric, other: ResolvedGeneric): bool = self.hash == other.hash
 proc asl*(generic: ResolvedGeneric): string = generic.name.asl
 
 proc concrete_defs*(generic: ResolvedGeneric,
-    module_ref: ResolvedModuleRef): seq[ResolvedFunctionDefinition] =
-  var concrete_defs: seq[ResolvedFunctionDefinition]
+    module_ref: ResolvedModuleRef): seq[ResolvedUserFunctionDefinition] =
+  var concrete_defs: seq[ResolvedUserFunctionDefinition]
   for def in generic.defs:
     let concrete_def = def.concretize(generic.generic, module_ref)
     concrete_defs.add(concrete_def)
   concrete_defs
 
 proc find_function*(generic: ResolvedGeneric,
-    def: ResolvedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+    def: ResolvedUserFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
   if def in generic.defs_map:
     ok(generic.defs_map[def])
   else:
@@ -58,30 +58,24 @@ type ResolvedUserModule* = ref object of RootObj
   generics: seq[ResolvedGeneric]
   generics_map: Table[Generic, ResolvedGeneric]
   structs: seq[ResolvedStruct]
-  functions_map: Table[ResolvedFunctionDefinition, ResolvedFunction]
+  functions_map: Table[ResolvedUserFunctionDefinition, ResolvedFunction]
   functions: seq[ResolvedFunction]
-  internal_functions_map: Table[ResolvedFunctionDefinition, ResolvedFunctionDefinition]
 
 proc new_resolved_user_module*(id: uint64, name: Identifier, generic_pairs: seq[
     (Generic, ResolvedGeneric)], structs: seq[ResolvedStruct], functions: seq[
-    ResolvedFunction], internal_functions: seq[ResolvedFunctionDefinition],
-    location: Location): ResolvedUserModule =
+    ResolvedFunction], location: Location): ResolvedUserModule =
   var generics: seq[ResolvedGeneric]
   var generics_map: Table[Generic, ResolvedGeneric]
   for (generic, resolved_generic) in generic_pairs:
     generics.add(resolved_generic)
     generics_map[generic] = resolved_generic
 
-  var functions_map: Table[ResolvedFunctionDefinition, ResolvedFunction]
+  var functions_map: Table[ResolvedUserFunctionDefinition, ResolvedFunction]
   for function in functions: functions_map[function.def] = function
-
-  var internal_functions_map: Table[ResolvedFunctionDefinition, ResolvedFunctionDefinition]
-  for internal_function in internal_functions:
-    internal_functions_map[internal_function] = internal_function
 
   ResolvedUserModule(id: id, name: name, location: location, generics: generics,
       generics_map: generics_map, structs: structs, functions: functions,
-      functions_map: functions_map, internal_functions_map: internal_functions_map)
+      functions_map: functions_map)
 
 proc module_deps*(module: ResolvedUserModule): HashSet[UserModule] =
   var module_set = accumulate_module_deps(module.generics)
@@ -109,81 +103,44 @@ proc find_generic*(module: ResolvedUserModule, generic: Generic): Result[
     err(fmt"failed to find generic `{generic.name.asl}`")
 
 proc find_function*(module: ResolvedUserModule,
-    def: ResolvedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+    def: ResolvedUserFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
   if def in module.functions_map:
     ok(module.functions_map[def].def)
-  elif def in module.internal_functions_map:
-    ok(module.internal_functions_map[def])
   else:
     err(fmt"2 - failed to find function `{def.asl}`")
-
-# =============================================================================
-# ResolvedNativeFunction
-# =============================================================================
-type ResolvedNativeFunction* = ref object of RootObj
-  native: string
-  def: ResolvedFunctionDefinition
-
-proc new_resolved_native_function*(native: string,
-    def: ResolvedFunctionDefinition): ResolvedNativeFunction =
-  ResolvedNativeFunction(native: native, def: def)
-
-proc native*(function: ResolvedNativeFunction): string = function.native
-proc def*(function: ResolvedNativeFunction): ResolvedFunctionDefinition = function.def
 
 # =============================================================================
 # ResolvedNativeModule
 # =============================================================================
 type ResolvedNativeModule* = ref object of RootObj
-  id: uint64
-  name: Identifier
-  generics: seq[ResolvedGeneric]
-  generics_map: Table[Generic, ResolvedGeneric]
-  structs: seq[ResolvedStruct]
-  functions: seq[ResolvedNativeFunction]
-  functions_map: Table[ResolvedFunctionDefinition, ResolvedNativeFunction]
+  user_module: ResolvedUserModule
 
-proc new_resolved_native_module*(name: Identifier, generic_pairs: seq[(Generic,
-    ResolvedGeneric)], structs: seq[ResolvedStruct], functions: seq[
-        ResolvedNativeFunction],
-    id: uint64): ResolvedNativeModule =
-  var generics: seq[ResolvedGeneric]
-  var generics_map: Table[Generic, ResolvedGeneric]
-  for (generic, resolved_generic) in generic_pairs:
-    generics.add(resolved_generic)
-    generics_map[generic] = resolved_generic
+proc new_resolved_native_module*(id: uint64, name: Identifier,
+    generic_pairs: seq[(Generic, ResolvedGeneric)], structs: seq[
+    ResolvedStruct], functions: seq[ResolvedFunction]): ResolvedNativeModule =
+  let user_module = new_resolved_user_module(id, name, generic_pairs, structs,
+      functions, Location())
+  ResolvedNativeModule(user_module: user_module)
 
-  var functions_map: Table[ResolvedFunctionDefinition, ResolvedNativeFunction]
-  for function in functions: functions_map[function.def] = function
-  ResolvedNativeModule(id: id, name: name, generics: generics, structs: structs,
-      generics_map: generics_map, functions: functions,
-      functions_map: functions_map)
-
-proc name*(module: ResolvedNativeModule): Identifier = module.name
+proc name*(module: ResolvedNativeModule): Identifier = module.user_module.name
 proc generics*(module: ResolvedNativeModule): seq[
-    ResolvedGeneric] = module.generics
+    ResolvedGeneric] = module.user_module.generics
 proc structs*(module: ResolvedNativeModule): seq[
-    ResolvedStruct] = module.structs
+    ResolvedStruct] = module.user_module.structs
 proc functions*(module: ResolvedNativeModule): seq[
-    ResolvedNativeFunction] = module.functions
-proc id*(module: ResolvedNativeModule): uint64 = module.id
+    ResolvedFunction] = module.user_module.functions
+proc id*(module: ResolvedNativeModule): uint64 = module.user_module.id
 proc hash*(module: ResolvedNativeModule): Hash = module.name.hash
 proc `==`*(self: ResolvedNativeModule, other: ResolvedNativeModule): bool = self.hash == other.hash
 proc asl*(module: ResolvedNativeModule): string = module.name.asl
 
 proc find_generic*(module: ResolvedNativeModule, generic: Generic): Result[
     ResolvedGeneric, string] =
-  if generic in module.generics_map:
-    ok(module.generics_map[generic])
-  else:
-    err(fmt"failed to find generic `{generic.name.asl}`")
+  module.user_module.find_generic(generic)
 
 proc find_function*(module: ResolvedNativeModule,
-    def: ResolvedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
-  if def in module.functions_map:
-    ok(module.functions_map[def].def)
-  else:
-    err(fmt"failed to find function `{def.asl}`")
+    def: ResolvedUserFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
+  module.user_module.find_function(def)
 
 # =============================================================================
 # ResolvedModule (Unified Wrapper)
@@ -229,7 +186,7 @@ proc structs*(module: ResolvedModule): seq[ResolvedStruct] =
   of TMK_NATIVE: module.native.structs
   of TMK_USER: module.user.structs
 
-proc functions*(module: ResolvedModule): seq[ResolvedFunctionDefinition] =
+proc functions*(module: ResolvedModule): seq[ResolvedUserFunctionDefinition] =
   case module.kind:
   of TMK_NATIVE: module.native.functions.map_it(it.def)
   of TMK_USER: module.user.functions.map_it(it.def)

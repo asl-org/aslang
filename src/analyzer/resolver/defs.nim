@@ -1,4 +1,4 @@
-# ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
+# ResolvedArgumentDefinition, ResolvedUserFunctionDefinition, ResolvedStruct
 import results, strformat, strutils, sets, hashes
 
 import module_ref
@@ -33,10 +33,10 @@ proc module_ref*(arg: ResolvedArgumentDefinition): ResolvedModuleRef = arg.modul
 proc asl*(arg: ResolvedArgumentDefinition): string = fmt"{arg.module_ref.asl} {arg.name.asl}"
 
 # =============================================================================
-# ResolvedFunctionDefinition
+# ResolvedUserFunctionDefinition
 # =============================================================================
 
-type ResolvedFunctionDefinition* = ref object of RootObj
+type ResolvedUserFunctionDefinition* = ref object of RootObj
   name: Identifier
   args: seq[ResolvedArgumentDefinition]
   returns: ResolvedModuleRef
@@ -44,40 +44,40 @@ type ResolvedFunctionDefinition* = ref object of RootObj
 
 proc new_resolved_function_definition*(name: Identifier, args: seq[
     ResolvedArgumentDefinition], returns: ResolvedModuleRef,
-    location: Location): ResolvedFunctionDefinition =
-  ResolvedFunctionDefinition(name: name, args: args, returns: returns,
+    location: Location): ResolvedUserFunctionDefinition =
+  ResolvedUserFunctionDefinition(name: name, args: args, returns: returns,
       location: location)
 
-proc module_deps*(def: ResolvedFunctionDefinition): HashSet[UserModule] =
+proc module_deps*(def: ResolvedUserFunctionDefinition): HashSet[UserModule] =
   var module_set = accumulate_module_deps(def.args)
   module_set.incl(def.returns.module_deps)
   module_set
 
-proc hash*(def: ResolvedFunctionDefinition): Hash =
+proc hash*(def: ResolvedUserFunctionDefinition): Hash =
   var acc = def.name.hash
   for arg in def.args:
     acc = acc !& arg.hash
   acc !& def.returns.hash
 
-proc `==`*(self: ResolvedFunctionDefinition,
-    other: ResolvedFunctionDefinition): bool =
+proc `==`*(self: ResolvedUserFunctionDefinition,
+    other: ResolvedUserFunctionDefinition): bool =
   self.hash == other.hash
 
-proc asl*(def: ResolvedFunctionDefinition): string =
+proc asl*(def: ResolvedUserFunctionDefinition): string =
   var args: seq[string]
   for arg in def.args: args.add(arg.asl)
   let args_str = args.join(", ")
   let returns_str = def.returns.asl
   fmt"fn {def.name.asl}({args_str}): {returns_str}"
 
-proc location*(def: ResolvedFunctionDefinition): Location = def.location
-proc name*(def: ResolvedFunctionDefinition): Identifier = def.name
-proc returns*(def: ResolvedFunctionDefinition): ResolvedModuleRef = def.returns
-proc args*(def: ResolvedFunctionDefinition): seq[
+proc location*(def: ResolvedUserFunctionDefinition): Location = def.location
+proc name*(def: ResolvedUserFunctionDefinition): Identifier = def.name
+proc returns*(def: ResolvedUserFunctionDefinition): ResolvedModuleRef = def.returns
+proc args*(def: ResolvedUserFunctionDefinition): seq[
     ResolvedArgumentDefinition] = def.args
 
-proc concretize*(def: ResolvedFunctionDefinition, generic: Generic,
-    module_ref: ResolvedModuleRef): ResolvedFunctionDefinition =
+proc concretize*(def: ResolvedUserFunctionDefinition, generic: Generic,
+    module_ref: ResolvedModuleRef): ResolvedUserFunctionDefinition =
   var concrete_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let concrete_arg = arg.concretize(generic, module_ref)

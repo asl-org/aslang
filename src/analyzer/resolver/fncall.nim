@@ -1,68 +1,68 @@
-# ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
+# ResolvedUserFunctionRef, ResolvedUserFunctionCall, ResolvedStructGet, ResolvedVariable
 import results, strformat, sets
 
 import initializer
 export initializer
 
 # =============================================================================
-# ResolvedFunctionRef
+# ResolvedUserFunctionRef
 # =============================================================================
 
 type
-  ResolvedFunctionRefKind* = enum
+  ResolvedUserFunctionRefKind* = enum
     TFRK_LOCAL, TFRK_MODULE
-  ResolvedFunctionRef* = ref object of RootObj
+  ResolvedUserFunctionRef* = ref object of RootObj
     name: Identifier
     arity: uint
-    case kind: ResolvedFunctionRefKind
+    case kind: ResolvedUserFunctionRefKind
     of TFRK_LOCAL: discard
     of TFRK_MODULE: module_ref: ResolvedModuleRef
 
 proc new_resolved_function_ref*(name: Identifier,
-    arity: uint): ResolvedFunctionRef =
-  ResolvedFunctionRef(kind: TFRK_LOCAL, name: name, arity: arity)
+    arity: uint): ResolvedUserFunctionRef =
+  ResolvedUserFunctionRef(kind: TFRK_LOCAL, name: name, arity: arity)
 
 proc new_resolved_function_ref*(module_ref: ResolvedModuleRef, name: Identifier,
-    arity: uint): ResolvedFunctionRef =
-  ResolvedFunctionRef(kind: TFRK_MODULE, module_ref: module_ref, name: name, arity: arity)
+    arity: uint): ResolvedUserFunctionRef =
+  ResolvedUserFunctionRef(kind: TFRK_MODULE, module_ref: module_ref, name: name, arity: arity)
 
-proc module_deps*(fnref: ResolvedFunctionRef): HashSet[UserModule] =
+proc module_deps*(fnref: ResolvedUserFunctionRef): HashSet[UserModule] =
   case fnref.kind:
   of TFRK_LOCAL: init_hashset[UserModule]()
   of TFRK_MODULE: fnref.module_ref.module_deps
 
-proc location*(fnref: ResolvedFunctionRef): Location =
+proc location*(fnref: ResolvedUserFunctionRef): Location =
   case fnref.kind:
   of TFRK_LOCAL: fnref.name.location
   of TFRK_MODULE: fnref.module_ref.location
 
-proc kind*(fnref: ResolvedFunctionRef): ResolvedFunctionRefKind = fnref.kind
-proc name*(fnref: ResolvedFunctionRef): Identifier = fnref.name
-proc arity*(fnref: ResolvedFunctionRef): uint = fnref.arity
+proc kind*(fnref: ResolvedUserFunctionRef): ResolvedUserFunctionRefKind = fnref.kind
+proc name*(fnref: ResolvedUserFunctionRef): Identifier = fnref.name
+proc arity*(fnref: ResolvedUserFunctionRef): uint = fnref.arity
 
-proc module_ref*(fnref: ResolvedFunctionRef): Result[ResolvedModuleRef, string] =
+proc module_ref*(fnref: ResolvedUserFunctionRef): Result[ResolvedModuleRef, string] =
   case fnref.kind:
   of TFRK_LOCAL: err(fmt"{fnref.location} expected a module function call")
   of TFRK_MODULE: ok(fnref.module_ref)
 
 # =============================================================================
-# ResolvedFunctionCall
+# ResolvedUserFunctionCall
 # =============================================================================
 
-type ResolvedFunctionCall* = ref object of RootObj
-  fnref: ResolvedFunctionRef
+type ResolvedUserFunctionCall* = ref object of RootObj
+  fnref: ResolvedUserFunctionRef
   args: seq[Argument]
 
-proc new_resolved_function_call*(fnref: ResolvedFunctionRef, args: seq[
-    Argument]): ResolvedFunctionCall =
-  ResolvedFunctionCall(fnref: fnref, args: args)
+proc new_resolved_function_call*(fnref: ResolvedUserFunctionRef, args: seq[
+    Argument]): ResolvedUserFunctionCall =
+  ResolvedUserFunctionCall(fnref: fnref, args: args)
 
-proc module_deps*(fncall: ResolvedFunctionCall): HashSet[UserModule] =
+proc module_deps*(fncall: ResolvedUserFunctionCall): HashSet[UserModule] =
   fncall.fnref.module_deps
 
-proc location*(fncall: ResolvedFunctionCall): Location = fncall.fnref.location
-proc fnref*(fncall: ResolvedFunctionCall): ResolvedFunctionRef = fncall.fnref
-proc args*(fncall: ResolvedFunctionCall): seq[Argument] = fncall.args
+proc location*(fncall: ResolvedUserFunctionCall): Location = fncall.fnref.location
+proc fnref*(fncall: ResolvedUserFunctionCall): ResolvedUserFunctionRef = fncall.fnref
+proc args*(fncall: ResolvedUserFunctionCall): seq[Argument] = fncall.args
 
 # =============================================================================
 # ResolvedStructGet
