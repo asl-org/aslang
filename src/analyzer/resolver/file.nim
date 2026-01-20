@@ -1,8 +1,8 @@
 import results, strformat, tables, options
 
 import parser
-import resolved_module
-export resolved_module
+import module
+export module
 
 # =============================================================================
 # ResolvedFile
@@ -10,19 +10,19 @@ export resolved_module
 type ResolvedFile* = ref object of RootObj
   name: string
   indent: int
-  maybe_start_def: Option[ResolvedFunctionDefinition]
+  maybe_start_def: Option[ResolvedUserFunctionDefinition]
   native_modules: seq[ResolvedNativeModule]
   native_modules_map: Table[NativeModule, ResolvedNativeModule]
   user_modules: seq[ResolvedUserModule]
   user_modules_map: Table[UserModule, ResolvedUserModule]
   modules: seq[ResolvedModule]
-  functions: seq[ResolvedFunction]
+  functions: seq[ResolvedUserFunction]
 
 proc new_resolved_file*(name: string, indent: int, maybe_start_def: Option[
-    ResolvedFunctionDefinition], native_modules: seq[(NativeModule,
+    ResolvedUserFunctionDefinition], native_modules: seq[(NativeModule,
         ResolvedModule)], user_modules: seq[ResolvedModule],
     user_modules_map: Table[UserModule, ResolvedModule], functions: seq[
-    ResolvedFunction]): ResolvedFile =
+    ResolvedUserFunction]): ResolvedFile =
   var native_modules_map: Table[NativeModule, ResolvedNativeModule]
   var resolved_native_modules: seq[ResolvedNativeModule]
   for (native_module, resolved_module) in native_modules:
@@ -56,7 +56,7 @@ proc new_resolved_file*(name: string, indent: int, maybe_start_def: Option[
 
 proc path*(file: ResolvedFile): string = file.name
 proc indent*(file: ResolvedFile): int = file.indent
-proc start_def*(file: ResolvedFile): Result[ResolvedFunctionDefinition, string] =
+proc start_def*(file: ResolvedFile): Result[ResolvedUserFunctionDefinition, string] =
   case file.maybe_start_def.is_some
   of true: ok(file.maybe_start_def.get)
   of false: err(fmt"{file.path} failed to find `start` function")
@@ -64,7 +64,7 @@ proc native_modules*(file: ResolvedFile): seq[
     ResolvedNativeModule] = file.native_modules
 proc user_modules*(file: ResolvedFile): seq[
     ResolvedUserModule] = file.user_modules
-proc functions*(file: ResolvedFile): seq[ResolvedFunction] = file.functions
+proc functions*(file: ResolvedFile): seq[ResolvedUserFunction] = file.functions
 
 proc get_resolved_module*(file: ResolvedFile, module: parser.Module): Result[
     ResolvedModule, string] =

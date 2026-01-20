@@ -420,13 +420,13 @@ proc generics*(module: NativeModule): seq[Generic] =
 proc structs*(module: NativeModule): seq[Struct] =
   module.user_module.structs
 
-proc functions*(module: NativeModule): seq[ExternFunction] =
-  var externs: seq[ExternFunction]
+proc functions*(module: NativeModule): seq[Function] =
+  var functions: seq[Function]
   for function in module.user_module.functions:
     case function.kind:
-    of FK_EXTERN: externs.add(function.extern_func)
+    of FK_EXTERN: functions.add(new_function(function.extern_func))
     of FK_USER: discard
-  externs
+  functions
 
 proc all_functions*(module: NativeModule): seq[Function] =
   module.user_module.functions
@@ -542,13 +542,9 @@ proc user_functions*(module: Module): Result[seq[Function], string] =
   of MK_USER: ok(module.user.functions)
   of MK_NATIVE: err(fmt"[PE161] module `{module.payload.name.asl}` is not a user module")
 
-proc native_functions*(module: Module): Result[seq[ExternFunction], string] =
+proc native_functions*(module: Module): Result[seq[Function], string] =
   case module.kind:
-  of MK_NATIVE:
-    var externs: seq[ExternFunction]
-    for function in module.native.functions:
-      externs.add(function)
-    ok(externs)
+  of MK_NATIVE: ok(module.native.functions)
   of MK_USER: err(fmt"[PE160] module `{module.payload.name.asl}` is not a native module")
 
 proc functions*(module: Module): seq[Function] =

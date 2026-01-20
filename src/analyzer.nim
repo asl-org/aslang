@@ -15,7 +15,7 @@ proc err_no_named_struct(location: Location, module_name: string,
 type
   AnalyzedImpl = ref object of RootObj
     module_ref: AnalyzedModuleRef
-    defs: seq[ResolvedFunctionDefinition]
+    defs: seq[ResolvedUserFunctionDefinition]
   AnalyzedModuleRefKind = enum
     RMRK_NATIVE, RMRK_USER, RMRK_GENERIC
   AnalyzedModuleRef = ref object of RootObj
@@ -33,7 +33,7 @@ type
 
 # AnalyzedImpl
 proc new_analyzed_impl(module_ref: AnalyzedModuleRef, defs: seq[
-    ResolvedFunctionDefinition]): AnalyzedImpl =
+    ResolvedUserFunctionDefinition]): AnalyzedImpl =
   AnalyzedImpl(module_ref: module_ref, defs: defs)
 
 # NOTE: Needed due to cyclic dependency between AnalyzedModuleRef and AnalyzedImpl
@@ -107,7 +107,7 @@ proc can_be_argument(module_ref: AnalyzedModuleRef): Result[void, string] =
     else: err(fmt"{module_ref.location} module `{module.name.asl}` can not be passed as an argument")
 
 proc find_function(module_ref: AnalyzedModuleRef,
-    def: ResolvedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+    def: ResolvedUserFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
   case module_ref.kind:
   of RMRK_NATIVE: module_ref.native_module.find_function(def)
   of RMRK_GENERIC: module_ref.generic.find_function(def)
@@ -150,7 +150,7 @@ proc `==`(self: AnalyzedModuleRef, other: AnalyzedModuleRef): bool =
 proc create_impl_from_child(resolved_generic: ResolvedGeneric,
     child: ResolvedModuleRef, analyzed_child: AnalyzedModuleRef): Result[
         AnalyzedImpl, string] =
-  var constraint_defs: seq[ResolvedFunctionDefinition]
+  var constraint_defs: seq[ResolvedUserFunctionDefinition]
   for def in resolved_generic.concrete_defs(child.self()):
     constraint_defs.add( ? analyzed_child.find_function(def))
   ok(new_analyzed_impl(analyzed_child, constraint_defs))
@@ -521,9 +521,9 @@ proc c(def: AnalyzedUserFunctionDefinition): string =
 
   fmt"{def.returns.c} {def.c_name}({args_str});"
 
-# Helper for resolving ResolvedFunctionDefinition with ResolvedUserModule
+# Helper for resolving ResolvedUserFunctionDefinition with ResolvedUserModule
 proc analyze_function_definition_user(file: ResolvedFile,
-    def: ResolvedFunctionDefinition, module: ResolvedUserModule,
+    def: ResolvedUserFunctionDefinition, module: ResolvedUserModule,
         generic: Option[
 
 ResolvedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
@@ -540,9 +540,9 @@ ResolvedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
   ok(new_analyzed_function_definition(def.name, analyzed_args,
       analyzed_returns, def.location, prefix, module.generics.len.uint64))
 
-# Helper for resolving ResolvedFunctionDefinition with ResolvedNativeModule
+# Helper for resolving ResolvedUserFunctionDefinition with ResolvedNativeModule
 proc analyze_function_definition_native(file: ResolvedFile,
-    def: ResolvedFunctionDefinition, module: ResolvedNativeModule,
+    def: ResolvedUserFunctionDefinition, module: ResolvedNativeModule,
         generic: Option[
 
 ResolvedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
@@ -559,9 +559,9 @@ ResolvedGeneric]): Result[AnalyzedUserFunctionDefinition, string] =
   ok(new_analyzed_function_definition(def.name, analyzed_args,
       analyzed_returns, def.location, prefix, module.generics.len.uint64))
 
-# Helper for resolving ResolvedFunctionDefinition without module
+# Helper for resolving ResolvedUserFunctionDefinition without module
 proc analyze_function_definition_no_module(file: ResolvedFile,
-    def: ResolvedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
+    def: ResolvedUserFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
     let analyzed_arg = ? analyze_def(file, arg)
@@ -570,20 +570,20 @@ proc analyze_function_definition_no_module(file: ResolvedFile,
   ok(new_analyzed_function_definition(def.name, analyzed_args, analyzed_returns, def.location))
 
 proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
-    generic: ResolvedGeneric, def: ResolvedFunctionDefinition): Result[
+    generic: ResolvedGeneric, def: ResolvedUserFunctionDefinition): Result[
         AnalyzedUserFunctionDefinition, string] =
   analyze_function_definition_user(file, def, module, some(generic))
 
 proc analyze_def(file: ResolvedFile, module: ResolvedNativeModule,
-    generic: ResolvedGeneric, def: ResolvedFunctionDefinition): Result[
+    generic: ResolvedGeneric, def: ResolvedUserFunctionDefinition): Result[
         AnalyzedUserFunctionDefinition, string] =
   analyze_function_definition_native(file, def, module, some(generic))
 
 proc analyze_def(file: ResolvedFile, module: ResolvedUserModule,
-    def: ResolvedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
+    def: ResolvedUserFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
   analyze_function_definition_user(file, def, module, none(ResolvedGeneric))
 
-proc analyze_def(file: ResolvedFile, def: ResolvedFunctionDefinition): Result[
+proc analyze_def(file: ResolvedFile, def: ResolvedUserFunctionDefinition): Result[
     AnalyzedUserFunctionDefinition, string] =
   analyze_function_definition_no_module(file, def)
 
@@ -818,14 +818,14 @@ type AnalyzedUserModuleDefinition = ref object of RootObj
   default_struct_index: int
   structs_map: Table[Identifier, AnalyzedStruct]
   function_defs: seq[AnalyzedUserFunctionDefinition]
-  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  function_defs_map: Table[ResolvedUserFunctionDefinition, AnalyzedUserFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint, seq[
       AnalyzedUserFunctionDefinition]]]
 
 proc new_analyzed_user_module_definition(module: ResolvedUserModule,
     generics: seq[(ResolvedGeneric, AnalyzedGeneric)], structs: seq[
         AnalyzedStruct],
-    function_defs: seq[(ResolvedFunctionDefinition,
+    function_defs: seq[(ResolvedUserFunctionDefinition,
     AnalyzedUserFunctionDefinition)]): AnalyzedUserModuleDefinition =
   var generics_map: Table[ResolvedGeneric, AnalyzedGeneric]
   var analyzed_generics: seq[AnalyzedGeneric]
@@ -842,7 +842,7 @@ proc new_analyzed_user_module_definition(module: ResolvedUserModule,
     of RSK_DEFAULT: default_struct_index = index
     of RSK_NAMED: structs_map[analyzed_struct.name] = analyzed_struct
 
-  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  var function_defs_map: Table[ResolvedUserFunctionDefinition, AnalyzedUserFunctionDefinition]
   var analyzed_function_defs: seq[AnalyzedUserFunctionDefinition]
   var function_signatures_map: Table[Identifier, Table[uint,
       seq[AnalyzedUserFunctionDefinition]]]
@@ -971,7 +971,7 @@ proc find_struct(module_def: AnalyzedUserModuleDefinition,
     ok(module_def.structs_map[name])
 
 proc find_function_def(module_def: AnalyzedUserModuleDefinition,
-    function_def: ResolvedFunctionDefinition): Result[
+    function_def: ResolvedUserFunctionDefinition): Result[
         AnalyzedUserFunctionDefinition, string] =
   if function_def notin module_def.function_defs_map:
     err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
@@ -1000,7 +1000,7 @@ proc analyze_def(file: ResolvedFile, module: ResolvedUserModule): Result[
     let analyzed_struct = ? analyze_def(file, module, struct)
     structs.add(analyzed_struct)
 
-  var function_defs: seq[(ResolvedFunctionDefinition,
+  var function_defs: seq[(ResolvedUserFunctionDefinition,
       AnalyzedUserFunctionDefinition)]
   for function in module.functions:
     let analyzed_def = ? analyze_def(file, module, function.def)
@@ -1043,7 +1043,7 @@ type AnalyzedNativeModuleDefinition = ref object of RootObj
   structs: seq[AnalyzedStruct]
   structs_map: Table[Identifier, AnalyzedStruct]
   functions: seq[AnalyzedNativeFunctionDefinition]
-  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedNativeFunctionDefinition]
+  function_defs_map: Table[ResolvedUserFunctionDefinition, AnalyzedNativeFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint, seq[
       AnalyzedNativeFunctionDefinition]]]
 
@@ -1076,7 +1076,7 @@ proc new_analyzed_native_module_definition(module: ResolvedNativeModule,
           AnalyzedNativeFunctionDefinition]()
     function_signatures_map[function.name][function.arity].add(function)
 
-  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedNativeFunctionDefinition]
+  var function_defs_map: Table[ResolvedUserFunctionDefinition, AnalyzedNativeFunctionDefinition]
   for (resolved_function, analyzed_function) in zip(module.functions, functions):
     function_defs_map[resolved_function.def] = analyzed_function
   AnalyzedNativeModuleDefinition(module: module, generics: analyzed_generics,
@@ -1095,7 +1095,7 @@ proc generic_impls(module: AnalyzedNativeModuleDefinition): Table[
   return impl_set
 
 proc find_function_def(module_def: AnalyzedNativeModuleDefinition,
-    function_def: ResolvedFunctionDefinition): Result[
+    function_def: ResolvedUserFunctionDefinition): Result[
         AnalyzedNativeFunctionDefinition, string] =
   if function_def notin module_def.function_defs_map:
     err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
@@ -1140,7 +1140,7 @@ proc analyze_def(file: ResolvedFile, def: ResolvedNativeModule): Result[
 
   var analyzed_functions: seq[AnalyzedNativeFunctionDefinition]
   for function in def.functions:
-    let analyzed_function = ? analyze_def(file, def, function)
+    let analyzed_function = ? analyze_def(file, def, function.extern)
     analyzed_functions.add(analyzed_function)
   ok(new_analyzed_native_module_definition(def, analyzed_generics,
       analyzed_structs, analyzed_functions))
@@ -1171,14 +1171,14 @@ type AnalyzedFileDefinition = ref object of RootObj
   user_modules: seq[AnalyzedUserModuleDefinition]
   user_modules_map: Table[ResolvedUserModule, AnalyzedUserModuleDefinition]
   function_defs: seq[AnalyzedUserFunctionDefinition]
-  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  function_defs_map: Table[ResolvedUserFunctionDefinition, AnalyzedUserFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint,
       seq[AnalyzedUserFunctionDefinition]]]
 
 proc new_analyzed_file_definition(file: ResolvedFile, native_modules: seq[(
     ResolvedNativeModule, AnalyzedNativeModuleDefinition)], user_modules: seq[(
     ResolvedUserModule, AnalyzedUserModuleDefinition)], function_defs: seq[(
-    ResolvedFunctionDefinition,
+    ResolvedUserFunctionDefinition,
     AnalyzedUserFunctionDefinition)]): AnalyzedFileDefinition =
   var native_modules_map: Table[ResolvedNativeModule, AnalyzedNativeModuleDefinition]
   var analyzed_native_modules: seq[AnalyzedNativeModuleDefinition]
@@ -1192,7 +1192,7 @@ proc new_analyzed_file_definition(file: ResolvedFile, native_modules: seq[(
     user_modules_map[resolved_module] = analyzed_user_module
     analyzed_user_modules.add(analyzed_user_module)
 
-  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedUserFunctionDefinition]
+  var function_defs_map: Table[ResolvedUserFunctionDefinition, AnalyzedUserFunctionDefinition]
   var function_signatures_map: Table[Identifier, Table[uint,
       seq[AnalyzedUserFunctionDefinition]]]
   var analyzed_function_defs: seq[AnalyzedUserFunctionDefinition]
@@ -1252,7 +1252,7 @@ proc find_module_def(file_def: AnalyzedFileDefinition,
     err(fmt"module `{module.name.asl}` not found in analyzed file definition")
 
 proc find_function_def(file_def: AnalyzedFileDefinition,
-    def: ResolvedFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
+    def: ResolvedUserFunctionDefinition): Result[AnalyzedUserFunctionDefinition, string] =
   if def in file_def.function_defs_map:
     ok(file_def.function_defs_map[def])
   else:
@@ -1279,7 +1279,7 @@ proc analyze_def(file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
     let analyzed_module_def = ? analyze_def(file, module)
     modules.add((module, analyzed_module_def))
 
-  var function_defs: seq[(ResolvedFunctionDefinition,
+  var function_defs: seq[(ResolvedUserFunctionDefinition,
       AnalyzedUserFunctionDefinition)]
   for function in file.functions:
     let analyzed_function_def = ? analyze_def(file, function.def)
@@ -1393,7 +1393,7 @@ proc asl(fnref: AnalyzedFunctionRef): string =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition,
-        fnref: ResolvedFunctionRef): Result[
+        fnref: ResolvedUserFunctionRef): Result[
     AnalyzedFunctionRef, string] =
   case fnref.kind:
   of TFRK_LOCAL:
@@ -1452,7 +1452,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
           analyzed_function_defs, analyzed_concrete_function_defs))
 
 proc analyze(file_def: AnalyzedFileDefinition,
-    fnref: ResolvedFunctionRef): Result[AnalyzedFunctionRef, string] =
+    fnref: ResolvedUserFunctionRef): Result[AnalyzedFunctionRef, string] =
   case fnref.kind:
   of TFRK_LOCAL:
     let analyzed_user_function_defs = ? file_def.find_function_defs(fnref.name, fnref.arity)
@@ -1688,7 +1688,7 @@ proc c(fncall: AnalyzedFunctionCall, result_arg: string): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition, scope: FunctionScope,
-    fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
+    fncall: ResolvedUserFunctionCall): Result[AnalyzedFunctionCall, string] =
   let analyzed_function_ref = ? analyze(file_def, module_def, fncall.fnref)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
   for (original_def, concrete_def) in analyzed_function_ref.defs:
@@ -1703,7 +1703,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
   err(error_message.join("\n"))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
+    fncall: ResolvedUserFunctionCall): Result[AnalyzedFunctionCall, string] =
   let analyzed_function_ref = ? analyze(file_def, fncall.fnref)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
   for (original_def, concrete_def) in analyzed_function_ref.defs:
@@ -2959,7 +2959,7 @@ proc c(function: AnalyzedFunction): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition,
-        function: ResolvedFunction): Result[
+        function: ResolvedUserFunction): Result[
     AnalyzedFunction, string] =
   var scope = FunctionScope()
   let analyzed_function_def = ? module_def.find_function_def(function.def)
@@ -2973,7 +2973,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
   ok(new_analyzed_function(analyzed_function_def, analyzed_steps))
 
 proc analyze(file_def: AnalyzedFileDefinition,
-    function: ResolvedFunction): Result[AnalyzedFunction, string] =
+    function: ResolvedUserFunction): Result[AnalyzedFunction, string] =
   var scope = FunctionScope()
   let analyzed_function_def = ? file_def.find_function_def(function.def)
   for arg in analyzed_function_def.args:
@@ -3062,7 +3062,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedUserModuleDefinition): Result[AnalyzedUserModule, string] =
   var analyzed_functions: seq[AnalyzedFunction]
   for function in module_def.module.functions:
-    let analyzed_function = ? analyze(file_def, module_def, function)
+    let analyzed_function = ? analyze(file_def, module_def, function.user)
     analyzed_functions.add(analyzed_function)
   ok(new_analyzed_user_module(module_def, analyzed_functions))
 

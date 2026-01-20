@@ -1,8 +1,8 @@
-# ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedFunction
+# ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedUserFunction
 import results, strformat, sets
 
-import resolved_call
-export resolved_call
+import fncall
+export fncall
 
 # =============================================================================
 # Mutually Recursive Types: Expression, Statement, Case, Else, Match
@@ -14,7 +14,7 @@ type
   ResolvedExpression* = ref object of RootObj
     case kind: ResolvedExpressionKind
     of TEK_MATCH: match: ResolvedMatch
-    of TEK_FNCALL: fncall: ResolvedFunctionCall
+    of TEK_FNCALL: fncall: ResolvedUserFunctionCall
     of TEK_INIT: init: ResolvedInitializer
     of TEK_STRUCT_GET: struct_get: ResolvedStructGet
     of TEK_VARIABLE: variable: ResolvedVariable
@@ -42,7 +42,7 @@ type
 proc new_resolved_expression*(match: ResolvedMatch): ResolvedExpression =
   ResolvedExpression(kind: TEK_MATCH, match: match)
 
-proc new_resolved_expression*(fncall: ResolvedFunctionCall): ResolvedExpression =
+proc new_resolved_expression*(fncall: ResolvedUserFunctionCall): ResolvedExpression =
   ResolvedExpression(kind: TEK_FNCALL, fncall: fncall)
 
 proc new_resolved_expression*(init: ResolvedInitializer): ResolvedExpression =
@@ -82,7 +82,7 @@ proc match*(expression: ResolvedExpression): Result[ResolvedMatch, string] =
   of TEK_MATCH: ok(expression.match)
   else: err(fmt"{expression.location} expected a match expression")
 
-proc fncall*(expression: ResolvedExpression): Result[ResolvedFunctionCall, string] =
+proc fncall*(expression: ResolvedExpression): Result[ResolvedUserFunctionCall, string] =
   case expression.kind:
   of TEK_FNCALL: ok(expression.fncall)
   else: err(fmt"{expression.location} expected a function call")
@@ -169,21 +169,69 @@ proc module_deps*(match: ResolvedMatch): HashSet[UserModule] =
   module_set
 
 # =============================================================================
-# ResolvedFunction
+# ResolvedUserFunction
 # =============================================================================
 
-type ResolvedFunction* = ref object of RootObj
-  def: ResolvedFunctionDefinition
+type ResolvedUserFunction* = ref object of RootObj
+  def: ResolvedUserFunctionDefinition
   steps: seq[ResolvedStatement]
 
-proc new_resolved_function*(def: ResolvedFunctionDefinition, steps: seq[
-    ResolvedStatement]): ResolvedFunction =
-  ResolvedFunction(def: def, steps: steps)
+proc new_resolved_user_function*(def: ResolvedUserFunctionDefinition,
+    steps: seq[ResolvedStatement]): ResolvedUserFunction =
+  ResolvedUserFunction(def: def, steps: steps)
 
-proc module_deps*(function: ResolvedFunction): HashSet[UserModule] =
+proc module_deps*(function: ResolvedUserFunction): HashSet[UserModule] =
   var module_set = function.def.module_deps
   module_set.incl(accumulate_module_deps(function.steps))
   module_set
 
-proc def*(function: ResolvedFunction): ResolvedFunctionDefinition = function.def
-proc steps*(function: ResolvedFunction): seq[ResolvedStatement] = function.steps
+proc def*(function: ResolvedUserFunction): ResolvedUserFunctionDefinition = function.def
+proc steps*(function: ResolvedUserFunction): seq[
+    ResolvedStatement] = function.steps
+
+
+# =============================================================================
+# ResolvedNativeFunction
+# =============================================================================
+type ResolvedNativeFunction* = ref object of RootObj
+  native: string
+  def: ResolvedUserFunctionDefinition
+
+proc new_resolved_native_function*(native: string,
+    def: ResolvedUserFunctionDefinition): ResolvedNativeFunction =
+  ResolvedNativeFunction(native: native, def: def)
+
+proc native*(function: ResolvedNativeFunction): string = function.native
+proc def*(function: ResolvedNativeFunction): ResolvedUserFunctionDefinition = function.def
+
+type
+  ResolvedFunctionKind = enum
+    RFK_USER, RFK_EXTERN
+  ResolvedFunction* = ref object of RootObj
+    case kind: ResolvedFunctionKind
+    of RFK_EXTERN: extern: ResolvedNativeFunction
+    of RFK_USER: user: ResolvedUserFunction
+
+proc new_resolved_function*(function: ResolvedUserFunction): ResolvedFunction =
+  ResolvedFunction(kind: RFK_USER, user: function)
+
+proc new_resolved_function*(function: ResolvedNativeFunction): ResolvedFunction =
+  ResolvedFunction(kind: RFK_EXTERN, extern: function)
+
+proc extern*(function: ResolvedFunction): ResolvedNativeFunction =
+  doAssert function.kind == RFK_EXTERN, "expected extern function"
+  function.extern
+
+proc user*(function: ResolvedFunction): ResolvedUserFunction =
+  doAssert function.kind == RFK_USER, "expected user function"
+  function.user
+
+proc def*(function: ResolvedFunction): ResolvedUserFunctionDefinition =
+  case function.kind:
+  of RFK_EXTERN: function.extern.def
+  of RFK_USER: function.user.def
+
+proc module_deps*(function: ResolvedFunction): HashSet[UserModule] =
+  case function.kind:
+  of RFK_USER: function.user.module_deps
+  of RFK_EXTERN: init_hashset[UserModule]()
