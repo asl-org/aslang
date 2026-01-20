@@ -36,7 +36,7 @@ proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields
 proc location*(struct: Struct): Location =
   struct.def.location
 
-proc name*(struct: Struct): Result[Identifier, ParserError] = name(struct.def)
+proc name*(struct: Struct): Identifier = name(struct.def)
 proc def*(struct: Struct): StructDefinition = struct.def
 
 proc asl*(struct: Struct, indent: string): seq[string] =

@@ -1,5 +1,5 @@
 # ResolvedModuleRef - foundational reference type for resolved modules
-import results, strformat, tables, strutils, sets, hashes
+import results, strformat, tables, strutils, sets, hashes, options
 
 import parser
 export parser
@@ -141,3 +141,37 @@ proc generic*(module_ref: ResolvedModuleRef): Result[Generic, string] =
   case module_ref.kind:
   of TMRK_GENERIC: ok(module_ref.generic)
   else: err(fmt"{module_ref.location} expected a generic")
+
+proc resolve(file: parser.File, module_name: Identifier, children: seq[
+    ResolvedModuleRef], location: Location): Result[ResolvedModuleRef, string] =
+  let arg_module = ? file.find_module(module_name)
+  case arg_module.kind:
+  of MK_NATIVE:
+    ok(new_resolved_module_ref(arg_module.native_module, children, location))
+  of MK_USER:
+    ok(new_resolved_module_ref(arg_module.user_module, children, location))
+
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    module_ref: ModuleRef): Result[ResolvedModuleRef, string] =
+  let module_name = module_ref.module
+  var resolved_children: seq[ResolvedModuleRef]
+
+  case module_ref.kind:
+  of MRK_SIMPLE:
+    if module.is_some:
+      let maybe_generic = module.get.find_generic(module_name)
+      if maybe_generic.is_ok:
+        let generic = maybe_generic.get
+        return ok(new_resolved_module_ref(generic, module_name.location))
+  of MRK_NESTED:
+    if module.is_some:
+      for child in module_ref.children:
+        let resolved_child = ? resolve(file, module, child)
+        resolved_children.add(resolved_child)
+    else:
+      for child in module_ref.children:
+        let resolved_child = ? resolve(file, module, child)
+        resolved_children.add(resolved_child)
+
+  file.resolve(module_name, resolved_children, module_name.location)
+

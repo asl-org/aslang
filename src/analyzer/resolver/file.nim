@@ -70,13 +70,13 @@ proc get_resolved_module*(file: ResolvedFile, module: parser.Module): Result[
     ResolvedModule, string] =
   case module.kind:
   of parser.MK_USER:
-    let user = ? module.user_module
+    let user = module.user_module
     if user in file.user_modules_map:
       ok(new_resolved_module(file.user_modules_map[user]))
     else:
       err("failed to find module `{user.name.asl}`")
   of parser.MK_NATIVE:
-    let native = ? module.native_module
+    let native = module.native_module
     if native in file.native_modules_map:
       ok(new_resolved_module(file.native_modules_map[native]))
     else:
@@ -124,10 +124,10 @@ proc find_module*(file: ResolvedFile, module: parser.Module): Result[
     ResolvedModule, string] =
   case module.kind:
   of parser.MK_USER:
-    let user = ? module.user_module
+    let user = module.user_module
     let resolved = ? find_module(file, user)
     ok(new_resolved_module(resolved))
   of parser.MK_NATIVE:
-    let native = ? module.native_module
+    let native = module.native_module
     let resolved = ? find_module(file, native)
     ok(new_resolved_module(resolved))

@@ -1,5 +1,5 @@
 # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedUserFunction
-import results, strformat, sets
+import results, strformat, sets, options
 
 import fncall
 export fncall
@@ -102,6 +102,26 @@ proc variable*(expression: ResolvedExpression): Result[ResolvedVariable, string]
   of TEK_VARIABLE: ok(expression.variable)
   else: err(fmt"{expression.location} expected a variable")
 
+# Forward Declaration needed due to cyclic dependencies
+proc resolve(file: parser.File, module: Option[parser.Module],
+    match: Match): Result[ResolvedMatch, string]
+
+# Expression
+proc resolve(file: parser.File, module: Option[parser.Module],
+    expression: Expression): Result[ResolvedExpression, string] =
+  case expression.kind:
+  of EK_MATCH:
+    ok(new_resolved_expression( ? resolve(file, module, ? expression.match)))
+  of EK_FNCALL:
+    ok(new_resolved_expression( ? resolve(file, module, ? expression.fncall)))
+  of EK_INIT:
+    ok(new_resolved_expression( ? resolve(file, module, ? expression.init)))
+  of EK_STRUCT_GET:
+    let sg = ? expression.struct_get
+    ok(new_resolved_expression(new_resolved_struct_get(sg.name, sg.field)))
+  of EK_VARIABLE:
+    ok(new_resolved_expression(new_resolved_variable( ? expression.variable)))
+
 # ResolvedStatement
 proc new_resolved_statement*(arg: Identifier,
     expression: ResolvedExpression): ResolvedStatement =
@@ -113,6 +133,19 @@ proc module_deps*(statement: ResolvedStatement): HashSet[UserModule] =
 proc arg*(statement: ResolvedStatement): Identifier = statement.arg
 proc expression*(statement: ResolvedStatement): ResolvedExpression = statement.expression
 proc location*(statement: ResolvedStatement): Location = statement.arg.location
+
+proc resolve(file: parser.File, module: Option[parser.Module],
+    statement: Statement): Result[ResolvedStatement, string] =
+  let resolved_expression = ? resolve(file, module, statement.expression)
+  ok(new_resolved_statement(statement.arg, resolved_expression))
+
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    statements: seq[Statement]): Result[seq[ResolvedStatement], string] =
+  var resolved_statements: seq[ResolvedStatement]
+  for statement in statements:
+    let resolved_statement = ? resolve(file, module, statement)
+    resolved_statements.add(resolved_statement)
+  ok(resolved_statements)
 
 # ResolvedCase
 proc new_resolved_case*(pattern: CasePattern, statements: seq[
@@ -127,6 +160,13 @@ proc statements*(case_block: ResolvedCase): seq[
 proc module_deps*(case_block: ResolvedCase): HashSet[UserModule] =
   accumulate_module_deps(case_block.statements)
 
+proc resolve(file: parser.File, module: Option[parser.Module],
+    case_block: Case): Result[ResolvedCase, string] =
+  let resolved_stmts = ? resolve(file, module,
+      case_block.statements)
+  ok(new_resolved_case(case_block.def.pattern, resolved_stmts,
+      case_block.def.location))
+
 # ResolvedElse
 proc new_resolved_else*(statements: seq[ResolvedStatement],
     location: Location): ResolvedElse =
@@ -138,6 +178,12 @@ proc statements*(else_block: ResolvedElse): seq[
 
 proc module_deps*(else_block: ResolvedElse): HashSet[UserModule] =
   accumulate_module_deps(else_block.statements)
+
+proc resolve(file: parser.File, module: Option[parser.Module],
+    else_block: Else): Result[ResolvedElse, string] =
+  let resolved_stmts = ? resolve(file, module,
+      else_block.statements)
+  ok(new_resolved_else(resolved_stmts, else_block.location))
 
 # ResolvedMatch
 proc new_resolved_match*(operand: Identifier, arg: Identifier, case_blocks: seq[
@@ -168,6 +214,22 @@ proc module_deps*(match: ResolvedMatch): HashSet[UserModule] =
   of TMK_COMPLETE: module_set.incl(match.else_block.module_deps)
   module_set
 
+proc resolve(file: parser.File, module: Option[parser.Module],
+    match: Match): Result[ResolvedMatch, string] =
+  var resolved_cases: seq[ResolvedCase]
+  for case_block in match.case_blocks:
+    let resolved_case = ? resolve(file, module, case_block)
+    resolved_cases.add(resolved_case)
+
+  case match.kind:
+  of MK_CASE_ONLY:
+    ok(new_resolved_match(match.def.operand, match.def.arg, resolved_cases,
+        match.def.location))
+  of MK_COMPLETE:
+    let resolved_else = ? resolve(file, module, ? match.else_block)
+    ok(new_resolved_match(match.def.operand, match.def.arg, resolved_cases,
+        resolved_else, match.def.location))
+
 # =============================================================================
 # ResolvedUserFunction
 # =============================================================================
@@ -189,6 +251,11 @@ proc def*(function: ResolvedUserFunction): ResolvedUserFunctionDefinition = func
 proc steps*(function: ResolvedUserFunction): seq[
     ResolvedStatement] = function.steps
 
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    function: Function): Result[ResolvedUserFunction, string] =
+  let resolved_def = ? resolve(file, module, function.def)
+  let resolved_steps = ? resolve(file, module, function.steps)
+  ok(new_resolved_user_function(resolved_def, resolved_steps))
 
 # =============================================================================
 # ResolvedNativeFunction
@@ -235,3 +302,21 @@ proc module_deps*(function: ResolvedFunction): HashSet[UserModule] =
   case function.kind:
   of RFK_USER: function.user.module_deps
   of RFK_EXTERN: init_hashset[UserModule]()
+
+proc resolve*(file: parser.File, module: parser.Module,
+    function: Function): Result[ResolvedFunction, string] =
+  case function.kind:
+  of FK_EXTERN:
+    case module.kind:
+    of parser.MK_NATIVE:
+      let resolved_def = ? resolve(file, some(module), function.def)
+      let native_function = new_resolved_native_function(
+          function.extern_func.extern, resolved_def)
+      ok(new_resolved_function(native_function))
+    of parser.MK_USER:
+      err("extern functions must belong to a native module")
+  of FK_USER:
+    let resolved_def = ? resolve(file, some(module), function.def)
+    let resolved_steps = ? resolve(file, some(module), function.steps)
+    let user_function = new_resolved_user_function(resolved_def, resolved_steps)
+    ok(new_resolved_function(user_function))

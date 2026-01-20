@@ -1,5 +1,5 @@
 # ResolvedArgumentDefinition, ResolvedUserFunctionDefinition, ResolvedStruct
-import results, strformat, strutils, sets, hashes
+import results, strformat, strutils, sets, hashes, options
 
 import module_ref
 export module_ref
@@ -31,6 +31,11 @@ proc location*(arg: ResolvedArgumentDefinition): Location = arg.module_ref.locat
 proc name*(arg: ResolvedArgumentDefinition): Identifier = arg.name
 proc module_ref*(arg: ResolvedArgumentDefinition): ResolvedModuleRef = arg.module_ref
 proc asl*(arg: ResolvedArgumentDefinition): string = fmt"{arg.module_ref.asl} {arg.name.asl}"
+
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolved_arg = ? resolve(file, module, arg.module_ref)
+  ok(new_resolved_argument_definition(resolved_arg, arg.name))
 
 # =============================================================================
 # ResolvedUserFunctionDefinition
@@ -85,6 +90,24 @@ proc concretize*(def: ResolvedUserFunctionDefinition, generic: Generic,
   let concrete_returns = def.returns.concretize(generic, module_ref)
   new_resolved_function_definition(def.name, concrete_args, concrete_returns, def.location)
 
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    generic: Generic, def: FunctionDefinition): Result[
+    ResolvedUserFunctionDefinition, string] =
+  var resolved_args: seq[ResolvedArgumentDefinition]
+  for arg in def.args:
+    let resolved_arg = ? resolve(file, module, arg)
+    resolved_args.add(resolved_arg)
+  let resolved_return = ? resolve(file, module, def.returns)
+  ok(new_resolved_function_definition(def.name, resolved_args, resolved_return, def.location))
+
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    def: FunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
+  var resolved_args: seq[ResolvedArgumentDefinition]
+  for arg in def.args:
+    resolved_args.add( ? resolve(file, module, arg))
+  let resolved_return = ? resolve(file, module, def.returns)
+  ok(new_resolved_function_definition(def.name, resolved_args, resolved_return, def.location))
+
 # =============================================================================
 # ResolvedStruct
 # =============================================================================
@@ -124,3 +147,16 @@ proc name*(struct: ResolvedStruct): Result[Identifier, string] =
   case struct.kind:
   of TSK_DEFAULT: err("{struct.location} expected a named struct")
   of TSK_NAMED: ok(struct.name)
+
+proc resolve*(file: parser.File, module: parser.Module, struct: Struct,
+    id: uint64): Result[ResolvedStruct, string] =
+  var resolved_fields: seq[ResolvedArgumentDefinition]
+  for field in struct.fields:
+    let resolved_field = ? resolve(file, some(module), field)
+    resolved_fields.add(resolved_field)
+
+  case struct.def.kind:
+  of SDK_DEFAULT:
+    ok(new_resolved_struct(id, resolved_fields, struct.location))
+  of SDK_NAMED:
+    ok(new_resolved_struct(id, struct.name, resolved_fields, struct.location))
