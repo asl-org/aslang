@@ -27,10 +27,9 @@ proc kind*(def: StructDefinition): StructDefinitionKind = def.kind
 
 proc location*(def: StructDefinition): Location = def.location
 
-proc name*(def: StructDefinition): Result[Identifier, ParserError] =
-  case def.kind:
-  of SDK_DEFAULT: err(err_parser_expected_named_struct(def.location))
-  of SDK_NAMED: ok(def.name)
+proc name*(def: StructDefinition): Identifier =
+  doAssert def.kind == SDK_NAMED, "expected extern function"
+  def.name
 
 proc asl*(def: StructDefinition): string =
   case def.kind:

@@ -81,19 +81,18 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
           return err(err_parser_struct_already_defined(struct.location,
               "default", predefined_default_struct_location))
       of SDK_NAMED:
-        let struct_name = ? struct.name
-        if struct_name in generics_map:
-          let generic = generics[generics_map[struct_name]]
+        if struct.name in generics_map:
+          let generic = generics[generics_map[struct.name]]
           return err(err_parser_struct_generic_conflict(struct.location,
-              struct_name.asl, generic.location, generic.name.asl))
+              struct.name.asl, generic.location, generic.name.asl))
 
-        if struct_name in structs_map:
+        if struct.name in structs_map:
           let predefined_struct_location = structs[structs_map[
-              struct_name]].location
+              struct.name]].location
           return err(err_parser_struct_already_defined(struct.location,
-              struct_name.asl, predefined_struct_location))
+              struct.name.asl, predefined_struct_location))
 
-        structs_map[struct_name] = index
+        structs_map[struct.name] = index
 
     var function_defs_hash_map: Table[Hash, int]
     var functions_map: Table[Identifier, seq[int]]
@@ -105,9 +104,8 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
 
       if function.name in structs_map:
         let struct = structs[structs_map[function.name]]
-        let struct_name = ? struct.name
         return err(err_parser_function_struct_conflict(function.location,
-            function.name.asl, struct.location, struct_name.asl))
+            function.name.asl, struct.location, struct.name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
@@ -129,9 +127,8 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
   of DK_STRUCT:
     let struct = ? data.struct
     if struct.def.kind != SDK_DEFAULT:
-      let struct_name = ? struct.name
       return err(err_parser_expected_default_struct(struct.location,
-          struct_name.asl))
+          struct.name.asl))
     else:
       default_struct_index = 0
 
@@ -205,19 +202,18 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
           return err(err_parser_struct_already_defined(struct.location,
               "default", predefined_default_struct_location))
       of SDK_NAMED:
-        let struct_name = ? struct.name
-        if struct_name in generics_map:
-          let generic = generics[generics_map[struct_name]]
+        if struct.name in generics_map:
+          let generic = generics[generics_map[struct.name]]
           return err(err_parser_struct_generic_conflict(struct.location,
-              struct_name.asl, generic.location, generic.name.asl))
+              struct.name.asl, generic.location, generic.name.asl))
 
-        if struct_name in structs_map:
+        if struct.name in structs_map:
           let predefined_struct_location = structs[structs_map[
-              struct_name]].location
+              struct.name]].location
           return err(err_parser_struct_already_defined(struct.location,
-              struct_name.asl, predefined_struct_location))
+              struct.name.asl, predefined_struct_location))
 
-        structs_map[struct_name] = index
+        structs_map[struct.name] = index
 
     var function_defs_hash_map: Table[Hash, int]
     var functions_map: Table[Identifier, seq[int]]
@@ -229,9 +225,8 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
 
       if function.name in structs_map:
         let struct = structs[structs_map[function.name]]
-        let struct_name = ? struct.name
         return err(err_parser_function_struct_conflict(function.location,
-            function.name.asl, struct.location, struct_name.asl))
+            function.name.asl, struct.location, struct.name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
@@ -263,19 +258,18 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
           return err(err_parser_struct_already_defined(struct.location,
               "default", predefined_default_struct_location))
       of SDK_NAMED:
-        let struct_name = ? struct.name
-        if struct_name in generics_map:
-          let generic = generics[generics_map[struct_name]]
+        if struct.name in generics_map:
+          let generic = generics[generics_map[struct.name]]
           return err(err_parser_struct_generic_conflict(struct.location,
-              struct_name.asl, generic.location, generic.name.asl))
+              struct.name.asl, generic.location, generic.name.asl))
 
-        if struct_name in structs_map:
+        if struct.name in structs_map:
           let predefined_struct_location = structs[structs_map[
-              struct_name]].location
+              struct.name]].location
           return err(err_parser_struct_already_defined(struct.location,
-              struct_name.asl, predefined_struct_location))
+              struct.name.asl, predefined_struct_location))
 
-        structs_map[struct_name] = index
+        structs_map[struct.name] = index
 
     var function_defs_hash_map: Table[Hash, int]
     var functions_map: Table[Identifier, seq[int]]
@@ -287,9 +281,8 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
 
       if function.name in structs_map:
         let struct = structs[structs_map[function.name]]
-        let struct_name = ? struct.name
         return err(err_parser_function_struct_conflict(function.location,
-            function.name.asl, struct.location, struct_name.asl))
+            function.name.asl, struct.location, struct.name.asl))
 
       let def_hash = function.def.hash
       if def_hash in function_defs_hash_map:
@@ -449,54 +442,6 @@ type
     of MK_NATIVE: native: NativeModule
     of MK_USER: user: UserModule
 
-# =============================================================================
-# ModulePayload
-# =============================================================================
-
-type ModulePayload* = object
-  name: Identifier
-  generics: seq[Generic]
-  generics_map: Table[Identifier, int]
-  structs: seq[Struct]
-  functions: seq[Function]
-  functions_map: Table[Identifier, seq[int]]
-  function_defs_hash_map: Table[Hash, int]
-
-proc new_module_payload*(name: Identifier, generics: seq[Generic],
-    generics_map: Table[Identifier, int], structs: seq[Struct],
-    functions: seq[Function], functions_map: Table[Identifier, seq[int]],
-    function_defs_hash_map: Table[Hash, int]): ModulePayload =
-  ModulePayload(name: name, generics: generics, generics_map: generics_map,
-      structs: structs, functions: functions, functions_map: functions_map,
-      function_defs_hash_map: function_defs_hash_map)
-
-proc name*(payload: ModulePayload): Identifier = payload.name
-proc generics*(payload: ModulePayload): seq[Generic] = payload.generics
-proc generics_map*(payload: ModulePayload): Table[Identifier,
-    int] = payload.generics_map
-proc structs*(payload: ModulePayload): seq[Struct] = payload.structs
-proc functions*(payload: ModulePayload): seq[Function] = payload.functions
-proc functions_map*(payload: ModulePayload): Table[Identifier, seq[
-    int]] = payload.functions_map
-proc function_defs_hash_map*(payload: ModulePayload): Table[Hash,
-    int] = payload.function_defs_hash_map
-
-proc payload*(module: Module): ModulePayload =
-  case module.kind:
-  of MK_USER:
-    let m = module.user
-    new_module_payload(m.name, m.generics, m.generics_map, m.structs,
-        m.functions, m.functions_map, m.function_defs_hash_map)
-  of MK_NATIVE:
-    let m = module.native
-    new_module_payload(m.name, m.generics, m.user_module.generics_map,
-        m.structs, m.user_module.functions, m.user_module.functions_map,
-        m.user_module.function_defs_hash_map)
-
-# =============================================================================
-# Module Accessors
-# =============================================================================
-
 proc new_module*(native: NativeModule): Module =
   Module(kind: MK_NATIVE, native: native)
 
@@ -518,63 +463,71 @@ proc module_ref*(module: Module): Result[ModuleRef, ParserError] =
   of MK_NATIVE: module.native.module_ref
   of MK_USER: module.user.module_ref
 
+proc name*(module: Module): Identifier =
+  case module.kind:
+  of MK_NATIVE: module.native.name
+  of MK_USER: module.user.name
+
 proc generics*(module: Module): seq[Generic] =
-  module.payload.generics
+  case module.kind:
+  of MK_NATIVE: module.native.generics
+  of MK_USER: module.user.generics
 
 proc generics_map*(module: Module): Table[Identifier, int] =
-  module.payload.generics_map
+  module.generics_map
 
 proc user_structs*(module: Module): Result[seq[Struct], string] =
   case module.kind:
   of MK_USER: ok(module.user.structs)
-  of MK_NATIVE: err(fmt"[PE161] module `{module.payload.name.asl}` is not a user module")
+  of MK_NATIVE: err(fmt"[PE161] module `{module.name.asl}` is not a user module")
 
 proc native_structs*(module: Module): Result[seq[Struct], string] =
   case module.kind:
   of MK_NATIVE: ok(module.native.structs)
-  of MK_USER: err(fmt"[PE160] module `{module.payload.name.asl}` is not a native module")
+  of MK_USER: err(fmt"[PE160] module `{module.name.asl}` is not a native module")
 
 proc structs*(module: Module): seq[Struct] =
-  module.payload.structs
+  case module.kind:
+  of MK_NATIVE: module.native.structs
+  of MK_USER: module.user.structs
 
 proc user_functions*(module: Module): Result[seq[Function], string] =
   case module.kind:
   of MK_USER: ok(module.user.functions)
-  of MK_NATIVE: err(fmt"[PE161] module `{module.payload.name.asl}` is not a user module")
+  of MK_NATIVE: err(fmt"[PE161] module `{module.name.asl}` is not a user module")
 
 proc native_functions*(module: Module): Result[seq[Function], string] =
   case module.kind:
   of MK_NATIVE: ok(module.native.functions)
-  of MK_USER: err(fmt"[PE160] module `{module.payload.name.asl}` is not a native module")
+  of MK_USER: err(fmt"[PE160] module `{module.name.asl}` is not a native module")
 
 proc functions*(module: Module): seq[Function] =
-  module.payload.functions
+  case module.kind:
+  of MK_NATIVE: module.native.functions
+  of MK_USER: module.user.functions
 
 proc functions_map*(module: Module): Table[Identifier, seq[int]] =
-  module.payload.functions_map
+  case module.kind:
+  of MK_NATIVE: module.native.user_module.functions_map
+  of MK_USER: module.functions_map
 
 proc function_defs_hash_map*(module: Module): Table[Hash, int] =
-  module.payload.function_defs_hash_map
+  case module.kind:
+  of MK_NATIVE: module.native.user_module.function_defs_hash_map
+  of MK_USER: module.user.function_defs_hash_map
 
 proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =
-  let payload = module.payload
-  if name notin payload.generics_map:
-    err(fmt"{name.location} [PE154] module `{payload.name.asl}` does not have any generic named `{name.asl}`")
-  else:
-    ok(payload.generics[payload.generics_map[name]])
-
-proc name*(module: Module): Identifier =
-  module.payload.name
-
-proc native_module*(module: Module): Result[NativeModule, string] =
   case module.kind:
-  of MK_NATIVE: ok(module.native)
-  of MK_USER: err(fmt"[PE160] [INTERNAL ERROR] module `{module.name.asl}` is not a native module")
+  of MK_NATIVE: module.native.find_generic(name)
+  of MK_USER: module.user.find_generic(name)
 
-proc user_module*(module: Module): Result[UserModule, string] =
-  case module.kind:
-  of MK_NATIVE: err(fmt"[PE161] [INTERNAL ERROR] module `{module.name.asl}` is not a user module")
-  of MK_USER: ok(module.user)
+proc native_module*(module: Module): NativeModule =
+  doAssert module.kind == MK_NATIVE, "expected a native module"
+  module.native
+
+proc user_module*(module: Module): UserModule =
+  doAssert module.kind == MK_USER, "expected a user module"
+  module.user
 
 proc location*(module: Module): Location =
   case module.kind:

@@ -1,5 +1,5 @@
 # ResolvedUserFunctionRef, ResolvedUserFunctionCall, ResolvedStructGet, ResolvedVariable
-import results, strformat, sets
+import results, strformat, sets, options
 
 import initializer
 export initializer
@@ -45,6 +45,14 @@ proc module_ref*(fnref: ResolvedUserFunctionRef): Result[ResolvedModuleRef, stri
   of TFRK_LOCAL: err(fmt"{fnref.location} expected a module function call")
   of TFRK_MODULE: ok(fnref.module_ref)
 
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    fnref: FunctionRef, arity: uint): Result[ResolvedUserFunctionRef, string] =
+  case fnref.kind:
+  of FRK_LOCAL: ok(new_resolved_function_ref(fnref.name, arity))
+  of FRK_MODULE:
+    let module_ref = ? resolve(file, module, ? fnref.module)
+    ok(new_resolved_function_ref(module_ref, fnref.name, arity))
+
 # =============================================================================
 # ResolvedUserFunctionCall
 # =============================================================================
@@ -63,6 +71,11 @@ proc module_deps*(fncall: ResolvedUserFunctionCall): HashSet[UserModule] =
 proc location*(fncall: ResolvedUserFunctionCall): Location = fncall.fnref.location
 proc fnref*(fncall: ResolvedUserFunctionCall): ResolvedUserFunctionRef = fncall.fnref
 proc args*(fncall: ResolvedUserFunctionCall): seq[Argument] = fncall.args
+
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    fncall: FunctionCall): Result[ResolvedUserFunctionCall, string] =
+  let fnref = ? resolve(file, module, fncall.fnref, fncall.args.len.uint)
+  ok(new_resolved_function_call(fnref, fncall.args))
 
 # =============================================================================
 # ResolvedStructGet

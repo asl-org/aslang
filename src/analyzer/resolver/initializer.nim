@@ -1,5 +1,5 @@
 # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
-import results, strformat, sets
+import results, strformat, sets, options
 
 import defs
 export defs
@@ -22,6 +22,12 @@ proc literal*(init: ResolvedLiteralInit): Literal = init.literal
 
 proc module_deps*(init: ResolvedLiteralInit): HashSet[UserModule] =
   init.module_ref.module_deps
+
+# LiteralInit
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    init: LiteralInit): Result[ResolvedLiteralInit, string] =
+  let module_ref = ? resolve(file, module, init.module)
+  ok(new_resolved_literal_init(module_ref, init.literal))
 
 # =============================================================================
 # ResolvedStructRef
@@ -55,6 +61,13 @@ proc name*(struct_ref: ResolvedStructRef): Result[Identifier, string] =
   of TSRK_NAMED: ok(struct_ref.name)
   of TSRK_DEFAULT: err(fmt"{struct_ref.location} expected a named struct")
 
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    struct_ref: StructRef): Result[ResolvedStructRef, string] =
+  let module_ref = ? resolve(file, module, struct_ref.module)
+  case struct_ref.kind:
+  of SRK_DEFAULT: ok(new_resolved_struct_ref(module_ref))
+  of SRK_NAMED: ok(new_resolved_struct_ref(module_ref, ? struct_ref.struct))
+
 # =============================================================================
 # ResolvedStructInit
 # =============================================================================
@@ -73,6 +86,12 @@ proc module_deps*(init: ResolvedStructInit): HashSet[UserModule] =
 proc location*(init: ResolvedStructInit): Location = init.struct_ref.location
 proc struct_ref*(init: ResolvedStructInit): ResolvedStructRef = init.struct_ref
 proc fields*(init: ResolvedStructInit): seq[KeywordArgument] = init.args
+
+# StructInit
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    init: StructInit): Result[ResolvedStructInit, string] =
+  let struct_ref = ? resolve(file, module, init.struct_ref)
+  ok(new_resolved_struct_init(struct_ref, init.args))
 
 # =============================================================================
 # ResolvedInitializer
@@ -113,3 +132,14 @@ proc module_deps*(init: ResolvedInitializer): HashSet[UserModule] =
   case init.kind:
   of TIK_LITERAL: init.literal.module_deps
   of TIK_STRUCT: init.struct.module_deps
+
+
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    init: Initializer): Result[ResolvedInitializer, string] =
+  case init.kind:
+  of IK_LITERAL:
+    let literal_init = ? init.literal
+    ok(new_resolved_initializer( ? resolve(file, module, literal_init)))
+  of IK_STRUCT:
+    let struct_init = ? init.struct
+    ok(new_resolved_initializer( ? resolve(file, module, struct_init)))

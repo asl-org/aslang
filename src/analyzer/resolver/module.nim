@@ -1,4 +1,4 @@
-import results, strformat, tables, sets, hashes, sequtils
+import results, strformat, tables, sets, hashes, sequtils, options
 
 import parser
 import expression
@@ -47,6 +47,14 @@ proc find_function*(generic: ResolvedGeneric,
     ok(generic.defs_map[def])
   else:
     err(fmt"failed to find function `{def.asl}`")
+
+proc resolve*(file: parser.File, module: Option[parser.Module],
+    generic: Generic, id: uint64): Result[ResolvedGeneric, string] =
+  var resolved_fndefs: seq[ResolvedUserFunctionDefinition]
+  for def in generic.defs:
+    let resolved_fndef = ? resolve(file, module, generic, def)
+    resolved_fndefs.add(resolved_fndef)
+  ok(new_resolved_generic(id, generic, resolved_fndefs, generic.location))
 
 # =============================================================================
 # ResolvedUserModule
@@ -195,3 +203,33 @@ proc module_deps*(module: ResolvedModule): HashSet[UserModule] =
   case module.kind:
   of TMK_NATIVE: init_hashset[UserModule]()
   of TMK_USER: module.user.module_deps
+
+proc resolve*(file: parser.File, module: parser.Module, id: uint64): Result[
+    ResolvedModule, string] =
+  # Generic resolution
+  var resolved_generics: seq[(Generic, ResolvedGeneric)]
+  for id, generic in module.generics:
+    let resolved_generic = ? resolve(file, some(module), generic, id.uint64)
+    resolved_generics.add((generic, resolved_generic))
+
+  var resolved_structs: seq[ResolvedStruct]
+  for id, struct in module.structs:
+    let resolved_struct = ? resolve(file, module, struct, id.uint64)
+    resolved_structs.add(resolved_struct)
+
+  var resolved_functions: seq[ResolvedFunction]
+  for function in module.functions:
+    let resolved_function = ? resolve(file, module, function)
+    resolved_functions.add(resolved_function)
+
+  # TODO: Eliminate un-necessary case block once the ExternFunction is evened out.
+  case module.kind:
+  of parser.MK_USER:
+    let resolved_user = new_resolved_user_module(id, module.name,
+        resolved_generics, resolved_structs, resolved_functions,
+        module.location)
+    ok(new_resolved_module(resolved_user))
+  of parser.MK_NATIVE:
+    let resolved_native = new_resolved_native_module(id, module.name,
+        resolved_generics, resolved_structs, resolved_functions)
+    ok(new_resolved_module(resolved_native))
