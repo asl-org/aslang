@@ -302,6 +302,22 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         functions_map: functions_map,
         function_defs_hash_map: function_defs_hash_map))
 
+proc new_user_module*(name: string, functions: seq[
+    ExternFunction]): Result[UserModule, ParserError] =
+  let name = new_identifier(name)
+  let user_module_def = new_module_definition(name, name.location)
+  let user_module_data = new_data()
+  let user_module_functions = functions.map_it(new_function(it))
+  new_user_module(user_module_def, @[], user_module_data, user_module_functions)
+
+proc new_user_module*(name: string, generics: seq[Generic], structs: seq[
+    Struct], functions: seq[ExternFunction]): Result[UserModule, ParserError] =
+  let name = new_identifier(name)
+  let user_module_def = new_module_definition(name, name.location)
+  let user_module_data = new_data(structs)
+  let user_module_functions = functions.map_it(new_function(it))
+  new_user_module(user_module_def, generics, user_module_data, user_module_functions)
+
 proc hash*(module: UserModule): Hash = module.def.hash
 proc `==`*(self: UserModule, other: UserModule): bool = self.hash == other.hash
 proc def*(module: UserModule): UserModuleDefinition = module.def
@@ -309,7 +325,6 @@ proc name*(module: UserModule): Identifier = module.def.name
 proc location*(module: UserModule): Location = module.def.location
 proc generics*(module: UserModule): seq[Generic] = module.generics
 proc structs*(module: UserModule): seq[Struct] = module.structs
-proc functions*(module: UserModule): seq[Function] = module.functions
 proc is_struct*(module: UserModule): bool = module.structs.len > 0
 
 proc module_ref*(module: UserModule): Result[ModuleRef, ParserError] =
@@ -382,23 +397,12 @@ type NativeModule* = ref object of RootObj
 
 proc new_native_module*(name: string, functions: seq[
     ExternFunction]): Result[NativeModule, ParserError] =
-  let name = new_identifier(name)
-  let user_module_def = new_module_definition(name, name.location)
-  let user_module_data = new_data()
-  let user_module_functions = functions.map_it(new_function(it))
-  let user_module = ? new_user_module(user_module_def, @[], user_module_data, user_module_functions)
-
+  let user_module = ? new_user_module(name, functions)
   ok(NativeModule(user_module: user_module))
 
 proc new_native_module*(name: string, generics: seq[Generic], structs: seq[
     Struct], functions: seq[ExternFunction]): Result[NativeModule, ParserError] =
-  let name = new_identifier(name)
-  let user_module_def = new_module_definition(name, name.location)
-  let user_module_data = new_data(structs)
-  let user_module_functions = functions.map_it(new_function(it))
-  let user_module = ? new_user_module(user_module_def, generics,
-      user_module_data, user_module_functions)
-
+  let user_module = ? new_user_module(name, generics, structs, functions)
   ok(NativeModule(user_module: user_module))
 
 proc name*(module: NativeModule): Identifier =

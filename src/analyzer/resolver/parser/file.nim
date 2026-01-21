@@ -12,19 +12,19 @@ type File* = ref object of RootObj
   indent: int
   modules: seq[Module]
   modules_map: Table[Identifier, int]
-  native_modules: seq[NativeModule]
+  native_modules: seq[UserModule]
   user_modules: seq[UserModule]
   functions: seq[Function]
 
 proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
-    functions: seq[Function], native_modules: seq[NativeModule]): Result[File, ParserError] =
+    functions: seq[Function], native_modules: seq[UserModule]): Result[File, ParserError] =
   if functions.len + user_modules.len == 0:
     return err(err_parser_empty_file(path))
 
   # NOTE: Build index to enable module look by name
   var modules: seq[Module]
   var modules_map: Table[Identifier, int]
-  var file_native_modules: seq[NativeModule]
+  var file_native_modules: seq[UserModule]
 
   for native_module in native_modules:
     if native_module.name in modules_map:
@@ -72,8 +72,10 @@ proc modules*(file: File): seq[Module] = file.modules
 proc modules_map*(file: File): Table[Identifier, int] = file.modules_map
 proc path*(file: File): string = file.path
 proc indent*(file: File): int = file.indent
-proc native_modules*(file: File): seq[NativeModule] = file.native_modules
-proc user_modules*(file: File): seq[UserModule] = file.user_modules
+proc native_modules*(file: File): seq[Module] = file.native_modules.map_it(
+    new_module(it))
+proc user_modules*(file: File): seq[Module] = file.user_modules.map_it(
+    new_module(it))
 proc functions*(file: File): seq[Function] = file.functions
 
 proc asl*(file: File): string =
@@ -100,7 +102,7 @@ proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
   else:
     err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")
 
-proc file_spec*(parser: Parser, native_modules: seq[NativeModule]): Result[File, ParserError] =
+proc file_spec*(parser: Parser, native_modules: seq[UserModule]): Result[File, ParserError] =
   var modules: seq[UserModule]
   var functions: seq[Function]
   while parser.can_parse():

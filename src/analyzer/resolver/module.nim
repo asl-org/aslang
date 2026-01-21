@@ -21,7 +21,7 @@ proc new_resolved_generic*(id: uint64, generic: Generic, defs: seq[
   ResolvedGeneric(id: id, generic: generic, defs: defs, defs_map: defs_map,
       location: location)
 
-proc module_deps*(generic: ResolvedGeneric): HashSet[UserModule] =
+proc module_deps*(generic: ResolvedGeneric): HashSet[Module] =
   accumulate_module_deps(generic.defs)
 
 proc id*(generic: ResolvedGeneric): uint64 = generic.id
@@ -85,7 +85,7 @@ proc new_resolved_user_module*(id: uint64, name: Identifier, generic_pairs: seq[
       generics_map: generics_map, structs: structs, functions: functions,
       functions_map: functions_map)
 
-proc module_deps*(module: ResolvedUserModule): HashSet[UserModule] =
+proc module_deps*(module: ResolvedUserModule): HashSet[Module] =
   var module_set = accumulate_module_deps(module.generics)
   module_set.incl(accumulate_module_deps(module.structs))
   module_set.incl(accumulate_module_deps(module.functions))
@@ -113,7 +113,7 @@ proc find_generic*(module: ResolvedUserModule, generic: Generic): Result[
 proc find_function*(module: ResolvedUserModule,
     def: ResolvedUserFunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
   if def in module.functions_map:
-    ok(module.functions_map[def].def)
+    ok((module.functions_map[def].def))
   else:
     err(fmt"2 - failed to find function `{def.asl}`")
 
@@ -199,10 +199,18 @@ proc functions*(module: ResolvedModule): seq[ResolvedUserFunctionDefinition] =
   of TMK_NATIVE: module.native.functions.map_it(it.def)
   of TMK_USER: module.user.functions.map_it(it.def)
 
-proc module_deps*(module: ResolvedModule): HashSet[UserModule] =
+proc module_deps*(module: ResolvedModule): HashSet[Module] =
   case module.kind:
-  of TMK_NATIVE: init_hashset[UserModule]()
+  of TMK_NATIVE: init_hashset[Module]()
   of TMK_USER: module.user.module_deps
+
+proc hash*(module: ResolvedModule): Hash =
+  case module.kind:
+  of TMK_NATIVE: module.native.hash
+  of TMK_USER: module.user.hash
+
+proc `==`*(self: ResolvedModule, other: ResolvedModule): bool =
+  self.hash == other.hash
 
 proc resolve*(file: parser.File, module: parser.Module, id: uint64): Result[
     ResolvedModule, string] =

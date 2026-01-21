@@ -47,16 +47,16 @@ export module
 import parser/file
 export file
 
-proc new_native_error_module(): Result[NativeModule, ParserError] =
+proc new_native_error_module(): Result[UserModule, ParserError] =
   let code_arg = ? new_argument_definition("S32", "code")
   let message_arg = ? new_argument_definition("String", "message")
   let struct = ? new_struct(new_struct_definition(Location()), @[code_arg, message_arg])
 
   var generics: seq[Generic]
   var functions: seq[ExternFunction]
-  new_native_module("Error", generics, @[struct], functions)
+  new_user_module("Error", generics, @[struct], functions)
 
-proc new_native_status_module(): Result[NativeModule, ParserError] =
+proc new_native_status_module(): Result[UserModule, ParserError] =
   let generic = new_generic(new_identifier("Value"), Location())
 
   let value_arg = ? new_argument_definition("Value", "value")
@@ -68,9 +68,9 @@ proc new_native_status_module(): Result[NativeModule, ParserError] =
   let err_struct = ? new_struct(err_branch, @[err_arg])
 
   var functions: seq[ExternFunction]
-  new_native_module("Status", @[generic], @[ok_struct, err_struct], functions)
+  new_user_module("Status", @[generic], @[ok_struct, err_struct], functions)
 
-proc new_native_array_module(): Result[NativeModule, ParserError] =
+proc new_native_array_module(): Result[UserModule, ParserError] =
   let generic = new_generic(new_identifier("Item"), Location())
 
   let size_arg = ? new_argument_definition("U64", "size")
@@ -120,34 +120,34 @@ proc new_native_array_module(): Result[NativeModule, ParserError] =
   let array_set_native_fn = new_extern_function(array_set_fn_def,
       "Array_set")
 
-  new_native_module("Array", @[generic], @[struct], @[
+  new_user_module("Array", @[generic], @[struct], @[
     array_init_native_fn, array_get_native_fn, array_set_native_fn
   ])
 
-proc native_modules(): Result[seq[NativeModule], ParserError] =
+proc native_modules(): Result[seq[UserModule], ParserError] =
   ok(@[
-    ? new_native_module("S8", @[
+    ? new_user_module("S8", @[
       ? new_extern_function("S8_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S8_read", "S8", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("S8_write", "Pointer", "write", @["S8",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("S16", @[
+    ? new_user_module("S16", @[
       ? new_extern_function("S16_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S16_read", "S16", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("S16_write", "Pointer", "write", @["S16",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("S32", @[
+    ? new_user_module("S32", @[
       ? new_extern_function("S32_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S32_read", "S32", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("S32_write", "Pointer", "write", @["S32",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("S64", @[
+    ? new_user_module("S64", @[
       ? new_extern_function("S64_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S64_read", "S64", "read", @["Pointer",
           "U64"]),
@@ -167,7 +167,7 @@ proc native_modules(): Result[seq[NativeModule], ParserError] =
       ? new_extern_function("S64_from_U8", "S64", "from", @["U8"]),
       ? new_extern_function("S64_from_U64", "S64", "from", @["U64"]),
     ]),
-    ? new_native_module("U8", @[
+    ? new_user_module("U8", @[
       ? new_extern_function("U8_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U8_read", "U8", "read", @["Pointer",
           "U64"]),
@@ -184,21 +184,21 @@ proc native_modules(): Result[seq[NativeModule], ParserError] =
       ? new_extern_function("U8_not", "U8", "not", @["U8"]),
       ? new_extern_function("U8_from_U64", "U8", "from", @["U64"]),
     ]),
-    ? new_native_module("U16", @[
+    ? new_user_module("U16", @[
       ? new_extern_function("U16_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U16_read", "U16", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("U16_write", "Pointer", "write", @["U16",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("U32", @[
+    ? new_user_module("U32", @[
       ? new_extern_function("U32_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U32_read", "U32", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("U32_write", "Pointer", "write", @["U32",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("U64", @[
+    ? new_user_module("U64", @[
       ? new_extern_function("U64_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U64_read", "U64", "read", @["Pointer",
           "U64"]),
@@ -225,28 +225,28 @@ proc native_modules(): Result[seq[NativeModule], ParserError] =
           "U64"]),
       ? new_extern_function("U64_not", "U64", "not", @["U64"]),
     ]),
-    ? new_native_module("F32", @[
+    ? new_user_module("F32", @[
       ? new_extern_function("F32_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("F32_read", "F32", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("F32_write", "Pointer", "write", @["F32",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("F64", @[
+    ? new_user_module("F64", @[
       ? new_extern_function("F64_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("F64_read", "F64", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("F64_write", "Pointer", "write", @["F64",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("String", @[
+    ? new_user_module("String", @[
       ? new_extern_function("String_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("String_read", "String", "read", @[
           "Pointer", "U64"]),
-      ? new_extern_function("F64_write", "Pointer", "write", @["String",
+      ? new_extern_function("String_write", "Pointer", "write", @["String",
           "Pointer", "U64"]),
     ]),
-    ? new_native_module("Pointer", @[
+    ? new_user_module("Pointer", @[
       ? new_extern_function("Pointer_byte_size", "U64", "byte_size", @[
           "U64"]),
       ? new_extern_function("Pointer_read", "Pointer", "read", @[
@@ -257,13 +257,15 @@ proc native_modules(): Result[seq[NativeModule], ParserError] =
     ? new_native_error_module(),
     ? new_native_status_module(),
     ? new_native_array_module(),
-    ? new_native_module("System", @[
+    ? new_user_module("System", @[
       ? new_extern_function("System_allocate", "Pointer", "allocate", @["U64"]),
       ? new_extern_function("System_free", "U64", "free", @["Pointer"]),
       ? new_extern_function("System_box_U8", "Pointer", "box", @["U8"]),
       ? new_extern_function("System_box_U64", "Pointer", "box", @["U64"]),
       ? new_extern_function("System_box_S32", "Pointer", "box", @["S32"]),
       ? new_extern_function("System_box_S64", "Pointer", "box", @["S64"]),
+      ? new_extern_function("System_box_Pointer", "Pointer", "box", @[
+          "Pointer"]),
       ? new_extern_function("System_print_U8", "U64", "print", @["U8"]),
       ? new_extern_function("System_print_U16", "U64", "print", @["U16"]),
       ? new_extern_function("System_print_U32", "U64", "print", @["U32"]),

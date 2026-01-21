@@ -76,10 +76,10 @@ proc make_resolved_module_ref(file: parser.File, module_name: string): Result[
   case module.kind:
   of MK_NATIVE:
     let native_module = module.native_module
-    ok(new_resolved_module_ref(native_module, Location()))
+    ok(new_resolved_module_ref(native_module, @[], Location()))
   of MK_USER:
     let user_module = module.user_module
-    let user_module_ref = new_resolved_module_ref(user_module, Location())
+    let user_module_ref = new_resolved_module_ref(user_module, @[], Location())
     ok(user_module_ref.self)
 
 # NOTE: This is a utility function to internally add some function definitions
@@ -99,10 +99,10 @@ proc make_resolved_function_def(file: parser.File, name: string, args: seq[(
   var resolved_arg_defs: seq[ResolvedArgumentDefinition]
   for (arg_module, arg_name) in args:
     resolved_arg_defs.add( ? make_resolved_arg_def(file, arg_module, arg_name))
-  ok(new_resolved_function_definition(name_id, resolved_arg_defs,
+  ok(new_resolved_user_function_definition(name_id, resolved_arg_defs,
       returns_module_ref, Location()))
 
-proc validate(module: ResolvedNativeModule,
+proc validate(module: ResolvedUserModule,
     integer_literal: IntegerLiteral): Result[void, string] =
   case module.name.asl:
   of "S8": safe_parse[int8](integer_literal.asl)
@@ -115,20 +115,20 @@ proc validate(module: ResolvedNativeModule,
   of "U64": safe_parse[uint64](integer_literal.asl)
   else: err("{integer_literal.location} integer can not be converted to module `{module.name.asl}`")
 
-proc validate(module: ResolvedNativeModule,
+proc validate(module: ResolvedUserModule,
     float_literal: FloatLiteral): Result[void, string] =
   case module.name.asl:
   of "F32": safe_parse[float32](float_literal.asl)
   of "F64": safe_parse[float64](float_literal.asl)
   else: err("{float_literal.location} float can not be converted to module `{module.name.asl}`")
 
-proc validate(module: ResolvedNativeModule,
+proc validate(module: ResolvedUserModule,
     string_literal: StringLiteral): Result[void, string] =
   case module.name.asl:
   of "String": ok()
   else: err("{string_literal.location} string can not be converted to module `{module.name.asl}`")
 
-proc validate*(module: ResolvedNativeModule, literal: Literal): Result[void, string] =
+proc validate*(module: ResolvedUserModule, literal: Literal): Result[void, string] =
   case literal.kind:
   of LK_INTEGER:
     let integer_literal = ? literal.integer_literal
@@ -141,17 +141,18 @@ proc validate*(module: ResolvedNativeModule, literal: Literal): Result[void, str
     validate(module, string_literal)
 
 proc resolve*(file: parser.File): Result[ResolvedFile, string] =
-  var native_modules: seq[(NativeModule, ResolvedModule)]
+  var native_modules: seq[(Module, ResolvedModule)]
+  var module_graph: Table[Module, HashSet[Module]]
+  var modules_map: Table[Module, ResolvedModule]
   for id, module in file.native_modules:
-    let resolved_module = ? resolve(file, parser.new_module(module),
-        id.uint64)
+    let resolved_module = ? resolve(file, module, id.uint64)
     native_modules.add((module, resolved_module))
+    module_graph[module] = resolved_module.module_deps
+    modules_map[module] = resolved_module
 
-  var module_graph: Table[UserModule, HashSet[UserModule]]
-  var modules_map: Table[UserModule, ResolvedModule]
   let offset = file.native_modules.len
   for id, module in file.user_modules:
-    let resolved_module = ? resolve(file, parser.new_module(module), (offset + id).uint64)
+    let resolved_module = ? resolve(file, module, (offset + id).uint64)
     let module_deps = resolved_module.module_deps
     module_graph[module] = module_deps
     modules_map[module] = resolved_module
@@ -159,7 +160,7 @@ proc resolve*(file: parser.File): Result[ResolvedFile, string] =
   # NOTE: Cycle detection and Topologically sort based on module dependencies.
   let maybe_module_order = detect_cycle(module_graph)
   if maybe_module_order.is_err:
-    let cycle = maybe_module_order.get
+    let cycle = maybe_module_order.error
     var message = @["CYCLIC DEPENDENCIES ENCOUNTERED"]
     for module in cycle:
       message.add(fmt"{module.location} {module.name.asl}")

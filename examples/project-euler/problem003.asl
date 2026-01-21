@@ -33,10 +33,10 @@ module Bitset:
         match set_status:
           case Ok { value: _ }:
             Status[Bitset].Ok { value: bitset }
-          else:
-            set_status
-      else:
-        get_status
+          case Err { error: temp }:
+            Status[Bitset].Err { error: temp }
+      case Err { error: temp }:
+        Status[Bitset].Err { error: temp }
 
   fn clear(Bitset bitset, U64 bit): Status[Bitset]
     arr = bitset.arr
@@ -52,10 +52,10 @@ module Bitset:
         match set_status:
           case Ok { value: _ }:
             Status[Bitset].Ok { value: bitset }
-          else:
-            set_status
-      else:
-        get_status
+          case Err { error: temp }:
+            Status[Bitset].Err { error: temp }
+      case Err { error: temp1 }:
+        Status[Bitset].Err { error: temp1 }
 
   fn toggle(Bitset bitset, U64 bit): Status[Bitset]
     status = Bitset.get(bitset, bit)
@@ -66,8 +66,8 @@ module Bitset:
             Bitset.set(bitset, bit)
           else:
             Bitset.clear(bitset, bit)
-      else:
-        status
+      case Err { error: temp }:
+        Status[Bitset].Err { error: temp }
 
 fn div_ceil(U64 a, U64 b): U64
   c = U64.add(a, b)

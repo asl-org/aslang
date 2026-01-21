@@ -38,7 +38,7 @@ proc compile*(filename: string, output: string): Result[void, string] =
 
   let output_file = filename.change_file_ext("c")
   ? write_file_safe(output_file, code)
-  let exit_code = exec_cmd(fmt"gcc -O3 {output_file} -o {output} -I .")
+  let exit_code = exec_cmd(fmt"gcc -O3 runtime.c {output_file} -o {output} -I .")
   if exit_code == 0:
     ? remove_file_safe(output_file)
     ok()

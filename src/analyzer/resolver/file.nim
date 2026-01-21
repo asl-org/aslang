@@ -1,4 +1,4 @@
-import results, strformat, tables, options
+import results, strformat, tables, options, sequtils
 
 import parser
 import module
@@ -11,30 +11,28 @@ type ResolvedFile* = ref object of RootObj
   name: string
   indent: int
   maybe_start_def: Option[ResolvedUserFunctionDefinition]
-  native_modules: seq[ResolvedNativeModule]
-  native_modules_map: Table[NativeModule, ResolvedNativeModule]
+  native_modules: seq[ResolvedModule]
+  native_modules_map: Table[Module, ResolvedModule]
   user_modules: seq[ResolvedUserModule]
-  user_modules_map: Table[UserModule, ResolvedUserModule]
+  user_modules_map: Table[Module, ResolvedUserModule]
   modules: seq[ResolvedModule]
   functions: seq[ResolvedUserFunction]
 
 proc new_resolved_file*(name: string, indent: int, maybe_start_def: Option[
-    ResolvedUserFunctionDefinition], native_modules: seq[(NativeModule,
+    ResolvedUserFunctionDefinition], native_modules: seq[(Module,
         ResolvedModule)], user_modules: seq[ResolvedModule],
-    user_modules_map: Table[UserModule, ResolvedModule], functions: seq[
+    user_modules_map: Table[Module, ResolvedModule], functions: seq[
     ResolvedUserFunction]): ResolvedFile =
-  var native_modules_map: Table[NativeModule, ResolvedNativeModule]
-  var resolved_native_modules: seq[ResolvedNativeModule]
+  var native_modules_map: Table[Module, ResolvedModule]
+  var resolved_native_modules: seq[ResolvedModule]
   for (native_module, resolved_module) in native_modules:
-    do_assert(resolved_module.kind == TMK_NATIVE, "expected native module")
-    let native = resolved_module.native.get
-    native_modules_map[native_module] = native
-    resolved_native_modules.add(native)
+    native_modules_map[native_module] = resolved_module
+    resolved_native_modules.add(resolved_module)
   var resolved_user_modules: seq[ResolvedUserModule]
   for resolved_module in user_modules:
     do_assert(resolved_module.kind == TMK_USER, "expected user module")
     resolved_user_modules.add(resolved_module.user.get)
-  var resolved_user_modules_map: Table[UserModule, ResolvedUserModule]
+  var resolved_user_modules_map: Table[Module, ResolvedUserModule]
   for user_module in user_modules_map.keys:
     let resolved_module = user_modules_map[user_module]
     do_assert(resolved_module.kind == TMK_USER, "expected user module")
@@ -61,24 +59,23 @@ proc start_def*(file: ResolvedFile): Result[ResolvedUserFunctionDefinition, stri
   of true: ok(file.maybe_start_def.get)
   of false: err(fmt"{file.path} failed to find `start` function")
 proc native_modules*(file: ResolvedFile): seq[
-    ResolvedNativeModule] = file.native_modules
+    ResolvedModule] = file.native_modules
 proc user_modules*(file: ResolvedFile): seq[
     ResolvedUserModule] = file.user_modules
-proc functions*(file: ResolvedFile): seq[ResolvedUserFunction] = file.functions
+proc functions*(file: ResolvedFile): seq[
+    ResolvedFunction] = file.functions.map_it(new_resolved_function(it))
 
 proc get_resolved_module*(file: ResolvedFile, module: parser.Module): Result[
     ResolvedModule, string] =
   case module.kind:
   of parser.MK_USER:
-    let user = module.user_module
-    if user in file.user_modules_map:
-      ok(new_resolved_module(file.user_modules_map[user]))
+    if module in file.user_modules_map:
+      ok(new_resolved_module(file.user_modules_map[module]))
     else:
       err("failed to find module `{user.name.asl}`")
   of parser.MK_NATIVE:
-    let native = module.native_module
-    if native in file.native_modules_map:
-      ok(new_resolved_module(file.native_modules_map[native]))
+    if module in file.native_modules_map:
+      ok(file.native_modules_map[module])
     else:
       err("failed to find native module `{native.name.asl}`")
 
@@ -86,7 +83,7 @@ proc find_module*(file: ResolvedFile, module_name: Identifier): Result[
     ResolvedModule, string] =
   for m, resolved_native in file.native_modules_map.pairs:
     if m.name == module_name:
-      return ok(new_resolved_module(resolved_native))
+      return ok(resolved_native)
   for m, resolved_user in file.user_modules_map.pairs:
     if m.name == module_name:
       return ok(new_resolved_module(resolved_user))
@@ -100,34 +97,16 @@ proc find_user_module*(file: ResolvedFile, module_name: Identifier): Result[
   err(fmt"{module_name.location} failed to find module `{module_name.asl}`")
 
 proc find_native_module*(file: ResolvedFile, module_name: Identifier): Result[
-    ResolvedNativeModule, string] =
+    ResolvedModule, string] =
   for m, resolved_native in file.native_modules_map.pairs:
     if m.name == module_name:
       return ok(resolved_native)
   err(fmt"{module_name.location} failed to find native module `{module_name.asl}`")
 
-proc find_module*(file: ResolvedFile, module: UserModule): Result[
-    ResolvedUserModule, string] =
-  if module in file.user_modules_map:
-    ok(file.user_modules_map[module])
-  else:
-    err("failed to find module `{module.name.asl}`")
-
-proc find_module*(file: ResolvedFile, module: NativeModule): Result[
-    ResolvedNativeModule, string] =
+proc find_module*(file: ResolvedFile, module: Module): Result[ResolvedModule, string] =
   if module in file.native_modules_map:
     ok(file.native_modules_map[module])
+  elif module in file.user_modules_map:
+    ok(new_resolved_module(file.user_modules_map[module]))
   else:
-    err("failed to find native module `{module.name.asl}`")
-
-proc find_module*(file: ResolvedFile, module: parser.Module): Result[
-    ResolvedModule, string] =
-  case module.kind:
-  of parser.MK_USER:
-    let user = module.user_module
-    let resolved = ? find_module(file, user)
-    ok(new_resolved_module(resolved))
-  of parser.MK_NATIVE:
-    let native = module.native_module
-    let resolved = ? find_module(file, native)
-    ok(new_resolved_module(resolved))
+    err("failed to find module `{module.name.asl}`")
