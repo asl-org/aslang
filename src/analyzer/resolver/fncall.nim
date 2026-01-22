@@ -26,9 +26,9 @@ proc new_resolved_function_ref*(module_ref: ResolvedModuleRef, name: Identifier,
     arity: uint): ResolvedUserFunctionRef =
   ResolvedUserFunctionRef(kind: TFRK_MODULE, module_ref: module_ref, name: name, arity: arity)
 
-proc module_deps*(fnref: ResolvedUserFunctionRef): HashSet[UserModule] =
+proc module_deps*(fnref: ResolvedUserFunctionRef): HashSet[Module] =
   case fnref.kind:
-  of TFRK_LOCAL: init_hashset[UserModule]()
+  of TFRK_LOCAL: init_hashset[Module]()
   of TFRK_MODULE: fnref.module_ref.module_deps
 
 proc location*(fnref: ResolvedUserFunctionRef): Location =
@@ -65,7 +65,7 @@ proc new_resolved_function_call*(fnref: ResolvedUserFunctionRef, args: seq[
     Argument]): ResolvedUserFunctionCall =
   ResolvedUserFunctionCall(fnref: fnref, args: args)
 
-proc module_deps*(fncall: ResolvedUserFunctionCall): HashSet[UserModule] =
+proc module_deps*(fncall: ResolvedUserFunctionCall): HashSet[Module] =
   fncall.fnref.module_deps
 
 proc location*(fncall: ResolvedUserFunctionCall): Location = fncall.fnref.location
@@ -89,8 +89,8 @@ proc new_resolved_struct_get*(variable: Identifier,
     field: Identifier): ResolvedStructGet =
   ResolvedStructGet(variable: variable, field: field)
 
-proc module_deps*(struct_get: ResolvedStructGet): HashSet[UserModule] =
-  init_hashset[UserModule]()
+proc module_deps*(struct_get: ResolvedStructGet): HashSet[Module] =
+  init_hashset[Module]()
 
 proc location*(struct_get: ResolvedStructGet): Location = struct_get.variable.location
 proc variable*(struct_get: ResolvedStructGet): Identifier = struct_get.variable
@@ -109,5 +109,5 @@ proc new_resolved_variable*(name: Identifier): ResolvedVariable =
 proc location*(variable: ResolvedVariable): Location = variable.name.location
 proc name*(variable: ResolvedVariable): Identifier = variable.name
 
-proc module_deps*(variable: ResolvedVariable): HashSet[UserModule] =
-  init_hashset[UserModule]()
+proc module_deps*(variable: ResolvedVariable): HashSet[Module] =
+  init_hashset[Module]()

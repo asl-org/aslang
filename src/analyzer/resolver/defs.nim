@@ -21,7 +21,7 @@ proc concretize*(def: ResolvedArgumentDefinition, generic: Generic,
   let concrete_module_ref = concretize(def.module_ref, generic, module_ref)
   new_resolved_argument_definition(concrete_module_ref, def.name)
 
-proc module_deps*(arg: ResolvedArgumentDefinition): HashSet[UserModule] =
+proc module_deps*(arg: ResolvedArgumentDefinition): HashSet[Module] =
   arg.module_ref.module_deps
 
 proc hash*(def: ResolvedArgumentDefinition): Hash =
@@ -47,13 +47,13 @@ type ResolvedUserFunctionDefinition* = ref object of RootObj
   returns: ResolvedModuleRef
   location: Location
 
-proc new_resolved_function_definition*(name: Identifier, args: seq[
+proc new_resolved_user_function_definition*(name: Identifier, args: seq[
     ResolvedArgumentDefinition], returns: ResolvedModuleRef,
     location: Location): ResolvedUserFunctionDefinition =
   ResolvedUserFunctionDefinition(name: name, args: args, returns: returns,
       location: location)
 
-proc module_deps*(def: ResolvedUserFunctionDefinition): HashSet[UserModule] =
+proc module_deps*(def: ResolvedUserFunctionDefinition): HashSet[Module] =
   var module_set = accumulate_module_deps(def.args)
   module_set.incl(def.returns.module_deps)
   module_set
@@ -88,7 +88,8 @@ proc concretize*(def: ResolvedUserFunctionDefinition, generic: Generic,
     let concrete_arg = arg.concretize(generic, module_ref)
     concrete_args.add(concrete_arg)
   let concrete_returns = def.returns.concretize(generic, module_ref)
-  new_resolved_function_definition(def.name, concrete_args, concrete_returns, def.location)
+  new_resolved_user_function_definition(def.name, concrete_args,
+      concrete_returns, def.location)
 
 proc resolve*(file: parser.File, module: Option[parser.Module],
     generic: Generic, def: FunctionDefinition): Result[
@@ -98,7 +99,8 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
     let resolved_arg = ? resolve(file, module, arg)
     resolved_args.add(resolved_arg)
   let resolved_return = ? resolve(file, module, def.returns)
-  ok(new_resolved_function_definition(def.name, resolved_args, resolved_return, def.location))
+  ok(new_resolved_user_function_definition(def.name, resolved_args,
+      resolved_return, def.location))
 
 proc resolve*(file: parser.File, module: Option[parser.Module],
     def: FunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
@@ -106,7 +108,8 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
   for arg in def.args:
     resolved_args.add( ? resolve(file, module, arg))
   let resolved_return = ? resolve(file, module, def.returns)
-  ok(new_resolved_function_definition(def.name, resolved_args, resolved_return, def.location))
+  ok(new_resolved_user_function_definition(def.name, resolved_args,
+      resolved_return, def.location))
 
 # =============================================================================
 # ResolvedStruct
@@ -132,7 +135,7 @@ proc new_resolved_struct*(id: uint64, name: Identifier, fields: seq[
   ResolvedStruct(kind: TSK_NAMED, id: id, name: name, fields: fields,
       location: location)
 
-proc module_deps*(struct: ResolvedStruct): HashSet[UserModule] =
+proc module_deps*(struct: ResolvedStruct): HashSet[Module] =
   accumulate_module_deps(struct.fields)
 
 proc id*(struct: ResolvedStruct): uint64 = struct.id

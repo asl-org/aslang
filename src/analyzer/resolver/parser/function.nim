@@ -121,16 +121,16 @@ proc extern_header_spec(parser: Parser, indent: int): Result[Identifier, ParserE
   discard ? parser.expect(indent_spec, indent)
   discard ? parser.expect(extern_keyword_spec)
   discard ? parser.expect(strict_space_spec)
-  let native = ? parser.expect(identifier_spec)
+  let extern = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
-  ok(native)
+  ok(extern)
 
 proc extern_function_spec*(parser: Parser, indent: int): Result[ExternFunction, ParserError] =
-  let native = ? parser.expect(extern_header_spec, indent)
+  let extern = ? parser.expect(extern_header_spec, indent)
   discard ? parser.expect(strict_empty_line_spec)
   let def = ? parser.expect(function_definition_spec, indent + 1)
-  ok(new_extern_function(def, native.asl))
+  ok(new_extern_function(def, extern.asl))
 
 proc function_spec*(parser: Parser, indent: int): Result[Function, ParserError] =
   var errors: seq[ParserError]

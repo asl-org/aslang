@@ -12,39 +12,23 @@ type File* = ref object of RootObj
   indent: int
   modules: seq[Module]
   modules_map: Table[Identifier, int]
-  native_modules: seq[NativeModule]
-  user_modules: seq[UserModule]
   functions: seq[Function]
 
-proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
-    functions: seq[Function], native_modules: seq[NativeModule]): Result[File, ParserError] =
-  if functions.len + user_modules.len == 0:
+proc new_file*(path: string, indent: int, modules: seq[Module],
+    functions: seq[Function]): Result[File, ParserError] =
+  if functions.len + modules.len == 0:
     return err(err_parser_empty_file(path))
 
   # NOTE: Build index to enable module look by name
-  var modules: seq[Module]
   var modules_map: Table[Identifier, int]
-  var file_native_modules: seq[NativeModule]
 
-  for native_module in native_modules:
-    if native_module.name in modules_map:
-      return err(err_parser_native_module_already_defined(
-          native_module.name.asl))
-    file_native_modules.add(native_module)
-    let module = new_module(native_module)
-    modules_map[module.name] = modules.len
-    modules.add(module)
-
-  for user_module in user_modules:
-    if user_module.name in modules_map:
+  for id, module in modules:
+    if module.name in modules_map:
       let predefined_module_location = modules[modules_map[
-          user_module.name]].location
-      return err(err_parseR_module_already_defined(user_module.location,
-          user_module.name.asl, predefined_module_location))
-
-    let module = new_module(user_module)
-    modules_map[module.name] = modules.len
-    modules.add(module)
+          module.name]].location
+      return err(err_parseR_module_already_defined(module.location,
+          module.name.asl, predefined_module_location))
+    modules_map[module.name] = id
 
   # NOTE: Build index to enable function look up by definition
   var function_defs_hash_map: Table[Hash, int]
@@ -64,23 +48,20 @@ proc new_file*(path: string, indent: int, user_modules: seq[UserModule],
           function.name.asl, predefined_function_location))
     function_defs_hash_map[def_hash] = index
 
-  ok(File(path: path, indent: indent, native_modules: file_native_modules,
-      user_modules: user_modules, modules: modules, modules_map: modules_map,
-      functions: functions))
+  ok(File(path: path, indent: indent, modules: modules,
+      modules_map: modules_map, functions: functions))
 
 proc modules*(file: File): seq[Module] = file.modules
 proc modules_map*(file: File): Table[Identifier, int] = file.modules_map
 proc path*(file: File): string = file.path
 proc indent*(file: File): int = file.indent
-proc native_modules*(file: File): seq[NativeModule] = file.native_modules
-proc user_modules*(file: File): seq[UserModule] = file.user_modules
 proc functions*(file: File): seq[Function] = file.functions
 
 proc asl*(file: File): string =
   var lines: seq[string]
   let indent = " ".repeat(file.indent)
 
-  for module in file.user_modules:
+  for module in file.modules:
     for line in module.asl(indent):
       lines.add(line)
     lines.add("\n")
@@ -100,8 +81,8 @@ proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
   else:
     err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")
 
-proc file_spec*(parser: Parser, native_modules: seq[NativeModule]): Result[File, ParserError] =
-  var modules: seq[UserModule]
+proc file_spec*(parser: Parser, builtin_modules: seq[Module]): Result[File, ParserError] =
+  var modules = builtin_modules
   var functions: seq[Function]
   while parser.can_parse():
     var errors: seq[ParserError]
@@ -118,4 +99,4 @@ proc file_spec*(parser: Parser, native_modules: seq[NativeModule]): Result[File,
     # NOTE: Error out if the parser failed to parse both module and function
     if errors.len == 2: return err(errors.max())
 
-  new_file(parser.path(), parser.indent(), modules, functions, native_modules)
+  new_file(parser.path(), parser.indent(), modules, functions)

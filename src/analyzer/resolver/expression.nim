@@ -55,9 +55,9 @@ proc new_resolved_expression*(variable: ResolvedVariable): ResolvedExpression =
   ResolvedExpression(kind: TEK_VARIABLE, variable: variable)
 
 # Forward declaration for mutual recursion
-proc module_deps*(match: ResolvedMatch): HashSet[UserModule]
+proc module_deps*(match: ResolvedMatch): HashSet[Module]
 
-proc module_deps*(expression: ResolvedExpression): HashSet[UserModule] =
+proc module_deps*(expression: ResolvedExpression): HashSet[Module] =
   case expression.kind:
   of TEK_MATCH: expression.match.module_deps
   of TEK_FNCALL: expression.fncall.module_deps
@@ -127,7 +127,7 @@ proc new_resolved_statement*(arg: Identifier,
     expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(arg: arg, expression: expression)
 
-proc module_deps*(statement: ResolvedStatement): HashSet[UserModule] =
+proc module_deps*(statement: ResolvedStatement): HashSet[Module] =
   statement.expression.module_deps
 
 proc arg*(statement: ResolvedStatement): Identifier = statement.arg
@@ -157,7 +157,7 @@ proc pattern*(case_block: ResolvedCase): CasePattern = case_block.pattern
 proc statements*(case_block: ResolvedCase): seq[
     ResolvedStatement] = case_block.statements
 
-proc module_deps*(case_block: ResolvedCase): HashSet[UserModule] =
+proc module_deps*(case_block: ResolvedCase): HashSet[Module] =
   accumulate_module_deps(case_block.statements)
 
 proc resolve(file: parser.File, module: Option[parser.Module],
@@ -176,7 +176,7 @@ proc location*(else_block: ResolvedElse): Location = else_block.location
 proc statements*(else_block: ResolvedElse): seq[
     ResolvedStatement] = else_block.statements
 
-proc module_deps*(else_block: ResolvedElse): HashSet[UserModule] =
+proc module_deps*(else_block: ResolvedElse): HashSet[Module] =
   accumulate_module_deps(else_block.statements)
 
 proc resolve(file: parser.File, module: Option[parser.Module],
@@ -207,7 +207,7 @@ proc else_block*(match: ResolvedMatch): Result[ResolvedElse, string] =
   of TMK_CASE_ONLY: err(fmt"{match.location} expected an else block")
   of TMK_COMPLETE: ok(match.else_block)
 
-proc module_deps*(match: ResolvedMatch): HashSet[UserModule] =
+proc module_deps*(match: ResolvedMatch): HashSet[Module] =
   var module_set = accumulate_module_deps(match.case_blocks)
   case match.kind:
   of TMK_CASE_ONLY: discard
@@ -242,7 +242,7 @@ proc new_resolved_user_function*(def: ResolvedUserFunctionDefinition,
     steps: seq[ResolvedStatement]): ResolvedUserFunction =
   ResolvedUserFunction(def: def, steps: steps)
 
-proc module_deps*(function: ResolvedUserFunction): HashSet[UserModule] =
+proc module_deps*(function: ResolvedUserFunction): HashSet[Module] =
   var module_set = function.def.module_deps
   module_set.incl(accumulate_module_deps(function.steps))
   module_set
@@ -270,9 +270,11 @@ proc new_resolved_native_function*(native: string,
 
 proc native*(function: ResolvedNativeFunction): string = function.native
 proc def*(function: ResolvedNativeFunction): ResolvedUserFunctionDefinition = function.def
+proc module_deps*(function: ResolvedNativeFunction): HashSet[Module] =
+  init_hashset[Module]()
 
 type
-  ResolvedFunctionKind = enum
+  ResolvedFunctionKind* = enum
     RFK_USER, RFK_EXTERN
   ResolvedFunction* = ref object of RootObj
     case kind: ResolvedFunctionKind
@@ -284,6 +286,13 @@ proc new_resolved_function*(function: ResolvedUserFunction): ResolvedFunction =
 
 proc new_resolved_function*(function: ResolvedNativeFunction): ResolvedFunction =
   ResolvedFunction(kind: RFK_EXTERN, extern: function)
+
+proc kind*(function: ResolvedFunction): ResolvedFunctionKind = function.kind
+
+proc extern_name*(function: ResolvedFunction): Option[string] =
+  case function.kind:
+  of RFK_EXTERN: some(function.extern.native)
+  of RFK_USER: none(string)
 
 proc extern*(function: ResolvedFunction): ResolvedNativeFunction =
   doAssert function.kind == RFK_EXTERN, "expected extern function"
@@ -298,23 +307,19 @@ proc def*(function: ResolvedFunction): ResolvedUserFunctionDefinition =
   of RFK_EXTERN: function.extern.def
   of RFK_USER: function.user.def
 
-proc module_deps*(function: ResolvedFunction): HashSet[UserModule] =
+proc module_deps*(function: ResolvedFunction): HashSet[Module] =
   case function.kind:
   of RFK_USER: function.user.module_deps
-  of RFK_EXTERN: init_hashset[UserModule]()
+  of RFK_EXTERN: function.extern.module_deps
 
 proc resolve*(file: parser.File, module: parser.Module,
     function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of FK_EXTERN:
-    case module.kind:
-    of parser.MK_NATIVE:
-      let resolved_def = ? resolve(file, some(module), function.def)
-      let native_function = new_resolved_native_function(
-          function.extern_func.extern, resolved_def)
-      ok(new_resolved_function(native_function))
-    of parser.MK_USER:
-      err("extern functions must belong to a native module")
+    let resolved_def = ? resolve(file, some(module), function.def)
+    let native_function = new_resolved_native_function(
+        function.extern_func.extern, resolved_def)
+    ok(new_resolved_function(native_function))
   of FK_USER:
     let resolved_def = ? resolve(file, some(module), function.def)
     let resolved_steps = ? resolve(file, some(module), function.steps)

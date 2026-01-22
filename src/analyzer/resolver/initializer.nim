@@ -20,7 +20,7 @@ proc location*(init: ResolvedLiteralInit): Location = init.module_ref.location
 proc module_ref*(init: ResolvedLiteralInit): ResolvedModuleRef = init.module_ref
 proc literal*(init: ResolvedLiteralInit): Literal = init.literal
 
-proc module_deps*(init: ResolvedLiteralInit): HashSet[UserModule] =
+proc module_deps*(init: ResolvedLiteralInit): HashSet[Module] =
   init.module_ref.module_deps
 
 # LiteralInit
@@ -49,7 +49,7 @@ proc new_resolved_struct_ref*(module_ref: ResolvedModuleRef,
     name: Identifier): ResolvedStructRef =
   ResolvedStructRef(kind: TSRK_NAMED, module_ref: module_ref, name: name)
 
-proc module_deps*(struct_ref: ResolvedStructRef): HashSet[UserModule] =
+proc module_deps*(struct_ref: ResolvedStructRef): HashSet[Module] =
   struct_ref.module_ref.module_deps
 
 proc location*(struct_ref: ResolvedStructRef): Location = struct_ref.module_ref.location
@@ -80,7 +80,7 @@ proc new_resolved_struct_init*(struct_ref: ResolvedStructRef, args: seq[
     KeywordArgument]): ResolvedStructInit =
   ResolvedStructInit(struct_ref: struct_ref, args: args)
 
-proc module_deps*(init: ResolvedStructInit): HashSet[UserModule] =
+proc module_deps*(init: ResolvedStructInit): HashSet[Module] =
   init.struct_ref.module_deps
 
 proc location*(init: ResolvedStructInit): Location = init.struct_ref.location
@@ -128,7 +128,7 @@ proc literal*(init: ResolvedInitializer): Result[ResolvedLiteralInit, string] =
   of TIK_LITERAL: ok(init.literal)
   else: err(fmt"{init.location} expected a literal initializer")
 
-proc module_deps*(init: ResolvedInitializer): HashSet[UserModule] =
+proc module_deps*(init: ResolvedInitializer): HashSet[Module] =
   case init.kind:
   of TIK_LITERAL: init.literal.module_deps
   of TIK_STRUCT: init.struct.module_deps
