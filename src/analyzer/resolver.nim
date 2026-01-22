@@ -73,14 +73,8 @@ proc make_resolved_module_ref(file: parser.File, module_name: string): Result[
     ResolvedModuleRef, string] =
   let module_id = new_identifier(module_name)
   let module = ? file.find_module(module_id)
-  case module.kind:
-  of MK_NATIVE:
-    let native_module = module.native_module
-    ok(new_resolved_module_ref(native_module, @[], Location()))
-  of MK_USER:
-    let user_module = module.user_module
-    let user_module_ref = new_resolved_module_ref(user_module, @[], Location())
-    ok(user_module_ref.self)
+  let user_module_ref = new_resolved_module_ref(module, @[], Location())
+  ok(user_module_ref.self)
 
 # NOTE: This is a utility function to internally add some function definitions
 # like `byte_size`, `read`, `write`
@@ -141,18 +135,10 @@ proc validate*(module: ResolvedUserModule, literal: Literal): Result[void, strin
     validate(module, string_literal)
 
 proc resolve*(file: parser.File): Result[ResolvedFile, string] =
-  var native_modules: seq[(Module, ResolvedModule)]
   var module_graph: Table[Module, HashSet[Module]]
   var modules_map: Table[Module, ResolvedModule]
-  for id, module in file.native_modules:
+  for id, module in file.modules:
     let resolved_module = ? resolve(file, module, id.uint64)
-    native_modules.add((module, resolved_module))
-    module_graph[module] = resolved_module.module_deps
-    modules_map[module] = resolved_module
-
-  let offset = file.native_modules.len
-  for id, module in file.user_modules:
-    let resolved_module = ? resolve(file, module, (offset + id).uint64)
     let module_deps = resolved_module.module_deps
     module_graph[module] = module_deps
     modules_map[module] = resolved_module
@@ -184,6 +170,5 @@ proc resolve*(file: parser.File): Result[ResolvedFile, string] =
 
   if maybe_start_def.is_none:
     return err(fmt"{file.path} failed to find `start` function")
-
   ok(new_resolved_file(file.path, file.indent, maybe_start_def,
-      native_modules, resolved_modules, modules_map, resolved_functions))
+      resolved_modules, modules_map, resolved_functions))

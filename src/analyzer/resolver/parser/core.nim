@@ -170,9 +170,6 @@ proc err_parser_module_already_defined*(location: Location, name: string,
 proc err_parser_empty_file*(path: string): ParserError =
   new_parser_error(new_location(path), fmt"expected file to have at least a function or module")
 
-proc err_parser_native_module_already_defined*(name: string): ParserError =
-  new_parser_error(Location(), fmt"[INTERNAL] Native module `{name} is defined twice")
-
 proc err_parser_function_module_conflict*(function_location: Location,
     function_name: string, module_location: Location,
     module_name: string): ParserError =

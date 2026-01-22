@@ -33,10 +33,10 @@ proc module_definition_spec*(parser: Parser): Result[UserModuleDefinition, Parse
   ok(new_module_definition(name, module_keyword.location))
 
 # =============================================================================
-# UserModule
+# Module
 # =============================================================================
 
-type UserModule* = ref object of RootObj
+type Module* = ref object of RootObj
   def: UserModuleDefinition
   generics: seq[Generic]
   generics_map: Table[Identifier, int]
@@ -48,8 +48,8 @@ type UserModule* = ref object of RootObj
   functions_map: Table[Identifier, seq[int]]
   function_defs_hash_map: Table[Hash, int]
 
-proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
-    data: Data, functions: seq[Function]): Result[UserModule, ParserError] =
+proc new_module*(def: UserModuleDefinition, generics: seq[Generic],
+    data: Data, functions: seq[Function]): Result[Module, ParserError] =
   if functions.len == 0 and data.kind == DK_NONE:
     if generics.len == 0:
       return err(err_parser_empty_module(def.location, def.name.asl))
@@ -119,7 +119,7 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         functions_map[function.name] = new_seq[int]()
       functions_map[function.name].add(index)
 
-    ok(UserModule(def: def, structs: structs, structs_map: structs_map,
+    ok(Module(def: def, structs: structs, structs_map: structs_map,
         default_struct_index: default_struct_index, generics: generics,
         generics_map: generics_map, functions: functions,
         functions_map: functions_map,
@@ -152,7 +152,7 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         functions_map[function.name] = new_seq[int]()
       functions_map[function.name].add(index)
 
-    ok(UserModule(def: def, structs: @[struct], data: data,
+    ok(Module(def: def, structs: @[struct], data: data,
         default_struct_index: 0, generics: generics, generics_map: generics_map,
         functions: functions, functions_map: functions_map,
         function_defs_hash_map: function_defs_hash_map))
@@ -184,7 +184,7 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         functions_map[function.name] = new_seq[int]()
       functions_map[function.name].add(index)
 
-    ok(UserModule(def: def, data: data,
+    ok(Module(def: def, data: data,
         default_struct_index: default_struct_index, generics: generics,
         generics_map: generics_map, functions: functions,
         functions_map: functions_map,
@@ -240,7 +240,7 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         functions_map[function.name] = new_seq[int]()
       functions_map[function.name].add(index)
 
-    ok(UserModule(def: def, structs: structs, structs_map: structs_map,
+    ok(Module(def: def, structs: structs, structs_map: structs_map,
         default_struct_index: default_struct_index, generics: generics,
         generics_map: generics_map, functions: functions,
         functions_map: functions_map,
@@ -296,51 +296,52 @@ proc new_user_module*(def: UserModuleDefinition, generics: seq[Generic],
         functions_map[function.name] = new_seq[int]()
       functions_map[function.name].add(index)
 
-    ok(UserModule(def: def, structs: structs, structs_map: structs_map,
+    ok(Module(def: def, structs: structs, structs_map: structs_map,
         default_struct_index: default_struct_index, generics: generics,
         generics_map: generics_map, functions: functions,
         functions_map: functions_map,
         function_defs_hash_map: function_defs_hash_map))
 
-proc new_user_module*(name: string, functions: seq[
-    ExternFunction]): Result[UserModule, ParserError] =
+proc new_module*(name: string, functions: seq[
+    ExternFunction]): Result[Module, ParserError] =
   let name = new_identifier(name)
-  let user_module_def = new_module_definition(name, name.location)
-  let user_module_data = new_data()
-  let user_module_functions = functions.map_it(new_function(it))
-  new_user_module(user_module_def, @[], user_module_data, user_module_functions)
+  let module_def = new_module_definition(name, name.location)
+  let module_data = new_data()
+  let module_functions = functions.map_it(new_function(it))
+  new_module(module_def, @[], module_data, module_functions)
 
-proc new_user_module*(name: string, generics: seq[Generic], structs: seq[
-    Struct], functions: seq[ExternFunction]): Result[UserModule, ParserError] =
+proc new_module*(name: string, generics: seq[Generic], structs: seq[
+    Struct], functions: seq[ExternFunction]): Result[Module, ParserError] =
   let name = new_identifier(name)
-  let user_module_def = new_module_definition(name, name.location)
-  let user_module_data = new_data(structs)
-  let user_module_functions = functions.map_it(new_function(it))
-  new_user_module(user_module_def, generics, user_module_data, user_module_functions)
+  let module_def = new_module_definition(name, name.location)
+  let module_data = new_data(structs)
+  let module_functions = functions.map_it(new_function(it))
+  new_module(module_def, generics, module_data, module_functions)
 
-proc hash*(module: UserModule): Hash = module.def.hash
-proc `==`*(self: UserModule, other: UserModule): bool = self.hash == other.hash
-proc def*(module: UserModule): UserModuleDefinition = module.def
-proc name*(module: UserModule): Identifier = module.def.name
-proc location*(module: UserModule): Location = module.def.location
-proc generics*(module: UserModule): seq[Generic] = module.generics
-proc structs*(module: UserModule): seq[Struct] = module.structs
-proc is_struct*(module: UserModule): bool = module.structs.len > 0
+proc hash*(module: Module): Hash = module.def.hash
+proc `==`*(self: Module, other: Module): bool = self.hash == other.hash
+proc def*(module: Module): UserModuleDefinition = module.def
+proc name*(module: Module): Identifier = module.def.name
+proc location*(module: Module): Location = module.def.location
+proc generics*(module: Module): seq[Generic] = module.generics
+proc structs*(module: Module): seq[Struct] = module.structs
+proc functions*(module: Module): seq[Function] = module.functions
+proc is_struct*(module: Module): bool = module.structs.len > 0
 
-proc module_ref*(module: UserModule): Result[ModuleRef, ParserError] =
+proc module_ref*(module: Module): Result[ModuleRef, ParserError] =
   if module.generics.len > 0:
     let children = module.generics.map_it(new_module_ref(it.name))
     new_module_ref(module.name, children)
   else:
     ok(new_module_ref(module.name))
 
-proc find_generic*(module: UserModule, name: Identifier): Result[Generic, string] =
+proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =
   if name notin module.generics_map:
     err(fmt"{name.location} [PE154] module `{module.name.asl}` does not have any generic named `{name.asl}`")
   else:
     ok(module.generics[module.generics_map[name]])
 
-proc asl*(module: UserModule, indent: string): seq[string] =
+proc asl*(module: Module, indent: string): seq[string] =
   var lines = @[module.def.asl]
   for generic in module.generics:
     for line in generic.asl(indent):
@@ -377,7 +378,7 @@ proc function_list_spec(parser: Parser, indent: int): Result[seq[Function], Pars
     maybe_function = parser.expect(function_spec, indent + 1)
   ok(functions)
 
-proc module_spec*(parser: Parser, indent: int): Result[UserModule, ParserError] =
+proc module_spec*(parser: Parser, indent: int): Result[Module, ParserError] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
   discard ? parser.expect(optional_empty_line_spec)
@@ -386,154 +387,4 @@ proc module_spec*(parser: Parser, indent: int): Result[UserModule, ParserError] 
   let data = ? parser.expect(data_spec, indent)
   discard ? parser.expect(optional_empty_line_spec)
   let functions = ? parser.expect(function_list_spec, indent)
-  new_user_module(def, generics, data, functions)
-
-# =============================================================================
-# NativeModule
-# =============================================================================
-
-type NativeModule* = ref object of RootObj
-  user_module: UserModule
-
-proc new_native_module*(name: string, functions: seq[
-    ExternFunction]): Result[NativeModule, ParserError] =
-  let user_module = ? new_user_module(name, functions)
-  ok(NativeModule(user_module: user_module))
-
-proc new_native_module*(name: string, generics: seq[Generic], structs: seq[
-    Struct], functions: seq[ExternFunction]): Result[NativeModule, ParserError] =
-  let user_module = ? new_user_module(name, generics, structs, functions)
-  ok(NativeModule(user_module: user_module))
-
-proc name*(module: NativeModule): Identifier =
-  module.user_module.name
-
-proc hash*(module: NativeModule): Hash =
-  module.name.hash
-
-proc generics*(module: NativeModule): seq[Generic] =
-  module.user_module.generics
-
-proc structs*(module: NativeModule): seq[Struct] =
-  module.user_module.structs
-
-proc functions*(module: NativeModule): seq[Function] =
-  var functions: seq[Function]
-  for function in module.user_module.functions:
-    case function.kind:
-    of FK_EXTERN: functions.add(new_function(function.extern_func))
-    of FK_USER: discard
-  functions
-
-proc all_functions*(module: NativeModule): seq[Function] =
-  module.user_module.functions
-
-proc module_ref*(module: NativeModule): Result[ModuleRef, ParserError] =
-  ok(new_module_ref(module.name))
-
-proc find_generic*(module: NativeModule, name: Identifier): Result[Generic, string] =
-  module.user_module.find_generic(name)
-
-# =============================================================================
-# Module (Unified)
-# =============================================================================
-
-type
-  ModuleKind* = enum
-    MK_NATIVE, MK_USER
-  Module* = ref object of RootObj
-    case kind: ModuleKind
-    of MK_NATIVE: native: NativeModule
-    of MK_USER: user: UserModule
-
-proc new_module*(native: NativeModule): Module =
-  Module(kind: MK_NATIVE, native: native)
-
-proc new_module*(user: UserModule): Module =
-  Module(kind: MK_USER, user: user)
-
-proc kind*(module: Module): ModuleKind = module.kind
-
-proc hash*(module: Module): Hash =
-  case module.kind:
-  of MK_USER: module.user.hash
-  of MK_NATIVE: module.native.hash
-
-proc `==`*(self: Module, other: Module): bool =
-  self.hash == other.hash
-
-proc module_ref*(module: Module): Result[ModuleRef, ParserError] =
-  case module.kind:
-  of MK_NATIVE: module.native.module_ref
-  of MK_USER: module.user.module_ref
-
-proc name*(module: Module): Identifier =
-  case module.kind:
-  of MK_NATIVE: module.native.name
-  of MK_USER: module.user.name
-
-proc generics*(module: Module): seq[Generic] =
-  case module.kind:
-  of MK_NATIVE: module.native.generics
-  of MK_USER: module.user.generics
-
-proc generics_map*(module: Module): Table[Identifier, int] =
-  module.generics_map
-
-proc user_structs*(module: Module): Result[seq[Struct], string] =
-  case module.kind:
-  of MK_USER: ok(module.user.structs)
-  of MK_NATIVE: err(fmt"[PE161] module `{module.name.asl}` is not a user module")
-
-proc native_structs*(module: Module): Result[seq[Struct], string] =
-  case module.kind:
-  of MK_NATIVE: ok(module.native.structs)
-  of MK_USER: err(fmt"[PE160] module `{module.name.asl}` is not a native module")
-
-proc structs*(module: Module): seq[Struct] =
-  case module.kind:
-  of MK_NATIVE: module.native.structs
-  of MK_USER: module.user.structs
-
-proc user_functions*(module: Module): Result[seq[Function], string] =
-  case module.kind:
-  of MK_USER: ok(module.user.functions)
-  of MK_NATIVE: err(fmt"[PE161] module `{module.name.asl}` is not a user module")
-
-proc native_functions*(module: Module): Result[seq[Function], string] =
-  case module.kind:
-  of MK_NATIVE: ok(module.native.functions)
-  of MK_USER: err(fmt"[PE160] module `{module.name.asl}` is not a native module")
-
-proc functions*(module: Module): seq[Function] =
-  case module.kind:
-  of MK_NATIVE: module.native.functions
-  of MK_USER: module.user.functions
-
-proc functions_map*(module: Module): Table[Identifier, seq[int]] =
-  case module.kind:
-  of MK_NATIVE: module.native.user_module.functions_map
-  of MK_USER: module.functions_map
-
-proc function_defs_hash_map*(module: Module): Table[Hash, int] =
-  case module.kind:
-  of MK_NATIVE: module.native.user_module.function_defs_hash_map
-  of MK_USER: module.user.function_defs_hash_map
-
-proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =
-  case module.kind:
-  of MK_NATIVE: module.native.find_generic(name)
-  of MK_USER: module.user.find_generic(name)
-
-proc native_module*(module: Module): NativeModule =
-  doAssert module.kind == MK_NATIVE, "expected a native module"
-  module.native
-
-proc user_module*(module: Module): UserModule =
-  doAssert module.kind == MK_USER, "expected a user module"
-  module.user
-
-proc location*(module: Module): Location =
-  case module.kind:
-  of MK_NATIVE: Location()
-  of MK_USER: module.user.location
+  new_module(def, generics, data, functions)

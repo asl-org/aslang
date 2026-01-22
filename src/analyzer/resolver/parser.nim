@@ -47,16 +47,16 @@ export module
 import parser/file
 export file
 
-proc new_native_error_module(): Result[UserModule, ParserError] =
+proc new_error_module(): Result[Module, ParserError] =
   let code_arg = ? new_argument_definition("S32", "code")
   let message_arg = ? new_argument_definition("String", "message")
   let struct = ? new_struct(new_struct_definition(Location()), @[code_arg, message_arg])
 
   var generics: seq[Generic]
   var functions: seq[ExternFunction]
-  new_user_module("Error", generics, @[struct], functions)
+  new_module("Error", generics, @[struct], functions)
 
-proc new_native_status_module(): Result[UserModule, ParserError] =
+proc new_status_module(): Result[Module, ParserError] =
   let generic = new_generic(new_identifier("Value"), Location())
 
   let value_arg = ? new_argument_definition("Value", "value")
@@ -68,9 +68,9 @@ proc new_native_status_module(): Result[UserModule, ParserError] =
   let err_struct = ? new_struct(err_branch, @[err_arg])
 
   var functions: seq[ExternFunction]
-  new_user_module("Status", @[generic], @[ok_struct, err_struct], functions)
+  new_module("Status", @[generic], @[ok_struct, err_struct], functions)
 
-proc new_native_array_module(): Result[UserModule, ParserError] =
+proc new_array_module(): Result[Module, ParserError] =
   let generic = new_generic(new_identifier("Item"), Location())
 
   let size_arg = ? new_argument_definition("U64", "size")
@@ -104,50 +104,50 @@ proc new_native_array_module(): Result[UserModule, ParserError] =
   let array_init_fn_name = new_identifier("init")
   let array_init_fn_def = ? new_function_definition(array_init_fn_name, @[
       size_arg_def], array_item_module_ref, Location())
-  let array_init_native_fn = new_extern_function(array_init_fn_def,
+  let array_init_fn = new_extern_function(array_init_fn_def,
       "Array_init")
 
   let array_get_fn_name = new_identifier("get")
   let array_get_fn_def = ? new_function_definition(array_get_fn_name, @[
       array_item_arg_def, index_arg_def], status_item_module_ref, Location())
-  let array_get_native_fn = new_extern_function(array_get_fn_def,
+  let array_get_fn = new_extern_function(array_get_fn_def,
       "Array_get")
 
   let array_set_fn_name = new_identifier("set")
   let array_set_fn_def = ? new_function_definition(array_set_fn_name, @[
       array_item_arg_def, index_arg_def, item_arg_def], status_array_module_ref,
       Location())
-  let array_set_native_fn = new_extern_function(array_set_fn_def,
+  let array_set_fn = new_extern_function(array_set_fn_def,
       "Array_set")
 
-  new_user_module("Array", @[generic], @[struct], @[
-    array_init_native_fn, array_get_native_fn, array_set_native_fn
+  new_module("Array", @[generic], @[struct], @[
+    array_init_fn, array_get_fn, array_set_fn
   ])
 
-proc native_modules(): Result[seq[UserModule], ParserError] =
+proc builtin_modules(): Result[seq[Module], ParserError] =
   ok(@[
-    ? new_user_module("S8", @[
+    ? new_module("S8", @[
       ? new_extern_function("S8_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S8_read", "S8", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("S8_write", "Pointer", "write", @["S8",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("S16", @[
+    ? new_module("S16", @[
       ? new_extern_function("S16_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S16_read", "S16", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("S16_write", "Pointer", "write", @["S16",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("S32", @[
+    ? new_module("S32", @[
       ? new_extern_function("S32_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S32_read", "S32", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("S32_write", "Pointer", "write", @["S32",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("S64", @[
+    ? new_module("S64", @[
       ? new_extern_function("S64_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("S64_read", "S64", "read", @["Pointer",
           "U64"]),
@@ -167,7 +167,7 @@ proc native_modules(): Result[seq[UserModule], ParserError] =
       ? new_extern_function("S64_from_U8", "S64", "from", @["U8"]),
       ? new_extern_function("S64_from_U64", "S64", "from", @["U64"]),
     ]),
-    ? new_user_module("U8", @[
+    ? new_module("U8", @[
       ? new_extern_function("U8_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U8_read", "U8", "read", @["Pointer",
           "U64"]),
@@ -184,21 +184,21 @@ proc native_modules(): Result[seq[UserModule], ParserError] =
       ? new_extern_function("U8_not", "U8", "not", @["U8"]),
       ? new_extern_function("U8_from_U64", "U8", "from", @["U64"]),
     ]),
-    ? new_user_module("U16", @[
+    ? new_module("U16", @[
       ? new_extern_function("U16_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U16_read", "U16", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("U16_write", "Pointer", "write", @["U16",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("U32", @[
+    ? new_module("U32", @[
       ? new_extern_function("U32_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U32_read", "U32", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("U32_write", "Pointer", "write", @["U32",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("U64", @[
+    ? new_module("U64", @[
       ? new_extern_function("U64_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("U64_read", "U64", "read", @["Pointer",
           "U64"]),
@@ -225,28 +225,28 @@ proc native_modules(): Result[seq[UserModule], ParserError] =
           "U64"]),
       ? new_extern_function("U64_not", "U64", "not", @["U64"]),
     ]),
-    ? new_user_module("F32", @[
+    ? new_module("F32", @[
       ? new_extern_function("F32_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("F32_read", "F32", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("F32_write", "Pointer", "write", @["F32",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("F64", @[
+    ? new_module("F64", @[
       ? new_extern_function("F64_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("F64_read", "F64", "read", @["Pointer",
           "U64"]),
       ? new_extern_function("F64_write", "Pointer", "write", @["F64",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("String", @[
+    ? new_module("String", @[
       ? new_extern_function("String_byte_size", "U64", "byte_size", @["U64"]),
       ? new_extern_function("String_read", "String", "read", @[
           "Pointer", "U64"]),
       ? new_extern_function("String_write", "Pointer", "write", @["String",
           "Pointer", "U64"]),
     ]),
-    ? new_user_module("Pointer", @[
+    ? new_module("Pointer", @[
       ? new_extern_function("Pointer_byte_size", "U64", "byte_size", @[
           "U64"]),
       ? new_extern_function("Pointer_read", "Pointer", "read", @[
@@ -254,10 +254,10 @@ proc native_modules(): Result[seq[UserModule], ParserError] =
       ? new_extern_function("Pointer_write", "Pointer", "write", @[
           "Pointer", "Pointer", "U64"]),
     ]),
-    ? new_native_error_module(),
-    ? new_native_status_module(),
-    ? new_native_array_module(),
-    ? new_user_module("System", @[
+    ? new_error_module(),
+    ? new_status_module(),
+    ? new_array_module(),
+    ? new_module("System", @[
       ? new_extern_function("System_allocate", "Pointer", "allocate", @["U64"]),
       ? new_extern_function("System_free", "U64", "free", @["Pointer"]),
       ? new_extern_function("System_box_U8", "Pointer", "box", @["U8"]),
@@ -281,8 +281,8 @@ proc native_modules(): Result[seq[UserModule], ParserError] =
   ])
 
 proc parse(parser: Parser): Result[file.File, ParserError] =
-  let native_mods = ? native_modules()
-  file_spec(parser, native_mods)
+  let builtin_modules = ? builtin_modules()
+  file_spec(parser, builtin_modules)
 
 proc parse*(path: string, tokens: seq[Token]): Result[file.File, string] =
   let maybe_parsed = new_parser(path, tokens, INDENT_SIZE).parse()
