@@ -1,4 +1,4 @@
-# ResolvedArgumentDefinition, ResolvedUserFunctionDefinition, ResolvedStruct
+# ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
 import results, strformat, strutils, sets, hashes, options
 
 import module_ref
@@ -38,77 +38,77 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
   ok(new_resolved_argument_definition(resolved_arg, arg.name))
 
 # =============================================================================
-# ResolvedUserFunctionDefinition
+# ResolvedFunctionDefinition
 # =============================================================================
 
-type ResolvedUserFunctionDefinition* = ref object of RootObj
+type ResolvedFunctionDefinition* = ref object of RootObj
   name: Identifier
   args: seq[ResolvedArgumentDefinition]
   returns: ResolvedModuleRef
   location: Location
 
-proc new_resolved_user_function_definition*(name: Identifier, args: seq[
+proc new_resolved_function_definition*(name: Identifier, args: seq[
     ResolvedArgumentDefinition], returns: ResolvedModuleRef,
-    location: Location): ResolvedUserFunctionDefinition =
-  ResolvedUserFunctionDefinition(name: name, args: args, returns: returns,
+    location: Location): ResolvedFunctionDefinition =
+  ResolvedFunctionDefinition(name: name, args: args, returns: returns,
       location: location)
 
-proc module_deps*(def: ResolvedUserFunctionDefinition): HashSet[Module] =
+proc module_deps*(def: ResolvedFunctionDefinition): HashSet[Module] =
   var module_set = accumulate_module_deps(def.args)
   module_set.incl(def.returns.module_deps)
   module_set
 
-proc hash*(def: ResolvedUserFunctionDefinition): Hash =
+proc hash*(def: ResolvedFunctionDefinition): Hash =
   var acc = def.name.hash
   for arg in def.args:
     acc = acc !& arg.hash
   acc !& def.returns.hash
 
-proc `==`*(self: ResolvedUserFunctionDefinition,
-    other: ResolvedUserFunctionDefinition): bool =
+proc `==`*(self: ResolvedFunctionDefinition,
+    other: ResolvedFunctionDefinition): bool =
   self.hash == other.hash
 
-proc asl*(def: ResolvedUserFunctionDefinition): string =
+proc asl*(def: ResolvedFunctionDefinition): string =
   var args: seq[string]
   for arg in def.args: args.add(arg.asl)
   let args_str = args.join(", ")
   let returns_str = def.returns.asl
   fmt"fn {def.name.asl}({args_str}): {returns_str}"
 
-proc location*(def: ResolvedUserFunctionDefinition): Location = def.location
-proc name*(def: ResolvedUserFunctionDefinition): Identifier = def.name
-proc returns*(def: ResolvedUserFunctionDefinition): ResolvedModuleRef = def.returns
-proc args*(def: ResolvedUserFunctionDefinition): seq[
+proc location*(def: ResolvedFunctionDefinition): Location = def.location
+proc name*(def: ResolvedFunctionDefinition): Identifier = def.name
+proc returns*(def: ResolvedFunctionDefinition): ResolvedModuleRef = def.returns
+proc args*(def: ResolvedFunctionDefinition): seq[
     ResolvedArgumentDefinition] = def.args
 
-proc concretize*(def: ResolvedUserFunctionDefinition, generic: Generic,
-    module_ref: ResolvedModuleRef): ResolvedUserFunctionDefinition =
+proc concretize*(def: ResolvedFunctionDefinition, generic: Generic,
+    module_ref: ResolvedModuleRef): ResolvedFunctionDefinition =
   var concrete_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let concrete_arg = arg.concretize(generic, module_ref)
     concrete_args.add(concrete_arg)
   let concrete_returns = def.returns.concretize(generic, module_ref)
-  new_resolved_user_function_definition(def.name, concrete_args,
+  new_resolved_function_definition(def.name, concrete_args,
       concrete_returns, def.location)
 
 proc resolve*(file: parser.File, module: Option[parser.Module],
     generic: Generic, def: FunctionDefinition): Result[
-    ResolvedUserFunctionDefinition, string] =
+    ResolvedFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let resolved_arg = ? resolve(file, module, arg)
     resolved_args.add(resolved_arg)
   let resolved_return = ? resolve(file, module, def.returns)
-  ok(new_resolved_user_function_definition(def.name, resolved_args,
+  ok(new_resolved_function_definition(def.name, resolved_args,
       resolved_return, def.location))
 
 proc resolve*(file: parser.File, module: Option[parser.Module],
-    def: FunctionDefinition): Result[ResolvedUserFunctionDefinition, string] =
+    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolved_args: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     resolved_args.add( ? resolve(file, module, arg))
   let resolved_return = ? resolve(file, module, def.returns)
-  ok(new_resolved_user_function_definition(def.name, resolved_args,
+  ok(new_resolved_function_definition(def.name, resolved_args,
       resolved_return, def.location))
 
 # =============================================================================

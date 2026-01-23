@@ -73,8 +73,8 @@ proc make_resolved_module_ref(file: parser.File, module_name: string): Result[
     ResolvedModuleRef, string] =
   let module_id = new_identifier(module_name)
   let module = ? file.find_module(module_id)
-  let user_module_ref = new_resolved_module_ref(module, @[], Location())
-  ok(user_module_ref.self)
+  let module_ref = new_resolved_module_ref(module, @[], Location())
+  ok(module_ref.self)
 
 # NOTE: This is a utility function to internally add some function definitions
 # like `byte_size`, `read`, `write`
@@ -87,16 +87,16 @@ proc make_resolved_arg_def(file: parser.File, module_name: string,
 # NOTE: This is a utility function to internally add some function definitions
 # like `byte_size`, `read`, `write`
 proc make_resolved_function_def(file: parser.File, name: string, args: seq[(
-    string, string)], returns: string): Result[ResolvedUserFunctionDefinition, string] =
+    string, string)], returns: string): Result[ResolvedFunctionDefinition, string] =
   let name_id = new_identifier(name)
   let returns_module_ref = ? make_resolved_module_ref(file, returns)
   var resolved_arg_defs: seq[ResolvedArgumentDefinition]
   for (arg_module, arg_name) in args:
     resolved_arg_defs.add( ? make_resolved_arg_def(file, arg_module, arg_name))
-  ok(new_resolved_user_function_definition(name_id, resolved_arg_defs,
+  ok(new_resolved_function_definition(name_id, resolved_arg_defs,
       returns_module_ref, Location()))
 
-proc validate(module: ResolvedUserModule,
+proc validate(module: ResolvedModule,
     integer_literal: IntegerLiteral): Result[void, string] =
   case module.name.asl:
   of "S8": safe_parse[int8](integer_literal.asl)
@@ -109,20 +109,20 @@ proc validate(module: ResolvedUserModule,
   of "U64": safe_parse[uint64](integer_literal.asl)
   else: err("{integer_literal.location} integer can not be converted to module `{module.name.asl}`")
 
-proc validate(module: ResolvedUserModule,
+proc validate(module: ResolvedModule,
     float_literal: FloatLiteral): Result[void, string] =
   case module.name.asl:
   of "F32": safe_parse[float32](float_literal.asl)
   of "F64": safe_parse[float64](float_literal.asl)
   else: err("{float_literal.location} float can not be converted to module `{module.name.asl}`")
 
-proc validate(module: ResolvedUserModule,
+proc validate(module: ResolvedModule,
     string_literal: StringLiteral): Result[void, string] =
   case module.name.asl:
   of "String": ok()
   else: err("{string_literal.location} string can not be converted to module `{module.name.asl}`")
 
-proc validate*(module: ResolvedUserModule, literal: Literal): Result[void, string] =
+proc validate*(module: ResolvedModule, literal: Literal): Result[void, string] =
   case literal.kind:
   of LK_INTEGER:
     let integer_literal = ? literal.integer_literal
@@ -152,19 +152,15 @@ proc resolve*(file: parser.File): Result[ResolvedFile, string] =
       message.add(fmt"{module.location} {module.name.asl}")
     return err(message.join("\n"))
 
-  let module_resolution_order = maybe_module_order.get
-  var resolved_modules: seq[ResolvedModule]
-  for module in module_resolution_order:
-    resolved_modules.add(modules_map[module])
-
-  var maybe_start_def: Option[ResolvedUserFunctionDefinition]
+  let resolved_modules = maybe_module_order.get.map_it(modules_map[it])
+  var maybe_start_def: Option[ResolvedFunctionDefinition]
   let start_def = ? make_resolved_function_def(file, "start", @[(
       "U8", "seed")], "U8")
 
-  var resolved_functions: seq[ResolvedUserFunction]
+  var resolved_functions: seq[ResolvedFunction]
   for function in file.functions:
     let resolved_function = ? resolve(file, none(parser.Module), function)
-    resolved_functions.add(resolved_function)
+    resolved_functions.add(new_resolved_function(resolved_function))
     if resolved_function.def == start_def:
       maybe_start_def = some(resolved_function.def)
 

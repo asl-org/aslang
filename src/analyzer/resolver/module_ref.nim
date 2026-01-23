@@ -17,33 +17,33 @@ proc accumulate_module_deps*[T](items: seq[T]): HashSet[Module] =
 
 type
   ResolvedModuleRefKind* = enum
-    TMRK_USER, TMRK_GENERIC
+    RMRK_MODULE, AMRK_GENERIC
   ResolvedModuleRef* = ref object of RootObj
     location: Location
     case kind: ResolvedModuleRefKind
-    of TMRK_USER:
+    of RMRK_MODULE:
       module: Module
       children: seq[ResolvedModuleRef]
-    of TMRK_GENERIC:
+    of AMRK_GENERIC:
       generic: Generic
 
 proc new_resolved_module_ref*(module: Module, children: seq[
     ResolvedModuleRef], location: Location): ResolvedModuleRef =
-  ResolvedModuleRef(kind: TMRK_USER, module: module,
+  ResolvedModuleRef(kind: RMRK_MODULE, module: module,
       children: children, location: location)
 
 proc new_resolved_module_ref*(generic: Generic,
     location: Location): ResolvedModuleRef =
-  ResolvedModuleRef(kind: TMRK_GENERIC, generic: generic,
+  ResolvedModuleRef(kind: AMRK_GENERIC, generic: generic,
       location: location)
 
 proc concretize*(module_ref: ResolvedModuleRef, generic: Generic,
     concrete_module_ref: ResolvedModuleRef): ResolvedModuleRef =
   case module_ref.kind:
-  of TMRK_GENERIC:
+  of AMRK_GENERIC:
     if module_ref.generic == generic: concrete_module_ref
     else: module_ref
-  of TMRK_USER:
+  of RMRK_MODULE:
     var concrete_children: seq[ResolvedModuleRef]
     for child in module_ref.children:
       let concrete_child = child.concretize(generic, concrete_module_ref)
@@ -53,8 +53,8 @@ proc concretize*(module_ref: ResolvedModuleRef, generic: Generic,
 
 proc module_deps*(module_ref: ResolvedModuleRef): HashSet[Module] =
   case module_ref.kind:
-  of TMRK_GENERIC: init_hashset[Module]()
-  of TMRK_USER:
+  of AMRK_GENERIC: init_hashset[Module]()
+  of RMRK_MODULE:
     var module_set: HashSet[Module]
     module_set.incl(module_ref.module)
     module_set.incl(accumulate_module_deps(module_ref.children))
@@ -62,9 +62,9 @@ proc module_deps*(module_ref: ResolvedModuleRef): HashSet[Module] =
 
 proc hash*(module_ref: ResolvedModuleRef): Hash =
   case module_ref.kind:
-  of TMRK_GENERIC:
+  of AMRK_GENERIC:
     module_ref.generic.hash
-  of TMRK_USER:
+  of RMRK_MODULE:
     var acc = module_ref.module.hash
     for child in module_ref.children:
       acc = acc !& child.hash
@@ -72,8 +72,8 @@ proc hash*(module_ref: ResolvedModuleRef): Hash =
 
 proc self*(module_ref: ResolvedModuleRef): ResolvedModuleRef =
   case module_ref.kind:
-  of TMRK_GENERIC: module_ref
-  of TMRK_USER:
+  of AMRK_GENERIC: module_ref
+  of RMRK_MODULE:
     var child_module_refs: seq[ResolvedModuleRef]
     for generic in module_ref.module.generics:
       let child_module_ref = new_resolved_module_ref(generic,
@@ -84,8 +84,8 @@ proc self*(module_ref: ResolvedModuleRef): ResolvedModuleRef =
 
 proc asl*(module_ref: ResolvedModuleRef): string =
   case module_ref.kind:
-  of TMRK_GENERIC: module_ref.generic.name.asl
-  of TMRK_USER:
+  of AMRK_GENERIC: module_ref.generic.name.asl
+  of RMRK_MODULE:
     let module_name = module_ref.module.name.asl
     var children: seq[string]
     for child in module_ref.children:
@@ -98,16 +98,16 @@ proc location*(module_ref: ResolvedModuleRef): Location = module_ref.location
 proc kind*(module_ref: ResolvedModuleRef): ResolvedModuleRefKind = module_ref.kind
 
 proc module*(module_ref: ResolvedModuleRef): Module =
-  doAssert module_ref.kind == TMRK_USER, "expected a user module"
+  do_assert module_ref.kind == RMRK_MODULE, "expected a module"
   module_ref.module
 
 proc generic*(module_ref: ResolvedModuleRef): Generic =
-  doAssert module_ref.kind == TMRK_GENERIC, "expected a generic"
+  do_assert module_ref.kind == AMRK_GENERIC, "expected a generic"
   module_ref.generic
 
 proc children*(module_ref: ResolvedModuleRef): Result[seq[ResolvedModuleRef], string] =
   case module_ref.kind:
-  of TMRK_USER: ok(module_ref.children)
+  of RMRK_MODULE: ok(module_ref.children)
   else: err(fmt"{module_ref.location} expected a nested module ref")
 
 proc resolve(file: parser.File, module_name: Identifier, children: seq[

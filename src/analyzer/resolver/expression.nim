@@ -1,4 +1,3 @@
-# ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedUserFunction
 import results, strformat, sets, options
 
 import fncall
@@ -14,7 +13,7 @@ type
   ResolvedExpression* = ref object of RootObj
     case kind: ResolvedExpressionKind
     of TEK_MATCH: match: ResolvedMatch
-    of TEK_FNCALL: fncall: ResolvedUserFunctionCall
+    of TEK_FNCALL: fncall: ResolvedFunctionCall
     of TEK_INIT: init: ResolvedInitializer
     of TEK_STRUCT_GET: struct_get: ResolvedStructGet
     of TEK_VARIABLE: variable: ResolvedVariable
@@ -42,7 +41,7 @@ type
 proc new_resolved_expression*(match: ResolvedMatch): ResolvedExpression =
   ResolvedExpression(kind: TEK_MATCH, match: match)
 
-proc new_resolved_expression*(fncall: ResolvedUserFunctionCall): ResolvedExpression =
+proc new_resolved_expression*(fncall: ResolvedFunctionCall): ResolvedExpression =
   ResolvedExpression(kind: TEK_FNCALL, fncall: fncall)
 
 proc new_resolved_expression*(init: ResolvedInitializer): ResolvedExpression =
@@ -82,7 +81,7 @@ proc match*(expression: ResolvedExpression): Result[ResolvedMatch, string] =
   of TEK_MATCH: ok(expression.match)
   else: err(fmt"{expression.location} expected a match expression")
 
-proc fncall*(expression: ResolvedExpression): Result[ResolvedUserFunctionCall, string] =
+proc fncall*(expression: ResolvedExpression): Result[ResolvedFunctionCall, string] =
   case expression.kind:
   of TEK_FNCALL: ok(expression.fncall)
   else: err(fmt"{expression.location} expected a function call")
@@ -235,10 +234,10 @@ proc resolve(file: parser.File, module: Option[parser.Module],
 # =============================================================================
 
 type ResolvedUserFunction* = ref object of RootObj
-  def: ResolvedUserFunctionDefinition
+  def: ResolvedFunctionDefinition
   steps: seq[ResolvedStatement]
 
-proc new_resolved_user_function*(def: ResolvedUserFunctionDefinition,
+proc new_resolved_user_function*(def: ResolvedFunctionDefinition,
     steps: seq[ResolvedStatement]): ResolvedUserFunction =
   ResolvedUserFunction(def: def, steps: steps)
 
@@ -247,7 +246,7 @@ proc module_deps*(function: ResolvedUserFunction): HashSet[Module] =
   module_set.incl(accumulate_module_deps(function.steps))
   module_set
 
-proc def*(function: ResolvedUserFunction): ResolvedUserFunctionDefinition = function.def
+proc def*(function: ResolvedUserFunction): ResolvedFunctionDefinition = function.def
 proc steps*(function: ResolvedUserFunction): seq[
     ResolvedStatement] = function.steps
 
@@ -258,51 +257,55 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
   ok(new_resolved_user_function(resolved_def, resolved_steps))
 
 # =============================================================================
-# ResolvedNativeFunction
+# ResolvedExternFunction
 # =============================================================================
-type ResolvedNativeFunction* = ref object of RootObj
-  native: string
-  def: ResolvedUserFunctionDefinition
+type ResolvedExternFunction* = ref object of RootObj
+  extern: string
+  def: ResolvedFunctionDefinition
 
-proc new_resolved_native_function*(native: string,
-    def: ResolvedUserFunctionDefinition): ResolvedNativeFunction =
-  ResolvedNativeFunction(native: native, def: def)
+proc new_resolved_extern_function*(extern: string,
+    def: ResolvedFunctionDefinition): ResolvedExternFunction =
+  ResolvedExternFunction(extern: extern, def: def)
 
-proc native*(function: ResolvedNativeFunction): string = function.native
-proc def*(function: ResolvedNativeFunction): ResolvedUserFunctionDefinition = function.def
-proc module_deps*(function: ResolvedNativeFunction): HashSet[Module] =
+proc extern*(function: ResolvedExternFunction): string = function.extern
+proc def*(function: ResolvedExternFunction): ResolvedFunctionDefinition = function.def
+proc module_deps*(function: ResolvedExternFunction): HashSet[Module] =
   init_hashset[Module]()
+
+# =============================================================================
+# ResolvedFunction
+# =============================================================================
 
 type
   ResolvedFunctionKind* = enum
     RFK_USER, RFK_EXTERN
   ResolvedFunction* = ref object of RootObj
     case kind: ResolvedFunctionKind
-    of RFK_EXTERN: extern: ResolvedNativeFunction
+    of RFK_EXTERN: extern: ResolvedExternFunction
     of RFK_USER: user: ResolvedUserFunction
 
 proc new_resolved_function*(function: ResolvedUserFunction): ResolvedFunction =
   ResolvedFunction(kind: RFK_USER, user: function)
 
-proc new_resolved_function*(function: ResolvedNativeFunction): ResolvedFunction =
+proc new_resolved_function*(function: ResolvedExternFunction): ResolvedFunction =
   ResolvedFunction(kind: RFK_EXTERN, extern: function)
 
 proc kind*(function: ResolvedFunction): ResolvedFunctionKind = function.kind
 
 proc extern_name*(function: ResolvedFunction): Option[string] =
   case function.kind:
-  of RFK_EXTERN: some(function.extern.native)
+  of RFK_EXTERN: some(function.extern.extern)
   of RFK_USER: none(string)
 
-proc extern*(function: ResolvedFunction): ResolvedNativeFunction =
-  doAssert function.kind == RFK_EXTERN, "expected extern function"
+proc extern*(function: ResolvedFunction): ResolvedExternFunction =
+  do_assert function.kind == RFK_EXTERN, "expected extern function"
   function.extern
 
 proc user*(function: ResolvedFunction): ResolvedUserFunction =
-  doAssert function.kind == RFK_USER, "expected user function"
+  do_assert function.kind == RFK_USER, "expected user function"
   function.user
 
-proc def*(function: ResolvedFunction): ResolvedUserFunctionDefinition =
+proc def*(function: ResolvedFunction): ResolvedFunctionDefinition =
   case function.kind:
   of RFK_EXTERN: function.extern.def
   of RFK_USER: function.user.def
@@ -317,9 +320,9 @@ proc resolve*(file: parser.File, module: parser.Module,
   case function.kind:
   of FK_EXTERN:
     let resolved_def = ? resolve(file, some(module), function.def)
-    let native_function = new_resolved_native_function(
+    let extern_function = new_resolved_extern_function(
         function.extern_func.extern, resolved_def)
-    ok(new_resolved_function(native_function))
+    ok(new_resolved_function(extern_function))
   of FK_USER:
     let resolved_def = ? resolve(file, some(module), function.def)
     let resolved_steps = ? resolve(file, some(module), function.steps)
