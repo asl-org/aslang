@@ -170,7 +170,7 @@ proc byte_size*(module_ref: AnalyzedModuleRef): uint64 =
   of "U8", "S8": 1
   of "U16", "S16": 2
   of "U32", "S32", "F32": 4
-  of "U64", "S64", "F64": 4
+  of "U64", "S64", "F64": 8
   else: 8
 
 proc c*(module_ref: AnalyzedModuleRef): string =
