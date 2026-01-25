@@ -87,7 +87,7 @@ proc location*(function: Function): Location = function.def.location
 proc name*(function: Function): Identifier = function.def.name
 
 proc extern_func*(function: Function): ExternFunction =
-  doAssert function.kind == FK_EXTERN, "expected extern function"
+  do_assert function.kind == FK_EXTERN, "expected extern function"
   function.extern_func
 
 proc asl*(function: Function, indent: string): seq[string] =

@@ -4,27 +4,27 @@ import core, identifier, module_ref, defs, struct, generic, function
 export core, identifier, module_ref, defs, struct, generic, function
 
 # =============================================================================
-# UserModuleDefinition
+# ModuleDefinition
 # =============================================================================
 
-type UserModuleDefinition* = ref object of RootObj
+type ModuleDefinition* = ref object of RootObj
   name: Identifier
   location: Location
 
 proc new_module_definition*(name: Identifier,
-    location: Location): UserModuleDefinition =
-  UserModuleDefinition(name: name, location: location)
+    location: Location): ModuleDefinition =
+  ModuleDefinition(name: name, location: location)
 
-proc location*(def: UserModuleDefinition): Location =
+proc location*(def: ModuleDefinition): Location =
   def.location
 
-proc asl*(def: UserModuleDefinition): string =
+proc asl*(def: ModuleDefinition): string =
   fmt"module {def.name.asl}:"
 
-proc hash*(def: UserModuleDefinition): Hash =
+proc hash*(def: ModuleDefinition): Hash =
   def.location.hash
 
-proc module_definition_spec*(parser: Parser): Result[UserModuleDefinition, ParserError] =
+proc module_definition_spec*(parser: Parser): Result[ModuleDefinition, ParserError] =
   let module_keyword = ? parser.expect(module_keyword_spec)
   discard ? parser.expect(strict_space_spec)
   let name = ? parser.expect(identifier_spec)
@@ -37,7 +37,7 @@ proc module_definition_spec*(parser: Parser): Result[UserModuleDefinition, Parse
 # =============================================================================
 
 type Module* = ref object of RootObj
-  def: UserModuleDefinition
+  def: ModuleDefinition
   generics: seq[Generic]
   generics_map: Table[Identifier, int]
   data: Data
@@ -48,7 +48,7 @@ type Module* = ref object of RootObj
   functions_map: Table[Identifier, seq[int]]
   function_defs_hash_map: Table[Hash, int]
 
-proc new_module*(def: UserModuleDefinition, generics: seq[Generic],
+proc new_module*(def: ModuleDefinition, generics: seq[Generic],
     data: Data, functions: seq[Function]): Result[Module, ParserError] =
   if functions.len == 0 and data.kind == DK_NONE:
     if generics.len == 0:
@@ -320,7 +320,7 @@ proc new_module*(name: string, generics: seq[Generic], structs: seq[
 
 proc hash*(module: Module): Hash = module.def.hash
 proc `==`*(self: Module, other: Module): bool = self.hash == other.hash
-proc def*(module: Module): UserModuleDefinition = module.def
+proc def*(module: Module): ModuleDefinition = module.def
 proc name*(module: Module): Identifier = module.def.name
 proc location*(module: Module): Location = module.def.location
 proc generics*(module: Module): seq[Generic] = module.generics

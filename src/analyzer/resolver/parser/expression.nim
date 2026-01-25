@@ -11,7 +11,7 @@ type
   ExpressionKind* = enum
     EK_MATCH, EK_FNCALL, EK_INIT, EK_STRUCT_GET, EK_VARIABLE
   StatementKind* = enum
-    SK_USER, SK_AUTO
+    SK_ASSIGNED, SK_AUTO
   MatchKind* = enum
     MK_CASE_ONLY, MK_COMPLETE
 
@@ -150,7 +150,7 @@ proc new_statement*(expression: Expression): Statement =
   Statement(kind: SK_AUTO, arg: arg, expression: expression)
 
 proc new_statement*(arg: Identifier, expression: Expression): Statement =
-  Statement(kind: SK_USER, arg: arg, expression: expression)
+  Statement(kind: SK_ASSIGNED, arg: arg, expression: expression)
 
 proc location*(statement: Statement): Location = statement.arg.location
 proc expression*(statement: Statement): Expression = statement.expression
@@ -160,7 +160,7 @@ proc asl*(statement: Statement, indent: string): seq[string] =
   var lines = statement.expression.asl(indent)
   case statement.kind:
   of SK_AUTO: discard
-  of SK_USER: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
+  of SK_ASSIGNED: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
   return lines
 
 proc assignment_spec*(parser: Parser, indent: int): Result[Statement, ParserError] =

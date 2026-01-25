@@ -28,7 +28,7 @@ proc kind*(def: StructDefinition): StructDefinitionKind = def.kind
 proc location*(def: StructDefinition): Location = def.location
 
 proc name*(def: StructDefinition): Identifier =
-  doAssert def.kind == SDK_NAMED, "expected extern function"
+  do_assert def.kind == SDK_NAMED, "expected extern function"
   def.name
 
 proc asl*(def: StructDefinition): string =
