@@ -210,6 +210,10 @@ U64 U64_remainder_U64(U64 x, U64 y)
 {
   return x % y;
 }
+U64 U64_from_U8(U8 x)
+{
+  return (U64)x;
+}
 
 U8 U8_from_U64(U64 x)
 {

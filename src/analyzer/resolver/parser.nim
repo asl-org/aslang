@@ -251,6 +251,7 @@ proc builtin_modules(): Result[seq[Module], ParserError] =
       ? new_extern_function("U64_or_U64", "U64", "or", @["U64",
           "U64"]),
       ? new_extern_function("U64_not", "U64", "not", @["U64"]),
+      ? new_extern_function("U64_from_U8", "U64", "from", @["U8"]),
     ]),
     ? new_module("F32", @[
       ? new_extern_function("F32_byte_size", "U64", "byte_size", @["U64"]),
