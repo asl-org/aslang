@@ -77,11 +77,10 @@ proc analyze_def(file: ResolvedFile,
   let def = function.def
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
-    let analyzed_arg = ? analyze_arg_with_generic(file, module, generic, arg)
+    let analyzed_arg = ? analyze_def(file, module, generic, arg)
     analyzed_args.add(analyzed_arg)
 
-  let analyzed_returns = ? analyze_module_ref_with_generic(file, module,
-      generic, def.returns)
+  let analyzed_returns = ? analyze_def(file, module, generic, def.returns)
 
   let prefix = function_prefix(module.name, generic)
 
@@ -99,10 +98,10 @@ proc analyze_def(file: ResolvedFile,
     generic: Option[ResolvedGeneric]): Result[AnalyzedFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
-    let analyzed_arg = ? analyze_arg_with_generic(file, module, generic, arg)
+    let analyzed_arg = ? analyze_def(file, module, generic, arg)
     analyzed_args.add(analyzed_arg)
 
-  let analyzed_returns = ? analyze_module_ref_with_generic(file, module,
+  let analyzed_returns = ? analyze_def(file, module,
       generic, def.returns)
 
   let prefix = function_prefix(module.name, generic)
@@ -111,7 +110,7 @@ proc analyze_def(file: ResolvedFile,
       analyzed_returns, def.location, prefix, module.generics.len.uint64))
 
 # Helper for resolving ResolvedFunctionDefinition without module
-proc analyze_function_definition_no_module(file: ResolvedFile,
+proc analyze_def*(file: ResolvedFile,
     def: ResolvedFunctionDefinition): Result[AnalyzedFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
@@ -120,7 +119,7 @@ proc analyze_function_definition_no_module(file: ResolvedFile,
   let analyzed_returns = ? analyze_def(file, def.returns)
   ok(new_analyzed_function_definition(def.name, analyzed_args, analyzed_returns, def.location))
 
-proc analyze_function_definition_no_module(file: ResolvedFile,
+proc analyze_def*(file: ResolvedFile,
     function: ResolvedFunction): Result[AnalyzedFunctionDefinition, string] =
   var analyzed_args: seq[AnalyzedArgumentDefinition]
   let def = function.def
@@ -153,11 +152,3 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
 proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     function: ResolvedFunction): Result[AnalyzedFunctionDefinition, string] =
   analyze_def(file, function, module, none(ResolvedGeneric))
-
-proc analyze_def*(file: ResolvedFile, def: ResolvedFunctionDefinition): Result[
-    AnalyzedFunctionDefinition, string] =
-  analyze_function_definition_no_module(file, def)
-
-proc analyze_def*(file: ResolvedFile, function: ResolvedFunction): Result[
-    AnalyzedFunctionDefinition, string] =
-  analyze_function_definition_no_module(file, function)
