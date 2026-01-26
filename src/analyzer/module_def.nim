@@ -205,12 +205,12 @@ proc find_function_def*(module_def: AnalyzedModuleDefinition,
     ok(module_def.function_defs_map[function_def])
 
 proc find_function_defs*(module_def: AnalyzedModuleDefinition,
-    name: Identifier, arity: uint): Result[seq[
+    name: Identifier, arity: uint, location: Location): Result[seq[
     AnalyzedFunctionDefinition], string] =
   if name notin module_def.function_signatures_map:
-    err(fmt"module `{module_def.name.asl}` does not have any function named `{name.asl}`")
+    err(fmt"{location} module `{module_def.name.asl}` does not have any function named `{name.asl}`")
   elif arity notin module_def.function_signatures_map[name]:
-    err(fmt"module `{module_def.name.asl}` does not have any function named `{name.asl}` with arity `{arity}`")
+    err(fmt"{location} module `{module_def.name.asl}` does not have any function named `{name.asl}` with arity `{arity}`")
   else:
     ok(module_def.function_signatures_map[name][arity])
 

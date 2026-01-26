@@ -3,8 +3,6 @@ import results, sequtils, strformat, tables, strutils, sets, options, algorithm
 import resolver
 import module_ref
 import arg_def
-import func_def
-import generic
 
 type
   AnalyzedStructKind* = enum
@@ -160,8 +158,8 @@ proc find_field*(struct: AnalyzedStruct, field: Identifier): Result[
   ok(struct.fields[field_index])
 
 # Helper for resolving ResolvedStruct with either module kind
-proc analyze_struct_common[T](file: ResolvedFile, struct: ResolvedStruct,
-    module: T): Result[AnalyzedStruct, string] =
+proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
+    struct: ResolvedStruct): Result[AnalyzedStruct, string] =
   var analyzed_fields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     let analyzed_field = ? analyze_def(file, module, field)
@@ -174,7 +172,3 @@ proc analyze_struct_common[T](file: ResolvedFile, struct: ResolvedStruct,
     let struct_name = ? struct.name
     ok(new_analyzed_struct(struct, struct_name, analyzed_fields,
         struct.location))
-
-proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
-    struct: ResolvedStruct): Result[AnalyzedStruct, string] =
-  analyze_struct_common(file, struct, module)

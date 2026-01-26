@@ -99,7 +99,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
       let analyzed_module_def = ? file_def.find_module_def(
           analyzed_module_ref.module)
       let analyzed_function_defs = ? analyzed_module_def.find_function_defs(
-          fnref.name, fnref.arity)
+          fnref.name, fnref.arity, fnref.location)
       let analyzed_concrete_function_defs = analyzed_function_defs.map_it(
           it.concretize(analyzed_module_ref.concrete_map))
       ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
@@ -122,7 +122,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
       let analyzed_module_def = ? file_def.find_module_def(
           analyzed_module_ref.module)
       let analyzed_function_defs = ? analyzed_module_def.find_function_defs(
-          fnref.name, fnref.arity)
+          fnref.name, fnref.arity, fnref.location)
       var analyzed_concrete_function_defs = analyzed_function_defs.map_it(
           it.concretize(analyzed_module_ref.concrete_map))
       ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
