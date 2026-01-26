@@ -224,6 +224,13 @@ proc builtin_modules(): Result[seq[Module], ParserError] =
           "U64"]),
       ? new_extern_function("U32_write", "Pointer", "write", @["U32",
           "Pointer", "U64"]),
+      ? new_extern_function("U32_add_U32", "U32", "add", @["U32", "U32"]),
+      ? new_extern_function("U32_subtract_U32", "U32", "subtract", @["U32",
+          "U32"]),
+      ? new_extern_function("U32_multiply_U32", "U32", "multiply", @["U32",
+          "U32"]),
+      ? new_extern_function("U32_compare_U32", "S8", "compare", @["U32",
+          "U32"]),
     ]),
     ? new_module("U64", @[
       ? new_extern_function("U64_byte_size", "U64", "byte_size", @["U64"]),

@@ -156,6 +156,26 @@ U8 U8_subtract_U8(U8 x, U8 y)
   return x - y;
 }
 
+U32 U32_add_U32(U32 x, U32 y)
+{
+  return x + y;
+}
+
+U32 U32_subtract_U32(U32 x, U32 y)
+{
+  return x - y;
+}
+
+U32 U32_multiply_U32(U32 x, U32 y)
+{
+  return x * y;
+}
+
+S8 U32_compare_U32(U32 x, U32 y)
+{
+  return (x < y) ? -1 : (x > y ? 1 : 0);
+}
+
 U64 U64_lshift_U64(U64 x, U64 y)
 {
   return x << y;
