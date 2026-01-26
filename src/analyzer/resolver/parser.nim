@@ -70,6 +70,31 @@ proc new_status_module(): Result[Module, ParserError] =
   var functions: seq[ExternFunction]
   new_module("Status", @[generic], @[ok_struct, err_struct], functions)
 
+proc new_string_module(): Result[Module, ParserError] =
+  let byte_size_fn = ? new_extern_function("String_byte_size", "U64",
+      "byte_size", @["U64"])
+  let read_fn = ? new_extern_function("String_read", "String", "read", @[
+      "Pointer", "U64"])
+  let write_fn = ? new_extern_function("String_write", "Pointer", "write", @[
+      "String", "Pointer", "U64"])
+
+  # fn get(String value, U64 index): Status[U8]
+  let get_fn_name = new_identifier("get")
+  let get_fn_args = @[
+    ? new_argument_definition("String", "value"),
+    ? new_argument_definition("U64", "index"),
+  ]
+
+  let u8_module_ref = new_module_ref("U8")
+  let status_module_name = new_identifier("Status")
+  let get_fn_returns = ? new_module_ref(status_module_name, @[u8_module_ref])
+
+  let get_fn_def = ? new_function_definition(get_fn_name, get_fn_args,
+      get_fn_returns, Location())
+  let get_fn = new_extern_function(get_fn_def, "String_get")
+
+  new_module("String", @[byte_size_fn, read_fn, write_fn, get_fn])
+
 proc new_array_module(): Result[Module, ParserError] =
   let generic = new_generic(new_identifier("Item"), Location())
 
@@ -183,6 +208,8 @@ proc builtin_modules(): Result[seq[Module], ParserError] =
           "U8"]),
       ? new_extern_function("U8_not", "U8", "not", @["U8"]),
       ? new_extern_function("U8_from_U64", "U8", "from", @["U64"]),
+      ? new_extern_function("U8_subtract_U8", "U8", "subtract", @["U8",
+          "U8"]),
     ]),
     ? new_module("U16", @[
       ? new_extern_function("U16_byte_size", "U64", "byte_size", @["U64"]),
@@ -239,13 +266,7 @@ proc builtin_modules(): Result[seq[Module], ParserError] =
       ? new_extern_function("F64_write", "Pointer", "write", @["F64",
           "Pointer", "U64"]),
     ]),
-    ? new_module("String", @[
-      ? new_extern_function("String_byte_size", "U64", "byte_size", @["U64"]),
-      ? new_extern_function("String_read", "String", "read", @[
-          "Pointer", "U64"]),
-      ? new_extern_function("String_write", "Pointer", "write", @["String",
-          "Pointer", "U64"]),
-    ]),
+    ? new_string_module(),
     ? new_module("Pointer", @[
       ? new_extern_function("Pointer_byte_size", "U64", "byte_size", @[
           "U64"]),

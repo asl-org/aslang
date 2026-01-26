@@ -151,6 +151,11 @@ U8 U8_rshift_U8(U8 x, U8 y)
   return x >> y;
 }
 
+U8 U8_subtract_U8(U8 x, U8 y)
+{
+  return x - y;
+}
+
 U64 U64_lshift_U64(U64 x, U64 y)
 {
   return x << y;
@@ -414,6 +419,23 @@ Pointer byte_write(U64 impl_id, Pointer data, U64 offset, Pointer value)
     return Pointer_write(Pointer_read(value, 0), data, offset); // Pointer types
   }
   UNREACHABLE();
+}
+
+Pointer String_get(String str, U64 index)
+{
+  if (index >= strlen(str))
+  {
+    Pointer err = ASL_Error_init(1, "Index out of Bounds");
+    Pointer status = ASL_Status_Err_init(err);
+    return status;
+  }
+
+  U64 impl_id = 4; // U8 impl_id
+  U64 offset = index * byte_size(impl_id);
+  Pointer value = byte_read(impl_id, (Pointer)str, offset);
+
+  Pointer status = ASL_Status_Ok_init(value);
+  return status;
 }
 
 U64 ASL_Array_get_size(Pointer ptr)
