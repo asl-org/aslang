@@ -20,7 +20,8 @@ proc location*(unsigned_integer: UnsignedIntegerLiteral): Location =
 proc asl*(unsigned_integer: UnsignedIntegerLiteral): string =
   unsigned_integer.value
 
-proc unsigned_integer_spec*(parser: Parser): Result[UnsignedIntegerLiteral, ParserError] =
+proc unsigned_integer_spec*(parser: Parser): Result[UnsignedIntegerLiteral,
+    Error] =
   # TODO: Support underscore separated values as integers as well.
   let int_value_token = ? parser.token_spec_util(TK_DIGITS)
   ok(new_unsigned_integer(int_value_token))
@@ -38,7 +39,7 @@ type
     location: Location
 
 proc new_signed_integer*(sign: Token, unsigned_integer: UnsignedIntegerLiteral): Result[
-    SignedIntegerLiteral, ParserError] =
+    SignedIntegerLiteral, Error] =
   case sign.kind:
   of TK_PLUS:
     ok(SignedIntegerLiteral(kind: SIK_POSITIVE, value: unsigned_integer.value,
@@ -62,8 +63,8 @@ proc asl*(signed_integer: SignedIntegerLiteral): string =
     of SIK_NEGATIVE: "-"
   return sign & signed_integer.value
 
-proc sign_spec*(parser: Parser): Result[Token, ParserError] =
-  var errors: seq[ParserError]
+proc sign_spec*(parser: Parser): Result[Token, Error] =
+  var errors: seq[Error]
 
   let maybe_plus = parser.token_spec_util(TK_PLUS)
   if maybe_plus.is_ok: return maybe_plus
@@ -74,7 +75,8 @@ proc sign_spec*(parser: Parser): Result[Token, ParserError] =
 
   err(errors.max())
 
-proc signed_integer_spec*(parser: Parser): Result[SignedIntegerLiteral, ParserError] =
+proc signed_integer_spec*(parser: Parser): Result[SignedIntegerLiteral,
+    Error] =
   var sign = ? parser.expect(sign_spec)
   let unsigned_intvalue = ? parser.expect(unsigned_integer_spec)
   new_signed_integer(sign, unsigned_intvalue)
@@ -119,8 +121,8 @@ proc asl*(integer: IntegerLiteral): string =
   of ILK_SIGNED: integer.signed.asl
   of ILK_UNSIGNED: integer.unsigned.asl
 
-proc integer_spec*(parser: Parser): Result[IntegerLiteral, ParserError] =
-  var errors: seq[ParserError]
+proc integer_spec*(parser: Parser): Result[IntegerLiteral, Error] =
+  var errors: seq[Error]
 
   let maybe_unsigned_integer = parser.expect(unsigned_integer_spec)
   if maybe_unsigned_integer.is_ok:
@@ -155,7 +157,7 @@ proc location*(float_literal: FloatLiteral): Location =
 proc asl*(float_literal: FloatLiteral): string =
   float_literal.value
 
-proc float_spec*(parser: Parser): Result[FloatLiteral, ParserError] =
+proc float_spec*(parser: Parser): Result[FloatLiteral, Error] =
   # TODO: Improve float parsing to support scientific notation as well.
   let first = ? parser.expect(integer_spec)
   discard ? parser.expect(dot_spec)
@@ -179,7 +181,7 @@ proc location*(string_literal: StringLiteral): Location =
 proc asl*(string_literal: StringLiteral): string =
   string_literal.value
 
-proc string_spec*(parser: Parser): Result[StringLiteral, ParserError] =
+proc string_spec*(parser: Parser): Result[StringLiteral, Error] =
   let token = ? parser.token_spec_util(TK_STRING)
   ok(new_string_literal(token.value, token.location))
 
@@ -234,8 +236,8 @@ proc asl*(literal: Literal): string =
   of LK_FLOAT: literal.float_literal.asl
   of LK_STRING: literal.string_literal.asl
 
-proc literal_spec*(parser: Parser): Result[Literal, ParserError] =
-  var errors: seq[ParserError]
+proc literal_spec*(parser: Parser): Result[Literal, Error] =
+  var errors: seq[Error]
 
   let maybe_integer = parser.expect(integer_spec)
   if maybe_integer.is_ok: return ok(new_literal(maybe_integer.get))

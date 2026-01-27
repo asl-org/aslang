@@ -47,7 +47,7 @@ export module
 import parser/file
 export file
 
-proc new_error_module(): Result[Module, ParserError] =
+proc new_error_module(): Result[Module, Error] =
   let code_arg = ? new_argument_definition("S32", "code")
   let message_arg = ? new_argument_definition("String", "message")
   let struct = ? new_struct(new_struct_definition(Location()), @[code_arg, message_arg])
@@ -56,7 +56,7 @@ proc new_error_module(): Result[Module, ParserError] =
   var functions: seq[ExternFunction]
   new_module("Error", generics, @[struct], functions)
 
-proc new_status_module(): Result[Module, ParserError] =
+proc new_status_module(): Result[Module, Error] =
   let generic = new_generic(new_identifier("Value"), Location())
 
   let value_arg = ? new_argument_definition("Value", "value")
@@ -70,7 +70,7 @@ proc new_status_module(): Result[Module, ParserError] =
   var functions: seq[ExternFunction]
   new_module("Status", @[generic], @[ok_struct, err_struct], functions)
 
-proc new_string_module(): Result[Module, ParserError] =
+proc new_string_module(): Result[Module, Error] =
   let byte_size_fn = ? new_extern_function("String_byte_size", "U64",
       "byte_size", @["U64"])
   let read_fn = ? new_extern_function("String_read", "String", "read", @[
@@ -95,7 +95,7 @@ proc new_string_module(): Result[Module, ParserError] =
 
   new_module("String", @[byte_size_fn, read_fn, write_fn, get_fn])
 
-proc new_array_module(): Result[Module, ParserError] =
+proc new_array_module(): Result[Module, Error] =
   let generic = new_generic(new_identifier("Item"), Location())
 
   let size_arg = ? new_argument_definition("U64", "size")
@@ -149,7 +149,7 @@ proc new_array_module(): Result[Module, ParserError] =
     array_init_fn, array_get_fn, array_set_fn
   ])
 
-proc builtin_modules(): Result[seq[Module], ParserError] =
+proc builtin_modules(): Result[seq[Module], Error] =
   ok(@[
     ? new_module("S8", @[
       ? new_extern_function("S8_byte_size", "U64", "byte_size", @["U64"]),
@@ -309,7 +309,7 @@ proc builtin_modules(): Result[seq[Module], ParserError] =
     ])
   ])
 
-proc parse(parser: Parser): Result[file.File, ParserError] =
+proc parse(parser: Parser): Result[file.File, Error] =
   let builtin_modules = ? builtin_modules()
   file_spec(parser, builtin_modules)
 

@@ -16,7 +16,7 @@ proc new_module_ref*(module: Identifier): ModuleRef =
   ModuleRef(kind: MRK_SIMPLE, module: module)
 
 proc new_module_ref*(module: Identifier, children: seq[
-    ModuleRef]): Result[ModuleRef, ParserError] =
+    ModuleRef]): Result[ModuleRef, Error] =
   if children.len == 0:
     err(err_parser_empty_generic_list(module.location))
   elif children.len > MAX_TYPE_CHILDREN_COUNT:
@@ -62,7 +62,7 @@ proc hash*(module_ref: ModuleRef): Hash =
       acc = acc !& hash(child)
   return acc
 
-proc module_ref_spec*(parser: Parser): Result[ModuleRef, ParserError] =
+proc module_ref_spec*(parser: Parser): Result[ModuleRef, Error] =
   let module_ref = ? parser.expect(identifier_spec)
 
   var maybe_open_square_bracket = parser.expect(open_square_bracket_spec)

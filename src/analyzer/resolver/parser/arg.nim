@@ -43,8 +43,8 @@ proc asl*(arg: Argument): string =
   of AK_LITERAL: arg.literal.asl
   of AK_VARIABLE: arg.variable.asl
 
-proc argument_spec*(parser: Parser): Result[Argument, ParserError] =
-  var errors: seq[ParserError]
+proc argument_spec*(parser: Parser): Result[Argument, Error] =
+  var errors: seq[Error]
 
   let maybe_identifier = parser.expect(identifier_spec)
   if maybe_identifier.is_ok: return ok(new_argument(maybe_identifier.get))
@@ -56,7 +56,7 @@ proc argument_spec*(parser: Parser): Result[Argument, ParserError] =
 
   err(errors.max())
 
-proc argument_list_spec*(parser: Parser): Result[seq[Argument], ParserError] =
+proc argument_list_spec*(parser: Parser): Result[seq[Argument], Error] =
   discard ? parser.expect(open_paren_bracket_spec)
 
   var args: seq[Argument]
@@ -110,18 +110,20 @@ proc asl*(fnref: FunctionRef): string =
   of FRK_LOCAL: fnref.name.asl
   of FRK_MODULE: fmt"{fnref.module.asl}.{fnref.name.asl}"
 
-proc function_ref_local_spec*(parser: Parser): Result[FunctionRef, ParserError] =
+proc function_ref_local_spec*(parser: Parser): Result[FunctionRef,
+    Error] =
   let name = ? parser.expect(identifier_spec)
   ok(new_function_ref(name))
 
-proc function_ref_module_spec*(parser: Parser): Result[FunctionRef, ParserError] =
+proc function_ref_module_spec*(parser: Parser): Result[FunctionRef,
+    Error] =
   let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(dot_spec)
   let name = ? parser.expect(identifier_spec)
   ok(new_function_ref(name, module_ref))
 
-proc function_ref_spec*(parser: Parser): Result[FunctionRef, ParserError] =
-  var errors: seq[ParserError]
+proc function_ref_spec*(parser: Parser): Result[FunctionRef, Error] =
+  var errors: seq[Error]
 
   let maybe_module_fnref = parser.expect(function_ref_module_spec)
   if maybe_module_fnref.is_ok: return maybe_module_fnref
@@ -142,7 +144,7 @@ type FunctionCall* = ref object of RootObj
   args: seq[Argument]
 
 proc new_function_call*(fnref: FunctionRef, args: seq[Argument]): Result[
-    FunctionCall, ParserError] =
+    FunctionCall, Error] =
   if args.len == 0:
     return err(err_parser_empty_arg_list(fnref.location))
   if args.len > MAX_ARGS_LENGTH:
@@ -163,7 +165,7 @@ proc asl*(fncall: FunctionCall): string =
   let args_str = args.join(", ")
   fmt"{fncall.fnref.asl}({args_str})"
 
-proc function_call_spec*(parser: Parser): Result[FunctionCall, ParserError] =
+proc function_call_spec*(parser: Parser): Result[FunctionCall, Error] =
   let fnref = ? parser.expect(function_ref_spec)
   let args = ? parser.expect(argument_list_spec)
   new_function_call(fnref, args)

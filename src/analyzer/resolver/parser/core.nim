@@ -12,167 +12,167 @@ const MAX_BRANCH_LENGTH* = 256
 # parser constants
 const INDENT_SIZE* = 2 # spaces
 
-type ParserError* = ref object of RootObj
+type Error* = ref object of RootObj
   location: Location
   message: string
 
-proc `<`*(self: ParserError, other: ParserError): bool = self.location < other.location
-proc `>`*(self: ParserError, other: ParserError): bool = self.location > other.location
-proc `==`*(self: ParserError, other: ParserError): bool = self.location == other.location
-proc `$`*(err: ParserError): string = fmt"[ERROR] {err.location} - {err.message}"
+proc `<`*(self: Error, other: Error): bool = self.location < other.location
+proc `>`*(self: Error, other: Error): bool = self.location > other.location
+proc `==`*(self: Error, other: Error): bool = self.location == other.location
+proc `$`*(err: Error): string = fmt"[ERROR] {err.location} - {err.message}"
 
-proc new_parser_error(location: Location, message: string): ParserError =
-  ParserError(location: location, message: message)
+proc new_parser_error(location: Location, message: string): Error =
+  Error(location: location, message: message)
 
-proc err_parser_reached_eof*(location: Location): ParserError =
+proc err_parser_reached_eof*(location: Location): Error =
   new_parser_error(location, "parser reached end of file")
 
 proc err_parser_expectation_mismatch*(location: Location, expected: string,
-    found: string): ParserError =
+    found: string): Error =
   new_parser_error(location, fmt"expected `{expected}` found `{found}`")
 
 proc err_parser_indentation_error*(location: Location, expected: int,
-    found: int): ParserError =
+    found: int): Error =
   new_parser_error(location, fmt"expected `{expected}` space(s) but found `{found}` space(s)")
 
-proc err_parser_empty_identifier*(location: Location): ParserError =
+proc err_parser_empty_identifier*(location: Location): Error =
   new_parser_error(location, "empty identifiers are not allowed")
 
 proc err_parser_identifier_too_long*(location: Location,
-    length: int): ParserError =
+    length: int): Error =
   new_parser_error(location, fmt"{location} identifier length `{length}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
 
-proc err_parser_expected_sign*(location: Location, found: string): ParserError =
+proc err_parser_expected_sign*(location: Location, found: string): Error =
   new_parser_error(location, fmt"expected a sign `+` or `-` but found {found}")
 
-proc err_parser_empty_generic_list*(location: Location): ParserError =
+proc err_parser_empty_generic_list*(location: Location): Error =
   new_parser_error(location, "nested module refs can not have empty child module ref list")
 
 proc err_parser_generic_list_too_long*(location: Location,
-    children: int): ParserError =
+    children: int): Error =
   new_parser_error(location, fmt"a nested module ref only supports upto `{MAX_TYPE_CHILDREN_COUNT}` children types but `{children}` were given")
 
-proc err_parser_empty_arg_list*(location: Location): ParserError =
+proc err_parser_empty_arg_list*(location: Location): Error =
   new_parser_error(location, "function argument list can not be empty")
 
-proc err_parser_arg_list_too_long*(location: Location, args: int): ParserError =
+proc err_parser_arg_list_too_long*(location: Location, args: int): Error =
   new_parser_error(location, fmt"function argument length `{args}` exceeded maximum argument length `{MAX_ARGS_LENGTH}`")
 
 proc err_parser_arg_already_defined*(location: Location, arg: string,
-    previous: Location): ParserError =
+    previous: Location): Error =
   new_parser_error(location, fmt"argument `{arg}` is already defined at {previous}")
 
-proc err_parser_empty_struct*(location: Location): ParserError =
+proc err_parser_empty_struct*(location: Location): Error =
   new_parser_error(location, "struct block can not be empty")
 
-proc err_parser_struct_too_long*(location: Location, fields: int): ParserError =
+proc err_parser_struct_too_long*(location: Location, fields: int): Error =
   new_parser_error(location, fmt"struct field length `{fields}` exceeded maximum field length `{MAX_ARGS_LENGTH}`")
 
-proc err_parser_empty_union_branch*(location: Location): ParserError =
+proc err_parser_empty_union_branch*(location: Location): Error =
   new_parser_error(location, "union branch block can not be empty")
 
 proc err_parser_union_branch_too_long*(location: Location,
-    fields: int): ParserError =
+    fields: int): Error =
   new_parser_error(location, fmt"union branch field length `{fields}` exceeded maximum field length `{MAX_ARGS_LENGTH}`")
 
-proc err_parser_empty_union*(location: Location): ParserError =
+proc err_parser_empty_union*(location: Location): Error =
   new_parser_error(location, "union block can not be empty")
 
 proc err_parser_union_too_long*(location: Location,
-    branches: int): ParserError =
+    branches: int): Error =
   new_parser_error(location, fmt"union branch length `{branches}` exceeded maximum field length `{MAX_BRANCH_LENGTH}`")
 
-proc err_parser_struct_conversion_error*(location: Location): ParserError =
+proc err_parser_struct_conversion_error*(location: Location): Error =
   new_parser_error(location, fmt"[UNREACHABLE] named struct pattern can not be converted to another named struct pattern")
 
-proc err_parser_empty_case*(location: Location): ParserError =
+proc err_parser_empty_case*(location: Location): Error =
   new_parser_error(location, fmt"case block must have at least one statement")
 
-proc err_parser_empty_else*(location: Location): ParserError =
+proc err_parser_empty_else*(location: Location): Error =
   new_parser_error(location, fmt"elseerr_parser_empty_else block must have at least one statement")
 
-proc err_parser_empty_match*(location: Location): ParserError =
+proc err_parser_empty_match*(location: Location): Error =
   new_parser_error(location, fmt"match block must have at least 2 case blocks")
 
-proc err_parser_empty_match_with_else*(location: Location): ParserError =
+proc err_parser_empty_match_with_else*(location: Location): Error =
   new_parser_error(location, fmt"match block must have at least 1 case block")
 
 proc err_parser_empty_generic_constraint_list*(location: Location,
-    generic: string): ParserError =
+    generic: string): Error =
   new_parser_error(location, fmt"generic `{generic}` must have at least one constraint")
 
 proc err_parser_generic_constraint_already_defined*(location: Location,
-    constraint: string, previous: Location): ParserError =
+    constraint: string, previous: Location): Error =
   new_parser_error(location, fmt"generic constraint `{constraint}` is already defined at {previous}")
 
-proc err_parser_empty_function*(location: Location, name: string): ParserError =
+proc err_parser_empty_function*(location: Location, name: string): Error =
   new_parser_error(location, fmt"function `{name}` must have at least one statement")
 
-proc err_parser_empty_module*(location: Location, name: string): ParserError =
+proc err_parser_empty_module*(location: Location, name: string): Error =
   new_parser_error(location, fmt"module `{name}` can not be empty")
 
 proc err_parser_empty_module_with_generics*(location: Location,
-    name: string): ParserError =
+    name: string): Error =
   new_parser_error(location, fmt"module `{name}` can not only contain generics")
 
 proc err_parser_generic_already_defined*(location: Location, name: string,
-    previous: Location): ParserError =
+    previous: Location): Error =
   new_parser_error(location, fmt"generic `{name}` is already defined at {previous}")
 
 proc err_parser_struct_already_defined*(location: Location, name: string,
-    previous: Location): ParserError =
+    previous: Location): Error =
   new_parser_error(location, fmt"struct `{name}` is already defined at {previous}")
 
 proc err_parser_function_already_defined*(location: Location, name: string,
-    previous: Location): ParserError =
+    previous: Location): Error =
   new_parser_error(location, fmt"function `{name}` is already defined at {previous}")
 
 proc err_parser_struct_generic_conflict*(struct_location: Location,
     struct_name: string, generic_location: Location,
-    generic_name: string): ParserError =
+    generic_name: string): Error =
   new_parser_error(struct_location, fmt"struct `{struct_name}` name conflicts with generic `{generic_name}` at {generic_location}")
 
 proc err_parser_function_generic_conflict*(function_location: Location,
     function_name: string, generic_location: Location,
-    generic_name: string): ParserError =
+    generic_name: string): Error =
   new_parser_error(function_location, fmt"function `{function_name}` name conflicts with generic `{generic_name}` at {generic_location}")
 
 proc err_parser_function_struct_conflict*(function_location: Location,
     function_name: string, struct_location: Location,
-    struct_name: string): ParserError =
+    struct_name: string): Error =
   new_parser_error(function_location, fmt"function `{function_name}` name conflicts with struct `{struct_name}` at {struct_location}")
 
 proc err_parser_function_union_branch_conflict*(function_location: Location,
     function_name: string, union_branch_location: Location,
-    union_branch_name: string): ParserError =
+    union_branch_name: string): Error =
   new_parser_error(function_location, fmt"function `{function_name}` name conflicts with union branch `{union_branch_name}` at {union_branch_location}")
 
-proc err_parser_expected_multi_struct*(kind: string): ParserError =
+proc err_parser_expected_multi_struct*(kind: string): Error =
   new_parser_error(Location(), fmt"[INTERNAL] expected data to be a list of structs but found `{kind}`")
 
-proc err_parser_expected_struct*(kind: string): ParserError =
+proc err_parser_expected_struct*(kind: string): Error =
   new_parser_error(Location(), fmt"[INTERNAL] expected data to be a default struct but found `{kind}`")
 
-proc err_parser_expected_union*(kind: string): ParserError =
+proc err_parser_expected_union*(kind: string): Error =
   new_parser_error(Location(), fmt"[INTERNAL] expected data to be a union but found `{kind}`")
 
 proc err_parser_expected_default_struct*(location: Location,
-    name: string): ParserError =
+    name: string): Error =
   new_parser_error(location, fmt"expected a default struct but found named struct `{name}`")
 
-proc err_parser_expected_named_struct*(location: Location): ParserError =
+proc err_parser_expected_named_struct*(location: Location): Error =
   new_parser_error(location, fmt"expected a named struct but found anonymous struct")
 
 proc err_parser_module_already_defined*(location: Location, name: string,
-    previous: Location): ParserError =
+    previous: Location): Error =
   new_parser_error(location, fmt"module `{name}` is already defined at {previous}")
 
-proc err_parser_empty_file*(path: string): ParserError =
+proc err_parser_empty_file*(path: string): Error =
   new_parser_error(new_location(path), fmt"expected file to have at least a function or module")
 
 proc err_parser_function_module_conflict*(function_location: Location,
     function_name: string, module_location: Location,
-    module_name: string): ParserError =
+    module_name: string): Error =
   new_parser_error(function_location, fmt"function `{function_name}` conflicts with module `{module_name}` at {module_location}")
 
 # NOTE: The parser assumes that the editor used to write code
@@ -193,19 +193,19 @@ proc new_parser*(path: string, tokens: seq[Token], indent: int): Parser =
 proc path*(parser: Parser): string = parser.path
 proc indent*(parser: Parser): int = parser.indent
 
-type AtomSpec*[T] = proc(parser: Parser): Result[T, ParserError]
-type BlockSpec*[T] = proc(parser: Parser, indent: int): Result[T, ParserError]
+type AtomSpec*[T] = proc(parser: Parser): Result[T, Error]
+type BlockSpec*[T] = proc(parser: Parser, indent: int): Result[T, Error]
 
 proc can_parse*(parser: Parser): bool =
   parser.index < parser.tokens.len
 
-proc peek*(parser: Parser): Result[Token, ParserError] =
+proc peek*(parser: Parser): Result[Token, Error] =
   if parser.can_parse():
     ok(parser.tokens[parser.index])
   else:
     err(err_parser_reached_eof(parser.tokens[^1].location))
 
-proc expect*[T](parser: Parser, spec: AtomSpec[T]): Result[T, ParserError] =
+proc expect*[T](parser: Parser, spec: AtomSpec[T]): Result[T, Error] =
   let start = parser.index
   let maybe_value = spec(parser)
   # NOTE: Reset parser index to start if parsing fails.
@@ -213,14 +213,14 @@ proc expect*[T](parser: Parser, spec: AtomSpec[T]): Result[T, ParserError] =
   return maybe_value
 
 proc expect*[T](parser: Parser, spec: BlockSpec[T], indent: int): Result[
-    T, ParserError] =
+    T, Error] =
   let start = parser.index
   let maybe_value = spec(parser, indent)
   # NOTE: Reset parser index to start if parsing fails.
   if maybe_value.is_err: parser.index = start
   return maybe_value
 
-proc token_spec_util*(parser: Parser, kind: TokenKind): Result[Token, ParserError] =
+proc token_spec_util*(parser: Parser, kind: TokenKind): Result[Token, Error] =
   let token = ? parser.peek()
   if token.kind == kind:
     parser.index += 1
@@ -228,7 +228,7 @@ proc token_spec_util*(parser: Parser, kind: TokenKind): Result[Token, ParserErro
   else:
     err(err_parser_expectation_mismatch(token.location, $(kind), $(token.kind)))
 
-proc keyword_spec_util*(parser: Parser, keyword: string): Result[Token, ParserError] =
+proc keyword_spec_util*(parser: Parser, keyword: string): Result[Token, Error] =
   let alphabet = ? parser.token_spec_util(TK_ALPHABETS)
   if alphabet.value == keyword:
     ok(alphabet)
@@ -238,78 +238,78 @@ proc keyword_spec_util*(parser: Parser, keyword: string): Result[Token, ParserEr
 
 # keyword specs
 proc module_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("module")
+    Error] = parser.keyword_spec_util("module")
 
 proc extern_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("extern")
+    Error] = parser.keyword_spec_util("extern")
 
 proc fn_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("fn")
+    Error] = parser.keyword_spec_util("fn")
 
 proc match_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("match")
+    Error] = parser.keyword_spec_util("match")
 
 proc case_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("case")
+    Error] = parser.keyword_spec_util("case")
 
 proc else_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("else")
+    Error] = parser.keyword_spec_util("else")
 
 proc struct_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("struct")
+    Error] = parser.keyword_spec_util("struct")
 
 proc generic_keyword_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.keyword_spec_util("generic")
+    Error] = parser.keyword_spec_util("generic")
 
 proc comment_spec*(parser: Parser): Result[Token,
-    ParserError] = parser.token_spec_util(TK_COMMENT)
+    Error] = parser.token_spec_util(TK_COMMENT)
 
 # special character spec
-proc colon_spec*(parser: Parser): Result[Token, ParserError] =
+proc colon_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_COLON)
 
-proc comma_spec*(parser: Parser): Result[Token, ParserError] =
+proc comma_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_COMMA)
 
-proc dot_spec*(parser: Parser): Result[Token, ParserError] =
+proc dot_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_DOT)
 
-proc equal_spec*(parser: Parser): Result[Token, ParserError] =
+proc equal_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_EQUAL)
 
-proc open_paren_bracket_spec*(parser: Parser): Result[Token, ParserError] =
+proc open_paren_bracket_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_OPEN_PAREN)
 
-proc close_paren_bracket_spec*(parser: Parser): Result[Token, ParserError] =
+proc close_paren_bracket_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_CLOSE_PAREN)
 
-proc open_curly_bracket_spec*(parser: Parser): Result[Token, ParserError] =
+proc open_curly_bracket_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_OPEN_CURLY)
 
-proc close_curly_bracket_spec*(parser: Parser): Result[Token, ParserError] =
+proc close_curly_bracket_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_CLOSE_CURLY)
 
-proc open_square_bracket_spec*(parser: Parser): Result[Token, ParserError] =
+proc open_square_bracket_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_OPEN_SQUARE)
 
-proc close_square_bracket_spec*(parser: Parser): Result[Token, ParserError] =
+proc close_square_bracket_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_CLOSE_SQUARE)
 
 # spaces spec
-proc new_line_spec*(parser: Parser): Result[Token, ParserError] =
+proc new_line_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_NEW_LINE)
 
-proc space_spec*(parser: Parser): Result[Token, ParserError] =
+proc space_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_SPACE)
 
 # NOTE: It just consumes all the spaces and always succeeds
-proc optional_space_spec*(parser: Parser): Result[int, ParserError] =
+proc optional_space_spec*(parser: Parser): Result[int, Error] =
   var count = 0
   while parser.expect(space_spec).is_ok:
     count += 1
   ok(count)
 
-proc strict_space_spec*(parser: Parser): Result[int, ParserError] =
+proc strict_space_spec*(parser: Parser): Result[int, Error] =
   var count = 0
   # NOTE: Must have one strict space
   discard ? parser.expect(space_spec)
@@ -319,7 +319,7 @@ proc strict_space_spec*(parser: Parser): Result[int, ParserError] =
   ok(count)
 
 # NOTE: This spec is also used to consume trailing line content
-proc empty_line_spec*(parser: Parser): Result[void, ParserError] =
+proc empty_line_spec*(parser: Parser): Result[void, Error] =
   # NOTE: Existence of space does not matter at all.
   discard ? parser.expect(optional_space_spec)
   # NOTE: Existence of comment does not matter at all.
@@ -328,13 +328,13 @@ proc empty_line_spec*(parser: Parser): Result[void, ParserError] =
   discard ? parser.expect(new_line_spec)
   ok()
 
-proc optional_empty_line_spec*(parser: Parser): Result[int, ParserError] =
+proc optional_empty_line_spec*(parser: Parser): Result[int, Error] =
   var count = 0
   while parser.expect(empty_line_spec).is_ok:
     count += 1
   ok(count)
 
-proc strict_empty_line_spec*(parser: Parser): Result[int, ParserError] =
+proc strict_empty_line_spec*(parser: Parser): Result[int, Error] =
   var count = 0
   # NOTE: Must have one strict space
   ? parser.expect(empty_line_spec)
@@ -344,7 +344,7 @@ proc strict_empty_line_spec*(parser: Parser): Result[int, ParserError] =
   ok(count)
 
 # NOTE: Configure indent size here.
-proc indent_spec*(parser: Parser, indent: int): Result[int, ParserError] =
+proc indent_spec*(parser: Parser, indent: int): Result[int, Error] =
   let spaces = ? parser.expect(optional_space_spec)
   if spaces == indent * parser.indent:
     return ok(spaces)
