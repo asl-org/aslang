@@ -10,7 +10,7 @@ import tokenizer/token
 export token
 
 proc tokenize(cursor: Cursor, filename: string, content: string): Result[Token, string] =
-  var errors: seq[TokenizerError]
+  var errors: seq[Error]
   for (kind, spec) in TOKEN_SPECS:
     let maybe_chunk = spec.match(cursor, content)
     if maybe_chunk.is_ok:

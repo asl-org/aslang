@@ -9,7 +9,7 @@ type Struct* = ref object of RootObj
   fields_map: Table[Identifier, int]
 
 proc new_struct*(def: StructDefinition, fields: seq[
-    ArgumentDefinition]): Result[Struct, ParserError] =
+    ArgumentDefinition]): Result[Struct, Error] =
   if fields.len == 0:
     return err(err_parser_empty_struct(def.location))
   if fields.len > MAX_ARGS_LENGTH:
@@ -47,7 +47,8 @@ proc asl*(struct: Struct, indent: string): seq[string] =
 
   return (@[header] & fields)
 
-proc struct_default_spec(parser: Parser, indent: int): Result[Struct, ParserError] =
+proc struct_default_spec(parser: Parser, indent: int): Result[Struct,
+    Error] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(struct_default_definition_spec)
   discard ? parser.expect(strict_empty_line_spec)
@@ -65,7 +66,8 @@ proc struct_default_spec(parser: Parser, indent: int): Result[Struct, ParserErro
 
   new_struct(def, fields)
 
-proc struct_named_spec(parser: Parser, indent: int): Result[Struct, ParserError] =
+proc struct_named_spec(parser: Parser, indent: int): Result[Struct,
+    Error] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(struct_named_definition_spec)
   discard ? parser.expect(strict_empty_line_spec)
@@ -83,8 +85,8 @@ proc struct_named_spec(parser: Parser, indent: int): Result[Struct, ParserError]
 
   new_struct(def, fields)
 
-proc struct_spec*(parser: Parser, indent: int): Result[Struct, ParserError] =
-  var errors: seq[ParserError]
+proc struct_spec*(parser: Parser, indent: int): Result[Struct, Error] =
+  var errors: seq[Error]
 
   let maybe_default_struct = parser.expect(struct_default_spec, indent)
   if maybe_default_struct.is_ok: return maybe_default_struct
@@ -96,7 +98,8 @@ proc struct_spec*(parser: Parser, indent: int): Result[Struct, ParserError] =
 
   err(errors.max())
 
-proc struct_list_spec(parser: Parser, indent: int): Result[seq[Struct], ParserError] =
+proc struct_list_spec(parser: Parser, indent: int): Result[seq[Struct],
+    Error] =
   var structs: seq[Struct]
   discard ? parser.expect(optional_empty_line_spec)
   var maybe_struct = parser.expect(struct_spec, indent + 1)
@@ -112,7 +115,7 @@ type UnionBranch = ref object of RootObj
   fields_map: Table[Identifier, int]
 
 proc new_union_branch*(name: Identifier, fields: seq[
-    ArgumentDefinition]): Result[UnionBranch, ParserError] =
+    ArgumentDefinition]): Result[UnionBranch, Error] =
   if fields.len == 0:
     return err(err_parser_empty_union_branch(name.location))
   if fields.len > MAX_ARGS_LENGTH:
@@ -131,7 +134,8 @@ proc new_union_branch*(name: Identifier, fields: seq[
 proc location*(branch: UnionBranch): Location = branch.location
 proc name*(branch: UnionBranch): Identifier = branch.name
 
-proc union_branch_spec*(parser: Parser, indent: int): Result[UnionBranch, ParserError] =
+proc union_branch_spec*(parser: Parser, indent: int): Result[UnionBranch,
+    Error] =
   discard ? parser.expect(indent_spec, indent)
   let name = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
@@ -157,7 +161,7 @@ type Union = ref object of RootObj
   branch_map: Table[Identifier, int]
 
 proc new_union*(location: Location, branches: seq[
-    UnionBranch]): Result[Union, ParserError] =
+    UnionBranch]): Result[Union, Error] =
   if branches.len == 0:
     return err(err_parser_empty_union_branch(location))
   if branches.len > MAX_BRANCH_LENGTH:
@@ -180,7 +184,7 @@ proc find_branch*(union: Union, name: Identifier): Result[UnionBranch, string] =
   else:
     err(fmt"{name.location} union does not have any branch named `{name.asl}`")
 
-proc union_spec*(parser: Parser, indent: int): Result[Union, ParserError] =
+proc union_spec*(parser: Parser, indent: int): Result[Union, Error] =
   let union_keyword = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
@@ -220,20 +224,20 @@ proc new_data*(structs: seq[Struct]): Data =
   Data(kind: DK_MULTI_STRUCT, structs: structs)
 
 proc kind*(data: Data): DataKind = data.kind
-proc structs*(data: Data): Result[seq[Struct], ParserError] =
+proc structs*(data: Data): Result[seq[Struct], Error] =
   case data.kind:
   of DK_MULTI_STRUCT: ok(data.structs)
   else: err(err_parser_expected_multi_struct($(data.kind)))
-proc struct*(data: Data): Result[Struct, ParserError] =
+proc struct*(data: Data): Result[Struct, Error] =
   case data.kind:
   of DK_STRUCT: ok(data.struct)
   else: err(err_parser_expected_struct($(data.kind)))
-proc union*(data: Data): Result[Union, ParserError] =
+proc union*(data: Data): Result[Union, Error] =
   case data.kind:
   of DK_UNION: ok(data.union)
   else: err(err_parser_expected_union($(data.kind)))
 
-proc data_spec*(parser: Parser, indent: int): Result[Data, ParserError] =
+proc data_spec*(parser: Parser, indent: int): Result[Data, Error] =
   let maybe_union = parser.expect(union_spec, indent)
   if maybe_union.is_ok: return ok(new_data(maybe_union.get))
 

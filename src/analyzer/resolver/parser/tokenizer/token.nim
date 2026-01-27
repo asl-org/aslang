@@ -38,17 +38,16 @@ type
   TokenSpec = ref object of RootObj
     case kind: TokenSpecKind
     of TSK_STATIC: value: string
-    of TSK_MATCHER: matcher: proc(content: string, start: int): Result[int, TokenizerError]
+    of TSK_MATCHER: matcher: proc(content: string, start: int): Result[int, Error]
 
 proc new_token_spec(value: string): TokenSpec =
   TokenSpec(kind: TSK_STATIC, value: value)
 
 proc new_token_spec(matcher: proc(content: string, start: int): Result[int,
-    TokenizerError]): TokenSpec =
+    Error]): TokenSpec =
   TokenSpec(kind: TSK_MATCHER, matcher: matcher)
 
-proc match*(spec: TokenSpec, cursor: Cursor, content: string): Result[string,
-    TokenizerError] =
+proc match*(spec: TokenSpec, cursor: Cursor, content: string): Result[string, Error] =
   let index =
     case spec.kind:
     of TSK_STATIC:

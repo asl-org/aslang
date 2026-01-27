@@ -15,7 +15,7 @@ type File* = ref object of RootObj
   functions: seq[Function]
 
 proc new_file*(path: string, indent: int, modules: seq[Module],
-    functions: seq[Function]): Result[File, ParserError] =
+    functions: seq[Function]): Result[File, Error] =
   if functions.len + modules.len == 0:
     return err(err_parser_empty_file(path))
 
@@ -81,11 +81,12 @@ proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
   else:
     err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")
 
-proc file_spec*(parser: Parser, builtin_modules: seq[Module]): Result[File, ParserError] =
+proc file_spec*(parser: Parser, builtin_modules: seq[Module]): Result[File,
+    Error] =
   var modules = builtin_modules
   var functions: seq[Function]
   while parser.can_parse():
-    var errors: seq[ParserError]
+    var errors: seq[Error]
     discard ? parser.expect(optional_empty_line_spec)
 
     let maybe_module = parser.expect(module_spec, 0)

@@ -52,7 +52,7 @@ type
 
 proc location*(match: Match): Location
 proc asl*(match: Match, indent: string): seq[string]
-proc match_spec*(parser: Parser, indent: int): Result[Match, ParserError]
+proc match_spec*(parser: Parser, indent: int): Result[Match, Error]
 
 # =============================================================================
 # Expression
@@ -116,8 +116,9 @@ proc variable*(expression: Expression): Result[Identifier, string] =
   of EK_VARIABLE: ok(expression.variable)
   else: err(fmt"{expression.location} expression is not a variable")
 
-proc expression_spec*(parser: Parser, indent: int): Result[Expression, ParserError] =
-  var errors: seq[ParserError]
+proc expression_spec*(parser: Parser, indent: int): Result[Expression,
+    Error] =
+  var errors: seq[Error]
 
   let maybe_match = parser.expect(match_spec, indent)
   if maybe_match.is_ok: return ok(new_expression(maybe_match.get))
@@ -163,7 +164,8 @@ proc asl*(statement: Statement, indent: string): seq[string] =
   of SK_ASSIGNED: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
   return lines
 
-proc assignment_spec*(parser: Parser, indent: int): Result[Statement, ParserError] =
+proc assignment_spec*(parser: Parser, indent: int): Result[Statement,
+    Error] =
   let arg = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(equal_spec)
@@ -171,8 +173,9 @@ proc assignment_spec*(parser: Parser, indent: int): Result[Statement, ParserErro
   let expression = ? parser.expect(expression_spec, indent)
   ok(new_statement(arg, expression))
 
-proc statement_spec*(parser: Parser, indent: int): Result[Statement, ParserError] =
-  var errors: seq[ParserError]
+proc statement_spec*(parser: Parser, indent: int): Result[Statement,
+    Error] =
+  var errors: seq[Error]
   discard ? parser.expect(indent_spec, indent)
 
   let maybe_assignment = parser.expect(assignment_spec, indent)
@@ -189,7 +192,8 @@ proc statement_spec*(parser: Parser, indent: int): Result[Statement, ParserError
 # Case
 # =============================================================================
 
-proc new_case*(def: CaseDefinition, statements: seq[Statement]): Result[Case, ParserError] =
+proc new_case*(def: CaseDefinition, statements: seq[Statement]): Result[Case,
+    Error] =
   if statements.len == 0: return err(err_parser_empty_case(def.location))
   ok(Case(def: def, statements: statements))
 
@@ -207,7 +211,7 @@ proc asl*(case_block: Case, indent: string): seq[string] =
       statements.add(indent & line)
   return (@[header] & statements)
 
-proc case_spec*(parser: Parser, indent: int): Result[Case, ParserError] =
+proc case_spec*(parser: Parser, indent: int): Result[Case, Error] =
   discard ? parser.expect(indent_spec, indent)
   let case_def = ? parser.expect(case_definition_spec)
   discard ? parser.expect(optional_empty_line_spec)
@@ -223,7 +227,8 @@ proc case_spec*(parser: Parser, indent: int): Result[Case, ParserError] =
 # Else
 # =============================================================================
 
-proc new_else*(statements: seq[Statement], location: Location): Result[Else, ParserError] =
+proc new_else*(statements: seq[Statement], location: Location): Result[Else,
+    Error] =
   if statements.len == 0:
     return err(err_parser_empty_else(location))
 
@@ -242,7 +247,7 @@ proc asl*(else_block: Else, indent: string): seq[string] =
 
   return (@[header] & statements)
 
-proc else_spec*(parser: Parser, indent: int): Result[Else, ParserError] =
+proc else_spec*(parser: Parser, indent: int): Result[Else, Error] =
   discard ? parser.expect(indent_spec, indent)
 
   let else_def = ? parser.expect(else_keyword_spec)
@@ -263,13 +268,14 @@ proc else_spec*(parser: Parser, indent: int): Result[Else, ParserError] =
 # Match
 # =============================================================================
 
-proc new_match*(def: MatchDefinition, case_blocks: seq[Case]): Result[Match, ParserError] =
+proc new_match*(def: MatchDefinition, case_blocks: seq[Case]): Result[Match,
+    Error] =
   if case_blocks.len < 2:
     return err(err_parser_empty_match(def.location))
   ok(Match(kind: MK_CASE_ONLY, def: def, case_blocks: case_blocks))
 
 proc new_match*(def: MatchDefinition, case_blocks: seq[Case],
-    else_block: Else): Result[Match, ParserError] =
+    else_block: Else): Result[Match, Error] =
   if case_blocks.len < 1:
     return err(err_parser_empty_match_with_else(def.location))
 
@@ -305,7 +311,7 @@ proc asl*(match: Match, indent: string): seq[string] =
 
   return (@[header] & lines)
 
-proc match_spec*(parser: Parser, indent: int): Result[Match, ParserError] =
+proc match_spec*(parser: Parser, indent: int): Result[Match, Error] =
   let match_def = ? parser.expect(match_definition_spec)
   var cases: seq[Case]
 

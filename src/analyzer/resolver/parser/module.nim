@@ -24,7 +24,8 @@ proc asl*(def: ModuleDefinition): string =
 proc hash*(def: ModuleDefinition): Hash =
   def.location.hash
 
-proc module_definition_spec*(parser: Parser): Result[ModuleDefinition, ParserError] =
+proc module_definition_spec*(parser: Parser): Result[ModuleDefinition,
+    Error] =
   let module_keyword = ? parser.expect(module_keyword_spec)
   discard ? parser.expect(strict_space_spec)
   let name = ? parser.expect(identifier_spec)
@@ -49,7 +50,7 @@ type Module* = ref object of RootObj
   function_defs_hash_map: Table[Hash, int]
 
 proc new_module*(def: ModuleDefinition, generics: seq[Generic],
-    data: Data, functions: seq[Function]): Result[Module, ParserError] =
+    data: Data, functions: seq[Function]): Result[Module, Error] =
   if functions.len == 0 and data.kind == DK_NONE:
     if generics.len == 0:
       return err(err_parser_empty_module(def.location, def.name.asl))
@@ -303,7 +304,7 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
         function_defs_hash_map: function_defs_hash_map))
 
 proc new_module*(name: string, functions: seq[
-    ExternFunction]): Result[Module, ParserError] =
+    ExternFunction]): Result[Module, Error] =
   let name = new_identifier(name)
   let module_def = new_module_definition(name, name.location)
   let module_data = new_data()
@@ -311,7 +312,7 @@ proc new_module*(name: string, functions: seq[
   new_module(module_def, @[], module_data, module_functions)
 
 proc new_module*(name: string, generics: seq[Generic], structs: seq[
-    Struct], functions: seq[ExternFunction]): Result[Module, ParserError] =
+    Struct], functions: seq[ExternFunction]): Result[Module, Error] =
   let name = new_identifier(name)
   let module_def = new_module_definition(name, name.location)
   let module_data = new_data(structs)
@@ -328,7 +329,7 @@ proc structs*(module: Module): seq[Struct] = module.structs
 proc functions*(module: Module): seq[Function] = module.functions
 proc is_struct*(module: Module): bool = module.structs.len > 0
 
-proc module_ref*(module: Module): Result[ModuleRef, ParserError] =
+proc module_ref*(module: Module): Result[ModuleRef, Error] =
   if module.generics.len > 0:
     let children = module.generics.map_it(new_module_ref(it.name))
     new_module_ref(module.name, children)
@@ -358,7 +359,8 @@ proc asl*(module: Module, indent: string): seq[string] =
 
   return lines
 
-proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic], ParserError] =
+proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic],
+    Error] =
   var generics: seq[Generic]
   discard ? parser.expect(optional_empty_line_spec)
   var maybe_generic = parser.expect(generic_spec, indent + 1)
@@ -368,7 +370,8 @@ proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic], Parser
     maybe_generic = parser.expect(generic_spec, indent + 1)
   ok(generics)
 
-proc function_list_spec(parser: Parser, indent: int): Result[seq[Function], ParserError] =
+proc function_list_spec(parser: Parser, indent: int): Result[seq[Function],
+    Error] =
   var functions: seq[Function]
   discard ? parser.expect(optional_empty_line_spec)
   var maybe_function = parser.expect(function_spec, indent + 1)
@@ -378,7 +381,7 @@ proc function_list_spec(parser: Parser, indent: int): Result[seq[Function], Pars
     maybe_function = parser.expect(function_spec, indent + 1)
   ok(functions)
 
-proc module_spec*(parser: Parser, indent: int): Result[Module, ParserError] =
+proc module_spec*(parser: Parser, indent: int): Result[Module, Error] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
   discard ? parser.expect(optional_empty_line_spec)

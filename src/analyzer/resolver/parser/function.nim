@@ -12,7 +12,7 @@ type UserFunction* = ref object of RootObj
   steps: seq[Statement]
 
 proc new_user_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
-    UserFunction, ParserError] =
+    UserFunction, Error] =
   if steps.len == 0:
     return err(err_parser_empty_function(def.location, def.name.asl))
   ok(UserFunction(def: def, steps: steps))
@@ -26,7 +26,7 @@ type ExternFunction* = ref object of RootObj
   extern: string
 
 proc new_extern_function*(extern: string, returns: string, name: string,
-    args: seq[string]): Result[ExternFunction, ParserError] =
+    args: seq[string]): Result[ExternFunction, Error] =
   var arg_defs: seq[ArgumentDefinition]
   for index, module in args.pairs:
     let module_id = new_identifier(module)
@@ -100,7 +100,8 @@ proc asl*(function: Function, indent: string): seq[string] =
 
   return (@[header] & lines)
 
-proc user_function_spec*(parser: Parser, indent: int): Result[UserFunction, ParserError] =
+proc user_function_spec*(parser: Parser, indent: int): Result[UserFunction,
+    Error] =
   let def = ? parser.expect(function_definition_spec, indent)
   discard ? parser.expect(strict_empty_line_spec)
 
@@ -117,7 +118,8 @@ proc user_function_spec*(parser: Parser, indent: int): Result[UserFunction, Pars
 
   new_user_function(def, steps)
 
-proc extern_header_spec(parser: Parser, indent: int): Result[Identifier, ParserError] =
+proc extern_header_spec(parser: Parser, indent: int): Result[Identifier,
+    Error] =
   discard ? parser.expect(indent_spec, indent)
   discard ? parser.expect(extern_keyword_spec)
   discard ? parser.expect(strict_space_spec)
@@ -126,14 +128,16 @@ proc extern_header_spec(parser: Parser, indent: int): Result[Identifier, ParserE
   discard ? parser.expect(colon_spec)
   ok(extern)
 
-proc extern_function_spec*(parser: Parser, indent: int): Result[ExternFunction, ParserError] =
+proc extern_function_spec*(parser: Parser, indent: int): Result[ExternFunction,
+    Error] =
   let extern = ? parser.expect(extern_header_spec, indent)
   discard ? parser.expect(strict_empty_line_spec)
   let def = ? parser.expect(function_definition_spec, indent + 1)
   ok(new_extern_function(def, extern.asl))
 
-proc function_spec*(parser: Parser, indent: int): Result[Function, ParserError] =
-  var errors: seq[ParserError]
+proc function_spec*(parser: Parser, indent: int): Result[Function,
+    Error] =
+  var errors: seq[Error]
   let maybe_user_func = parser.expect(user_function_spec, indent)
   if maybe_user_func.is_ok: return ok(new_function(maybe_user_func.get))
   else: errors.add(maybe_user_func.error)

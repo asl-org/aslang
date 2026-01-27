@@ -4,7 +4,7 @@ import constants
 import error
 
 proc match_string*(content: string, start: int): Result[
-    int, TokenizerError] =
+    int, Error] =
   var index = start
   if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
@@ -33,7 +33,7 @@ proc match_string*(content: string, start: int): Result[
   err(err_tokenizer_reached_eof(index))
 
 proc match_comment*(content: string, start: int): Result[
-    int, TokenizerError] =
+    int, Error] =
   var index = start
   if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
@@ -46,7 +46,7 @@ proc match_comment*(content: string, start: int): Result[
   ok(index)
 
 proc match_digit*(content: string, start: int): Result[
-    int, TokenizerError] =
+    int, Error] =
   var index = start
   if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
@@ -58,7 +58,7 @@ proc match_digit*(content: string, start: int): Result[
   ok(index)
 
 proc match_alphabet*(content: string, start: int): Result[
-    int, TokenizerError] =
+    int, Error] =
   var index = start
   if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
