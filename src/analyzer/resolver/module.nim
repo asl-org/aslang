@@ -1,8 +1,9 @@
 import results, strformat, tables, sets, hashes, options
 
 import parser
+import defs
+import module_ref
 import expression
-export expression
 
 # =============================================================================
 # ResolvedGeneric

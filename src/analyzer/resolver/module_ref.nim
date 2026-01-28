@@ -2,7 +2,6 @@
 import results, strformat, tables, strutils, sets, hashes, options
 
 import parser
-export parser
 
 # Helper function to accumulate module dependencies from a sequence
 proc accumulate_module_deps*[T](items: seq[T]): HashSet[Module] =

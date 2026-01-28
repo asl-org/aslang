@@ -1,13 +1,12 @@
 import results, strformat, hashes, strutils
 
 import core
-export core
 
 type Identifier* = ref object of RootObj
   name: string
   location: Location
 
-proc new_identifier*(name: string, location: Location): Result[Identifier, Error] =
+proc new_identifier*(name: string, location: Location): Result[Identifier, core.Error] =
   if name.len == 0:
     return err(err_parser_empty_identifier(location))
 
@@ -35,8 +34,8 @@ proc `==`*(a: Identifier, b: Identifier): bool =
   a.hash == b.hash
 
 # identifier specs
-proc identifier_head_spec*(parser: Parser): Result[Token, Error] =
-  var errors: seq[Error]
+proc identifier_head_spec*(parser: Parser): Result[Token, core.Error] =
+  var errors: seq[core.Error]
 
   let maybe_underscore = parser.token_spec_util(TK_UNDERSCORE)
   if maybe_underscore.is_ok: return maybe_underscore
@@ -48,8 +47,8 @@ proc identifier_head_spec*(parser: Parser): Result[Token, Error] =
 
   err(errors.max())
 
-proc identifier_tail_spec*(parser: Parser): Result[Token, Error] =
-  var errors: seq[Error]
+proc identifier_tail_spec*(parser: Parser): Result[Token, core.Error] =
+  var errors: seq[core.Error]
 
   let maybe_id_head = parser.expect(identifier_head_spec)
   if maybe_id_head.is_ok: return maybe_id_head
@@ -61,7 +60,7 @@ proc identifier_tail_spec*(parser: Parser): Result[Token, Error] =
 
   err(errors.max())
 
-proc identifier_spec*(parser: Parser): Result[Identifier, Error] =
+proc identifier_spec*(parser: Parser): Result[Identifier, core.Error] =
   let id_head = ? parser.expect(identifier_head_spec)
   var name = id_head.value
   var location = id_head.location
