@@ -1,7 +1,7 @@
-import results, strformat, strutils, tables
+import results, strformat, strutils, tables, sequtils
 
-import core, identifier, literal
-export core, identifier, literal
+import core, identifier, literal, repo
+export core, identifier, literal, repo
 
 # =============================================================================
 # MatchDefinition
@@ -16,7 +16,7 @@ type
     arg: Identifier
 
 proc new_match_definition*(operand: Identifier,
-    location: Location): Result[MatchDefinition, Error] =
+    location: Location): Result[MatchDefinition, core.Error] =
   let arg = new_identifier(location)
   ok(MatchDefinition(kind: MDK_DEFAULT, arg: arg, operand: operand))
 
@@ -34,7 +34,7 @@ proc asl*(def: MatchDefinition): string =
   of MDK_ASSIGNED: fmt"{def.arg.asl} = match {def.operand.asl}:"
 
 proc match_definition_default_spec*(parser: Parser): Result[
-    MatchDefinition, Error] =
+    MatchDefinition, core.Error] =
   let match_keyword = ? parser.expect(match_keyword_spec)
   discard ? parser.expect(strict_space_spec)
   let operand = ? parser.expect(identifier_spec)
@@ -43,7 +43,7 @@ proc match_definition_default_spec*(parser: Parser): Result[
   new_match_definition(operand, match_keyword.location)
 
 proc match_definition_assigned_spec*(parser: Parser): Result[MatchDefinition,
-    Error] =
+    core.Error] =
   let arg = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(equal_spec)
@@ -52,8 +52,8 @@ proc match_definition_assigned_spec*(parser: Parser): Result[MatchDefinition,
   ok(new_match_definition(match_def_default, arg))
 
 proc match_definition_spec*(parser: Parser): Result[MatchDefinition,
-    Error] =
-  var errors: seq[Error]
+    core.Error] =
+  var errors: seq[core.Error]
   let maybe_match_def_default = parser.expect(match_definition_default_spec)
   if maybe_match_def_default.is_ok: return maybe_match_def_default
   else: errors.add(maybe_match_def_default.error)
@@ -65,7 +65,7 @@ proc match_definition_spec*(parser: Parser): Result[MatchDefinition,
   err(errors.max())
 
 proc keyword_value_identifier_spec*(parser: Parser): Result[(Identifier,
-    Identifier), Error] =
+    Identifier), core.Error] =
   let name = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
@@ -88,31 +88,32 @@ type
     of SPK_NAMED: struct: Identifier
 
 proc new_struct_pattern*(args: seq[(Identifier, Identifier)],
-    location: Location): Result[StructPattern, Error] =
+    location: Location): Result[StructPattern, core.Error] =
   if args.len == 0:
     return err(err_parser_empty_arg_list(location))
   if args.len > MAX_ARGS_LENGTH:
     return err(err_parser_arg_list_too_long(location, args.len))
 
-  var keys_map: Table[Identifier, int]
-  var values_map: Table[Identifier, int]
-  for index, (key, value) in args.pairs:
-    if key in keys_map:
-      let predefined_field_location = args[keys_map[key]][0].location
-      return err(err_parser_arg_already_defined(key.location, key.asl,
-          predefined_field_location))
-    keys_map[key] = index
+  let maybe_keys_repo = new_repo(args.map_it(it[0]))
+  if maybe_keys_repo.is_err:
+    let error = maybe_keys_repo.error
+    let key = error.current
+    let predefined_key_location = error.previous.location
+    return err(err_parser_arg_already_defined(key.location, key.asl,
+        predefined_key_location))
 
-    if value in values_map:
-      let predefined_field_location = args[values_map[value]][1].location
-      return err(err_parser_arg_already_defined(value.location, value.asl,
-          predefined_field_location))
-    values_map[value] = index
+  let maybe_values_repo = new_repo(args.map_it(it[1]))
+  if maybe_values_repo.is_err:
+    let error = maybe_values_repo.error
+    let value = error.current
+    let predefined_value_location = error.previous.location
+    return err(err_parser_arg_already_defined(value.location, value.asl,
+        predefined_value_location))
 
   ok(StructPattern(kind: SPK_DEFAULT, args: args, location: location))
 
 proc new_struct_pattern*(struct: Identifier, pattern: StructPattern): Result[
-    StructPattern, Error] =
+    StructPattern, core.Error] =
   case pattern.kind:
   of SPK_DEFAULT:
     ok(StructPattern(kind: SPK_NAMED, location: struct.location, struct: struct,
@@ -139,7 +140,7 @@ proc asl*(pattern: StructPattern): string =
   of SPK_NAMED: pattern.struct.asl & " { " & args.join(", ") & " }"
 
 proc struct_pattern_default_spec*(parser: Parser): Result[StructPattern,
-    Error] =
+    core.Error] =
   let open_curly = ? parser.expect(open_curly_bracket_spec)
   discard ? parser.expect(optional_space_spec)
 
@@ -157,13 +158,13 @@ proc struct_pattern_default_spec*(parser: Parser): Result[StructPattern,
   new_struct_pattern(keywords, open_curly.location)
 
 proc struct_pattern_named_spec*(parser: Parser): Result[StructPattern,
-    Error] =
+    core.Error] =
   let struct = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   let struct_pattern_default = ? parser.expect(struct_pattern_default_spec)
   new_struct_pattern(struct, struct_pattern_default)
 
-proc struct_pattern_spec*(parser: Parser): Result[StructPattern, Error] =
+proc struct_pattern_spec*(parser: Parser): Result[StructPattern, core.Error] =
   let maybe_struct_pattern_named = parser.expect(struct_pattern_named_spec)
   if maybe_struct_pattern_named.is_ok:
     maybe_struct_pattern_named
@@ -210,8 +211,8 @@ proc asl*(pattern: CasePattern): string =
   of CPK_LITERAL: pattern.literal.asl
   of CPK_STRUCT: pattern.struct.asl
 
-proc case_pattern_spec*(parser: Parser): Result[CasePattern, Error] =
-  var errors: seq[Error]
+proc case_pattern_spec*(parser: Parser): Result[CasePattern, core.Error] =
+  var errors: seq[core.Error]
 
   let maybe_struct_pattern = parser.expect(struct_pattern_spec)
   if maybe_struct_pattern.is_ok: return ok(new_case_pattern(
@@ -243,7 +244,7 @@ proc asl*(def: CaseDefinition): string =
   fmt"case {def.pattern.asl}:"
 
 proc case_definition_spec*(parser: Parser): Result[CaseDefinition,
-    Error] =
+    core.Error] =
   let case_keyword = ? parser.expect(case_keyword_spec)
   discard ? parser.expect(space_spec)
   discard ? parser.expect(optional_space_spec)
