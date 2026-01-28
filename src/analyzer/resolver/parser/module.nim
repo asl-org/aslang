@@ -66,242 +66,80 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
           generic.name.asl, predefined_generic_location))
     generics_map[generic.name] = index
 
+  var structs: seq[Struct]
   var structs_map: Table[Identifier, int]
   var default_struct_index = -1
   case data.kind:
-  of DK_MULTI_STRUCT:
-    let structs = ? data.structs
-    for index, struct in structs:
-      case struct.def.kind:
-      of SDK_DEFAULT:
-        if default_struct_index == -1:
-          default_struct_index = index
-        else:
-          let predefined_default_struct_location = structs[
-              default_struct_index].location
-          return err(err_parser_struct_already_defined(struct.location,
-              "default", predefined_default_struct_location))
-      of SDK_NAMED:
-        if struct.name in generics_map:
-          let generic = generics[generics_map[struct.name]]
-          return err(err_parser_struct_generic_conflict(struct.location,
-              struct.name.asl, generic.location, generic.name.asl))
-
-        if struct.name in structs_map:
-          let predefined_struct_location = structs[structs_map[
-              struct.name]].location
-          return err(err_parser_struct_already_defined(struct.location,
-              struct.name.asl, predefined_struct_location))
-
-        structs_map[struct.name] = index
-
-    var function_defs_hash_map: Table[Hash, int]
-    var functions_map: Table[Identifier, seq[int]]
-    for index, function in functions:
-      if function.name in generics_map:
-        let generic = generics[generics_map[function.name]]
-        return err(err_parser_function_generic_conflict(function.location,
-            function.name.asl, generic.location, generic.name.asl))
-
-      if function.name in structs_map:
-        let struct = structs[structs_map[function.name]]
-        return err(err_parser_function_struct_conflict(function.location,
-            function.name.asl, struct.location, struct.name.asl))
-
-      let def_hash = function.def.hash
-      if def_hash in function_defs_hash_map:
-        let predefined_function_location = functions[function_defs_hash_map[
-            def_hash]].location
-        return err(err_parser_function_already_defined(function.location,
-            function.name.asl, predefined_function_location))
-      function_defs_hash_map[def_hash] = index
-
-      if function.name notin functions_map:
-        functions_map[function.name] = new_seq[int]()
-      functions_map[function.name].add(index)
-
-    ok(Module(def: def, structs: structs, structs_map: structs_map,
-        default_struct_index: default_struct_index, generics: generics,
-        generics_map: generics_map, functions: functions,
-        functions_map: functions_map,
-        function_defs_hash_map: function_defs_hash_map))
   of DK_STRUCT:
     let struct = ? data.struct
+    structs = @[struct]
     if struct.def.kind != SDK_DEFAULT:
       return err(err_parser_expected_default_struct(struct.location,
           struct.name.asl))
     else:
       default_struct_index = 0
-
-    var function_defs_hash_map: Table[Hash, int]
-    var functions_map: Table[Identifier, seq[int]]
-    for index, function in functions:
-      if function.name in generics_map:
-        let generic = generics[generics_map[function.name]]
-        return err(err_parser_function_generic_conflict(function.location,
-            function.name.asl, generic.location, generic.name.asl))
-
-      let def_hash = function.def.hash
-      if def_hash in function_defs_hash_map:
-        let predefined_function_location = functions[function_defs_hash_map[
-            def_hash]].location
-        return err(err_parser_function_already_defined(function.location,
-            function.name.asl, predefined_function_location))
-      function_defs_hash_map[def_hash] = index
-
-      if function.name notin functions_map:
-        functions_map[function.name] = new_seq[int]()
-      functions_map[function.name].add(index)
-
-    ok(Module(def: def, structs: @[struct], data: data,
-        default_struct_index: 0, generics: generics, generics_map: generics_map,
-        functions: functions, functions_map: functions_map,
-        function_defs_hash_map: function_defs_hash_map))
   of DK_UNION:
     let union = ? data.union
-    var function_defs_hash_map: Table[Hash, int]
-    var functions_map: Table[Identifier, seq[int]]
-    for index, function in functions:
-      if function.name in generics_map:
-        let generic = generics[generics_map[function.name]]
-        return err(err_parser_function_generic_conflict(function.location,
-            function.name.asl, generic.location, generic.name.asl))
+    for branch in union.branches:
+      structs.add( ? branch.struct)
+    for index, struct in structs:
+      case struct.def.kind:
+      of SDK_DEFAULT:
+        if default_struct_index == -1:
+          default_struct_index = index
+        else:
+          let predefined_default_struct_location = structs[
+              default_struct_index].location
+          return err(err_parser_struct_already_defined(struct.location,
+              "default", predefined_default_struct_location))
+      of SDK_NAMED:
+        if struct.name in generics_map:
+          let generic = generics[generics_map[struct.name]]
+          return err(err_parser_struct_generic_conflict(struct.location,
+              struct.name.asl, generic.location, generic.name.asl))
 
-      let maybe_branch = union.find_branch(function.name)
-      if maybe_branch.is_ok:
-        let branch = maybe_branch.get
-        return err(err_parser_function_union_branch_conflict(function.location,
-            function.name.asl, branch.location, branch.name.asl))
+        if struct.name in structs_map:
+          let predefined_struct_location = structs[structs_map[
+              struct.name]].location
+          return err(err_parser_struct_already_defined(struct.location,
+              struct.name.asl, predefined_struct_location))
 
-      let def_hash = function.def.hash
-      if def_hash in function_defs_hash_map:
-        let predefined_function_location = functions[function_defs_hash_map[
-            def_hash]].location
-        return err(err_parser_function_already_defined(function.location,
-            function.name.asl, predefined_function_location))
-      function_defs_hash_map[def_hash] = index
-
-      if function.name notin functions_map:
-        functions_map[function.name] = new_seq[int]()
-      functions_map[function.name].add(index)
-
-    ok(Module(def: def, data: data,
-        default_struct_index: default_struct_index, generics: generics,
-        generics_map: generics_map, functions: functions,
-        functions_map: functions_map,
-        function_defs_hash_map: function_defs_hash_map))
+        structs_map[struct.name] = index
   of DK_NONE:
-    let structs: seq[Struct] = @[]
-    for index, struct in structs:
-      case struct.def.kind:
-      of SDK_DEFAULT:
-        if default_struct_index == -1:
-          default_struct_index = index
-        else:
-          let predefined_default_struct_location = structs[
-              default_struct_index].location
-          return err(err_parser_struct_already_defined(struct.location,
-              "default", predefined_default_struct_location))
-      of SDK_NAMED:
-        if struct.name in generics_map:
-          let generic = generics[generics_map[struct.name]]
-          return err(err_parser_struct_generic_conflict(struct.location,
-              struct.name.asl, generic.location, generic.name.asl))
+    discard
+  of DK_LITERAL:
+    discard
 
-        if struct.name in structs_map:
-          let predefined_struct_location = structs[structs_map[
-              struct.name]].location
-          return err(err_parser_struct_already_defined(struct.location,
-              struct.name.asl, predefined_struct_location))
+  var function_defs_hash_map: Table[Hash, int]
+  var functions_map: Table[Identifier, seq[int]]
+  for index, function in functions:
+    if function.name in generics_map:
+      let generic = generics[generics_map[function.name]]
+      return err(err_parser_function_generic_conflict(function.location,
+          function.name.asl, generic.location, generic.name.asl))
 
-        structs_map[struct.name] = index
+    if function.name in structs_map:
+      let struct = structs[structs_map[function.name]]
+      return err(err_parser_function_struct_conflict(function.location,
+          function.name.asl, struct.location, struct.name.asl))
 
-    var function_defs_hash_map: Table[Hash, int]
-    var functions_map: Table[Identifier, seq[int]]
-    for index, function in functions:
-      if function.name in generics_map:
-        let generic = generics[generics_map[function.name]]
-        return err(err_parser_function_generic_conflict(function.location,
-            function.name.asl, generic.location, generic.name.asl))
+    let def_hash = function.def.hash
+    if def_hash in function_defs_hash_map:
+      let predefined_function_location = functions[function_defs_hash_map[
+          def_hash]].location
+      return err(err_parser_function_already_defined(function.location,
+          function.name.asl, predefined_function_location))
+    function_defs_hash_map[def_hash] = index
 
-      if function.name in structs_map:
-        let struct = structs[structs_map[function.name]]
-        return err(err_parser_function_struct_conflict(function.location,
-            function.name.asl, struct.location, struct.name.asl))
+    if function.name notin functions_map:
+      functions_map[function.name] = new_seq[int]()
+    functions_map[function.name].add(index)
 
-      let def_hash = function.def.hash
-      if def_hash in function_defs_hash_map:
-        let predefined_function_location = functions[function_defs_hash_map[
-            def_hash]].location
-        return err(err_parser_function_already_defined(function.location,
-            function.name.asl, predefined_function_location))
-      function_defs_hash_map[def_hash] = index
-
-      if function.name notin functions_map:
-        functions_map[function.name] = new_seq[int]()
-      functions_map[function.name].add(index)
-
-    ok(Module(def: def, structs: structs, structs_map: structs_map,
-        default_struct_index: default_struct_index, generics: generics,
-        generics_map: generics_map, functions: functions,
-        functions_map: functions_map,
-        function_defs_hash_map: function_defs_hash_map))
-  else:
-    let structs = ? data.structs
-    for index, struct in structs:
-      case struct.def.kind:
-      of SDK_DEFAULT:
-        if default_struct_index == -1:
-          default_struct_index = index
-        else:
-          let predefined_default_struct_location = structs[
-              default_struct_index].location
-          return err(err_parser_struct_already_defined(struct.location,
-              "default", predefined_default_struct_location))
-      of SDK_NAMED:
-        if struct.name in generics_map:
-          let generic = generics[generics_map[struct.name]]
-          return err(err_parser_struct_generic_conflict(struct.location,
-              struct.name.asl, generic.location, generic.name.asl))
-
-        if struct.name in structs_map:
-          let predefined_struct_location = structs[structs_map[
-              struct.name]].location
-          return err(err_parser_struct_already_defined(struct.location,
-              struct.name.asl, predefined_struct_location))
-
-        structs_map[struct.name] = index
-
-    var function_defs_hash_map: Table[Hash, int]
-    var functions_map: Table[Identifier, seq[int]]
-    for index, function in functions:
-      if function.name in generics_map:
-        let generic = generics[generics_map[function.name]]
-        return err(err_parser_function_generic_conflict(function.location,
-            function.name.asl, generic.location, generic.name.asl))
-
-      if function.name in structs_map:
-        let struct = structs[structs_map[function.name]]
-        return err(err_parser_function_struct_conflict(function.location,
-            function.name.asl, struct.location, struct.name.asl))
-
-      let def_hash = function.def.hash
-      if def_hash in function_defs_hash_map:
-        let predefined_function_location = functions[function_defs_hash_map[
-            def_hash]].location
-        return err(err_parser_function_already_defined(function.location,
-            function.name.asl, predefined_function_location))
-      function_defs_hash_map[def_hash] = index
-
-      if function.name notin functions_map:
-        functions_map[function.name] = new_seq[int]()
-      functions_map[function.name].add(index)
-
-    ok(Module(def: def, structs: structs, structs_map: structs_map,
-        default_struct_index: default_struct_index, generics: generics,
-        generics_map: generics_map, functions: functions,
-        functions_map: functions_map,
-        function_defs_hash_map: function_defs_hash_map))
+  ok(Module(def: def, structs: structs, structs_map: structs_map,
+      default_struct_index: default_struct_index, generics: generics,
+      generics_map: generics_map, functions: functions,
+      functions_map: functions_map,
+      function_defs_hash_map: function_defs_hash_map))
 
 proc new_module*(name: string, functions: seq[
     ExternFunction]): Result[Module, Error] =
@@ -310,14 +148,6 @@ proc new_module*(name: string, functions: seq[
   let module_data = new_data()
   let module_functions = functions.map_it(new_function(it))
   new_module(module_def, @[], module_data, module_functions)
-
-proc new_module*(name: string, generics: seq[Generic], structs: seq[
-    Struct], functions: seq[ExternFunction]): Result[Module, Error] =
-  let name = new_identifier(name)
-  let module_def = new_module_definition(name, name.location)
-  let module_data = new_data(structs)
-  let module_functions = functions.map_it(new_function(it))
-  new_module(module_def, generics, module_data, module_functions)
 
 proc hash*(module: Module): Hash = module.def.hash
 proc `==`*(self: Module, other: Module): bool = self.hash == other.hash

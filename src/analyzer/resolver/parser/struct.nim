@@ -132,6 +132,9 @@ proc new_union_branch*(name: Identifier, fields: seq[
 
 proc location*(branch: UnionBranch): Location = branch.location
 proc name*(branch: UnionBranch): Identifier = branch.name
+proc struct*(branch: UnionBranch): Result[Struct, Error] =
+  let def = new_struct_definition(branch.name, branch.name.location)
+  new_struct(def, branch.fields)
 
 proc union_branch_spec*(parser: Parser, indent: int): Result[UnionBranch,
     Error] =
@@ -177,6 +180,8 @@ proc new_union*(location: Location, branches: seq[
 
   ok(Union(location: location, branches: branches, branch_map: branch_map))
 
+proc branches*(union: Union): seq[UnionBranch] = union.branches
+
 proc find_branch*(union: Union, name: Identifier): Result[UnionBranch, string] =
   if name in union.branch_map:
     ok(union.branches[union.branch_map[name]])
@@ -184,6 +189,7 @@ proc find_branch*(union: Union, name: Identifier): Result[UnionBranch, string] =
     err(fmt"{name.location} union does not have any branch named `{name.asl}`")
 
 proc union_spec*(parser: Parser, indent: int): Result[Union, Error] =
+  discard ? parser.expect(indent_spec, indent)
   let union_keyword = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
@@ -201,14 +207,13 @@ proc union_spec*(parser: Parser, indent: int): Result[Union, Error] =
 
 type
   DataKind* = enum
-    DK_NONE, DK_LITERAL, DK_STRUCT, DK_UNION, DK_MULTI_STRUCT
+    DK_NONE, DK_LITERAL, DK_STRUCT, DK_UNION
   Data* = ref object of RootObj
     case kind: DataKind
     of DK_NONE: discard
     of DK_LITERAL: discard
     of DK_STRUCT: struct: Struct
     of DK_UNION: union: Union
-    of DK_MULTI_STRUCT: structs: seq[Struct]
 
 proc new_data*(): Data =
   Data(kind: DK_NONE)
@@ -219,14 +224,7 @@ proc new_data(union: Union): Data =
 proc new_data(struct: Struct): Data =
   Data(kind: DK_STRUCT, struct: struct)
 
-proc new_data*(structs: seq[Struct]): Data =
-  Data(kind: DK_MULTI_STRUCT, structs: structs)
-
 proc kind*(data: Data): DataKind = data.kind
-proc structs*(data: Data): Result[seq[Struct], Error] =
-  case data.kind:
-  of DK_MULTI_STRUCT: ok(data.structs)
-  else: err(err_parser_expected_multi_struct($(data.kind)))
 proc struct*(data: Data): Result[Struct, Error] =
   case data.kind:
   of DK_STRUCT: ok(data.struct)
@@ -242,9 +240,6 @@ proc data_spec*(parser: Parser, indent: int): Result[Data, Error] =
 
   let maybe_struct = parser.expect(struct_default_spec, indent)
   if maybe_struct.is_ok: return ok(new_data(maybe_struct.get))
-
-  let maybe_multi_struct = parser.expect(struct_list_spec, indent)
-  if maybe_multi_struct.is_ok: return ok(new_data(maybe_multi_struct.get))
 
   # TODO: Introduce may be literal data type
   ok(new_data())

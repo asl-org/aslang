@@ -152,10 +152,11 @@ module Error:
     String message
 module Status:
   generic Value
-  struct Ok:
-    Value value
-  struct Err:
-    Error error
+  union:
+    Ok:
+      Value value
+    Err:
+      Error error
 module Array:
   generic Item
   struct:

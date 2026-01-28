@@ -152,10 +152,11 @@ module Error:
     String message
 module Status:
   generic Value
-  struct Ok:
-    Value value
-  struct Err:
-    Error error
+  union:
+    Ok:
+      Value value
+    Err:
+      Error error
 module Array:
   generic Item
   struct:
@@ -205,4 +206,10 @@ module System:
     fn print(String value): U64
 
 fn start(U8 seed): U8
+  status = Status[U8].Ok { value: 1 }
+  match status:
+    case Ok { value: temp }:
+      System.print(temp)
+    else:
+      System.print("ERROR")
   exit_success = U8 0
