@@ -1,7 +1,6 @@
 import results, strformat, strutils, tables, hashes
 
 import core, identifier, module_ref
-export core, identifier, module_ref
 
 # =============================================================================
 # StructDefinition
@@ -37,14 +36,14 @@ proc asl*(def: StructDefinition): string =
   of SDK_NAMED: fmt"struct {def.name.asl}:"
 
 proc struct_default_definition_spec*(parser: Parser): Result[
-    StructDefinition, Error] =
+    StructDefinition, core.Error] =
   let struct_keyword = ? parser.expect(struct_keyword_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
   ok(new_struct_definition(struct_keyword.location))
 
 proc struct_named_definition_spec*(parser: Parser): Result[
-    StructDefinition, Error] =
+    StructDefinition, core.Error] =
   let struct_keyword = ? parser.expect(struct_keyword_spec)
   discard ? parser.expect(strict_space_spec)
   let name = ? parser.expect(identifier_spec)
@@ -53,8 +52,8 @@ proc struct_named_definition_spec*(parser: Parser): Result[
   ok(new_struct_definition(name, struct_keyword.location))
 
 proc struct_definition_spec*(parser: Parser): Result[
-    StructDefinition, Error] =
-  var errors: seq[Error]
+    StructDefinition, core.Error] =
+  var errors: seq[core.Error]
 
   let maybe_struct_default_def = parser.expect(struct_default_definition_spec)
   if maybe_struct_default_def.is_ok: return maybe_struct_default_def
@@ -80,7 +79,7 @@ proc new_argument_definition*(module_ref: ModuleRef,
   ArgumentDefinition(name: name, module_ref: module_ref)
 
 proc new_argument_definition*(module_ref: string, name: string): Result[
-    ArgumentDefinition, Error] =
+    ArgumentDefinition, core.Error] =
   let module_ref_id = new_module_ref(module_ref)
   let name_id = new_identifier(name)
   ok(new_argument_definition(module_ref_id, name_id))
@@ -100,7 +99,7 @@ proc name*(def: ArgumentDefinition): Identifier = def.name
 proc hash*(def: ArgumentDefinition): Hash = hash(def.module_ref)
 
 proc argument_definition_spec*(parser: Parser): Result[
-    ArgumentDefinition, Error] =
+    ArgumentDefinition, core.Error] =
   let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(strict_space_spec)
   let name = ? parser.expect(identifier_spec)
@@ -108,7 +107,7 @@ proc argument_definition_spec*(parser: Parser): Result[
 
 # TODO: Fix this later.
 proc struct_field_definition_spec*(parser: Parser, indent: int): Result[
-    ArgumentDefinition, Error] =
+    ArgumentDefinition, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let field = ? parser.expect(argument_definition_spec)
   ok(field)
@@ -125,7 +124,7 @@ type FunctionDefinition* = ref object of RootObj
 
 proc new_function_definition*(name: Identifier, args: seq[ArgumentDefinition],
     returns: ModuleRef, location: Location): Result[FunctionDefinition,
-        Error] =
+        core.Error] =
   if args.len == 0:
     return err(err_parser_empty_arg_list(location))
   if args.len > MAX_ARGS_LENGTH:
@@ -161,7 +160,7 @@ proc hash*(def: FunctionDefinition): Hash =
   return acc
 
 proc argument_definition_list_spec*(parser: Parser): Result[seq[
-    ArgumentDefinition], Error] =
+    ArgumentDefinition], core.Error] =
   var argdefs: seq[ArgumentDefinition]
   discard ? parser.expect(open_paren_bracket_spec)
   discard ? parser.expect(optional_space_spec)
@@ -178,7 +177,7 @@ proc argument_definition_list_spec*(parser: Parser): Result[seq[
   ok(argdefs)
 
 proc function_definition_spec*(parser: Parser, indent: int): Result[
-    FunctionDefinition, Error] =
+    FunctionDefinition, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let fn_keyword = ? parser.expect(fn_keyword_spec)
 

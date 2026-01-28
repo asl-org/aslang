@@ -1,7 +1,6 @@
 import results, strformat, tables
 
-import core, defs, repo
-export core, defs, repo
+import core, defs, identifier, module_ref
 
 type Struct* = ref object of RootObj
   def: StructDefinition

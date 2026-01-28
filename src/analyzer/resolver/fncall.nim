@@ -1,8 +1,8 @@
 # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
 import results, strformat, sets, options
 
-import initializer
-export initializer
+import parser
+import module_ref
 
 # =============================================================================
 # ResolvedFunctionRef

@@ -1,7 +1,10 @@
 import results, strformat, sets, options
 
+import parser
+import module_ref
+import defs
 import fncall
-export fncall
+import initializer
 
 # =============================================================================
 # Mutually Recursive Types: Expression, Statement, Case, Else, Match

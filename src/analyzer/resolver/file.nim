@@ -1,8 +1,9 @@
 import results, strformat, tables, options, sequtils
 
 import parser
+import defs
+import expression
 import module
-export module
 
 # =============================================================================
 # ResolvedFile

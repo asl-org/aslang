@@ -1,7 +1,6 @@
 import results, strformat
 
 import core, identifier, module_ref, defs, expression
-export core, identifier, module_ref, defs, expression
 
 # =============================================================================
 # UserFunction

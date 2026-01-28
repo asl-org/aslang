@@ -1,7 +1,6 @@
 import results, strformat, strutils, tables, sequtils
 
-import core, identifier, literal, repo
-export core, identifier, literal, repo
+import core, identifier, literal
 
 # =============================================================================
 # MatchDefinition

@@ -1,7 +1,6 @@
 import results, strformat, sequtils, tables, hashes
 
 import core, identifier, module_ref, defs, struct, generic, function
-export core, identifier, module_ref, defs, struct, generic, function
 
 # =============================================================================
 # ModuleDefinition

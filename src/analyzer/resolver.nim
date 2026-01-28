@@ -1,6 +1,27 @@
 import results, strformat, tables, strutils, sets, algorithm, options, sequtils,
     hashes, parseutils
 
+import resolver/parser
+export parser
+
+import resolver/module_ref
+export module_ref
+
+import resolver/defs
+export defs
+
+import resolver/fncall
+export fncall
+
+import resolver/initializer
+export initializer
+
+import resolver/expression
+export expression
+
+import resolver/module
+export module
+
 import resolver/file
 export file
 

@@ -3,6 +3,9 @@ import results, strformat
 import tokenizer
 export tokenizer
 
+import repo
+export repo
+
 # ast node constants
 const MAX_IDENTIFIER_LENGTH* = 256
 const MAX_TYPE_CHILDREN_COUNT* = 8

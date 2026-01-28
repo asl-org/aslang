@@ -1,7 +1,6 @@
 import results, strformat, tables, hashes
 
 import core, identifier, module_ref, defs
-export core, identifier, module_ref, defs
 
 # =============================================================================
 # Generic
@@ -23,7 +22,7 @@ proc new_generic*(name: Identifier, location: Location): Generic =
   Generic(kind: GK_DEFAULT, name: name, location: location)
 
 proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
-    location: Location): Result[Generic, Error] =
+    location: Location): Result[Generic, core.Error] =
   if defs.len == 0:
     return err(err_parser_empty_generic_constraint_list(location, name.asl))
 
@@ -80,7 +79,7 @@ proc `==`*(self: Generic, other: Generic): bool =
   self.hash == other.hash
 
 proc generic_default_spec*(parser: Parser, indent: int): Result[Generic,
-    Error] =
+    core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let generic_keyword = ? parser.expect(generic_keyword_spec)
   discard ? parser.expect(space_spec)
@@ -89,7 +88,7 @@ proc generic_default_spec*(parser: Parser, indent: int): Result[Generic,
   ok(new_generic(name, generic_keyword.location))
 
 proc generic_constrained_spec*(parser: Parser, indent: int): Result[Generic,
-    Error] =
+    core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let generic_keyword = ? parser.expect(generic_keyword_spec)
   discard ? parser.expect(space_spec)
@@ -109,8 +108,8 @@ proc generic_constrained_spec*(parser: Parser, indent: int): Result[Generic,
 
   new_generic(name, defs, generic_keyword.location)
 
-proc generic_spec*(parser: Parser, indent: int): Result[Generic, Error] =
-  var errors: seq[Error]
+proc generic_spec*(parser: Parser, indent: int): Result[Generic, core.Error] =
+  var errors: seq[core.Error]
 
   let maybe_generic_constrained = parser.expect(generic_constrained_spec, indent)
   if maybe_generic_constrained.is_ok: return maybe_generic_constrained

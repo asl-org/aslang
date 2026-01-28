@@ -1,7 +1,6 @@
 import results, strformat
 
 import core, identifier, arg, initializer, pattern
-export core, identifier, arg, initializer, pattern
 
 # =============================================================================
 # Mutually Recursive Types: Expression, Statement, Case, Else, Match

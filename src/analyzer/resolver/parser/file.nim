@@ -1,7 +1,6 @@
 import results, strformat, strutils, sequtils, re, tables, hashes
 
-import core, module, function
-export core, module, function
+import core, module, function, identifier, defs
 
 # =============================================================================
 # File
