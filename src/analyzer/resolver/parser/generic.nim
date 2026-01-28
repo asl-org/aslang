@@ -110,10 +110,17 @@ proc generic_constrained_spec*(parser: Parser, indent: int): Result[Generic,
   new_generic(name, defs, generic_keyword.location)
 
 proc generic_spec*(parser: Parser, indent: int): Result[Generic, Error] =
+  var errors: seq[Error]
+
   let maybe_generic_constrained = parser.expect(generic_constrained_spec, indent)
-  if maybe_generic_constrained.is_ok:
-    maybe_generic_constrained
-  else:
-    # NOTE: generic default parser must be second since it is a subset of
-    # generic_named spec and therefore may result in malformed parsing.
-    parser.expect(generic_default_spec, indent)
+  if maybe_generic_constrained.is_ok: return maybe_generic_constrained
+  else: errors.add(maybe_generic_constrained.error)
+
+  # NOTE: generic default parser must be second since it is a subset of
+  # generic_named spec and therefore may result in malformed parsing.
+  let maybe_generic_default = parser.expect(generic_default_spec, indent)
+  if maybe_generic_default.is_ok: return maybe_generic_default
+  else: errors.add(maybe_generic_default.error)
+
+  err(errors.max())
+

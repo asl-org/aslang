@@ -362,12 +362,11 @@ proc asl*(module: Module, indent: string): seq[string] =
 proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic],
     Error] =
   var generics: seq[Generic]
-  discard ? parser.expect(optional_empty_line_spec)
-  var maybe_generic = parser.expect(generic_spec, indent + 1)
+  var maybe_generic = parser.expect(generic_spec, indent)
   while maybe_generic.is_ok:
     generics.add(maybe_generic.get)
     discard ? parser.expect(optional_empty_line_spec)
-    maybe_generic = parser.expect(generic_spec, indent + 1)
+    maybe_generic = parser.expect(generic_spec, indent)
   ok(generics)
 
 proc function_list_spec(parser: Parser, indent: int): Result[seq[Function],
@@ -385,9 +384,9 @@ proc module_spec*(parser: Parser, indent: int): Result[Module, Error] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
   discard ? parser.expect(optional_empty_line_spec)
-  let generics = ? parser.expect(generic_list_spec, indent)
+  let generics = ? parser.expect(generic_list_spec, indent + 1)
   discard ? parser.expect(optional_empty_line_spec)
-  let data = ? parser.expect(data_spec, indent)
+  let data = ? parser.expect(data_spec, indent + 1)
   discard ? parser.expect(optional_empty_line_spec)
   let functions = ? parser.expect(function_list_spec, indent)
   new_module(def, generics, data, functions)

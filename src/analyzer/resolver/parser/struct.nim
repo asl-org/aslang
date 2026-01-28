@@ -101,12 +101,11 @@ proc struct_spec*(parser: Parser, indent: int): Result[Struct, Error] =
 proc struct_list_spec(parser: Parser, indent: int): Result[seq[Struct],
     Error] =
   var structs: seq[Struct]
-  discard ? parser.expect(optional_empty_line_spec)
-  var maybe_struct = parser.expect(struct_spec, indent + 1)
+  var maybe_struct = parser.expect(struct_spec, indent)
   while maybe_struct.is_ok:
     structs.add(maybe_struct.get)
     discard ? parser.expect(optional_empty_line_spec)
-    maybe_struct = parser.expect(struct_spec, indent + 1)
+    maybe_struct = parser.expect(struct_spec, indent)
   ok(structs)
 
 type UnionBranch = ref object of RootObj
