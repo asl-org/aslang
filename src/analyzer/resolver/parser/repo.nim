@@ -10,7 +10,7 @@ proc new_error[T](current: T, previous: T): Error[T] =
 proc current*[T](error: Error[T]): T = error.current
 proc previous*[T](error: Error[T]): T = error.previous
 
-type Key[K, V] = proc(value: V): K {.nimcall.}
+type Key[K, V] = proc(value: V): K
 
 type Repo*[K, V] = ref object of RootObj
   key: Key[K, V]
@@ -29,6 +29,10 @@ proc new_repo*[V](items: seq[V]): Result[Repo[V, V], Error[V]] =
   new_repo[V, V](items, proc(x: V): V = x)
 
 proc items*[K, V](repo: Repo[K, V]): seq[V] = repo.items
+
+proc find_id*[K, V](repo: Repo[K, V], key: K): Result[int, void] =
+  if key notin repo.items_map: err()
+  else: ok(repo.items_map[key])
 
 proc find*[K, V](repo: Repo[K, V], key: K): Result[V, void] =
   if key notin repo.items_map: err()

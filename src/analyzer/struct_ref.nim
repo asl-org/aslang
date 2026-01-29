@@ -52,8 +52,8 @@ proc c*(struct_ref: AnalyzedStructRef): string =
 proc analyze*(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedModuleDefinition, scope: FunctionScope,
     struct_ref: ResolvedStructRef): Result[AnalyzedStructRef, string] =
-  let analyzed_module_ref = ? analyze_def(file_def.file, module_def.module,
-      struct_ref.module_ref)
+  let analyzed_module_ref = ? analyze_def(file_def.file,
+      module_def.resolved_module, struct_ref.module_ref)
   case analyzed_module_ref.kind:
   of AMRK_GENERIC:
     err(fmt"1 {struct_ref.location} generic `{analyzed_module_ref.generic.name.asl}` is not a struct")
@@ -65,7 +65,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
       let maybe_struct = analyzed_module_def.find_struct()
       if maybe_struct.is_ok:
         let analyzed_struct = maybe_struct.get
-        let analyzed_concretized_struct = analyzed_struct.concretize(
+        let analyzed_concretized_struct = ? analyzed_struct.concretize(
             analyzed_module_ref.concrete_map)
         ok(new_analyzed_struct_ref(analyzed_module_ref, analyzed_struct,
             analyzed_concretized_struct))
@@ -77,7 +77,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
       let maybe_struct = analyzed_module_def.find_struct(struct_name)
       if maybe_struct.is_ok:
         let analyzed_struct = maybe_struct.get
-        let analyzed_concretized_struct = analyzed_struct.concretize(
+        let analyzed_concretized_struct = ? analyzed_struct.concretize(
             analyzed_module_ref.concrete_map)
         ok(new_analyzed_struct_ref(analyzed_module_ref, analyzed_struct,
             analyzed_concretized_struct))
@@ -99,7 +99,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
       let maybe_struct = analyzed_module_def.find_struct()
       if maybe_struct.is_ok:
         let analyzed_struct = maybe_struct.get
-        let analyzed_concretized_struct = analyzed_struct.concretize(
+        let analyzed_concretized_struct = ? analyzed_struct.concretize(
             analyzed_module_ref.concrete_map)
         ok(new_analyzed_struct_ref(analyzed_module_ref, analyzed_struct,
             analyzed_concretized_struct))
@@ -111,7 +111,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
       let maybe_struct = analyzed_module_def.find_struct(struct_name)
       if maybe_struct.is_ok:
         let analyzed_struct = maybe_struct.get
-        let analyzed_concretized_struct = analyzed_struct.concretize(
+        let analyzed_concretized_struct = ? analyzed_struct.concretize(
             analyzed_module_ref.concrete_map)
         ok(new_analyzed_struct_ref(analyzed_module_ref, analyzed_struct,
             analyzed_concretized_struct))

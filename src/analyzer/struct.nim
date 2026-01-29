@@ -10,31 +10,31 @@ type
   AnalyzedStruct* = ref object of RootObj
     struct: ResolvedStruct
     location: Location
-    fields: seq[AnalyzedArgumentDefinition]
-    fields_map: Table[Identifier, int]
+    fields_repo: Repo[Identifier, AnalyzedArgumentDefinition]
     case kind: AnalyzedStructKind
     of RSK_DEFAULT: discard
     of RSK_NAMED: name: Identifier
 
 proc new_analyzed_struct(struct: ResolvedStruct, fields: seq[
-    AnalyzedArgumentDefinition], location: Location): AnalyzedStruct =
-  var fields_map: Table[Identifier, int]
-  for index, field in fields.pairs: fields_map[field.name] = index
-  AnalyzedStruct(kind: RSK_DEFAULT, struct: struct, fields: fields,
-      fields_map: fields_map, location: location)
+    AnalyzedArgumentDefinition], location: Location): Result[AnalyzedStruct, string] =
+  let maybe_fields_repo = new_repo(fields, name)
+  if maybe_fields_repo.is_err: return err("new_analyzed_struct UNREACHABLE")
+  ok(AnalyzedStruct(kind: RSK_DEFAULT, struct: struct,
+      fields_repo: maybe_fields_repo.get, location: location))
 
-proc new_analyzed_struct(struct: ResolvedStruct, name: Identifier, fields: seq[
-    AnalyzedArgumentDefinition], location: Location): AnalyzedStruct =
-  var fields_map: Table[Identifier, int]
-  for index, field in fields.pairs: fields_map[field.name] = index
-  AnalyzedStruct(kind: RSK_NAMED, struct: struct, name: name, fields: fields,
-      fields_map: fields_map, location: location)
+proc new_analyzed_struct(struct: ResolvedStruct, struct_name: Identifier,
+    fields: seq[AnalyzedArgumentDefinition], location: Location): Result[
+        AnalyzedStruct, string] =
+  let maybe_fields_repo = new_repo(fields, name)
+  if maybe_fields_repo.is_err: return err("new_analyzed_struct UNREACHABLE")
+  ok(AnalyzedStruct(kind: RSK_NAMED, struct: struct, name: struct_name,
+      fields_repo: maybe_fields_repo.get, location: location))
 
 proc kind*(struct: AnalyzedStruct): AnalyzedStructKind = struct.kind
 proc id*(struct: AnalyzedStruct): uint64 = struct.struct.id
 proc name*(struct: AnalyzedStruct): Identifier = struct.name
 proc fields*(struct: AnalyzedStruct): seq[
-    AnalyzedArgumentDefinition] = struct.fields
+    AnalyzedArgumentDefinition] = struct.fields_repo.items
 
 proc generic_impls*(struct: AnalyzedStruct): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
@@ -135,7 +135,7 @@ proc c*(struct: AnalyzedStruct, prefix: string, id: Option[uint64] = none(
   return lines
 
 proc concretize*(struct: AnalyzedStruct, concrete_map: Table[ResolvedGeneric,
-    AnalyzedModuleRef]): AnalyzedStruct =
+    AnalyzedModuleRef]): Result[AnalyzedStruct, string] =
   var concretized_fields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     concretized_fields.add(field.concretize(concrete_map))
@@ -147,15 +147,15 @@ proc concretize*(struct: AnalyzedStruct, concrete_map: Table[ResolvedGeneric,
       concretized_fields, struct.location)
 
 proc find_field_index*(struct: AnalyzedStruct, field: Identifier): Result[int, string] =
-  if field in struct.fields_map:
-    ok(struct.fields_map[field])
-  else:
-    err(fmt"{field.location} field is not defined in the struct")
+  let maybe_field_id = struct.fields_repo.find_id(field)
+  if maybe_field_id.is_ok: ok(maybe_field_id.get)
+  else: err(fmt"{field.location} field is not defined in the struct")
 
 proc find_field*(struct: AnalyzedStruct, field: Identifier): Result[
     AnalyzedArgumentDefinition, string] =
-  let field_index = ? struct.find_field_index(field)
-  ok(struct.fields[field_index])
+  let maybe_field = struct.fields_repo.find(field)
+  if maybe_field.is_ok: ok(maybe_field.get)
+  else: err(fmt"{field.location} field is not defined in the struct")
 
 # Helper for resolving ResolvedStruct with either module kind
 proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
@@ -167,8 +167,7 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
 
   case struct.kind:
   of TSK_DEFAULT:
-    ok(new_analyzed_struct(struct, analyzed_fields, struct.location))
+    new_analyzed_struct(struct, analyzed_fields, struct.location)
   of TSK_NAMED:
     let struct_name = ? struct.name
-    ok(new_analyzed_struct(struct, struct_name, analyzed_fields,
-        struct.location))
+    new_analyzed_struct(struct, struct_name, analyzed_fields, struct.location)

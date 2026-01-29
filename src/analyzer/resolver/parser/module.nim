@@ -44,8 +44,6 @@ type Module* = ref object of RootObj
   default_struct_index: int
   structs_map: Table[Identifier, int]
   functions: seq[Function]
-  functions_map: Table[Identifier, seq[int]]
-  function_defs_hash_map: Table[Hash, int]
 
 proc new_module*(def: ModuleDefinition, generics: seq[Generic],
     data: Data, functions: seq[Function]): Result[Module, core.Error] =
@@ -106,13 +104,18 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
               struct.name.asl, predefined_struct_location))
 
         structs_map[struct.name] = index
-  of DK_NONE:
-    discard
-  of DK_LITERAL:
-    discard
+  of DK_NONE: discard
+  of DK_LITERAL: assert false, "DK_LITERAL UNREACHABLE"
 
-  var function_defs_hash_map: Table[Hash, int]
-  var functions_map: Table[Identifier, seq[int]]
+  let maybe_functions_repo = new_repo(functions, proc(
+      fn: Function): Hash = fn.def.hash)
+  if maybe_functions_repo.is_err:
+    let error = maybe_functions_repo.error
+    let function = error.current
+    let predefined_function_location = error.previous.location
+    return err(err_parser_function_already_defined(function.location,
+        function.name.asl, predefined_function_location))
+
   for index, function in functions:
     let maybe_generic = generics_repo.find(function.name)
     if maybe_generic.is_ok:
@@ -125,22 +128,9 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
       return err(err_parser_function_struct_conflict(function.location,
           function.name.asl, struct.location, struct.name.asl))
 
-    let def_hash = function.def.hash
-    if def_hash in function_defs_hash_map:
-      let predefined_function_location = functions[function_defs_hash_map[
-          def_hash]].location
-      return err(err_parser_function_already_defined(function.location,
-          function.name.asl, predefined_function_location))
-    function_defs_hash_map[def_hash] = index
-
-    if function.name notin functions_map:
-      functions_map[function.name] = new_seq[int]()
-    functions_map[function.name].add(index)
-
-  ok(Module(def: def, structs: structs, structs_map: structs_map,
-      default_struct_index: default_struct_index, generics_repo: generics_repo,
-      functions: functions, functions_map: functions_map,
-      function_defs_hash_map: function_defs_hash_map))
+  ok(Module(def: def, generics_repo: generics_repo, structs: structs,
+      structs_map: structs_map, default_struct_index: default_struct_index,
+      functions: functions))
 
 proc new_module*(name: string, functions: seq[
     ExternFunction]): Result[Module, core.Error] =

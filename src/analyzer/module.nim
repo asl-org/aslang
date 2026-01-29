@@ -86,7 +86,7 @@ proc c*(module: AnalyzedModule, generic_impls: seq[seq[(
 proc analyze*(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedModuleDefinition): Result[AnalyzedModule, string] =
   var analyzed_functions: seq[AnalyzedFunction]
-  for function in module_def.module.functions:
+  for function in module_def.resolved_module.functions:
     let analyzed_function =
       case function.kind:
       of RFK_USER:

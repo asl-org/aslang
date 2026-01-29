@@ -86,7 +86,8 @@ proc analyze*(file_def: AnalyzedFileDefinition,
         analyzed_function_defs))
   of RFRK_MODULE:
     let resolved_module_ref = ? fnref.module_ref
-    let analyzed_module_ref = ? analyze_def(file_def.file, module_def.module, resolved_module_ref)
+    let analyzed_module_ref = ? analyze_def(file_def.file,
+        module_def.resolved_module, resolved_module_ref)
     case analyzed_module_ref.kind:
     of AMRK_GENERIC:
       let resolved_generic = analyzed_module_ref.generic

@@ -81,7 +81,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     case pattern.kind:
     of SPK_DEFAULT:
       let analyzed_struct = ? analyzed_operand_module.find_struct()
-      let concrete_struct = analyzed_struct.concretize(operand.concrete_map)
+      let concrete_struct = ? analyzed_struct.concretize(operand.concrete_map)
       var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]
       for (key, value) in pattern.args:
         let field = ? concrete_struct.find_field(key)
@@ -92,7 +92,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     of SPK_NAMED:
       let struct_name = ? pattern.struct
       let analyzed_struct = ? analyzed_operand_module.find_struct(struct_name)
-      let concrete_struct = analyzed_struct.concretize(operand.concrete_map)
+      let concrete_struct = ? analyzed_struct.concretize(operand.concrete_map)
       var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]
       for (key, value) in pattern.args:
         let field = ? concrete_struct.find_field(key)

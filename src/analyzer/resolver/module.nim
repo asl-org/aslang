@@ -10,26 +10,25 @@ import expression
 # =============================================================================
 type ResolvedGeneric* = ref object of RootObj
   id: uint64
-  generic: Generic
-  defs: seq[ResolvedFunctionDefinition]
-  defs_map: Table[ResolvedFunctionDefinition, ResolvedFunctionDefinition]
+  parsed_generic: Generic
+  defs_repo: Repo[Hash, ResolvedFunctionDefinition]
   location: Location
 
 proc new_resolved_generic*(id: uint64, generic: Generic, defs: seq[
-    ResolvedFunctionDefinition], location: Location): ResolvedGeneric =
-  var defs_map: Table[ResolvedFunctionDefinition, ResolvedFunctionDefinition]
-  for def in defs: defs_map[def] = def
-  ResolvedGeneric(id: id, generic: generic, defs: defs, defs_map: defs_map,
-      location: location)
-
-proc module_deps*(generic: ResolvedGeneric): HashSet[Module] =
-  accumulate_module_deps(generic.defs)
+    ResolvedFunctionDefinition], location: Location): Result[ResolvedGeneric, string] =
+  let maybe_defs_repo = new_repo[Hash, ResolvedFunctionDefinition](defs, hash)
+  if maybe_defs_repo.is_err: return err("new_resolved_generic UNREACHABLE")
+  ok(ResolvedGeneric(id: id, parsed_generic: generic,
+      defs_repo: maybe_defs_repo.get, location: location))
 
 proc id*(generic: ResolvedGeneric): uint64 = generic.id
 proc location*(generic: ResolvedGeneric): Location = generic.location
-proc name*(generic: ResolvedGeneric): Identifier = generic.generic.name
+proc parsed_generic*(generic: ResolvedGeneric): Generic = generic.parsed_generic
+proc name*(generic: ResolvedGeneric): Identifier = generic.parsed_generic.name
 proc defs*(generic: ResolvedGeneric): seq[
-    ResolvedFunctionDefinition] = generic.defs
+    ResolvedFunctionDefinition] = generic.defs_repo.items
+proc module_deps*(generic: ResolvedGeneric): HashSet[Module] =
+  accumulate_module_deps(generic.defs)
 proc hash*(generic: ResolvedGeneric): Hash = generic.location.hash
 proc `==`*(self: ResolvedGeneric, other: ResolvedGeneric): bool = self.hash == other.hash
 proc asl*(generic: ResolvedGeneric): string = generic.name.asl
@@ -38,16 +37,15 @@ proc concrete_defs*(generic: ResolvedGeneric,
     module_ref: ResolvedModuleRef): seq[ResolvedFunctionDefinition] =
   var concrete_defs: seq[ResolvedFunctionDefinition]
   for def in generic.defs:
-    let concrete_def = def.concretize(generic.generic, module_ref)
+    let concrete_def = def.concretize(generic.parsed_generic, module_ref)
     concrete_defs.add(concrete_def)
   concrete_defs
 
 proc find_function*(generic: ResolvedGeneric,
     def: ResolvedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
-  if def in generic.defs_map:
-    ok(generic.defs_map[def])
-  else:
-    err(fmt"failed to find function `{def.asl}`")
+  let maybe_def = generic.defs_repo.find(def.hash)
+  if maybe_def.is_ok: ok(maybe_def.get)
+  else: err(fmt"failed to find function `{def.asl}`")
 
 proc resolve*(file: parser.File, module: Option[parser.Module],
     generic: Generic, id: uint64): Result[ResolvedGeneric, string] =
@@ -55,36 +53,43 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
   for def in generic.defs:
     let resolved_fndef = ? resolve(file, module, generic, def)
     resolved_fndefs.add(resolved_fndef)
-  ok(new_resolved_generic(id, generic, resolved_fndefs, generic.location))
+  new_resolved_generic(id, generic, resolved_fndefs, generic.location)
 
 # =============================================================================
 # ResolvedModule
 # =============================================================================
 type ResolvedModule* = ref object of RootObj
   id: uint64
-  name: Identifier
-  location: Location
-  generics: seq[ResolvedGeneric]
-  generics_map: Table[Generic, ResolvedGeneric]
+  parsed_module: Module
+  generics_repo: Repo[Generic, ResolvedGeneric]
   structs: seq[ResolvedStruct]
-  functions_map: Table[ResolvedFunctionDefinition, ResolvedFunction]
-  functions: seq[ResolvedFunction]
+  functions_repo: Repo[ResolvedFunctionDefinition, ResolvedFunction]
 
-proc new_resolved_module*(id: uint64, name: Identifier, generic_pairs: seq[
-    (Generic, ResolvedGeneric)], structs: seq[ResolvedStruct], functions: seq[
-    ResolvedFunction], location: Location): ResolvedModule =
-  var generics: seq[ResolvedGeneric]
-  var generics_map: Table[Generic, ResolvedGeneric]
-  for (generic, resolved_generic) in generic_pairs:
-    generics.add(resolved_generic)
-    generics_map[generic] = resolved_generic
+proc new_resolved_module*(id: uint64, parsed_module: Module, generics: seq[
+    ResolvedGeneric], structs: seq[ResolvedStruct], functions: seq[
+    ResolvedFunction]): Result[ResolvedModule, string] =
+  let maybe_generics_repo = new_repo(generics, parsed_generic)
+  if maybe_generics_repo.is_err: return err("new_resolved_module UNREACHABLE")
+  let generics_repo = maybe_generics_repo.get
 
-  var functions_map: Table[ResolvedFunctionDefinition, ResolvedFunction]
-  for function in functions: functions_map[function.def] = function
+  let maybe_functions_repo = new_repo(functions, def)
+  if maybe_functions_repo.is_err: return err("new_resolved_module UNREACHABLE")
+  let functions_repo = maybe_functions_repo.get
 
-  ResolvedModule(id: id, name: name, location: location, generics: generics,
-      generics_map: generics_map, structs: structs, functions: functions,
-      functions_map: functions_map)
+  ok(ResolvedModule(id: id, parsed_module: parsed_module,
+      generics_repo: generics_repo, structs: structs,
+      functions_repo: functions_repo))
+
+proc id*(module: ResolvedModule): uint64 = module.id
+proc location*(module: ResolvedModule): Location = module.parsed_module.location
+proc parsed_module*(module: ResolvedModule): Module = module.parsed_module
+
+proc name*(module: ResolvedModule): Identifier = module.parsed_module.name
+proc generics*(module: ResolvedModule): seq[
+    ResolvedGeneric] = module.generics_repo.items
+proc structs*(module: ResolvedModule): seq[ResolvedStruct] = module.structs
+proc functions*(module: ResolvedModule): seq[
+    ResolvedFunction] = module.functions_repo.items
 
 proc module_deps*(module: ResolvedModule): HashSet[Module] =
   var module_set = accumulate_module_deps(module.generics)
@@ -92,39 +97,29 @@ proc module_deps*(module: ResolvedModule): HashSet[Module] =
   module_set.incl(accumulate_module_deps(module.functions))
   module_set
 
-proc id*(module: ResolvedModule): uint64 = module.id
-proc location*(module: ResolvedModule): Location = module.location
-proc name*(module: ResolvedModule): Identifier = module.name
-proc generics*(module: ResolvedModule): seq[
-    ResolvedGeneric] = module.generics
-proc structs*(module: ResolvedModule): seq[ResolvedStruct] = module.structs
-proc functions*(module: ResolvedModule): seq[
-    ResolvedFunction] = module.functions
 proc hash*(module: ResolvedModule): Hash = module.location.hash
 proc `==`*(self: ResolvedModule, other: ResolvedModule): bool = self.hash == other.hash
 proc asl*(module: ResolvedModule): string = module.name.asl
 
 proc find_generic*(module: ResolvedModule, generic: Generic): Result[
     ResolvedGeneric, string] =
-  if generic in module.generics_map:
-    ok(module.generics_map[generic])
-  else:
-    err(fmt"failed to find generic `{generic.name.asl}`")
+  let maybe_generic = module.generics_repo.find(generic)
+  if maybe_generic.is_ok: return ok(maybe_generic.get)
+  else: err(fmt"failed to find generic `{generic.name.asl}`")
 
 proc find_function*(module: ResolvedModule,
     def: ResolvedFunctionDefinition): Result[ResolvedFunctionDefinition, string] =
-  if def in module.functions_map:
-    ok((module.functions_map[def].def))
-  else:
-    err(fmt"2 - failed to find function `{def.asl}`")
+  let maybe_function = module.functions_repo.find(def)
+  if maybe_function.is_ok: ok(maybe_function.get.def)
+  else: err(fmt"failed to find function `{def.name.asl}`")
 
 proc resolve*(file: parser.File, module: parser.Module, id: uint64): Result[
     ResolvedModule, string] =
   # Generic resolution
-  var resolved_generics: seq[(Generic, ResolvedGeneric)]
+  var resolved_generics: seq[ResolvedGeneric]
   for id, generic in module.generics:
     let resolved_generic = ? resolve(file, some(module), generic, id.uint64)
-    resolved_generics.add((generic, resolved_generic))
+    resolved_generics.add(resolved_generic)
 
   var resolved_structs: seq[ResolvedStruct]
   for id, struct in module.structs:
@@ -137,5 +132,5 @@ proc resolve*(file: parser.File, module: parser.Module, id: uint64): Result[
     resolved_functions.add(resolved_function)
 
   # TODO: Eliminate un-necessary case block once the ExternFunction is evened out.
-  ok(new_resolved_module(id, module.name, resolved_generics,
-      resolved_structs, resolved_functions, module.location))
+  new_resolved_module(id, module, resolved_generics, resolved_structs,
+      resolved_functions)

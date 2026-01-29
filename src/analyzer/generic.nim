@@ -5,15 +5,13 @@ import module_ref
 import func_def
 
 type AnalyzedGeneric* = ref object of RootObj
-  generic: ResolvedGeneric
+  resolved_generic: ResolvedGeneric
   defs: seq[AnalyzedFunctionDefinition]
   defs_map: Table[Identifier, Table[uint, seq[AnalyzedFunctionDefinition]]]
-  location: Location
 
-proc new_analyzed_generic(generic: ResolvedGeneric, defs: seq[
-    AnalyzedFunctionDefinition], location: Location): AnalyzedGeneric =
-  var defs_map: Table[Identifier, Table[uint, seq[
-      AnalyzedFunctionDefinition]]]
+proc new_analyzed_generic(resolved_generic: ResolvedGeneric, defs: seq[
+    AnalyzedFunctionDefinition]): AnalyzedGeneric =
+  var defs_map: Table[Identifier, Table[uint, seq[AnalyzedFunctionDefinition]]]
   for def in defs:
     if def.name notin defs_map:
       defs_map[def.name] = init_table[uint, seq[
@@ -21,12 +19,13 @@ proc new_analyzed_generic(generic: ResolvedGeneric, defs: seq[
     if def.arity notin defs_map[def.name]:
       defs_map[def.name][def.arity] = new_seq[AnalyzedFunctionDefinition]()
     defs_map[def.name][def.arity].add(def)
-  AnalyzedGeneric(generic: generic, defs: defs, defs_map: defs_map,
-      location: location)
+  AnalyzedGeneric(resolved_generic: resolved_generic, defs: defs,
+      defs_map: defs_map)
 
-proc name*(generic: AnalyzedGeneric): Identifier = generic.generic.name
 proc defs*(generic: AnalyzedGeneric): seq[
     AnalyzedFunctionDefinition] = generic.defs
+proc resolved_generic*(generic: AnalyzedGeneric): ResolvedGeneric = generic.resolved_generic
+proc name*(generic: AnalyzedGeneric): Identifier = generic.resolved_generic.name
 
 proc generic_impls*(generic: AnalyzedGeneric): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
@@ -66,4 +65,4 @@ proc analyze_def*(file: ResolvedFile, generic: ResolvedGeneric,
   for def in generic.defs:
     let analyzed_def = ? analyze_def(file, module, generic, def)
     analyzed_defs.add(analyzed_def)
-  ok(new_analyzed_generic(generic, analyzed_defs, generic.location))
+  ok(new_analyzed_generic(generic, analyzed_defs))

@@ -7,27 +7,22 @@ import generic
 import struct
 
 type AnalyzedModuleDefinition* = ref object of RootObj
-  module: ResolvedModule
-  generics: seq[AnalyzedGeneric]
-  generics_map: Table[ResolvedGeneric, AnalyzedGeneric]
+  resolved_module: ResolvedModule
+  generics_repo: Repo[ResolvedGeneric, AnalyzedGeneric]
   structs: seq[AnalyzedStruct]
   default_struct_index: int
   structs_map: Table[Identifier, AnalyzedStruct]
-  function_defs: seq[AnalyzedFunctionDefinition]
-  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedFunctionDefinition]
+  function_defs_repo: Repo[ResolvedFunctionDefinition, AnalyzedFunctionDefinition]
   function_signatures_map: Table[Identifier, Table[uint, seq[
       AnalyzedFunctionDefinition]]]
 
-proc new_analyzed_module_definition(module: ResolvedModule,
-    generics: seq[(ResolvedGeneric, AnalyzedGeneric)], structs: seq[
-        AnalyzedStruct],
-    function_defs: seq[(ResolvedFunctionDefinition,
-    AnalyzedFunctionDefinition)]): AnalyzedModuleDefinition =
-  var generics_map: Table[ResolvedGeneric, AnalyzedGeneric]
-  var analyzed_generics: seq[AnalyzedGeneric]
-  for (resolved_generic, analyzed_generic) in generics:
-    generics_map[resolved_generic] = analyzed_generic
-    analyzed_generics.add(analyzed_generic)
+proc new_analyzed_module_definition(resolved_module: ResolvedModule,
+    generics: seq[AnalyzedGeneric], structs: seq[AnalyzedStruct],
+    function_defs: seq[AnalyzedFunctionDefinition]): Result[
+    AnalyzedModuleDefinition, string] =
+  let maybe_generics_repo = new_repo(generics, resolved_generic)
+  if maybe_generics_repo.is_err: return err("new_analyzed_module_definition UNREACHABLE")
+  let generics_repo = maybe_generics_repo.get
 
   var default_struct_index = -1
   var structs_map: Table[Identifier, AnalyzedStruct]
@@ -38,40 +33,39 @@ proc new_analyzed_module_definition(module: ResolvedModule,
     of RSK_DEFAULT: default_struct_index = index
     of RSK_NAMED: structs_map[analyzed_struct.name] = analyzed_struct
 
-  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedFunctionDefinition]
-  var analyzed_function_defs: seq[AnalyzedFunctionDefinition]
+  let maybe_function_defs_repo = new_repo(function_defs, resolved_def)
+  if maybe_function_defs_repo.is_err: return err("new_analyzed_module_definition UNREACHABLE")
+  let function_defs_repo = maybe_function_defs_repo.get
+
   var function_signatures_map: Table[Identifier, Table[uint,
       seq[AnalyzedFunctionDefinition]]]
-  for (resolved_function_def, analyzed_function_def) in function_defs:
-    function_defs_map[resolved_function_def] = analyzed_function_def
-    analyzed_function_defs.add(analyzed_function_def)
-
+  for analyzed_function_def in function_defs:
     if analyzed_function_def.name notin function_signatures_map:
       function_signatures_map[analyzed_function_def.name] = init_table[uint,
           seq[AnalyzedFunctionDefinition]]()
     if analyzed_function_def.arity notin function_signatures_map[
         analyzed_function_def.name]:
       function_signatures_map[analyzed_function_def.name][
-          analyzed_function_def.arity] = new_seq[
-              AnalyzedFunctionDefinition]()
+          analyzed_function_def.arity] = new_seq[AnalyzedFunctionDefinition]()
     function_signatures_map[analyzed_function_def.name][
         analyzed_function_def.arity].add(analyzed_function_def)
 
-  AnalyzedModuleDefinition(
-    module: module, generics: analyzed_generics, generics_map: generics_map,
-    structs: analyzed_structs, structs_map: structs_map,
-    function_defs: analyzed_function_defs, function_defs_map: function_defs_map,
-    function_signatures_map: function_signatures_map
-  )
+  ok(AnalyzedModuleDefinition(resolved_module: resolved_module,
+      generics_repo: generics_repo, structs: analyzed_structs,
+      structs_map: structs_map, function_defs_repo: function_defs_repo,
+      function_signatures_map: function_signatures_map))
 
 proc id*(module_def: AnalyzedModuleDefinition): uint64 = module_def.id
-proc module*(module_def: AnalyzedModuleDefinition): ResolvedModule = module_def.module
-proc name*(module_def: AnalyzedModuleDefinition): Identifier = module_def.module.name
+proc resolved_module*(module_def: AnalyzedModuleDefinition): ResolvedModule = module_def.resolved_module
+proc name*(module_def: AnalyzedModuleDefinition): Identifier = module_def.resolved_module.name
 proc structs*(module_def: AnalyzedModuleDefinition): seq[
     AnalyzedStruct] = module_def.structs
 proc generics*(module_def: AnalyzedModuleDefinition): seq[
-    AnalyzedGeneric] = module_def.generics
-proc hash*(module_def: AnalyzedModuleDefinition): Hash = module_def.module.hash
+    AnalyzedGeneric] = module_def.generics_repo.items
+proc function_defs(module_def: AnalyzedModuleDefinition): seq[
+    AnalyzedFunctionDefinition] =
+  module_def.function_defs_repo.items
+proc hash*(module_def: AnalyzedModuleDefinition): Hash = module_def.resolved_module.hash
 proc `==`*(self: AnalyzedModuleDefinition,
     other: AnalyzedModuleDefinition): bool =
   self.hash == other.hash
@@ -177,10 +171,9 @@ proc c*(def: AnalyzedModuleDefinition): seq[string] =
 
 proc find_generic*(module_def: AnalyzedModuleDefinition,
     generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
-  if generic notin module_def.generics_map:
-    err(fmt"module `{module_def.name.asl}` does not have any generic named `{generic.name.asl}`")
-  else:
-    ok(module_def.generics_map[generic])
+  let maybe_generic = module_def.generics_repo.find(generic)
+  if maybe_generic.is_ok: ok(maybe_generic.get)
+  else: err(fmt"module `{module_def.name.asl}` does not have any generic named `{generic.name.asl}`")
 
 proc find_struct*(module_def: AnalyzedModuleDefinition): Result[
     AnalyzedStruct, string] =
@@ -199,10 +192,9 @@ proc find_struct*(module_def: AnalyzedModuleDefinition,
 proc find_function_def*(module_def: AnalyzedModuleDefinition,
     function_def: ResolvedFunctionDefinition): Result[
         AnalyzedFunctionDefinition, string] =
-  if function_def notin module_def.function_defs_map:
-    err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
-  else:
-    ok(module_def.function_defs_map[function_def])
+  let maybe_function_def = module_def.function_defs_repo.find(function_def)
+  if maybe_function_def.is_ok: ok(maybe_function_def.get)
+  else: err(fmt"module `{module_def.name.asl}` does not have any function named `{function_def.name.asl}`")
 
 proc find_function_defs*(module_def: AnalyzedModuleDefinition,
     name: Identifier, arity: uint, location: Location): Result[seq[
@@ -216,21 +208,19 @@ proc find_function_defs*(module_def: AnalyzedModuleDefinition,
 
 proc analyze_def*(file: ResolvedFile, module: ResolvedModule): Result[
     AnalyzedModuleDefinition, string] =
-  var generics: seq[(ResolvedGeneric, AnalyzedGeneric)]
+  var generics: seq[AnalyzedGeneric]
   for generic in module.generics:
     let analyzed_generic = ? analyze_def(file, generic, module)
-    generics.add((generic, analyzed_generic))
+    generics.add(analyzed_generic)
 
   var structs: seq[AnalyzedStruct]
   for struct in module.structs:
     let analyzed_struct = ? analyze_def(file, module, struct)
     structs.add(analyzed_struct)
 
-  var function_defs: seq[(ResolvedFunctionDefinition,
-      AnalyzedFunctionDefinition)]
+  var function_defs: seq[AnalyzedFunctionDefinition]
   for function in module.functions:
     let analyzed_def = ? analyze_def(file, module, function)
-    function_defs.add((function.def, analyzed_def))
+    function_defs.add(analyzed_def)
 
-  ok(new_analyzed_module_definition(module, generics, structs,
-      function_defs))
+  new_analyzed_module_definition(module, generics, structs, function_defs)

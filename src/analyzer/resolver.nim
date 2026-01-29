@@ -160,9 +160,8 @@ proc resolve*(file: parser.File): Result[ResolvedFile, string] =
   var modules_map: Table[Module, ResolvedModule]
   for id, module in file.modules:
     let resolved_module = ? resolve(file, module, id.uint64)
-    let module_deps = resolved_module.module_deps
-    module_graph[module] = module_deps
     modules_map[module] = resolved_module
+    module_graph[module] = resolved_module.module_deps
 
   # NOTE: Cycle detection and Topologically sort based on module dependencies.
   let maybe_module_order = detect_cycle(module_graph)
@@ -187,5 +186,4 @@ proc resolve*(file: parser.File): Result[ResolvedFile, string] =
 
   if maybe_start_def.is_none:
     return err(fmt"{file.path} failed to find `start` function")
-  ok(new_resolved_file(file.path, file.indent, maybe_start_def,
-      resolved_modules, modules_map, resolved_functions))
+  new_resolved_file(file.path, file.indent, maybe_start_def, resolved_modules, resolved_functions)
