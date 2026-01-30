@@ -119,20 +119,19 @@ type
   ResolvedStructKind* = enum
     TSK_DEFAULT, TSK_NAMED
   ResolvedStruct* = ref object of RootObj
-    id: uint64
     fields: seq[ResolvedArgumentDefinition]
     location: Location
     case kind: ResolvedStructKind
     of TSK_DEFAULT: discard
     of TSK_NAMED: name: Identifier
 
-proc new_resolved_struct*(id: uint64, fields: seq[ResolvedArgumentDefinition],
+proc new_resolved_struct*(fields: seq[ResolvedArgumentDefinition],
     location: Location): ResolvedStruct =
-  ResolvedStruct(kind: TSK_DEFAULT, id: id, fields: fields, location: location)
+  ResolvedStruct(kind: TSK_DEFAULT, fields: fields, location: location)
 
-proc new_resolved_struct*(id: uint64, name: Identifier, fields: seq[
+proc new_resolved_struct*(name: Identifier, fields: seq[
     ResolvedArgumentDefinition], location: Location): ResolvedStruct =
-  ResolvedStruct(kind: TSK_NAMED, id: id, name: name, fields: fields,
+  ResolvedStruct(kind: TSK_NAMED, name: name, fields: fields,
       location: location)
 
 proc module_deps*(struct: ResolvedStruct): HashSet[Module] =
@@ -151,15 +150,109 @@ proc name*(struct: ResolvedStruct): Result[Identifier, string] =
   of TSK_DEFAULT: err("{struct.location} expected a named struct")
   of TSK_NAMED: ok(struct.name)
 
-proc resolve*(file: parser.File, module: parser.Module, struct: Struct,
-    id: uint64): Result[ResolvedStruct, string] =
+proc resolve*(file: parser.File, module: parser.Module, struct: Struct): Result[
+    ResolvedStruct, string] =
   var resolved_fields: seq[ResolvedArgumentDefinition]
   for field in struct.fields:
     let resolved_field = ? resolve(file, some(module), field)
     resolved_fields.add(resolved_field)
+  ok(new_resolved_struct(resolved_fields, struct.location))
 
-  case struct.def.kind:
-  of SDK_DEFAULT:
-    ok(new_resolved_struct(id, resolved_fields, struct.location))
-  of SDK_NAMED:
-    ok(new_resolved_struct(id, struct.name, resolved_fields, struct.location))
+type ResolvedUnionBranch* = ref object of RootObj
+  id: uint64
+  parsed_branch: UnionBranch
+  fields: seq[ResolvedArgumentDefinition]
+
+proc new_resolved_union_branch(id: uint64, parsed_branch: UnionBranch,
+    fields: seq[ResolvedArgumentDefinition]): ResolvedUnionBranch =
+  ResolvedUnionBranch(id: id, parsed_branch: parsed_branch, fields: fields)
+
+proc name*(branch: ResolvedUnionBranch): Identifier = branch.parsed_branch.name
+proc id*(branch: ResolvedUnionBranch): uint64 = branch.id
+
+proc fields*(branch: ResolvedUnionBranch): seq[ResolvedArgumentDefinition] =
+  branch.fields
+
+proc module_deps*(branch: ResolvedUnionBranch): HashSet[Module] =
+  accumulate_module_deps(branch.fields)
+
+proc resolve*(file: parser.File, module: parser.Module, branch: UnionBranch,
+    id: uint64): Result[ResolvedUnionBranch, string] =
+  var resolved_fields: seq[ResolvedArgumentDefinition]
+  for field in branch.fields:
+    let resolved_field = ? resolve(file, some(module), field)
+    resolved_fields.add(resolved_field)
+
+  ok(new_resolved_union_branch(id, branch, resolved_fields))
+
+type ResolvedUnion* = ref object of RootObj
+  union: Union
+  branches: seq[ResolvedUnionBranch]
+
+proc new_resolved_union(union: Union, branches: seq[
+    ResolvedUnionBranch]): ResolvedUnion =
+  ResolvedUnion(union: union, branches: branches)
+
+proc location*(union: ResolvedUnion): Location = union.union.location
+
+proc branches*(union: ResolvedUnion): seq[ResolvedUnionBranch] =
+  union.branches
+
+proc module_deps*(union: ResolvedUnion): HashSet[Module] =
+  accumulate_module_deps(union.branches)
+
+proc resolve*(file: parser.File, module: parser.Module, union: Union): Result[
+    ResolvedUnion, string] =
+  var resolved_branches: seq[ResolvedUnionBranch]
+  for id, branch in union.branches:
+    let resolved_branch = ? resolve(file, module, branch, id.uint64)
+    resolved_branches.add(resolved_branch)
+  ok(new_resolved_union(union, resolved_branches))
+
+type
+  ResolvedDataKind* = enum
+    RDK_NONE, RDK_LITERAL, RDK_STRUCT, RDK_UNION
+  ResolvedData* = ref object of RootObj
+    case kind: ResolvedDataKind
+    of RDK_NONE: discard
+    of RDK_LITERAL: discard
+    of RDK_STRUCT: struct: ResolvedStruct
+    of RDK_UNION: union: ResolvedUnion
+
+proc new_resolved_data(): ResolvedData =
+  ResolvedData(kind: RDK_NONE)
+
+proc new_resolved_data(struct: ResolvedStruct): ResolvedData =
+  ResolvedData(kind: RDK_STRUCT, struct: struct)
+
+proc new_resolved_data(union: ResolvedUnion): ResolvedData =
+  ResolvedData(kind: RDK_UNION, union: union)
+
+proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
+proc struct*(data: ResolvedData): ResolvedStruct =
+  do_assert data.kind == RDK_STRUCT, "[UNREACHABLE] expected data to be struct"
+  data.struct
+proc union*(data: ResolvedData): ResolvedUnion =
+  do_assert data.kind == RDK_UNION, "[UNREACHABLE] expected data to be union"
+  data.union
+
+proc module_deps*(data: ResolvedData): HashSet[Module] =
+  case data.kind:
+  of RDK_NONE: init_hashset[Module]()
+  of RDK_LITERAL: init_hashset[Module]()
+  of RDK_STRUCT: data.struct.module_deps
+  of RDK_UNION: data.union.module_deps
+
+proc resolve*(file: parser.File, module: parser.Module, data: Data): Result[
+    ResolvedData, string] =
+  case module.data.kind:
+  of DK_NONE:
+    return ok(new_resolved_data())
+  of DK_LITERAL:
+    assert false, "[UNREACHABLE] - literal resolution is not supported"
+  of DK_STRUCT:
+    let resolved_struct = ? resolve(file, module, module.data.struct)
+    return ok(new_resolved_data(resolved_struct))
+  of DK_UNION:
+    let resolved_union = ? resolve(file, module, module.data.union)
+    return ok(new_resolved_data(resolved_union))

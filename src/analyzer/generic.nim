@@ -6,24 +6,20 @@ import func_def
 
 type AnalyzedGeneric* = ref object of RootObj
   resolved_generic: ResolvedGeneric
-  defs: seq[AnalyzedFunctionDefinition]
-  defs_map: Table[Identifier, Table[uint, seq[AnalyzedFunctionDefinition]]]
+  defs_repo: Repo[AnalyzedFunctionDefinition]
 
 proc new_analyzed_generic(resolved_generic: ResolvedGeneric, defs: seq[
-    AnalyzedFunctionDefinition]): AnalyzedGeneric =
-  var defs_map: Table[Identifier, Table[uint, seq[AnalyzedFunctionDefinition]]]
-  for def in defs:
-    if def.name notin defs_map:
-      defs_map[def.name] = init_table[uint, seq[
-          AnalyzedFunctionDefinition]]()
-    if def.arity notin defs_map[def.name]:
-      defs_map[def.name][def.arity] = new_seq[AnalyzedFunctionDefinition]()
-    defs_map[def.name][def.arity].add(def)
-  AnalyzedGeneric(resolved_generic: resolved_generic, defs: defs,
-      defs_map: defs_map)
+    AnalyzedFunctionDefinition]): Result[AnalyzedGeneric, string] =
+  let maybe_defs_repo = new_repo(defs, @[
+    new_index[AnalyzedFunctionDefinition]("name_and_arity", proc(
+        def: AnalyzedFunctionDefinition): (Identifier, uint) = (def.name, def.arity))
+  ])
+  if maybe_defs_repo.is_err: return err("new_analyzed_generic [UNREACHBLE]")
+  ok(AnalyzedGeneric(resolved_generic: resolved_generic,
+      defs_repo: maybe_defs_repo.get))
 
 proc defs*(generic: AnalyzedGeneric): seq[
-    AnalyzedFunctionDefinition] = generic.defs
+    AnalyzedFunctionDefinition] = generic.defs_repo.items
 proc resolved_generic*(generic: AnalyzedGeneric): ResolvedGeneric = generic.resolved_generic
 proc name*(generic: AnalyzedGeneric): Identifier = generic.resolved_generic.name
 
@@ -51,12 +47,11 @@ proc c*(generic: AnalyzedGeneric, prefix: string): seq[string] =
 
 proc find_function_defs*(generic: AnalyzedGeneric, name: Identifier,
     arity: uint): Result[seq[AnalyzedFunctionDefinition], string] =
-  if name notin generic.defs_map:
-    err(fmt"generic `{generic.name.asl}` does not have any constraint named `{name.asl}`")
-  elif arity notin generic.defs_map[name]:
+  let maybe_def = generic.defs_repo.find("name_and_arity", (name, arity))
+  if maybe_def.is_err:
     err(fmt"generic `{generic.name.asl}` does not have any constraint named `{name.asl}` with arity `{arity}`")
   else:
-    ok(generic.defs_map[name][arity])
+    ok(maybe_def.get)
 
 # Helper for resolving ResolvedGeneric with ResolvedModule
 proc analyze_def*(file: ResolvedFile, generic: ResolvedGeneric,
@@ -65,4 +60,4 @@ proc analyze_def*(file: ResolvedFile, generic: ResolvedGeneric,
   for def in generic.defs:
     let analyzed_def = ? analyze_def(file, module, generic, def)
     analyzed_defs.add(analyzed_def)
-  ok(new_analyzed_generic(generic, analyzed_defs))
+  new_analyzed_generic(generic, analyzed_defs)

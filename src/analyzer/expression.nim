@@ -238,27 +238,43 @@ proc c(case_block: AnalyzedCase, operand: AnalyzedArgumentDefinition,
     lines.add(fmt"{conditional}({id_call} == {struct.id})")
     lines.add("{")
 
-    let prefix =
-      case struct.kind:
-      of RSPK_DEFAULT: operand.module_ref.name
-      of RSPK_NAMED: fmt"{operand.module_ref.name}_{struct.name.asl}"
+    case struct.kind:
+    of RSPK_DEFAULT:
+      let prefix = operand.module_ref.name
+      for index in 0..<struct.args.len:
+        let field = struct.args[index][0]
+        let key = struct.args[index][1]
+        let original_field = struct.struct.fields[index]
 
-    for index in 0..<struct.args.len:
-      let field = struct.args[index][0]
-      let key = struct.args[index][1]
-      let original_field = struct.original_struct.fields[index]
-
-      case original_field.module_ref.kind:
-      of AMRK_GENERIC:
-        case field.module_ref.kind:
+        case original_field.module_ref.kind:
         of AMRK_GENERIC:
-          lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
+          case field.module_ref.kind:
+          of AMRK_GENERIC:
+            lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
+          else:
+            let arg_name = fmt"__asl_arg_{key.location.hash.to_hex}"
+            lines.add(fmt"{original_field.module_ref.c} {arg_name} = {prefix}_get_{key.asl}({operand.name.asl});")
+            lines.add(fmt"{field.c} = {field.module_ref.c}_read({arg_name}, 0);")
         else:
-          let arg_name = fmt"__asl_arg_{key.location.hash.to_hex}"
-          lines.add(fmt"{original_field.module_ref.c} {arg_name} = {prefix}_get_{key.asl}({operand.name.asl});")
-          lines.add(fmt"{field.c} = {field.module_ref.c}_read({arg_name}, 0);")
-      else:
-        lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
+          lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
+    of RSPK_NAMED:
+      let prefix = fmt"{operand.module_ref.name}_{struct.name.asl}"
+      for index in 0..<struct.args.len:
+        let field = struct.args[index][0]
+        let key = struct.args[index][1]
+        let original_field = struct.branch.fields[index]
+
+        case original_field.module_ref.kind:
+        of AMRK_GENERIC:
+          case field.module_ref.kind:
+          of AMRK_GENERIC:
+            lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
+          else:
+            let arg_name = fmt"__asl_arg_{key.location.hash.to_hex}"
+            lines.add(fmt"{original_field.module_ref.c} {arg_name} = {prefix}_get_{key.asl}({operand.name.asl});")
+            lines.add(fmt"{field.c} = {field.module_ref.c}_read({arg_name}, 0);")
+        else:
+          lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
 
   for statement in case_block.statements:
     lines.add(statement.c)
@@ -417,6 +433,21 @@ proc analyze*(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedModuleDefinition, scope: FunctionScope,
     match: ResolvedMatch): Result[AnalyzedMatch, string] =
   let analyzed_operand_module_ref = ? scope.get(match.operand)
+  case analyzed_operand_module_ref.kind:
+    of AMRK_GENERIC:
+      return err(fmt"{match.location} match expression does not support generic operands")
+    of AMRK_MODULE:
+      let module = analyzed_operand_module_ref.module
+      let analyzed_operand_module = ? file_def.find_module_def(module)
+      case analyzed_operand_module.data.kind:
+      of ADK_NONE:
+        case analyzed_operand_module.name.asl:
+        of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64": discard
+        else: return err(fmt"{match.location} module `{analyzed_operand_module.name.asl}` is does not have a data block")
+      of ADK_STRUCT:
+        return err(fmt"{match.location} module `{analyzed_operand_module.name.asl}` is a struct and not supported in match blocks")
+      else: discard
+
   let analyzed_operand = new_analyzed_argument_definition(
       analyzed_operand_module_ref, match.operand)
   case match.kind:
@@ -447,8 +478,11 @@ proc analyze*(file_def: AnalyzedFileDefinition,
     of AMRK_MODULE:
       let module = analyzed_operand_module_ref.module
       let analyzed_operand_module = ? file_def.find_module_def(module)
-      if unique_patterns.len < analyzed_operand_module.structs.len:
-        return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+      case analyzed_operand_module.data.kind:
+      of ADK_UNION:
+        if unique_patterns.len < analyzed_operand_module.data.union.branches.len:
+          return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+      else: discard
 
     ok(new_analyzed_match(analyzed_operand, analyzed_case_blocks,
         match.location))
@@ -481,8 +515,11 @@ proc analyze*(file_def: AnalyzedFileDefinition,
     of AMRK_MODULE:
       let module = analyzed_operand_module_ref.module
       let analyzed_operand_module = ? file_def.find_module_def(module)
-      if unique_patterns.len == analyzed_operand_module.structs.len:
-        return err(fmt"{match.location} match expression already covers all cases, else block is not required")
+      case analyzed_operand_module.data.kind:
+      of ADK_UNION:
+        if unique_patterns.len == analyzed_operand_module.data.union.branches.len:
+          return err(fmt"{match.location} match expression already covers all cases, else block is not required")
+      else: discard
 
     ok(new_analyzed_match(analyzed_operand, analyzed_case_blocks,
         analyzed_else_block, match.location))
@@ -490,6 +527,21 @@ proc analyze*(file_def: AnalyzedFileDefinition,
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     match: ResolvedMatch): Result[AnalyzedMatch, string] =
   let analyzed_operand_module_ref = ? scope.get(match.operand)
+  case analyzed_operand_module_ref.kind:
+    of AMRK_GENERIC:
+      return err(fmt"{match.location} match expression does not support generic operands")
+    of AMRK_MODULE:
+      let module = analyzed_operand_module_ref.module
+      let analyzed_operand_module = ? file_def.find_module_def(module)
+      case analyzed_operand_module.data.kind:
+      of ADK_NONE:
+        case analyzed_operand_module.name.asl:
+        of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64": discard
+        else: return err(fmt"{match.location} module `{analyzed_operand_module.name.asl}` is does not have a data block")
+      of ADK_STRUCT:
+        return err(fmt"{match.location} module `{analyzed_operand_module.name.asl}` is a struct and not supported in match blocks")
+      else: discard
+
   let analyzed_operand = new_analyzed_argument_definition(
       analyzed_operand_module_ref, match.operand)
   case match.kind:
@@ -519,8 +571,11 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     of AMRK_MODULE:
       let module = analyzed_operand_module_ref.module
       let analyzed_operand_module = ? file_def.find_module_def(module)
-      if unique_patterns.len < analyzed_operand_module.structs.len:
-        return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+      case analyzed_operand_module.data.kind:
+      of ADK_UNION:
+        if unique_patterns.len < analyzed_operand_module.data.union.branches.len:
+          return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
+      else: discard
 
     ok(new_analyzed_match(analyzed_operand, analyzed_case_blocks,
         match.location))
@@ -553,8 +608,11 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     of AMRK_MODULE:
       let module = analyzed_operand_module_ref.module
       let analyzed_operand_module = ? file_def.find_module_def(module)
-      if unique_patterns.len == analyzed_operand_module.structs.len:
-        return err(fmt"{match.location} match expression already covers all cases, else block is not required")
+      case analyzed_operand_module.data.kind:
+      of ADK_UNION:
+        if unique_patterns.len == analyzed_operand_module.data.union.branches.len:
+          return err(fmt"{match.location} match expression already covers all cases, else block is not required")
+      else: discard
 
     ok(new_analyzed_match(analyzed_operand, analyzed_case_blocks,
         analyzed_else_block, match.location))

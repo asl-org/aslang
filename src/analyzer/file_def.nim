@@ -7,39 +7,28 @@ import module_def
 
 type AnalyzedFileDefinition* = ref object of RootObj
   file: ResolvedFile
-  modules_repo: Repo[ResolvedModule, AnalyzedModuleDefinition]
-  function_defs_repo: Repo[ResolvedFunctionDefinition, AnalyzedFunctionDefinition]
-  function_signatures_map: Table[Identifier, Table[uint,
-      seq[AnalyzedFunctionDefinition]]]
+  modules_repo: Repo[AnalyzedModuleDefinition]
+  function_defs_repo: Repo[AnalyzedFunctionDefinition]
 
 proc new_analyzed_file_definition(file: ResolvedFile, modules: seq[
     AnalyzedModuleDefinition], function_defs: seq[
     AnalyzedFunctionDefinition]): Result[AnalyzedFileDefinition, string] =
-  let maybe_modules_repo = new_repo(modules, resolved_module)
+  let maybe_modules_repo = new_repo(modules, @[new_index[
+      AnalyzedModuleDefinition]("name", resolved_module, true)])
   if maybe_modules_repo.is_err: return err("new_analyzed_file_definition UNREACHABLE")
   let modules_repo = maybe_modules_repo.get
 
-  let maybe_function_defs_repo = new_repo(function_defs, resolved_def)
+  let maybe_function_defs_repo = new_repo(function_defs, @[
+    new_index[AnalyzedFunctionDefinition]("def", resolved_def, true),
+    new_index[AnalyzedFunctionDefinition]("name_and_arity", proc(
+        def: AnalyzedFunctionDefinition): (Identifier, uint) = (def.name,
+        def.arity)),
+  ])
   if maybe_function_defs_repo.is_err: return err("new_analyzed_file_definition UNREACHABLE")
   let function_defs_repo = maybe_function_defs_repo.get
 
-  var function_signatures_map: Table[Identifier, Table[uint, seq[
-      AnalyzedFunctionDefinition]]]
-  for analyzed_function_def in function_defs:
-    if analyzed_function_def.name notin function_signatures_map:
-      function_signatures_map[analyzed_function_def.name] = init_table[uint,
-          seq[AnalyzedFunctionDefinition]]()
-    if analyzed_function_def.arity notin function_signatures_map[
-        analyzed_function_def.name]:
-      function_signatures_map[analyzed_function_def.name][
-          analyzed_function_def.arity] = new_seq[
-              AnalyzedFunctionDefinition]()
-    function_signatures_map[analyzed_function_def.name][
-          analyzed_function_def.arity].add(analyzed_function_def)
-
   ok(AnalyzedFileDefinition(file: file, modules_repo: modules_repo,
-      function_defs_repo: function_defs_repo,
-      function_signatures_map: function_signatures_map))
+      function_defs_repo: function_defs_repo))
 
 proc file*(def: AnalyzedFileDefinition): ResolvedFile = def.file
 proc modules*(def: AnalyzedFileDefinition): seq[
@@ -73,24 +62,23 @@ proc c*(file: AnalyzedFileDefinition): seq[string] =
 
 proc find_module_def*(file_def: AnalyzedFileDefinition,
     module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
-  let maybe_module = file_def.modules_repo.find(module)
-  if maybe_module.is_ok: ok(maybe_module.get)
+  let maybe_module = file_def.modules_repo.find("name", module)
+  if maybe_module.is_ok: ok(maybe_module.get[0])
   else: err(fmt"module `{module.name.asl}` not found in analyzed file definition")
 
 proc find_function_def*(file_def: AnalyzedFileDefinition,
     def: ResolvedFunctionDefinition): Result[AnalyzedFunctionDefinition, string] =
-  let maybe_function_def = file_def.function_defs_repo.find(def)
-  if maybe_function_def.is_ok: ok(maybe_function_def.get)
+  let maybe_function_def = file_def.function_defs_repo.find("def", def)
+  if maybe_function_def.is_ok: ok(maybe_function_def.get[0])
   else: err(fmt"def `{def.name.asl}` not found in analyzed file definition")
 
 proc find_function_defs*(file_def: AnalyzedFileDefinition, name: Identifier,
     arity: uint): Result[seq[AnalyzedFunctionDefinition], string] =
-  if name notin file_def.function_signatures_map:
-    err(fmt"function `{name.asl}` not found in analyzed file definition")
-  elif arity notin file_def.function_signatures_map[name]:
+  let maybe_def = file_def.function_defs_repo.find("name_and_arity", (name, arity))
+  if maybe_def.is_err:
     err(fmt"function `{name.asl}` with arity `{arity}` not found in analyzed file definition")
   else:
-    ok(file_def.function_signatures_map[name][arity])
+    ok(maybe_def.get)
 
 proc analyze_def*(file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
   var modules: seq[AnalyzedModuleDefinition]

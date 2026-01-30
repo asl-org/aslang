@@ -4,7 +4,7 @@ import core, defs, identifier, module_ref
 
 type Struct* = ref object of RootObj
   def: StructDefinition
-  fields_repo: Repo[Identifier, ArgumentDefinition]
+  fields_repo: Repo[ArgumentDefinition]
 
 proc new_struct*(def: StructDefinition, fields: seq[
     ArgumentDefinition]): Result[Struct, core.Error] =
@@ -13,7 +13,8 @@ proc new_struct*(def: StructDefinition, fields: seq[
   if fields.len > MAX_ARGS_LENGTH:
     return err(err_parser_struct_too_long(def.location, fields.len))
 
-  let maybe_fields_repo = new_repo(fields, name)
+  let maybe_fields_repo = new_repo(fields, @[new_index[ArgumentDefinition](
+      "name", name, true)])
   if maybe_fields_repo.is_ok:
     ok(Struct(def: def, fields_repo: maybe_fields_repo.get))
   else:
@@ -24,11 +25,11 @@ proc new_struct*(def: StructDefinition, fields: seq[
           predefined_field_location))
 
 proc find_field*(struct: Struct, field: Identifier): Result[ModuleRef, string] =
-  let maybe_found = struct.fields_repo.find(field)
+  let maybe_found = struct.fields_repo.find("name", field)
   if maybe_found.is_err:
     err(fmt"{field.location} [PE109] field `{field.asl}` does not exist")
   else:
-    ok(maybe_found.get.module_ref)
+    ok(maybe_found.get[0].module_ref)
 
 proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields_repo.items
 
@@ -65,9 +66,9 @@ proc struct_default_spec(parser: Parser, indent: int): Result[Struct,
 
   new_struct(def, fields)
 
-type UnionBranch = ref object of RootObj
+type UnionBranch* = ref object of RootObj
   name: Identifier
-  fields_repo: Repo[Identifier, ArgumentDefinition]
+  fields_repo: Repo[ArgumentDefinition]
 
 proc new_union_branch*(branch_name: Identifier, fields: seq[
     ArgumentDefinition]): Result[UnionBranch, core.Error] =
@@ -76,7 +77,8 @@ proc new_union_branch*(branch_name: Identifier, fields: seq[
   if fields.len > MAX_ARGS_LENGTH:
     return err(err_parser_union_branch_too_long(branch_name.location, fields.len))
 
-  let maybe_fields_repo = new_repo(fields, name)
+  let maybe_fields_repo = new_repo(fields, @[new_index[ArgumentDefinition](
+      "name", name, true)])
   if maybe_fields_repo.is_ok:
     ok(UnionBranch(name: branch_name, fields_repo: maybe_fields_repo.get))
   else:
@@ -88,9 +90,12 @@ proc new_union_branch*(branch_name: Identifier, fields: seq[
 
 proc location*(branch: UnionBranch): Location = branch.location
 proc name*(branch: UnionBranch): Identifier = branch.name
-proc struct*(branch: UnionBranch): Result[Struct, core.Error] =
+proc fields*(branch: UnionBranch): seq[ArgumentDefinition] = branch.fields_repo.items
+proc struct*(branch: UnionBranch): Result[Struct, string] =
   let def = new_struct_definition(branch.name, branch.name.location)
-  new_struct(def, branch.fields_repo.items)
+  let maybe_struct = new_struct(def, branch.fields_repo.items)
+  if maybe_struct.is_ok: ok(maybe_struct.get)
+  else: err($(maybe_struct.error))
 
 proc union_branch_spec*(parser: Parser, indent: int): Result[UnionBranch,
     core.Error] =
@@ -113,9 +118,9 @@ proc union_branch_spec*(parser: Parser, indent: int): Result[UnionBranch,
 
   new_union_branch(name, fields)
 
-type Union = ref object of RootObj
+type Union* = ref object of RootObj
   location: Location
-  branches_repo: Repo[Identifier, UnionBranch]
+  branches_repo: Repo[UnionBranch]
 
 proc new_union*(location: Location, branches: seq[
     UnionBranch]): Result[Union, core.Error] =
@@ -124,7 +129,8 @@ proc new_union*(location: Location, branches: seq[
   if branches.len > MAX_BRANCH_LENGTH:
     return err(err_parser_union_branch_too_long(location, branches.len))
 
-  let maybe_branches_repo = new_repo(branches, name)
+  let maybe_branches_repo = new_repo(branches, @[new_index[UnionBranch]("name",
+      name, true)])
   if maybe_branches_repo.is_ok:
     ok(Union(location: location, branches_repo: maybe_branches_repo.get))
   else:
@@ -134,15 +140,15 @@ proc new_union*(location: Location, branches: seq[
     err(err_parser_arg_already_defined(branch.location, branch.name.asl,
         predefined_branch_location))
 
-
+proc location*(union: Union): Location = union.location
 proc branches*(union: Union): seq[UnionBranch] = union.branches_repo.items
 
 proc find_branch*(union: Union, name: Identifier): Result[UnionBranch, string] =
-  let maybe_branch = union.branches_repo.find(name)
+  let maybe_branch = union.branches_repo.find("name", name)
   if maybe_branch.is_err:
     err(fmt"{name.location} union does not have any branch named `{name.asl}`")
   else:
-    ok(maybe_branch.get)
+    ok(maybe_branch.get[0])
 
 proc union_spec*(parser: Parser, indent: int): Result[Union, core.Error] =
   discard ? parser.expect(indent_spec, indent)
@@ -181,14 +187,12 @@ proc new_data(struct: Struct): Data =
   Data(kind: DK_STRUCT, struct: struct)
 
 proc kind*(data: Data): DataKind = data.kind
-proc struct*(data: Data): Result[Struct, core.Error] =
-  case data.kind:
-  of DK_STRUCT: ok(data.struct)
-  else: err(err_parser_expected_struct($(data.kind)))
-proc union*(data: Data): Result[Union, core.Error] =
-  case data.kind:
-  of DK_UNION: ok(data.union)
-  else: err(err_parser_expected_union($(data.kind)))
+proc struct*(data: Data): Struct =
+  do_assert data.kind == DK_STRUCT, "[UNREACHABLE] expected a struct"
+  data.struct
+proc union*(data: Data): Union =
+  do_assert data.kind == DK_UNION, "[UNREACHABLE] expected a union"
+  data.union
 
 proc data_spec*(parser: Parser, indent: int): Result[Data, core.Error] =
   let maybe_union = parser.expect(union_spec, indent)

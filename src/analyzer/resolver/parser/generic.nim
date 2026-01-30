@@ -12,7 +12,7 @@ type
   Generic* = ref object of RootObj
     name: Identifier
     location: Location
-    defs_repo: Repo[Hash, FunctionDefinition]
+    defs_repo: Repo[FunctionDefinition]
     case kind: GenericKind
     of GK_DEFAULT: discard
     of GK_CONSTRAINED: defs: seq[FunctionDefinition]
@@ -25,7 +25,8 @@ proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
   if defs.len == 0:
     return err(err_parser_empty_generic_constraint_list(location, name.asl))
 
-  let maybe_defs_repo = new_repo[Hash, FunctionDefinition](defs, hash)
+  let maybe_defs_repo = new_repo(defs, @[new_index[FunctionDefinition](
+      "def", hash, true)])
   if maybe_defs_repo.is_err:
     let error = maybe_defs_repo.error
     let def = error.current

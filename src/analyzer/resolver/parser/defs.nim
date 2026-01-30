@@ -130,7 +130,8 @@ proc new_function_definition*(fn_name: Identifier, args: seq[
   if args.len > MAX_ARGS_LENGTH:
     return err(err_parser_arg_list_too_long(location, args.len))
 
-  let maybe_args_repo = new_repo(args, name)
+  let maybe_args_repo = new_repo(args, @[new_index[ArgumentDefinition]("name",
+      name, true)])
   if maybe_args_repo.is_err:
     let error = maybe_args_repo.error
     let arg = error.current

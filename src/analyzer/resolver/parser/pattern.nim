@@ -93,7 +93,8 @@ proc new_struct_pattern*(args: seq[(Identifier, Identifier)],
   if args.len > MAX_ARGS_LENGTH:
     return err(err_parser_arg_list_too_long(location, args.len))
 
-  let maybe_keys_repo = new_repo(args.map_it(it[0]))
+  let maybe_keys_repo = new_repo(args.map_it(it[0]), @[new_index("name", proc(
+      x: Identifier): Identifier = x, true)])
   if maybe_keys_repo.is_err:
     let error = maybe_keys_repo.error
     let key = error.current
@@ -101,7 +102,8 @@ proc new_struct_pattern*(args: seq[(Identifier, Identifier)],
     return err(err_parser_arg_already_defined(key.location, key.asl,
         predefined_key_location))
 
-  let maybe_values_repo = new_repo(args.map_it(it[1]))
+  let maybe_values_repo = new_repo(args.map_it(it[1]), @[new_index("name", proc(
+      x: Identifier): Identifier = x, true)])
   if maybe_values_repo.is_err:
     let error = maybe_values_repo.error
     let value = error.current

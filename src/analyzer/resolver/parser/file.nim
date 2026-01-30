@@ -9,15 +9,15 @@ import core, module, function, identifier, defs
 type File* = ref object of RootObj
   path: string
   indent: int
-  modules_repo: Repo[Identifier, Module]
-  functions_repo: Repo[Hash, Function]
+  modules_repo: Repo[Module]
+  functions_repo: Repo[Function]
 
 proc new_file*(path: string, indent: int, modules: seq[Module],
     functions: seq[Function]): Result[File, core.Error] =
   if functions.len + modules.len == 0:
     return err(err_parser_empty_file(path))
 
-  let maybe_modules_repo = new_repo(modules, name)
+  let maybe_modules_repo = new_repo(modules, @[new_index[Module]("name", name, true)])
   if maybe_modules_repo.is_err:
     let error = maybe_modules_repo.error
     let module = error.current
@@ -25,8 +25,8 @@ proc new_file*(path: string, indent: int, modules: seq[Module],
     return err(err_parseR_module_already_defined(module.location,
           module.name.asl, predefined_module_location))
 
-  let maybe_functions_repo = new_repo(functions, proc(
-      fn: Function): Hash = fn.def.hash)
+  let maybe_functions_repo = new_repo(functions, @[new_index[Function]("def",
+      proc(fn: Function): Hash = fn.def.hash, true)])
   if maybe_functions_repo.is_err:
     let error = maybe_functions_repo.error
     let function = error.current
@@ -39,9 +39,9 @@ proc new_file*(path: string, indent: int, modules: seq[Module],
 
   for index, function in functions:
     # NOTE: Validate module and function name collisions
-    let maybe_module = modules_repo.find(function.name)
+    let maybe_module = modules_repo.find("name", function.name)
     if maybe_module.is_ok:
-      let module = maybe_module.get
+      let module = maybe_module.get[0]
       return err(err_parser_function_module_conflict(function.location,
           function.name.asl, module.location, module.name.asl))
 
@@ -70,8 +70,8 @@ proc asl*(file: File): string =
   lines.map_it(it.strip(leading = false)).join("\n").replace(re"\n{3,}", "\n\n")
 
 proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
-  let maybe_module = file.modules_repo.find(module_name)
-  if maybe_module.is_ok: ok(maybe_module.get)
+  let maybe_module = file.modules_repo.find("name", module_name)
+  if maybe_module.is_ok: ok(maybe_module.get[0])
   else: err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")
 
 proc file_spec*(parser: Parser, builtin_modules: seq[Module]): Result[File,

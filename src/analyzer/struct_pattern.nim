@@ -12,33 +12,39 @@ type
   AnalyzedStructPatternKind* = enum
     RSPK_DEFAULT, RSPK_NAMED
   AnalyzedStructPattern* = ref object of RootObj
-    original_struct: AnalyzedStruct
     args: seq[(AnalyzedArgumentDefinition, Identifier)]
     location: Location
     case kind: AnalyzedStructPatternKind
-    of RSPK_DEFAULT: discard
-    of RSPK_NAMED: name: Identifier
+    of RSPK_DEFAULT: struct: AnalyzedStruct
+    of RSPK_NAMED: branch: AnalyzedUnionBranch
 
-proc new_analyzed_struct_pattern(original_struct: AnalyzedStruct, args: seq[(
+proc new_analyzed_struct_pattern(struct: AnalyzedStruct, args: seq[(
     AnalyzedArgumentDefinition, Identifier)],
     location: Location): AnalyzedStructPattern =
-  AnalyzedStructPattern(kind: RSPK_DEFAULT, original_struct: original_struct,
-      args: args, location: location)
+  AnalyzedStructPattern(kind: RSPK_DEFAULT, struct: struct, args: args,
+      location: location)
 
-proc new_analyzed_struct_pattern(original_struct: AnalyzedStruct,
+proc new_analyzed_struct_pattern(branch: AnalyzedUnionBranch,
     name: Identifier, args: seq[(AnalyzedArgumentDefinition, Identifier)],
     location: Location): AnalyzedStructPattern =
-  AnalyzedStructPattern(kind: RSPK_NAMED, original_struct: original_struct,
-      name: name, args: args, location: location)
+  AnalyzedStructPattern(kind: RSPK_NAMED, branch: branch, args: args,
+      location: location)
 
 proc kind*(pattern: AnalyzedStructPattern): AnalyzedStructPatternKind = pattern.kind
-proc id*(pattern: AnalyzedStructPattern): uint64 = pattern.original_struct.id
+proc id*(pattern: AnalyzedStructPattern): uint64 =
+  do_assert pattern.kind == RSPK_NAMED, "expected a union branch pattern"
+  pattern.branch.id
 proc args*(pattern: AnalyzedStructPattern): seq[(AnalyzedArgumentDefinition,
     Identifier)] = pattern.args
-proc original_struct*(pattern: AnalyzedStructPattern): AnalyzedStruct = pattern.original_struct
+proc struct*(pattern: AnalyzedStructPattern): AnalyzedStruct =
+  do_assert pattern.kind == RSPK_DEFAULT, "expected struct"
+  pattern.struct
+proc branch*(pattern: AnalyzedStructPattern): AnalyzedUnionBranch =
+  do_assert pattern.kind == RSPK_NAMED, "expected branch"
+  pattern.branch
 proc name*(pattern: AnalyzedStructPattern): Identifier =
-  do_assert pattern.kind == RSPK_NAMED, "expected named struct"
-  pattern.name
+  do_assert pattern.kind == RSPK_NAMED, "expected union"
+  pattern.branch.name
 
 proc hash*(pattern: AnalyzedStructPattern): Hash =
   case pattern.kind:
@@ -73,30 +79,40 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
   of AMRK_MODULE:
     let module = operand.module
     let analyzed_operand_module = ? file_def.find_module_def(module)
-    if analyzed_operand_module.structs.len == 0:
-      return err(fmt"{pattern.location} module `{analyzed_operand_module.name.asl}` is a module and not a union")
-    if analyzed_operand_module.structs.len == 1:
-      return err(fmt"{pattern.location} module `{analyzed_operand_module.name.asl}` is a struct and not a union")
-
-    case pattern.kind:
-    of SPK_DEFAULT:
-      let analyzed_struct = ? analyzed_operand_module.find_struct()
-      let concrete_struct = ? analyzed_struct.concretize(operand.concrete_map)
-      var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]
-      for (key, value) in pattern.args:
-        let field = ? concrete_struct.find_field(key)
-        let value_arg = new_analyzed_argument_definition(field.module_ref, value)
-        analyzed_fields.add((value_arg, key))
-      ok(new_analyzed_struct_pattern(analyzed_struct, analyzed_fields,
-          pattern.location))
-    of SPK_NAMED:
+    case analyzed_operand_module.data.kind:
+    of ADK_NONE, ADK_LITERAL: err(fmt"{pattern.location} module `{analyzed_operand_module.name.asl}` is a module and not a union")
+    of ADK_UNION:
       let struct_name = ? pattern.struct
-      let analyzed_struct = ? analyzed_operand_module.find_struct(struct_name)
-      let concrete_struct = ? analyzed_struct.concretize(operand.concrete_map)
+      let analyzed_branch = ? analyzed_operand_module.find_branch(struct_name)
+      let concrete_branch = ? analyzed_branch.concretize(operand.concrete_map)
       var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]
       for (key, value) in pattern.args:
-        let field = ? concrete_struct.find_field(key)
+        let field = ? concrete_branch.find_field(key)
         let value_arg = new_analyzed_argument_definition(field.module_ref, value)
         analyzed_fields.add((value_arg, key))
-      ok(new_analyzed_struct_pattern(analyzed_struct, struct_name,
+      return ok(new_analyzed_struct_pattern(analyzed_branch, struct_name,
           analyzed_fields, pattern.location))
+      # return err(fmt"{pattern.location} module `{analyzed_operand_module.name.asl}` is a struct and not a union")
+    of ADK_STRUCT:
+      case pattern.kind:
+      of SPK_DEFAULT:
+        let analyzed_struct = ? analyzed_operand_module.find_struct()
+        let concrete_struct = ? analyzed_struct.concretize(operand.concrete_map)
+        var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]
+        for (key, value) in pattern.args:
+          let field = ? concrete_struct.find_field(key)
+          let value_arg = new_analyzed_argument_definition(field.module_ref, value)
+          analyzed_fields.add((value_arg, key))
+        ok(new_analyzed_struct_pattern(analyzed_struct, analyzed_fields,
+            pattern.location))
+      of SPK_NAMED:
+        let struct_name = ? pattern.struct
+        let analyzed_branch = ? analyzed_operand_module.find_branch(struct_name)
+        let concrete_branch = ? analyzed_branch.concretize(operand.concrete_map)
+        var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]
+        for (key, value) in pattern.args:
+          let field = ? concrete_branch.find_field(key)
+          let value_arg = new_analyzed_argument_definition(field.module_ref, value)
+          analyzed_fields.add((value_arg, key))
+        ok(new_analyzed_struct_pattern(analyzed_branch, struct_name,
+            analyzed_fields, pattern.location))
