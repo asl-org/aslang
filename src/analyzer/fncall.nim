@@ -65,6 +65,9 @@ proc c*(fncall: AnalyzedFunctionCall, result_arg: string): seq[string] =
           lines.add(fmt"U64 {arg} = {child.module.id};")
           new_args.add(arg)
 
+      assert fncall.args.len == fncall.original_def.args.len, "function call args length mismatch with original definition"
+      assert fncall.args.len == fncall.concrete_def.args.len, "function call args length mismatch with concrete definition"
+
       for index in 0..<fncall.args.len:
         let original_def = fncall.original_def.args[index]
         let concrete_def = fncall.concrete_def.args[index]

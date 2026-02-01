@@ -243,6 +243,8 @@ proc c(case_block: AnalyzedCase, operand: AnalyzedArgumentDefinition,
       of RSPK_DEFAULT: operand.module_ref.name
       of RSPK_NAMED: fmt"{operand.module_ref.name}_{struct.name.asl}"
 
+    assert struct.args.len == struct.original_struct.fields.len, "struct pattern args length mismatch with original struct fields"
+
     for index in 0..<struct.args.len:
       let field = struct.args[index][0]
       let key = struct.args[index][1]
@@ -287,6 +289,10 @@ proc analyze(file_def: AnalyzedFileDefinition,
     let analyzed_statement = ? analyze(file_def, module_def, case_scope, statement)
     analyzed_statements.add(analyzed_statement)
     case_scope = ? case_scope.set(analyzed_statement.arg)
+
+  if analyzed_statements.len == 0:
+    return err(fmt"{case_block.location} case block must have at least one statement")
+
   ok(new_analyzed_case(analyzed_case_pattern, analyzed_statements,
       case_block.location))
 
@@ -307,6 +313,10 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     let analyzed_statement = ? analyze(file_def, case_scope, statement)
     analyzed_statements.add(analyzed_statement)
     case_scope = ? case_scope.set(analyzed_statement.arg)
+
+  if analyzed_statements.len == 0:
+    return err(fmt"{case_block.location} case block must have at least one statement")
+
   ok(new_analyzed_case(analyzed_case_pattern, analyzed_statements,
       case_block.location))
 
@@ -351,6 +361,10 @@ proc analyze(file_def: AnalyzedFileDefinition,
     let analyzed_statement = ? analyze(file_def, module_def, else_scope, statement)
     analyzed_statements.add(analyzed_statement)
     else_scope = ? else_scope.set(analyzed_statement.arg)
+
+  if analyzed_statements.len == 0:
+    return err(fmt"{else_block.location} else block must have at least one statement")
+
   ok(new_analyzed_else(analyzed_statements, else_block.location))
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
@@ -361,6 +375,10 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     let analyzed_statement = ? analyze(file_def, else_scope, statement)
     analyzed_statements.add(analyzed_statement)
     else_scope = ? else_scope.set(analyzed_statement.arg)
+
+  if analyzed_statements.len == 0:
+    return err(fmt"{else_block.location} else block must have at least one statement")
+
   ok(new_analyzed_else(analyzed_statements, else_block.location))
 
 # Match
@@ -427,6 +445,9 @@ proc analyze*(file_def: AnalyzedFileDefinition,
           analyzed_operand_module_ref, case_block)
       analyzed_case_blocks.add(analyzed_case_block)
 
+    if analyzed_case_blocks.len == 0:
+      return err(fmt"{match.location} match expression must have at least one case block")
+
     var unique_patterns: Table[AnalyzedCasePattern, AnalyzedCase]
     for case_block in analyzed_case_blocks:
       # NOTE: Ensure all the case block returns type is same.
@@ -458,6 +479,9 @@ proc analyze*(file_def: AnalyzedFileDefinition,
       let analyzed_case_block = ? analyze(file_def, module_def, scope,
           analyzed_operand_module_ref, case_block)
       analyzed_case_blocks.add(analyzed_case_block)
+
+    if analyzed_case_blocks.len == 0:
+      return err(fmt"{match.location} match expression must have at least one case block")
 
     let else_block = ? match.else_block
     let analyzed_else_block = ? analyze(file_def, module_def, scope, else_block)
@@ -500,6 +524,9 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
           analyzed_operand_module_ref, case_block)
       analyzed_case_blocks.add(analyzed_case_block)
 
+    if analyzed_case_blocks.len == 0:
+      return err(fmt"{match.location} match expression must have at least one case block")
+
     var unique_patterns: Table[AnalyzedCasePattern, AnalyzedCase]
     for case_block in analyzed_case_blocks:
       if case_block.returns != analyzed_case_blocks[0].returns:
@@ -530,6 +557,9 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
       let analyzed_case_block = ? analyze(file_def, scope,
           analyzed_operand_module_ref, case_block)
       analyzed_case_blocks.add(analyzed_case_block)
+
+    if analyzed_case_blocks.len == 0:
+      return err(fmt"{match.location} match expression must have at least one case block")
 
     let else_block = ? match.else_block
     let analyzed_else_block = ? analyze(file_def, scope, else_block)

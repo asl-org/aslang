@@ -35,5 +35,5 @@ proc find*[K, V](repo: Repo[K, V], key: K): Result[V, void] =
   else: ok(repo.items[repo.items_map[key]])
 
 proc find*[K, V](repo: Repo[K, V], index: int): Result[V, void] =
-  if index < 0 or index > repo.items.len: err()
+  if index < 0 or index >= repo.items.len: err()
   else: ok(repo.items[index])

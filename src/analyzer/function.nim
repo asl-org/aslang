@@ -58,6 +58,10 @@ proc analyze*(file_def: AnalyzedFileDefinition,
     let analyzed_function_step = ? analyze(file_def, module_def, scope, step)
     analyzed_steps.add(analyzed_function_step)
     scope = ? scope.set(analyzed_function_step.arg)
+
+  if analyzed_steps.len == 0:
+    return err(fmt"{function.def.location} function must have at least one statement")
+
   ok(new_analyzed_user_function(analyzed_function_def, analyzed_steps))
 
 proc analyze(file_def: AnalyzedFileDefinition,
@@ -72,6 +76,10 @@ proc analyze(file_def: AnalyzedFileDefinition,
     let analyzed_function_step = ? analyze(file_def, scope, step)
     analyzed_steps.add(analyzed_function_step)
     scope = ? scope.set(analyzed_function_step.arg)
+
+  if analyzed_steps.len == 0:
+    return err(fmt"{function.def.location} function must have at least one statement")
+
   ok(new_analyzed_user_function(analyzed_function_def, analyzed_steps))
 
 proc analyze*(file_def: AnalyzedFileDefinition,

@@ -41,6 +41,10 @@ proc asl*(struct_init: AnalyzedStructInit): string =
 proc c*(struct_init: AnalyzedStructInit, result_arg: string): seq[string] =
   var lines: seq[string]
   var args: seq[string]
+
+  assert struct_init.fields.len == struct_init.struct_ref.origin.fields.len, "struct init fields length mismatch with origin"
+  assert struct_init.fields.len == struct_init.struct_ref.struct.fields.len, "struct init fields length mismatch with struct"
+
   for index in 0..<struct_init.fields.len:
     let original_field = struct_init.struct_ref.origin.fields[index]
     let concrete_field = struct_init.struct_ref.struct.fields[index]
