@@ -88,7 +88,7 @@ proc new_union_branch*(branch_name: Identifier, fields: seq[
     err(err_parser_arg_already_defined(field.location, field.name.asl,
           predefined_field_location))
 
-proc location*(branch: UnionBranch): Location = branch.location
+proc location*(branch: UnionBranch): Location = branch.name.location
 proc name*(branch: UnionBranch): Identifier = branch.name
 proc fields*(branch: UnionBranch): seq[ArgumentDefinition] = branch.fields_repo.items
 proc struct*(branch: UnionBranch): Result[Struct, string] =
