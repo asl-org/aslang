@@ -22,7 +22,7 @@ proc new_file*(path: string, indent: int, modules: seq[Module],
     let error = maybe_modules_repo.error
     let module = error.current
     let predefined_module_location = error.previous.location
-    return err(err_parseR_module_already_defined(module.location,
+    return err(err_parser_module_already_defined(module.location,
           module.name.asl, predefined_module_location))
 
   let maybe_functions_repo = new_repo(functions, @[new_index[Function]("def",
