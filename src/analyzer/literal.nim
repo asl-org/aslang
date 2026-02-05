@@ -1,4 +1,4 @@
-import results, strformat, tables, sets
+import results, strformat, tables, sets, options
 
 import resolver
 import module_ref
@@ -27,20 +27,13 @@ proc asl*(literal: AnalyzedLiteral): string =
 proc c*(literal: AnalyzedLiteral, result_arg: string): string =
   fmt"{literal.module_ref.c} {result_arg} = {literal.literal.asl};"
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-        init: ResolvedLiteralInit): Result[AnalyzedLiteral, string] =
-  let analyzed_module_ref = ? analyze_def(file_def.file,
-      module_def.resolved_module, init.module_ref)
-  case analyzed_module_ref.kind:
-  of AMRK_GENERIC: err(fmt"{init.location} Generics are not supported via literal initialization")
-  of AMRK_MODULE:
-    ? analyzed_module_ref.module.validate(init.literal)
-    ok(new_analyzed_literal(analyzed_module_ref, init.literal))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    init: ResolvedLiteralInit): Result[AnalyzedLiteral, string] =
-  let analyzed_module_ref = ? analyze_def(file_def.file, init.module_ref)
+    init: ResolvedLiteralInit,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedLiteral, string] =
+  let analyzed_module_ref = if module_def.isSome:
+    ? analyze_def(file_def.file, module_def.get.resolved_module, init.module_ref)
+  else:
+    ? analyze_def(file_def.file, init.module_ref)
   case analyzed_module_ref.kind:
   of AMRK_GENERIC: err(fmt"{init.location} Generics are not supported via literal initialization")
   of AMRK_MODULE:

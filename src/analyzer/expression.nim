@@ -114,7 +114,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
     ok(new_analyzed_expression(analyzed_function_call))
   of TEK_INIT:
     let init = ? expression.init
-    let analyzed_init = ? analyze(file_def, module_def, scope, init)
+    let analyzed_init = ? analyze(file_def, scope, init, some(module_def))
     ok(new_analyzed_expression(analyzed_init))
   of TEK_STRUCT_GET:
     let struct_get = ? expression.struct_get

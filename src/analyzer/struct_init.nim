@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, hashes, strutils, sets
+import results, sequtils, strformat, tables, hashes, strutils, sets, options
 
 import resolver
 import module_ref
@@ -59,30 +59,10 @@ proc c*(struct_init: AnalyzedStructInit, result_arg: string): seq[string] =
   lines.add(fmt"Pointer {result_arg} = {struct_init.data_ref.c}_init({args_str});")
   return lines
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    init: ResolvedStructInit): Result[AnalyzedStructInit, string] =
-  let analyzed_data_ref = ? analyze(file_def, module_def, scope,
-      init.struct_ref)
-
-  var args = new_seq[Argument](analyzed_data_ref.fields.len)
-  var found_field_indices: Hashset[int]
-  for field in init.fields:
-    let analyzed_field_index = ? analyzed_data_ref.find_field_index(field.name)
-    found_field_indices.incl(analyzed_field_index)
-    args[analyzed_field_index] = field.value
-
-  # NOTE: Only a subset of fields are given to initilaizer
-  if found_field_indices.len < analyzed_data_ref.fields.len:
-    return err(fmt"{init.location} struct initializer is missing fields")
-
-  let analyzed_fields = ? analyze(file_def, scope, args,
-      analyzed_data_ref.fields)
-  ok(new_analyzed_struct_init(analyzed_data_ref, analyzed_fields))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    init: ResolvedStructInit): Result[AnalyzedStructInit, string] =
-  let analyzed_data_ref = ? analyze(file_def, scope, init.struct_ref)
+    init: ResolvedStructInit,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStructInit, string] =
+  let analyzed_data_ref = ? analyze(file_def, scope, init.struct_ref, module_def)
 
   var args = new_seq[Argument](analyzed_data_ref.fields.len)
   var found_field_indices: Hashset[int]

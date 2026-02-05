@@ -1,4 +1,4 @@
-import results, tables, sets
+import results, tables, sets, options
 
 import resolver
 import module_ref
@@ -43,27 +43,15 @@ proc c*(init: AnalyzedInitializer, result_arg: string): seq[string] =
   of RIK_LITERAL: @[init.literal.c(result_arg)]
   of RIK_STRUCT: init.struct.c(result_arg)
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
-  case init.kind:
-  of TIK_STRUCT:
-    let struct_init = ? init.struct
-    let analyzed_struct_init = ? analyze(file_def, module_def, scope, struct_init)
-    ok(new_analyzed_initializer(analyzed_struct_init))
-  of TIK_LITERAL:
-    let literal_init = ? init.literal
-    let analyzed_literal = ? analyze(file_def, module_def, scope, literal_init)
-    ok(new_analyzed_initializer(analyzed_literal))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
+    init: ResolvedInitializer,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedInitializer, string] =
   case init.kind:
   of TIK_STRUCT:
     let struct_init = ? init.struct
-    let analyzed_struct_init = ? analyze(file_def, scope, struct_init)
+    let analyzed_struct_init = ? analyze(file_def, scope, struct_init, module_def)
     ok(new_analyzed_initializer(analyzed_struct_init))
   of TIK_LITERAL:
     let literal_init = ? init.literal
-    let analyzed_literal = ? analyze(file_def, scope, literal_init)
+    let analyzed_literal = ? analyze(file_def, scope, literal_init, module_def)
     ok(new_analyzed_initializer(analyzed_literal))
