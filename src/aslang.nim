@@ -22,7 +22,7 @@ when isMainModule:
   for (kind, key, val) in getopt():
     case kind:
     of cmdArgument:
-      filename = key.absolutePath
+      filename = key.absolute_path
     of cmdLongOption, cmdShortOption:
       case key:
       of "o", "output":
