@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, strutils, sets
+import results, sequtils, strformat, tables, strutils, sets, options
 
 import resolver
 import module_ref
@@ -90,7 +90,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
     let analyzed_function =
       case function.kind:
       of RFK_USER:
-        let analyzed_user_function = ? analyze(file_def, module_def, function.user)
+        let analyzed_user_function = ? analyze(file_def, function.user, some(module_def))
         new_analyzed_function(analyzed_user_function)
       of RFK_EXTERN:
         let analyzed_function_def = ? module_def.find_function_def(

@@ -46,30 +46,19 @@ proc c*(function: AnalyzedUserFunction): seq[string] =
   return lines
 
 proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition,
-        function: ResolvedUserFunction): Result[
+    function: ResolvedUserFunction,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[
     AnalyzedUserFunction, string] =
   var scope = FunctionScope()
-  let analyzed_function_def = ? module_def.find_function_def(function.def)
+  let analyzed_function_def = if module_def.isSome:
+    ? module_def.get.find_function_def(function.def)
+  else:
+    ? file_def.find_function_def(function.def)
   for arg in analyzed_function_def.args: scope = ? scope.set(arg)
 
   var analyzed_steps: seq[AnalyzedStatement]
   for step in function.steps:
-    let analyzed_function_step = ? analyze(file_def, scope, step, some(module_def))
-    analyzed_steps.add(analyzed_function_step)
-    scope = ? scope.set(analyzed_function_step.arg)
-  ok(new_analyzed_user_function(analyzed_function_def, analyzed_steps))
-
-proc analyze(file_def: AnalyzedFileDefinition,
-    function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
-  var scope = FunctionScope()
-  let analyzed_function_def = ? file_def.find_function_def(function.def)
-  for arg in analyzed_function_def.args:
-    scope = ? scope.set(arg)
-
-  var analyzed_steps: seq[AnalyzedStatement]
-  for step in function.steps:
-    let analyzed_function_step = ? analyze(file_def, scope, step)
+    let analyzed_function_step = ? analyze(file_def, scope, step, module_def)
     analyzed_steps.add(analyzed_function_step)
     scope = ? scope.set(analyzed_function_step.arg)
   ok(new_analyzed_user_function(analyzed_function_def, analyzed_steps))
