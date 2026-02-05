@@ -1,4 +1,4 @@
-import results, strformat, tables, strutils, sets
+import results, strformat, tables, strutils, sets, options
 
 import resolver
 import module_ref
@@ -55,7 +55,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
 
   var analyzed_steps: seq[AnalyzedStatement]
   for step in function.steps:
-    let analyzed_function_step = ? analyze(file_def, module_def, scope, step)
+    let analyzed_function_step = ? analyze(file_def, scope, step, some(module_def))
     analyzed_steps.add(analyzed_function_step)
     scope = ? scope.set(analyzed_function_step.arg)
   ok(new_analyzed_user_function(analyzed_function_def, analyzed_steps))

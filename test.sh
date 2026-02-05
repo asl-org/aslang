@@ -1,4 +1,10 @@
+#!/bin/bash
 set -e
+
+# Add Nim to PATH if not already available
+if ! command -v nimble &> /dev/null; then
+  export PATH="/tmp/Nim-2.2.2/bin:$PATH"
+fi
 
 echo "🔨 Building..."
 nimble build -d:release > /dev/null 2>&1

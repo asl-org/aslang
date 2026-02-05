@@ -151,7 +151,7 @@ proc asl*(statement: AnalyzedStatement, indent: string): seq[string] =
 proc c*(statement: AnalyzedStatement): seq[string] =
   statement.expression.c(statement.arg)
 
-proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
+proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     statement: ResolvedStatement,
     module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStatement, string] =
   let analyzed_expression = ? analyze(file_def, scope, statement.expression, module_def)
