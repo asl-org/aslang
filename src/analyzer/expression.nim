@@ -100,52 +100,25 @@ proc c(expression: AnalyzedExpression, result_arg: AnalyzedArgumentDefinition): 
   of REK_STRUCT_GET: @[expression.struct_get.c(result_arg.name.asl)]
   of REK_VARIABLE: @[fmt"{expression.variable.module_ref.c} {result_arg.name.asl} = {expression.variable.name.asl};"]
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    match: ResolvedMatch): Result[AnalyzedMatch, string]
-
-proc analyze(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    expression: ResolvedExpression): Result[AnalyzedExpression, string] =
-  case expression.kind:
-  of TEK_FNCALL:
-    let fncall = ? expression.fncall
-    let analyzed_function_call = ? analyze(file_def, scope, fncall, some(module_def))
-    ok(new_analyzed_expression(analyzed_function_call))
-  of TEK_INIT:
-    let init = ? expression.init
-    let analyzed_init = ? analyze(file_def, scope, init, some(module_def))
-    ok(new_analyzed_expression(analyzed_init))
-  of TEK_STRUCT_GET:
-    let struct_get = ? expression.struct_get
-    let analyzed_struct_get = ? analyze(file_def, scope, struct_get, some(module_def))
-    ok(new_analyzed_expression(analyzed_struct_get))
-  of TEK_VARIABLE:
-    let variable = ? expression.variable
-    let analyzed_variable = ? analyze(scope, variable)
-    ok(new_analyzed_expression(analyzed_variable))
-  of TEK_MATCH:
-    let match = ? expression.match
-    let analyzed_match = ? analyze(file_def, module_def, scope, match)
-    ok(new_analyzed_expression(analyzed_match))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    match: ResolvedMatch): Result[AnalyzedMatch, string]
+    match: ResolvedMatch,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedMatch, string]
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    expression: ResolvedExpression): Result[AnalyzedExpression, string] =
+    expression: ResolvedExpression,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedExpression, string] =
   case expression.kind:
   of TEK_FNCALL:
     let fncall = ? expression.fncall
-    let analyzed_function_call = ? analyze(file_def, scope, fncall)
+    let analyzed_function_call = ? analyze(file_def, scope, fncall, module_def)
     ok(new_analyzed_expression(analyzed_function_call))
   of TEK_INIT:
     let init = ? expression.init
-    let analyzed_init = ? analyze(file_def, scope, init)
+    let analyzed_init = ? analyze(file_def, scope, init, module_def)
     ok(new_analyzed_expression(analyzed_init))
   of TEK_STRUCT_GET:
     let struct_get = ? expression.struct_get
-    let analyzed_struct_get = ? analyze(file_def, scope, struct_get)
+    let analyzed_struct_get = ? analyze(file_def, scope, struct_get, module_def)
     ok(new_analyzed_expression(analyzed_struct_get))
   of TEK_VARIABLE:
     let variable = ? expression.variable
@@ -153,7 +126,7 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     ok(new_analyzed_expression(analyzed_variable))
   of TEK_MATCH:
     let match = ? expression.match
-    let analyzed_match = ? analyze(file_def, scope, match)
+    let analyzed_match = ? analyze(file_def, scope, match, module_def)
     ok(new_analyzed_expression(analyzed_match))
 
 # Statement
@@ -178,18 +151,10 @@ proc asl*(statement: AnalyzedStatement, indent: string): seq[string] =
 proc c*(statement: AnalyzedStatement): seq[string] =
   statement.expression.c(statement.arg)
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    statement: ResolvedStatement): Result[AnalyzedStatement, string] =
-  let analyzed_expression = ? analyze(file_def, module_def, scope,
-      statement.expression)
-  let analyzed_arg = new_analyzed_argument_definition(
-      analyzed_expression.returns, statement.arg)
-  ok(new_analyzed_statement(analyzed_arg, analyzed_expression))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    statement: ResolvedStatement): Result[AnalyzedStatement, string] =
-  let analyzed_expression = ? analyze(file_def, scope, statement.expression)
+    statement: ResolvedStatement,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStatement, string] =
+  let analyzed_expression = ? analyze(file_def, scope, statement.expression, module_def)
   let analyzed_arg = new_analyzed_argument_definition(
       analyzed_expression.returns, statement.arg)
   ok(new_analyzed_statement(analyzed_arg, analyzed_expression))
@@ -284,33 +249,13 @@ proc c(case_block: AnalyzedCase, operand: AnalyzedArgumentDefinition,
 
   return lines
 
-proc analyze(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    operand: AnalyzedModuleRef, case_block: ResolvedCase): Result[AnalyzedCase, string] =
-  var case_scope = scope.clone()
-  let analyzed_case_pattern = ? analyze(file_def, scope, operand,
-      case_block.pattern)
-
-  case analyzed_case_pattern.kind:
-  of RCPK_LITERAL: discard
-  of RCPK_STRUCT:
-    let analyzed_struct_pattern = analyzed_case_pattern.struct
-    for (field, name) in analyzed_struct_pattern.args:
-      case_scope = ? case_scope.set(field)
-
-  var analyzed_statements: seq[AnalyzedStatement]
-  for statement in case_block.statements:
-    let analyzed_statement = ? analyze(file_def, module_def, case_scope, statement)
-    analyzed_statements.add(analyzed_statement)
-    case_scope = ? case_scope.set(analyzed_statement.arg)
-  ok(new_analyzed_case(analyzed_case_pattern, analyzed_statements,
-      case_block.location))
-
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    operand: AnalyzedModuleRef, case_block: ResolvedCase): Result[AnalyzedCase, string] =
+    operand: AnalyzedModuleRef, case_block: ResolvedCase,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedCase, string] =
   var case_scope = scope.clone()
   let analyzed_case_pattern = ? analyze(file_def, scope, operand,
       case_block.pattern)
+
   case analyzed_case_pattern.kind:
   of RCPK_LITERAL: discard
   of RCPK_STRUCT:
@@ -320,7 +265,7 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
 
   var analyzed_statements: seq[AnalyzedStatement]
   for statement in case_block.statements:
-    let analyzed_statement = ? analyze(file_def, case_scope, statement)
+    let analyzed_statement = ? analyze(file_def, case_scope, statement, module_def)
     analyzed_statements.add(analyzed_statement)
     case_scope = ? case_scope.set(analyzed_statement.arg)
   ok(new_analyzed_case(analyzed_case_pattern, analyzed_statements,
@@ -358,23 +303,13 @@ proc c(else_block: AnalyzedElse, result_arg: string): seq[string] =
   lines.add("}")
   return lines
 
-proc analyze(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    else_block: ResolvedElse): Result[AnalyzedElse, string] =
-  var else_scope = scope.clone()
-  var analyzed_statements: seq[AnalyzedStatement]
-  for statement in else_block.statements:
-    let analyzed_statement = ? analyze(file_def, module_def, else_scope, statement)
-    analyzed_statements.add(analyzed_statement)
-    else_scope = ? else_scope.set(analyzed_statement.arg)
-  ok(new_analyzed_else(analyzed_statements, else_block.location))
-
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    else_block: ResolvedElse): Result[AnalyzedElse, string] =
+    else_block: ResolvedElse,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedElse, string] =
   var else_scope = scope.clone()
   var analyzed_statements: seq[AnalyzedStatement]
   for statement in else_block.statements:
-    let analyzed_statement = ? analyze(file_def, else_scope, statement)
+    let analyzed_statement = ? analyze(file_def, else_scope, statement, module_def)
     analyzed_statements.add(analyzed_statement)
     else_scope = ? else_scope.set(analyzed_statement.arg)
   ok(new_analyzed_else(analyzed_statements, else_block.location))
@@ -429,9 +364,9 @@ proc c(match: AnalyzedMatch, result_arg: AnalyzedArgumentDefinition): seq[string
   of RMK_COMPLETE: lines.add(match.else_block.c(result_arg.name.asl))
   return lines
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    match: ResolvedMatch): Result[AnalyzedMatch, string] =
+proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
+    match: ResolvedMatch,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedMatch, string] =
   let analyzed_operand_module_ref = ? scope.get(match.operand)
   case analyzed_operand_module_ref.kind:
     of AMRK_GENERIC:
@@ -454,8 +389,8 @@ proc analyze*(file_def: AnalyzedFileDefinition,
   of TMK_CASE_ONLY:
     var analyzed_case_blocks: seq[AnalyzedCase]
     for case_block in match.case_blocks:
-      let analyzed_case_block = ? analyze(file_def, module_def, scope,
-          analyzed_operand_module_ref, case_block)
+      let analyzed_case_block = ? analyze(file_def, scope,
+          analyzed_operand_module_ref, case_block, module_def)
       analyzed_case_blocks.add(analyzed_case_block)
 
     var unique_patterns: Table[AnalyzedCasePattern, AnalyzedCase]
@@ -489,105 +424,12 @@ proc analyze*(file_def: AnalyzedFileDefinition,
   of TMK_COMPLETE:
     var analyzed_case_blocks: seq[AnalyzedCase]
     for case_block in match.case_blocks:
-      let analyzed_case_block = ? analyze(file_def, module_def, scope,
-          analyzed_operand_module_ref, case_block)
+      let analyzed_case_block = ? analyze(file_def, scope,
+          analyzed_operand_module_ref, case_block, module_def)
       analyzed_case_blocks.add(analyzed_case_block)
 
     let else_block = ? match.else_block
-    let analyzed_else_block = ? analyze(file_def, module_def, scope, else_block)
-
-    var unique_patterns: Table[AnalyzedCasePattern, AnalyzedCase]
-    for case_block in analyzed_case_blocks:
-      if case_block.returns != analyzed_else_block.returns:
-        return err(fmt"{case_block.location} returns `{case_block.returns.asl}` but expected `{analyzed_else_block.returns.asl}`")
-
-      # NOTE: Detect duplicate patterns
-      if case_block.pattern in unique_patterns:
-        let prev_case_block = unique_patterns[case_block.pattern]
-        return err(fmt"{case_block.location} duplicate case block found at `{prev_case_block.location}`")
-      else:
-        unique_patterns[case_block.pattern] = case_block
-
-    # NOTE: Make sure all the cases are covered
-    case analyzed_operand_module_ref.kind:
-    of AMRK_GENERIC:
-      return err(fmt"{match.location} match expression does not support generic operands")
-    of AMRK_MODULE:
-      let module = analyzed_operand_module_ref.module
-      let analyzed_operand_module = ? file_def.find_module_def(module)
-      case analyzed_operand_module.data.kind:
-      of ADK_UNION:
-        if unique_patterns.len == analyzed_operand_module.data.union.branches.len:
-          return err(fmt"{match.location} match expression already covers all cases, else block is not required")
-      else: discard
-
-    ok(new_analyzed_match(analyzed_operand, analyzed_case_blocks,
-        analyzed_else_block, match.location))
-
-proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    match: ResolvedMatch): Result[AnalyzedMatch, string] =
-  let analyzed_operand_module_ref = ? scope.get(match.operand)
-  case analyzed_operand_module_ref.kind:
-    of AMRK_GENERIC:
-      return err(fmt"{match.location} match expression does not support generic operands")
-    of AMRK_MODULE:
-      let module = analyzed_operand_module_ref.module
-      let analyzed_operand_module = ? file_def.find_module_def(module)
-      case analyzed_operand_module.data.kind:
-      of ADK_NONE:
-        case analyzed_operand_module.name.asl:
-        of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64": discard
-        else: return err(fmt"{match.location} module `{analyzed_operand_module.name.asl}` is does not have a data block")
-      of ADK_STRUCT:
-        return err(fmt"{match.location} module `{analyzed_operand_module.name.asl}` is a struct and not supported in match blocks")
-      else: discard
-
-  let analyzed_operand = new_analyzed_argument_definition(
-      analyzed_operand_module_ref, match.operand)
-  case match.kind:
-  of TMK_CASE_ONLY:
-    var analyzed_case_blocks: seq[AnalyzedCase]
-    for case_block in match.case_blocks:
-      let analyzed_case_block = ? analyze(file_def, scope,
-          analyzed_operand_module_ref, case_block)
-      analyzed_case_blocks.add(analyzed_case_block)
-
-    var unique_patterns: Table[AnalyzedCasePattern, AnalyzedCase]
-    for case_block in analyzed_case_blocks:
-      if case_block.returns != analyzed_case_blocks[0].returns:
-        return err(fmt"{case_block.location} returns `{case_block.returns.asl}` but expected `{analyzed_case_blocks[0].returns.asl}`")
-
-      # NOTE: Detect duplicate patterns
-      if case_block.pattern in unique_patterns:
-        let prev_case_block = unique_patterns[case_block.pattern]
-        return err(fmt"{case_block.location} duplicate case block found at `{prev_case_block.location}`")
-      else:
-        unique_patterns[case_block.pattern] = case_block
-
-    # NOTE: Make sure all the cases are covered
-    case analyzed_operand_module_ref.kind:
-    of AMRK_GENERIC:
-      return err(fmt"{match.location} match expression does not support generic operands")
-    of AMRK_MODULE:
-      let module = analyzed_operand_module_ref.module
-      let analyzed_operand_module = ? file_def.find_module_def(module)
-      case analyzed_operand_module.data.kind:
-      of ADK_UNION:
-        if unique_patterns.len < analyzed_operand_module.data.union.branches.len:
-          return err(fmt"{match.location} match expression does not cover all cases, an else block is required")
-      else: discard
-
-    ok(new_analyzed_match(analyzed_operand, analyzed_case_blocks,
-        match.location))
-  of TMK_COMPLETE:
-    var analyzed_case_blocks: seq[AnalyzedCase]
-    for case_block in match.case_blocks:
-      let analyzed_case_block = ? analyze(file_def, scope,
-          analyzed_operand_module_ref, case_block)
-      analyzed_case_blocks.add(analyzed_case_block)
-
-    let else_block = ? match.else_block
-    let analyzed_else_block = ? analyze(file_def, scope, else_block)
+    let analyzed_else_block = ? analyze(file_def, scope, else_block, module_def)
 
     var unique_patterns: Table[AnalyzedCasePattern, AnalyzedCase]
     for case_block in analyzed_case_blocks:
