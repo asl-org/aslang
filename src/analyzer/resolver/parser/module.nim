@@ -120,7 +120,6 @@ proc location*(module: Module): Location = module.def.location
 proc generics*(module: Module): seq[Generic] = module.generics_repo.items
 proc data*(module: Module): Data = module.data
 proc functions*(module: Module): seq[Function] = module.functions_repo.items
-proc is_struct*(module: Module): bool = module.data.kind != DK_NONE
 
 proc module_ref*(module: Module): Result[ModuleRef, core.Error] =
   if module.generics.len > 0:

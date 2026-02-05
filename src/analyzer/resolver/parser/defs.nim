@@ -51,21 +51,6 @@ proc struct_named_definition_spec*(parser: Parser): Result[
   discard ? parser.expect(colon_spec)
   ok(new_struct_definition(name, struct_keyword.location))
 
-proc struct_definition_spec*(parser: Parser): Result[
-    StructDefinition, core.Error] =
-  var errors: seq[core.Error]
-
-  let maybe_struct_default_def = parser.expect(struct_default_definition_spec)
-  if maybe_struct_default_def.is_ok: return maybe_struct_default_def
-  else: errors.add(maybe_struct_default_def.error)
-
-
-  let maybe_struct_named_def = parser.expect(struct_named_definition_spec)
-  if maybe_struct_named_def.is_ok: return maybe_struct_named_def
-  else: errors.add(maybe_struct_named_def.error)
-
-  err(errors.max())
-
 # =============================================================================
 # ArgumentDefinition
 # =============================================================================
