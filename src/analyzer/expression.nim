@@ -110,7 +110,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
   case expression.kind:
   of TEK_FNCALL:
     let fncall = ? expression.fncall
-    let analyzed_function_call = ? analyze(file_def, module_def, scope, fncall)
+    let analyzed_function_call = ? analyze(file_def, scope, fncall, some(module_def))
     ok(new_analyzed_expression(analyzed_function_call))
   of TEK_INIT:
     let init = ? expression.init

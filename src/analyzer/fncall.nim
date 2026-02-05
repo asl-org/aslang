@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, strutils, sets
+import results, sequtils, strformat, tables, strutils, sets, options
 
 import resolver
 import module_ref
@@ -95,25 +95,10 @@ proc c*(fncall: AnalyzedFunctionCall, result_arg: string): seq[string] =
 
   return lines
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let analyzed_function_ref = ? analyze(file_def, module_def, fncall.fnref)
-  var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
-  for (original_def, concrete_def) in analyzed_function_ref.defs:
-    let maybe_analyzed_args = analyze(file_def, scope,
-        fncall.args, concrete_def.args)
-    if maybe_analyzed_args.is_ok:
-      return ok(new_analyzed_function_call(analyzed_function_ref, original_def,
-          concrete_def, maybe_analyzed_args.get))
-    else:
-      error_message.add(maybe_analyzed_args.error)
-      error_message.add(concrete_def.asl)
-  err(error_message.join("\n"))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let analyzed_function_ref = ? analyze(file_def, fncall.fnref)
+    fncall: ResolvedFunctionCall,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedFunctionCall, string] =
+  let analyzed_function_ref = ? analyze(file_def, fncall.fnref, module_def)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
   for (original_def, concrete_def) in analyzed_function_ref.defs:
     let maybe_analyzed_args = analyze(file_def, scope, fncall.args,
@@ -121,6 +106,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     if maybe_analyzed_args.is_ok:
       return ok(new_analyzed_function_call(analyzed_function_ref, original_def,
           concrete_def, maybe_analyzed_args.get))
-
-    error_message.add(concrete_def.asl)
+    else:
+      error_message.add(maybe_analyzed_args.error)
+      error_message.add(concrete_def.asl)
   err(error_message.join("\n"))
