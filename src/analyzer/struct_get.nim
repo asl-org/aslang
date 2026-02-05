@@ -44,11 +44,10 @@ proc analyze*(file_def: AnalyzedFileDefinition,
   of AMRK_MODULE:
     let resolved_module = analyzed_module_ref.module
     let analyzed_module_def = ? file_def.find_module_def(resolved_module)
-    if analyzed_module_def.structs.len == 0:
-      err(fmt"5 {struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
-    elif analyzed_module_def.structs.len > 1:
-      err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is a union")
-    else:
+    case analyzed_module_def.data.kind:
+    of ADK_NONE, ADK_LITERAL: err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
+    of ADK_UNION: err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is a union")
+    of ADK_STRUCT:
       let maybe_default_struct = analyzed_module_def.find_struct()
       if maybe_default_struct.is_err:
         err(err_no_default_struct(struct_get.location,
@@ -71,11 +70,10 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
   of AMRK_MODULE:
     let resolved_module = analyzed_module_ref.module
     let analyzed_module_def = ? file_def.find_module_def(resolved_module)
-    if analyzed_module_def.structs.len == 0:
-      err(fmt"8 {struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
-    elif analyzed_module_def.structs.len > 1:
-      err(fmt"9 {struct_get.location} module `{analyzed_module_def.name.asl}` is a union")
-    else:
+    case analyzed_module_def.data.kind:
+    of ADK_NONE, ADK_LITERAL: err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
+    of ADK_UNION: err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is a union")
+    of ADK_STRUCT:
       let maybe_default_struct = analyzed_module_def.find_struct()
       if maybe_default_struct.is_err:
         err(err_no_default_struct(struct_get.location,

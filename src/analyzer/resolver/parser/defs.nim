@@ -122,23 +122,24 @@ type FunctionDefinition* = ref object of RootObj
   args: seq[ArgumentDefinition]
   location: Location
 
-proc new_function_definition*(name: Identifier, args: seq[ArgumentDefinition],
-    returns: ModuleRef, location: Location): Result[FunctionDefinition,
-        core.Error] =
+proc new_function_definition*(fn_name: Identifier, args: seq[
+    ArgumentDefinition], returns: ModuleRef, location: Location): Result[
+        FunctionDefinition, core.Error] =
   if args.len == 0:
     return err(err_parser_empty_arg_list(location))
   if args.len > MAX_ARGS_LENGTH:
     return err(err_parser_arg_list_too_long(location, args.len))
 
-  var args_map: Table[Identifier, int]
-  for index, arg in args.pairs:
-    if arg.name in args_map:
-      let predefined_arg_location = args[args_map[arg.name]].location
-      return err(err_parser_arg_already_defined(arg.location, arg.name.asl,
+  let maybe_args_repo = new_repo(args, @[new_index[ArgumentDefinition]("name",
+      name, true)])
+  if maybe_args_repo.is_err:
+    let error = maybe_args_repo.error
+    let arg = error.current
+    let predefined_arg_location = error.previous.location
+    return err(err_parser_arg_already_defined(arg.location, arg.name.asl,
           predefined_arg_location))
-    args_map[arg.name] = index
 
-  ok(FunctionDefinition(name: name, args: args, returns: returns,
+  ok(FunctionDefinition(name: fn_name, args: args, returns: returns,
       location: location))
 
 proc location*(def: FunctionDefinition): Location = def.location

@@ -137,7 +137,8 @@ proc new_struct_init*(struct_ref: StructRef, args: seq[
   if args.len > MAX_ARGS_LENGTH:
     return err(err_parser_arg_list_too_long(struct_ref.location, args.len))
 
-  var maybe_args_repo = new_repo(args, name)
+  var maybe_args_repo = new_repo(args, @[new_index[KeywordArgument]("name",
+      name, true)])
   if maybe_args_repo.is_err:
     let error = maybe_args_repo.error
     let arg = error.current

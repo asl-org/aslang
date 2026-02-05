@@ -12,8 +12,7 @@ type
   Generic* = ref object of RootObj
     name: Identifier
     location: Location
-    defs_hash_map: Table[Hash, int]
-    defs_map: Table[Identifier, Table[int, seq[int]]] # Name => Arity => Indexes
+    defs_repo: Repo[FunctionDefinition]
     case kind: GenericKind
     of GK_DEFAULT: discard
     of GK_CONSTRAINED: defs: seq[FunctionDefinition]
@@ -26,24 +25,17 @@ proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
   if defs.len == 0:
     return err(err_parser_empty_generic_constraint_list(location, name.asl))
 
-  var defs_map: Table[Identifier, Table[int, seq[int]]]
-  var defs_hash_map: Table[Hash, int]
-  for index, def in defs.pairs:
-    let def_hash = def.hash
-    if def_hash in defs_hash_map:
-      let predefined_def_location = defs[defs_hash_map[def_hash]].location
-      return err(err_parser_generic_constraint_already_defined(def.location,
-          def.name.asl, predefined_def_location))
-    defs_hash_map[def_hash] = index
+  let maybe_defs_repo = new_repo(defs, @[new_index[FunctionDefinition](
+      "def", hash, true)])
+  if maybe_defs_repo.is_err:
+    let error = maybe_defs_repo.error
+    let def = error.current
+    let predefined_def_location = error.previous.location
+    return err(err_parser_generic_constraint_already_defined(def.location,
+        def.name.asl, predefined_def_location))
 
-    if def.name notin defs_map:
-      defs_map[def.name] = init_table[int, seq[int]]()
-    if def.args.len notin defs_map[def.name]:
-      defs_map[def.name][def.args.len] = new_seq[int]()
-    defs_map[def.name][def.args.len].add(index)
-
-  ok(Generic(kind: GK_CONSTRAINED, name: name, defs: defs, defs_map: defs_map,
-      defs_hash_map: defs_hash_map, location: location))
+  ok(Generic(kind: GK_CONSTRAINED, name: name, defs_repo: maybe_defs_repo.get,
+      location: location))
 
 proc module_ref*(generic: Generic): ModuleRef =
   new_module_ref(generic.name)
@@ -54,7 +46,7 @@ proc location*(generic: Generic): Location =
 proc defs*(generic: Generic): seq[FunctionDefinition] =
   case generic.kind:
   of GK_DEFAULT: @[]
-  of GK_CONSTRAINED: generic.defs
+  of GK_CONSTRAINED: generic.defs_repo.items
 
 proc name*(generic: Generic): Identifier =
   generic.name

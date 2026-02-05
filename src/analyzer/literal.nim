@@ -30,8 +30,8 @@ proc c*(literal: AnalyzedLiteral, result_arg: string): string =
 proc analyze*(file_def: AnalyzedFileDefinition,
     module_def: AnalyzedModuleDefinition, scope: FunctionScope,
         init: ResolvedLiteralInit): Result[AnalyzedLiteral, string] =
-  let analyzed_module_ref = ? analyze_def(file_def.file, module_def.module,
-      init.module_ref)
+  let analyzed_module_ref = ? analyze_def(file_def.file,
+      module_def.resolved_module, init.module_ref)
   case analyzed_module_ref.kind:
   of AMRK_GENERIC: err(fmt"{init.location} Generics are not supported via literal initialization")
   of AMRK_MODULE:

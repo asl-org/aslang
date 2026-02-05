@@ -92,7 +92,7 @@ proc can_be_argument*(module_ref: AnalyzedModuleRef): Result[void, string] =
   of AMRK_GENERIC: ok() # generic arguments can be passed as an argument too.
   of AMRK_MODULE:
     let module = module_ref.module
-    if module.structs.len > 0: return ok()
+    if module.data.kind != RDK_NONE: return ok()
     case module.name.asl:
     of "S8", "S16", "S32", "S64", "U8", "U16", "U32", "U64", "F32", "F64",
         "Pointer", "String": ok()

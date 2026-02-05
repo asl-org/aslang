@@ -7,51 +7,35 @@ import module_def
 
 type AnalyzedFileDefinition* = ref object of RootObj
   file: ResolvedFile
-  modules: seq[AnalyzedModuleDefinition]
-  modules_map: Table[ResolvedModule, AnalyzedModuleDefinition]
-  function_defs: seq[AnalyzedFunctionDefinition]
-  function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedFunctionDefinition]
-  function_signatures_map: Table[Identifier, Table[uint,
-      seq[AnalyzedFunctionDefinition]]]
+  modules_repo: Repo[AnalyzedModuleDefinition]
+  function_defs_repo: Repo[AnalyzedFunctionDefinition]
 
-proc new_analyzed_file_definition(file: ResolvedFile, modules: seq[(
-    ResolvedModule, AnalyzedModuleDefinition)], function_defs: seq[(
-    ResolvedFunctionDefinition,
-    AnalyzedFunctionDefinition)]): AnalyzedFileDefinition =
-  var modules_map: Table[ResolvedModule, AnalyzedModuleDefinition]
-  var analyzedmodules: seq[AnalyzedModuleDefinition]
-  for (resolved_module, analyzed_module) in modules:
-    modules_map[resolved_module] = analyzed_module
-    analyzedmodules.add(analyzed_module)
+proc new_analyzed_file_definition(file: ResolvedFile, modules: seq[
+    AnalyzedModuleDefinition], function_defs: seq[
+    AnalyzedFunctionDefinition]): Result[AnalyzedFileDefinition, string] =
+  let maybe_modules_repo = new_repo(modules, @[new_index[
+      AnalyzedModuleDefinition]("name", resolved_module, true)])
+  if maybe_modules_repo.is_err: return err("new_analyzed_file_definition UNREACHABLE")
+  let modules_repo = maybe_modules_repo.get
 
-  var function_defs_map: Table[ResolvedFunctionDefinition, AnalyzedFunctionDefinition]
-  var function_signatures_map: Table[Identifier, Table[uint, seq[
-      AnalyzedFunctionDefinition]]]
-  var analyzed_function_defs: seq[AnalyzedFunctionDefinition]
-  for (resolved_function_def, analyzed_function_def) in function_defs:
-    function_defs_map[resolved_function_def] = analyzed_function_def
-    analyzed_function_defs.add(analyzed_function_def)
+  let maybe_function_defs_repo = new_repo(function_defs, @[
+    new_index[AnalyzedFunctionDefinition]("def", resolved_def, true),
+    new_index[AnalyzedFunctionDefinition]("name_and_arity", proc(
+        def: AnalyzedFunctionDefinition): (Identifier, uint) = (def.name,
+        def.arity)),
+  ])
+  if maybe_function_defs_repo.is_err: return err("new_analyzed_file_definition UNREACHABLE")
+  let function_defs_repo = maybe_function_defs_repo.get
 
-    if analyzed_function_def.name notin function_signatures_map:
-      function_signatures_map[analyzed_function_def.name] = init_table[uint,
-          seq[AnalyzedFunctionDefinition]]()
-    if analyzed_function_def.arity notin function_signatures_map[
-        analyzed_function_def.name]:
-      function_signatures_map[analyzed_function_def.name][
-          analyzed_function_def.arity] = new_seq[
-              AnalyzedFunctionDefinition]()
-    function_signatures_map[analyzed_function_def.name][
-          analyzed_function_def.arity].add(analyzed_function_def)
-
-  AnalyzedFileDefinition(file: file,
-      modules: analyzed_modules,
-      modules_map: modules_map, function_defs: analyzed_function_defs,
-      function_defs_map: function_defs_map,
-      function_signatures_map: function_signatures_map)
+  ok(AnalyzedFileDefinition(file: file, modules_repo: modules_repo,
+      function_defs_repo: function_defs_repo))
 
 proc file*(def: AnalyzedFileDefinition): ResolvedFile = def.file
 proc modules*(def: AnalyzedFileDefinition): seq[
-    AnalyzedModuleDefinition] = def.modules
+    AnalyzedModuleDefinition] = def.modules_repo.items
+proc function_defs*(def: AnalyzedFileDefinition): seq[
+    AnalyzedFunctionDefinition] =
+  def.function_defs_repo.items
 
 proc generic_impls*(file: AnalyzedFileDefinition): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
@@ -78,37 +62,33 @@ proc c*(file: AnalyzedFileDefinition): seq[string] =
 
 proc find_module_def*(file_def: AnalyzedFileDefinition,
     module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
-  if module in file_def.modules_map:
-    ok(file_def.modules_map[module])
-  else:
-    err(fmt"module `{module.name.asl}` not found in analyzed file definition")
+  let maybe_module = file_def.modules_repo.find("name", module)
+  if maybe_module.is_ok: ok(maybe_module.get[0])
+  else: err(fmt"module `{module.name.asl}` not found in analyzed file definition")
 
 proc find_function_def*(file_def: AnalyzedFileDefinition,
     def: ResolvedFunctionDefinition): Result[AnalyzedFunctionDefinition, string] =
-  if def in file_def.function_defs_map:
-    ok(file_def.function_defs_map[def])
-  else:
-    err(fmt"def `{def.name.asl}` not found in analyzed file definition")
+  let maybe_function_def = file_def.function_defs_repo.find("def", def)
+  if maybe_function_def.is_ok: ok(maybe_function_def.get[0])
+  else: err(fmt"def `{def.name.asl}` not found in analyzed file definition")
 
 proc find_function_defs*(file_def: AnalyzedFileDefinition, name: Identifier,
     arity: uint): Result[seq[AnalyzedFunctionDefinition], string] =
-  if name notin file_def.function_signatures_map:
-    err(fmt"function `{name.asl}` not found in analyzed file definition")
-  elif arity notin file_def.function_signatures_map[name]:
+  let maybe_def = file_def.function_defs_repo.find("name_and_arity", (name, arity))
+  if maybe_def.is_err:
     err(fmt"function `{name.asl}` with arity `{arity}` not found in analyzed file definition")
   else:
-    ok(file_def.function_signatures_map[name][arity])
+    ok(maybe_def.get)
 
 proc analyze_def*(file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
-  var modules: seq[(ResolvedModule, AnalyzedModuleDefinition)]
+  var modules: seq[AnalyzedModuleDefinition]
   for module in file.modules:
     let analyzed_module_def = ? analyze_def(file, module)
-    modules.add((module, analyzed_module_def))
+    modules.add(analyzed_module_def)
 
-  var function_defs: seq[(ResolvedFunctionDefinition,
-      AnalyzedFunctionDefinition)]
+  var function_defs: seq[AnalyzedFunctionDefinition]
   for function in file.functions:
     let analyzed_function_def = ? analyze_def(file, function)
-    function_defs.add((function.def, analyzed_function_def))
+    function_defs.add(analyzed_function_def)
 
-  ok(new_analyzed_file_definition(file, modules, function_defs))
+  new_analyzed_file_definition(file, modules, function_defs)
