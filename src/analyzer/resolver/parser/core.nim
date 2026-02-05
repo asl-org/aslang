@@ -78,13 +78,6 @@ proc err_parser_union_branch_too_long*(location: Location,
     fields: int): Error =
   new_parser_error(location, fmt"union branch field length `{fields}` exceeded maximum field length `{MAX_ARGS_LENGTH}`")
 
-proc err_parser_empty_union*(location: Location): Error =
-  new_parser_error(location, "union block can not be empty")
-
-proc err_parser_union_too_long*(location: Location,
-    branches: int): Error =
-  new_parser_error(location, fmt"union branch length `{branches}` exceeded maximum field length `{MAX_BRANCH_LENGTH}`")
-
 proc err_parser_struct_conversion_error*(location: Location): Error =
   new_parser_error(location, fmt"[UNREACHABLE] named struct pattern can not be converted to another named struct pattern")
 
@@ -122,10 +115,6 @@ proc err_parser_generic_already_defined*(location: Location, name: string,
     previous: Location): Error =
   new_parser_error(location, fmt"generic `{name}` is already defined at {previous}")
 
-proc err_parser_struct_already_defined*(location: Location, name: string,
-    previous: Location): Error =
-  new_parser_error(location, fmt"struct `{name}` is already defined at {previous}")
-
 proc err_parser_function_already_defined*(location: Location, name: string,
     previous: Location): Error =
   new_parser_error(location, fmt"function `{name}` is already defined at {previous}")
@@ -144,27 +133,6 @@ proc err_parser_function_struct_conflict*(function_location: Location,
     function_name: string, struct_location: Location,
     struct_name: string): Error =
   new_parser_error(function_location, fmt"function `{function_name}` name conflicts with struct `{struct_name}` at {struct_location}")
-
-proc err_parser_function_union_branch_conflict*(function_location: Location,
-    function_name: string, union_branch_location: Location,
-    union_branch_name: string): Error =
-  new_parser_error(function_location, fmt"function `{function_name}` name conflicts with union branch `{union_branch_name}` at {union_branch_location}")
-
-proc err_parser_expected_multi_struct*(kind: string): Error =
-  new_parser_error(Location(), fmt"[INTERNAL] expected data to be a list of structs but found `{kind}`")
-
-proc err_parser_expected_struct*(kind: string): Error =
-  new_parser_error(Location(), fmt"[INTERNAL] expected data to be a default struct but found `{kind}`")
-
-proc err_parser_expected_union*(kind: string): Error =
-  new_parser_error(Location(), fmt"[INTERNAL] expected data to be a union but found `{kind}`")
-
-proc err_parser_expected_default_struct*(location: Location,
-    name: string): Error =
-  new_parser_error(location, fmt"expected a default struct but found named struct `{name}`")
-
-proc err_parser_expected_named_struct*(location: Location): Error =
-  new_parser_error(location, fmt"expected a named struct but found anonymous struct")
 
 proc err_parser_module_already_defined*(location: Location, name: string,
     previous: Location): Error =
