@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, hashes, sets
+import results, sequtils, strformat, tables, hashes, sets, options
 
 import resolver
 import module_ref
@@ -75,9 +75,8 @@ proc asl*(fnref: AnalyzedFunctionRef): string =
   of RFRK_LOCAL: fmt"{fnref.name.asl}"
   of RFRK_MODULE: fmt"{fnref.module_ref.asl}.{fnref.name.asl}"
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition,
-        fnref: ResolvedFunctionRef): Result[
+proc analyze*(file_def: AnalyzedFileDefinition, fnref: ResolvedFunctionRef,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[
     AnalyzedFunctionRef, string] =
   case fnref.kind:
   of RFRK_LOCAL:
@@ -86,45 +85,27 @@ proc analyze*(file_def: AnalyzedFileDefinition,
         analyzed_function_defs))
   of RFRK_MODULE:
     let resolved_module_ref = ? fnref.module_ref
-    let analyzed_module_ref = ? analyze_def(file_def.file,
-        module_def.resolved_module, resolved_module_ref)
+    let analyzed_module_ref = if module_def.isSome:
+      ? analyze_def(file_def.file, module_def.get.resolved_module, resolved_module_ref)
+    else:
+      ? analyze_def(file_def.file, resolved_module_ref)
     case analyzed_module_ref.kind:
     of AMRK_GENERIC:
-      let resolved_generic = analyzed_module_ref.generic
-      let analyzed_generic = ? module_def.find_generic(resolved_generic)
-      let analyzed_function_defs = ? analyzed_generic.find_function_defs(
-          fnref.name, fnref.arity)
-      ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
-          analyzed_function_defs, analyzed_function_defs))
+      if module_def.isSome:
+        let resolved_generic = analyzed_module_ref.generic
+        let analyzed_generic = ? module_def.get.find_generic(resolved_generic)
+        let analyzed_function_defs = ? analyzed_generic.find_function_defs(
+            fnref.name, fnref.arity)
+        ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
+            analyzed_function_defs, analyzed_function_defs))
+      else:
+        err("{fnref.location} local function calls do not support generics")
     of AMRK_MODULE:
       let analyzed_module_def = ? file_def.find_module_def(
           analyzed_module_ref.module)
       let analyzed_function_defs = ? analyzed_module_def.find_function_defs(
           fnref.name, fnref.arity, fnref.location)
       let analyzed_concrete_function_defs = analyzed_function_defs.map_it(
-          it.concretize(analyzed_module_ref.concrete_map))
-      ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
-          analyzed_function_defs, analyzed_concrete_function_defs))
-
-proc analyze*(file_def: AnalyzedFileDefinition,
-    fnref: ResolvedFunctionRef): Result[AnalyzedFunctionRef, string] =
-  case fnref.kind:
-  of RFRK_LOCAL:
-    let analyzed_function_defs = ? file_def.find_function_defs(fnref.name, fnref.arity)
-    ok(new_analyzed_function_ref(fnref.name, analyzed_function_defs,
-        analyzed_function_defs))
-  of RFRK_MODULE:
-    let resolved_module_ref = ? fnref.module_ref
-    let analyzed_module_ref = ? analyze_def(file_def.file, resolved_module_ref)
-    case analyzed_module_ref.kind:
-    of AMRK_GENERIC:
-      err("{fnref.location} local function calls do not support generics")
-    of AMRK_MODULE:
-      let analyzed_module_def = ? file_def.find_module_def(
-          analyzed_module_ref.module)
-      let analyzed_function_defs = ? analyzed_module_def.find_function_defs(
-          fnref.name, fnref.arity, fnref.location)
-      var analyzed_concrete_function_defs = analyzed_function_defs.map_it(
           it.concretize(analyzed_module_ref.concrete_map))
       ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
           analyzed_function_defs, analyzed_concrete_function_defs))

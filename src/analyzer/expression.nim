@@ -1,4 +1,4 @@
-import results, strformat, tables, hashes, strutils, sets
+import results, strformat, tables, hashes, strutils, sets, options
 
 import resolver
 import module_ref
@@ -110,15 +110,15 @@ proc analyze(file_def: AnalyzedFileDefinition,
   case expression.kind:
   of TEK_FNCALL:
     let fncall = ? expression.fncall
-    let analyzed_function_call = ? analyze(file_def, module_def, scope, fncall)
+    let analyzed_function_call = ? analyze(file_def, scope, fncall, some(module_def))
     ok(new_analyzed_expression(analyzed_function_call))
   of TEK_INIT:
     let init = ? expression.init
-    let analyzed_init = ? analyze(file_def, module_def, scope, init)
+    let analyzed_init = ? analyze(file_def, scope, init, some(module_def))
     ok(new_analyzed_expression(analyzed_init))
   of TEK_STRUCT_GET:
     let struct_get = ? expression.struct_get
-    let analyzed_struct_get = ? analyze(file_def, module_def, scope, struct_get)
+    let analyzed_struct_get = ? analyze(file_def, scope, struct_get, some(module_def))
     ok(new_analyzed_expression(analyzed_struct_get))
   of TEK_VARIABLE:
     let variable = ? expression.variable

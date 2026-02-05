@@ -122,51 +122,16 @@ proc find_field_index*(data_ref: AnalyzedDataRef, name: Identifier): Result[int,
   of ADRK_STRUCT: data_ref.struct.struct.find_field_index(name)
   of ADRK_UNION: data_ref.union.branch.find_field_index(name)
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    struct_ref: ResolvedStructRef): Result[AnalyzedDataRef, string] =
-  let analyzed_module_ref = ? analyze_def(file_def.file,
-      module_def.resolved_module, struct_ref.module_ref)
-  case analyzed_module_ref.kind:
-  of AMRK_GENERIC:
-    err(fmt"1 {struct_ref.location} generic `{analyzed_module_ref.generic.name.asl}` is not a struct")
-  of AMRK_MODULE:
-    let resolved_module = analyzed_module_ref.module
-    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
-    case struct_ref.kind:
-    of TSRK_DEFAULT:
-      let maybe_struct = analyzed_module_def.find_struct()
-      if maybe_struct.is_ok:
-        let analyzed_struct = maybe_struct.get
-        let analyzed_concretized_struct = ? analyzed_struct.concretize(
-            analyzed_module_ref.concrete_map)
-        let analyzed_struct_ref = new_analyzed_struct_ref(analyzed_module_ref,
-            analyzed_struct,
-            analyzed_concretized_struct)
-        ok(new_analyzed_data_ref(analyzed_struct_ref))
-      else:
-        err(err_no_default_struct(struct_ref.location,
-            analyzed_module_def.name.asl))
-    of TSRK_NAMED:
-      let branch_name = ? struct_ref.name
-      let maybe_branch = analyzed_module_def.find_branch(branch_name)
-      if maybe_branch.is_ok:
-        let analyzed_branch = maybe_branch.get
-        let analyzed_concretized_branch = ? analyzed_branch.concretize(
-            analyzed_module_ref.concrete_map)
-        let analyzed_union_ref = new_analyzed_union_ref(analyzed_module_ref,
-            analyzed_branch, analyzed_concretized_branch)
-        ok(new_analyzed_data_ref(analyzed_union_ref))
-      else:
-        err(err_no_named_struct(struct_ref.location,
-            analyzed_module_def.name.asl, branch_name.asl))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    struct_ref: ResolvedStructRef): Result[AnalyzedDataRef, string] =
-  let analyzed_module_ref = ? analyze_def(file_def.file, struct_ref.module_ref)
+    struct_ref: ResolvedStructRef,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedDataRef, string] =
+  let analyzed_module_ref = if module_def.isSome:
+    ? analyze_def(file_def.file, module_def.get.resolved_module, struct_ref.module_ref)
+  else:
+    ? analyze_def(file_def.file, struct_ref.module_ref)
   case analyzed_module_ref.kind:
   of AMRK_GENERIC:
-    err(fmt"2 {struct_ref.location} generic `{analyzed_module_ref.generic.name.asl}` is not a struct")
+    err(fmt"{struct_ref.location} generic `{analyzed_module_ref.generic.name.asl}` is not a struct")
   of AMRK_MODULE:
     let resolved_module = analyzed_module_ref.module
     let analyzed_module_def = ? file_def.find_module_def(resolved_module)
