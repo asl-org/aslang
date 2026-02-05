@@ -25,9 +25,7 @@ proc name*(generic: AnalyzedGeneric): Identifier = generic.resolved_generic.name
 
 proc generic_impls*(generic: AnalyzedGeneric): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
-  var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
-  for def in generic.defs: impl_set = impl_set.merge(def.generic_impls())
-  return impl_set
+  collect_impls(generic.defs)
 
 proc asl*(generic: AnalyzedGeneric, indent: string): seq[string] =
   if generic.defs.len == 0:

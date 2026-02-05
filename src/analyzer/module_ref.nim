@@ -51,6 +51,12 @@ proc merge*(
       impl_set[module] = generics
   return impl_set
 
+proc collect_impls*[T](items: openArray[T]): Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]] =
+  var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
+  for item in items:
+    impl_set = impl_set.merge(item.generic_impls)
+  return impl_set
+
 # AnalyzedModuleRef
 
 proc new_analyzed_module_ref(generic: ResolvedGeneric,
