@@ -33,35 +33,9 @@ proc asl*(struct_get: AnalyzedStructGet): string =
 proc c*(struct_get: AnalyzedStructGet, result_arg: string): string =
   fmt"{struct_get.field.module_ref.c} {result_arg} = {struct_get.variable.module_ref.name}_get_{struct_get.field.name.asl}({struct_get.variable.name.asl});"
 
-proc analyze*(file_def: AnalyzedFileDefinition,
-    module_def: AnalyzedModuleDefinition, scope: FunctionScope,
-    struct_get: ResolvedStructGet): Result[AnalyzedStructGet, string] =
-  let analyzed_module_ref = ? scope.get(struct_get.variable)
-  let analyzed_variable = new_analyzed_argument_definition(analyzed_module_ref,
-      struct_get.variable)
-  case analyzed_module_ref.kind:
-  of AMRK_GENERIC: err(fmt"4 {struct_get.location} variable `{struct_get.variable.asl}` is not a struct but generic")
-  of AMRK_MODULE:
-    let resolved_module = analyzed_module_ref.module
-    let analyzed_module_def = ? file_def.find_module_def(resolved_module)
-    case analyzed_module_def.data.kind:
-    of ADK_NONE, ADK_LITERAL: err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is not a struct")
-    of ADK_UNION: err(fmt"{struct_get.location} module `{analyzed_module_def.name.asl}` is a union")
-    of ADK_STRUCT:
-      let maybe_default_struct = analyzed_module_def.find_struct()
-      if maybe_default_struct.is_err:
-        err(err_no_default_struct(struct_get.location,
-            analyzed_module_def.name.asl))
-      else:
-        let analyzed_struct = maybe_default_struct.get
-        let analyzed_field_module_ref = ? analyzed_struct.find_field(
-            struct_get.field)
-        let analyzed_field = analyzed_field_module_ref.concretize(
-            analyzed_module_ref.concrete_map)
-        ok(new_analyzed_struct_get(analyzed_variable, analyzed_field))
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
-    struct_get: ResolvedStructGet): Result[AnalyzedStructGet, string] =
+    struct_get: ResolvedStructGet,
+    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStructGet, string] =
   let analyzed_module_ref = ? scope.get(struct_get.variable)
   let analyzed_variable = new_analyzed_argument_definition(analyzed_module_ref,
       struct_get.variable)

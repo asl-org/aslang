@@ -1,4 +1,4 @@
-import results, strformat, tables, hashes, strutils, sets
+import results, strformat, tables, hashes, strutils, sets, options
 
 import resolver
 import module_ref
@@ -118,7 +118,7 @@ proc analyze(file_def: AnalyzedFileDefinition,
     ok(new_analyzed_expression(analyzed_init))
   of TEK_STRUCT_GET:
     let struct_get = ? expression.struct_get
-    let analyzed_struct_get = ? analyze(file_def, module_def, scope, struct_get)
+    let analyzed_struct_get = ? analyze(file_def, scope, struct_get, some(module_def))
     ok(new_analyzed_expression(analyzed_struct_get))
   of TEK_VARIABLE:
     let variable = ? expression.variable
