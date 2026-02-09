@@ -11,6 +11,12 @@ import file_def
 type FunctionScope* = ref object of RootObj
   table: Table[Identifier, AnalyzedModuleRef]
 
+proc new_function_scope*(): FunctionScope =
+  FunctionScope()
+
+proc new_function_scope(table: Table[Identifier, AnalyzedModuleRef]): FunctionScope =
+  FunctionScope(table: table)
+
 proc get*(scope: FunctionScope, name: Identifier): Result[AnalyzedModuleRef, string] =
   if name notin scope.table:
     return err(fmt"{name.location} argument `{name.asl}` is not present in the scope")
@@ -27,7 +33,7 @@ proc clone*(scope: FunctionScope): FunctionScope =
   var table: Table[Identifier, AnalyzedModuleRef]
   for name, module_ref in scope.table:
     table[name] = module_ref
-  FunctionScope(table: table)
+  new_function_scope(table)
 
 type
   AnalyzedFunctionRefKind* = enum

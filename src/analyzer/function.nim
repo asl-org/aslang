@@ -49,7 +49,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
     function: ResolvedUserFunction,
     module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[
     AnalyzedUserFunction, string] =
-  var scope = FunctionScope()
+  var scope = new_function_scope()
   let analyzed_function_def = if module_def.is_some:
     ? module_def.get.find_function_def(function.def)
   else:
