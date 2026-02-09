@@ -125,7 +125,7 @@ proc find_field_index*(data_ref: AnalyzedDataRef, name: Identifier): Result[int,
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     struct_ref: ResolvedStructRef,
     module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedDataRef, string] =
-  let analyzed_module_ref = if module_def.isSome:
+  let analyzed_module_ref = if module_def.is_some:
     ? analyze_def(file_def.file, module_def.get.resolved_module, struct_ref.module_ref)
   else:
     ? analyze_def(file_def.file, struct_ref.module_ref)

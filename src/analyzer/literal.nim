@@ -30,7 +30,7 @@ proc c*(literal: AnalyzedLiteral, result_arg: string): string =
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     init: ResolvedLiteralInit,
     module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedLiteral, string] =
-  let analyzed_module_ref = if module_def.isSome:
+  let analyzed_module_ref = if module_def.is_some:
     ? analyze_def(file_def.file, module_def.get.resolved_module, init.module_ref)
   else:
     ? analyze_def(file_def.file, init.module_ref)

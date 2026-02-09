@@ -19,8 +19,8 @@ proc write_file_safe(filename: string, content: string): Result[void, string] =
 
 proc read_file_safe(filename: string): Result[string, string] =
   try:
-    let content = readFile(filename)
-    let invalid_index = validateUtf8(content)
+    let content = read_file(filename)
+    let invalid_index = validate_utf8(content)
     if invalid_index != -1:
       let invalid_char = content.rune_at(invalid_index)
       return err(fmt"Failed to read UTF8 file due to unexpected character `{invalid_char}` at index {invalid_index}")

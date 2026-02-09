@@ -85,13 +85,13 @@ proc analyze*(file_def: AnalyzedFileDefinition, fnref: ResolvedFunctionRef,
         analyzed_function_defs))
   of RFRK_MODULE:
     let resolved_module_ref = ? fnref.module_ref
-    let analyzed_module_ref = if module_def.isSome:
+    let analyzed_module_ref = if module_def.is_some:
       ? analyze_def(file_def.file, module_def.get.resolved_module, resolved_module_ref)
     else:
       ? analyze_def(file_def.file, resolved_module_ref)
     case analyzed_module_ref.kind:
     of AMRK_GENERIC:
-      if module_def.isSome:
+      if module_def.is_some:
         let resolved_generic = analyzed_module_ref.generic
         let analyzed_generic = ? module_def.get.find_generic(resolved_generic)
         let analyzed_function_defs = ? analyzed_generic.find_function_defs(
