@@ -7,6 +7,8 @@ type Cursor* = object
   line: int = 1
   col: int = 1
 
+proc new_cursor*(): Cursor = Cursor()
+
 proc index*(cursor: Cursor): int = cursor.index
 
 proc `$`*(cursor: Cursor): string =

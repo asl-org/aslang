@@ -23,7 +23,7 @@ proc tokenize(cursor: Cursor, filename: string, content: string): Result[Token, 
   return err($(errors.max()))
 
 proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
-  var cursor = Cursor()
+  var cursor = new_cursor()
   var tokens: seq[Token]
   while cursor.index < content.len:
     let token = ? cursor.tokenize(filename, content)

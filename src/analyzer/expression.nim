@@ -281,7 +281,9 @@ proc returns(else_block: AnalyzedElse): AnalyzedModuleRef =
 
 proc generic_impls(else_block: AnalyzedElse): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
-  collect_impls(else_block.statements)
+  var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
+  for statement in else_block.statements: impl_set = impl_set.merge(statement.generic_impls)
+  return impl_set
 
 proc asl(else_block: AnalyzedElse, indent: string): seq[string] =
   var lines = @["else:"]

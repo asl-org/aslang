@@ -40,7 +40,9 @@ proc fields*(struct: AnalyzedStruct): seq[
 
 proc generic_impls*(struct: AnalyzedStruct): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
-  collect_impls(struct.fields)
+  var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
+  for field in struct.fields: impl_set = impl_set.merge(field.generic_impls)
+  return impl_set
 
 proc asl*(struct: AnalyzedStruct, indent: string): seq[string] =
   var lines =
@@ -205,7 +207,9 @@ proc find_field*(branch: AnalyzedUnionBranch, field: Identifier): Result[
 
 proc generic_impls*(branch: AnalyzedUnionBranch): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
-  collect_impls(branch.fields)
+  var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
+  for field in branch.fields: impl_set = impl_set.merge(field.generic_impls)
+  return impl_set
 
 proc asl*(branch: AnalyzedUnionBranch, indent: string): seq[string] =
   var lines = @[fmt"{branch.name.asl}:"]
@@ -319,7 +323,9 @@ proc branches*(union: AnalyzedUnion): seq[AnalyzedUnionBranch] =
 
 proc generic_impls*(union: AnalyzedUnion): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
-  collect_impls(union.branches)
+  var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
+  for branch in union.branches: impl_set = impl_set.merge(branch.generic_impls)
+  return impl_set
 
 proc asl*(union: AnalyzedUnion, indent: string): seq[string] =
   var lines = @[fmt"union:"]
