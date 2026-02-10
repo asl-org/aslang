@@ -3,12 +3,6 @@ import results, strformat, tables, strutils, sets, hashes, options
 
 import parser
 
-# Helper function to accumulate module dependencies from a sequence
-proc accumulate_module_deps*[T](items: seq[T]): HashSet[Module] =
-  var module_set: HashSet[Module]
-  for item in items:
-    module_set.incl(item.module_deps)
-  module_set
 
 # =============================================================================
 # ResolvedModuleRef
@@ -56,7 +50,8 @@ proc module_deps*(module_ref: ResolvedModuleRef): HashSet[Module] =
   of RMRK_MODULE:
     var module_set: HashSet[Module]
     module_set.incl(module_ref.module)
-    module_set.incl(accumulate_module_deps(module_ref.children))
+    for child in module_ref.children:
+      module_set.incl(child.module_deps)
     module_set
 
 proc hash*(module_ref: ResolvedModuleRef): Hash =

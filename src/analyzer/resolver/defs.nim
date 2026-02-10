@@ -54,7 +54,8 @@ proc new_resolved_function_definition*(name: Identifier, args: seq[
       location: location)
 
 proc module_deps*(def: ResolvedFunctionDefinition): HashSet[Module] =
-  var module_set = accumulate_module_deps(def.args)
+  var module_set: HashSet[Module]
+  for arg in def.args: module_set.incl(arg.module_deps)
   module_set.incl(def.returns.module_deps)
   module_set
 
@@ -135,7 +136,9 @@ proc new_resolved_struct*(name: Identifier, fields: seq[
       location: location)
 
 proc module_deps*(struct: ResolvedStruct): HashSet[Module] =
-  accumulate_module_deps(struct.fields)
+  var module_set: HashSet[Module]
+  for field in struct.fields: module_set.incl(field.module_deps)
+  module_set
 
 proc id*(struct: ResolvedStruct): uint64 = struct.id
 proc hash*(struct: ResolvedStruct): Hash = struct.location.hash
@@ -174,7 +177,9 @@ proc fields*(branch: ResolvedUnionBranch): seq[ResolvedArgumentDefinition] =
   branch.fields
 
 proc module_deps*(branch: ResolvedUnionBranch): HashSet[Module] =
-  accumulate_module_deps(branch.fields)
+  var module_set: HashSet[Module]
+  for field in branch.fields: module_set.incl(field.module_deps)
+  module_set
 
 proc resolve*(file: parser.File, module: parser.Module, branch: UnionBranch,
     id: uint64): Result[ResolvedUnionBranch, string] =
@@ -199,7 +204,9 @@ proc branches*(union: ResolvedUnion): seq[ResolvedUnionBranch] =
   union.branches
 
 proc module_deps*(union: ResolvedUnion): HashSet[Module] =
-  accumulate_module_deps(union.branches)
+  var module_set: HashSet[Module]
+  for branch in union.branches: module_set.incl(branch.module_deps)
+  module_set
 
 proc resolve*(file: parser.File, module: parser.Module, union: Union): Result[
     ResolvedUnion, string] =
