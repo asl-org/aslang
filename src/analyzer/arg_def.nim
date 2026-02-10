@@ -45,7 +45,7 @@ proc function_prefix*(module_name: Identifier,
     module_name.asl
 
 # Helper to analyze module_ref with optional generic
-proc analyze_def*[T](file: ResolvedFile, module: T,
+proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     generic: Option[ResolvedGeneric], module_ref: ResolvedModuleRef): Result[
         AnalyzedModuleRef, string] =
   if generic.is_some:
@@ -53,22 +53,22 @@ proc analyze_def*[T](file: ResolvedFile, module: T,
   else:
     analyze_def(file, module, module_ref)
 
-proc analyze_def*[T](file: ResolvedFile, module: T,
-    generic: Option[ResolvedGeneric], arg: ResolvedArgumentDefinition): Result[
-        AnalyzedArgumentDefinition, string] =
-  if generic.is_some:
-    analyze_def(file, module, generic.get, arg)
-  else:
-    analyze_def(file, module, arg)
-
 # Helper for resolving ResolvedArgumentDefinition with ResolvedModule
 proc analyze_def(file: ResolvedFile, arg: ResolvedArgumentDefinition,
     module: ResolvedModule, generic: Option[ResolvedGeneric]): Result[
     AnalyzedArgumentDefinition, string] =
-  let analyzed_module_ref = ? analyze_def(file, module,
-      generic, arg.module_ref)
+  let analyzed_module_ref = if generic.is_some:
+    ? analyze_def(file, module, generic.get, arg.module_ref)
+  else:
+    ? analyze_def(file, module, arg.module_ref)
   ? analyzed_module_ref.can_be_argument
   ok(new_analyzed_argument_definition(analyzed_module_ref, arg.name))
+
+# Helper to analyze arg with optional generic
+proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
+    generic: Option[ResolvedGeneric], arg: ResolvedArgumentDefinition): Result[
+        AnalyzedArgumentDefinition, string] =
+  analyze_def(file, arg, module, generic)
 
 # Helper for resolving ResolvedArgumentDefinition without module
 proc analyze_def*(file: ResolvedFile,

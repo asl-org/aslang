@@ -160,7 +160,9 @@ proc statements*(case_block: ResolvedCase): seq[
     ResolvedStatement] = case_block.statements
 
 proc module_deps*(case_block: ResolvedCase): HashSet[Module] =
-  accumulate_module_deps(case_block.statements)
+  var module_set: HashSet[Module]
+  for statement in case_block.statements: module_set.incl(statement.module_deps)
+  module_set
 
 proc resolve(file: parser.File, module: Option[parser.Module],
     case_block: Case): Result[ResolvedCase, string] =
@@ -179,7 +181,9 @@ proc statements*(else_block: ResolvedElse): seq[
     ResolvedStatement] = else_block.statements
 
 proc module_deps*(else_block: ResolvedElse): HashSet[Module] =
-  accumulate_module_deps(else_block.statements)
+  var module_set: HashSet[Module]
+  for statement in else_block.statements: module_set.incl(statement.module_deps)
+  module_set
 
 proc resolve(file: parser.File, module: Option[parser.Module],
     else_block: Else): Result[ResolvedElse, string] =
@@ -210,7 +214,8 @@ proc else_block*(match: ResolvedMatch): Result[ResolvedElse, string] =
   of TMK_COMPLETE: ok(match.else_block)
 
 proc module_deps*(match: ResolvedMatch): HashSet[Module] =
-  var module_set = accumulate_module_deps(match.case_blocks)
+  var module_set: HashSet[Module]
+  for case_block in match.case_blocks: module_set.incl(case_block.module_deps)
   case match.kind:
   of TMK_CASE_ONLY: discard
   of TMK_COMPLETE: module_set.incl(match.else_block.module_deps)
@@ -246,7 +251,7 @@ proc new_resolved_user_function*(def: ResolvedFunctionDefinition,
 
 proc module_deps*(function: ResolvedUserFunction): HashSet[Module] =
   var module_set = function.def.module_deps
-  module_set.incl(accumulate_module_deps(function.steps))
+  for step in function.steps: module_set.incl(step.module_deps)
   module_set
 
 proc def*(function: ResolvedUserFunction): ResolvedFunctionDefinition = function.def

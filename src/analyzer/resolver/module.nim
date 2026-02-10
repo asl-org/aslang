@@ -29,7 +29,9 @@ proc name*(generic: ResolvedGeneric): Identifier = generic.parsed_generic.name
 proc defs*(generic: ResolvedGeneric): seq[
     ResolvedFunctionDefinition] = generic.defs_repo.items
 proc module_deps*(generic: ResolvedGeneric): HashSet[Module] =
-  accumulate_module_deps(generic.defs)
+  var module_set: HashSet[Module]
+  for def in generic.defs: module_set.incl(def.module_deps)
+  module_set
 proc hash*(generic: ResolvedGeneric): Hash = generic.location.hash
 proc `==`*(self: ResolvedGeneric, other: ResolvedGeneric): bool = self.hash == other.hash
 proc asl*(generic: ResolvedGeneric): string = generic.name.asl
@@ -97,10 +99,11 @@ proc functions*(module: ResolvedModule): seq[
     ResolvedFunction] = module.functions_repo.items
 
 proc module_deps*(module: ResolvedModule): HashSet[Module] =
-  var module_set = accumulate_module_deps(module.generics)
-  # module_set.incl(accumulate_module_deps(module.structs))
+  var module_set: HashSet[Module]
+  for generic in module.generics: module_set.incl(generic.module_deps)
+  # for struct in module.structs: module_set.incl(struct.module_deps)
   module_set.incl(module.data.module_deps)
-  module_set.incl(accumulate_module_deps(module.functions))
+  for function in module.functions: module_set.incl(function.module_deps)
   module_set
 
 proc hash*(module: ResolvedModule): Hash = module.location.hash
