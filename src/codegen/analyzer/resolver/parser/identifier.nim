@@ -35,30 +35,10 @@ proc `==`*(a: Identifier, b: Identifier): bool =
 
 # identifier specs
 proc identifier_head_spec*(parser: Parser): Result[Token, core.Error] =
-  var errors: seq[core.Error]
-
-  let maybe_underscore = parser.token_spec_util(TK_UNDERSCORE)
-  if maybe_underscore.is_ok: return maybe_underscore
-  else: errors.add(maybe_underscore.error)
-
-  let maybe_alphabet = parser.token_spec_util(TK_ALPHABETS)
-  if maybe_alphabet.is_ok: return maybe_alphabet
-  else: errors.add(maybe_alphabet.error)
-
-  err(errors.max())
+  parser.first_of([underscore_spec, alphabets_spec])
 
 proc identifier_tail_spec*(parser: Parser): Result[Token, core.Error] =
-  var errors: seq[core.Error]
-
-  let maybe_id_head = parser.expect(identifier_head_spec)
-  if maybe_id_head.is_ok: return maybe_id_head
-  else: errors.add(maybe_id_head.error)
-
-  let maybe_digits = parser.token_spec_util(TK_DIGITS)
-  if maybe_digits.is_ok: return maybe_digits
-  else: errors.add(maybe_digits.error)
-
-  err(errors.max())
+  parser.first_of([identifier_head_spec, digits_spec])
 
 proc identifier_spec*(parser: Parser): Result[Identifier, core.Error] =
   let id_head = ? parser.expect(identifier_head_spec)

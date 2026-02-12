@@ -104,22 +104,8 @@ proc keyword_argument_spec*(parser: Parser): Result[KeywordArgument,
 
 proc keyword_argument_list_spec*(parser: Parser): Result[seq[KeywordArgument],
     core.Error] =
-  var args: seq[KeywordArgument]
-  discard ? parser.expect(open_curly_bracket_spec)
-
-  discard ? parser.expect(optional_space_spec)
-  # NOTE: every struct init must have at least one keyword argument
-  args.add( ? parser.expect(keyword_argument_spec))
-  discard ? parser.expect(optional_space_spec)
-  var maybe_comma = parser.expect(comma_spec)
-  while maybe_comma.is_ok:
-    discard ? parser.expect(optional_space_spec)
-    args.add( ? parser.expect(keyword_argument_spec))
-    discard ? parser.expect(optional_space_spec)
-    maybe_comma = parser.expect(comma_spec)
-
-  discard ? parser.expect(close_curly_bracket_spec)
-  ok(args)
+  parser.list_spec(open_curly_bracket_spec, keyword_argument_spec,
+      close_curly_bracket_spec)
 
 # =============================================================================
 # StructInit

@@ -85,7 +85,7 @@ proc err_parser_empty_case*(location: Location): Error =
   new_parser_error(location, fmt"case block must have at least one statement")
 
 proc err_parser_empty_else*(location: Location): Error =
-  new_parser_error(location, fmt"elseerr_parser_empty_else block must have at least one statement")
+  new_parser_error(location, fmt"else block must have at least one statement")
 
 proc err_parser_empty_match*(location: Location): Error =
   new_parser_error(location, fmt"match block must have at least 2 case blocks")
@@ -156,16 +156,15 @@ type Parser* = ref object of RootObj
   tokens: seq[Token]
   index: int = 0
   indent: int
-  checkpoints: seq[int]
 
 proc new_parser*(path: string, tokens: seq[Token], indent: int): Parser =
-  Parser(path: path, tokens: tokens, index: 0, indent: indent, checkpoints: @[])
+  Parser(path: path, tokens: tokens, index: 0, indent: indent)
 
 proc path*(parser: Parser): string = parser.path
 proc indent*(parser: Parser): int = parser.indent
 
-type AtomSpec*[T] = proc(parser: Parser): Result[T, Error]
-type BlockSpec*[T] = proc(parser: Parser, indent: int): Result[T, Error]
+type AtomSpec*[T] = proc(parser: Parser): Result[T, Error] {.nimcall.}
+type BlockSpec*[T] = proc(parser: Parser, indent: int): Result[T, Error] {.nimcall.}
 
 proc can_parse*(parser: Parser): bool =
   parser.index < parser.tokens.len
@@ -266,6 +265,22 @@ proc open_square_bracket_spec*(parser: Parser): Result[Token, Error] =
 proc close_square_bracket_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_CLOSE_SQUARE)
 
+# content token specs
+proc underscore_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_spec_util(TK_UNDERSCORE)
+
+proc alphabets_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_spec_util(TK_ALPHABETS)
+
+proc digits_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_spec_util(TK_DIGITS)
+
+proc plus_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_spec_util(TK_PLUS)
+
+proc minus_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_spec_util(TK_MINUS)
+
 # spaces spec
 proc new_line_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_NEW_LINE)
@@ -322,3 +337,60 @@ proc indent_spec*(parser: Parser, indent: int): Result[int, Error] =
 
   let token = ? parser.peek()
   err(err_parser_indentation_error(token.location, indent * parser.indent, spaces))
+
+# parser combinators
+proc first_of*[T](parser: Parser, specs: openArray[AtomSpec[T]]): Result[T, Error] =
+  var errors: seq[Error]
+  for spec in specs:
+    let maybe = parser.expect(spec)
+    if maybe.is_ok: return maybe
+    errors.add(maybe.error)
+  err(errors.max())
+
+proc first_of*[T](parser: Parser, specs: openArray[BlockSpec[T]], indent: int): Result[T, Error] =
+  var errors: seq[Error]
+  for spec in specs:
+    let maybe = parser.expect(spec, indent)
+    if maybe.is_ok: return maybe
+    errors.add(maybe.error)
+  err(errors.max())
+
+proc comma_separated_spec*[T](parser: Parser, item_spec: AtomSpec[T]): Result[seq[T], Error] =
+  var items: seq[T]
+  discard ? parser.expect(optional_space_spec)
+  items.add( ? parser.expect(item_spec))
+  discard ? parser.expect(optional_space_spec)
+  while parser.expect(comma_spec).is_ok:
+    discard ? parser.expect(optional_space_spec)
+    items.add( ? parser.expect(item_spec))
+    discard ? parser.expect(optional_space_spec)
+  ok(items)
+
+proc list_spec*[T](parser: Parser, open_bracket: AtomSpec[Token],
+    item_spec: AtomSpec[T], close_bracket: AtomSpec[Token]): Result[seq[T], Error] =
+  discard ? parser.expect(open_bracket)
+  let items = ? parser.comma_separated_spec(item_spec)
+  discard ? parser.expect(close_bracket)
+  ok(items)
+
+proc zero_or_more_spec*[T](parser: Parser, item_spec: BlockSpec[T],
+    indent: int, separator: AtomSpec[int]): Result[seq[T], Error] =
+  var items: seq[T]
+  var maybe = parser.expect(item_spec, indent)
+  while maybe.is_ok:
+    items.add(maybe.get)
+    discard ? parser.expect(separator)
+    maybe = parser.expect(item_spec, indent)
+  ok(items)
+
+proc one_or_more_spec*[T](parser: Parser, item_spec: BlockSpec[T],
+    indent: int, separator: AtomSpec[int]): Result[seq[T], Error] =
+  var items: seq[T]
+  items.add( ? parser.expect(item_spec, indent))
+  discard ? parser.expect(separator)
+  var maybe = parser.expect(item_spec, indent)
+  while maybe.is_ok:
+    items.add(maybe.get)
+    discard ? parser.expect(separator)
+    maybe = parser.expect(item_spec, indent)
+  ok(items)

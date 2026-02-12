@@ -6,20 +6,17 @@ import core
 # UnsignedIntegerLiteral
 # =============================================================================
 
-type UnsignedIntegerLiteral* = ref object of RootObj
+type UnsignedIntegerLiteral = ref object of RootObj
   value: string
   location: Location
 
-proc new_unsigned_integer*(digits: Token): UnsignedIntegerLiteral =
+proc new_unsigned_integer(digits: Token): UnsignedIntegerLiteral =
   UnsignedIntegerLiteral(value: digits.value, location: digits.location)
 
-proc location*(unsigned_integer: UnsignedIntegerLiteral): Location =
-  unsigned_integer.location
-
-proc asl*(unsigned_integer: UnsignedIntegerLiteral): string =
+proc asl(unsigned_integer: UnsignedIntegerLiteral): string =
   unsigned_integer.value
 
-proc unsigned_integer_spec*(parser: Parser): Result[UnsignedIntegerLiteral,
+proc unsigned_integer_spec(parser: Parser): Result[UnsignedIntegerLiteral,
     core.Error] =
   # TODO: Support underscore separated values as integers as well.
   let int_value_token = ? parser.token_spec_util(TK_DIGITS)
@@ -30,14 +27,14 @@ proc unsigned_integer_spec*(parser: Parser): Result[UnsignedIntegerLiteral,
 # =============================================================================
 
 type
-  SignedIntegerLiteralKind* = enum
+  SignedIntegerLiteralKind = enum
     SIK_POSITIVE, SIK_NEGATIVE
-  SignedIntegerLiteral* = ref object of RootObj
+  SignedIntegerLiteral = ref object of RootObj
     kind: SignedIntegerLiteralKind
     value: string
     location: Location
 
-proc new_signed_integer*(sign: Token, unsigned_integer: UnsignedIntegerLiteral): Result[
+proc new_signed_integer(sign: Token, unsigned_integer: UnsignedIntegerLiteral): Result[
     SignedIntegerLiteral, core.Error] =
   case sign.kind:
   of TK_PLUS:
@@ -49,32 +46,17 @@ proc new_signed_integer*(sign: Token, unsigned_integer: UnsignedIntegerLiteral):
   else:
     return err(err_parser_expected_sign(sign.location, sign.value))
 
-proc location*(signed_integer: SignedIntegerLiteral): Location =
-  signed_integer.location
-
-proc kind*(signed_integer: SignedIntegerLiteral): SignedIntegerLiteralKind =
-  signed_integer.kind
-
-proc asl*(signed_integer: SignedIntegerLiteral): string =
+proc asl(signed_integer: SignedIntegerLiteral): string =
   let sign =
     case signed_integer.kind:
     of SIK_POSITIVE: ""
     of SIK_NEGATIVE: "-"
   return sign & signed_integer.value
 
-proc sign_spec*(parser: Parser): Result[Token, core.Error] =
-  var errors: seq[core.Error]
+proc sign_spec(parser: Parser): Result[Token, core.Error] =
+  parser.first_of([plus_spec, minus_spec])
 
-  let maybe_plus = parser.token_spec_util(TK_PLUS)
-  if maybe_plus.is_ok: return maybe_plus
-  else: errors.add(maybe_plus.error)
-
-  let maybe_minus = parser.token_spec_util(TK_MINUS)
-  if maybe_minus.is_ok: return maybe_minus
-
-  err(errors.max())
-
-proc signed_integer_spec*(parser: Parser): Result[SignedIntegerLiteral,
+proc signed_integer_spec(parser: Parser): Result[SignedIntegerLiteral,
     core.Error] =
   var sign = ? parser.expect(sign_spec)
   let unsigned_intvalue = ? parser.expect(unsigned_integer_spec)
@@ -92,10 +74,10 @@ type
     of ILK_SIGNED: signed: SignedIntegerLiteral
     of ILK_UNSIGNED: unsigned: UnsignedIntegerLiteral
 
-proc new_integer_literal*(signed: SignedIntegerLiteral): IntegerLiteral =
+proc new_integer_literal(signed: SignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ILK_SIGNED, signed: signed)
 
-proc new_integer_literal*(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
+proc new_integer_literal(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ILK_UNSIGNED, unsigned: unsigned)
 
 proc location*(integer: IntegerLiteral): Location =
@@ -120,7 +102,7 @@ proc asl*(integer: IntegerLiteral): string =
   of ILK_SIGNED: integer.signed.asl
   of ILK_UNSIGNED: integer.unsigned.asl
 
-proc integer_spec*(parser: Parser): Result[IntegerLiteral, core.Error] =
+proc integer_spec(parser: Parser): Result[IntegerLiteral, core.Error] =
   var errors: seq[core.Error]
 
   let maybe_unsigned_integer = parser.expect(unsigned_integer_spec)
@@ -145,7 +127,7 @@ type FloatLiteral* = ref object of RootObj
   value: string
   location: Location
 
-proc new_float_literal*(first: IntegerLiteral,
+proc new_float_literal(first: IntegerLiteral,
     second: UnsignedIntegerLiteral): FloatLiteral =
   let value = first.asl & "." & second.asl
   FloatLiteral(value: value, location: first.location)
@@ -156,7 +138,7 @@ proc location*(float_literal: FloatLiteral): Location =
 proc asl*(float_literal: FloatLiteral): string =
   float_literal.value
 
-proc float_spec*(parser: Parser): Result[FloatLiteral, core.Error] =
+proc float_spec(parser: Parser): Result[FloatLiteral, core.Error] =
   # TODO: Improve float parsing to support scientific notation as well.
   let first = ? parser.expect(integer_spec)
   discard ? parser.expect(dot_spec)
@@ -180,7 +162,7 @@ proc location*(string_literal: StringLiteral): Location =
 proc asl*(string_literal: StringLiteral): string =
   string_literal.value
 
-proc string_spec*(parser: Parser): Result[StringLiteral, core.Error] =
+proc string_spec(parser: Parser): Result[StringLiteral, core.Error] =
   let token = ? parser.token_spec_util(TK_STRING)
   ok(new_string_literal(token.value, token.location))
 

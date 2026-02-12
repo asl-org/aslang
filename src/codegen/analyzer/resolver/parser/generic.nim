@@ -89,29 +89,13 @@ proc generic_constrained_spec*(parser: Parser, indent: int): Result[Generic,
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
 
-  var defs: seq[FunctionDefinition]
   discard ? parser.expect(optional_empty_line_spec)
-
-  var maybe_func_def = parser.expect(function_definition_spec, indent + 1)
-  while maybe_func_def.is_ok:
-    defs.add(maybe_func_def.get)
-    discard ? parser.expect(strict_empty_line_spec)
-    maybe_func_def = parser.expect(function_definition_spec, indent + 1)
-
+  let defs = ? parser.zero_or_more_spec(function_definition_spec, indent + 1,
+      strict_empty_line_spec)
   new_generic(name, defs, generic_keyword.location)
 
+# NOTE: generic_constrained must be first since generic_default is a subset of
+# it and therefore may result in malformed parsing.
 proc generic_spec*(parser: Parser, indent: int): Result[Generic, core.Error] =
-  var errors: seq[core.Error]
-
-  let maybe_generic_constrained = parser.expect(generic_constrained_spec, indent)
-  if maybe_generic_constrained.is_ok: return maybe_generic_constrained
-  else: errors.add(maybe_generic_constrained.error)
-
-  # NOTE: generic default parser must be second since it is a subset of
-  # generic_named spec and therefore may result in malformed parsing.
-  let maybe_generic_default = parser.expect(generic_default_spec, indent)
-  if maybe_generic_default.is_ok: return maybe_generic_default
-  else: errors.add(maybe_generic_default.error)
-
-  err(errors.max())
+  parser.first_of([generic_constrained_spec, generic_default_spec], indent)
 

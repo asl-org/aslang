@@ -7,7 +7,7 @@ import core, identifier, literal
 # =============================================================================
 
 type
-  MatchDefinitionKind* = enum
+  MatchDefinitionKind = enum
     MDK_DEFAULT, MDK_ASSIGNED
   MatchDefinition* = ref object of RootObj
     kind: MatchDefinitionKind
@@ -52,18 +52,9 @@ proc match_definition_assigned_spec*(parser: Parser): Result[MatchDefinition,
 
 proc match_definition_spec*(parser: Parser): Result[MatchDefinition,
     core.Error] =
-  var errors: seq[core.Error]
-  let maybe_match_def_default = parser.expect(match_definition_default_spec)
-  if maybe_match_def_default.is_ok: return maybe_match_def_default
-  else: errors.add(maybe_match_def_default.error)
+  parser.first_of([match_definition_default_spec, match_definition_assigned_spec])
 
-  let maybe_match_def_assigned = parser.expect(match_definition_assigned_spec)
-  if maybe_match_def_assigned.is_ok: return maybe_match_def_assigned
-  else: errors.add(maybe_match_def_assigned.error)
-
-  err(errors.max())
-
-proc keyword_value_identifier_spec*(parser: Parser): Result[(Identifier,
+proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
     Identifier), core.Error] =
   let name = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
@@ -140,25 +131,14 @@ proc asl*(pattern: StructPattern): string =
   of SPK_DEFAULT: "{ " & args.join(", ") & " }"
   of SPK_NAMED: pattern.struct.asl & " { " & args.join(", ") & " }"
 
-proc struct_pattern_default_spec*(parser: Parser): Result[StructPattern,
+proc struct_pattern_default_spec(parser: Parser): Result[StructPattern,
     core.Error] =
   let open_curly = ? parser.expect(open_curly_bracket_spec)
-  discard ? parser.expect(optional_space_spec)
-
-  var keywords: seq[(Identifier, Identifier)]
-  keywords.add( ? parser.expect(keyword_value_identifier_spec))
-  discard ? parser.expect(optional_space_spec)
-  var maybe_comma = parser.expect(comma_spec)
-  while maybe_comma.is_ok:
-    discard ? parser.expect(optional_space_spec)
-    keywords.add( ? parser.expect(keyword_value_identifier_spec))
-    discard ? parser.expect(optional_space_spec)
-    maybe_comma = parser.expect(comma_spec)
-
+  let keywords = ? parser.comma_separated_spec(keyword_value_identifier_spec)
   discard ? parser.expect(close_curly_bracket_spec)
   new_struct_pattern(keywords, open_curly.location)
 
-proc struct_pattern_named_spec*(parser: Parser): Result[StructPattern,
+proc struct_pattern_named_spec(parser: Parser): Result[StructPattern,
     core.Error] =
   let struct = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
