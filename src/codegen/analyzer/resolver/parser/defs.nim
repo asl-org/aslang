@@ -19,7 +19,7 @@ proc asl*(def: StructDefinition): string = "struct:"
 proc struct_default_definition_spec*(parser: Parser): Result[
     StructDefinition, core.Error] =
   let struct_keyword = ? parser.expect(struct_keyword_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
   ok(new_struct_definition(struct_keyword.location))
 
@@ -52,7 +52,7 @@ proc hash*(def: ArgumentDefinition): Hash = hash(def.module_ref)
 proc argument_definition_spec*(parser: Parser): Result[
     ArgumentDefinition, core.Error] =
   let module_ref = ? parser.expect(module_ref_spec)
-  discard ? parser.expect(strict_space_spec)
+  discard ? parser.expect_at_least_one(space_spec)
   let name = ? parser.expect(identifier_spec)
   ok(new_argument_definition(module_ref, name))
 
@@ -113,7 +113,7 @@ proc hash*(def: FunctionDefinition): Hash =
 
 proc argument_definition_list_spec*(parser: Parser): Result[seq[
     ArgumentDefinition], core.Error] =
-  parser.list_spec(open_paren_bracket_spec,
+  parser.container_spec(open_paren_bracket_spec,
       argument_definition_spec, close_paren_bracket_spec)
 
 proc function_definition_spec*(parser: Parser, indent: int): Result[
@@ -121,16 +121,16 @@ proc function_definition_spec*(parser: Parser, indent: int): Result[
   discard ? parser.expect(indent_spec, indent)
   let fn_keyword = ? parser.expect(fn_keyword_spec)
 
-  discard ? parser.expect(strict_space_spec)
+  discard ? parser.expect_at_least_one(space_spec)
   let name = ? parser.expect(identifier_spec)
 
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let args = ? parser.expect(argument_definition_list_spec)
 
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
 
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let returns = ? parser.expect(module_ref_spec)
 
   new_function_definition(name, args, returns, fn_keyword.location)

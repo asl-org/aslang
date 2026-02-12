@@ -35,10 +35,10 @@ proc `==`*(a: Identifier, b: Identifier): bool =
 
 # identifier specs
 proc identifier_head_spec(parser: Parser): Result[Token, core.Error] =
-  parser.first_of([underscore_spec, alphabets_spec])
+  parser.expect_one_of([underscore_spec, alphabets_spec])
 
 proc identifier_tail_spec(parser: Parser): Result[Token, core.Error] =
-  parser.first_of([identifier_head_spec, digits_spec])
+  parser.expect_one_of([identifier_head_spec, digits_spec])
 
 proc identifier_spec*(parser: Parser): Result[Identifier, core.Error] =
   let id_head = ? parser.expect(identifier_head_spec)

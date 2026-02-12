@@ -35,31 +35,31 @@ proc asl*(def: MatchDefinition): string =
 proc match_definition_default_spec*(parser: Parser): Result[
     MatchDefinition, core.Error] =
   let match_keyword = ? parser.expect(match_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
+  discard ? parser.expect_at_least_one(space_spec)
   let operand = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
   new_match_definition(operand, match_keyword.location)
 
 proc match_definition_assigned_spec*(parser: Parser): Result[MatchDefinition,
     core.Error] =
   let arg = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(equal_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let match_def_default = ? parser.expect(match_definition_default_spec)
   ok(new_match_definition(match_def_default, arg))
 
 proc match_definition_spec*(parser: Parser): Result[MatchDefinition,
     core.Error] =
-  parser.first_of([match_definition_default_spec, match_definition_assigned_spec])
+  parser.expect_one_of([match_definition_default_spec, match_definition_assigned_spec])
 
 proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
     Identifier), core.Error] =
   let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let value = ? parser.expect(identifier_spec)
   ok((name, value))
 
@@ -134,14 +134,15 @@ proc asl*(pattern: StructPattern): string =
 proc struct_pattern_default_spec(parser: Parser): Result[StructPattern,
     core.Error] =
   let open_curly = ? parser.expect(open_curly_bracket_spec)
-  let keywords = ? parser.comma_separated_spec(keyword_value_identifier_spec)
+  discard ? parser.expect_any(space_spec)
+  let keywords = ? parser.list_spec(keyword_value_identifier_spec, comma_spec)
   discard ? parser.expect(close_curly_bracket_spec)
   new_struct_pattern(keywords, open_curly.location)
 
 proc struct_pattern_named_spec(parser: Parser): Result[StructPattern,
     core.Error] =
   let struct = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let struct_pattern_default = ? parser.expect(struct_pattern_default_spec)
   new_struct_pattern(struct, struct_pattern_default)
 
@@ -228,8 +229,8 @@ proc case_definition_spec*(parser: Parser): Result[CaseDefinition,
     core.Error] =
   let case_keyword = ? parser.expect(case_keyword_spec)
   discard ? parser.expect(space_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let pattern = ? parser.expect(case_pattern_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
   ok(new_case_definition(pattern, case_keyword.location))

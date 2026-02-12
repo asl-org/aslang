@@ -54,7 +54,7 @@ proc asl(signed_integer: SignedIntegerLiteral): string =
   return sign & signed_integer.value
 
 proc sign_spec(parser: Parser): Result[Token, core.Error] =
-  parser.first_of([plus_spec, minus_spec])
+  parser.expect_one_of([plus_spec, minus_spec])
 
 proc signed_integer_spec(parser: Parser): Result[SignedIntegerLiteral,
     core.Error] =

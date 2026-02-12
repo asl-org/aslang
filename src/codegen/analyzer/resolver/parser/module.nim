@@ -26,9 +26,9 @@ proc hash*(def: ModuleDefinition): Hash =
 proc module_definition_spec*(parser: Parser): Result[ModuleDefinition,
     core.Error] =
   let module_keyword = ? parser.expect(module_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
+  discard ? parser.expect_at_least_one(space_spec)
   let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
   ok(new_module_definition(name, module_keyword.location))
 
@@ -137,20 +137,20 @@ proc asl*(module: Module, indent: string): seq[string] =
 
 proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic],
     core.Error] =
-  parser.zero_or_more_spec(generic_spec, indent, optional_empty_line_spec)
+  parser.expect_any(generic_spec, indent, optional_empty_line_spec)
 
 proc function_list_spec(parser: Parser, indent: int): Result[seq[Function],
     core.Error] =
-  discard ? parser.expect(optional_empty_line_spec)
-  parser.zero_or_more_spec(function_spec, indent + 1, optional_empty_line_spec)
+  discard ? parser.expect_any(empty_line_spec)
+  parser.expect_any(function_spec, indent + 1, optional_empty_line_spec)
 
 proc module_spec*(parser: Parser, indent: int): Result[Module, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(module_definition_spec)
-  discard ? parser.expect(optional_empty_line_spec)
+  discard ? parser.expect_any(empty_line_spec)
   let generics = ? parser.expect(generic_list_spec, indent + 1)
-  discard ? parser.expect(optional_empty_line_spec)
+  discard ? parser.expect_any(empty_line_spec)
   let data = ? parser.expect(data_spec, indent + 1)
-  discard ? parser.expect(optional_empty_line_spec)
+  discard ? parser.expect_any(empty_line_spec)
   let functions = ? parser.expect(function_list_spec, indent)
   new_module(def, generics, data, functions)

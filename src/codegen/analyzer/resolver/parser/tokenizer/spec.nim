@@ -16,6 +16,10 @@ proc match_string*(content: string, start: int): Result[
   if index >= content.len: return err(err_tokenizer_reached_eof(index))
 
   while index < content.len:
+    if index + 1 - start > MAX_STRING_LENGTH:
+      return err(err_tokenizer_max_length_exceeded(start, "string",
+          MAX_STRING_LENGTH))
+
     if content[index] == BACK_SLASH_OP:
       if index + 1 >= content.len:
         return err(err_tokenizer_reached_eof(index + 1))
@@ -24,9 +28,6 @@ proc match_string*(content: string, start: int): Result[
         return err(err_tokenizer_unexpected_escape_sequence(index, escape_seq))
       index += 2
     elif content[index] == DOUBLE_QUOTE:
-      if index + 1 - start > MAX_STRING_LENGTH:
-        return err(err_tokenizer_max_length_exceeded(start, "string",
-            MAX_STRING_LENGTH))
       return ok(index + 1)
     elif content[index] == NEW_LINE:
       return err(err_tokenizer_new_line_in_string(index))

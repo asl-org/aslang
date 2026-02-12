@@ -80,7 +80,7 @@ proc file_spec*(parser: Parser, builtin_modules: seq[Module]): Result[File,
   var functions: seq[Function]
   while parser.can_parse():
     var errors: seq[core.Error]
-    discard ? parser.expect(optional_empty_line_spec)
+    discard ? parser.expect_any(empty_line_spec)
 
     let maybe_module = parser.expect(module_spec, 0)
     if maybe_module.is_ok: modules.add(maybe_module.get)

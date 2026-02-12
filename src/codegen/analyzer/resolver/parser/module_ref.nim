@@ -67,6 +67,7 @@ proc module_ref_spec*(parser: Parser): Result[ModuleRef, core.Error] =
   var maybe_open_square_bracket = parser.expect(open_square_bracket_spec)
   if maybe_open_square_bracket.is_err: return ok(new_module_ref(module_ref))
 
-  let children = ? parser.comma_separated_spec(module_ref_spec)
+  discard ? parser.expect_any(space_spec)
+  let children = ? parser.list_spec(module_ref_spec, comma_spec)
   discard ? parser.expect(close_square_bracket_spec)
   new_module_ref(module_ref, children)

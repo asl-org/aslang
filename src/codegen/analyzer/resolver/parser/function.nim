@@ -82,9 +82,9 @@ proc asl*(function: Function, indent: string): seq[string] =
 proc user_function_spec(parser: Parser, indent: int): Result[UserFunction,
     core.Error] =
   let def = ? parser.expect(function_definition_spec, indent)
-  discard ? parser.expect(strict_empty_line_spec)
+  discard ? parser.expect_at_least_one(empty_line_spec)
 
-  let steps = ? parser.one_or_more_spec(statement_spec, indent + 1,
+  let steps = ? parser.expect_at_least_one(statement_spec, indent + 1,
       optional_empty_line_spec)
   new_user_function(def, steps)
 
@@ -92,16 +92,16 @@ proc extern_header_spec(parser: Parser, indent: int): Result[Identifier,
     core.Error] =
   discard ? parser.expect(indent_spec, indent)
   discard ? parser.expect(extern_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
+  discard ? parser.expect_at_least_one(space_spec)
   let extern = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
   ok(extern)
 
 proc extern_function_spec(parser: Parser, indent: int): Result[ExternFunction,
     core.Error] =
   let extern = ? parser.expect(extern_header_spec, indent)
-  discard ? parser.expect(strict_empty_line_spec)
+  discard ? parser.expect_at_least_one(empty_line_spec)
   let def = ? parser.expect(function_definition_spec, indent + 1)
   ok(new_extern_function(def, extern.asl))
 

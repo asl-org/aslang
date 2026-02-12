@@ -72,7 +72,7 @@ proc generic_default_spec*(parser: Parser, indent: int): Result[Generic,
   discard ? parser.expect(indent_spec, indent)
   let generic_keyword = ? parser.expect(generic_keyword_spec)
   discard ? parser.expect(space_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let name = ? parser.expect(identifier_spec)
   ok(new_generic(name, generic_keyword.location))
 
@@ -81,18 +81,18 @@ proc generic_constrained_spec*(parser: Parser, indent: int): Result[Generic,
   discard ? parser.expect(indent_spec, indent)
   let generic_keyword = ? parser.expect(generic_keyword_spec)
   discard ? parser.expect(space_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
 
-  discard ? parser.expect(optional_empty_line_spec)
-  let defs = ? parser.zero_or_more_spec(function_definition_spec, indent + 1,
+  discard ? parser.expect_any(empty_line_spec)
+  let defs = ? parser.expect_any(function_definition_spec, indent + 1,
       strict_empty_line_spec)
   new_generic(name, defs, generic_keyword.location)
 
 # NOTE: generic_constrained must be first since generic_default is a subset of
 # it and therefore may result in malformed parsing.
 proc generic_spec*(parser: Parser, indent: int): Result[Generic, core.Error] =
-  parser.first_of([generic_constrained_spec, generic_default_spec], indent)
+  parser.expect_one_of([generic_constrained_spec, generic_default_spec], indent)
 

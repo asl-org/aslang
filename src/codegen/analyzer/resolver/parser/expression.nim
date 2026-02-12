@@ -166,9 +166,9 @@ proc asl*(statement: Statement, indent: string): seq[string] =
 proc assignment_spec(parser: Parser, indent: int): Result[Statement,
     core.Error] =
   let arg = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(equal_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let expression = ? parser.expect(expression_spec, indent)
   ok(new_statement(arg, expression))
 
@@ -213,8 +213,8 @@ proc asl*(case_block: Case, indent: string): seq[string] =
 proc case_spec(parser: Parser, indent: int): Result[Case, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let case_def = ? parser.expect(case_definition_spec)
-  discard ? parser.expect(optional_empty_line_spec)
-  let statements = ? parser.zero_or_more_spec(statement_spec, indent + 1,
+  discard ? parser.expect_any(empty_line_spec)
+  let statements = ? parser.expect_any(statement_spec, indent + 1,
       optional_empty_line_spec)
   new_case(case_def, statements)
 
@@ -246,11 +246,11 @@ proc else_spec(parser: Parser, indent: int): Result[Else, core.Error] =
   discard ? parser.expect(indent_spec, indent)
 
   let else_def = ? parser.expect(else_keyword_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
-  discard ? parser.expect(optional_empty_line_spec)
+  discard ? parser.expect_any(empty_line_spec)
 
-  let statements = ? parser.zero_or_more_spec(statement_spec, indent + 1,
+  let statements = ? parser.expect_any(statement_spec, indent + 1,
       optional_empty_line_spec)
   new_else(statements, else_def.location)
 
@@ -304,8 +304,8 @@ proc asl*(match: Match, indent: string): seq[string] =
 proc match_spec*(parser: Parser, indent: int): Result[Match, core.Error] =
   let match_def = ? parser.expect(match_definition_spec)
 
-  discard ? parser.expect(optional_empty_line_spec)
-  let cases = ? parser.zero_or_more_spec(case_spec, indent + 1,
+  discard ? parser.expect_any(empty_line_spec)
+  let cases = ? parser.expect_any(case_spec, indent + 1,
       optional_empty_line_spec)
 
   var maybe_else = parser.expect(else_spec, indent + 1)

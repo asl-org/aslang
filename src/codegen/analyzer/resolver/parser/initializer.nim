@@ -24,7 +24,7 @@ proc asl*(init: LiteralInit): string =
 
 proc literal_init_spec*(parser: Parser): Result[LiteralInit, core.Error] =
   let module_ref = ? parser.expect(module_ref_spec)
-  discard ? parser.expect(strict_space_spec)
+  discard ? parser.expect_at_least_one(space_spec)
   let literal = ? parser.expect(literal_spec)
   ok(new_literal_init(module_ref, literal))
 
@@ -96,15 +96,15 @@ proc asl*(kwarg: KeywordArgument): string =
 proc keyword_argument_spec*(parser: Parser): Result[KeywordArgument,
     core.Error] =
   let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let value = ? parser.expect(argument_spec)
   ok(new_keyword_argument(name, value))
 
 proc keyword_argument_list_spec*(parser: Parser): Result[seq[KeywordArgument],
     core.Error] =
-  parser.list_spec(open_curly_bracket_spec, keyword_argument_spec,
+  parser.container_spec(open_curly_bracket_spec, keyword_argument_spec,
       close_curly_bracket_spec)
 
 # =============================================================================
@@ -148,7 +148,7 @@ proc asl*(init: StructInit): string =
 
 proc struct_init_spec*(parser: Parser): Result[StructInit, core.Error] =
   let struct_ref = ? parser.expect(struct_ref_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   let kwargs = ? parser.expect(keyword_argument_list_spec)
   new_struct_init(struct_ref, kwargs)
 
