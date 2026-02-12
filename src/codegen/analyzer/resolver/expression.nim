@@ -40,19 +40,19 @@ type
     of TMK_COMPLETE: else_block: ResolvedElse
 
 # ResolvedExpression constructors
-proc new_resolved_expression*(match: ResolvedMatch): ResolvedExpression =
+proc new_resolved_expression(match: ResolvedMatch): ResolvedExpression =
   ResolvedExpression(kind: TEK_MATCH, match: match)
 
-proc new_resolved_expression*(fncall: ResolvedFunctionCall): ResolvedExpression =
+proc new_resolved_expression(fncall: ResolvedFunctionCall): ResolvedExpression =
   ResolvedExpression(kind: TEK_FNCALL, fncall: fncall)
 
-proc new_resolved_expression*(init: ResolvedInitializer): ResolvedExpression =
+proc new_resolved_expression(init: ResolvedInitializer): ResolvedExpression =
   ResolvedExpression(kind: TEK_INIT, init: init)
 
-proc new_resolved_expression*(struct_get: ResolvedStructGet): ResolvedExpression =
+proc new_resolved_expression(struct_get: ResolvedStructGet): ResolvedExpression =
   ResolvedExpression(kind: TEK_STRUCT_GET, struct_get: struct_get)
 
-proc new_resolved_expression*(variable: ResolvedVariable): ResolvedExpression =
+proc new_resolved_expression(variable: ResolvedVariable): ResolvedExpression =
   ResolvedExpression(kind: TEK_VARIABLE, variable: variable)
 
 # Forward declaration for mutual recursion
@@ -124,7 +124,7 @@ proc resolve(file: parser.File, module: Option[parser.Module],
     ok(new_resolved_expression(new_resolved_variable( ? expression.variable)))
 
 # ResolvedStatement
-proc new_resolved_statement*(arg: Identifier,
+proc new_resolved_statement(arg: Identifier,
     expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(arg: arg, expression: expression)
 
@@ -149,7 +149,7 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
   ok(resolved_statements)
 
 # ResolvedCase
-proc new_resolved_case*(pattern: CasePattern, statements: seq[
+proc new_resolved_case(pattern: CasePattern, statements: seq[
     ResolvedStatement], location: Location): ResolvedCase =
   ResolvedCase(pattern: pattern, statements: statements, location: location)
 
@@ -171,7 +171,7 @@ proc resolve(file: parser.File, module: Option[parser.Module],
       case_block.def.location))
 
 # ResolvedElse
-proc new_resolved_else*(statements: seq[ResolvedStatement],
+proc new_resolved_else(statements: seq[ResolvedStatement],
     location: Location): ResolvedElse =
   ResolvedElse(statements: statements, location: location)
 
@@ -191,12 +191,12 @@ proc resolve(file: parser.File, module: Option[parser.Module],
   ok(new_resolved_else(resolved_stmts, else_block.location))
 
 # ResolvedMatch
-proc new_resolved_match*(operand: Identifier, arg: Identifier, case_blocks: seq[
+proc new_resolved_match(operand: Identifier, arg: Identifier, case_blocks: seq[
     ResolvedCase], location: Location): ResolvedMatch =
   ResolvedMatch(kind: TMK_CASE_ONLY, operand: operand, case_blocks: case_blocks,
       location: location)
 
-proc new_resolved_match*(operand: Identifier, arg: Identifier, case_blocks: seq[
+proc new_resolved_match(operand: Identifier, arg: Identifier, case_blocks: seq[
     ResolvedCase], else_block: ResolvedElse,
         location: Location): ResolvedMatch =
   ResolvedMatch(kind: TMK_COMPLETE, operand: operand, case_blocks: case_blocks,
@@ -244,7 +244,7 @@ type ResolvedUserFunction* = ref object of RootObj
   def: ResolvedFunctionDefinition
   steps: seq[ResolvedStatement]
 
-proc new_resolved_user_function*(def: ResolvedFunctionDefinition,
+proc new_resolved_user_function(def: ResolvedFunctionDefinition,
     steps: seq[ResolvedStatement]): ResolvedUserFunction =
   ResolvedUserFunction(def: def, steps: steps)
 
@@ -270,7 +270,7 @@ type ResolvedExternFunction* = ref object of RootObj
   extern: string
   def: ResolvedFunctionDefinition
 
-proc new_resolved_extern_function*(extern: string,
+proc new_resolved_extern_function(extern: string,
     def: ResolvedFunctionDefinition): ResolvedExternFunction =
   ResolvedExternFunction(extern: extern, def: def)
 

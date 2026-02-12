@@ -6,34 +6,15 @@ import core, identifier, module_ref
 # StructDefinition
 # =============================================================================
 
-type
-  StructDefinitionKind* = enum
-    SDK_DEFAULT, SDK_NAMED
-  StructDefinition* = ref object of RootObj
-    location: Location
-    case kind: StructDefinitionKind
-    of SDK_DEFAULT: discard
-    of SDK_NAMED: name: Identifier
+type StructDefinition* = ref object of RootObj
+  location: Location
 
 proc new_struct_definition*(location: Location): StructDefinition =
-  StructDefinition(kind: SDK_DEFAULT, location: location)
-
-proc new_struct_definition*(name: Identifier,
-    location: Location): StructDefinition =
-  StructDefinition(kind: SDK_NAMED, name: name, location: location)
-
-proc kind*(def: StructDefinition): StructDefinitionKind = def.kind
+  StructDefinition(location: location)
 
 proc location*(def: StructDefinition): Location = def.location
 
-proc name*(def: StructDefinition): Identifier =
-  do_assert def.kind == SDK_NAMED, "expected extern function"
-  def.name
-
-proc asl*(def: StructDefinition): string =
-  case def.kind:
-  of SDK_DEFAULT: "struct:"
-  of SDK_NAMED: fmt"struct {def.name.asl}:"
+proc asl*(def: StructDefinition): string = "struct:"
 
 proc struct_default_definition_spec*(parser: Parser): Result[
     StructDefinition, core.Error] =
@@ -41,15 +22,6 @@ proc struct_default_definition_spec*(parser: Parser): Result[
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
   ok(new_struct_definition(struct_keyword.location))
-
-proc struct_named_definition_spec*(parser: Parser): Result[
-    StructDefinition, core.Error] =
-  let struct_keyword = ? parser.expect(struct_keyword_spec)
-  discard ? parser.expect(strict_space_spec)
-  let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
-  discard ? parser.expect(colon_spec)
-  ok(new_struct_definition(name, struct_keyword.location))
 
 # =============================================================================
 # ArgumentDefinition
@@ -62,12 +34,6 @@ type ArgumentDefinition* = ref object of RootObj
 proc new_argument_definition*(module_ref: ModuleRef,
     name: Identifier): ArgumentDefinition =
   ArgumentDefinition(name: name, module_ref: module_ref)
-
-proc new_argument_definition*(module_ref: string, name: string): Result[
-    ArgumentDefinition, core.Error] =
-  let module_ref_id = new_module_ref(module_ref)
-  let name_id = new_identifier(name)
-  ok(new_argument_definition(module_ref_id, name_id))
 
 proc module_ref*(def: ArgumentDefinition): ModuleRef =
   def.module_ref

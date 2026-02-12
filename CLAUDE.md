@@ -1,14 +1,14 @@
-# AGENT.md - ASLang Compiler Project Guide
+# CLAUDE.md - ASLang Compiler Project Guide
 
 ## Project Overview
 
 ASLang (A Software Language) is a compiler for a new programming language designed for zero-maintenance systems. It targets readability, security, performance, and software architecture by turning common architectural patterns into single-line declarations instead of boilerplate code.
 
-- **Compiler language:** Nim (>= 2.2.2)
+- **Compiler language:** Nim (2.2.0)
 - **Source files:** `.asl`
 - **Target:** C code, then compiled to native executables via GCC
 - **Runtime:** Custom C runtime library (`runtime.c` / `runtime.h`)
-- **Codebase:** ~7,500 lines of Nim across 55 source files
+- **Codebase:** ~7,600 lines of Nim across 74 source files
 
 ## Build and Test
 
@@ -48,20 +48,20 @@ let analyzed_file = ? analyze(resolved_file)
 let code = ? analyzed_file.c()
 ```
 
-### 1. Tokenizer (`src/analyzer/resolver/parser/tokenizer.nim` + `tokenizer/`)
+### 1. Tokenizer (`src/codegen/analyzer/resolver/parser/tokenizer.nim` + `tokenizer/`)
 - Reads raw source files and converts text into tokens
 - Token types: operators, brackets, literals (string, digits, alphabets), whitespace, comments
 - Tracks source location (filename, line, column, index) for error reporting
 - Key function: `tokenize(filename, content) -> Result[seq[Token], string]`
 
-### 2. Parser (`src/analyzer/resolver/parser.nim` + `parser/`)
+### 2. Parser (`src/codegen/analyzer/resolver/parser.nim` + `parser/`)
 - Consumes tokens and produces unresolved AST
 - Top-level type: `File` containing modules and file-level functions
-- Modules contain generics, structs (or unions), and functions
+- Modules contain generics, data (struct or union), and functions
 - `parser.nim` acts as an import/export hub following Nim convention
 - Key function: `parse(path, tokens) -> Result[File, string]`
 
-### 3. Resolver (`src/analyzer/resolver.nim` + `resolver/`)
+### 3. Resolver (`src/codegen/analyzer/resolver.nim` + `resolver/`)
 - Assigns types to identifiers (variables, modules)
 - Produces `Resolved*` versions of AST nodes
 - Tracks module dependencies and detects circular dependencies
@@ -69,18 +69,18 @@ let code = ? analyzed_file.c()
 - Validates numeric literal ranges for target types
 - Key function: `resolve(file) -> Result[ResolvedFile, string]`
 
-### 4. Analyzer (`src/analyzer.nim` + `analyzer/`)
+### 4. Analyzer (`src/codegen/analyzer.nim` + `analyzer/`)
 - Performs semantic analysis and validation
 - Validates that types follow defined constraints
 - Produces `Analyzed*` versions of AST nodes
 - Performs monomorphization (instantiates generic types with concrete types)
-- Generates C code from analyzed AST
 - Key function: `analyze(resolved_file) -> Result[AnalyzedFile, string]`
-- Key function: `c(analyzed_file) -> Result[string, string]`
 
-### 5. C Compilation
+### 5. Codegen (`src/codegen.nim` + `codegen/`)
+- Generates C code from analyzed AST
+- Each codegen file mirrors an analyzer type (e.g., `codegen/function.nim` generates C for `AnalyzedFunction`)
+- Key function: `c(analyzed_file) -> Result[string, string]`
 - Generated C code is compiled with `gcc -O3 runtime.c <output>.c -o <binary>`
-- Runtime provides type definitions and built-in function implementations
 
 ## Project Structure
 
@@ -88,68 +88,90 @@ let code = ? analyzed_file.c()
 src/
   aslang.nim                    # CLI entry point (arg parsing, invokes compile)
   compiler.nim                  # Compilation orchestration (tokenize -> parse -> resolve -> analyze -> codegen -> gcc)
-  analyzer.nim                  # Import/export hub for analyzer layer
-  analyzer/
-    # Analyzer layer (Analyzed* types, semantic analysis, codegen)
-    module_ref.nim              # AnalyzedModuleRef, AnalyzedImpl (generic instantiation)
-    arg_def.nim                 # AnalyzedArgumentDefinition
-    arg.nim                     # Argument analysis
-    struct.nim                  # AnalyzedStruct (struct analysis and C codegen)
-    struct_ref.nim              # AnalyzedStructRef
-    struct_init.nim             # AnalyzedStructInit
-    struct_get.nim              # AnalyzedStructGet (field access)
-    struct_pattern.nim          # AnalyzedStructPattern
-    case_pattern.nim            # AnalyzedCasePattern
-    literal.nim                 # Literal analysis
-    initializer.nim             # AnalyzedInitializer
-    func_ref.nim                # AnalyzedFunctionRef
-    func_def.nim                # AnalyzedFunctionDefinition
-    fncall.nim                  # AnalyzedFunctionCall
-    function.nim                # AnalyzedUserFunction
-    expression.nim              # AnalyzedExpression, AnalyzedStatement, AnalyzedMatch, AnalyzedCase, AnalyzedElse
-    generic.nim                 # Generic analysis
-    module.nim                  # AnalyzedModule
-    module_def.nim              # AnalyzedModuleDefinition, AnalyzedData (struct/union)
-    file_def.nim                # AnalyzedFileDefinition, FunctionScope
-    file.nim                    # AnalyzedFile (top-level, C code generation)
+  codegen.nim                   # Import/export hub for codegen layer (imports analyzer + codegen/file)
+  codegen/
+    # Codegen layer (C code generation from Analyzed* types)
+    arg.nim                     # AnalyzedArgument -> C
+    arg_def.nim                 # AnalyzedArgumentDefinition -> C (byte_size, c)
+    expression.nim              # AnalyzedStatement -> C
+    file.nim                    # AnalyzedFile -> C (top-level file generation)
+    file_def.nim                # AnalyzedFileDefinition -> C (headers, struct defs)
+    fncall.nim                  # AnalyzedFunctionCall -> C
+    func_def.nim                # AnalyzedFunctionDefinition -> C (c_name, h)
+    function.nim                # AnalyzedUserFunction -> C
+    generic.nim                 # AnalyzedGeneric -> C
+    initializer.nim             # AnalyzedInitializer -> C
+    literal.nim                 # AnalyzedLiteral -> C
+    module.nim                  # AnalyzedModule -> C
+    module_def.nim              # AnalyzedModuleDefinition -> C (headers, data defs)
+    module_ref.nim              # AnalyzedModuleRef -> C (byte_size, c)
+    struct.nim                  # AnalyzedStruct/Union -> C (h, c)
+    struct_get.nim              # AnalyzedStructGet -> C
+    struct_init.nim             # AnalyzedStructInit -> C
+    struct_ref.nim              # AnalyzedDataRef -> C
 
-    # Resolver layer (Resolved* types, type assignment)
-    resolver.nim                # Type resolution entry point + cycle detection + literal validation
-    resolver/
-      module_ref.nim            # ResolvedModuleRef
-      defs.nim                  # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
-      fncall.nim                # ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
-      initializer.nim           # ResolvedLiteralInit, ResolvedStructInit, ResolvedInitializer
-      expression.nim            # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedUserFunction
-      module.nim                # ResolvedGeneric, ResolvedModule (User/Native)
-      file.nim                  # ResolvedFile
+    # Analyzer layer (Analyzed* types, semantic analysis)
+    analyzer.nim                # Import/export hub for analyzer layer
+    analyzer/
+      module_ref.nim            # AnalyzedModuleRef, AnalyzedImpl (generic instantiation)
+      arg_def.nim               # AnalyzedArgumentDefinition
+      arg.nim                   # Argument analysis
+      struct.nim                # AnalyzedStruct, AnalyzedUnionBranch, AnalyzedUnion, AnalyzedData
+      struct_ref.nim            # AnalyzedStructRef, AnalyzedUnionRef, AnalyzedDataRef
+      struct_init.nim           # AnalyzedStructInit
+      struct_get.nim            # AnalyzedStructGet (field access)
+      struct_pattern.nim        # AnalyzedStructPattern
+      case_pattern.nim          # AnalyzedCasePattern
+      literal.nim               # Literal analysis
+      initializer.nim           # AnalyzedInitializer
+      func_ref.nim              # AnalyzedFunctionRef
+      func_def.nim              # AnalyzedFunctionDefinition
+      fncall.nim                # AnalyzedFunctionCall
+      function.nim              # AnalyzedUserFunction, AnalyzedFunction
+      expression.nim            # AnalyzedExpression, AnalyzedStatement, AnalyzedMatch, AnalyzedCase, AnalyzedElse
+      generic.nim               # Generic analysis
+      module.nim                # AnalyzedModule
+      module_def.nim            # AnalyzedModuleDefinition
+      file_def.nim              # AnalyzedFileDefinition, FunctionScope
+      file.nim                  # AnalyzedFile (top-level analysis)
 
-      # Parser layer (unresolved AST)
-      parser.nim                # Parser hub + native module initialization + parse()
-      parser/
-        tokenizer.nim           # Tokenizer hub
-        tokenizer/
-          location.nim          # Source position tracking
-          cursor.nim            # Character cursor
-          token.nim             # Token type (kind, value, location)
-          spec.nim              # Token specifications (matchers)
-          constants.nim         # Operator/special character definitions
-          error.nim             # Tokenizer errors
-        core.nim                # Parser infrastructure (Parser type, indent/space handling)
-        identifier.nim          # Identifier type and parsing
-        module_ref.nim          # ModuleRef (recursive, supports generics like Array[Item])
-        literal.nim             # Literal types (IntegerLiteral, FloatLiteral, StringLiteral)
-        defs.nim                # ArgumentDefinition, FunctionDefinition, StructDefinition
-        struct.nim              # Struct type with fields, union branches
-        arg.nim                 # Argument, FunctionRef, FunctionCall
-        initializer.nim         # LiteralInit, StructRef, StructInit, Initializer, StructGet
-        pattern.nim             # MatchDefinition, StructPattern, CasePattern, CaseDefinition
-        expression.nim          # Expression, Statement, Case, Else, Match (mutually recursive)
-        generic.nim             # Generic type with constraints
-        function.nim            # UserFunction, ExternFunction, Function
-        module.nim              # UserModule, NativeModule, Module, ModulePayload
-        file.nim                # File (top-level container)
-        repo.nim                # Repo[T] - flexible indexed lookups
+      # Resolver layer (Resolved* types, type assignment)
+      resolver.nim              # Type resolution entry point + cycle detection + literal validation
+      resolver/
+        module_ref.nim          # ResolvedModuleRef
+        defs.nim                # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct, ResolvedUnionBranch, ResolvedUnion, ResolvedData
+        fncall.nim              # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
+        initializer.nim         # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
+        expression.nim          # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedUserFunction, ResolvedExternFunction, ResolvedFunction
+        module.nim              # ResolvedGeneric, ResolvedModule
+        file.nim                # ResolvedFile
+
+        # Parser layer (unresolved AST)
+        parser.nim              # Parser hub + native module initialization + parse()
+        parser/
+          tokenizer.nim         # Tokenizer hub
+          tokenizer/
+            location.nim        # Source position tracking (Location, Cursor)
+            cursor.nim          # Character cursor
+            token.nim           # Token type (kind, value, location)
+            spec.nim            # Token specifications (matchers)
+            constants.nim       # Operator/special character definitions
+            error.nim           # Tokenizer errors
+          core.nim              # Parser infrastructure (Parser type, indent/space handling, combinators)
+          repo.nim              # Repo[T] - flexible indexed lookups with duplicate detection
+          identifier.nim        # Identifier type and parsing
+          module_ref.nim        # ModuleRef (recursive, supports generics like Array[Item])
+          literal.nim           # Literal types (IntegerLiteral, FloatLiteral, StringLiteral)
+          defs.nim              # StructDefinition, ArgumentDefinition, FunctionDefinition
+          struct.nim            # Struct, UnionBranch, Union, Data
+          arg.nim               # Argument, FunctionRef, FunctionCall
+          initializer.nim       # LiteralInit, StructRef, StructInit, Initializer, StructGet
+          pattern.nim           # MatchDefinition, StructPattern, CasePattern, CaseDefinition
+          expression.nim        # Expression, Statement, Case, Else, Match (mutually recursive)
+          generic.nim           # Generic type (default or constrained with function defs)
+          function.nim          # UserFunction, ExternFunction, Function
+          module.nim            # Module (generics, data, functions)
+          file.nim              # File (top-level container)
 
 examples/
   docs/                         # Language feature examples (4 files)
@@ -171,9 +193,10 @@ aslang.nimble                   # Nim package manifest
 #### Parser Layer Import Order
 
 ```
-parser.nim (hub)
+parser.nim (hub - imports and re-exports all submodules)
   ├── parser/tokenizer       # No dependencies
   ├── parser/core            # No dependencies
+  ├── parser/repo            # No dependencies
   ├── parser/identifier      # Depends on core
   ├── parser/module_ref      # Depends on identifier, core
   ├── parser/defs            # Depends on identifier, module_ref, core
@@ -191,15 +214,15 @@ parser.nim (hub)
 
 #### Resolver Layer Import Chain
 
-Each file imports and re-exports its dependencies, so a single import at the top gets everything:
+Each file imports `parser` (the hub) to get all parser types:
 
 ```
-resolver.nim
+resolver.nim (entry point - cycle detection, literal validation, topological sort)
   ├── resolver/module_ref    # ResolvedModuleRef
-  ├── resolver/defs          # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct
-  ├── resolver/fncall        # ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
-  ├── resolver/initializer   # ResolvedLiteralInit, ResolvedStructInit, ResolvedInitializer
-  ├── resolver/expression    # ResolvedExpression, ResolvedStatement, ResolvedUserFunction, etc.
+  ├── resolver/defs          # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct, ResolvedData
+  ├── resolver/fncall        # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
+  ├── resolver/initializer   # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
+  ├── resolver/expression    # ResolvedExpression, ResolvedStatement, ResolvedUserFunction, ResolvedFunction
   ├── resolver/module        # ResolvedGeneric, ResolvedModule
   └── resolver/file          # ResolvedFile
 ```
@@ -207,17 +230,30 @@ resolver.nim
 #### Analyzer Layer Import Chain
 
 ```
-analyzer.nim (hub - imports resolver and analyzer/file, exports both)
+analyzer.nim (hub - imports resolver and all analyzer modules, exports both)
   analyzer/file.nim          # AnalyzedFile (imports all other analyzer modules)
-  analyzer/function.nim      # AnalyzedUserFunction
+  analyzer/function.nim      # AnalyzedUserFunction, AnalyzedFunction
   analyzer/expression.nim    # AnalyzedExpression, AnalyzedStatement, AnalyzedMatch, etc.
   analyzer/module.nim        # AnalyzedModule
-  analyzer/module_def.nim    # AnalyzedModuleDefinition, AnalyzedData
+  analyzer/module_def.nim    # AnalyzedModuleDefinition
   analyzer/file_def.nim      # AnalyzedFileDefinition, FunctionScope
   analyzer/func_def.nim      # AnalyzedFunctionDefinition
   analyzer/module_ref.nim    # AnalyzedModuleRef, AnalyzedImpl
   analyzer/arg_def.nim       # AnalyzedArgumentDefinition
   ... (remaining analyzer files)
+```
+
+#### Codegen Layer Import Chain
+
+```
+codegen.nim (hub - imports analyzer hub + codegen/file, exports both)
+  codegen/file.nim           # AnalyzedFile -> C (imports all other codegen modules)
+  codegen/function.nim       # AnalyzedFunction -> C
+  codegen/expression.nim     # AnalyzedStatement -> C
+  codegen/module.nim         # AnalyzedModule -> C
+  codegen/module_def.nim     # AnalyzedModuleDefinition -> C
+  codegen/file_def.nim       # AnalyzedFileDefinition -> C
+  ... (remaining codegen files mirror analyzer types)
 ```
 
 ## ASLang Language Syntax
@@ -355,7 +391,7 @@ module Array:
 - `underscore_case` for all identifiers (never camelCase)
 - Constructors: `new_<struct>`
 - Properties: named after the field (e.g., `location`, `name`, `kind`)
-- Extractors: named like properties with `*` export marker (`native*`, `user*`, `payload*`)
+- Extractors: named like properties with `*` export marker (`extern*`, `user*`)
 - Helpers: action-based names (`find_module`, `find_generic`)
 
 ### Struct Definition Pattern
@@ -392,6 +428,12 @@ proc find_field*(struct: Struct, name: Identifier): Result[Field, string] =
   # lookup logic
 ```
 
+### Visibility Rules
+- Export (`*`) only procs that are used by other modules
+- Constructors used only within the same file should be private
+- `kind*` accessor procs on variant types MUST stay public if the type's discriminator is accessed from other modules (Nim requirement)
+- Codegen `c()` / `h()` helper procs that are only called within the same file should be private
+
 ### Control Flow
 - Always use `case` statements for checking `.kind` - never `if x.kind == ...`
 - Exhaustive case handling - handle all variants explicitly
@@ -399,11 +441,11 @@ proc find_field*(struct: Struct, name: Identifier): Result[Field, string] =
 ```nim
 # GOOD
 case module.kind:
-of MK_NATIVE: # handle native
-of MK_USER: # handle user
+of MK_CASE_ONLY: # handle
+of MK_COMPLETE: # handle
 
 # BAD
-if module.kind == MK_NATIVE:
+if module.kind == MK_CASE_ONLY:
   # ...
 ```
 
@@ -462,31 +504,32 @@ type
 | Type | Description |
 |------|-------------|
 | `File` | Top-level container for all modules and file-level functions |
-| `Module` | Variant of `UserModule` or `NativeModule` |
-| `ModulePayload` | Unified view of module data (generics, structs, functions) |
-| `UserModule` | User-defined module with generics, structs, functions |
-| `NativeModule` | Built-in module with extern functions |
-| `Generic` | Generic type parameter |
-| `Struct` | Data structure with fields (supports unions with branches) |
+| `Module` | Module with generics, data (struct/union), and functions |
+| `Generic` | Generic type parameter (default or constrained with function defs) |
+| `Data` | Module data: none, literal, struct, or union |
+| `Struct` | Data structure with named fields |
+| `UnionBranch` | Union variant with name and fields |
+| `Union` | Discriminated union with branches |
 | `Function` | Variant of `UserFunction` or `ExternFunction` |
 | `UserFunction` | User-defined function with steps (statements) |
 | `ExternFunction` | External C function binding |
-| `Repo[T]` | Flexible indexed lookup collection |
+| `Repo[T]` | Flexible indexed lookup collection with duplicate detection |
 
 ### Resolver Layer (Resolved AST)
 
 | Type | Description |
 |------|-------------|
 | `ResolvedFile` | Top-level resolved container with start function |
-| `ResolvedModule` | Resolved module (User or Native variant) |
-| `ResolvedGeneric` | Generic type parameter with function definition repo |
+| `ResolvedModule` | Resolved module with generics, data, and functions |
+| `ResolvedGeneric` | Generic type parameter with resolved function definition repo |
 | `ResolvedModuleRef` | Reference to a module with resolved children |
 | `ResolvedFunctionDefinition` | Function signature with resolved args and return |
 | `ResolvedArgumentDefinition` | Function argument with resolved type |
-| `ResolvedStruct` | Struct with resolved fields |
+| `ResolvedStruct` | Struct with resolved fields (default or named) |
+| `ResolvedData` | Module data: none, literal, struct, or union |
 | `ResolvedExpression` | Expression variant (match, fncall, init, struct_get, variable) |
 | `ResolvedStatement` | Assignment statement with resolved expression |
-| `ResolvedUserFunction` | Function with resolved definition and statements |
+| `ResolvedFunction` | Variant of `ResolvedUserFunction` or `ResolvedExternFunction` |
 | `ResolvedMatch` | Pattern matching expression |
 | `ResolvedFunctionCall` | Function call with resolved arguments |
 | `ResolvedInitializer` | Literal or struct initialization |
@@ -495,19 +538,19 @@ type
 
 | Type | Description |
 |------|-------------|
-| `AnalyzedFile` | Top-level analyzed file with C code generation |
-| `AnalyzedModule` | Analyzed module |
-| `AnalyzedModuleDefinition` | Module definition with data (struct/union) and function defs |
+| `AnalyzedFile` | Top-level analyzed file |
+| `AnalyzedModule` | Analyzed module with definition and functions |
+| `AnalyzedModuleDefinition` | Module definition with data and function defs |
 | `AnalyzedFileDefinition` | File definition with FunctionScope support |
 | `AnalyzedModuleRef` | Variant: AMRK_GENERIC (generic ref) or AMRK_MODULE (concrete module with impls) |
 | `AnalyzedImpl` | Generic implementation binding (module_ref + constraint function defs) |
-| `AnalyzedFunctionDefinition` | Concrete function signature with C name generation |
+| `AnalyzedFunctionDefinition` | Concrete function signature |
 | `AnalyzedArgumentDefinition` | Parameter with analyzed module ref |
-| `AnalyzedUserFunction` | Function with analyzed statements and C codegen |
+| `AnalyzedFunction` | Variant of user or extern function |
 | `AnalyzedExpression` | Expression variant (match, fncall, init, struct_get, variable) |
 | `AnalyzedStatement` | Statement with analyzed expression |
 | `AnalyzedMatch` | Pattern matching with case/else blocks |
-| `AnalyzedStruct` | Struct with analyzed field types and C codegen |
+| `AnalyzedStruct` | Struct with analyzed field types |
 | `AnalyzedFunctionCall` | Function call with analyzed arguments |
 | `AnalyzedInitializer` | Analyzed literal or struct initialization |
 | `AnalyzedStructGet` | Analyzed field access |
@@ -516,37 +559,9 @@ type
 
 ## Common Patterns
 
-### Module Unification Pattern
+### Repo Pattern
 
-Variant types (`UserModule`/`NativeModule`) are unified under a common type (`Module`) with accessors:
-
-```nim
-# Parser layer: Module wraps UserModule and NativeModule
-type Module* = ref object of RootObj
-  case kind: ModuleKind
-  of MK_USER: user_module: UserModule
-  of MK_NATIVE: native_module: NativeModule
-
-# ModulePayload provides a unified view of common data
-proc payload*(module: Module): ModulePayload =
-  case module.kind:
-  of MK_USER: new_module_payload(module.user_module)
-  of MK_NATIVE: new_module_payload(module.native_module)
-```
-
-### Avoiding Thin Wrappers
-
-When functions need to work with both `UserModule` and `NativeModule`, use `parser.Module` instead of creating thin wrappers:
-
-```nim
-# GOOD: Single function accepting unified type
-proc resolve(file: File, module: parser.Module, ref: ModuleRef): Result[...] =
-  # implementation uses module.payload for common access
-
-# BAD: Thin wrappers that just delegate
-proc resolve(file: File, module: UserModule, ref: ModuleRef): Result[...] =
-  resolve(file, parser.new_module(module), ref)  # Don't do this
-```
+`Repo[T]` provides flexible indexed lookups with multiple composite indexes, duplicate detection, and name/hash-based access. Used for functions, generics, fields, and module lookups at both parser and resolver layers.
 
 ### Error Message Helpers
 
@@ -559,10 +574,6 @@ proc err_no_default_struct(location: Location, module_name: string): string =
 
 Generic modules are instantiated per concrete type usage. The analyzer collects all implementations (`AnalyzedImpl`) from usage sites, then the codegen generates separate C code for each concrete instantiation.
 
-### Repo Pattern
-
-`Repo[T]` provides flexible indexed lookups with multiple composite indexes, duplicate detection, and name/hash-based access. Used for functions, generics, fields, and module lookups.
-
 ## Refactoring Guidelines
 
 1. Max 60 lines per change - Keep changes small and verifiable
@@ -570,10 +581,9 @@ Generic modules are instantiated per concrete type usage. The analyzer collects 
 3. Fix linter errors immediately - Do not proceed with broken code
 4. One function at a time - When unifying types, migrate incrementally
 5. Preserve argument order - Match order of variable existence in scope
-6. Prefer `parser.Module` over `UserModule`/`NativeModule` for internal functions
-7. Use chain exports - Import and re-export dependencies to minimize import statements
-8. Keep files under 250 lines - Split large files following the `<name>.nim` + `<name>/` pattern
-9. **Parser breakdown pattern**: When breaking down parser files:
+6. Use chain exports - Import and re-export dependencies to minimize import statements
+7. Keep files under 250 lines - Split large files following the `<name>.nim` + `<name>/` pattern
+8. **Parser breakdown pattern**: When breaking down parser files:
    - Extract related types into focused modules
    - Keep mutually recursive types together
    - Order imports by dependency (no dependencies first, then dependent modules)

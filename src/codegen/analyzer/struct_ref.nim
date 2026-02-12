@@ -28,7 +28,7 @@ proc new_analyzed_struct_ref(module_ref: AnalyzedModuleRef,
 proc module_ref*(struct_ref: AnalyzedStructRef): AnalyzedModuleRef =
   struct_ref.module_ref
 
-proc origin*(struct_ref: AnalyzedStructRef): AnalyzedStruct =
+proc origin(struct_ref: AnalyzedStructRef): AnalyzedStruct =
   struct_ref.origin
 
 proc struct*(struct_ref: AnalyzedStructRef): AnalyzedStruct =

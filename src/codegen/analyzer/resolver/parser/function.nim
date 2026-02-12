@@ -1,4 +1,4 @@
-import results, strformat
+import results
 
 import core, identifier, module_ref, defs, expression
 
@@ -23,26 +23,6 @@ proc new_user_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
 type ExternFunction* = ref object of RootObj
   def: FunctionDefinition
   extern: string
-
-proc new_extern_function*(extern: string, returns: string, name: string,
-    args: seq[string]): Result[ExternFunction, core.Error] =
-  var arg_defs: seq[ArgumentDefinition]
-  for index, module in args.pairs:
-    let module_id = new_identifier(module)
-    let module_ref = new_module_ref(module_id)
-
-    let arg_id = new_identifier(fmt"__asl__arg__{index}__")
-    let arg_def = new_argument_definition(module_ref, arg_id)
-    arg_defs.add(arg_def)
-
-  var def = ? new_function_definition(
-    new_identifier(name),                            # name
-    arg_defs,
-    new_module_ref(new_identifier(returns)),         # return type
-    Location()
-  )
-
-  ok(ExternFunction(def: def, extern: extern))
 
 proc new_extern_function*(def: FunctionDefinition,
     extern: string): ExternFunction =
