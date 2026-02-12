@@ -48,9 +48,9 @@ proc struct_default_spec(parser: Parser, indent: int): Result[Struct,
     core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let def = ? parser.expect(struct_default_definition_spec)
-  discard ? parser.expect(strict_empty_line_spec)
+  discard ? parser.expect_at_least_one(empty_line_spec)
 
-  let fields = ? parser.one_or_more_spec(struct_field_definition_spec,
+  let fields = ? parser.expect_at_least_one(struct_field_definition_spec,
       indent + 1, strict_empty_line_spec)
   new_struct(def, fields)
 
@@ -89,11 +89,11 @@ proc union_branch_spec(parser: Parser, indent: int): Result[UnionBranch,
     core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let name = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
-  discard ? parser.expect(strict_empty_line_spec)
+  discard ? parser.expect_at_least_one(empty_line_spec)
 
-  let fields = ? parser.one_or_more_spec(struct_field_definition_spec,
+  let fields = ? parser.expect_at_least_one(struct_field_definition_spec,
       indent + 1, strict_empty_line_spec)
   new_union_branch(name, fields)
 
@@ -132,12 +132,12 @@ proc find_branch*(union: Union, name: Identifier): Result[UnionBranch, string] =
 proc union_spec(parser: Parser, indent: int): Result[Union, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let union_keyword = ? parser.expect(identifier_spec)
-  discard ? parser.expect(optional_space_spec)
+  discard ? parser.expect_any(space_spec)
   discard ? parser.expect(colon_spec)
-  discard ? parser.expect(strict_empty_line_spec)
+  discard ? parser.expect_at_least_one(empty_line_spec)
 
-  discard ? parser.expect(optional_empty_line_spec)
-  let branches = ? parser.zero_or_more_spec(union_branch_spec, indent + 1,
+  discard ? parser.expect_any(empty_line_spec)
+  let branches = ? parser.expect_any(union_branch_spec, indent + 1,
       optional_empty_line_spec)
   new_union(union_keyword.location, branches)
 

@@ -56,7 +56,7 @@ proc argument_spec*(parser: Parser): Result[Argument, core.Error] =
   err(errors.max())
 
 proc argument_list_spec*(parser: Parser): Result[seq[Argument], core.Error] =
-  parser.list_spec(open_paren_bracket_spec, argument_spec,
+  parser.container_spec(open_paren_bracket_spec, argument_spec,
       close_paren_bracket_spec)
 
 # =============================================================================
@@ -109,7 +109,7 @@ proc function_ref_module_spec(parser: Parser): Result[FunctionRef,
   ok(new_function_ref(name, module_ref))
 
 proc function_ref_spec*(parser: Parser): Result[FunctionRef, core.Error] =
-  parser.first_of([function_ref_module_spec, function_ref_local_spec])
+  parser.expect_one_of([function_ref_module_spec, function_ref_local_spec])
 
 # =============================================================================
 # FunctionCall

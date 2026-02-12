@@ -164,7 +164,8 @@ proc path*(parser: Parser): string = parser.path
 proc indent*(parser: Parser): int = parser.indent
 
 type AtomSpec*[T] = proc(parser: Parser): Result[T, Error] {.nimcall.}
-type BlockSpec*[T] = proc(parser: Parser, indent: int): Result[T, Error] {.nimcall.}
+type BlockSpec*[T] = proc(parser: Parser, indent: int): Result[T,
+    Error] {.nimcall.}
 
 proc can_parse*(parser: Parser): bool =
   parser.index < parser.tokens.len
@@ -281,65 +282,14 @@ proc plus_spec*(parser: Parser): Result[Token, Error] =
 proc minus_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_MINUS)
 
-# spaces spec
 proc new_line_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_NEW_LINE)
 
 proc space_spec*(parser: Parser): Result[Token, Error] =
   parser.token_spec_util(TK_SPACE)
 
-# NOTE: It just consumes all the spaces and always succeeds
-proc optional_space_spec*(parser: Parser): Result[int, Error] =
-  var count = 0
-  while parser.expect(space_spec).is_ok:
-    count += 1
-  ok(count)
-
-proc strict_space_spec*(parser: Parser): Result[int, Error] =
-  var count = 0
-  # NOTE: Must have one strict space
-  discard ? parser.expect(space_spec)
-  count += 1
-  while parser.expect(space_spec).is_ok:
-    count += 1
-  ok(count)
-
-# NOTE: This spec is also used to consume trailing line content
-proc empty_line_spec*(parser: Parser): Result[void, Error] =
-  # NOTE: Existence of space does not matter at all.
-  discard ? parser.expect(optional_space_spec)
-  # NOTE: Existence of comment does not matter at all.
-  discard parser.expect(comment_spec)
-  # NOTE: Every line must end with a new line.
-  discard ? parser.expect(new_line_spec)
-  ok()
-
-proc optional_empty_line_spec*(parser: Parser): Result[int, Error] =
-  var count = 0
-  while parser.expect(empty_line_spec).is_ok:
-    count += 1
-  ok(count)
-
-proc strict_empty_line_spec*(parser: Parser): Result[int, Error] =
-  var count = 0
-  # NOTE: Must have one strict space
-  ? parser.expect(empty_line_spec)
-  count += 1
-  while parser.expect(empty_line_spec).is_ok:
-    count += 1
-  ok(count)
-
-# NOTE: Configure indent size here.
-proc indent_spec*(parser: Parser, indent: int): Result[int, Error] =
-  let spaces = ? parser.expect(optional_space_spec)
-  if spaces == indent * parser.indent:
-    return ok(spaces)
-
-  let token = ? parser.peek()
-  err(err_parser_indentation_error(token.location, indent * parser.indent, spaces))
-
 # parser combinators
-proc first_of*[T](parser: Parser, specs: openArray[AtomSpec[T]]): Result[T, Error] =
+proc expect_one_of*[T](parser: Parser, specs: openArray[AtomSpec[T]]): Result[T, Error] =
   var errors: seq[Error]
   for spec in specs:
     let maybe = parser.expect(spec)
@@ -347,7 +297,8 @@ proc first_of*[T](parser: Parser, specs: openArray[AtomSpec[T]]): Result[T, Erro
     errors.add(maybe.error)
   err(errors.max())
 
-proc first_of*[T](parser: Parser, specs: openArray[BlockSpec[T]], indent: int): Result[T, Error] =
+proc expect_one_of*[T](parser: Parser, specs: openArray[BlockSpec[T]],
+    indent: int): Result[T, Error] =
   var errors: seq[Error]
   for spec in specs:
     let maybe = parser.expect(spec, indent)
@@ -355,25 +306,21 @@ proc first_of*[T](parser: Parser, specs: openArray[BlockSpec[T]], indent: int): 
     errors.add(maybe.error)
   err(errors.max())
 
-proc comma_separated_spec*[T](parser: Parser, item_spec: AtomSpec[T]): Result[seq[T], Error] =
-  var items: seq[T]
-  discard ? parser.expect(optional_space_spec)
-  items.add( ? parser.expect(item_spec))
-  discard ? parser.expect(optional_space_spec)
-  while parser.expect(comma_spec).is_ok:
-    discard ? parser.expect(optional_space_spec)
-    items.add( ? parser.expect(item_spec))
-    discard ? parser.expect(optional_space_spec)
-  ok(items)
+proc expect_any*[T](parser: Parser, spec: AtomSpec[T]): Result[int, Error] =
+  var count = 0
+  while parser.expect(spec).is_ok:
+    count += 1
+  ok(count)
 
-proc list_spec*[T](parser: Parser, open_bracket: AtomSpec[Token],
-    item_spec: AtomSpec[T], close_bracket: AtomSpec[Token]): Result[seq[T], Error] =
-  discard ? parser.expect(open_bracket)
-  let items = ? parser.comma_separated_spec(item_spec)
-  discard ? parser.expect(close_bracket)
-  ok(items)
+proc expect_at_least_one*[T](parser: Parser, spec: AtomSpec[T]): Result[int, Error] =
+  let first = parser.expect(spec)
+  if first.is_err: return err(first.error)
+  var count = 1
+  while parser.expect(spec).is_ok:
+    count += 1
+  ok(count)
 
-proc zero_or_more_spec*[T](parser: Parser, item_spec: BlockSpec[T],
+proc expect_any*[T](parser: Parser, item_spec: BlockSpec[T],
     indent: int, separator: AtomSpec[int]): Result[seq[T], Error] =
   var items: seq[T]
   var maybe = parser.expect(item_spec, indent)
@@ -383,7 +330,7 @@ proc zero_or_more_spec*[T](parser: Parser, item_spec: BlockSpec[T],
     maybe = parser.expect(item_spec, indent)
   ok(items)
 
-proc one_or_more_spec*[T](parser: Parser, item_spec: BlockSpec[T],
+proc expect_at_least_one*[T](parser: Parser, item_spec: BlockSpec[T],
     indent: int, separator: AtomSpec[int]): Result[seq[T], Error] =
   var items: seq[T]
   items.add( ? parser.expect(item_spec, indent))
@@ -393,4 +340,44 @@ proc one_or_more_spec*[T](parser: Parser, item_spec: BlockSpec[T],
     items.add(maybe.get)
     discard ? parser.expect(separator)
     maybe = parser.expect(item_spec, indent)
+  ok(items)
+
+# NOTE: This spec is also used to consume trailing line content
+proc empty_line_spec*(parser: Parser): Result[void, Error] =
+  discard ? parser.expect_any(space_spec)
+  discard parser.expect(comment_spec)
+  discard ? parser.expect(new_line_spec)
+  ok()
+
+proc optional_empty_line_spec*(parser: Parser): Result[int, Error] =
+  parser.expect_any(empty_line_spec)
+
+proc strict_empty_line_spec*(parser: Parser): Result[int, Error] =
+  parser.expect_at_least_one(empty_line_spec)
+
+proc indent_spec*(parser: Parser, indent: int): Result[int, Error] =
+  let spaces = ? parser.expect_any(space_spec)
+  if spaces == indent * parser.indent:
+    return ok(spaces)
+
+  let token = ? parser.peek()
+  err(err_parser_indentation_error(token.location, indent * parser.indent, spaces))
+
+proc list_spec*[T](parser: Parser, item_spec: AtomSpec[T],
+    separator: AtomSpec[Token]): Result[seq[T], Error] =
+  var items: seq[T]
+  items.add( ? parser.expect(item_spec))
+  discard ? parser.expect_any(space_spec)
+  while parser.expect(separator).is_ok:
+    discard ? parser.expect_any(space_spec)
+    items.add( ? parser.expect(item_spec))
+    discard ? parser.expect_any(space_spec)
+  ok(items)
+
+proc container_spec*[T](parser: Parser, open_bracket: AtomSpec[Token],
+    item_spec: AtomSpec[T], close_bracket: AtomSpec[Token]): Result[seq[T], Error] =
+  discard ? parser.expect(open_bracket)
+  discard ? parser.expect_any(space_spec)
+  let items = ? parser.list_spec(item_spec, comma_spec)
+  discard ? parser.expect(close_bracket)
   ok(items)
