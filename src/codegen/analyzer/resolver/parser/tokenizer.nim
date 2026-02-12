@@ -1,6 +1,7 @@
-import results
+import results, strformat
 
 import tokenizer/cursor
+import tokenizer/constants
 import tokenizer/error
 
 import tokenizer/location
@@ -10,6 +11,9 @@ import tokenizer/token
 export token
 
 proc tokenize(cursor: Cursor, filename: string, content: string): Result[Token, string] =
+  if cursor.index < content.len and content[cursor.index] == TAB:
+    return err(fmt"{filename}:{cursor} {err_tokenizer_tab_not_allowed(cursor.index)}")
+
   var errors: seq[Error]
   for (kind, spec) in TOKEN_SPECS:
     let maybe_chunk = spec.match(cursor, content)
@@ -20,7 +24,8 @@ proc tokenize(cursor: Cursor, filename: string, content: string): Result[Token, 
       return ok(new_token(kind, chunk, location))
     else:
       errors.add(maybe_chunk.error)
-  return err($(errors.max()))
+
+  return err(fmt"{filename}:{cursor} {errors.max()}")
 
 proc tokenize*(filename: string, content: string): Result[seq[Token], string] =
   var cursor = new_cursor()

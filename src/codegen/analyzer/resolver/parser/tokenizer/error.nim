@@ -25,3 +25,9 @@ proc err_tokenizer_unexpected_escape_sequence*(index: int,
 
 proc err_tokenizer_new_line_in_string*(index: int): Error =
   new_tokenizer_error(index, fmt"encountered new line character while parsing string literal")
+
+proc err_tokenizer_max_length_exceeded*(index: int, kind: string, max_length: int): Error =
+  new_tokenizer_error(index, fmt"{kind} literal exceeds maximum length of {max_length}")
+
+proc err_tokenizer_tab_not_allowed*(index: int): Error =
+  new_tokenizer_error(index, "tab characters are not allowed, use spaces for indentation")

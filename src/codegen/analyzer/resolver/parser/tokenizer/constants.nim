@@ -1,5 +1,5 @@
 const MAX_DIGITS_LENGTH* = 256
-const MAX_STRING_LENGTH* = 1 shl 16
+const MAX_STRING_LENGTH* = 1 shl 20
 
 # OPERATORS
 const PLUS_OP* = '+'
@@ -22,6 +22,7 @@ const NEW_LINE* = '\n'
 const UNDERSCORE* = '_'
 const DOUBLE_QUOTE* = '"'
 const HASHTAG* = '#'
+const TAB* = '\t'
 
 
 const STRING_ESCAPE_SEQS* = @['\\', '\"', 'r', 'n', 't', 'b']

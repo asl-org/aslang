@@ -24,6 +24,9 @@ proc match_string*(content: string, start: int): Result[
         return err(err_tokenizer_unexpected_escape_sequence(index, escape_seq))
       index += 2
     elif content[index] == DOUBLE_QUOTE:
+      if index + 1 - start > MAX_STRING_LENGTH:
+        return err(err_tokenizer_max_length_exceeded(start, "string",
+            MAX_STRING_LENGTH))
       return ok(index + 1)
     elif content[index] == NEW_LINE:
       return err(err_tokenizer_new_line_in_string(index))
@@ -54,6 +57,9 @@ proc match_digit*(content: string, start: int): Result[
     return err(err_tokenizer_expectation_mismatch(index, "digit", $content[index]))
 
   while index < content.len and content[index].is_digit:
+    if index - start > MAX_DIGITS_LENGTH:
+      return err(err_tokenizer_max_length_exceeded(start, "numeric",
+          MAX_DIGITS_LENGTH))
     index += 1
   ok(index)
 
