@@ -45,11 +45,6 @@ proc asl*(struct_ref: AnalyzedStructRef): string =
     of RSK_NAMED: fmt".{struct_ref.struct.name.asl}"
   fmt"{struct_ref.module_ref.asl}{suffix}"
 
-proc c*(struct_ref: AnalyzedStructRef): string =
-  case struct_ref.struct.kind:
-  of RSK_DEFAULT: fmt"{struct_ref.module_ref.name}"
-  of RSK_NAMED: fmt"{struct_ref.module_ref.name}_{struct_ref.struct.name.asl}"
-
 type AnalyzedUnionRef* = ref object of RootObj
   module_ref: AnalyzedModuleRef
   origin: AnalyzedUnionBranch
@@ -60,6 +55,7 @@ proc new_analyzed_union_ref(module_ref: AnalyzedModuleRef,
   AnalyzedUnionRef(module_ref: module_ref, origin: origin, branch: branch)
 
 proc module_ref*(union_ref: AnalyzedUnionRef): AnalyzedModuleRef = union_ref.module_ref
+proc branch*(union_ref: AnalyzedUnionRef): AnalyzedUnionBranch = union_ref.branch
 
 proc generic_impls*(union_ref: AnalyzedUnionRef): Table[ResolvedModule,
     seq[HashSet[AnalyzedImpl]]] =
@@ -67,9 +63,6 @@ proc generic_impls*(union_ref: AnalyzedUnionRef): Table[ResolvedModule,
 
 proc asl*(union_ref: AnalyzedUnionRef): string =
   fmt"{union_ref.module_ref.asl}.{union_ref.branch.name.asl}"
-
-proc c*(union_ref: AnalyzedUnionRef): string =
-  fmt"{union_ref.module_ref.name}_{union_ref.branch.name.asl}"
 
 type
   AnalyzedDataRefKind* = enum
@@ -84,6 +77,14 @@ proc new_analyzed_data_ref(struct: AnalyzedStructRef): AnalyzedDataRef =
 
 proc new_analyzed_data_ref(union: AnalyzedUnionRef): AnalyzedDataRef =
   AnalyzedDataRef(kind: ADRK_UNION, union: union)
+
+proc kind*(data_ref: AnalyzedDataRef): AnalyzedDataRefKind = data_ref.kind
+proc struct*(data_ref: AnalyzedDataRef): AnalyzedStructRef =
+  do_assert data_ref.kind == ADRK_STRUCT, "expected struct data ref"
+  data_ref.struct
+proc union*(data_ref: AnalyzedDataRef): AnalyzedUnionRef =
+  do_assert data_ref.kind == ADRK_UNION, "expected union data ref"
+  data_ref.union
 
 proc original_fields*(data_ref: AnalyzedDataRef): seq[
     AnalyzedArgumentDefinition] =
@@ -111,11 +112,6 @@ proc asl*(data_ref: AnalyzedDataRef): string =
   case data_ref.kind:
   of ADRK_STRUCT: data_ref.struct.asl
   of ADRK_UNION: data_ref.union.asl
-
-proc c*(data_ref: AnalyzedDataRef): string =
-  case data_ref.kind:
-  of ADRK_STRUCT: data_ref.struct.c
-  of ADRK_UNION: data_ref.union.c
 
 proc find_field_index*(data_ref: AnalyzedDataRef, name: Identifier): Result[int, string] =
   case data_ref.kind:

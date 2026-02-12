@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, hashes, sets, options
+import results, strformat, tables, hashes, sets, options
 
 import resolver
 import module_ref
@@ -45,7 +45,7 @@ proc name*(module_def: AnalyzedModuleDefinition): Identifier = module_def.resolv
 proc data*(module_def: AnalyzedModuleDefinition): AnalyzedData = module_def.data
 proc generics*(module_def: AnalyzedModuleDefinition): seq[
     AnalyzedGeneric] = module_def.generics_repo.items
-proc function_defs(module_def: AnalyzedModuleDefinition): seq[
+proc function_defs*(module_def: AnalyzedModuleDefinition): seq[
     AnalyzedFunctionDefinition] =
   module_def.function_defs_repo.items
 proc hash*(module_def: AnalyzedModuleDefinition): Hash = module_def.resolved_module.hash
@@ -72,86 +72,6 @@ proc asl*(def: AnalyzedModuleDefinition, indent: string): seq[string] =
     lines.add("\n")
 
   lines.add(def.data.asl(indent))
-  return lines
-
-proc h*(def: AnalyzedModuleDefinition): seq[string] =
-  var lines: seq[string]
-  for generic in def.generics:
-    lines.add(generic.c(def.name.asl))
-
-  lines.add(def.data.h(def.name.asl))
-  # if def.structs.len > 0:
-  #   # internal functions for structs
-  #   # byte size
-  #   lines.add(fmt"U64 {def.name.asl}_byte_size(U64 items);")
-  #   # read
-  #   lines.add(fmt"Pointer {def.name.asl}_read(Pointer __asl_ptr, U64 offset);")
-  #   # write
-  #   lines.add(fmt"Pointer {def.name.asl}_write(Pointer value, Pointer __asl_ptr, U64 offset);")
-
-  #   # struct
-  #   if def.structs.len == 1:
-  #     let struct = def.structs[0]
-  #     lines.add(struct.h(def.name.asl))
-  #   # union
-  #   else:
-  #     # union branch id getter
-  #     lines.add(fmt"U64 {def.name.asl}_get_id(Pointer __asl_ptr);")
-
-  #     # union branch id setter
-  #     lines.add(fmt"Pointer {def.name.asl}_set_id(Pointer __asl_ptr, U64 id);")
-  #     for index, struct in def.structs:
-  #       lines.add(struct.h(def.name.asl, some(index.uint64)))
-
-  # TODO: Understand that function can not have same name so use function id as prefix
-  lines.add(def.function_defs.map_it(it.h))
-
-  return lines
-
-proc c*(def: AnalyzedModuleDefinition): seq[string] =
-  var lines: seq[string]
-  for generic in def.generics:
-    lines.add(generic.c(def.name.asl))
-
-  lines.add(def.data.c(def.name.asl))
-  # if def.structs.len > 0:
-  #   # internal functions for structs
-  #   # byte size
-  #   lines.add(fmt"U64 {def.name.asl}_byte_size(U64 items)")
-  #   lines.add("{")
-  #   lines.add("return Pointer_byte_size(items);")
-  #   lines.add("}")
-  #   # read
-  #   lines.add(fmt"Pointer {def.name.asl}_read(Pointer __asl_ptr, U64 offset)")
-  #   lines.add("{")
-  #   lines.add("return Pointer_read(__asl_ptr, offset);")
-  #   lines.add("}")
-  #   # write
-  #   lines.add(fmt"Pointer {def.name.asl}_write(Pointer value, Pointer __asl_ptr, U64 offset)")
-  #   lines.add("{")
-  #   lines.add("return Pointer_write(value, __asl_ptr, offset);")
-  #   lines.add("}")
-
-  #   # struct
-  #   if def.structs.len == 1:
-  #     let struct = def.structs[0]
-  #     lines.add(struct.c(def.name.asl))
-  #   # union
-  #   else:
-  #     # union branch id getter
-  #     lines.add(fmt"U64 {def.name.asl}_get_id(Pointer __asl_ptr)")
-  #     lines.add("{")
-  #     lines.add(fmt"return U64_read(__asl_ptr, 0);")
-  #     lines.add("}")
-
-  #     # union branch id setter
-  #     lines.add(fmt"Pointer {def.name.asl}_set_id(Pointer __asl_ptr, U64 id)")
-  #     lines.add("{")
-  #     lines.add(fmt"return U64_write(id, __asl_ptr, 0);")
-  #     lines.add("}")
-  #     for index, struct in def.structs:
-  #       lines.add(struct.c(def.name.asl, some(index.uint64)))
-
   return lines
 
 proc find_generic*(module_def: AnalyzedModuleDefinition,

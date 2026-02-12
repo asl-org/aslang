@@ -1,4 +1,4 @@
-import results, strformat, tables, strutils, sets, options
+import results, strformat, tables, sets, options
 
 import resolver
 import module_ref
@@ -17,7 +17,8 @@ proc new_analyzed_user_function(def: AnalyzedFunctionDefinition, steps: seq[
     AnalyzedStatement]): AnalyzedUserFunction =
   AnalyzedUserFunction(def: def, steps: steps)
 
-proc statements(function: AnalyzedUserFunction): seq[AnalyzedStatement] =
+proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDefinition = function.def
+proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] =
   function.steps
 
 proc generic_impls*(function: AnalyzedUserFunction): Table[ResolvedModule,
@@ -32,17 +33,6 @@ proc asl*(function: AnalyzedUserFunction, indent: string): seq[string] =
   for statement in function.steps:
     for line in statement.asl(indent):
       lines.add(indent & line)
-  return lines
-
-proc c*(function: AnalyzedUserFunction): seq[string] =
-  var lines: seq[string]
-  lines.add(function.def.h.replace(";", ""))
-  lines.add("{")
-  for statement in function.statements:
-    lines.add(statement.c)
-  let last_arg = function.statements[^1].arg.name.asl
-  lines.add(fmt"return {last_arg};")
-  lines.add("}")
   return lines
 
 proc analyze*(file_def: AnalyzedFileDefinition,
@@ -70,7 +60,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
   of RFK_EXTERN: err("UNREACHABLE")
 
 type
-  AnalyzedFunctionKind = enum
+  AnalyzedFunctionKind* = enum
     AFK_USER, AFK_EXTERN
   AnalyzedFunction* = ref object of RootObj
     case kind: AnalyzedFunctionKind
@@ -86,6 +76,11 @@ proc new_analyzed_function*(def: AnalyzedFunctionDefinition,
     extern: ResolvedExternFunction): AnalyzedFunction =
   AnalyzedFunction(kind: AFK_EXTERN, def: def, extern: extern)
 
+proc kind*(function: AnalyzedFunction): AnalyzedFunctionKind = function.kind
+proc user*(function: AnalyzedFunction): AnalyzedUserFunction =
+  do_assert function.kind == AFK_USER, "expected user function"
+  function.user
+
 proc generic_impls*(function: AnalyzedFunction): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
   case function.kind:
@@ -96,8 +91,3 @@ proc asl*(function: AnalyzedFunction, indent: string): seq[string] =
   case function.kind:
   of AFK_EXTERN: @[]
   of AFK_USER: function.user.asl(indent)
-
-proc c*(function: AnalyzedFunction): seq[string] =
-  case function.kind:
-  of AFK_EXTERN: @[]
-  of AFK_USER: function.user.c

@@ -30,6 +30,9 @@ proc new_analyzed_function_definition(def: ResolvedFunctionDefinition,
 proc args*(def: AnalyzedFunctionDefinition): seq[
     AnalyzedArgumentDefinition] = def.args
 proc returns*(def: AnalyzedFunctionDefinition): AnalyzedModuleRef = def.returns
+proc extern*(def: AnalyzedFunctionDefinition): Option[string] = def.extern
+proc prefix*(def: AnalyzedFunctionDefinition): string = def.prefix
+proc generics*(def: AnalyzedFunctionDefinition): uint64 = def.generics
 
 proc resolved_def*(def: AnalyzedFunctionDefinition): ResolvedFunctionDefinition = def.resolved_def
 proc name*(def: AnalyzedFunctionDefinition): Identifier = def.resolved_def.name
@@ -55,22 +58,6 @@ proc generic_impls*(def: AnalyzedFunctionDefinition): Table[
 proc asl*(def: AnalyzedFunctionDefinition): string =
   let args = def.args.map_it(it.asl).join(", ")
   fmt"fn {def.name.asl}({args}): {def.returns.asl}"
-
-proc c_name*(def: AnalyzedFunctionDefinition): string =
-  if def.extern.is_some:
-    def.extern.get
-  elif def.prefix == "":
-    fmt"{def.name.asl}_{def.location.hash.to_hex}"
-  else:
-    fmt"{def.prefix}_{def.name.asl}_{def.location.hash.to_hex}"
-
-proc h*(def: AnalyzedFunctionDefinition): string =
-  let generic_args = if def.generics > 0: ((0.uint64)..<(
-      def.generics)).map_it(fmt"U64 __asl_impl_id_{it}") else: @[]
-  let args = generic_args & def.args.map_it(it.c)
-  let args_str = args.join(", ")
-  let code = fmt"{def.returns.c} {def.c_name}({args_str});"
-  if def.extern.is_some: fmt"extern {code}" else: code
 
 # Helper for resolving ResolvedFunctionDefinition with ResolvedModule
 proc analyze_def(file: ResolvedFile,

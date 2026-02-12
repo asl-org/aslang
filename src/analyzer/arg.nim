@@ -39,8 +39,6 @@ proc asl*(arg: AnalyzedArgument): string =
   of RAK_LITERAL: arg.literal.asl
   of RAK_VARIABLE: arg.variable.asl
 
-proc c*(arg: AnalyzedArgument): string = arg.asl
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope, args: seq[
     Argument], argdefs: seq[AnalyzedArgumentDefinition]): Result[seq[
     AnalyzedArgument], string] =

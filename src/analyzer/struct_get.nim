@@ -17,6 +17,9 @@ proc new_analyzed_struct_get(variable: AnalyzedArgumentDefinition,
     field: AnalyzedArgumentDefinition): AnalyzedStructGet =
   AnalyzedStructGet(variable: variable, field: field)
 
+proc variable*(struct_get: AnalyzedStructGet): AnalyzedArgumentDefinition = struct_get.variable
+proc field*(struct_get: AnalyzedStructGet): AnalyzedArgumentDefinition = struct_get.field
+
 proc returns*(struct_get: AnalyzedStructGet): AnalyzedModuleRef =
   struct_get.field.module_ref
 
@@ -29,9 +32,6 @@ proc generic_impls*(struct_get: AnalyzedStructGet): Table[ResolvedModule,
 
 proc asl*(struct_get: AnalyzedStructGet): string =
   fmt"{struct_get.variable.name.asl}.{struct_get.field.name.asl}"
-
-proc c*(struct_get: AnalyzedStructGet, result_arg: string): string =
-  fmt"{struct_get.field.module_ref.c} {result_arg} = {struct_get.variable.module_ref.name}_get_{struct_get.field.name.asl}({struct_get.variable.name.asl});"
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     struct_get: ResolvedStructGet,

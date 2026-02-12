@@ -14,6 +14,9 @@ proc new_analyzed_literal(module_ref: AnalyzedModuleRef,
     literal: Literal): AnalyzedLiteral =
   AnalyzedLiteral(module_ref: module_ref, literal: literal)
 
+proc module_ref*(literal: AnalyzedLiteral): AnalyzedModuleRef = literal.module_ref
+proc literal*(lit: AnalyzedLiteral): Literal = lit.literal
+
 proc returns*(literal: AnalyzedLiteral): AnalyzedModuleRef =
   literal.module_ref
 
@@ -23,9 +26,6 @@ proc generic_impls*(literal: AnalyzedLiteral): Table[ResolvedModule, seq[
 
 proc asl*(literal: AnalyzedLiteral): string =
   fmt"{literal.module_ref.asl} {literal.literal.asl}"
-
-proc c*(literal: AnalyzedLiteral, result_arg: string): string =
-  fmt"{literal.module_ref.c} {result_arg} = {literal.literal.asl};"
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     init: ResolvedLiteralInit,

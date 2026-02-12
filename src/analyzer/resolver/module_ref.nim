@@ -1,5 +1,5 @@
 # ResolvedModuleRef - foundational reference type for resolved modules
-import results, strformat, tables, strutils, sets, hashes, options
+import results, strformat, strutils, sets, hashes, options
 
 import parser
 

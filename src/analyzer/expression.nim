@@ -1,4 +1,4 @@
-import results, strformat, tables, hashes, strutils, sets, options
+import results, strformat, tables, sets, options
 
 import resolver
 import module_ref
@@ -14,9 +14,9 @@ import struct_pattern
 import case_pattern
 
 type
-  AnalyzedExpressionKind = enum
+  AnalyzedExpressionKind* = enum
     REK_MATCH, REK_FNCALL, REK_INIT, REK_STRUCT_GET, REK_VARIABLE
-  AnalyzedExpression = ref object of RootObj
+  AnalyzedExpression* = ref object of RootObj
     case kind: AnalyzedExpressionKind
     of REK_MATCH: match: AnalyzedMatch
     of REK_FNCALL: fncall: AnalyzedFunctionCall
@@ -26,16 +26,16 @@ type
   AnalyzedStatement* = ref object of RootObj
     arg: AnalyzedArgumentDefinition
     expression: AnalyzedExpression
-  AnalyzedCase = ref object of RootObj
+  AnalyzedCase* = ref object of RootObj
     pattern: AnalyzedCasePattern
     statements: seq[AnalyzedStatement]
     location: Location
-  AnalyzedElse = ref object of RootObj
+  AnalyzedElse* = ref object of RootObj
     location: Location
     statements: seq[AnalyzedStatement]
-  AnalyzedMatchKind = enum
+  AnalyzedMatchKind* = enum
     RMK_CASE_ONLY, RMK_COMPLETE
-  AnalyzedMatch = ref object of RootObj
+  AnalyzedMatch* = ref object of RootObj
     location: Location
     operand: AnalyzedArgumentDefinition
     case_blocks: seq[AnalyzedCase]
@@ -57,6 +57,37 @@ proc new_analyzed_expression(struct_get: AnalyzedStructGet): AnalyzedExpression 
 
 proc new_analyzed_expression(variable: AnalyzedArgumentDefinition): AnalyzedExpression =
   AnalyzedExpression(kind: REK_VARIABLE, variable: variable)
+
+# Accessor procs for codegen
+proc kind*(expression: AnalyzedExpression): AnalyzedExpressionKind = expression.kind
+proc match*(expression: AnalyzedExpression): AnalyzedMatch =
+  do_assert expression.kind == REK_MATCH, "expected match"
+  expression.match
+proc fncall*(expression: AnalyzedExpression): AnalyzedFunctionCall =
+  do_assert expression.kind == REK_FNCALL, "expected fncall"
+  expression.fncall
+proc init*(expression: AnalyzedExpression): AnalyzedInitializer =
+  do_assert expression.kind == REK_INIT, "expected init"
+  expression.init
+proc struct_get*(expression: AnalyzedExpression): AnalyzedStructGet =
+  do_assert expression.kind == REK_STRUCT_GET, "expected struct_get"
+  expression.struct_get
+proc variable*(expression: AnalyzedExpression): AnalyzedArgumentDefinition =
+  do_assert expression.kind == REK_VARIABLE, "expected variable"
+  expression.variable
+proc expression*(statement: AnalyzedStatement): AnalyzedExpression = statement.expression
+proc pattern*(case_block: AnalyzedCase): AnalyzedCasePattern = case_block.pattern
+proc statements*(case_block: AnalyzedCase): seq[AnalyzedStatement] = case_block.statements
+proc location*(case_block: AnalyzedCase): Location = case_block.location
+proc statements*(else_block: AnalyzedElse): seq[AnalyzedStatement] = else_block.statements
+proc location*(else_block: AnalyzedElse): Location = else_block.location
+proc kind*(match: AnalyzedMatch): AnalyzedMatchKind = match.kind
+proc operand*(match: AnalyzedMatch): AnalyzedArgumentDefinition = match.operand
+proc case_blocks*(match: AnalyzedMatch): seq[AnalyzedCase] = match.case_blocks
+proc else_block*(match: AnalyzedMatch): AnalyzedElse =
+  do_assert match.kind == RMK_COMPLETE, "expected complete match"
+  match.else_block
+proc location*(match: AnalyzedMatch): Location = match.location
 
 proc returns(match: AnalyzedMatch): AnalyzedModuleRef
 
@@ -89,16 +120,6 @@ proc asl(expression: AnalyzedExpression, indent: string): seq[string] =
   of REK_INIT: @[expression.init.asl]
   of REK_STRUCT_GET: @[expression.struct_get.asl]
   of REK_VARIABLE: @[expression.variable.asl]
-
-proc c(match: AnalyzedMatch, result_arg: AnalyzedArgumentDefinition): seq[string]
-
-proc c(expression: AnalyzedExpression, result_arg: AnalyzedArgumentDefinition): seq[string] =
-  case expression.kind:
-  of REK_MATCH: expression.match.c(result_arg)
-  of REK_FNCALL: expression.fncall.c(result_arg.name.asl)
-  of REK_INIT: expression.init.c(result_arg.name.asl)
-  of REK_STRUCT_GET: @[expression.struct_get.c(result_arg.name.asl)]
-  of REK_VARIABLE: @[fmt"{expression.variable.module_ref.c} {result_arg.name.asl} = {expression.variable.name.asl};"]
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     match: ResolvedMatch,
@@ -148,9 +169,6 @@ proc asl*(statement: AnalyzedStatement, indent: string): seq[string] =
   lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
   lines
 
-proc c*(statement: AnalyzedStatement): seq[string] =
-  statement.expression.c(statement.arg)
-
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     statement: ResolvedStatement,
     module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStatement, string] =
@@ -181,73 +199,6 @@ proc asl(case_block: AnalyzedCase, indent: string): seq[string] =
     for line in statement.asl(indent):
       lines.add(indent & line)
   lines
-
-proc c(case_block: AnalyzedCase, operand: AnalyzedArgumentDefinition,
-    result_arg: string, first: bool = false): seq[string] =
-  var lines: seq[string]
-  let conditional = if first: "if" else: "else if"
-  case case_block.pattern.kind:
-  of RCPK_LITERAL:
-    let literal = case_block.pattern.literal
-    case literal.kind:
-    of LK_FLOAT: discard # UNREACHABLE
-    of LK_INTEGER:
-      lines.add(fmt"{conditional}({operand.name.asl} == {literal.asl})")
-      lines.add("{")
-    of LK_STRING:
-      lines.add(fmt"{conditional}(String_compare({operand.name.asl}, {literal.asl}) == 0)")
-      lines.add("{")
-  of RCPK_STRUCT:
-    let struct = case_block.pattern.struct
-    let id_call = fmt"{operand.module_ref.name}_get_id({operand.name.asl})"
-    lines.add(fmt"{conditional}({id_call} == {struct.id})")
-    lines.add("{")
-
-    case struct.kind:
-    of RSPK_DEFAULT:
-      let prefix = operand.module_ref.name
-      for index in 0..<struct.args.len:
-        let field = struct.args[index][0]
-        let key = struct.args[index][1]
-        let original_field = struct.struct.fields[index]
-
-        case original_field.module_ref.kind:
-        of AMRK_GENERIC:
-          case field.module_ref.kind:
-          of AMRK_GENERIC:
-            lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
-          else:
-            let arg_name = fmt"__asl_arg_{key.location.hash.to_hex}"
-            lines.add(fmt"{original_field.module_ref.c} {arg_name} = {prefix}_get_{key.asl}({operand.name.asl});")
-            lines.add(fmt"{field.c} = {field.module_ref.c}_read({arg_name}, 0);")
-        else:
-          lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
-    of RSPK_NAMED:
-      let prefix = fmt"{operand.module_ref.name}_{struct.name.asl}"
-      for index in 0..<struct.args.len:
-        let field = struct.args[index][0]
-        let key = struct.args[index][1]
-        let original_field = struct.branch.fields[index]
-
-        case original_field.module_ref.kind:
-        of AMRK_GENERIC:
-          case field.module_ref.kind:
-          of AMRK_GENERIC:
-            lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
-          else:
-            let arg_name = fmt"__asl_arg_{key.location.hash.to_hex}"
-            lines.add(fmt"{original_field.module_ref.c} {arg_name} = {prefix}_get_{key.asl}({operand.name.asl});")
-            lines.add(fmt"{field.c} = {field.module_ref.c}_read({arg_name}, 0);")
-        else:
-          lines.add(fmt"{field.c} = {prefix}_get_{key.asl}({operand.name.asl});")
-
-  for statement in case_block.statements:
-    lines.add(statement.c)
-  let last_statement = case_block.statements[^1].arg.name.asl
-  lines.add(fmt"{result_arg} = {last_statement};")
-  lines.add("}")
-
-  return lines
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     operand: AnalyzedModuleRef, case_block: ResolvedCase,
@@ -290,16 +241,6 @@ proc asl(else_block: AnalyzedElse, indent: string): seq[string] =
   for statement in else_block.statements:
     for line in statement.asl(indent):
       lines.add(indent & line)
-  return lines
-
-proc c(else_block: AnalyzedElse, result_arg: string): seq[string] =
-  var lines: seq[string]
-  lines.add("else {")
-  for statement in else_block.statements:
-    lines.add(statement.c)
-  let last_arg = else_block.statements[^1].arg.name.asl
-  lines.add(fmt"{result_arg} = {last_arg};")
-  lines.add("}")
   return lines
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
@@ -352,16 +293,6 @@ proc asl(match: AnalyzedMatch, indent: string): seq[string] =
       lines.add(indent & line)
 
   lines
-
-proc c(match: AnalyzedMatch, result_arg: AnalyzedArgumentDefinition): seq[string] =
-  var lines: seq[string]
-  lines.add(fmt"{result_arg.c};")
-  for index, case_block in match.case_blocks:
-    lines.add(case_block.c(match.operand, result_arg.name.asl, index == 0))
-  case match.kind:
-  of RMK_CASE_ONLY: discard
-  of RMK_COMPLETE: lines.add(match.else_block.c(result_arg.name.asl))
-  return lines
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     match: ResolvedMatch,

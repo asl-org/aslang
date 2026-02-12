@@ -9,7 +9,7 @@ import struct_init
 import literal
 
 type
-  AnalyzedInitializerKind = enum
+  AnalyzedInitializerKind* = enum
     RIK_LITERAL, RIK_STRUCT
   AnalyzedInitializer* = ref object of RootObj
     case kind: AnalyzedInitializerKind
@@ -21,6 +21,14 @@ proc new_analyzed_initializer(struct: AnalyzedStructInit): AnalyzedInitializer =
 
 proc new_analyzed_initializer(literal: AnalyzedLiteral): AnalyzedInitializer =
   AnalyzedInitializer(kind: RIK_LITERAL, literal: literal)
+
+proc kind*(init: AnalyzedInitializer): AnalyzedInitializerKind = init.kind
+proc literal*(init: AnalyzedInitializer): AnalyzedLiteral =
+  do_assert init.kind == RIK_LITERAL, "expected literal"
+  init.literal
+proc struct*(init: AnalyzedInitializer): AnalyzedStructInit =
+  do_assert init.kind == RIK_STRUCT, "expected struct"
+  init.struct
 
 proc returns*(init: AnalyzedInitializer): AnalyzedModuleRef =
   case init.kind:
@@ -37,11 +45,6 @@ proc asl*(init: AnalyzedInitializer): string =
   case init.kind:
   of RIK_LITERAL: init.literal.asl
   of RIK_STRUCT: init.struct.asl
-
-proc c*(init: AnalyzedInitializer, result_arg: string): seq[string] =
-  case init.kind:
-  of RIK_LITERAL: @[init.literal.c(result_arg)]
-  of RIK_STRUCT: init.struct.c(result_arg)
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     init: ResolvedInitializer,

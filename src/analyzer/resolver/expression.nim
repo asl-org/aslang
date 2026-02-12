@@ -1,7 +1,6 @@
 import results, strformat, sets, options
 
 import parser
-import module_ref
 import defs
 import fncall
 import initializer

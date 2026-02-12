@@ -46,20 +46,6 @@ proc generic_impls*(file: AnalyzedFileDefinition): Table[ResolvedModule, seq[
     impl_set = impl_set.merge(function_def.generic_impls())
   return impl_set
 
-proc h*(file: AnalyzedFileDefinition): seq[string] =
-  var lines: seq[string]
-  for module in file.modules:
-    lines.add(module.h)
-  for fndef in file.function_defs:
-    lines.add(fndef.h)
-  return lines
-
-proc c*(file: AnalyzedFileDefinition): seq[string] =
-  var lines: seq[string]
-  for module in file.modules:
-    lines.add(module.c)
-  return lines
-
 proc find_module_def*(file_def: AnalyzedFileDefinition,
     module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
   let maybe_module = file_def.modules_repo.find("name", module)

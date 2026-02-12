@@ -38,13 +38,6 @@ proc asl*(generic: AnalyzedGeneric, indent: string): seq[string] =
       lines.add(indent & def.asl)
     lines
 
-proc c*(generic: AnalyzedGeneric, prefix: string): seq[string] =
-  var lines: seq[string]
-  for def in generic.defs:
-    lines.add(def.h)
-  # TODO: provide implementation of generic calls
-  return lines
-
 proc find_function_defs*(generic: AnalyzedGeneric, name: Identifier,
     arity: uint): Result[seq[AnalyzedFunctionDefinition], string] =
   let maybe_def = generic.defs_repo.find("name_and_arity", (name, arity))

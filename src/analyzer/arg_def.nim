@@ -23,7 +23,6 @@ proc concretize*(arg: AnalyzedArgumentDefinition, concrete_map: Table[
   new_analyzed_argument_definition(concretized_module_ref, arg.name)
 
 proc name*(arg: AnalyzedArgumentDefinition): Identifier = arg.name
-proc byte_size*(arg: AnalyzedArgumentDefinition): uint64 = arg.module_ref.byte_size
 proc module_ref*(arg: AnalyzedArgumentDefinition): AnalyzedModuleRef = arg.module_ref
 proc location*(arg: AnalyzedArgumentDefinition): Location = arg.location
 
@@ -33,9 +32,6 @@ proc generic_impls*(arg: AnalyzedArgumentDefinition): Table[ResolvedModule,
 
 proc asl*(arg: AnalyzedArgumentDefinition): string =
   fmt"{arg.module_ref.asl} {arg.name.asl}"
-
-proc c*(arg: AnalyzedArgumentDefinition): string =
-  fmt"{arg.module_ref.c} {arg.name.asl}"
 
 proc function_prefix*(module_name: Identifier,
     generic: Option[ResolvedGeneric]): string =

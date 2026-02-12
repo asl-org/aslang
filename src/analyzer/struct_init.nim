@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, hashes, strutils, sets, options
+import results, sequtils, strformat, tables, strutils, sets, options
 
 import resolver
 import module_ref
@@ -19,6 +19,9 @@ proc new_analyzed_struct_init(data_ref: AnalyzedDataRef, fields: seq[
     AnalyzedArgument]): AnalyzedStructInit =
   AnalyzedStructInit(data_ref: data_ref, fields: fields)
 
+proc data_ref*(struct_init: AnalyzedStructInit): AnalyzedDataRef = struct_init.data_ref
+proc fields*(struct_init: AnalyzedStructInit): seq[AnalyzedArgument] = struct_init.fields
+
 proc returns*(struct_init: AnalyzedStructInit): AnalyzedModuleRef =
   struct_init.data_ref.module_ref
 
@@ -37,27 +40,6 @@ proc asl*(struct_init: AnalyzedStructInit): string =
     args.add(fmt"{field_def.name.asl}: {field_arg.asl}")
   let args_str = args.join(", ")
   struct_init.data_ref.asl & " { " & args_str & " }"
-
-proc c*(struct_init: AnalyzedStructInit, result_arg: string): seq[string] =
-  var lines: seq[string]
-  var args: seq[string]
-  for index in 0..<struct_init.fields.len:
-    let original_field = struct_init.data_ref.original_fields[index]
-    let concrete_field = struct_init.data_ref.fields[index]
-    let arg = struct_init.fields[index]
-    case original_field.module_ref.kind:
-    of AMRK_GENERIC:
-      case concrete_field.module_ref.kind:
-      of AMRK_GENERIC: args.add(arg.c)
-      else:
-        let arg_name = fmt"__asl_arg_{concrete_field.location.hash.to_hex}"
-        lines.add(fmt"Pointer {arg_name} = System_box_{concrete_field.module_ref.c}({arg.c});")
-        args.add(arg_name)
-    else: args.add(arg.c)
-
-  let args_str = args.join(", ")
-  lines.add(fmt"Pointer {result_arg} = {struct_init.data_ref.c}_init({args_str});")
-  return lines
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     init: ResolvedStructInit,
