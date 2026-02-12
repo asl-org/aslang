@@ -99,22 +99,13 @@ proc asl*(function: Function, indent: string): seq[string] =
 
   return (@[header] & lines)
 
-proc user_function_spec*(parser: Parser, indent: int): Result[UserFunction,
+proc user_function_spec(parser: Parser, indent: int): Result[UserFunction,
     core.Error] =
   let def = ? parser.expect(function_definition_spec, indent)
   discard ? parser.expect(strict_empty_line_spec)
 
-  var steps: seq[Statement]
-  # NOTE: Function must have at least 1 expression.
-  steps.add( ? parser.expect(statement_spec, indent + 1))
-  discard ? parser.expect(optional_empty_line_spec)
-
-  var maybe_expression = parser.expect(statement_spec, indent + 1)
-  while maybe_expression.is_ok:
-    steps.add(maybe_expression.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_expression = parser.expect(statement_spec, indent + 1)
-
+  let steps = ? parser.one_or_more_spec(statement_spec, indent + 1,
+      optional_empty_line_spec)
   new_user_function(def, steps)
 
 proc extern_header_spec(parser: Parser, indent: int): Result[Identifier,
@@ -127,7 +118,7 @@ proc extern_header_spec(parser: Parser, indent: int): Result[Identifier,
   discard ? parser.expect(colon_spec)
   ok(extern)
 
-proc extern_function_spec*(parser: Parser, indent: int): Result[ExternFunction,
+proc extern_function_spec(parser: Parser, indent: int): Result[ExternFunction,
     core.Error] =
   let extern = ? parser.expect(extern_header_spec, indent)
   discard ? parser.expect(strict_empty_line_spec)

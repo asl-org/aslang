@@ -163,7 +163,7 @@ proc asl*(statement: Statement, indent: string): seq[string] =
   of SK_ASSIGNED: lines[0] = fmt"{statement.arg.asl} = {lines[0]}"
   return lines
 
-proc assignment_spec*(parser: Parser, indent: int): Result[Statement,
+proc assignment_spec(parser: Parser, indent: int): Result[Statement,
     core.Error] =
   let arg = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
@@ -210,16 +210,12 @@ proc asl*(case_block: Case, indent: string): seq[string] =
       statements.add(indent & line)
   return (@[header] & statements)
 
-proc case_spec*(parser: Parser, indent: int): Result[Case, core.Error] =
+proc case_spec(parser: Parser, indent: int): Result[Case, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let case_def = ? parser.expect(case_definition_spec)
   discard ? parser.expect(optional_empty_line_spec)
-  var statements: seq[Statement]
-  var maybe_statement = parser.expect(statement_spec, indent + 1)
-  while maybe_statement.is_ok:
-    statements.add(maybe_statement.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_statement = parser.expect(statement_spec, indent + 1)
+  let statements = ? parser.zero_or_more_spec(statement_spec, indent + 1,
+      optional_empty_line_spec)
   new_case(case_def, statements)
 
 # =============================================================================
@@ -246,7 +242,7 @@ proc asl*(else_block: Else, indent: string): seq[string] =
 
   return (@[header] & statements)
 
-proc else_spec*(parser: Parser, indent: int): Result[Else, core.Error] =
+proc else_spec(parser: Parser, indent: int): Result[Else, core.Error] =
   discard ? parser.expect(indent_spec, indent)
 
   let else_def = ? parser.expect(else_keyword_spec)
@@ -254,13 +250,8 @@ proc else_spec*(parser: Parser, indent: int): Result[Else, core.Error] =
   discard ? parser.expect(colon_spec)
   discard ? parser.expect(optional_empty_line_spec)
 
-  var statements: seq[Statement]
-  var maybe_statement = parser.expect(statement_spec, indent + 1)
-  while maybe_statement.is_ok:
-    statements.add(maybe_statement.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_statement = parser.expect(statement_spec, indent + 1)
-
+  let statements = ? parser.zero_or_more_spec(statement_spec, indent + 1,
+      optional_empty_line_spec)
   new_else(statements, else_def.location)
 
 # =============================================================================
@@ -312,14 +303,10 @@ proc asl*(match: Match, indent: string): seq[string] =
 
 proc match_spec*(parser: Parser, indent: int): Result[Match, core.Error] =
   let match_def = ? parser.expect(match_definition_spec)
-  var cases: seq[Case]
 
   discard ? parser.expect(optional_empty_line_spec)
-  var maybe_case = parser.expect(case_spec, indent + 1)
-  while maybe_case.is_ok:
-    cases.add(maybe_case.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_case = parser.expect(case_spec, indent + 1)
+  let cases = ? parser.zero_or_more_spec(case_spec, indent + 1,
+      optional_empty_line_spec)
 
   var maybe_else = parser.expect(else_spec, indent + 1)
   if maybe_else.is_ok:

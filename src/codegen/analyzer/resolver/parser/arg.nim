@@ -56,21 +56,8 @@ proc argument_spec*(parser: Parser): Result[Argument, core.Error] =
   err(errors.max())
 
 proc argument_list_spec*(parser: Parser): Result[seq[Argument], core.Error] =
-  discard ? parser.expect(open_paren_bracket_spec)
-
-  var args: seq[Argument]
-  discard ? parser.expect(optional_space_spec)
-  # NOTE: every function call must have at least one argument
-  args.add( ? parser.expect(argument_spec))
-  discard ? parser.expect(optional_space_spec)
-
-  while parser.expect(comma_spec).is_ok:
-    discard ? parser.expect(optional_space_spec)
-    args.add( ? parser.expect(argument_spec))
-    discard ? parser.expect(optional_space_spec)
-
-  discard ? parser.expect(close_paren_bracket_spec)
-  ok(args)
+  parser.list_spec(open_paren_bracket_spec, argument_spec,
+      close_paren_bracket_spec)
 
 # =============================================================================
 # FunctionRef
@@ -109,12 +96,12 @@ proc asl*(fnref: FunctionRef): string =
   of FRK_LOCAL: fnref.name.asl
   of FRK_MODULE: fmt"{fnref.module.asl}.{fnref.name.asl}"
 
-proc function_ref_local_spec*(parser: Parser): Result[FunctionRef,
+proc function_ref_local_spec(parser: Parser): Result[FunctionRef,
     core.Error] =
   let name = ? parser.expect(identifier_spec)
   ok(new_function_ref(name))
 
-proc function_ref_module_spec*(parser: Parser): Result[FunctionRef,
+proc function_ref_module_spec(parser: Parser): Result[FunctionRef,
     core.Error] =
   let module_ref = ? parser.expect(module_ref_spec)
   discard ? parser.expect(dot_spec)
@@ -122,17 +109,7 @@ proc function_ref_module_spec*(parser: Parser): Result[FunctionRef,
   ok(new_function_ref(name, module_ref))
 
 proc function_ref_spec*(parser: Parser): Result[FunctionRef, core.Error] =
-  var errors: seq[core.Error]
-
-  let maybe_module_fnref = parser.expect(function_ref_module_spec)
-  if maybe_module_fnref.is_ok: return maybe_module_fnref
-  else: errors.add(maybe_module_fnref.error)
-
-  let maybe_local_fnref = parser.expect(function_ref_local_spec)
-  if maybe_local_fnref.is_ok: return maybe_local_fnref
-  else: errors.add(maybe_local_fnref.error)
-
-  err(errors.max())
+  parser.first_of([function_ref_module_spec, function_ref_local_spec])
 
 # =============================================================================
 # FunctionCall

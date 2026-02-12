@@ -152,24 +152,12 @@ proc asl*(module: Module, indent: string): seq[string] =
 
 proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic],
     core.Error] =
-  var generics: seq[Generic]
-  var maybe_generic = parser.expect(generic_spec, indent)
-  while maybe_generic.is_ok:
-    generics.add(maybe_generic.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_generic = parser.expect(generic_spec, indent)
-  ok(generics)
+  parser.zero_or_more_spec(generic_spec, indent, optional_empty_line_spec)
 
 proc function_list_spec(parser: Parser, indent: int): Result[seq[Function],
     core.Error] =
-  var functions: seq[Function]
   discard ? parser.expect(optional_empty_line_spec)
-  var maybe_function = parser.expect(function_spec, indent + 1)
-  while maybe_function.is_ok:
-    functions.add(maybe_function.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_function = parser.expect(function_spec, indent + 1)
-  ok(functions)
+  parser.zero_or_more_spec(function_spec, indent + 1, optional_empty_line_spec)
 
 proc module_spec*(parser: Parser, indent: int): Result[Module, core.Error] =
   discard ? parser.expect(indent_spec, indent)

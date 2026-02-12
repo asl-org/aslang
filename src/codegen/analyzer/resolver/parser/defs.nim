@@ -147,20 +147,8 @@ proc hash*(def: FunctionDefinition): Hash =
 
 proc argument_definition_list_spec*(parser: Parser): Result[seq[
     ArgumentDefinition], core.Error] =
-  var argdefs: seq[ArgumentDefinition]
-  discard ? parser.expect(open_paren_bracket_spec)
-  discard ? parser.expect(optional_space_spec)
-  # NOTE: Every function must have an input argument
-  argdefs.add( ? parser.expect(argument_definition_spec))
-  discard ? parser.expect(optional_space_spec)
-
-  while parser.expect(comma_spec).is_ok:
-    discard ? parser.expect(optional_space_spec)
-    argdefs.add( ? parser.expect(argument_definition_spec))
-    discard ? parser.expect(optional_space_spec)
-
-  discard ? parser.expect(close_paren_bracket_spec)
-  ok(argdefs)
+  parser.list_spec(open_paren_bracket_spec,
+      argument_definition_spec, close_paren_bracket_spec)
 
 proc function_definition_spec*(parser: Parser, indent: int): Result[
     FunctionDefinition, core.Error] =

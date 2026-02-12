@@ -53,17 +53,8 @@ proc struct_default_spec(parser: Parser, indent: int): Result[Struct,
   let def = ? parser.expect(struct_default_definition_spec)
   discard ? parser.expect(strict_empty_line_spec)
 
-  var fields: seq[ArgumentDefinition]
-  # NOTE: struct must always at least have 1 field.
-  fields.add( ? parser.expect(struct_field_definition_spec, indent + 1))
-  discard ? parser.expect(strict_empty_line_spec)
-
-  var maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
-  while maybe_field.is_ok:
-    fields.add(maybe_field.get)
-    discard ? parser.expect(strict_empty_line_spec)
-    maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
-
+  let fields = ? parser.one_or_more_spec(struct_field_definition_spec,
+      indent + 1, strict_empty_line_spec)
   new_struct(def, fields)
 
 type UnionBranch* = ref object of RootObj
@@ -97,7 +88,7 @@ proc struct*(branch: UnionBranch): Result[Struct, string] =
   if maybe_struct.is_ok: ok(maybe_struct.get)
   else: err($(maybe_struct.error))
 
-proc union_branch_spec*(parser: Parser, indent: int): Result[UnionBranch,
+proc union_branch_spec(parser: Parser, indent: int): Result[UnionBranch,
     core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let name = ? parser.expect(identifier_spec)
@@ -105,17 +96,8 @@ proc union_branch_spec*(parser: Parser, indent: int): Result[UnionBranch,
   discard ? parser.expect(colon_spec)
   discard ? parser.expect(strict_empty_line_spec)
 
-  var fields: seq[ArgumentDefinition]
-  # NOTE: struct must always at least have 1 field.
-  fields.add( ? parser.expect(struct_field_definition_spec, indent + 1))
-  discard ? parser.expect(strict_empty_line_spec)
-
-  var maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
-  while maybe_field.is_ok:
-    fields.add(maybe_field.get)
-    discard ? parser.expect(strict_empty_line_spec)
-    maybe_field = parser.expect(struct_field_definition_spec, indent + 1)
-
+  let fields = ? parser.one_or_more_spec(struct_field_definition_spec,
+      indent + 1, strict_empty_line_spec)
   new_union_branch(name, fields)
 
 type Union* = ref object of RootObj
@@ -150,21 +132,16 @@ proc find_branch*(union: Union, name: Identifier): Result[UnionBranch, string] =
   else:
     ok(maybe_branch.get[0])
 
-proc union_spec*(parser: Parser, indent: int): Result[Union, core.Error] =
+proc union_spec(parser: Parser, indent: int): Result[Union, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let union_keyword = ? parser.expect(identifier_spec)
   discard ? parser.expect(optional_space_spec)
   discard ? parser.expect(colon_spec)
   discard ? parser.expect(strict_empty_line_spec)
 
-  var branches: seq[UnionBranch]
   discard ? parser.expect(optional_empty_line_spec)
-  var maybe_union_branch = parser.expect(union_branch_spec, indent + 1)
-  while maybe_union_branch.is_ok:
-    branches.add(maybe_union_branch.get)
-    discard ? parser.expect(optional_empty_line_spec)
-    maybe_union_branch = parser.expect(union_branch_spec, indent + 1)
-
+  let branches = ? parser.zero_or_more_spec(union_branch_spec, indent + 1,
+      optional_empty_line_spec)
   new_union(union_keyword.location, branches)
 
 type
