@@ -1,6 +1,6 @@
 import results, strformat, unicode, os, osproc
 
-import analyzer
+import codegen
 
 # Helper to wrap void-returning file operations with error handling
 proc safe_void_operation(operation: proc(), filename: string,
