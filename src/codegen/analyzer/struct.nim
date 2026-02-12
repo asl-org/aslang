@@ -90,7 +90,7 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
   of TSK_DEFAULT:
     new_analyzed_struct(struct, analyzed_fields, struct.location)
   of TSK_NAMED:
-    let struct_name = ? struct.name
+    let struct_name = struct.name
     new_analyzed_struct(struct, struct_name, analyzed_fields, struct.location)
 
 type AnalyzedUnionBranch* = ref object of RootObj

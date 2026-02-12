@@ -78,30 +78,25 @@ proc location*(expression: ResolvedExpression): Location =
 
 proc kind*(expression: ResolvedExpression): ResolvedExpressionKind = expression.kind
 
-proc match*(expression: ResolvedExpression): Result[ResolvedMatch, string] =
-  case expression.kind:
-  of TEK_MATCH: ok(expression.match)
-  else: err(fmt"{expression.location} expected a match expression")
+proc match*(expression: ResolvedExpression): ResolvedMatch =
+  do_assert expression.kind == TEK_MATCH, fmt"{expression.location} expected a match expression"
+  expression.match
 
-proc fncall*(expression: ResolvedExpression): Result[ResolvedFunctionCall, string] =
-  case expression.kind:
-  of TEK_FNCALL: ok(expression.fncall)
-  else: err(fmt"{expression.location} expected a function call")
+proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall =
+  do_assert expression.kind == TEK_FNCALL, fmt"{expression.location} expected a function call"
+  expression.fncall
 
-proc init*(expression: ResolvedExpression): Result[ResolvedInitializer, string] =
-  case expression.kind:
-  of TEK_INIT: ok(expression.init)
-  else: err(fmt"{expression.location} expected an initilaizer")
+proc init*(expression: ResolvedExpression): ResolvedInitializer =
+  do_assert expression.kind == TEK_INIT, fmt"{expression.location} expected an initializer"
+  expression.init
 
-proc struct_get*(expression: ResolvedExpression): Result[ResolvedStructGet, string] =
-  case expression.kind:
-  of TEK_STRUCT_GET: ok(expression.struct_get)
-  else: err(fmt"{expression.location} expected a struct field accessor")
+proc struct_get*(expression: ResolvedExpression): ResolvedStructGet =
+  do_assert expression.kind == TEK_STRUCT_GET, fmt"{expression.location} expected a struct field accessor"
+  expression.struct_get
 
-proc variable*(expression: ResolvedExpression): Result[ResolvedVariable, string] =
-  case expression.kind:
-  of TEK_VARIABLE: ok(expression.variable)
-  else: err(fmt"{expression.location} expected a variable")
+proc variable*(expression: ResolvedExpression): ResolvedVariable =
+  do_assert expression.kind == TEK_VARIABLE, fmt"{expression.location} expected a variable"
+  expression.variable
 
 # Forward Declaration needed due to cyclic dependencies
 proc resolve(file: parser.File, module: Option[parser.Module],
@@ -112,16 +107,16 @@ proc resolve(file: parser.File, module: Option[parser.Module],
     expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of EK_MATCH:
-    ok(new_resolved_expression( ? resolve(file, module, ? expression.match)))
+    ok(new_resolved_expression( ? resolve(file, module, expression.match)))
   of EK_FNCALL:
-    ok(new_resolved_expression( ? resolve(file, module, ? expression.fncall)))
+    ok(new_resolved_expression( ? resolve(file, module, expression.fncall)))
   of EK_INIT:
-    ok(new_resolved_expression( ? resolve(file, module, ? expression.init)))
+    ok(new_resolved_expression( ? resolve(file, module, expression.init)))
   of EK_STRUCT_GET:
-    let sg = ? expression.struct_get
+    let sg = expression.struct_get
     ok(new_resolved_expression(new_resolved_struct_get(sg.name, sg.field)))
   of EK_VARIABLE:
-    ok(new_resolved_expression(new_resolved_variable( ? expression.variable)))
+    ok(new_resolved_expression(new_resolved_variable(expression.variable)))
 
 # ResolvedStatement
 proc new_resolved_statement(arg: Identifier,
@@ -207,10 +202,9 @@ proc location*(match: ResolvedMatch): Location = match.location
 proc operand*(match: ResolvedMatch): Identifier = match.operand
 proc case_blocks*(match: ResolvedMatch): seq[ResolvedCase] = match.case_blocks
 
-proc else_block*(match: ResolvedMatch): Result[ResolvedElse, string] =
-  case match.kind:
-  of TMK_CASE_ONLY: err(fmt"{match.location} expected an else block")
-  of TMK_COMPLETE: ok(match.else_block)
+proc else_block*(match: ResolvedMatch): ResolvedElse =
+  do_assert match.kind == TMK_COMPLETE, fmt"{match.location} expected an else block"
+  match.else_block
 
 proc module_deps*(match: ResolvedMatch): HashSet[Module] =
   var module_set: HashSet[Module]
@@ -232,7 +226,7 @@ proc resolve(file: parser.File, module: Option[parser.Module],
     ok(new_resolved_match(match.def.operand, match.def.arg, resolved_cases,
         match.def.location))
   of MK_COMPLETE:
-    let resolved_else = ? resolve(file, module, ? match.else_block)
+    let resolved_else = ? resolve(file, module, match.else_block)
     ok(new_resolved_match(match.def.operand, match.def.arg, resolved_cases,
         resolved_else, match.def.location))
 

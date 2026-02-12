@@ -130,23 +130,23 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedExpression, string] =
   case expression.kind:
   of TEK_FNCALL:
-    let fncall = ? expression.fncall
+    let fncall = expression.fncall
     let analyzed_function_call = ? analyze(file_def, scope, fncall, module_def)
     ok(new_analyzed_expression(analyzed_function_call))
   of TEK_INIT:
-    let init = ? expression.init
+    let init = expression.init
     let analyzed_init = ? analyze(file_def, scope, init, module_def)
     ok(new_analyzed_expression(analyzed_init))
   of TEK_STRUCT_GET:
-    let struct_get = ? expression.struct_get
+    let struct_get = expression.struct_get
     let analyzed_struct_get = ? analyze(file_def, scope, struct_get, module_def)
     ok(new_analyzed_expression(analyzed_struct_get))
   of TEK_VARIABLE:
-    let variable = ? expression.variable
+    let variable = expression.variable
     let analyzed_variable = ? analyze(scope, variable)
     ok(new_analyzed_expression(analyzed_variable))
   of TEK_MATCH:
-    let match = ? expression.match
+    let match = expression.match
     let analyzed_match = ? analyze(file_def, scope, match, module_def)
     ok(new_analyzed_expression(analyzed_match))
 
@@ -358,7 +358,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
           analyzed_operand_module_ref, case_block, module_def)
       analyzed_case_blocks.add(analyzed_case_block)
 
-    let else_block = ? match.else_block
+    let else_block = match.else_block
     let analyzed_else_block = ? analyze(file_def, scope, else_block, module_def)
 
     var unique_patterns: Table[AnalyzedCasePattern, AnalyzedCase]

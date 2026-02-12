@@ -1,8 +1,7 @@
-import results, strformat, tables, sets, options
+import results, tables, sets, options
 
 import resolver
 import module_ref
-import arg_def
 import func_def
 import module_def
 import file_def
@@ -37,7 +36,8 @@ proc asl*(function: AnalyzedUserFunction, indent: string): seq[string] =
 
 proc analyze*(file_def: AnalyzedFileDefinition,
     function: ResolvedUserFunction,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[
     AnalyzedUserFunction, string] =
   var scope = new_function_scope()
   let analyzed_function_def = if module_def.is_some:

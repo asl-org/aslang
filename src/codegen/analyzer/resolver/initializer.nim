@@ -56,17 +56,16 @@ proc location*(struct_ref: ResolvedStructRef): Location = struct_ref.module_ref.
 proc kind*(struct_ref: ResolvedStructRef): ResolvedStructRefKind = struct_ref.kind
 proc module_ref*(struct_ref: ResolvedStructRef): ResolvedModuleRef = struct_ref.module_ref
 
-proc name*(struct_ref: ResolvedStructRef): Result[Identifier, string] =
-  case struct_ref.kind:
-  of TSRK_NAMED: ok(struct_ref.name)
-  of TSRK_DEFAULT: err(fmt"{struct_ref.location} expected a named struct")
+proc name*(struct_ref: ResolvedStructRef): Identifier =
+  do_assert struct_ref.kind == TSRK_NAMED, fmt"{struct_ref.location} expected a named struct"
+  struct_ref.name
 
 proc resolve*(file: parser.File, module: Option[parser.Module],
     struct_ref: StructRef): Result[ResolvedStructRef, string] =
   let module_ref = ? resolve(file, module, struct_ref.module)
   case struct_ref.kind:
   of SRK_DEFAULT: ok(new_resolved_struct_ref(module_ref))
-  of SRK_NAMED: ok(new_resolved_struct_ref(module_ref, ? struct_ref.struct))
+  of SRK_NAMED: ok(new_resolved_struct_ref(module_ref, struct_ref.struct))
 
 # =============================================================================
 # ResolvedStructInit
@@ -118,15 +117,13 @@ proc location*(init: ResolvedInitializer): Location =
 
 proc kind*(init: ResolvedInitializer): ResolvedInitializerKind = init.kind
 
-proc struct*(init: ResolvedInitializer): Result[ResolvedStructInit, string] =
-  case init.kind:
-  of TIK_STRUCT: ok(init.struct)
-  else: err(fmt"{init.location} expected a struct initializer")
+proc struct*(init: ResolvedInitializer): ResolvedStructInit =
+  do_assert init.kind == TIK_STRUCT, fmt"{init.location} expected a struct initializer"
+  init.struct
 
-proc literal*(init: ResolvedInitializer): Result[ResolvedLiteralInit, string] =
-  case init.kind:
-  of TIK_LITERAL: ok(init.literal)
-  else: err(fmt"{init.location} expected a literal initializer")
+proc literal*(init: ResolvedInitializer): ResolvedLiteralInit =
+  do_assert init.kind == TIK_LITERAL, fmt"{init.location} expected a literal initializer"
+  init.literal
 
 proc module_deps*(init: ResolvedInitializer): HashSet[Module] =
   case init.kind:
@@ -138,8 +135,8 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
     init: Initializer): Result[ResolvedInitializer, string] =
   case init.kind:
   of IK_LITERAL:
-    let literal_init = ? init.literal
+    let literal_init = init.literal
     ok(new_resolved_initializer( ? resolve(file, module, literal_init)))
   of IK_STRUCT:
-    let struct_init = ? init.struct
+    let struct_init = init.struct
     ok(new_resolved_initializer( ? resolve(file, module, struct_init)))

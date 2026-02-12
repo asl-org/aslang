@@ -320,8 +320,8 @@ proc expect_at_least_one*[T](parser: Parser, spec: AtomSpec[T]): Result[int, Err
     count += 1
   ok(count)
 
-proc expect_any*[T](parser: Parser, item_spec: BlockSpec[T],
-    indent: int, separator: AtomSpec[int]): Result[seq[T], Error] =
+proc expect_any*[T, S](parser: Parser, item_spec: BlockSpec[T],
+    indent: int, separator: AtomSpec[S]): Result[seq[T], Error] =
   var items: seq[T]
   var maybe = parser.expect(item_spec, indent)
   while maybe.is_ok:
@@ -330,16 +330,15 @@ proc expect_any*[T](parser: Parser, item_spec: BlockSpec[T],
     maybe = parser.expect(item_spec, indent)
   ok(items)
 
-proc expect_at_least_one*[T](parser: Parser, item_spec: BlockSpec[T],
-    indent: int, separator: AtomSpec[int]): Result[seq[T], Error] =
+proc expect_at_least_one*[T](parser: Parser, item_spec: BlockSpec[T]): Result[
+    seq[T], Error] =
   var items: seq[T]
   items.add( ? parser.expect(item_spec, indent))
-  discard ? parser.expect(separator)
-  var maybe = parser.expect(item_spec, indent)
-  while maybe.is_ok:
-    items.add(maybe.get)
+  var maybe_item = parser.expect(item_spec, indent)
+  while maybe_item.is_ok:
+    items.add(maybe_item.get)
     discard ? parser.expect(separator)
-    maybe = parser.expect(item_spec, indent)
+    maybe_item = parser.expect(item_spec, indent)
   ok(items)
 
 # NOTE: This spec is also used to consume trailing line content
@@ -363,7 +362,7 @@ proc indent_spec*(parser: Parser, indent: int): Result[int, Error] =
   let token = ? parser.peek()
   err(err_parser_indentation_error(token.location, indent * parser.indent, spaces))
 
-proc list_spec*[T](parser: Parser, item_spec: AtomSpec[T],
+proc non_empty_list_spec*[T](parser: Parser, item_spec: AtomSpec[T],
     separator: AtomSpec[Token]): Result[seq[T], Error] =
   var items: seq[T]
   items.add( ? parser.expect(item_spec))
@@ -374,10 +373,22 @@ proc list_spec*[T](parser: Parser, item_spec: AtomSpec[T],
     discard ? parser.expect_any(space_spec)
   ok(items)
 
+proc non_empty_list_spec*[T, S](parser: Parser, item_spec: BlockSpec[T],
+    indent: int, separator: AtomSpec[S]): Result[seq[T], Error] =
+  var items: seq[T]
+  items.add( ? parser.expect(item_spec, indent))
+  discard ? parser.expect(separator)
+  var maybe = parser.expect(item_spec, indent)
+  while maybe.is_ok:
+    items.add(maybe.get)
+    discard ? parser.expect(separator)
+    maybe = parser.expect(item_spec, indent)
+  ok(items)
+
 proc container_spec*[T](parser: Parser, open_bracket: AtomSpec[Token],
     item_spec: AtomSpec[T], close_bracket: AtomSpec[Token]): Result[seq[T], Error] =
   discard ? parser.expect(open_bracket)
   discard ? parser.expect_any(space_spec)
-  let items = ? parser.list_spec(item_spec, comma_spec)
+  let items = ? parser.non_empty_list_spec(item_spec, comma_spec)
   discard ? parser.expect(close_bracket)
   ok(items)

@@ -143,10 +143,9 @@ proc location*(struct: ResolvedStruct): Location = struct.location
 proc fields*(struct: ResolvedStruct): seq[
     ResolvedArgumentDefinition] = struct.fields
 
-proc name*(struct: ResolvedStruct): Result[Identifier, string] =
-  case struct.kind:
-  of TSK_DEFAULT: err("{struct.location} expected a named struct")
-  of TSK_NAMED: ok(struct.name)
+proc name*(struct: ResolvedStruct): Identifier =
+  do_assert struct.kind == TSK_NAMED, fmt"{struct.location} expected a named struct"
+  struct.name
 
 proc resolve*(file: parser.File, module: parser.Module, struct: Struct): Result[
     ResolvedStruct, string] =

@@ -27,15 +27,13 @@ proc location*(arg: Argument): Location =
 
 proc kind*(arg: Argument): ArgumentKind = arg.kind
 
-proc variable*(arg: Argument): Result[Identifier, string] =
-  case arg.kind:
-  of AK_LITERAL: err(fmt"{arg.location} [PE118] expected argument to be a variable but found literal `{arg.literal.asl}`")
-  of AK_VARIABLE: ok(arg.variable)
+proc variable*(arg: Argument): Identifier =
+  do_assert arg.kind == AK_VARIABLE, fmt"{arg.location} [PE118] expected argument to be a variable"
+  arg.variable
 
-proc literal*(arg: Argument): Result[Literal, string] =
-  case arg.kind:
-  of AK_LITERAL: ok(arg.literal)
-  of AK_VARIABLE: err(fmt"{arg.location} [PE119] expected argument to be a literal but found variable `{arg.variable.asl}`")
+proc literal*(arg: Argument): Literal =
+  do_assert arg.kind == AK_LITERAL, fmt"{arg.location} [PE119] expected argument to be a literal"
+  arg.literal
 
 proc asl*(arg: Argument): string =
   case arg.kind:
@@ -86,10 +84,9 @@ proc location*(fnref: FunctionRef): Location =
 proc kind*(fnref: FunctionRef): FunctionRefKind = fnref.kind
 proc name*(fnref: FunctionRef): Identifier = fnref.name
 
-proc module*(fnref: FunctionRef): Result[ModuleRef, string] =
-  case fnref.kind:
-  of FRK_LOCAL: err(fmt"{fnref.location} expected a module function call but found local function call")
-  of FRK_MODULE: ok(fnref.module)
+proc module*(fnref: FunctionRef): ModuleRef =
+  do_assert fnref.kind == FRK_MODULE, fmt"{fnref.location} expected a module function call"
+  fnref.module
 
 proc asl*(fnref: FunctionRef): string =
   case fnref.kind:

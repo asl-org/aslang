@@ -180,7 +180,7 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     if resolved_module == module:
       return err(fmt"{module_ref.location} module `{resolved_module.name.asl}` can not be passed as an argument to generic constraint `{generic.name.asl}`")
 
-    let children = ? module_ref.children
+    let children = module_ref.children
     if children.len != resolved_module.generics.len:
       return err(fmt"{module_ref.location} module `{resolved_module.name.asl}` expects `{resolved_module.generics.len}` generics but found `{children.len}`")
 
@@ -199,7 +199,7 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     ok(new_analyzed_module_ref(resolved_generic, module_ref.location))
   of RMRK_MODULE:
     let resolved_module = ? file.find_module(module_ref.module)
-    let children = ? module_ref.children
+    let children = module_ref.children
     if children.len != resolved_module.generics.len:
       return err(fmt"{module_ref.location} module `{resolved_module.name.asl}` expects `{resolved_module.generics.len}` generics but found `{children.len}`")
 
@@ -217,7 +217,7 @@ proc analyze_def*(file: ResolvedFile, module_ref: ResolvedModuleRef): Result[
     err(fmt"{module_ref.location} file level functions do not support generics")
   of RMRK_MODULE:
     let resolved_module = ? file.find_module(module_ref.module)
-    let children = ? module_ref.children
+    let children = module_ref.children
     if children.len != resolved_module.generics.len:
       return err(fmt"{module_ref.location} module `{resolved_module.name.asl}` expects `{resolved_module.generics.len}` generics but found `{children.len}`")
 

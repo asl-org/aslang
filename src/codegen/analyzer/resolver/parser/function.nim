@@ -1,6 +1,6 @@
 import results
 
-import core, identifier, module_ref, defs, expression
+import core, identifier, defs, expression
 
 # =============================================================================
 # UserFunction
@@ -84,7 +84,7 @@ proc user_function_spec(parser: Parser, indent: int): Result[UserFunction,
   let def = ? parser.expect(function_definition_spec, indent)
   discard ? parser.expect_at_least_one(empty_line_spec)
 
-  let steps = ? parser.expect_at_least_one(statement_spec, indent + 1,
+  let steps = ? parser.non_empty_list_spec(statement_spec, indent + 1,
       optional_empty_line_spec)
   new_user_function(def, steps)
 

@@ -146,13 +146,13 @@ proc validate(module: ResolvedModule,
 proc validate*(module: ResolvedModule, literal: Literal): Result[void, string] =
   case literal.kind:
   of LK_INTEGER:
-    let integer_literal = ? literal.integer_literal
+    let integer_literal = literal.integer_literal
     validate(module, integer_literal)
   of LK_FLOAT:
-    let float_literal = ? literal.float_literal
+    let float_literal = literal.float_literal
     validate(module, float_literal)
   of LK_STRING:
-    let string_literal = ? literal.string_literal
+    let string_literal = literal.string_literal
     validate(module, string_literal)
 
 proc resolve*(file: parser.File): Result[ResolvedFile, string] =

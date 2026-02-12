@@ -3,7 +3,6 @@ import sequtils, strformat, strutils
 import analyzer
 import func_def
 import module_ref
-import arg_def
 import function
 
 proc c*(module: AnalyzedModule, generic_impls: seq[seq[(

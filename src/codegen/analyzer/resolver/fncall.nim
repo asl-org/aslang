@@ -40,17 +40,16 @@ proc kind*(fnref: ResolvedFunctionRef): ResolvedFunctionRefKind = fnref.kind
 proc name*(fnref: ResolvedFunctionRef): Identifier = fnref.name
 proc arity*(fnref: ResolvedFunctionRef): uint = fnref.arity
 
-proc module_ref*(fnref: ResolvedFunctionRef): Result[ResolvedModuleRef, string] =
-  case fnref.kind:
-  of RFRK_LOCAL: err(fmt"{fnref.location} expected a module function call")
-  of RFRK_MODULE: ok(fnref.module_ref)
+proc module_ref*(fnref: ResolvedFunctionRef): ResolvedModuleRef =
+  do_assert fnref.kind == RFRK_MODULE, fmt"{fnref.location} expected a module function call"
+  fnref.module_ref
 
 proc resolve*(file: parser.File, module: Option[parser.Module],
     fnref: FunctionRef, arity: uint): Result[ResolvedFunctionRef, string] =
   case fnref.kind:
   of FRK_LOCAL: ok(new_resolved_function_ref(fnref.name, arity))
   of FRK_MODULE:
-    let module_ref = ? resolve(file, module, ? fnref.module)
+    let module_ref = ? resolve(file, module, fnref.module)
     ok(new_resolved_function_ref(module_ref, fnref.name, arity))
 
 # =============================================================================

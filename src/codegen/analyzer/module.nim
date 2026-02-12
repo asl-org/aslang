@@ -2,9 +2,6 @@ import results, strformat, tables, sets, options
 
 import resolver
 import module_ref
-import arg_def
-import func_def
-import generic
 import module_def
 import file_def
 import function
@@ -18,7 +15,8 @@ proc new_analyzed_module(def: AnalyzedModuleDefinition, functions: seq[
   AnalyzedModule(def: def, functions: functions)
 
 proc def*(module: AnalyzedModule): AnalyzedModuleDefinition = module.def
-proc functions*(module: AnalyzedModule): seq[AnalyzedFunction] = module.functions
+proc functions*(module: AnalyzedModule): seq[
+    AnalyzedFunction] = module.functions
 
 proc generic_impls*(module: AnalyzedModule): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =

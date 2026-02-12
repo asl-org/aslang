@@ -52,7 +52,8 @@ proc match_definition_assigned_spec*(parser: Parser): Result[MatchDefinition,
 
 proc match_definition_spec*(parser: Parser): Result[MatchDefinition,
     core.Error] =
-  parser.expect_one_of([match_definition_default_spec, match_definition_assigned_spec])
+  parser.expect_one_of([match_definition_default_spec,
+      match_definition_assigned_spec])
 
 proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
     Identifier), core.Error] =
@@ -117,10 +118,9 @@ proc location*(pattern: StructPattern): Location = pattern.location
 proc kind*(pattern: StructPattern): StructPatternKind = pattern.kind
 proc args*(pattern: StructPattern): seq[(Identifier, Identifier)] = pattern.args
 
-proc struct*(pattern: StructPattern): Result[Identifier, string] =
-  case pattern.kind:
-  of SPK_DEFAULT: err(fmt"{pattern.location} expected a named struct but found a default struct")
-  of SPK_NAMED: ok(pattern.struct)
+proc struct*(pattern: StructPattern): Identifier =
+  do_assert pattern.kind == SPK_NAMED, fmt"{pattern.location} expected a named struct"
+  pattern.struct
 
 proc asl*(pattern: StructPattern): string =
   var args: seq[string]
@@ -135,7 +135,7 @@ proc struct_pattern_default_spec(parser: Parser): Result[StructPattern,
     core.Error] =
   let open_curly = ? parser.expect(open_curly_bracket_spec)
   discard ? parser.expect_any(space_spec)
-  let keywords = ? parser.list_spec(keyword_value_identifier_spec, comma_spec)
+  let keywords = ? parser.non_empty_list_spec(keyword_value_identifier_spec, comma_spec)
   discard ? parser.expect(close_curly_bracket_spec)
   new_struct_pattern(keywords, open_curly.location)
 
@@ -178,15 +178,13 @@ proc location*(pattern: CasePattern): Location =
 
 proc kind*(pattern: CasePattern): CasePatternKind = pattern.kind
 
-proc literal*(pattern: CasePattern): Result[Literal, string] =
-  case pattern.kind:
-  of CPK_LITERAL: ok(pattern.literal)
-  of CPK_STRUCT: err(fmt"{pattern.location} expected case pattern to be literal but struct was found")
+proc literal*(pattern: CasePattern): Literal =
+  do_assert pattern.kind == CPK_LITERAL, fmt"{pattern.location} expected literal case pattern"
+  pattern.literal
 
-proc struct*(pattern: CasePattern): Result[StructPattern, string] =
-  case pattern.kind:
-  of CPK_LITERAL: err(fmt"{pattern.location} expected case pattern to be struct but literal was found")
-  of CPK_STRUCT: ok(pattern.struct)
+proc struct*(pattern: CasePattern): StructPattern =
+  do_assert pattern.kind == CPK_STRUCT, fmt"{pattern.location} expected struct case pattern"
+  pattern.struct
 
 proc asl*(pattern: CasePattern): string =
   case pattern.kind:

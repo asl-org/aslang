@@ -51,10 +51,10 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedInitializer, string] =
   case init.kind:
   of TIK_STRUCT:
-    let struct_init = ? init.struct
+    let struct_init = init.struct
     let analyzed_struct_init = ? analyze(file_def, scope, struct_init, module_def)
     ok(new_analyzed_initializer(analyzed_struct_init))
   of TIK_LITERAL:
-    let literal_init = ? init.literal
+    let literal_init = init.literal
     let analyzed_literal = ? analyze(file_def, scope, literal_init, module_def)
     ok(new_analyzed_initializer(analyzed_literal))

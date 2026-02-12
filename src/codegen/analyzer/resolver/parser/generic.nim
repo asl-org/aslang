@@ -1,6 +1,6 @@
 import results, strformat, tables, hashes
 
-import core, identifier, module_ref, defs
+import core, identifier, defs
 
 # =============================================================================
 # Generic
@@ -87,7 +87,7 @@ proc generic_constrained_spec*(parser: Parser, indent: int): Result[Generic,
   discard ? parser.expect(colon_spec)
 
   discard ? parser.expect_any(empty_line_spec)
-  let defs = ? parser.expect_any(function_definition_spec, indent + 1,
+  let defs = ? parser.non_empty_list_spec(function_definition_spec, indent + 1,
       strict_empty_line_spec)
   new_generic(name, defs, generic_keyword.location)
 
