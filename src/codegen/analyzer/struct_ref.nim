@@ -120,9 +120,11 @@ proc find_field_index*(data_ref: AnalyzedDataRef, name: Identifier): Result[int,
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     struct_ref: ResolvedStructRef,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedDataRef, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedDataRef, string] =
   let analyzed_module_ref = if module_def.is_some:
-    ? analyze_def(file_def.file, module_def.get.resolved_module, struct_ref.module_ref)
+    ? analyze_def(file_def.file, module_def.get.resolved_module,
+        struct_ref.module_ref)
   else:
     ? analyze_def(file_def.file, struct_ref.module_ref)
   case analyzed_module_ref.kind:
@@ -146,7 +148,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
         err(err_no_default_struct(struct_ref.location,
             analyzed_module_def.name.asl))
     of TSRK_NAMED:
-      let branch_name = ? struct_ref.name
+      let branch_name = struct_ref.name
       let maybe_branch = analyzed_module_def.find_branch(branch_name)
       if maybe_branch.is_ok:
         let analyzed_branch = maybe_branch.get

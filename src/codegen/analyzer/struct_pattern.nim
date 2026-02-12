@@ -82,7 +82,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     case analyzed_operand_module.data.kind:
     of ADK_NONE, ADK_LITERAL: err(fmt"{pattern.location} module `{analyzed_operand_module.name.asl}` is a module and not a union")
     of ADK_UNION:
-      let struct_name = ? pattern.struct
+      let struct_name = pattern.struct
       let analyzed_branch = ? analyzed_operand_module.find_branch(struct_name)
       let concrete_branch = ? analyzed_branch.concretize(operand.concrete_map)
       var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]
@@ -106,7 +106,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
         ok(new_analyzed_struct_pattern(analyzed_struct, analyzed_fields,
             pattern.location))
       of SPK_NAMED:
-        let struct_name = ? pattern.struct
+        let struct_name = pattern.struct
         let analyzed_branch = ? analyzed_operand_module.find_branch(struct_name)
         let concrete_branch = ? analyzed_branch.concretize(operand.concrete_map)
         var analyzed_fields: seq[(AnalyzedArgumentDefinition, Identifier)]

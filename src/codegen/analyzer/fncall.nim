@@ -2,7 +2,6 @@ import results, sequtils, strformat, tables, strutils, sets, options
 
 import resolver
 import module_ref
-import arg_def
 import func_def
 import module_def
 import file_def
@@ -47,7 +46,8 @@ proc asl*(fncall: AnalyzedFunctionCall): string =
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     fncall: ResolvedFunctionCall,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedFunctionCall, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedFunctionCall, string] =
   let analyzed_function_ref = ? analyze(file_def, fncall.fnref, module_def)
   var error_message = @[fmt"{fncall.location} failed to find matching function call:"]
   for (original_def, concrete_def) in analyzed_function_ref.defs:

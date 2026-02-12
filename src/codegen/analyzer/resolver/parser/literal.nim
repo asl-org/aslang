@@ -1,4 +1,4 @@
-import results, strformat
+import results
 
 import core
 
@@ -87,15 +87,13 @@ proc location*(integer: IntegerLiteral): Location =
 
 proc kind*(integer: IntegerLiteral): IntegerLiteralKind = integer.kind
 
-proc signed*(integer: IntegerLiteral): Result[SignedIntegerLiteral, string] =
-  case integer.kind:
-  of ILK_SIGNED: ok(integer.signed)
-  of ILK_UNSIGNED: err(fmt"[INTERNAL ERROR] expected signed integer but found unsigned")
+proc signed*(integer: IntegerLiteral): SignedIntegerLiteral =
+  do_assert integer.kind == ILK_SIGNED, "expected signed integer but found unsigned"
+  integer.signed
 
-proc unsigned*(integer: IntegerLiteral): Result[UnsignedIntegerLiteral, string] =
-  case integer.kind:
-  of ILK_SIGNED: err(fmt"[INTERNAL ERROR] expected unsigned integer but found signed")
-  of ILK_UNSIGNED: ok(integer.unsigned)
+proc unsigned*(integer: IntegerLiteral): UnsignedIntegerLiteral =
+  do_assert integer.kind == ILK_UNSIGNED, "expected unsigned integer but found signed"
+  integer.unsigned
 
 proc asl*(integer: IntegerLiteral): string =
   case integer.kind:
@@ -196,20 +194,17 @@ proc location*(literal: Literal): Location =
 
 proc kind*(literal: Literal): LiteralKind = literal.kind
 
-proc integer_literal*(literal: Literal): Result[IntegerLiteral, string] =
-  case literal.kind:
-  of LK_INTEGER: ok(literal.integer_literal)
-  else: err(fmt"[INTERNAL ERROR] is not an integer")
+proc integer_literal*(literal: Literal): IntegerLiteral =
+  do_assert literal.kind == LK_INTEGER, "expected integer literal"
+  literal.integer_literal
 
-proc float_literal*(literal: Literal): Result[FloatLiteral, string] =
-  case literal.kind:
-  of LK_FLOAT: ok(literal.float_literal)
-  else: err(fmt"[INTERNAL ERROR] is not a float")
+proc float_literal*(literal: Literal): FloatLiteral =
+  do_assert literal.kind == LK_FLOAT, "expected float literal"
+  literal.float_literal
 
-proc string_literal*(literal: Literal): Result[StringLiteral, string] =
-  case literal.kind:
-  of LK_STRING: ok(literal.string_literal)
-  else: err(fmt"[INTERNAL ERROR] is not a string")
+proc string_literal*(literal: Literal): StringLiteral =
+  do_assert literal.kind == LK_STRING, "expected string literal"
+  literal.string_literal
 
 proc asl*(literal: Literal): string =
   case literal.kind:

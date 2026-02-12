@@ -1,4 +1,4 @@
-import strformat, hashes, strutils
+import strformat, strutils
 
 import analyzer
 import module_ref

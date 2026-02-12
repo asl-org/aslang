@@ -1,4 +1,4 @@
-import strformat, sequtils, strutils, hashes
+import strformat, sequtils, strutils
 
 import analyzer
 import func_def

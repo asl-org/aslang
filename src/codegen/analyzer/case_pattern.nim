@@ -62,7 +62,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     AnalyzedCasePattern, string] =
   case pattern.kind:
   of CPK_LITERAL:
-    let literal = ? pattern.literal
+    let literal = pattern.literal
     case operand.kind:
     of AMRK_GENERIC:
       err(fmt"{pattern.location} match expression does not support generic operands")
@@ -75,7 +75,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
       else:
         err(fmt"{pattern.location} only integer literals are supported in the case pattern")
   of CPK_STRUCT:
-    let struct = ? pattern.struct
+    let struct = pattern.struct
     let analyzed_struct_pattern = ? analyze(file_def, scope, operand, struct)
     ok(new_analyzed_case_pattern(analyzed_struct_pattern, pattern.location))
 

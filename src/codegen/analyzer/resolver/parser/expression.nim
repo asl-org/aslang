@@ -90,30 +90,25 @@ proc asl*(expression: Expression, indent: string): seq[string] =
 
 proc kind*(expression: Expression): ExpressionKind = expression.kind
 
-proc match*(expression: Expression): Result[Match, string] =
-  case expression.kind:
-  of EK_MATCH: ok(expression.match)
-  else: err(fmt"{expression.location} expression is not a match")
+proc match*(expression: Expression): Match =
+  do_assert expression.kind == EK_MATCH, fmt"{expression.location} expression is not a match"
+  expression.match
 
-proc fncall*(expression: Expression): Result[FunctionCall, string] =
-  case expression.kind:
-  of EK_FNCALL: ok(expression.fncall)
-  else: err(fmt"{expression.location} expression is not a function call")
+proc fncall*(expression: Expression): FunctionCall =
+  do_assert expression.kind == EK_FNCALL, fmt"{expression.location} expression is not a function call"
+  expression.fncall
 
-proc init*(expression: Expression): Result[Initializer, string] =
-  case expression.kind:
-  of EK_INIT: ok(expression.init)
-  else: err(fmt"{expression.location} expression is not an initializer")
+proc init*(expression: Expression): Initializer =
+  do_assert expression.kind == EK_INIT, fmt"{expression.location} expression is not an initializer"
+  expression.init
 
-proc struct_get*(expression: Expression): Result[StructGet, string] =
-  case expression.kind:
-  of EK_STRUCT_GET: ok(expression.struct_get)
-  else: err(fmt"{expression.location} expression is not a struct get")
+proc struct_get*(expression: Expression): StructGet =
+  do_assert expression.kind == EK_STRUCT_GET, fmt"{expression.location} expression is not a struct get"
+  expression.struct_get
 
-proc variable*(expression: Expression): Result[Identifier, string] =
-  case expression.kind:
-  of EK_VARIABLE: ok(expression.variable)
-  else: err(fmt"{expression.location} expression is not a variable")
+proc variable*(expression: Expression): Identifier =
+  do_assert expression.kind == EK_VARIABLE, fmt"{expression.location} expression is not a variable"
+  expression.variable
 
 proc expression_spec*(parser: Parser, indent: int): Result[Expression,
     core.Error] =
@@ -214,7 +209,7 @@ proc case_spec(parser: Parser, indent: int): Result[Case, core.Error] =
   discard ? parser.expect(indent_spec, indent)
   let case_def = ? parser.expect(case_definition_spec)
   discard ? parser.expect_any(empty_line_spec)
-  let statements = ? parser.expect_any(statement_spec, indent + 1,
+  let statements = ? parser.non_empty_list_spec(statement_spec, indent + 1,
       optional_empty_line_spec)
   new_case(case_def, statements)
 
@@ -250,7 +245,7 @@ proc else_spec(parser: Parser, indent: int): Result[Else, core.Error] =
   discard ? parser.expect(colon_spec)
   discard ? parser.expect_any(empty_line_spec)
 
-  let statements = ? parser.expect_any(statement_spec, indent + 1,
+  let statements = ? parser.non_empty_list_spec(statement_spec, indent + 1,
       optional_empty_line_spec)
   new_else(statements, else_def.location)
 
@@ -280,10 +275,9 @@ proc def*(match: Match): MatchDefinition = match.def
 proc kind*(match: Match): MatchKind = match.kind
 proc case_blocks*(match: Match): seq[Case] = match.case_blocks
 
-proc else_block*(match: Match): Result[Else, string] =
-  case match.kind:
-  of MK_CASE_ONLY: err(fmt"{match.location} match block does not have any else block")
-  of MK_COMPLETE: ok(match.else_block)
+proc else_block*(match: Match): Else =
+  do_assert match.kind == MK_COMPLETE, fmt"{match.location} match block does not have any else block"
+  match.else_block
 
 proc asl*(match: Match, indent: string): seq[string] =
   let header = match.def.asl
@@ -305,7 +299,7 @@ proc match_spec*(parser: Parser, indent: int): Result[Match, core.Error] =
   let match_def = ? parser.expect(match_definition_spec)
 
   discard ? parser.expect_any(empty_line_spec)
-  let cases = ? parser.expect_any(case_spec, indent + 1,
+  let cases = ? parser.non_empty_list_spec(case_spec, indent + 1,
       optional_empty_line_spec)
 
   var maybe_else = parser.expect(else_spec, indent + 1)

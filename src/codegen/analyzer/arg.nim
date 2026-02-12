@@ -46,13 +46,13 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope, args: seq[
   for (arg, def) in zip(args, argdefs):
     case arg.kind:
     of AK_VARIABLE:
-      let variable = ? arg.variable
+      let variable = arg.variable
       let arg_module_ref = ? scope.get(variable)
       if arg_module_ref != def.module_ref:
         return err(fmt"{arg.location} expected `{variable.asl}` to be of type `{def.module_ref.asl}` but found `{arg_module_ref.asl}`")
       analyzed_args.add(new_analyzed_argument(arg_module_ref, variable))
     of AK_LITERAL:
-      let literal = ? arg.literal
+      let literal = arg.literal
       ? def.module_ref.module.validate(literal)
       analyzed_args.add(new_analyzed_argument(def.module_ref, literal))
   ok(analyzed_args)

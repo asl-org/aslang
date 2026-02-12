@@ -53,10 +53,9 @@ proc location*(struct_ref: StructRef): Location =
 proc kind*(struct_ref: StructRef): StructRefKind = struct_ref.kind
 proc module*(struct_ref: StructRef): ModuleRef = struct_ref.module
 
-proc struct*(struct_ref: StructRef): Result[Identifier, string] =
-  case struct_ref.kind:
-  of SRK_DEFAULT: err(fmt"{struct_ref.location} expected named struct but found default")
-  of SRK_NAMED: ok(struct_ref.struct)
+proc struct*(struct_ref: StructRef): Identifier =
+  do_assert struct_ref.kind == SRK_NAMED, fmt"{struct_ref.location} expected named struct"
+  struct_ref.struct
 
 proc asl*(struct_ref: StructRef): string =
   case struct_ref.kind:
@@ -177,15 +176,13 @@ proc location*(init: Initializer): Location =
 
 proc kind*(init: Initializer): InitializerKind = init.kind
 
-proc literal*(init: Initializer): Result[LiteralInit, string] =
-  case init.kind:
-  of IK_LITERAL: ok(init.literal)
-  of IK_STRUCT: err(fmt"{init.location} [PE170] expected literal but found struct initializer")
+proc literal*(init: Initializer): LiteralInit =
+  do_assert init.kind == IK_LITERAL, fmt"{init.location} [PE170] expected literal initializer"
+  init.literal
 
-proc struct*(init: Initializer): Result[StructInit, string] =
-  case init.kind:
-  of IK_LITERAL: err(fmt"{init.location} [PE171] expected struct but found literal initializer")
-  of IK_STRUCT: ok(init.struct)
+proc struct*(init: Initializer): StructInit =
+  do_assert init.kind == IK_STRUCT, fmt"{init.location} [PE171] expected struct initializer"
+  init.struct
 
 proc asl*(init: Initializer): string =
   case init.kind:

@@ -99,10 +99,9 @@ proc generic*(module_ref: ResolvedModuleRef): Generic =
   do_assert module_ref.kind == AMRK_GENERIC, "expected a generic"
   module_ref.generic
 
-proc children*(module_ref: ResolvedModuleRef): Result[seq[ResolvedModuleRef], string] =
-  case module_ref.kind:
-  of RMRK_MODULE: ok(module_ref.children)
-  else: err(fmt"{module_ref.location} expected a nested module ref")
+proc children*(module_ref: ResolvedModuleRef): seq[ResolvedModuleRef] =
+  do_assert module_ref.kind == RMRK_MODULE, fmt"{module_ref.location} expected a nested module ref"
+  module_ref.children
 
 proc resolve(file: parser.File, module_name: Identifier, children: seq[
     ResolvedModuleRef], location: Location): Result[ResolvedModuleRef, string] =

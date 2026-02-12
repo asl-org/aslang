@@ -50,7 +50,7 @@ proc struct_default_spec(parser: Parser, indent: int): Result[Struct,
   let def = ? parser.expect(struct_default_definition_spec)
   discard ? parser.expect_at_least_one(empty_line_spec)
 
-  let fields = ? parser.expect_at_least_one(struct_field_definition_spec,
+  let fields = ? parser.non_empty_list_spec(struct_field_definition_spec,
       indent + 1, strict_empty_line_spec)
   new_struct(def, fields)
 
@@ -93,7 +93,7 @@ proc union_branch_spec(parser: Parser, indent: int): Result[UnionBranch,
   discard ? parser.expect(colon_spec)
   discard ? parser.expect_at_least_one(empty_line_spec)
 
-  let fields = ? parser.expect_at_least_one(struct_field_definition_spec,
+  let fields = ? parser.non_empty_list_spec(struct_field_definition_spec,
       indent + 1, strict_empty_line_spec)
   new_union_branch(name, fields)
 
@@ -137,7 +137,7 @@ proc union_spec(parser: Parser, indent: int): Result[Union, core.Error] =
   discard ? parser.expect_at_least_one(empty_line_spec)
 
   discard ? parser.expect_any(empty_line_spec)
-  let branches = ? parser.expect_any(union_branch_spec, indent + 1,
+  let branches = ? parser.non_empty_list_spec(union_branch_spec, indent + 1,
       optional_empty_line_spec)
   new_union(union_keyword.location, branches)
 

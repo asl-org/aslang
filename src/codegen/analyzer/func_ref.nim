@@ -90,7 +90,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, fnref: ResolvedFunctionRef,
     ok(new_analyzed_function_ref(fnref.name, analyzed_function_defs,
         analyzed_function_defs))
   of RFRK_MODULE:
-    let resolved_module_ref = ? fnref.module_ref
+    let resolved_module_ref = fnref.module_ref
     let analyzed_module_ref = if module_def.is_some:
       ? analyze_def(file_def.file, module_def.get.resolved_module, resolved_module_ref)
     else:
