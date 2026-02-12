@@ -1,4 +1,4 @@
-import ../analyzer
+import analyzer
 import literal
 import struct_init
 

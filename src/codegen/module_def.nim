@@ -1,6 +1,6 @@
 import sequtils
 
-import ../analyzer
+import analyzer
 import generic
 import struct
 import func_def

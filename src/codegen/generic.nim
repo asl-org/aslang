@@ -1,4 +1,4 @@
-import ../analyzer
+import analyzer
 import func_def
 
 proc c*(generic: AnalyzedGeneric, prefix: string): seq[string] =

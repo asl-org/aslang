@@ -1,6 +1,5 @@
 import results, strformat, unicode, os, osproc
 
-import analyzer
 import codegen
 
 # Helper to wrap void-returning file operations with error handling

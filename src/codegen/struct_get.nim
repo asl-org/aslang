@@ -1,6 +1,6 @@
 import strformat
 
-import ../analyzer
+import analyzer
 import module_ref
 
 proc c*(struct_get: AnalyzedStructGet, result_arg: string): string =

@@ -1,4 +1,4 @@
-import ../analyzer
+import analyzer
 import module_def
 import func_def
 

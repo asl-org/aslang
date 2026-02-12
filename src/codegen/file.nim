@@ -1,6 +1,6 @@
 import results, strformat, tables, strutils, sets
 
-import ../analyzer
+import analyzer
 import func_def
 import file_def
 import module

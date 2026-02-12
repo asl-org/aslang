@@ -1,6 +1,6 @@
 import strformat, hashes, strutils
 
-import ../analyzer
+import analyzer
 import fncall
 import initializer
 import struct_get

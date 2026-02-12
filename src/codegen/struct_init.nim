@@ -1,6 +1,6 @@
 import strformat, hashes, strutils
 
-import ../analyzer
+import analyzer
 import module_ref
 import arg
 import struct_ref

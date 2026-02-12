@@ -1,4 +1,4 @@
-import ../analyzer
+import analyzer
 
 proc byte_size*(module_ref: AnalyzedModuleRef): uint64 =
   case module_ref.name:

@@ -1,6 +1,6 @@
 import strformat
 
-import ../analyzer
+import analyzer
 
 proc c*(struct_ref: AnalyzedStructRef): string =
   case struct_ref.struct.kind:

@@ -1,6 +1,6 @@
 import strformat
 
-import ../analyzer
+import analyzer
 import module_ref
 
 proc byte_size*(arg: AnalyzedArgumentDefinition): uint64 = arg.module_ref.byte_size

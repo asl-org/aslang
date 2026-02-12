@@ -1,6 +1,6 @@
 import strformat, sequtils, strutils, algorithm
 
-import ../analyzer
+import analyzer
 import module_ref
 import arg_def
 

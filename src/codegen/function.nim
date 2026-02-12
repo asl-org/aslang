@@ -1,6 +1,6 @@
 import strformat, strutils
 
-import ../analyzer
+import analyzer
 import func_def
 import expression
 
