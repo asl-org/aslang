@@ -14,7 +14,7 @@ type ResolvedGeneric* = ref object of RootObj
   defs_repo: Repo[ResolvedFunctionDefinition]
   location: Location
 
-proc new_resolved_generic*(id: uint64, generic: Generic, defs: seq[
+proc new_resolved_generic(id: uint64, generic: Generic, defs: seq[
     ResolvedFunctionDefinition], location: Location): Result[ResolvedGeneric, string] =
   let maybe_defs_repo = new_repo[ResolvedFunctionDefinition](defs, @[new_index[
       ResolvedFunctionDefinition]("def", hash, true)])
@@ -24,7 +24,7 @@ proc new_resolved_generic*(id: uint64, generic: Generic, defs: seq[
 
 proc id*(generic: ResolvedGeneric): uint64 = generic.id
 proc location*(generic: ResolvedGeneric): Location = generic.location
-proc parsed_generic*(generic: ResolvedGeneric): Generic = generic.parsed_generic
+proc parsed_generic(generic: ResolvedGeneric): Generic = generic.parsed_generic
 proc name*(generic: ResolvedGeneric): Identifier = generic.parsed_generic.name
 proc defs*(generic: ResolvedGeneric): seq[
     ResolvedFunctionDefinition] = generic.defs_repo.items
@@ -69,7 +69,7 @@ type ResolvedModule* = ref object of RootObj
   data: ResolvedData
   functions_repo: Repo[ResolvedFunction]
 
-proc new_resolved_module*(id: uint64, parsed_module: Module, generics: seq[
+proc new_resolved_module(id: uint64, parsed_module: Module, generics: seq[
     ResolvedGeneric], data: ResolvedData, functions: seq[
     ResolvedFunction]): Result[ResolvedModule, string] =
   let maybe_generics_repo = new_repo(generics, @[new_index[ResolvedGeneric](

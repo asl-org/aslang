@@ -35,12 +35,6 @@ proc new_argument_definition*(module_ref: ModuleRef,
     name: Identifier): ArgumentDefinition =
   ArgumentDefinition(name: name, module_ref: module_ref)
 
-proc new_argument_definition*(module_ref: string, name: string): Result[
-    ArgumentDefinition, core.Error] =
-  let module_ref_id = new_module_ref(module_ref)
-  let name_id = new_identifier(name)
-  ok(new_argument_definition(module_ref_id, name_id))
-
 proc module_ref*(def: ArgumentDefinition): ModuleRef =
   def.module_ref
 

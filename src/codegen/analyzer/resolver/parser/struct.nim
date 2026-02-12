@@ -36,8 +36,6 @@ proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields_repo.items
 proc location*(struct: Struct): Location =
   struct.def.location
 
-proc def*(struct: Struct): StructDefinition = struct.def
-
 proc asl*(struct: Struct, indent: string): seq[string] =
   let header = struct.def.asl
   var fields: seq[string]

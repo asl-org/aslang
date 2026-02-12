@@ -12,7 +12,7 @@ type ResolvedLiteralInit* = ref object of RootObj
   module_ref: ResolvedModuleRef
   literal: Literal
 
-proc new_resolved_literal_init*(module_ref: ResolvedModuleRef,
+proc new_resolved_literal_init(module_ref: ResolvedModuleRef,
     literal: Literal): ResolvedLiteralInit =
   ResolvedLiteralInit(module_ref: module_ref, literal: literal)
 
@@ -42,10 +42,10 @@ type
     of TSRK_DEFAULT: discard
     of TSRK_NAMED: name: Identifier
 
-proc new_resolved_struct_ref*(module_ref: ResolvedModuleRef): ResolvedStructRef =
+proc new_resolved_struct_ref(module_ref: ResolvedModuleRef): ResolvedStructRef =
   ResolvedStructRef(kind: TSRK_DEFAULT, module_ref: module_ref)
 
-proc new_resolved_struct_ref*(module_ref: ResolvedModuleRef,
+proc new_resolved_struct_ref(module_ref: ResolvedModuleRef,
     name: Identifier): ResolvedStructRef =
   ResolvedStructRef(kind: TSRK_NAMED, module_ref: module_ref, name: name)
 
@@ -76,7 +76,7 @@ type ResolvedStructInit* = ref object of RootObj
   struct_ref: ResolvedStructRef
   args: seq[KeywordArgument]
 
-proc new_resolved_struct_init*(struct_ref: ResolvedStructRef, args: seq[
+proc new_resolved_struct_init(struct_ref: ResolvedStructRef, args: seq[
     KeywordArgument]): ResolvedStructInit =
   ResolvedStructInit(struct_ref: struct_ref, args: args)
 
@@ -105,10 +105,10 @@ type
     of TIK_LITERAL: literal: ResolvedLiteralInit
     of TIK_STRUCT: struct: ResolvedStructInit
 
-proc new_resolved_initializer*(literal: ResolvedLiteralInit): ResolvedInitializer =
+proc new_resolved_initializer(literal: ResolvedLiteralInit): ResolvedInitializer =
   ResolvedInitializer(kind: TIK_LITERAL, literal: literal)
 
-proc new_resolved_initializer*(struct: ResolvedStructInit): ResolvedInitializer =
+proc new_resolved_initializer(struct: ResolvedStructInit): ResolvedInitializer =
   ResolvedInitializer(kind: TIK_STRUCT, struct: struct)
 
 proc location*(init: ResolvedInitializer): Location =

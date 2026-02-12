@@ -37,9 +37,6 @@ proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
   ok(Generic(kind: GK_CONSTRAINED, name: name, defs_repo: maybe_defs_repo.get,
       location: location))
 
-proc module_ref*(generic: Generic): ModuleRef =
-  new_module_ref(generic.name)
-
 proc location*(generic: Generic): Location =
   generic.location
 

@@ -126,14 +126,9 @@ type
     of TSK_DEFAULT: discard
     of TSK_NAMED: name: Identifier
 
-proc new_resolved_struct*(fields: seq[ResolvedArgumentDefinition],
+proc new_resolved_struct(fields: seq[ResolvedArgumentDefinition],
     location: Location): ResolvedStruct =
   ResolvedStruct(kind: TSK_DEFAULT, fields: fields, location: location)
-
-proc new_resolved_struct*(name: Identifier, fields: seq[
-    ResolvedArgumentDefinition], location: Location): ResolvedStruct =
-  ResolvedStruct(kind: TSK_NAMED, name: name, fields: fields,
-      location: location)
 
 proc module_deps*(struct: ResolvedStruct): HashSet[Module] =
   var module_set: HashSet[Module]

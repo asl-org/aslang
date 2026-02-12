@@ -18,11 +18,11 @@ type
     of RFRK_LOCAL: discard
     of RFRK_MODULE: module_ref: ResolvedModuleRef
 
-proc new_resolved_function_ref*(name: Identifier,
+proc new_resolved_function_ref(name: Identifier,
     arity: uint): ResolvedFunctionRef =
   ResolvedFunctionRef(kind: RFRK_LOCAL, name: name, arity: arity)
 
-proc new_resolved_function_ref*(module_ref: ResolvedModuleRef, name: Identifier,
+proc new_resolved_function_ref(module_ref: ResolvedModuleRef, name: Identifier,
     arity: uint): ResolvedFunctionRef =
   ResolvedFunctionRef(kind: RFRK_MODULE, module_ref: module_ref, name: name, arity: arity)
 
@@ -61,7 +61,7 @@ type ResolvedFunctionCall* = ref object of RootObj
   fnref: ResolvedFunctionRef
   args: seq[Argument]
 
-proc new_resolved_function_call*(fnref: ResolvedFunctionRef, args: seq[
+proc new_resolved_function_call(fnref: ResolvedFunctionRef, args: seq[
     Argument]): ResolvedFunctionCall =
   ResolvedFunctionCall(fnref: fnref, args: args)
 

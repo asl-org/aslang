@@ -1,4 +1,4 @@
-import results, strformat, sequtils, tables, hashes
+import results, strformat, tables, hashes
 
 import core, identifier, module_ref, defs, struct, generic, function
 
@@ -104,14 +104,6 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
   ok(Module(def: def, generics_repo: generics_repo, data: data,
       functions_repo: functions_repo))
 
-proc new_module*(name: string, functions: seq[
-    ExternFunction]): Result[Module, core.Error] =
-  let name = new_identifier(name)
-  let module_def = new_module_definition(name, name.location)
-  let module_data = new_data()
-  let module_functions = functions.map_it(new_function(it))
-  new_module(module_def, @[], module_data, module_functions)
-
 proc hash*(module: Module): Hash = module.def.hash
 proc `==`*(self: Module, other: Module): bool = self.hash == other.hash
 proc def*(module: Module): ModuleDefinition = module.def
@@ -120,13 +112,6 @@ proc location*(module: Module): Location = module.def.location
 proc generics*(module: Module): seq[Generic] = module.generics_repo.items
 proc data*(module: Module): Data = module.data
 proc functions*(module: Module): seq[Function] = module.functions_repo.items
-
-proc module_ref*(module: Module): Result[ModuleRef, core.Error] =
-  if module.generics.len > 0:
-    let children = module.generics.map_it(new_module_ref(it.name))
-    new_module_ref(module.name, children)
-  else:
-    ok(new_module_ref(module.name))
 
 proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =
   let maybe_generic = module.generics_repo.find("name", name)
