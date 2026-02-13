@@ -117,6 +117,8 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
 # =============================================================================
 
 type
+  # TODO: Figure out if `TSK_NAMED` is being used anywhere.
+  # if not eliminate the dead code surrounding `TSK_NAMED`.
   ResolvedStructKind* = enum
     TSK_DEFAULT, TSK_NAMED
   ResolvedStruct* = ref object of RootObj
@@ -211,17 +213,61 @@ proc resolve*(file: parser.File, module: parser.Module, union: Union): Result[
   ok(new_resolved_union(union, resolved_branches))
 
 type
+  ResolvedLiteralKind* = enum
+    RLK_U8, RLK_U16, RLK_U32, RLK_U64
+    RLK_S8, RLK_S16, RLK_S32, RLK_S64
+    RLK_F32, RLK_F64, RLK_STRING, RLK_PTR
+  ResolvedLiteral* = ref object of RootObj
+    kind: ResolvedLiteralKind
+    location: Location
+    name: string
+
+proc name*(literal: ResolvedLiteral): string = literal.name
+
+proc resolve(literal: ParsedLiteral): Result[
+    ResolvedLiteral, string] =
+  case literal.asl:
+  of "uint8_t": ok(ResolvedLiteral(kind: RLK_U8, name: literal.asl,
+      location: literal.location))
+  of "uint16_t": ok(ResolvedLiteral(kind: RLK_U16, name: literal.asl,
+      location: literal.location))
+  of "uint32_t": ok(ResolvedLiteral(kind: RLK_U32, name: literal.asl,
+      location: literal.location))
+  of "uint64_t": ok(ResolvedLiteral(kind: RLK_U64, name: literal.asl,
+      location: literal.location))
+  of "int8_t": ok(ResolvedLiteral(kind: RLK_S8, name: literal.asl,
+      location: literal.location))
+  of "int16_t": ok(ResolvedLiteral(kind: RLK_S16, name: literal.asl,
+      location: literal.location))
+  of "int32_t": ok(ResolvedLiteral(kind: RLK_S32, name: literal.asl,
+      location: literal.location))
+  of "int64_t": ok(ResolvedLiteral(kind: RLK_S64, name: literal.asl,
+      location: literal.location))
+  of "float": ok(ResolvedLiteral(kind: RLK_F32, name: literal.asl,
+      location: literal.location))
+  of "double": ok(ResolvedLiteral(kind: RLK_F64, name: literal.asl,
+      location: literal.location))
+  of "string": ok(ResolvedLiteral(kind: RLK_STRING, name: literal.asl,
+      location: literal.location))
+  of "uintptr_t": ok(ResolvedLiteral(kind: RLK_PTR, name: literal.asl,
+      location: literal.location))
+  else: err(fmt"{literal.location} literal `{literal.asl}` is unsupported")
+
+type
   ResolvedDataKind* = enum
     RDK_NONE, RDK_LITERAL, RDK_STRUCT, RDK_UNION
   ResolvedData* = ref object of RootObj
     case kind: ResolvedDataKind
     of RDK_NONE: discard
-    of RDK_LITERAL: discard
+    of RDK_LITERAL: literal: ResolvedLiteral
     of RDK_STRUCT: struct: ResolvedStruct
     of RDK_UNION: union: ResolvedUnion
 
 proc new_resolved_data(): ResolvedData =
   ResolvedData(kind: RDK_NONE)
+
+proc new_resolved_data(literal: ResolvedLiteral): ResolvedData =
+  ResolvedData(kind: RDK_LITERAL, literal: literal)
 
 proc new_resolved_data(struct: ResolvedStruct): ResolvedData =
   ResolvedData(kind: RDK_STRUCT, struct: struct)
@@ -230,6 +276,9 @@ proc new_resolved_data(union: ResolvedUnion): ResolvedData =
   ResolvedData(kind: RDK_UNION, union: union)
 
 proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
+proc literal*(data: ResolvedData): ResolvedLiteral =
+  do_assert data.kind == RDK_LITERAL, "[UNREACHABLE] expected data to be literal"
+  data.literal
 proc struct*(data: ResolvedData): ResolvedStruct =
   do_assert data.kind == RDK_STRUCT, "[UNREACHABLE] expected data to be struct"
   data.struct
@@ -250,7 +299,8 @@ proc resolve*(file: parser.File, module: parser.Module, data: Data): Result[
   of DK_NONE:
     return ok(new_resolved_data())
   of DK_LITERAL:
-    assert false, "[UNREACHABLE] - literal resolution is not supported"
+    let resolved_literal = ? resolve(module.data.literal)
+    return ok(new_resolved_data(resolved_literal))
   of DK_STRUCT:
     let resolved_struct = ? resolve(file, module, module.data.struct)
     return ok(new_resolved_data(resolved_struct))

@@ -277,6 +277,9 @@ proc struct_keyword_spec*(parser: Parser): Result[Token,
 proc generic_keyword_spec*(parser: Parser): Result[Token,
     Error] = parser.token_value_spec("generic")
 
+proc literal_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("literal")
+
 proc comment_spec*(parser: Parser): Result[Token,
     Error] = parser.token_kind_spec(TK_COMMENT)
 

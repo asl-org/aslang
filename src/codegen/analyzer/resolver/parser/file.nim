@@ -74,9 +74,8 @@ proc find_module*(file: File, module_name: Identifier): Result[Module, string] =
   if maybe_module.is_ok: ok(maybe_module.get[0])
   else: err(fmt"{module_name.location} [PE168] module `{module_name.asl}` is not defined in the file {file.path}")
 
-proc file_spec*(parser: Parser, builtin_modules: seq[Module]): Result[File,
-    core.Error] =
-  var modules = builtin_modules
+proc file_spec*(parser: Parser): Result[File, core.Error] =
+  var modules: seq[Module]
   var functions: seq[Function]
   while parser.can_parse():
     var errors: seq[core.Error]
@@ -93,4 +92,4 @@ proc file_spec*(parser: Parser, builtin_modules: seq[Module]): Result[File,
     # NOTE: Error out if the parser failed to parse both module and function
     if errors.len == 2: return err(errors.max())
 
-  new_file(parser.path(), parser.indent(), modules, functions)
+  new_file(parser.path, parser.indent, modules, functions)

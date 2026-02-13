@@ -49,6 +49,6 @@ export file
 
 proc parse*(path: string, tokens: seq[Token]): Result[file.File, string] =
   let parser = new_parser(path, tokens)
-  let maybe_parsed = file_spec(parser, @[])
+  let maybe_parsed = file_spec(parser)
   if maybe_parsed.is_ok: ok(maybe_parsed.get)
   else: err($(maybe_parsed.error))

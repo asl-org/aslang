@@ -3,6 +3,7 @@ import strformat, sequtils, strutils, algorithm
 import analyzer
 import module_ref
 import arg_def
+import literal
 
 proc h*(struct: AnalyzedStruct, prefix: string): seq[string] =
   # NOTE: sort fields for efficient packing of bytes
@@ -199,22 +200,25 @@ proc c*(union: AnalyzedUnion, prefix: string): seq[string] =
     lines.add(branch.c(prefix, index.uint64))
   return lines
 
+proc typedefs*(data: AnalyzedData, prefix: string): seq[string] =
+  case data.kind:
+  of ADK_LITERAL: @[data.literal.h(prefix)]
+  else: @[]
+
 proc h*(data: AnalyzedData, prefix: string): seq[string] =
   var lines: seq[string]
   case data.kind:
   of ADK_NONE: discard
-  of ADK_LITERAL: do_assert false, "[UNREACHABLE] literal codegen is not supported"
-  of ADK_STRUCT:
-    lines.add(data.struct.h(prefix))
-  of ADK_UNION:
-    lines.add(data.union.h(prefix))
+  of ADK_LITERAL: discard
+  of ADK_STRUCT: lines.add(data.struct.h(prefix))
+  of ADK_UNION: lines.add(data.union.h(prefix))
   return lines
 
 proc c*(data: AnalyzedData, prefix: string): seq[string] =
   var lines: seq[string]
   case data.kind:
   of ADK_NONE: discard
-  of ADK_LITERAL: do_assert false, "[UNREACHABLE] literal code gen is not supported"
+  of ADK_LITERAL: discard
   of ADK_STRUCT: lines.add(data.struct.c(prefix))
   of ADK_UNION: lines.add(data.union.c(prefix))
   return lines

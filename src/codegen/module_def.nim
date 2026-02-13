@@ -5,6 +5,9 @@ import generic
 import struct
 import func_def
 
+proc typedefs*(def: AnalyzedModuleDefinition): seq[string] =
+  def.data.typedefs(def.name.asl)
+
 proc h*(def: AnalyzedModuleDefinition): seq[string] =
   var lines: seq[string]
   for generic in def.generics:

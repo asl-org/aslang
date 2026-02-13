@@ -1,4 +1,5 @@
 module S8:
+  literal: int8_t
   extern S8_byte_size:
     fn byte_size(U64 items): U64
   extern S8_read:
@@ -6,6 +7,7 @@ module S8:
   extern S8_write:
     fn write(S8 value, Pointer ptr, U64 offset): Pointer
 module S16:
+  literal: int16_t
   extern S16_byte_size:
     fn byte_size(U64 items): U64
   extern S16_read:
@@ -13,6 +15,7 @@ module S16:
   extern S16_write:
     fn write(S16 value, Pointer ptr, U64 offset): Pointer
 module S32:
+  literal: int32_t
   extern S32_byte_size:
     fn byte_size(U64 items): U64
   extern S32_read:
@@ -20,6 +23,7 @@ module S32:
   extern S32_write:
     fn write(S32 value, Pointer ptr, U64 offset): Pointer
 module S64:
+  literal: int64_t
   extern S64_byte_size:
     fn byte_size(U64 items): U64
   extern S64_read:
@@ -43,6 +47,7 @@ module S64:
   extern S64_from_U64:
     fn from(U64 value): S64
 module U8:
+  literal: uint8_t
   extern U8_byte_size:
     fn byte_size(U64 items): U64
   extern U8_read:
@@ -64,6 +69,7 @@ module U8:
   extern U8_subtract_U8:
     fn subtract(U8 a, U8 b): U8
 module U16:
+  literal: uint16_t
   extern U16_byte_size:
     fn byte_size(U64 items): U64
   extern U16_read:
@@ -71,6 +77,7 @@ module U16:
   extern U16_write:
     fn write(U16 value, Pointer ptr, U64 offset): Pointer
 module U32:
+  literal: uint32_t
   extern U32_byte_size:
     fn byte_size(U64 items): U64
   extern U32_read:
@@ -86,6 +93,7 @@ module U32:
   extern U32_compare_U32:
     fn compare(U32 a, U32 b): S8
 module U64:
+  literal: uint64_t
   extern U64_byte_size:
     fn byte_size(U64 items): U64
   extern U64_read:
@@ -117,6 +125,7 @@ module U64:
   extern U64_from_U8:
     fn from(U8 value): U64
 module F32:
+  literal: float
   extern F32_byte_size:
     fn byte_size(U64 items): U64
   extern F32_read:
@@ -124,6 +133,7 @@ module F32:
   extern F32_write:
     fn write(F32 value, Pointer ptr, U64 offset): Pointer
 module F64:
+  literal: double
   extern F64_byte_size:
     fn byte_size(U64 items): U64
   extern F64_read:
@@ -131,6 +141,7 @@ module F64:
   extern F64_write:
     fn write(F64 value, Pointer ptr, U64 offset): Pointer
 module String:
+  literal: string
   extern String_byte_size:
     fn byte_size(U64 items): U64
   extern String_read:
@@ -140,6 +151,7 @@ module String:
   extern String_get:
     fn get(String value, U64 index): Status[U8]
 module Pointer:
+  literal: uintptr_t
   extern Pointer_byte_size:
     fn byte_size(U64 items): U64
   extern Pointer_read:

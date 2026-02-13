@@ -203,26 +203,41 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     analyzed_union_branches.add(analyzed_branch)
   new_analyzed_union(union, analyzed_union_branches)
 
+type AnalyzedLiteral* = ref object of RootObj
+  resolved_literal: ResolvedLiteral
+
+proc new_analyzed_literal(resolved_literal: ResolvedLiteral): AnalyzedLiteral =
+  AnalyzedLiteral(resolved_literal: resolved_literal)
+
+proc name*(literal: AnalyzedLiteral): string =
+  literal.resolved_literal.name
+
 type
   AnalyzedDataKind* = enum
     ADK_NONE, ADK_LITERAL, ADK_STRUCT, ADK_UNION
   AnalyzedData* = ref object of RootObj
     case kind: AnalyzedDataKind
     of ADK_NONE: discard
-    of ADK_LITERAL: discard
+    of ADK_LITERAL: literal: AnalyzedLiteral
     of ADK_STRUCT: struct: AnalyzedStruct
     of ADK_UNION: union: AnalyzedUnion
 
 proc new_analyzed_data(): AnalyzedData =
   AnalyzedData(kind: ADK_NONE)
 
-proc new_resolved_data(struct: AnalyzedStruct): AnalyzedData =
+proc new_analyzed_data(literal: AnalyzedLiteral): AnalyzedData =
+  AnalyzedData(kind: ADK_LITERAL, literal: literal)
+
+proc new_analyzed_data(struct: AnalyzedStruct): AnalyzedData =
   AnalyzedData(kind: ADK_STRUCT, struct: struct)
 
-proc new_resolved_data(union: AnalyzedUnion): AnalyzedData =
+proc new_analyzed_data(union: AnalyzedUnion): AnalyzedData =
   AnalyzedData(kind: ADK_UNION, union: union)
 
 proc kind*(data: AnalyzedData): AnalyzedDataKind = data.kind
+proc literal*(data: AnalyzedData): AnalyzedLiteral =
+  do_assert data.kind == ADK_LITERAL, "[UNREACHABLE] expected a literal"
+  data.literal
 proc struct*(data: AnalyzedData): AnalyzedStruct =
   do_assert data.kind == ADK_STRUCT, "[UNREACHABLE] expected a struct"
   data.struct
@@ -235,7 +250,7 @@ proc generic_impls*(data: AnalyzedData): Table[ResolvedModule, seq[HashSet[
   var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
   case data.kind:
   of ADK_NONE: discard
-  of ADK_LITERAL: do_assert false, "[UNREACHABLE] literal generic_impls are not supported"
+  of ADK_LITERAL: discard
   of ADK_STRUCT: impl_set = impl_set.merge(data.struct.generic_impls)
   of ADK_UNION: impl_set = impl_set.merge(data.union.generic_impls)
   return impl_set
@@ -257,10 +272,12 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
   of RDK_NONE: return ok(new_analyzed_data())
-  of RDK_LITERAL: do_assert false, "[UNREACHABLE] literal analysis is not yet supported"
+  of RDK_LITERAL:
+    let analyzed_literal = new_analyzed_literal(data.literal)
+    ok(new_analyzed_data(analyzed_literal))
   of RDK_STRUCT:
     let analyzed_struct = ? analyze_def(file, module, data.struct)
-    return ok(new_resolved_data(analyzed_struct))
+    return ok(new_analyzed_data(analyzed_struct))
   of RDK_UNION:
     let analyzed_union = ? analyze_def(file, module, data.union)
-    return ok(new_resolved_data(analyzed_union))
+    return ok(new_analyzed_data(analyzed_union))
