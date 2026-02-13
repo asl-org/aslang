@@ -20,7 +20,8 @@ proc new_analyzed_struct_init(data_ref: AnalyzedDataRef, fields: seq[
   AnalyzedStructInit(data_ref: data_ref, fields: fields)
 
 proc data_ref*(struct_init: AnalyzedStructInit): AnalyzedDataRef = struct_init.data_ref
-proc fields*(struct_init: AnalyzedStructInit): seq[AnalyzedArgument] = struct_init.fields
+proc fields*(struct_init: AnalyzedStructInit): seq[
+    AnalyzedArgument] = struct_init.fields
 
 proc returns*(struct_init: AnalyzedStructInit): AnalyzedModuleRef =
   struct_init.data_ref.module_ref
@@ -43,7 +44,8 @@ proc asl*(struct_init: AnalyzedStructInit): string =
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     init: ResolvedStructInit,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStructInit, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedStructInit, string] =
   let analyzed_data_ref = ? analyze(file_def, scope, init.struct_ref, module_def)
 
   var args = new_seq[Argument](analyzed_data_ref.fields.len)

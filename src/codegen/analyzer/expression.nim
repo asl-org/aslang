@@ -77,9 +77,11 @@ proc variable*(expression: AnalyzedExpression): AnalyzedArgumentDefinition =
   expression.variable
 proc expression*(statement: AnalyzedStatement): AnalyzedExpression = statement.expression
 proc pattern*(case_block: AnalyzedCase): AnalyzedCasePattern = case_block.pattern
-proc statements*(case_block: AnalyzedCase): seq[AnalyzedStatement] = case_block.statements
+proc statements*(case_block: AnalyzedCase): seq[
+    AnalyzedStatement] = case_block.statements
 proc location*(case_block: AnalyzedCase): Location = case_block.location
-proc statements*(else_block: AnalyzedElse): seq[AnalyzedStatement] = else_block.statements
+proc statements*(else_block: AnalyzedElse): seq[
+    AnalyzedStatement] = else_block.statements
 proc location*(else_block: AnalyzedElse): Location = else_block.location
 proc kind*(match: AnalyzedMatch): AnalyzedMatchKind = match.kind
 proc operand*(match: AnalyzedMatch): AnalyzedArgumentDefinition = match.operand
@@ -123,11 +125,13 @@ proc asl(expression: AnalyzedExpression, indent: string): seq[string] =
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     match: ResolvedMatch,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedMatch, string]
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedMatch, string]
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     expression: ResolvedExpression,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedExpression, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedExpression, string] =
   case expression.kind:
   of TEK_FNCALL:
     let fncall = expression.fncall
@@ -171,7 +175,8 @@ proc asl*(statement: AnalyzedStatement, indent: string): seq[string] =
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     statement: ResolvedStatement,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStatement, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedStatement, string] =
   let analyzed_expression = ? analyze(file_def, scope, statement.expression, module_def)
   let analyzed_arg = new_analyzed_argument_definition(
       analyzed_expression.returns, statement.arg)
@@ -202,7 +207,8 @@ proc asl(case_block: AnalyzedCase, indent: string): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     operand: AnalyzedModuleRef, case_block: ResolvedCase,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedCase, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedCase, string] =
   var case_scope = scope.clone()
   let analyzed_case_pattern = ? analyze(file_def, scope, operand,
       case_block.pattern)
@@ -233,7 +239,8 @@ proc returns(else_block: AnalyzedElse): AnalyzedModuleRef =
 proc generic_impls(else_block: AnalyzedElse): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
   var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
-  for statement in else_block.statements: impl_set = impl_set.merge(statement.generic_impls)
+  for statement in else_block.statements: impl_set = impl_set.merge(
+      statement.generic_impls)
   return impl_set
 
 proc asl(else_block: AnalyzedElse, indent: string): seq[string] =
@@ -245,7 +252,8 @@ proc asl(else_block: AnalyzedElse, indent: string): seq[string] =
 
 proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     else_block: ResolvedElse,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedElse, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedElse, string] =
   var else_scope = scope.clone()
   var analyzed_statements: seq[AnalyzedStatement]
   for statement in else_block.statements:
@@ -296,7 +304,8 @@ proc asl(match: AnalyzedMatch, indent: string): seq[string] =
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     match: ResolvedMatch,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedMatch, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedMatch, string] =
   let analyzed_operand_module_ref = ? scope.get(match.operand)
   case analyzed_operand_module_ref.kind:
     of AMRK_GENERIC:

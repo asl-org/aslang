@@ -14,7 +14,8 @@ type FunctionScope* = ref object of RootObj
 proc new_function_scope*(): FunctionScope =
   FunctionScope()
 
-proc new_function_scope(table: Table[Identifier, AnalyzedModuleRef]): FunctionScope =
+proc new_function_scope(table: Table[Identifier,
+    AnalyzedModuleRef]): FunctionScope =
   FunctionScope(table: table)
 
 proc get*(scope: FunctionScope, name: Identifier): Result[AnalyzedModuleRef, string] =
@@ -82,7 +83,8 @@ proc asl*(fnref: AnalyzedFunctionRef): string =
   of RFRK_MODULE: fmt"{fnref.module_ref.asl}.{fnref.name.asl}"
 
 proc analyze*(file_def: AnalyzedFileDefinition, fnref: ResolvedFunctionRef,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[
     AnalyzedFunctionRef, string] =
   case fnref.kind:
   of RFRK_LOCAL:
