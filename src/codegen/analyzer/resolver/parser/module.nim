@@ -137,12 +137,12 @@ proc asl*(module: Module, indent: string): seq[string] =
 
 proc generic_list_spec(parser: Parser, indent: int): Result[seq[Generic],
     core.Error] =
-  parser.expect_any(generic_spec, indent, optional_empty_line_spec)
+  parser.list_spec(generic_spec, indent, optional_empty_line_spec)
 
 proc function_list_spec(parser: Parser, indent: int): Result[seq[Function],
     core.Error] =
   discard ? parser.expect_any(empty_line_spec)
-  parser.expect_any(function_spec, indent + 1, optional_empty_line_spec)
+  parser.list_spec(function_spec, indent + 1, optional_empty_line_spec)
 
 proc module_spec*(parser: Parser, indent: int): Result[Module, core.Error] =
   discard ? parser.expect(indent_spec, indent)

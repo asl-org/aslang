@@ -1,6 +1,6 @@
 import results, strformat, tables
 
-import core, defs, identifier, module_ref
+import core, defs, identifier
 
 type Struct* = ref object of RootObj
   def: StructDefinition
@@ -24,13 +24,6 @@ proc new_struct*(def: StructDefinition, fields: seq[
     err(err_parser_arg_already_defined(field.location, field.name.asl,
           predefined_field_location))
 
-proc find_field*(struct: Struct, field: Identifier): Result[ModuleRef, string] =
-  let maybe_found = struct.fields_repo.find("name", field)
-  if maybe_found.is_err:
-    err(fmt"{field.location} [PE109] field `{field.asl}` does not exist")
-  else:
-    ok(maybe_found.get[0].module_ref)
-
 proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields_repo.items
 
 proc location*(struct: Struct): Location =
@@ -47,7 +40,7 @@ proc asl*(struct: Struct, indent: string): seq[string] =
 proc struct_default_spec(parser: Parser, indent: int): Result[Struct,
     core.Error] =
   discard ? parser.expect(indent_spec, indent)
-  let def = ? parser.expect(struct_default_definition_spec)
+  let def = ? parser.expect(struct_definition_spec)
   discard ? parser.expect_at_least_one(empty_line_spec)
 
   let fields = ? parser.non_empty_list_spec(struct_field_definition_spec,
@@ -79,11 +72,6 @@ proc new_union_branch*(branch_name: Identifier, fields: seq[
 proc location*(branch: UnionBranch): Location = branch.name.location
 proc name*(branch: UnionBranch): Identifier = branch.name
 proc fields*(branch: UnionBranch): seq[ArgumentDefinition] = branch.fields_repo.items
-proc struct*(branch: UnionBranch): Result[Struct, string] =
-  let def = new_struct_definition(branch.name.location)
-  let maybe_struct = new_struct(def, branch.fields_repo.items)
-  if maybe_struct.is_ok: ok(maybe_struct.get)
-  else: err($(maybe_struct.error))
 
 proc union_branch_spec(parser: Parser, indent: int): Result[UnionBranch,
     core.Error] =

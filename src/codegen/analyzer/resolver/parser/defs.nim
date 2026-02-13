@@ -16,7 +16,7 @@ proc location*(def: StructDefinition): Location = def.location
 
 proc asl*(def: StructDefinition): string = "struct:"
 
-proc struct_default_definition_spec*(parser: Parser): Result[
+proc struct_definition_spec*(parser: Parser): Result[
     StructDefinition, core.Error] =
   let struct_keyword = ? parser.expect(struct_keyword_spec)
   discard ? parser.expect_any(space_spec)
