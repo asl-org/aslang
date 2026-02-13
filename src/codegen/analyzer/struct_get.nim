@@ -35,7 +35,8 @@ proc asl*(struct_get: AnalyzedStructGet): string =
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     struct_get: ResolvedStructGet,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedStructGet, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedStructGet, string] =
   let analyzed_module_ref = ? scope.get(struct_get.variable)
   let analyzed_variable = new_analyzed_argument_definition(analyzed_module_ref,
       struct_get.variable)

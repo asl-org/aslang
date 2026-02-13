@@ -1,4 +1,23 @@
-#include "runtime.h"
+#include <stdint.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+/** NOTE: Needed for UNREACHABLE Macro */
+#if __STDC_VERSION__ >= 202311L
+// Using C23 unreachable()
+#include <stddef.h>
+#define UNREACHABLE() unreachable()
+#elif defined(__GNUC__) || defined(__clang__)
+// Using compiler-specific built-ins
+#define UNREACHABLE() __builtin_unreachable()
+#elif defined(_MSC_VER)
+// Using compiler-specific built-ins
+#define UNREACHABLE() __assume(0)
+#else
+// Fallback - abort or trigger undefined behavior
+#define UNREACHABLE() abort()
+#endif
 
 /** NOTE: Type definitions for Native C types */
 typedef int8_t S8;
@@ -13,6 +32,7 @@ typedef float F32;
 typedef double F64;
 typedef char *String;
 typedef void *Pointer;
+typedef const char *string;
 
 /** NOTE: System calls fall under System module */
 Pointer System_allocate(U64 bytes)

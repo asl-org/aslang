@@ -56,7 +56,13 @@ proc c*(file: AnalyzedFile): Result[string, string] =
     lines.add(function.c)
 
   let code = @[
-    "#include \"runtime.h\"\n",
+    "#include <stdint.h>",
+    "#include <string.h>",
+    "#include <stdio.h>",
+    "#include <stdlib.h>",
+    "\n",
+    "typedef const char *string;",
+    "\n",
     lines.join("\n"),
     "\n",
     "int main(int argc, char** argv) {",

@@ -103,11 +103,6 @@ proc children*(module_ref: ResolvedModuleRef): seq[ResolvedModuleRef] =
   do_assert module_ref.kind == RMRK_MODULE, fmt"{module_ref.location} expected a nested module ref"
   module_ref.children
 
-proc resolve(file: parser.File, module_name: Identifier, children: seq[
-    ResolvedModuleRef], location: Location): Result[ResolvedModuleRef, string] =
-  let arg_module = ? file.find_module(module_name)
-  ok(new_resolved_module_ref(arg_module, children, location))
-
 proc resolve*(file: parser.File, module: Option[parser.Module],
     module_ref: ModuleRef): Result[ResolvedModuleRef, string] =
   let module_name = module_ref.module
@@ -121,14 +116,11 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
         let generic = maybe_generic.get
         return ok(new_resolved_module_ref(generic, module_name.location))
   of MRK_NESTED:
-    if module.is_some:
-      for child in module_ref.children:
-        let resolved_child = ? resolve(file, module, child)
-        resolved_children.add(resolved_child)
-    else:
-      for child in module_ref.children:
-        let resolved_child = ? resolve(file, module, child)
-        resolved_children.add(resolved_child)
+    for child in module_ref.children:
+      let resolved_child = ? resolve(file, module, child)
+      resolved_children.add(resolved_child)
 
-  file.resolve(module_name, resolved_children, module_name.location)
+  let arg_module = ? file.find_module(module_name)
+  ok(new_resolved_module_ref(arg_module, resolved_children,
+      module_name.location))
 
