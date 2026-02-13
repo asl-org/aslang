@@ -13,7 +13,7 @@ const MAX_ARGS_LENGTH* = 32
 const MAX_BRANCH_LENGTH* = 256
 
 # parser constants
-const INDENT_SIZE* = 2 # spaces
+const INDENT_SIZE = 2 # spaces
 
 type Error* = ref object of RootObj
   location: Location
@@ -157,8 +157,11 @@ type Parser* = ref object of RootObj
   index: int = 0
   indent: int
 
-proc new_parser*(path: string, tokens: seq[Token], indent: int): Parser =
+proc new_parser(path: string, tokens: seq[Token], indent: int): Parser =
   Parser(path: path, tokens: tokens, index: 0, indent: indent)
+
+proc new_parser*(path: string, tokens: seq[Token]): Parser =
+  new_parser(path, tokens, INDENT_SIZE)
 
 proc path*(parser: Parser): string = parser.path
 proc indent*(parser: Parser): int = parser.indent
@@ -176,6 +179,22 @@ proc peek*(parser: Parser): Result[Token, Error] =
   else:
     err(err_parser_reached_eof(parser.tokens[^1].location))
 
+proc token_kind_spec*(parser: Parser, kind: TokenKind): Result[Token, Error] =
+  let token = ? parser.peek()
+  if token.kind == kind:
+    parser.index += 1
+    ok(token)
+  else:
+    err(err_parser_expectation_mismatch(token.location, $(kind), $(token.kind)))
+
+proc token_value_spec*(parser: Parser, keyword: string): Result[Token, Error] =
+  let alphabet = ? parser.token_kind_spec(TK_ALPHABETS)
+  if alphabet.value == keyword:
+    ok(alphabet)
+  else:
+    err(err_parser_expectation_mismatch(alphabet.location, keyword,
+        alphabet.value))
+
 proc expect*[T](parser: Parser, spec: AtomSpec[T]): Result[T, Error] =
   let start = parser.index
   let maybe_value = spec(parser)
@@ -191,104 +210,31 @@ proc expect*[T](parser: Parser, spec: BlockSpec[T], indent: int): Result[
   if maybe_value.is_err: parser.index = start
   return maybe_value
 
-proc token_spec_util*(parser: Parser, kind: TokenKind): Result[Token, Error] =
-  let token = ? parser.peek()
-  if token.kind == kind:
-    parser.index += 1
-    ok(token)
-  else:
-    err(err_parser_expectation_mismatch(token.location, $(kind), $(token.kind)))
+proc expect_any*[T](parser: Parser, spec: AtomSpec[T]): Result[seq[T], Error] =
+  var items: seq[T]
+  var maybe_item = parser.expect(spec)
+  while maybe_item.is_ok:
+    items.add(maybe_item.get)
+    maybe_item = parser.expect(spec)
+  ok(items)
 
-proc keyword_spec_util*(parser: Parser, keyword: string): Result[Token, Error] =
-  let alphabet = ? parser.token_spec_util(TK_ALPHABETS)
-  if alphabet.value == keyword:
-    ok(alphabet)
-  else:
-    err(err_parser_expectation_mismatch(alphabet.location, keyword,
-        alphabet.value))
+proc expect_at_least_one*[T](parser: Parser, spec: AtomSpec[T]): Result[seq[T], Error] =
+  var items: seq[T]
+  items.add( ? parser.expect(spec))
+  items.add( ? parser.expect_any(spec))
+  ok(items)
 
-# keyword specs
-proc module_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("module")
+proc expect_at_least_one*[T](parser: Parser, item_spec: BlockSpec[T]): Result[
+    seq[T], Error] =
+  var items: seq[T]
+  items.add( ? parser.expect(item_spec, indent))
+  var maybe_item = parser.expect(item_spec, indent)
+  while maybe_item.is_ok:
+    items.add(maybe_item.get)
+    discard ? parser.expect(separator)
+    maybe_item = parser.expect(item_spec, indent)
+  ok(items)
 
-proc extern_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("extern")
-
-proc fn_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("fn")
-
-proc match_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("match")
-
-proc case_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("case")
-
-proc else_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("else")
-
-proc struct_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("struct")
-
-proc generic_keyword_spec*(parser: Parser): Result[Token,
-    Error] = parser.keyword_spec_util("generic")
-
-proc comment_spec*(parser: Parser): Result[Token,
-    Error] = parser.token_spec_util(TK_COMMENT)
-
-# special character spec
-proc colon_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_COLON)
-
-proc comma_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_COMMA)
-
-proc dot_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_DOT)
-
-proc equal_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_EQUAL)
-
-proc open_paren_bracket_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_OPEN_PAREN)
-
-proc close_paren_bracket_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_CLOSE_PAREN)
-
-proc open_curly_bracket_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_OPEN_CURLY)
-
-proc close_curly_bracket_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_CLOSE_CURLY)
-
-proc open_square_bracket_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_OPEN_SQUARE)
-
-proc close_square_bracket_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_CLOSE_SQUARE)
-
-# content token specs
-proc underscore_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_UNDERSCORE)
-
-proc alphabets_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_ALPHABETS)
-
-proc digits_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_DIGITS)
-
-proc plus_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_PLUS)
-
-proc minus_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_MINUS)
-
-proc new_line_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_NEW_LINE)
-
-proc space_spec*(parser: Parser): Result[Token, Error] =
-  parser.token_spec_util(TK_SPACE)
-
-# parser combinators
 proc expect_one_of*[T](parser: Parser, specs: openArray[AtomSpec[T]]): Result[T, Error] =
   var errors: seq[Error]
   for spec in specs:
@@ -306,61 +252,109 @@ proc expect_one_of*[T](parser: Parser, specs: openArray[BlockSpec[T]],
     errors.add(maybe.error)
   err(errors.max())
 
-proc expect_any*[T](parser: Parser, spec: AtomSpec[T]): Result[int, Error] =
-  var count = 0
-  while parser.expect(spec).is_ok:
-    count += 1
-  ok(count)
+# keyword specs
+proc module_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("module")
 
-proc expect_at_least_one*[T](parser: Parser, spec: AtomSpec[T]): Result[int, Error] =
-  let first = parser.expect(spec)
-  if first.is_err: return err(first.error)
-  var count = 1
-  while parser.expect(spec).is_ok:
-    count += 1
-  ok(count)
+proc extern_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("extern")
 
-proc expect_any*[T, S](parser: Parser, item_spec: BlockSpec[T],
-    indent: int, separator: AtomSpec[S]): Result[seq[T], Error] =
-  var items: seq[T]
-  var maybe = parser.expect(item_spec, indent)
-  while maybe.is_ok:
-    items.add(maybe.get)
-    discard ? parser.expect(separator)
-    maybe = parser.expect(item_spec, indent)
-  ok(items)
+proc fn_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("fn")
 
-proc expect_at_least_one*[T](parser: Parser, item_spec: BlockSpec[T]): Result[
-    seq[T], Error] =
-  var items: seq[T]
-  items.add( ? parser.expect(item_spec, indent))
-  var maybe_item = parser.expect(item_spec, indent)
-  while maybe_item.is_ok:
-    items.add(maybe_item.get)
-    discard ? parser.expect(separator)
-    maybe_item = parser.expect(item_spec, indent)
-  ok(items)
+proc match_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("match")
+
+proc case_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("case")
+
+proc else_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("else")
+
+proc struct_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("struct")
+
+proc generic_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("generic")
+
+proc literal_keyword_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_value_spec("literal")
+
+proc comment_spec*(parser: Parser): Result[Token,
+    Error] = parser.token_kind_spec(TK_COMMENT)
+
+# special character spec
+proc colon_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_COLON)
+
+proc comma_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_COMMA)
+
+proc dot_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_DOT)
+
+proc equal_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_EQUAL)
+
+proc open_paren_bracket_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_OPEN_PAREN)
+
+proc close_paren_bracket_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_CLOSE_PAREN)
+
+proc open_curly_bracket_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_OPEN_CURLY)
+
+proc close_curly_bracket_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_CLOSE_CURLY)
+
+proc open_square_bracket_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_OPEN_SQUARE)
+
+proc close_square_bracket_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_CLOSE_SQUARE)
+
+# content token specs
+proc underscore_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_UNDERSCORE)
+
+proc alphabets_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_ALPHABETS)
+
+proc digits_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_DIGITS)
+
+proc plus_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_PLUS)
+
+proc minus_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_MINUS)
+
+proc new_line_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_NEW_LINE)
+
+proc space_spec*(parser: Parser): Result[Token, Error] =
+  parser.token_kind_spec(TK_SPACE)
 
 # NOTE: This spec is also used to consume trailing line content
-proc empty_line_spec*(parser: Parser): Result[void, Error] =
+proc empty_line_spec*(parser: Parser): Result[Token, Error] =
   discard ? parser.expect_any(space_spec)
   discard parser.expect(comment_spec)
-  discard ? parser.expect(new_line_spec)
-  ok()
+  parser.expect(new_line_spec)
 
-proc optional_empty_line_spec*(parser: Parser): Result[int, Error] =
+proc optional_empty_line_spec*(parser: Parser): Result[seq[Token], Error] =
   parser.expect_any(empty_line_spec)
 
-proc strict_empty_line_spec*(parser: Parser): Result[int, Error] =
+proc strict_empty_line_spec*(parser: Parser): Result[seq[Token], Error] =
   parser.expect_at_least_one(empty_line_spec)
 
-proc indent_spec*(parser: Parser, indent: int): Result[int, Error] =
+proc indent_spec*(parser: Parser, indent: int): Result[seq[Token], Error] =
   let spaces = ? parser.expect_any(space_spec)
-  if spaces == indent * parser.indent:
+  if spaces.len == indent * parser.indent:
     return ok(spaces)
 
   let token = ? parser.peek()
-  err(err_parser_indentation_error(token.location, indent * parser.indent, spaces))
+  err(err_parser_indentation_error(token.location, indent * parser.indent, spaces.len))
 
 proc non_empty_list_spec*[T](parser: Parser, item_spec: AtomSpec[T],
     separator: AtomSpec[Token]): Result[seq[T], Error] =
@@ -378,6 +372,16 @@ proc non_empty_list_spec*[T, S](parser: Parser, item_spec: BlockSpec[T],
   var items: seq[T]
   items.add( ? parser.expect(item_spec, indent))
   discard ? parser.expect(separator)
+  var maybe = parser.expect(item_spec, indent)
+  while maybe.is_ok:
+    items.add(maybe.get)
+    discard ? parser.expect(separator)
+    maybe = parser.expect(item_spec, indent)
+  ok(items)
+
+proc list_spec*[T, S](parser: Parser, item_spec: BlockSpec[T],
+    indent: int, separator: AtomSpec[S]): Result[seq[T], Error] =
+  var items: seq[T]
   var maybe = parser.expect(item_spec, indent)
   while maybe.is_ok:
     items.add(maybe.get)

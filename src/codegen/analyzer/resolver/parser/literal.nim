@@ -19,7 +19,7 @@ proc asl(unsigned_integer: UnsignedIntegerLiteral): string =
 proc unsigned_integer_spec(parser: Parser): Result[UnsignedIntegerLiteral,
     core.Error] =
   # TODO: Support underscore separated values as integers as well.
-  let int_value_token = ? parser.token_spec_util(TK_DIGITS)
+  let int_value_token = ? parser.token_kind_spec(TK_DIGITS)
   ok(new_unsigned_integer(int_value_token))
 
 # =============================================================================
@@ -161,7 +161,7 @@ proc asl*(string_literal: StringLiteral): string =
   string_literal.value
 
 proc string_spec(parser: Parser): Result[StringLiteral, core.Error] =
-  let token = ? parser.token_spec_util(TK_STRING)
+  let token = ? parser.token_kind_spec(TK_STRING)
   ok(new_string_literal(token.value, token.location))
 
 # =============================================================================

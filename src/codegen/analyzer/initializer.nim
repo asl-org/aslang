@@ -13,17 +13,17 @@ type
     RIK_LITERAL, RIK_STRUCT
   AnalyzedInitializer* = ref object of RootObj
     case kind: AnalyzedInitializerKind
-    of RIK_LITERAL: literal: AnalyzedLiteral
+    of RIK_LITERAL: literal: AnalyzedLiteralInit
     of RIK_STRUCT: struct: AnalyzedStructInit
 
 proc new_analyzed_initializer(struct: AnalyzedStructInit): AnalyzedInitializer =
   AnalyzedInitializer(kind: RIK_STRUCT, struct: struct)
 
-proc new_analyzed_initializer(literal: AnalyzedLiteral): AnalyzedInitializer =
+proc new_analyzed_initializer(literal: AnalyzedLiteralInit): AnalyzedInitializer =
   AnalyzedInitializer(kind: RIK_LITERAL, literal: literal)
 
 proc kind*(init: AnalyzedInitializer): AnalyzedInitializerKind = init.kind
-proc literal*(init: AnalyzedInitializer): AnalyzedLiteral =
+proc literal*(init: AnalyzedInitializer): AnalyzedLiteralInit =
   do_assert init.kind == RIK_LITERAL, "expected literal"
   init.literal
 proc struct*(init: AnalyzedInitializer): AnalyzedStructInit =
@@ -48,7 +48,8 @@ proc asl*(init: AnalyzedInitializer): string =
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     init: ResolvedInitializer,
-    module_def: Option[AnalyzedModuleDefinition] = none[AnalyzedModuleDefinition]()): Result[AnalyzedInitializer, string] =
+    module_def: Option[AnalyzedModuleDefinition] = none[
+        AnalyzedModuleDefinition]()): Result[AnalyzedInitializer, string] =
   case init.kind:
   of TIK_STRUCT:
     let struct_init = init.struct

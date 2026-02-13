@@ -1,6 +1,6 @@
 import results, strformat, tables
 
-import core, defs, identifier, module_ref
+import core, defs, identifier
 
 type Struct* = ref object of RootObj
   def: StructDefinition
@@ -24,13 +24,6 @@ proc new_struct*(def: StructDefinition, fields: seq[
     err(err_parser_arg_already_defined(field.location, field.name.asl,
           predefined_field_location))
 
-proc find_field*(struct: Struct, field: Identifier): Result[ModuleRef, string] =
-  let maybe_found = struct.fields_repo.find("name", field)
-  if maybe_found.is_err:
-    err(fmt"{field.location} [PE109] field `{field.asl}` does not exist")
-  else:
-    ok(maybe_found.get[0].module_ref)
-
 proc fields*(struct: Struct): seq[ArgumentDefinition] = struct.fields_repo.items
 
 proc location*(struct: Struct): Location =
@@ -44,15 +37,36 @@ proc asl*(struct: Struct, indent: string): seq[string] =
 
   return (@[header] & fields)
 
-proc struct_default_spec(parser: Parser, indent: int): Result[Struct,
+proc struct_spec(parser: Parser, indent: int): Result[Struct,
     core.Error] =
   discard ? parser.expect(indent_spec, indent)
-  let def = ? parser.expect(struct_default_definition_spec)
+  let def = ? parser.expect(struct_definition_spec)
   discard ? parser.expect_at_least_one(empty_line_spec)
 
   let fields = ? parser.non_empty_list_spec(struct_field_definition_spec,
       indent + 1, strict_empty_line_spec)
   new_struct(def, fields)
+
+type ParsedLiteral* = ref object of RootObj
+  literal_type: Identifier
+  location: Location
+
+proc new_parsed_literal(literal_type: Identifier,
+    location: Location): ParsedLiteral =
+  ParsedLiteral(literal_type: literal_type, location: location)
+
+proc location*(literal: ParsedLiteral): Location = literal.location
+proc asl*(literal: ParsedLiteral): string = literal.literal_type.asl
+
+proc literal_spec(parser: Parser, indent: int): Result[ParsedLiteral,
+    core.Error] =
+  discard ? parser.expect(indent_spec, indent)
+  let literal_keyword = ? parser.expect(literal_keyword_spec)
+  discard ? parser.expect_any(space_spec)
+  discard ? parser.expect(colon_spec)
+  discard ? parser.expect_any(space_spec)
+  let literal_type = ? parser.expect(identifier_spec)
+  ok(new_parsed_literal(literal_type, literal_keyword.location))
 
 type UnionBranch* = ref object of RootObj
   name: Identifier
@@ -79,11 +93,6 @@ proc new_union_branch*(branch_name: Identifier, fields: seq[
 proc location*(branch: UnionBranch): Location = branch.name.location
 proc name*(branch: UnionBranch): Identifier = branch.name
 proc fields*(branch: UnionBranch): seq[ArgumentDefinition] = branch.fields_repo.items
-proc struct*(branch: UnionBranch): Result[Struct, string] =
-  let def = new_struct_definition(branch.name.location)
-  let maybe_struct = new_struct(def, branch.fields_repo.items)
-  if maybe_struct.is_ok: ok(maybe_struct.get)
-  else: err($(maybe_struct.error))
 
 proc union_branch_spec(parser: Parser, indent: int): Result[UnionBranch,
     core.Error] =
@@ -147,7 +156,7 @@ type
   Data* = ref object of RootObj
     case kind: DataKind
     of DK_NONE: discard
-    of DK_LITERAL: discard
+    of DK_LITERAL: literal: ParsedLiteral
     of DK_STRUCT: struct: Struct
     of DK_UNION: union: Union
 
@@ -160,7 +169,13 @@ proc new_data(union: Union): Data =
 proc new_data(struct: Struct): Data =
   Data(kind: DK_STRUCT, struct: struct)
 
+proc new_data(literal: ParsedLiteral): Data =
+  Data(kind: DK_LITERAL, literal: literal)
+
 proc kind*(data: Data): DataKind = data.kind
+proc literal*(data: Data): ParsedLiteral =
+  do_assert data.kind == DK_LITERAL, "[UNREACHABLE] expected a literal"
+  data.literal
 proc struct*(data: Data): Struct =
   do_assert data.kind == DK_STRUCT, "[UNREACHABLE] expected a struct"
   data.struct
@@ -172,8 +187,11 @@ proc data_spec*(parser: Parser, indent: int): Result[Data, core.Error] =
   let maybe_union = parser.expect(union_spec, indent)
   if maybe_union.is_ok: return ok(new_data(maybe_union.get))
 
-  let maybe_struct = parser.expect(struct_default_spec, indent)
+  let maybe_struct = parser.expect(struct_spec, indent)
   if maybe_struct.is_ok: return ok(new_data(maybe_struct.get))
+
+  let maybe_literal = parser.expect(literal_spec, indent)
+  if maybe_literal.is_ok: return ok(new_data(maybe_literal.get))
 
   # TODO: Introduce may be literal data type
   ok(new_data())

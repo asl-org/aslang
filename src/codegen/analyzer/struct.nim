@@ -4,37 +4,20 @@ import resolver
 import module_ref
 import arg_def
 
-type
-  AnalyzedStructKind* = enum
-    RSK_DEFAULT, RSK_NAMED
-  AnalyzedStruct* = ref object of RootObj
-    struct: ResolvedStruct
-    location: Location
-    fields_repo: Repo[AnalyzedArgumentDefinition]
-    case kind: AnalyzedStructKind
-    of RSK_DEFAULT: discard
-    of RSK_NAMED: name: Identifier
+type AnalyzedStruct* = ref object of RootObj
+  struct: ResolvedStruct
+  location: Location
+  fields_repo: Repo[AnalyzedArgumentDefinition]
 
 proc new_analyzed_struct(struct: ResolvedStruct, fields: seq[
     AnalyzedArgumentDefinition], location: Location): Result[AnalyzedStruct, string] =
   let maybe_fields_repo = new_repo(fields, @[new_index[
       AnalyzedArgumentDefinition]("name", name, true)])
   if maybe_fields_repo.is_err: return err("new_analyzed_struct UNREACHABLE")
-  ok(AnalyzedStruct(kind: RSK_DEFAULT, struct: struct,
+  ok(AnalyzedStruct(struct: struct,
       fields_repo: maybe_fields_repo.get, location: location))
 
-proc new_analyzed_struct(struct: ResolvedStruct, struct_name: Identifier,
-    fields: seq[AnalyzedArgumentDefinition], location: Location): Result[
-        AnalyzedStruct, string] =
-  let maybe_fields_repo = new_repo(fields, @[new_index[
-      AnalyzedArgumentDefinition]("name", name, true)])
-  if maybe_fields_repo.is_err: return err("new_analyzed_struct UNREACHABLE")
-  ok(AnalyzedStruct(kind: RSK_NAMED, struct: struct, name: struct_name,
-      fields_repo: maybe_fields_repo.get, location: location))
-
-proc kind*(struct: AnalyzedStruct): AnalyzedStructKind = struct.kind
 proc id*(struct: AnalyzedStruct): uint64 = struct.struct.id
-proc name*(struct: AnalyzedStruct): Identifier = struct.name
 proc fields*(struct: AnalyzedStruct): seq[
     AnalyzedArgumentDefinition] = struct.fields_repo.items
 
@@ -45,14 +28,9 @@ proc generic_impls*(struct: AnalyzedStruct): Table[ResolvedModule, seq[
   return impl_set
 
 proc asl*(struct: AnalyzedStruct, indent: string): seq[string] =
-  var lines =
-    case struct.kind:
-    of RSK_DEFAULT: @["struct:"]
-    of RSK_NAMED: @[fmt"struct {struct.name.asl}:"]
-
+  var lines = @["struct:"]
   for field in struct.fields:
     lines.add(indent & field.asl)
-
   return lines
 
 proc concretize*(struct: AnalyzedStruct, concrete_map: Table[ResolvedGeneric,
@@ -60,12 +38,7 @@ proc concretize*(struct: AnalyzedStruct, concrete_map: Table[ResolvedGeneric,
   var concretized_fields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     concretized_fields.add(field.concretize(concrete_map))
-
-  case struct.kind:
-  of RSK_DEFAULT: new_analyzed_struct(struct.struct, concretized_fields,
-      struct.location)
-  of RSK_NAMED: new_analyzed_struct(struct.struct, struct.name,
-      concretized_fields, struct.location)
+  new_analyzed_struct(struct.struct, concretized_fields, struct.location)
 
 proc find_field_index*(struct: AnalyzedStruct, field: Identifier): Result[int, string] =
   let maybe_field_id = struct.fields_repo.find_id("name", field)
@@ -85,13 +58,7 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
   for field in struct.fields:
     let analyzed_field = ? analyze_def(file, module, field)
     analyzed_fields.add(analyzed_field)
-
-  case struct.kind:
-  of TSK_DEFAULT:
-    new_analyzed_struct(struct, analyzed_fields, struct.location)
-  of TSK_NAMED:
-    let struct_name = struct.name
-    new_analyzed_struct(struct, struct_name, analyzed_fields, struct.location)
+  new_analyzed_struct(struct, analyzed_fields, struct.location)
 
 type AnalyzedUnionBranch* = ref object of RootObj
   resolved_branch: ResolvedUnionBranch
@@ -203,26 +170,41 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     analyzed_union_branches.add(analyzed_branch)
   new_analyzed_union(union, analyzed_union_branches)
 
+type AnalyzedLiteral* = ref object of RootObj
+  resolved_literal: ResolvedLiteral
+
+proc new_analyzed_literal(resolved_literal: ResolvedLiteral): AnalyzedLiteral =
+  AnalyzedLiteral(resolved_literal: resolved_literal)
+
+proc name*(literal: AnalyzedLiteral): string =
+  literal.resolved_literal.name
+
 type
   AnalyzedDataKind* = enum
     ADK_NONE, ADK_LITERAL, ADK_STRUCT, ADK_UNION
   AnalyzedData* = ref object of RootObj
     case kind: AnalyzedDataKind
     of ADK_NONE: discard
-    of ADK_LITERAL: discard
+    of ADK_LITERAL: literal: AnalyzedLiteral
     of ADK_STRUCT: struct: AnalyzedStruct
     of ADK_UNION: union: AnalyzedUnion
 
 proc new_analyzed_data(): AnalyzedData =
   AnalyzedData(kind: ADK_NONE)
 
-proc new_resolved_data(struct: AnalyzedStruct): AnalyzedData =
+proc new_analyzed_data(literal: AnalyzedLiteral): AnalyzedData =
+  AnalyzedData(kind: ADK_LITERAL, literal: literal)
+
+proc new_analyzed_data(struct: AnalyzedStruct): AnalyzedData =
   AnalyzedData(kind: ADK_STRUCT, struct: struct)
 
-proc new_resolved_data(union: AnalyzedUnion): AnalyzedData =
+proc new_analyzed_data(union: AnalyzedUnion): AnalyzedData =
   AnalyzedData(kind: ADK_UNION, union: union)
 
 proc kind*(data: AnalyzedData): AnalyzedDataKind = data.kind
+proc literal*(data: AnalyzedData): AnalyzedLiteral =
+  do_assert data.kind == ADK_LITERAL, "[UNREACHABLE] expected a literal"
+  data.literal
 proc struct*(data: AnalyzedData): AnalyzedStruct =
   do_assert data.kind == ADK_STRUCT, "[UNREACHABLE] expected a struct"
   data.struct
@@ -235,7 +217,7 @@ proc generic_impls*(data: AnalyzedData): Table[ResolvedModule, seq[HashSet[
   var impl_set: Table[ResolvedModule, seq[HashSet[AnalyzedImpl]]]
   case data.kind:
   of ADK_NONE: discard
-  of ADK_LITERAL: do_assert false, "[UNREACHABLE] literal generic_impls are not supported"
+  of ADK_LITERAL: discard
   of ADK_STRUCT: impl_set = impl_set.merge(data.struct.generic_impls)
   of ADK_UNION: impl_set = impl_set.merge(data.union.generic_impls)
   return impl_set
@@ -257,10 +239,12 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
     data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
   of RDK_NONE: return ok(new_analyzed_data())
-  of RDK_LITERAL: do_assert false, "[UNREACHABLE] literal analysis is not yet supported"
+  of RDK_LITERAL:
+    let analyzed_literal = new_analyzed_literal(data.literal)
+    ok(new_analyzed_data(analyzed_literal))
   of RDK_STRUCT:
     let analyzed_struct = ? analyze_def(file, module, data.struct)
-    return ok(new_resolved_data(analyzed_struct))
+    return ok(new_analyzed_data(analyzed_struct))
   of RDK_UNION:
     let analyzed_union = ? analyze_def(file, module, data.union)
-    return ok(new_resolved_data(analyzed_union))
+    return ok(new_analyzed_data(analyzed_union))
