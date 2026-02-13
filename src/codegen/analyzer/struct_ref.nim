@@ -39,11 +39,7 @@ proc generic_impls*(struct_ref: AnalyzedStructRef): Table[ResolvedModule,
   struct_ref.module_ref.generic_impls
 
 proc asl*(struct_ref: AnalyzedStructRef): string =
-  let suffix =
-    case struct_ref.struct.kind:
-    of RSK_DEFAULT: ""
-    of RSK_NAMED: fmt".{struct_ref.struct.name.asl}"
-  fmt"{struct_ref.module_ref.asl}{suffix}"
+  struct_ref.module_ref.asl
 
 type AnalyzedUnionRef* = ref object of RootObj
   module_ref: AnalyzedModuleRef

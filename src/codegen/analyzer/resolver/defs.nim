@@ -116,21 +116,13 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
 # ResolvedStruct
 # =============================================================================
 
-type
-  # TODO: Figure out if `TSK_NAMED` is being used anywhere.
-  # if not eliminate the dead code surrounding `TSK_NAMED`.
-  ResolvedStructKind* = enum
-    TSK_DEFAULT, TSK_NAMED
-  ResolvedStruct* = ref object of RootObj
-    fields: seq[ResolvedArgumentDefinition]
-    location: Location
-    case kind: ResolvedStructKind
-    of TSK_DEFAULT: discard
-    of TSK_NAMED: name: Identifier
+type ResolvedStruct* = ref object of RootObj
+  fields: seq[ResolvedArgumentDefinition]
+  location: Location
 
 proc new_resolved_struct(fields: seq[ResolvedArgumentDefinition],
     location: Location): ResolvedStruct =
-  ResolvedStruct(kind: TSK_DEFAULT, fields: fields, location: location)
+  ResolvedStruct(fields: fields, location: location)
 
 proc module_deps*(struct: ResolvedStruct): HashSet[Module] =
   var module_set: HashSet[Module]
@@ -140,14 +132,9 @@ proc module_deps*(struct: ResolvedStruct): HashSet[Module] =
 proc id*(struct: ResolvedStruct): uint64 = struct.id
 proc hash*(struct: ResolvedStruct): Hash = struct.location.hash
 proc `==`*(self: ResolvedStruct, other: ResolvedStruct): bool = self.hash == other.hash
-proc kind*(struct: ResolvedStruct): ResolvedStructKind = struct.kind
 proc location*(struct: ResolvedStruct): Location = struct.location
 proc fields*(struct: ResolvedStruct): seq[
     ResolvedArgumentDefinition] = struct.fields
-
-proc name*(struct: ResolvedStruct): Identifier =
-  do_assert struct.kind == TSK_NAMED, fmt"{struct.location} expected a named struct"
-  struct.name
 
 proc resolve*(file: parser.File, module: parser.Module, struct: Struct): Result[
     ResolvedStruct, string] =

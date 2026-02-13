@@ -4,37 +4,20 @@ import resolver
 import module_ref
 import arg_def
 
-type
-  AnalyzedStructKind* = enum
-    RSK_DEFAULT, RSK_NAMED
-  AnalyzedStruct* = ref object of RootObj
-    struct: ResolvedStruct
-    location: Location
-    fields_repo: Repo[AnalyzedArgumentDefinition]
-    case kind: AnalyzedStructKind
-    of RSK_DEFAULT: discard
-    of RSK_NAMED: name: Identifier
+type AnalyzedStruct* = ref object of RootObj
+  struct: ResolvedStruct
+  location: Location
+  fields_repo: Repo[AnalyzedArgumentDefinition]
 
 proc new_analyzed_struct(struct: ResolvedStruct, fields: seq[
     AnalyzedArgumentDefinition], location: Location): Result[AnalyzedStruct, string] =
   let maybe_fields_repo = new_repo(fields, @[new_index[
       AnalyzedArgumentDefinition]("name", name, true)])
   if maybe_fields_repo.is_err: return err("new_analyzed_struct UNREACHABLE")
-  ok(AnalyzedStruct(kind: RSK_DEFAULT, struct: struct,
+  ok(AnalyzedStruct(struct: struct,
       fields_repo: maybe_fields_repo.get, location: location))
 
-proc new_analyzed_struct(struct: ResolvedStruct, struct_name: Identifier,
-    fields: seq[AnalyzedArgumentDefinition], location: Location): Result[
-        AnalyzedStruct, string] =
-  let maybe_fields_repo = new_repo(fields, @[new_index[
-      AnalyzedArgumentDefinition]("name", name, true)])
-  if maybe_fields_repo.is_err: return err("new_analyzed_struct UNREACHABLE")
-  ok(AnalyzedStruct(kind: RSK_NAMED, struct: struct, name: struct_name,
-      fields_repo: maybe_fields_repo.get, location: location))
-
-proc kind*(struct: AnalyzedStruct): AnalyzedStructKind = struct.kind
 proc id*(struct: AnalyzedStruct): uint64 = struct.struct.id
-proc name*(struct: AnalyzedStruct): Identifier = struct.name
 proc fields*(struct: AnalyzedStruct): seq[
     AnalyzedArgumentDefinition] = struct.fields_repo.items
 
@@ -45,14 +28,9 @@ proc generic_impls*(struct: AnalyzedStruct): Table[ResolvedModule, seq[
   return impl_set
 
 proc asl*(struct: AnalyzedStruct, indent: string): seq[string] =
-  var lines =
-    case struct.kind:
-    of RSK_DEFAULT: @["struct:"]
-    of RSK_NAMED: @[fmt"struct {struct.name.asl}:"]
-
+  var lines = @["struct:"]
   for field in struct.fields:
     lines.add(indent & field.asl)
-
   return lines
 
 proc concretize*(struct: AnalyzedStruct, concrete_map: Table[ResolvedGeneric,
@@ -60,12 +38,7 @@ proc concretize*(struct: AnalyzedStruct, concrete_map: Table[ResolvedGeneric,
   var concretized_fields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     concretized_fields.add(field.concretize(concrete_map))
-
-  case struct.kind:
-  of RSK_DEFAULT: new_analyzed_struct(struct.struct, concretized_fields,
-      struct.location)
-  of RSK_NAMED: new_analyzed_struct(struct.struct, struct.name,
-      concretized_fields, struct.location)
+  new_analyzed_struct(struct.struct, concretized_fields, struct.location)
 
 proc find_field_index*(struct: AnalyzedStruct, field: Identifier): Result[int, string] =
   let maybe_field_id = struct.fields_repo.find_id("name", field)
@@ -85,13 +58,7 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule,
   for field in struct.fields:
     let analyzed_field = ? analyze_def(file, module, field)
     analyzed_fields.add(analyzed_field)
-
-  case struct.kind:
-  of TSK_DEFAULT:
-    new_analyzed_struct(struct, analyzed_fields, struct.location)
-  of TSK_NAMED:
-    let struct_name = struct.name
-    new_analyzed_struct(struct, struct_name, analyzed_fields, struct.location)
+  new_analyzed_struct(struct, analyzed_fields, struct.location)
 
 type AnalyzedUnionBranch* = ref object of RootObj
   resolved_branch: ResolvedUnionBranch
