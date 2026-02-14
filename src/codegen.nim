@@ -1,5 +1,5 @@
 import codegen/analyzer
 export analyzer
 
-import codegen/file
-export file
+import codegen/generator/gen_file
+export gen_file

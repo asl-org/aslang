@@ -4,6 +4,7 @@ import resolver
 
 import module_ref
 import arg_def
+import ../metadata
 
 type AnalyzedFunctionDefinition* = ref object of RootObj
   resolved_def: ResolvedFunctionDefinition
@@ -12,25 +13,28 @@ type AnalyzedFunctionDefinition* = ref object of RootObj
   prefix: string
   generics: uint64
   extern: Option[string]
+  metadata: FunctionMetadata
 
 proc new_analyzed_function_definition(def: ResolvedFunctionDefinition,
     args: seq[AnalyzedArgumentDefinition], returns: AnalyzedModuleRef,
-    prefix: string = "", generics: uint64 = 0): AnalyzedFunctionDefinition =
+    prefix: string = "", generics: uint64 = 0,
+    metadata: FunctionMetadata = new_function_metadata()): AnalyzedFunctionDefinition =
   AnalyzedFunctionDefinition(resolved_def: def, args: args, returns: returns,
-      prefix: prefix, generics: generics)
+      prefix: prefix, generics: generics, metadata: metadata)
 
-# WIP
 proc new_analyzed_function_definition(def: ResolvedFunctionDefinition,
     args: seq[AnalyzedArgumentDefinition], returns: AnalyzedModuleRef,
     extern: Option[string], prefix: string = "",
-    generics: uint64 = 0): AnalyzedFunctionDefinition =
+    generics: uint64 = 0,
+    metadata: FunctionMetadata = new_function_metadata()): AnalyzedFunctionDefinition =
   AnalyzedFunctionDefinition(resolved_def: def, args: args, returns: returns,
-      prefix: prefix, generics: generics, extern: extern)
+      prefix: prefix, generics: generics, extern: extern, metadata: metadata)
 
 proc args*(def: AnalyzedFunctionDefinition): seq[
     AnalyzedArgumentDefinition] = def.args
 proc returns*(def: AnalyzedFunctionDefinition): AnalyzedModuleRef = def.returns
 proc extern*(def: AnalyzedFunctionDefinition): Option[string] = def.extern
+proc metadata*(def: AnalyzedFunctionDefinition): FunctionMetadata = def.metadata
 proc prefix*(def: AnalyzedFunctionDefinition): string = def.prefix
 proc generics*(def: AnalyzedFunctionDefinition): uint64 = def.generics
 
@@ -39,14 +43,20 @@ proc name*(def: AnalyzedFunctionDefinition): Identifier = def.resolved_def.name
 proc location*(def: AnalyzedFunctionDefinition): Location = def.resolved_def.location
 
 proc arity*(def: AnalyzedFunctionDefinition): uint = def.args.len.uint
+proc with_metadata*(def: AnalyzedFunctionDefinition,
+    metadata: FunctionMetadata): AnalyzedFunctionDefinition =
+  new_analyzed_function_definition(def.resolved_def, def.args, def.returns,
+      def.extern, def.prefix, def.generics, metadata)
+
 proc concretize*(def: AnalyzedFunctionDefinition, concrete_map: Table[
     ResolvedGeneric, AnalyzedModuleRef]): AnalyzedFunctionDefinition =
   var concretized_args: seq[AnalyzedArgumentDefinition]
   for arg in def.args:
     concretized_args.add(arg.concretize(concrete_map))
   let concretized_returns = def.returns.concretize(concrete_map)
-  new_analyzed_function_definition(def.resolved_def, concretized_args,
-      concretized_returns, def.extern)
+  new_analyzed_function_definition(def.resolved_def,
+      concretized_args, concretized_returns, def.extern,
+      metadata = def.metadata)
 
 proc generic_impls*(def: AnalyzedFunctionDefinition): Table[
     ResolvedModule, seq[HashSet[AnalyzedImpl]]] =

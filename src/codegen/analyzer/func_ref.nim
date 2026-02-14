@@ -107,7 +107,7 @@ proc analyze*(file_def: AnalyzedFileDefinition, fnref: ResolvedFunctionRef,
         ok(new_analyzed_function_ref(analyzed_module_ref, fnref.name,
             analyzed_function_defs, analyzed_function_defs))
       else:
-        err("{fnref.location} local function calls do not support generics")
+        err(fmt"{fnref.location} local function calls do not support generics")
     of AMRK_MODULE:
       let analyzed_module_def = ? file_def.find_module_def(
           analyzed_module_ref.module)

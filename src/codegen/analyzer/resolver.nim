@@ -128,20 +128,20 @@ proc validate(module: ResolvedModule,
   of "U16": safe_parse[uint16](integer_literal.asl)
   of "U32": safe_parse[uint32](integer_literal.asl)
   of "U64": safe_parse[uint64](integer_literal.asl)
-  else: err("{integer_literal.location} integer can not be converted to module `{module.name.asl}`")
+  else: err(fmt"{integer_literal.location} integer can not be converted to module `{module.name.asl}`")
 
 proc validate(module: ResolvedModule,
     float_literal: FloatLiteral): Result[void, string] =
   case module.name.asl:
   of "F32": safe_parse[float32](float_literal.asl)
   of "F64": safe_parse[float64](float_literal.asl)
-  else: err("{float_literal.location} float can not be converted to module `{module.name.asl}`")
+  else: err(fmt"{float_literal.location} float can not be converted to module `{module.name.asl}`")
 
 proc validate(module: ResolvedModule,
     string_literal: StringLiteral): Result[void, string] =
   case module.name.asl:
   of "String": ok()
-  else: err("{string_literal.location} string can not be converted to module `{module.name.asl}`")
+  else: err(fmt"{string_literal.location} string can not be converted to module `{module.name.asl}`")
 
 proc validate*(module: ResolvedModule, literal: Literal): Result[void, string] =
   case literal.kind:

@@ -18,6 +18,11 @@ doc/html/
 *.swp
 *~
 
+# Debug symbols and sanitizer artifacts
+*.dSYM/
+*.dSYM
+*.pdb
+
 # Operating System specific files
 .DS_Store
 Thumbs.db

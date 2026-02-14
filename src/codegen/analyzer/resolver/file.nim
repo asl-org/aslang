@@ -20,7 +20,7 @@ proc new_resolved_file*(name: string, indent: int, maybe_start_def: Option[
     ResolvedFunction]): Result[ResolvedFile, string] =
   let maybe_modules_repo = new_repo(modules, @[new_index[ResolvedModule]("name",
       parsed_module, true)])
-  if maybe_modules_repo.is_err: return err("new_resolved_file UNREACHABLE")
+  if maybe_modules_repo.is_err: return err("[UNREACHABLE] new_resolved_file")
   let modules_repo = maybe_modules_repo.get
   ok(ResolvedFile(name: name, indent: indent, maybe_start_def: maybe_start_def,
       modules_repo: modules_repo, functions: functions))
@@ -40,4 +40,4 @@ proc find_module*(file: ResolvedFile, module: Module): Result[
     ResolvedModule, string] =
   let maybe_module = file.modules_repo.find("name", module)
   if maybe_module.is_ok: ok(maybe_module.get[0])
-  else: err("failed to find module `{module.name.asl}`")
+  else: err(fmt"failed to find module `{module.name.asl}`")

@@ -21,7 +21,7 @@ proc new_analyzed_module_definition(resolved_module: ResolvedModule,
     AnalyzedModuleDefinition, string] =
   let maybe_generics_repo = new_repo(generics, @[new_index[AnalyzedGeneric](
       "name", resolved_generic, true)])
-  if maybe_generics_repo.is_err: return err("new_analyzed_module_definition UNREACHABLE")
+  if maybe_generics_repo.is_err: return err("[UNREACHABLE] new_analyzed_module_definition")
   let generics_repo = maybe_generics_repo.get
 
   let maybe_function_defs_repo = new_repo(function_defs, @[
@@ -30,7 +30,7 @@ proc new_analyzed_module_definition(resolved_module: ResolvedModule,
         def: AnalyzedFunctionDefinition): (Identifier, uint) = (def.name,
         def.arity)),
   ])
-  if maybe_function_defs_repo.is_err: return err("new_analyzed_module_definition UNREACHABLE")
+  if maybe_function_defs_repo.is_err: return err("[UNREACHABLE] new_analyzed_module_definition")
   let function_defs_repo = maybe_function_defs_repo.get
 
   ok(AnalyzedModuleDefinition(resolved_module: resolved_module,

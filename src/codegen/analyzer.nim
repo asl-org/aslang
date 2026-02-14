@@ -63,3 +63,9 @@ export module
 
 import analyzer/file
 export file
+
+import analyzer/data_metadata
+export data_metadata
+
+import analyzer/func_metadata
+export func_metadata

@@ -13,7 +13,7 @@ proc new_analyzed_struct(struct: ResolvedStruct, fields: seq[
     AnalyzedArgumentDefinition], location: Location): Result[AnalyzedStruct, string] =
   let maybe_fields_repo = new_repo(fields, @[new_index[
       AnalyzedArgumentDefinition]("name", name, true)])
-  if maybe_fields_repo.is_err: return err("new_analyzed_struct UNREACHABLE")
+  if maybe_fields_repo.is_err: return err("[UNREACHABLE] new_analyzed_struct")
   ok(AnalyzedStruct(struct: struct,
       fields_repo: maybe_fields_repo.get, location: location))
 
@@ -69,7 +69,7 @@ proc new_analyzed_union_branch(resolved_branch: ResolvedUnionBranch,
   let maybe_repo = new_repo(fields, @[
     new_index[AnalyzedArgumentDefinition]("name", name, true)
   ])
-  if maybe_repo.is_err: return err("new_analyzed_union_branch [UNREACHABLE]")
+  if maybe_repo.is_err: return err("[UNREACHABLE] new_analyzed_union_branch")
   ok(AnalyzedUnionBranch(resolved_branch: resolved_branch,
       fields_repo: maybe_repo.get))
 

@@ -215,9 +215,9 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
 
   case analyzed_case_pattern.kind:
   of RCPK_LITERAL: discard
-  of RCPK_STRUCT:
-    let analyzed_struct_pattern = analyzed_case_pattern.struct
-    for (field, name) in analyzed_struct_pattern.args:
+  of RCPK_UNION:
+    let analyzed_union_pattern = analyzed_case_pattern.union_pattern
+    for (field, name) in analyzed_union_pattern.args:
       case_scope = ? case_scope.set(field)
 
   var analyzed_statements: seq[AnalyzedStatement]

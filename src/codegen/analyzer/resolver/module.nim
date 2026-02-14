@@ -18,7 +18,7 @@ proc new_resolved_generic(id: uint64, generic: Generic, defs: seq[
     ResolvedFunctionDefinition], location: Location): Result[ResolvedGeneric, string] =
   let maybe_defs_repo = new_repo[ResolvedFunctionDefinition](defs, @[new_index[
       ResolvedFunctionDefinition]("def", hash, true)])
-  if maybe_defs_repo.is_err: return err("new_resolved_generic UNREACHABLE")
+  if maybe_defs_repo.is_err: return err("[UNREACHABLE] new_resolved_generic")
   ok(ResolvedGeneric(id: id, parsed_generic: generic,
       defs_repo: maybe_defs_repo.get, location: location))
 
@@ -74,12 +74,12 @@ proc new_resolved_module(id: uint64, parsed_module: Module, generics: seq[
     ResolvedFunction]): Result[ResolvedModule, string] =
   let maybe_generics_repo = new_repo(generics, @[new_index[ResolvedGeneric](
       "name", parsed_generic, true)])
-  if maybe_generics_repo.is_err: return err("new_resolved_module UNREACHABLE")
+  if maybe_generics_repo.is_err: return err("[UNREACHABLE] new_resolved_module")
   let generics_repo = maybe_generics_repo.get
 
   let maybe_functions_repo = new_repo(functions, @[new_index[ResolvedFunction](
       "def", def, true)])
-  if maybe_functions_repo.is_err: return err("new_resolved_module UNREACHABLE")
+  if maybe_functions_repo.is_err: return err("[UNREACHABLE] new_resolved_module")
   let functions_repo = maybe_functions_repo.get
 
   ok(ResolvedModule(id: id, parsed_module: parsed_module,

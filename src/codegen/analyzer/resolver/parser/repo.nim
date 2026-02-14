@@ -61,7 +61,7 @@ proc insert[T](index: Index[T], id: int, item: T): Result[Index[T], (int, int)] 
   var node = index.root
   var hvals = index.key(item)
   for h in hvals:
-    do_assert node.kind == INK_NON_LEAF, "[ERROR]: Failed insert item into index `{index.name}`"
+    do_assert node.kind == INK_NON_LEAF, fmt"[ERROR]: Failed insert item into index `{index.name}`"
     parent = some(node)
     node = node.children.mget_or_put(h, new_index_node())
 
@@ -73,7 +73,7 @@ proc insert[T](index: Index[T], id: int, item: T): Result[Index[T], (int, int)] 
       node = node.insert(id)
       ok(index)
   of INK_NON_LEAF:
-    do_assert parent.is_some, "[ERROR]: Failed insert item into index `{index.name}`"
+    do_assert parent.is_some, fmt"[ERROR]: Failed insert item into index `{index.name}`"
     parent.get.children[hvals[^1]] = new_index_node(id)
     ok(index)
 
@@ -81,15 +81,15 @@ proc find[T](index: Index[T], keys: IndexKey): Result[seq[int], string] =
   var node = index.root
   for k in normalize(keys):
     case node.kind:
-    of INK_LEAF: return err("[ERROR]: Failed find item in index `{index.name}`")
+    of INK_LEAF: return err(fmt"[ERROR]: Failed find item in index `{index.name}`")
     of INK_NON_LEAF:
       if k notin node.children:
-        return err("[ERROR]: Failed find item in index `{index.name}`")
+        return err(fmt"[ERROR]: Failed find item in index `{index.name}`")
       node = node.children[k]
 
   case node.kind:
   of INK_NON_LEAF:
-    err("[ERROR]: Failed find item in index `{index.name}`")
+    err(fmt"[ERROR]: Failed find item in index `{index.name}`")
   of INK_LEAF:
     ok(node.ids)
 
