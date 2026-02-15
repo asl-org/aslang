@@ -97,10 +97,10 @@ PRINT(String, "%s\n")
  * }
  *
  */
-#define POINTER_READ(TYPE)                  \
-  TYPE TYPE##_read(Pointer ptr, U64 offset) \
-  {                                         \
-    return *((TYPE *)(ptr + offset));       \
+#define POINTER_READ(TYPE)                        \
+  TYPE TYPE##_read(Pointer ptr, U64 offset)       \
+  {                                               \
+    return *((TYPE *)((char *)ptr + offset));     \
   }
 
 /** NOTE: Macro for generating {Type}_write function for Native Types.
@@ -111,11 +111,11 @@ PRINT(String, "%s\n")
  * }
  *
  */
-#define POINTER_WRITE(TYPE)                                 \
-  Pointer TYPE##_write(TYPE value, Pointer ptr, U64 offset) \
-  {                                                         \
-    *((TYPE *)(ptr + offset)) = value;                      \
-    return ptr;                                             \
+#define POINTER_WRITE(TYPE)                                   \
+  Pointer TYPE##_write(TYPE value, Pointer ptr, U64 offset)   \
+  {                                                           \
+    *((TYPE *)((char *)ptr + offset)) = value;                \
+    return ptr;                                               \
   }
 
 /** NOTE: Macro for generating System_box_{Type} function for Native Types.
@@ -155,7 +155,7 @@ BASIC_OPS(String)
 BASIC_OPS(Pointer)
 
 #undef BASIC_OPS
-#undef BOX
+#undef BOX_POINTER
 #undef BYTE_SIZE
 #undef POINTER_READ
 #undef POINTER_WRITE
@@ -394,29 +394,28 @@ U64 byte_size(U64 impl_id)
   switch (impl_id)
   {
   case 0:
-    return 1; // S8
+    return sizeof(S8);  // 1
   case 1:
-    return 2; // S16
+    return sizeof(S16); // 2
   case 2:
-    return 3; // S32
+    return sizeof(S32); // 4
   case 3:
-    return 4; // S64
+    return sizeof(S64); // 8
   case 4:
-    return 1; // U8
+    return sizeof(U8);  // 1
   case 5:
-    return 2; // U16
+    return sizeof(U16); // 2
   case 6:
-    return 3; // U32
+    return sizeof(U32); // 4
   case 7:
-    return 4; // U64
+    return sizeof(U64); // 8
   case 8:
-    return 3; // F32
+    return sizeof(F32); // 4
   case 9:
-    return 4; // F64
+    return sizeof(F64); // 8
   default:
-    return 4; // Pointer types
+    return sizeof(Pointer); // 8 on 64-bit
   }
-  UNREACHABLE();
 }
 
 Pointer byte_read(U64 impl_id, Pointer data, U64 offset)
@@ -446,7 +445,6 @@ Pointer byte_read(U64 impl_id, Pointer data, U64 offset)
   default:
     return System_box_Pointer(Pointer_read(data, offset)); // Pointer types
   }
-  UNREACHABLE();
 }
 
 Pointer byte_write(U64 impl_id, Pointer data, U64 offset, Pointer value)
@@ -476,7 +474,6 @@ Pointer byte_write(U64 impl_id, Pointer data, U64 offset, Pointer value)
   default:
     return Pointer_write(Pointer_read(value, 0), data, offset); // Pointer types
   }
-  UNREACHABLE();
 }
 
 Pointer String_get(String str, U64 index)
@@ -556,8 +553,8 @@ Pointer Array_set(U64 impl_id, Pointer arr, U64 index, Pointer value)
 
   U64 offset = index * byte_size(impl_id);
   Pointer data = Array_get_data(arr);
-  data = byte_write(impl_id, data, offset, value);
+  byte_write(impl_id, data, offset, value);
 
-  Pointer status = ASL_Status_Ok_init(data);
+  Pointer status = ASL_Status_Ok_init(arr);
   return status;
 }

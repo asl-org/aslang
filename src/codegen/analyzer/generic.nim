@@ -14,7 +14,7 @@ proc new_analyzed_generic(resolved_generic: ResolvedGeneric, defs: seq[
     new_index[AnalyzedFunctionDefinition]("name_and_arity", proc(
         def: AnalyzedFunctionDefinition): (Identifier, uint) = (def.name, def.arity))
   ])
-  if maybe_defs_repo.is_err: return err("new_analyzed_generic [UNREACHBLE]")
+  if maybe_defs_repo.is_err: return err("[UNREACHABLE] new_analyzed_generic")
   ok(AnalyzedGeneric(resolved_generic: resolved_generic,
       defs_repo: maybe_defs_repo.get))
 

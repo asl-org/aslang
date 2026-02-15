@@ -15,7 +15,7 @@ proc new_analyzed_file_definition(file: ResolvedFile, modules: seq[
     AnalyzedFunctionDefinition]): Result[AnalyzedFileDefinition, string] =
   let maybe_modules_repo = new_repo(modules, @[new_index[
       AnalyzedModuleDefinition]("name", resolved_module, true)])
-  if maybe_modules_repo.is_err: return err("new_analyzed_file_definition UNREACHABLE")
+  if maybe_modules_repo.is_err: return err("[UNREACHABLE] new_analyzed_file_definition")
   let modules_repo = maybe_modules_repo.get
 
   let maybe_function_defs_repo = new_repo(function_defs, @[
@@ -24,7 +24,7 @@ proc new_analyzed_file_definition(file: ResolvedFile, modules: seq[
         def: AnalyzedFunctionDefinition): (Identifier, uint) = (def.name,
         def.arity)),
   ])
-  if maybe_function_defs_repo.is_err: return err("new_analyzed_file_definition UNREACHABLE")
+  if maybe_function_defs_repo.is_err: return err("[UNREACHABLE] new_analyzed_file_definition")
   let function_defs_repo = maybe_function_defs_repo.get
 
   ok(AnalyzedFileDefinition(file: file, modules_repo: modules_repo,

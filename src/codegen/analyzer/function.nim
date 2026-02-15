@@ -7,6 +7,7 @@ import module_def
 import file_def
 import func_ref
 import expression
+import func_metadata
 
 type AnalyzedUserFunction* = ref object of RootObj
   def: AnalyzedFunctionDefinition
@@ -14,7 +15,8 @@ type AnalyzedUserFunction* = ref object of RootObj
 
 proc new_analyzed_user_function(def: AnalyzedFunctionDefinition, steps: seq[
     AnalyzedStatement]): AnalyzedUserFunction =
-  AnalyzedUserFunction(def: def, steps: steps)
+  let enriched_def = def.with_metadata(compute_user_metadata(steps))
+  AnalyzedUserFunction(def: enriched_def, steps: steps)
 
 proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDefinition = function.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] =
@@ -57,7 +59,7 @@ proc analyze*(file_def: AnalyzedFileDefinition,
     function: ResolvedFunction): Result[AnalyzedUserFunction, string] =
   case function.kind:
   of RFK_USER: file_def.analyze(function.user)
-  of RFK_EXTERN: err("UNREACHABLE")
+  of RFK_EXTERN: err("[UNREACHABLE] analyze expected user function, got extern")
 
 type
   AnalyzedFunctionKind* = enum
@@ -80,6 +82,9 @@ proc kind*(function: AnalyzedFunction): AnalyzedFunctionKind = function.kind
 proc user*(function: AnalyzedFunction): AnalyzedUserFunction =
   do_assert function.kind == AFK_USER, "expected user function"
   function.user
+proc extern_def*(function: AnalyzedFunction): AnalyzedFunctionDefinition =
+  do_assert function.kind == AFK_EXTERN, "expected extern function"
+  function.def
 
 proc generic_impls*(function: AnalyzedFunction): Table[ResolvedModule, seq[
     HashSet[AnalyzedImpl]]] =
