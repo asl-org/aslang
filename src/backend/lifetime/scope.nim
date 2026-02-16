@@ -36,6 +36,7 @@ type
     owned_children: Table[string, seq[string]]
     exit_var: string
     consumed: HashSet[string]
+    reassign_frees: Table[int, seq[CStmt]]
 
 # --- Allocation classification (metadata-driven) ---
 
@@ -153,6 +154,8 @@ proc inner_free_stmt*(status_name: string): CStmt =
       @[c_call("Pointer_read",
           @[c_ident(status_name), c_lit(UNION_VALUE_OFFSET)])]))
 
+proc free_call(name: string): CStmt
+
 # --- Constructor ---
 
 proc new_scope*(stmts: seq[CStmt],
@@ -160,13 +163,24 @@ proc new_scope*(stmts: seq[CStmt],
     extra_allocs: seq[string] = @[]): LifetimeScope =
   var scope = LifetimeScope()
 
-  # 1. Track heap allocations in this scope
-  for stmt in stmts:
+  # 1. Track heap allocations in this scope (from declarations and reassignments)
+  var seen_allocs: HashSet[string]
+  for i, stmt in stmts:
     if stmt.kind == CSK_DECL and stmt.decl_init.is_allocation(metadata):
       let kind = classify_alloc(stmt.decl_init, metadata)
       scope.allocations.add(Allocation(name: stmt.decl_name, kind: kind))
       scope.alloc_names.incl(stmt.decl_name)
       scope.alloc_kinds[stmt.decl_name] = kind
+      seen_allocs.incl(stmt.decl_name)
+    elif stmt.kind == CSK_ASSIGN and stmt.assign_expr.is_allocation(metadata):
+      if stmt.assign_name in seen_allocs:
+        scope.reassign_frees[i] = @[free_call(stmt.assign_name)]
+      else:
+        let kind = classify_alloc(stmt.assign_expr, metadata)
+        scope.allocations.add(Allocation(name: stmt.assign_name, kind: kind))
+        scope.alloc_names.incl(stmt.assign_name)
+        scope.alloc_kinds[stmt.assign_name] = kind
+      seen_allocs.incl(stmt.assign_name)
 
   # 1b. Add parent-provided allocations (extracted from OWNED Status)
   for name in extra_allocs:
@@ -221,3 +235,6 @@ proc generate_frees*(scope: LifetimeScope): seq[CStmt] =
 
 proc alloc_kinds*(scope: LifetimeScope): Table[string, AllocKind] =
   scope.alloc_kinds
+
+proc reassign_frees*(scope: LifetimeScope): Table[int, seq[CStmt]] =
+  scope.reassign_frees

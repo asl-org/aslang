@@ -54,8 +54,12 @@ proc optimize_stmts(stmts: seq[CStmt],
   for name, kind in scope.alloc_kinds.pairs:
     combined_kinds[name] = kind
 
+  let reassign_frees = scope.reassign_frees
   var optimized: seq[CStmt]
   for i, stmt in stmts:
+    # Free old value before reassignment of allocated variable
+    if i in reassign_frees:
+      optimized.add(reassign_frees[i])
     let is_scope_exit = (stmt.kind == CSK_RETURN) or
         (stmt.kind == CSK_ASSIGN and i == stmts.len - 1)
     if is_scope_exit:

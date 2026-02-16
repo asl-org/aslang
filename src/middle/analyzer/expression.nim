@@ -24,6 +24,7 @@ type
     of REK_INIT: init: AnalyzedInitializer
     of REK_VARIABLE: variable: AnalyzedArgumentDefinition
   AnalyzedStatement* = ref object of RootObj
+    is_reassignment: bool
     arg: AnalyzedArgumentDefinition
     expression: AnalyzedExpression
   AnalyzedCase* = ref object of RootObj
@@ -165,11 +166,16 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
 
 # Statement
 proc new_analyzed_statement(arg: AnalyzedArgumentDefinition,
-    expression: AnalyzedExpression): AnalyzedStatement =
-  AnalyzedStatement(arg: arg, expression: expression)
+    expression: AnalyzedExpression,
+    is_reassignment: bool = false): AnalyzedStatement =
+  AnalyzedStatement(arg: arg, expression: expression,
+      is_reassignment: is_reassignment)
 
 proc returns(statement: AnalyzedStatement): AnalyzedModuleRef =
   statement.expression.returns
+
+proc is_reassignment*(statement: AnalyzedStatement): bool =
+  statement.is_reassignment
 
 proc arg*(statement: AnalyzedStatement): AnalyzedArgumentDefinition =
   statement.arg
@@ -189,7 +195,8 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
   let analyzed_expression = ? analyze(file_def, scope, statement.expression, module_def)
   let analyzed_arg = new_analyzed_argument_definition(
       analyzed_expression.returns, statement.arg)
-  ok(new_analyzed_statement(analyzed_arg, analyzed_expression))
+  let is_reassign = scope.has(statement.arg)
+  ok(new_analyzed_statement(analyzed_arg, analyzed_expression, is_reassign))
 
 # Case
 proc new_analyzed_case(pattern: AnalyzedCasePattern, statements: seq[

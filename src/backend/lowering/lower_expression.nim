@@ -23,7 +23,18 @@ proc generate_expression*(expression: AnalyzedExpression,
         result_arg.name.asl, c_ident(expression.variable.name.asl))]
 
 proc generate_statement*(statement: AnalyzedStatement): seq[CStmt] =
-  statement.expression.generate_expression(statement.arg)
+  var stmts = statement.expression.generate_expression(statement.arg)
+  if statement.is_reassignment:
+    let target = statement.arg.name.asl
+    var patched: seq[CStmt]
+    for stmt in stmts:
+      if stmt.kind == CSK_DECL and stmt.decl_name == target:
+        if stmt.decl_init != nil:
+          patched.add(c_assign(target, stmt.decl_init))
+      else:
+        patched.add(stmt)
+    return patched
+  stmts
 
 proc generate_case(case_block: AnalyzedCase,
     operand: AnalyzedArgumentDefinition, result_arg: string,

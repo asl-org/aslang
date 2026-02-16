@@ -23,10 +23,15 @@ proc get*(scope: FunctionScope, name: Identifier): Result[AnalyzedModuleRef, str
     return err(fmt"{name.location} argument `{name.asl}` is not present in the scope")
   ok(scope.table[name])
 
+proc has*(scope: FunctionScope, name: Identifier): bool =
+  name in scope.table
+
 proc set*(scope: FunctionScope, arg: AnalyzedArgumentDefinition): Result[
     FunctionScope, string] =
   if arg.name in scope.table:
-    return err(fmt"{arg.location} argument `{arg.name.asl}` can not be mutated")
+    if scope.table[arg.name] != arg.module_ref:
+      return err(fmt"{arg.location} cannot reassign `{arg.name.asl}` from type `{scope.table[arg.name].asl}` to `{arg.module_ref.asl}`")
+    return ok(scope)
   scope.table[arg.name] = arg.module_ref
   ok(scope)
 
