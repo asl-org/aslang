@@ -7,6 +7,7 @@ import middle/analyzer
 import backend/lowering
 import backend/optimizer
 import backend/emitter
+import temp_counter
 
 # Helper to wrap void-returning file operations with error handling
 proc safe_void_operation(operation: proc(), filename: string,
@@ -35,6 +36,7 @@ proc read_file_safe(filename: string): Result[string, string] =
     err(fmt"Failed to read file '{filename}': {e.msg}")
 
 proc compile*(filename: string, output: string): Result[void, string] =
+  reset_temp_counter()
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)

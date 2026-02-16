@@ -15,7 +15,7 @@ type
     of RAK_LITERAL: literal: Literal
     of RAK_VARIABLE: variable: Identifier
 
-proc new_analyzed_argument(module_ref: AnalyzedModuleRef,
+proc new_analyzed_argument*(module_ref: AnalyzedModuleRef,
     variable: Identifier): AnalyzedArgument =
   AnalyzedArgument(kind: RAK_VARIABLE, module_ref: module_ref,
       variable: variable)

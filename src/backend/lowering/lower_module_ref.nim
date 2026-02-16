@@ -1,26 +1,7 @@
-import strformat, strutils
+import strformat
 
 import ../../middle/analyzer
 import ../ir/constructors
-
-proc generate_impl_id_args*(module_ref: AnalyzedModuleRef): (seq[CStmt],
-    seq[CExpr]) =
-  var stmts: seq[CStmt]
-  var args: seq[CExpr]
-  case module_ref.kind:
-  of AMRK_GENERIC: discard
-  of AMRK_MODULE:
-    for impl in module_ref.impls:
-      let child = impl.module_ref
-      case child.kind:
-      of AMRK_GENERIC:
-        args.add(c_ident(fmt"__asl_impl_id_{child.generic.id}"))
-      of AMRK_MODULE:
-        let impl_arg = fmt"__asl_impl_id_{child.location.hash.to_hex}"
-        stmts.add(c_decl_var(c_named("U64"), impl_arg,
-            c_lit($child.module.id)))
-        args.add(c_ident(impl_arg))
-  return (stmts, args)
 
 proc generate_impl_id_inline*(module_ref: AnalyzedModuleRef): seq[CExpr] =
   case module_ref.kind:

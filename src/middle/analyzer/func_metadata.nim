@@ -27,7 +27,7 @@ proc compute_user_metadata*(steps: seq[AnalyzedStatement]): FunctionMetadata =
       if called.mutates_args:
         meta.mutates_args = true
         meta.reads_only = false
-    of REK_MATCH, REK_STRUCT_GET, REK_VARIABLE:
+    of REK_MATCH, REK_VARIABLE:
       discard
 
   # Check if the function returns an allocated value
@@ -39,7 +39,7 @@ proc compute_user_metadata*(steps: seq[AnalyzedStatement]): FunctionMetadata =
     of REK_FNCALL:
       if last.fncall.concrete_def.metadata.returns_allocated:
         meta.returns_allocated = true
-    of REK_MATCH, REK_STRUCT_GET, REK_VARIABLE:
+    of REK_MATCH, REK_VARIABLE:
       discard
 
   return meta

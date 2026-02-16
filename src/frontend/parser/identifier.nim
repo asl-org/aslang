@@ -1,6 +1,7 @@
-import results, strformat, hashes, strutils
+import results, hashes
 
 import core
+import ../../temp_counter
 
 type Identifier* = ref object of RootObj
   name: string
@@ -18,7 +19,7 @@ proc new_identifier*(name: string): Identifier =
   Identifier(name: name, location: new_location(name))
 
 proc new_identifier*(location: Location): Identifier =
-  let name = fmt"__asl_arg_{location.hash.to_hex}"
+  let name = next_temp()
   Identifier(name: name, location: location)
 
 proc location*(identifier: Identifier): Location =

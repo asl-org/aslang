@@ -1,11 +1,11 @@
-import strformat, strutils
+import strformat
 
 import ../../middle/analyzer
+import ../../temp_counter
 import ../ir/constructors
 import ../emitter
 import lower_fncall
 import lower_initializer
-import lower_struct_get
 import lower_module_ref
 import lower_arg_def
 
@@ -18,8 +18,6 @@ proc generate_expression*(expression: AnalyzedExpression,
   of REK_MATCH: expression.match.generate_match(result_arg)
   of REK_FNCALL: expression.fncall.generate_fncall(result_arg.name.asl)
   of REK_INIT: expression.init.generate_initializer(result_arg.name.asl)
-  of REK_STRUCT_GET: expression.struct_get.generate_struct_get(
-      result_arg.name.asl)
   of REK_VARIABLE:
     @[c_decl_var(expression.variable.module_ref.generate_type,
         result_arg.name.asl, c_ident(expression.variable.name.asl))]
@@ -69,7 +67,7 @@ proc generate_case(case_block: AnalyzedCase,
               c_call(fmt"{prefix}_get_{key.asl}",
               id_args & @[c_ident(operand.name.asl)])))
         else:
-          let arg_name = fmt"__asl_arg_{key.location.hash.to_hex}"
+          let arg_name = next_temp()
           body.add(c_decl_var(original_field.module_ref.generate_type,
               arg_name,
               c_call(fmt"{prefix}_get_{key.asl}",

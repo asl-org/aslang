@@ -1,6 +1,7 @@
-import strformat, strutils
+import strformat
 
 import ../../middle/analyzer
+import ../../temp_counter
 import ../ir/constructors
 import ../emitter
 import lower_module_ref
@@ -23,7 +24,7 @@ proc generate_struct_init*(struct_init: AnalyzedStructInit,
       case concrete_field.module_ref.kind:
       of AMRK_GENERIC: args.add(c_ident(field_arg.generate_arg))
       else:
-        let arg_name = fmt"__asl_arg_{concrete_field.location.hash.to_hex}"
+        let arg_name = next_temp()
         stmts.add(c_decl_var(c_pointer(), arg_name,
             c_call(fmt"System_box_{concrete_field.module_ref.generate_type.emit}",
             @[c_ident(field_arg.generate_arg)])))

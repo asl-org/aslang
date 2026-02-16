@@ -1,6 +1,6 @@
 # Compute FunctionMetadata for codegen-generated struct/union functions.
 #
-# For each struct/union, gen_struct.nim generates C functions:
+# For each struct/union, lower_struct.nim generates C functions:
 #   _init        → allocates, returns_allocated, consumes_args
 #   _get_*       → reads_only (defaults)
 #   _set_*       → mutates_args

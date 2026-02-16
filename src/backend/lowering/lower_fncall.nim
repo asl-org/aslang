@@ -1,6 +1,7 @@
-import strformat, sequtils, strutils
+import strformat, sequtils
 
 import ../../middle/analyzer
+import ../../temp_counter
 import ../ir/constructors
 import ../emitter
 import lower_func_def
@@ -34,10 +35,7 @@ proc generate_fncall*(fncall: AnalyzedFunctionCall,
         of AMRK_GENERIC:
           new_args.add(c_ident(fmt"__asl_impl_id_{child.generic.id}"))
         of AMRK_MODULE:
-          let impl_arg = fmt"__asl_impl_id_{child.location.hash.to_hex}"
-          stmts.add(c_decl_var(c_named("U64"), impl_arg,
-              c_lit($child.module.id)))
-          new_args.add(c_ident(impl_arg))
+          new_args.add(c_lit($child.module.id))
 
       for index in 0..<fncall.args.len:
         let original_def = fncall.original_def.args[index]
@@ -49,7 +47,7 @@ proc generate_fncall*(fncall: AnalyzedFunctionCall,
           case concrete_def.module_ref.kind:
           of AMRK_GENERIC: new_args.add(c_ident(fn_arg.asl))
           else:
-            let arg_name = fmt"__asl_arg_{fn_arg.location.hash.to_hex}"
+            let arg_name = next_temp()
             stmts.add(c_decl_var(c_pointer(), arg_name,
                 c_call(fmt"System_box_{concrete_def.module_ref.generate_type.emit}",
                 @[c_ident(fn_arg.generate_arg)])))
@@ -64,7 +62,7 @@ proc generate_fncall*(fncall: AnalyzedFunctionCall,
               result_arg,
               c_call(fncall.original_def.generate_func_name, new_args)))
         else:
-          let arg_name = fmt"__asl_arg_{fncall.location.hash.to_hex}"
+          let arg_name = next_temp()
           stmts.add(c_decl_var(fncall.original_def.returns.generate_type,
               arg_name,
               c_call(fncall.original_def.generate_func_name, new_args)))

@@ -28,9 +28,6 @@ export struct_ref
 import analyzer/literal
 export literal
 
-import analyzer/struct_get
-export struct_get
-
 import analyzer/generic
 export generic
 

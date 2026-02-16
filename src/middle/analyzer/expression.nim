@@ -1,27 +1,27 @@
-import results, strformat, tables, sets, options
+import results, strformat, tables, sets, options, sequtils
 
 import ../resolver
 import module_ref
 import arg_def
+import arg
 import struct
 import module_def
 import file_def
 import func_ref
+import func_def
 import fncall
 import initializer
-import struct_get
 import struct_pattern
 import case_pattern
 
 type
   AnalyzedExpressionKind* = enum
-    REK_MATCH, REK_FNCALL, REK_INIT, REK_STRUCT_GET, REK_VARIABLE
+    REK_MATCH, REK_FNCALL, REK_INIT, REK_VARIABLE
   AnalyzedExpression* = ref object of RootObj
     case kind: AnalyzedExpressionKind
     of REK_MATCH: match: AnalyzedMatch
     of REK_FNCALL: fncall: AnalyzedFunctionCall
     of REK_INIT: init: AnalyzedInitializer
-    of REK_STRUCT_GET: struct_get: AnalyzedStructGet
     of REK_VARIABLE: variable: AnalyzedArgumentDefinition
   AnalyzedStatement* = ref object of RootObj
     arg: AnalyzedArgumentDefinition
@@ -52,9 +52,6 @@ proc new_analyzed_expression(fncall: AnalyzedFunctionCall): AnalyzedExpression =
 proc new_analyzed_expression(init: AnalyzedInitializer): AnalyzedExpression =
   AnalyzedExpression(kind: REK_INIT, init: init)
 
-proc new_analyzed_expression(struct_get: AnalyzedStructGet): AnalyzedExpression =
-  AnalyzedExpression(kind: REK_STRUCT_GET, struct_get: struct_get)
-
 proc new_analyzed_expression(variable: AnalyzedArgumentDefinition): AnalyzedExpression =
   AnalyzedExpression(kind: REK_VARIABLE, variable: variable)
 
@@ -69,9 +66,6 @@ proc fncall*(expression: AnalyzedExpression): AnalyzedFunctionCall =
 proc init*(expression: AnalyzedExpression): AnalyzedInitializer =
   do_assert expression.kind == REK_INIT, "expected init"
   expression.init
-proc struct_get*(expression: AnalyzedExpression): AnalyzedStructGet =
-  do_assert expression.kind == REK_STRUCT_GET, "expected struct_get"
-  expression.struct_get
 proc variable*(expression: AnalyzedExpression): AnalyzedArgumentDefinition =
   do_assert expression.kind == REK_VARIABLE, "expected variable"
   expression.variable
@@ -98,7 +92,6 @@ proc returns(expression: AnalyzedExpression): AnalyzedModuleRef =
   of REK_MATCH: expression.match.returns
   of REK_FNCALL: expression.fncall.returns
   of REK_INIT: expression.init.returns
-  of REK_STRUCT_GET: expression.struct_get.returns
   of REK_VARIABLE: expression.variable.module_ref
 
 proc generic_impls(match: AnalyzedMatch): Table[ResolvedModule, seq[HashSet[
@@ -110,7 +103,6 @@ proc generic_impls(expression: AnalyzedExpression): Table[ResolvedModule,
   of REK_MATCH: expression.match.generic_impls
   of REK_FNCALL: expression.fncall.generic_impls
   of REK_INIT: expression.init.generic_impls
-  of REK_STRUCT_GET: expression.struct_get.generic_impls
   of REK_VARIABLE: expression.variable.generic_impls
 
 proc asl(match: AnalyzedMatch, indent: string): seq[string]
@@ -120,7 +112,6 @@ proc asl(expression: AnalyzedExpression, indent: string): seq[string] =
   of REK_MATCH: expression.match.asl(indent)
   of REK_FNCALL: @[expression.fncall.asl]
   of REK_INIT: @[expression.init.asl]
-  of REK_STRUCT_GET: @[expression.struct_get.asl]
   of REK_VARIABLE: @[expression.variable.asl]
 
 proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope,
@@ -142,9 +133,27 @@ proc analyze(file_def: AnalyzedFileDefinition, scope: FunctionScope,
     let analyzed_init = ? analyze(file_def, scope, init, module_def)
     ok(new_analyzed_expression(analyzed_init))
   of TEK_STRUCT_GET:
-    let struct_get = expression.struct_get
-    let analyzed_struct_get = ? analyze(file_def, scope, struct_get, module_def)
-    ok(new_analyzed_expression(analyzed_struct_get))
+    let sg = expression.struct_get
+    let analyzed_module_ref = ? scope.get(sg.variable)
+    case analyzed_module_ref.kind:
+    of AMRK_GENERIC:
+      return err(fmt"{sg.location} variable `{sg.variable.asl}` is not a struct but generic")
+    of AMRK_MODULE:
+      let resolved_module = analyzed_module_ref.module
+      let analyzed_module_def = ? file_def.find_module_def(resolved_module)
+      let original_defs = ? analyzed_module_def.find_function_defs(
+          sg.field, 1.uint, sg.location)
+      let concrete_defs = original_defs.map_it(
+          it.concretize(analyzed_module_ref.concrete_map))
+      let fnref = new_analyzed_function_ref(analyzed_module_ref, sg.field,
+          original_defs, concrete_defs)
+      let fn_arg = new_analyzed_argument(analyzed_module_ref, sg.variable)
+      for (original_def, concrete_def) in fnref.defs:
+        if concrete_def.args[0].module_ref == analyzed_module_ref:
+          return ok(new_analyzed_expression(
+              new_analyzed_function_call(fnref, original_def,
+                  concrete_def, @[fn_arg])))
+      err(fmt"{sg.location} no matching getter for `{sg.field.asl}` on `{analyzed_module_ref.asl}`")
   of TEK_VARIABLE:
     let variable = expression.variable
     let analyzed_variable = ? analyze(scope, variable)

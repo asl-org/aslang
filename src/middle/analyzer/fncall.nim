@@ -14,7 +14,7 @@ type AnalyzedFunctionCall* = ref object of RootObj
   original_def: AnalyzedFunctionDefinition
   args: seq[AnalyzedArgument]
 
-proc new_analyzed_function_call(fnref: AnalyzedFunctionRef,
+proc new_analyzed_function_call*(fnref: AnalyzedFunctionRef,
     original_def: AnalyzedFunctionDefinition,
         concrete_def: AnalyzedFunctionDefinition,
     args: seq[AnalyzedArgument]): AnalyzedFunctionCall =

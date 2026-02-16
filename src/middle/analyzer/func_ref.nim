@@ -53,7 +53,7 @@ proc new_analyzed_function_ref(name: Identifier, original_defs: seq[
   AnalyzedFunctionRef(kind: RFRK_LOCAL, name: name,
       original_defs: original_defs, concrete_defs: concrete_defs)
 
-proc new_analyzed_function_ref(module_ref: AnalyzedModuleRef, name: Identifier,
+proc new_analyzed_function_ref*(module_ref: AnalyzedModuleRef, name: Identifier,
     original_defs: seq[AnalyzedFunctionDefinition], concrete_defs: seq[
     AnalyzedFunctionDefinition]): AnalyzedFunctionRef =
   AnalyzedFunctionRef(kind: RFRK_MODULE, module_ref: module_ref, name: name,
