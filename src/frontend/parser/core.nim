@@ -45,6 +45,10 @@ proc err_parser_identifier_too_long*(location: Location,
     length: int): Error =
   new_parser_error(location, fmt"{location} identifier length `{length}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
 
+proc err_parser_reserved_identifier*(location: Location,
+    name: string): Error =
+  new_parser_error(location, fmt"identifier `{name}` uses reserved prefix `__asl_`")
+
 proc err_parser_expected_sign*(location: Location, found: string): Error =
   new_parser_error(location, fmt"expected a sign `+` or `-` but found {found}")
 

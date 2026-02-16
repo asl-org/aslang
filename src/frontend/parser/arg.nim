@@ -1,76 +1,10 @@
 import results, strformat, strutils
 
-import core, identifier, module_ref, literal
-
-# =============================================================================
-# StructRef (no Argument dependency — separate type block)
-# =============================================================================
-
-type
-  StructRefKind* = enum
-    SRK_DEFAULT, SRK_NAMED
-  StructRef* = ref object of RootObj
-    module: ModuleRef
-    case kind: StructRefKind
-    of SRK_DEFAULT: discard
-    of SRK_NAMED: struct: Identifier
-
-proc new_struct_ref*(module: ModuleRef): StructRef =
-  StructRef(kind: SRK_DEFAULT, module: module)
-
-proc new_struct_ref*(module: ModuleRef, struct: Identifier): StructRef =
-  StructRef(kind: SRK_NAMED, module: module, struct: struct)
-
-proc location*(struct_ref: StructRef): Location =
-  struct_ref.module.location
-
-proc kind*(struct_ref: StructRef): StructRefKind = struct_ref.kind
-proc module*(struct_ref: StructRef): ModuleRef = struct_ref.module
-
-proc struct*(struct_ref: StructRef): Identifier =
-  do_assert struct_ref.kind == SRK_NAMED, fmt"{struct_ref.location} expected named struct"
-  struct_ref.struct
-
-proc asl*(struct_ref: StructRef): string =
-  case struct_ref.kind:
-  of SRK_DEFAULT: struct_ref.module.asl
-  of SRK_NAMED: fmt"{struct_ref.module.asl}.{struct_ref.struct.asl}"
-
-# =============================================================================
-# FunctionRef (no Argument dependency — separate type block)
-# =============================================================================
-
-type
-  FunctionRefKind* = enum
-    FRK_LOCAL, FRK_MODULE
-  FunctionRef* = ref object of RootObj
-    name: Identifier
-    case kind: FunctionRefKind
-    of FRK_LOCAL: discard
-    of FRK_MODULE: module: ModuleRef
-
-proc new_function_ref*(name: Identifier): FunctionRef =
-  FunctionRef(kind: FRK_LOCAL, name: name)
-
-proc new_function_ref*(name: Identifier, module: ModuleRef): FunctionRef =
-  FunctionRef(kind: FRK_MODULE, name: name, module: module)
-
-proc location*(fnref: FunctionRef): Location =
-  case fnref.kind:
-  of FRK_LOCAL: fnref.name.location
-  of FRK_MODULE: fnref.module.location
-
-proc kind*(fnref: FunctionRef): FunctionRefKind = fnref.kind
-proc name*(fnref: FunctionRef): Identifier = fnref.name
-
-proc module*(fnref: FunctionRef): ModuleRef =
-  do_assert fnref.kind == FRK_MODULE, fmt"{fnref.location} expected a module function call"
-  fnref.module
-
-proc asl*(fnref: FunctionRef): string =
-  case fnref.kind:
-  of FRK_LOCAL: fnref.name.asl
-  of FRK_MODULE: fmt"{fnref.module.asl}.{fnref.name.asl}"
+import core, identifier, literal
+import struct_ref
+export struct_ref
+import function_ref
+export function_ref
 
 # =============================================================================
 # Mutually recursive types: Argument, FunctionCall, KeywordArgument, StructInit
@@ -238,40 +172,12 @@ proc argument_list_spec*(parser: Parser): Result[seq[Argument], core.Error] =
   parser.container_spec(open_paren_bracket_spec, argument_spec,
       close_paren_bracket_spec)
 
-# --- FunctionRef specs ---
-
-proc function_ref_local_spec(parser: Parser): Result[FunctionRef,
-    core.Error] =
-  let name = ? parser.expect(identifier_spec)
-  ok(new_function_ref(name))
-
-proc function_ref_module_spec(parser: Parser): Result[FunctionRef,
-    core.Error] =
-  let module_ref = ? parser.expect(module_ref_spec)
-  discard ? parser.expect(dot_spec)
-  let name = ? parser.expect(identifier_spec)
-  ok(new_function_ref(name, module_ref))
-
-proc function_ref_spec*(parser: Parser): Result[FunctionRef, core.Error] =
-  parser.expect_one_of([function_ref_module_spec, function_ref_local_spec])
-
 # --- FunctionCall spec ---
 
 proc function_call_spec*(parser: Parser): Result[FunctionCall, core.Error] =
   let fnref = ? parser.expect(function_ref_spec)
   let args = ? parser.expect(argument_list_spec)
   new_function_call(fnref, args)
-
-# --- StructRef spec ---
-
-proc struct_ref_spec*(parser: Parser): Result[StructRef, core.Error] =
-  let module = ? parser.expect(module_ref_spec)
-  let maybe_dot = parser.expect(dot_spec)
-  if maybe_dot.is_ok:
-    let struct = ? parser.expect(identifier_spec)
-    ok(new_struct_ref(module, struct))
-  else:
-    ok(new_struct_ref(module))
 
 # --- KeywordArgument specs ---
 

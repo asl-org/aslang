@@ -229,6 +229,9 @@ module User:
     user_age = user.age
     System.print(user_age)
 
+fn add_and_print(S64 a, S64 b): U64
+  System.print(S64.add(a, b))
+
 fn start(U8 seed): U8
   a = S64 10
   b = S64 20
@@ -238,10 +241,26 @@ fn start(U8 seed): U8
 
   System.print(S64.multiply(S64.add(a, b), c))
 
+  System.print(S64.add(S64.add(a, b), S64.multiply(b, c)))
+
   base_id = U64 1
   base_age = U64 20
   bonus = U64 5
   user = User { id: base_id, age: U64.add(base_age, bonus) }
   User.print(user)
+
+  id_val = U64 42
+  age_val = U64 30
+  User.print(User { id: id_val, age: age_val })
+
+  ok_status = Status[U64].Ok { value: 0 }
+  result = match ok_status:
+    case Ok { value: v }:
+      System.print(S64.add(a, c))
+      S64.add(a, b)
+    else:
+      S64 0
+
+  System.print(result)
 
   U8 0

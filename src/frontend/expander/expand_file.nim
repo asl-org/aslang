@@ -9,7 +9,7 @@ proc expand_function(function: Function): Result[Function, string] =
   case function.kind:
   of FK_EXTERN: return ok(function)
   of FK_USER:
-    let new_steps = flatten_statements(function.steps)
+    let new_steps = ? flatten_statements(function.steps)
     let maybe_user = new_user_function(function.def, new_steps)
     if maybe_user.is_err: return err($maybe_user.error)
     ok(new_function(maybe_user.get))
@@ -44,9 +44,6 @@ proc expand_module(module: Module): Result[Module, string] =
 
   # Flatten nested expression arguments in user function bodies
   let expanded_functions = ? expand_functions(all_functions)
-
-  if expanded_functions == module.functions:
-    return ok(module)
 
   let maybe_module = new_module(module.def, module.generics, module.data,
       expanded_functions)

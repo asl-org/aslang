@@ -1,4 +1,4 @@
-import results, hashes
+import results, hashes, strutils
 
 import core
 import ../../temp_counter
@@ -13,6 +13,10 @@ proc new_identifier*(name: string, location: Location): Result[Identifier, core.
 
   if name.len > MAX_IDENTIFIER_LENGTH:
     return err(err_parser_identifier_too_long(location, name.len))
+
+  if name.startsWith("__asl_"):
+    return err(err_parser_reserved_identifier(location, name))
+
   ok(Identifier(name: name, location: location))
 
 proc new_identifier*(name: string): Identifier =
