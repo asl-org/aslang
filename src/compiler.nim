@@ -1,6 +1,13 @@
 import results, strformat, unicode, os, osproc
 
-import codegen
+import frontend/parser
+import frontend/expander
+import middle/resolver
+import middle/analyzer
+import backend/lowering
+import backend/optimizer
+import backend/emitter
+import temp_counter
 
 # Helper to wrap void-returning file operations with error handling
 proc safe_void_operation(operation: proc(), filename: string,
@@ -29,12 +36,16 @@ proc read_file_safe(filename: string): Result[string, string] =
     err(fmt"Failed to read file '{filename}': {e.msg}")
 
 proc compile*(filename: string, output: string): Result[void, string] =
+  reset_temp_counter()
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)
-  let resolved_file = ? resolve(file)
+  let expanded = ? expand(file)
+  let resolved_file = ? resolve(expanded)
   let analyzed_file = ? analyze(resolved_file)
-  let code = ? analyzed_file.c()
+  let program = ? generate(analyzed_file)
+  let optimized = optimize(program)
+  let code = emit(optimized)
 
   let output_file = filename.change_file_ext("c")
   ? write_file_safe(output_file, code)
