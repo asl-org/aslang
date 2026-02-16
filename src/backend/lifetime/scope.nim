@@ -121,11 +121,11 @@ proc collect_consumed(stmts: seq[CStmt],
 
 proc detect_status_match*(cond: CExpr,
     alloc_kinds: Table[string, AllocKind]): Option[(string, AllocKind)] =
-  ## Detect if an if-condition is a Status match: Status_get_id(X) == N
+  ## Detect if an if-condition is a Status match: Status_get_id([impl_id,] X) == N
   ## Returns the Status variable name and its AllocKind.
   if cond.kind == CEK_BINARY and cond.op == "==" and
       cond.lhs.kind == CEK_CALL and cond.lhs.call_args.len > 0:
-    let arg = cond.lhs.call_args[0]
+    let arg = cond.lhs.call_args[^1]
     if arg.kind == CEK_IDENT and arg.ident_name in alloc_kinds:
       let kind = alloc_kinds[arg.ident_name]
       if kind == AK_STATUS_OWNED or kind == AK_STATUS_BORROWED:
@@ -142,8 +142,8 @@ proc find_extractions*(stmts: seq[CStmt], status_name: string,
       let fn_name = stmt.decl_init.call_name
       if fn_name in metadata and metadata[fn_name].is_union_extraction:
         if stmt.decl_init.call_args.len > 0 and
-            stmt.decl_init.call_args[0].kind == CEK_IDENT and
-            stmt.decl_init.call_args[0].ident_name == status_name:
+            stmt.decl_init.call_args[^1].kind == CEK_IDENT and
+            stmt.decl_init.call_args[^1].ident_name == status_name:
           names.add(stmt.decl_name)
   return names
 

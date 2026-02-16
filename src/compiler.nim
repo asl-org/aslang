@@ -1,6 +1,7 @@
 import results, strformat, unicode, os, osproc
 
 import frontend/parser
+import frontend/expander
 import middle/resolver
 import middle/analyzer
 import middle/lowering
@@ -37,7 +38,8 @@ proc compile*(filename: string, output: string): Result[void, string] =
   let content = ? read_file_safe(filename)
   let tokens = ? tokenize(filename, content)
   let file = ? parse(filename, tokens)
-  let resolved_file = ? resolve(file)
+  let expanded = ? expand(file)
+  let resolved_file = ? resolve(expanded)
   let analyzed_file = ? analyze(resolved_file)
   let program = ? generate(analyzed_file)
   let optimized = optimize(program)

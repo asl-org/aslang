@@ -11,7 +11,9 @@ import lower_literal
 proc generate_struct_init*(struct_init: AnalyzedStructInit,
     result_arg: string): seq[CStmt] =
   var stmts: seq[CStmt]
+  let id_args = struct_init.data_ref.module_ref.generate_impl_id_inline
   var args: seq[CExpr]
+  args.add(id_args)
   for index in 0..<struct_init.fields.len:
     let original_field = struct_init.data_ref.original_fields[index]
     let concrete_field = struct_init.data_ref.fields[index]

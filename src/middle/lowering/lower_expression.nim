@@ -18,8 +18,8 @@ proc generate_expression*(expression: AnalyzedExpression,
   of REK_MATCH: expression.match.generate_match(result_arg)
   of REK_FNCALL: expression.fncall.generate_fncall(result_arg.name.asl)
   of REK_INIT: expression.init.generate_initializer(result_arg.name.asl)
-  of REK_STRUCT_GET: @[expression.struct_get.generate_struct_get(
-      result_arg.name.asl)]
+  of REK_STRUCT_GET: expression.struct_get.generate_struct_get(
+      result_arg.name.asl)
   of REK_VARIABLE:
     @[c_decl_var(expression.variable.module_ref.generate_type,
         result_arg.name.asl, c_ident(expression.variable.name.asl))]
@@ -48,9 +48,10 @@ proc generate_case(case_block: AnalyzedCase,
           c_lit("0"))
   of RCPK_UNION:
     let union_pattern = case_block.pattern.union_pattern
+    let id_args = operand.module_ref.generate_impl_id_inline
     let id_call = c_call(
         fmt"{operand.module_ref.name}_get_id",
-        @[c_ident(operand.name.asl)])
+        id_args & @[c_ident(operand.name.asl)])
     condition = c_binary("==", id_call, c_lit($union_pattern.id))
 
     let prefix = fmt"{operand.module_ref.name}_{union_pattern.name.asl}"
@@ -66,13 +67,13 @@ proc generate_case(case_block: AnalyzedCase,
           let (ftype, _) = field.generate_param
           body.add(c_decl_var(ftype, field.name.asl,
               c_call(fmt"{prefix}_get_{key.asl}",
-              @[c_ident(operand.name.asl)])))
+              id_args & @[c_ident(operand.name.asl)])))
         else:
           let arg_name = fmt"__asl_arg_{key.location.hash.to_hex}"
           body.add(c_decl_var(original_field.module_ref.generate_type,
               arg_name,
               c_call(fmt"{prefix}_get_{key.asl}",
-              @[c_ident(operand.name.asl)])))
+              id_args & @[c_ident(operand.name.asl)])))
           let (ftype, _) = field.generate_param
           body.add(c_decl_var(ftype, field.name.asl,
               c_call(fmt"{field.module_ref.generate_type.emit}_read",
@@ -81,7 +82,7 @@ proc generate_case(case_block: AnalyzedCase,
         let (ftype, _) = field.generate_param
         body.add(c_decl_var(ftype, field.name.asl,
             c_call(fmt"{prefix}_get_{key.asl}",
-            @[c_ident(operand.name.asl)])))
+            id_args & @[c_ident(operand.name.asl)])))
 
   for statement in case_block.statements:
     body.add(statement.generate_statement)
