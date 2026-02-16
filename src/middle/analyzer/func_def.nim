@@ -13,6 +13,7 @@ type AnalyzedFunctionDefinition* = ref object of RootObj
   prefix: string
   generics: uint64
   extern: Option[string]
+  expanded: bool
   metadata: FunctionMetadata
 
 proc new_analyzed_function_definition(def: ResolvedFunctionDefinition,
@@ -25,15 +26,17 @@ proc new_analyzed_function_definition(def: ResolvedFunctionDefinition,
 proc new_analyzed_function_definition(def: ResolvedFunctionDefinition,
     args: seq[AnalyzedArgumentDefinition], returns: AnalyzedModuleRef,
     extern: Option[string], prefix: string = "",
-    generics: uint64 = 0,
+    generics: uint64 = 0, expanded: bool = false,
     metadata: FunctionMetadata = new_function_metadata()): AnalyzedFunctionDefinition =
   AnalyzedFunctionDefinition(resolved_def: def, args: args, returns: returns,
-      prefix: prefix, generics: generics, extern: extern, metadata: metadata)
+      prefix: prefix, generics: generics, extern: extern, expanded: expanded,
+      metadata: metadata)
 
 proc args*(def: AnalyzedFunctionDefinition): seq[
     AnalyzedArgumentDefinition] = def.args
 proc returns*(def: AnalyzedFunctionDefinition): AnalyzedModuleRef = def.returns
 proc extern*(def: AnalyzedFunctionDefinition): Option[string] = def.extern
+proc expanded*(def: AnalyzedFunctionDefinition): bool = def.expanded
 proc metadata*(def: AnalyzedFunctionDefinition): FunctionMetadata = def.metadata
 proc prefix*(def: AnalyzedFunctionDefinition): string = def.prefix
 proc generics*(def: AnalyzedFunctionDefinition): uint64 = def.generics
@@ -46,7 +49,7 @@ proc arity*(def: AnalyzedFunctionDefinition): uint = def.args.len.uint
 proc with_metadata*(def: AnalyzedFunctionDefinition,
     metadata: FunctionMetadata): AnalyzedFunctionDefinition =
   new_analyzed_function_definition(def.resolved_def, def.args, def.returns,
-      def.extern, def.prefix, def.generics, metadata)
+      def.extern, def.prefix, def.generics, def.expanded, metadata)
 
 proc concretize*(def: AnalyzedFunctionDefinition, concrete_map: Table[
     ResolvedGeneric, AnalyzedModuleRef]): AnalyzedFunctionDefinition =
@@ -56,7 +59,7 @@ proc concretize*(def: AnalyzedFunctionDefinition, concrete_map: Table[
   let concretized_returns = def.returns.concretize(concrete_map)
   new_analyzed_function_definition(def.resolved_def,
       concretized_args, concretized_returns, def.extern,
-      metadata = def.metadata)
+      expanded = def.expanded, metadata = def.metadata)
 
 proc generic_impls*(def: AnalyzedFunctionDefinition): Table[
     ResolvedModule, seq[HashSet[AnalyzedImpl]]] =
@@ -87,7 +90,7 @@ proc analyze_def(file: ResolvedFile,
   of RFK_EXTERN:
     ok(new_analyzed_function_definition(def, analyzed_args,
         analyzed_returns, function.extern_name, prefix,
-        module.generics.len.uint64))
+        module.generics.len.uint64, function.is_expanded))
   of RFK_USER:
     ok(new_analyzed_function_definition(def, analyzed_args,
         analyzed_returns, prefix, module.generics.len.uint64))
@@ -129,7 +132,7 @@ proc analyze_def*(file: ResolvedFile,
   case function.kind:
   of RFK_EXTERN:
     ok(new_analyzed_function_definition(def, analyzed_args, analyzed_returns,
-        function.extern_name))
+        function.extern_name, expanded = function.is_expanded))
   of RFK_USER:
     ok(new_analyzed_function_definition(def, analyzed_args, analyzed_returns))
 

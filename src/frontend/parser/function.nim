@@ -23,14 +23,16 @@ proc new_user_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
 type ExternFunction* = ref object of RootObj
   def: FunctionDefinition
   extern: string
+  expanded: bool
 
 proc new_extern_function*(def: FunctionDefinition,
-    extern: string): ExternFunction =
-  ExternFunction(def: def, extern: extern)
+    extern: string, expanded: bool = false): ExternFunction =
+  ExternFunction(def: def, extern: extern, expanded: expanded)
 
 proc name*(function: ExternFunction): Identifier = function.def.name
 proc def*(function: ExternFunction): FunctionDefinition = function.def
 proc extern*(function: ExternFunction): string = function.extern
+proc expanded*(function: ExternFunction): bool = function.expanded
 
 # =============================================================================
 # Function (Unified)

@@ -1,9 +1,9 @@
 import results, tables, sets
 
-import ../analyzer
+import ../../middle/analyzer
 import ../../metadata
-import ../../ir/constructors
-import ../../backend/lifetime/runtime_metadata
+import ../ir/constructors
+import ../lifetime/runtime_metadata
 import lower_func_def
 import lower_file_def
 import lower_module
@@ -80,10 +80,7 @@ proc generate*(file: AnalyzedFile): Result[CProgram, string] =
   var metadata: Table[string, FunctionMetadata]
   add_runtime_metadata(metadata)
   for module in file.modules:
-    # Data-generated functions (init, get_*, set_*, etc.)
-    for name, m in compute_data_metadata(module.def.data, module.def.name.asl):
-      metadata[name] = m
-    # Module-level user/extern functions
+    # Module-level user/extern functions (enriched with data metadata)
     for function in module.functions:
       case function.kind:
       of AFK_USER:
@@ -92,6 +89,11 @@ proc generate*(file: AnalyzedFile): Result[CProgram, string] =
         let name = function.extern_def.generate_func_name
         if name notin metadata:
           metadata[name] = function.extern_def.metadata
+    # Fallback: data-generated metadata for struct/union operations not covered
+    # by ExternFunctions (e.g., init when module has a user-defined init)
+    for name, m in compute_data_metadata(module.def.data, module.def.name.asl):
+      if name notin metadata:
+        metadata[name] = m
   # File-level functions
   for function in file.functions:
     metadata[function.def.generate_func_name] = function.def.metadata

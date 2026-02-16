@@ -5,6 +5,7 @@ import module_ref
 import func_def
 import generic
 import struct
+import data_metadata
 
 type AnalyzedModuleDefinition* = ref object of RootObj
   resolved_module: ResolvedModule
@@ -124,4 +125,13 @@ proc analyze_def*(file: ResolvedFile, module: ResolvedModule): Result[
     let analyzed_def = ? analyze_def(file, module, function)
     function_defs.add(analyzed_def)
 
-  new_analyzed_module_definition(module, generics, analyzed_data, function_defs)
+  # Enrich extern function defs with metadata from struct/union data
+  let data_meta = compute_data_metadata(analyzed_data, module.name.asl)
+  var enriched_defs: seq[AnalyzedFunctionDefinition]
+  for fdef in function_defs:
+    if fdef.extern.is_some and fdef.extern.get in data_meta:
+      enriched_defs.add(fdef.with_metadata(data_meta[fdef.extern.get]))
+    else:
+      enriched_defs.add(fdef)
+
+  new_analyzed_module_definition(module, generics, analyzed_data, enriched_defs)

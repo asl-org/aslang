@@ -4,7 +4,7 @@ import frontend/parser
 import frontend/expander
 import middle/resolver
 import middle/analyzer
-import middle/lowering
+import backend/lowering
 import backend/optimizer
 import backend/emitter
 

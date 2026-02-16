@@ -1,7 +1,7 @@
 import strformat, strutils
 
-import ../analyzer
-import ../../ir/constructors
+import ../../middle/analyzer
+import ../ir/constructors
 
 proc generate_impl_id_args*(module_ref: AnalyzedModuleRef): (seq[CStmt],
     seq[CExpr]) =

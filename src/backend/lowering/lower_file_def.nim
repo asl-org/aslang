@@ -1,5 +1,5 @@
-import ../analyzer
-import ../../ir/constructors
+import ../../middle/analyzer
+import ../ir/constructors
 import lower_module_def
 import lower_func_def
 

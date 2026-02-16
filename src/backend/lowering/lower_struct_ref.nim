@@ -1,6 +1,6 @@
 import strformat
 
-import ../analyzer
+import ../../middle/analyzer
 
 proc generate_data_ref_name*(struct_ref: AnalyzedStructRef): string =
   fmt"{struct_ref.module_ref.name}"

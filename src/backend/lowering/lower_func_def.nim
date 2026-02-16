@@ -1,7 +1,7 @@
 import strformat, sequtils, strutils, options
 
-import ../analyzer
-import ../../ir/constructors
+import ../../middle/analyzer
+import ../ir/constructors
 import lower_module_ref
 import lower_arg_def
 

@@ -9,17 +9,19 @@ proc expand_module(module: Module): Result[Module, string] =
   of DK_NONE, DK_LITERAL:
     ok(module)
   of DK_STRUCT, DK_UNION:
-    var existing_names: HashSet[string]
+    var existing_names: HashSet[(string, int)]
     for function in module.functions:
-      existing_names.incl(function.name.asl)
+      existing_names.incl((function.name.asl, function.def.args.len))
 
     let prefix = module.name.asl
     var generated: seq[Function]
     case module.data.kind:
     of DK_STRUCT:
-      generated = ? expand_struct(module.data.struct, prefix, existing_names)
+      generated = ? expand_struct(module.data.struct, prefix,
+          module.name.asl, module.generics, existing_names)
     of DK_UNION:
-      generated = ? expand_union(module.data.union, prefix, existing_names)
+      generated = ? expand_union(module.data.union, prefix,
+          module.name.asl, module.generics, existing_names)
     else: discard
 
     if generated.len == 0:

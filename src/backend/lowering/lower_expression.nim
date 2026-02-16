@@ -1,8 +1,8 @@
 import strformat, strutils
 
-import ../analyzer
-import ../../ir/constructors
-import ../../backend/emitter
+import ../../middle/analyzer
+import ../ir/constructors
+import ../emitter
 import lower_fncall
 import lower_initializer
 import lower_struct_get

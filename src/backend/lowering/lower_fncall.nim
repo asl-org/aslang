@@ -1,8 +1,8 @@
 import strformat, sequtils, strutils
 
-import ../analyzer
-import ../../ir/constructors
-import ../../backend/emitter
+import ../../middle/analyzer
+import ../ir/constructors
+import ../emitter
 import lower_func_def
 import lower_module_ref
 import lower_arg

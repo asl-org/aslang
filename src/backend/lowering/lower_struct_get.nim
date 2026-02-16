@@ -1,7 +1,7 @@
 import strformat
 
-import ../analyzer
-import ../../ir/constructors
+import ../../middle/analyzer
+import ../ir/constructors
 import lower_module_ref
 
 proc generate_struct_get*(struct_get: AnalyzedStructGet,

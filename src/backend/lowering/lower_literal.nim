@@ -1,5 +1,5 @@
-import ../analyzer
-import ../../ir/constructors
+import ../../middle/analyzer
+import ../ir/constructors
 import lower_module_ref
 
 proc generate_typedef*(literal: AnalyzedLiteral, prefix: string): CDecl =

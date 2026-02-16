@@ -19,8 +19,8 @@
 
 import tables, sets, options
 
-import ../../ir/types
-import ../../ir/constructors
+import ../ir/types
+import ../ir/constructors
 
 # --- Types ---
 

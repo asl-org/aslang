@@ -1,6 +1,6 @@
 import tables
 
-import ../metadata
+import ../../metadata
 export metadata
 
 type

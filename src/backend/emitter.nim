@@ -1,6 +1,6 @@
 import strformat, strutils, sequtils
 
-import ../ir/types
+import ir/types
 
 proc emit*(t: CType): string =
   case t.kind:

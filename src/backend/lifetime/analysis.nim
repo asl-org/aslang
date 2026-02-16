@@ -1,7 +1,7 @@
 import tables, options
 
-import ../../ir/types
-import ../../ir/constructors
+import ../ir/types
+import ../ir/constructors
 import scope
 
 # --- Tree traversal: recurse into nested scopes ---

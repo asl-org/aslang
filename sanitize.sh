@@ -21,7 +21,13 @@ run_with_timeout() {
   shift
   "$@" &
   local pid=$!
-  (sleep $seconds && kill $pid 2>/dev/null) &
+  (
+    sleep "$seconds"
+    # Kill children first (e.g. sample_leak spawned by leaks), then parent.
+    # If we kill the parent first, children become orphans reparented to PID 1.
+    pkill -P "$pid" 2>/dev/null
+    kill "$pid" 2>/dev/null
+  ) &
   local watcher=$!
   wait $pid 2>/dev/null
   local status=$?
@@ -29,6 +35,14 @@ run_with_timeout() {
   wait $watcher 2>/dev/null
   return $status
 }
+
+# Clean up stray processes on exit/interrupt
+cleanup() {
+  pkill -f sample_asan 2>/dev/null || true
+  pkill -f sample_leak 2>/dev/null || true
+  rm -f sample_asan sample_leak /tmp/asan_output /tmp/leak_output
+}
+trap cleanup EXIT INT TERM
 
 failed=0
 passed=0

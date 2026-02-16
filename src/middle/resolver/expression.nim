@@ -262,13 +262,16 @@ proc resolve*(file: parser.File, module: Option[parser.Module],
 # =============================================================================
 type ResolvedExternFunction* = ref object of RootObj
   extern: string
+  expanded: bool
   def: ResolvedFunctionDefinition
 
 proc new_resolved_extern_function(extern: string,
-    def: ResolvedFunctionDefinition): ResolvedExternFunction =
-  ResolvedExternFunction(extern: extern, def: def)
+    def: ResolvedFunctionDefinition,
+    expanded: bool = false): ResolvedExternFunction =
+  ResolvedExternFunction(extern: extern, def: def, expanded: expanded)
 
 proc extern*(function: ResolvedExternFunction): string = function.extern
+proc expanded*(function: ResolvedExternFunction): bool = function.expanded
 proc def*(function: ResolvedExternFunction): ResolvedFunctionDefinition = function.def
 proc module_deps*(function: ResolvedExternFunction): HashSet[Module] =
   init_hashset[Module]()
@@ -298,6 +301,11 @@ proc extern_name*(function: ResolvedFunction): Option[string] =
   of RFK_EXTERN: some(function.extern.extern)
   of RFK_USER: none(string)
 
+proc is_expanded*(function: ResolvedFunction): bool =
+  case function.kind:
+  of RFK_EXTERN: function.extern.expanded
+  of RFK_USER: false
+
 proc extern*(function: ResolvedFunction): ResolvedExternFunction =
   do_assert function.kind == RFK_EXTERN, "expected extern function"
   function.extern
@@ -322,7 +330,8 @@ proc resolve*(file: parser.File, module: parser.Module,
   of FK_EXTERN:
     let resolved_def = ? resolve(file, some(module), function.def)
     let extern_function = new_resolved_extern_function(
-        function.extern_func.extern, resolved_def)
+        function.extern_func.extern, resolved_def,
+        function.extern_func.expanded)
     ok(new_resolved_function(extern_function))
   of FK_USER:
     let resolved_def = ? resolve(file, some(module), function.def)
