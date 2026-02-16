@@ -148,6 +148,7 @@ proc new_statement*(arg: Identifier, expression: Expression): Statement =
   Statement(kind: SK_ASSIGNED, arg: arg, expression: expression)
 
 proc location*(statement: Statement): Location = statement.arg.location
+proc kind*(statement: Statement): StatementKind = statement.kind
 proc expression*(statement: Statement): Expression = statement.expression
 proc arg*(statement: Statement): Identifier = statement.arg
 

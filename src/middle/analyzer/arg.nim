@@ -55,4 +55,6 @@ proc analyze*(file_def: AnalyzedFileDefinition, scope: FunctionScope, args: seq[
       let literal = arg.literal
       ? def.module_ref.module.validate(literal)
       analyzed_args.add(new_analyzed_argument(def.module_ref, literal))
+    of AK_FNCALL, AK_STRUCT_INIT:
+      return err(fmt"{arg.location} nested expression arguments must be expanded before analysis")
   ok(analyzed_args)
