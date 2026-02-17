@@ -6,6 +6,8 @@ export tokenizer
 import repo
 export repo
 
+import ../../utils
+
 # ast node constants
 const MAX_IDENTIFIER_LENGTH* = 256
 const MAX_TYPE_CHILDREN_COUNT* = 8
@@ -15,7 +17,7 @@ const MAX_BRANCH_LENGTH* = 256
 # parser constants
 const INDENT_SIZE = 2 # spaces
 
-type Error* = ref object of RootObj
+struct Error:
   location: Location
   message: string
 
@@ -44,6 +46,10 @@ proc err_parser_empty_identifier*(location: Location): Error =
 proc err_parser_identifier_too_long*(location: Location,
     length: int): Error =
   new_parser_error(location, fmt"{location} identifier length `{length}` exceeded maximum identifier length of `{MAX_IDENTIFIER_LENGTH}`")
+
+proc err_parser_reserved_identifier*(location: Location,
+    name: string): Error =
+  new_parser_error(location, fmt"identifier `{name}` uses reserved prefix `__asl_`")
 
 proc err_parser_expected_sign*(location: Location, found: string): Error =
   new_parser_error(location, fmt"expected a sign `+` or `-` but found {found}")
@@ -151,10 +157,10 @@ proc err_parser_function_module_conflict*(function_location: Location,
 # add the new line at the end of file if not present. This is
 # a conscious choice to ensure the consistent syntax with
 # minimal configuration.
-type Parser* = ref object of RootObj
+struct Parser:
   path: string
   tokens: seq[Token]
-  index: int = 0
+  index: int
   indent: int
 
 proc new_parser(path: string, tokens: seq[Token], indent: int): Parser =
@@ -162,9 +168,6 @@ proc new_parser(path: string, tokens: seq[Token], indent: int): Parser =
 
 proc new_parser*(path: string, tokens: seq[Token]): Parser =
   new_parser(path, tokens, INDENT_SIZE)
-
-proc path*(parser: Parser): string = parser.path
-proc indent*(parser: Parser): int = parser.indent
 
 type AtomSpec*[T] = proc(parser: Parser): Result[T, Error] {.nimcall.}
 type BlockSpec*[T] = proc(parser: Parser, indent: int): Result[T,
@@ -224,16 +227,6 @@ proc expect_at_least_one*[T](parser: Parser, spec: AtomSpec[T]): Result[seq[T], 
   items.add( ? parser.expect_any(spec))
   ok(items)
 
-proc expect_at_least_one*[T](parser: Parser, item_spec: BlockSpec[T]): Result[
-    seq[T], Error] =
-  var items: seq[T]
-  items.add( ? parser.expect(item_spec, indent))
-  var maybe_item = parser.expect(item_spec, indent)
-  while maybe_item.is_ok:
-    items.add(maybe_item.get)
-    discard ? parser.expect(separator)
-    maybe_item = parser.expect(item_spec, indent)
-  ok(items)
 
 proc expect_one_of*[T](parser: Parser, specs: openArray[AtomSpec[T]]): Result[T, Error] =
   var errors: seq[Error]

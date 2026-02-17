@@ -1,15 +1,13 @@
 import results, strformat, strutils, hashes
 
 import core, identifier
+import ../../utils
 
-type
-  ModuleRefKind* = enum
-    MRK_SIMPLE, MRK_NESTED
-  ModuleRef* = ref object of RootObj
-    module: Identifier
-    case kind: ModuleRefKind
-    of MRK_SIMPLE: discard
-    of MRK_NESTED: children: seq[ModuleRef]
+union ModuleRef:
+  module: Identifier
+  MRK_SIMPLE
+  MRK_NESTED:
+    children: seq[ModuleRef]
 
 proc new_module_ref*(module: Identifier): ModuleRef =
   ModuleRef(kind: MRK_SIMPLE, module: module)
@@ -30,19 +28,13 @@ proc new_module_ref*(module: string): ModuleRef =
 proc location*(module_ref: ModuleRef): Location =
   module_ref.module.location
 
-proc module*(module_ref: ModuleRef): Identifier =
-  module_ref.module
-
-proc kind*(module_ref: ModuleRef): ModuleRefKind =
-  module_ref.kind
-
 proc children*(module_ref: ModuleRef): seq[ModuleRef] =
-  case module_ref.kind:
+  variant module_ref:
   of MRK_SIMPLE: @[]
-  of MRK_NESTED: module_ref.children
+  of MRK_NESTED(children): children
 
 proc asl*(module_ref: ModuleRef): string =
-  case module_ref.kind:
+  variant module_ref:
   of MRK_SIMPLE: module_ref.module.asl
   of MRK_NESTED:
     var children: seq[string]
@@ -54,7 +46,7 @@ proc asl*(module_ref: ModuleRef): string =
 
 proc hash*(module_ref: ModuleRef): Hash =
   var acc = hash(module_ref.module)
-  case module_ref.kind:
+  variant module_ref:
   of MRK_SIMPLE: discard
   of MRK_NESTED:
     for child in module_ref.children:

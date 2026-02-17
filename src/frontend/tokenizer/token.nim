@@ -5,6 +5,7 @@ import constants
 import location
 import spec
 import error
+import ../../utils
 
 type TokenKind* = enum
   TK_PLUS, TK_MINUS
@@ -17,17 +18,13 @@ type TokenKind* = enum
   TK_STRING, TK_DIGITS, TK_ALPHABETS, TK_UNDERSCORE
   TK_COMMENT
 
-type Token* = ref object of RootObj
+struct Token:
   kind: TokenKind
   value: string
   location: Location
 
 proc new_token*(kind: TokenKind, value: string, location: Location): Token =
   Token(kind: kind, value: value, location: location)
-
-proc kind*(token: Token): TokenKind = token.kind
-proc value*(token: Token): string = token.value
-proc location*(token: Token): Location = token.location
 
 proc hash*(token: Token): Hash =
   hash(token.kind) !& hash(token.value)

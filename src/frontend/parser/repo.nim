@@ -1,5 +1,7 @@
 import tables, options, sequtils, hashes, results, strformat
 
+import ../../utils
+
 type Error*[T] = ref object of RootObj
   current: T
   previous: T
@@ -65,7 +67,7 @@ proc insert[T](index: Index[T], id: int, item: T): Result[Index[T], (int, int)] 
     parent = some(node)
     node = node.children.mget_or_put(h, new_index_node())
 
-  case node.kind:
+  variant node:
   of INK_LEAF:
     if index.primary:
       err((id, node.ids[0]))
@@ -80,14 +82,14 @@ proc insert[T](index: Index[T], id: int, item: T): Result[Index[T], (int, int)] 
 proc find[T](index: Index[T], keys: IndexKey): Result[seq[int], string] =
   var node = index.root
   for k in normalize(keys):
-    case node.kind:
+    variant node:
     of INK_LEAF: return err(fmt"[ERROR]: Failed find item in index `{index.name}`")
     of INK_NON_LEAF:
       if k notin node.children:
         return err(fmt"[ERROR]: Failed find item in index `{index.name}`")
       node = node.children[k]
 
-  case node.kind:
+  variant node:
   of INK_NON_LEAF:
     err(fmt"[ERROR]: Failed find item in index `{index.name}`")
   of INK_LEAF:

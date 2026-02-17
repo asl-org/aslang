@@ -1,18 +1,17 @@
 import results, strformat, strutils, tables, hashes
 
 import core, identifier, module_ref
+import ../../utils
 
 # =============================================================================
 # StructDefinition
 # =============================================================================
 
-type StructDefinition* = ref object of RootObj
+struct StructDefinition:
   location: Location
 
 proc new_struct_definition*(location: Location): StructDefinition =
   StructDefinition(location: location)
-
-proc location*(def: StructDefinition): Location = def.location
 
 proc asl*(def: StructDefinition): string = "struct:"
 
@@ -27,16 +26,13 @@ proc struct_definition_spec*(parser: Parser): Result[
 # ArgumentDefinition
 # =============================================================================
 
-type ArgumentDefinition* = ref object of RootObj
+struct ArgumentDefinition:
   name: Identifier
   module_ref: ModuleRef
 
 proc new_argument_definition*(module_ref: ModuleRef,
     name: Identifier): ArgumentDefinition =
   ArgumentDefinition(name: name, module_ref: module_ref)
-
-proc module_ref*(def: ArgumentDefinition): ModuleRef =
-  def.module_ref
 
 proc location*(def: ArgumentDefinition): Location =
   def.module_ref.location
@@ -46,7 +42,6 @@ proc asl*(def: ArgumentDefinition): string =
   let ref_str = def.module_ref.asl
   fmt"{ref_str} {name_str}"
 
-proc name*(def: ArgumentDefinition): Identifier = def.name
 proc hash*(def: ArgumentDefinition): Hash = hash(def.module_ref)
 
 proc argument_definition_spec*(parser: Parser): Result[
@@ -67,7 +62,7 @@ proc struct_field_definition_spec*(parser: Parser, indent: int): Result[
 # FunctionDefinition
 # =============================================================================
 
-type FunctionDefinition* = ref object of RootObj
+struct FunctionDefinition:
   name: Identifier
   returns: ModuleRef
   args: seq[ArgumentDefinition]
@@ -82,7 +77,7 @@ proc new_function_definition*(fn_name: Identifier, args: seq[
     return err(err_parser_arg_list_too_long(location, args.len))
 
   let maybe_args_repo = new_repo(args, @[new_index[ArgumentDefinition]("name",
-      name, true)])
+      proc(arg: ArgumentDefinition): Identifier = arg.name, true)])
   if maybe_args_repo.is_err:
     let error = maybe_args_repo.error
     let arg = error.current
@@ -92,11 +87,6 @@ proc new_function_definition*(fn_name: Identifier, args: seq[
 
   ok(FunctionDefinition(name: fn_name, args: args, returns: returns,
       location: location))
-
-proc location*(def: FunctionDefinition): Location = def.location
-proc name*(def: FunctionDefinition): Identifier = def.name
-proc args*(def: FunctionDefinition): seq[ArgumentDefinition] = def.args
-proc returns*(def: FunctionDefinition): ModuleRef = def.returns
 
 proc asl*(def: FunctionDefinition): string =
   var args: seq[string]

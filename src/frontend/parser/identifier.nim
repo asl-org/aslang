@@ -1,9 +1,10 @@
-import results, hashes
+import results, hashes, strutils
 
 import core
 import ../../temp_counter
+import ../../utils
 
-type Identifier* = ref object of RootObj
+struct Identifier:
   name: string
   location: Location
 
@@ -13,6 +14,10 @@ proc new_identifier*(name: string, location: Location): Result[Identifier, core.
 
   if name.len > MAX_IDENTIFIER_LENGTH:
     return err(err_parser_identifier_too_long(location, name.len))
+
+  if name.startsWith("__asl_"):
+    return err(err_parser_reserved_identifier(location, name))
+
   ok(Identifier(name: name, location: location))
 
 proc new_identifier*(name: string): Identifier =
@@ -21,9 +26,6 @@ proc new_identifier*(name: string): Identifier =
 proc new_identifier*(location: Location): Identifier =
   let name = next_temp()
   Identifier(name: name, location: location)
-
-proc location*(identifier: Identifier): Location =
-  identifier.location
 
 proc asl*(identifier: Identifier): string =
   identifier.name
