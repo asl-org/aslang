@@ -1,12 +1,13 @@
 import results, sets
 
 import ../parser
+import ../../utils
 import expand_struct
 import expand_union
 import expand_expression
 
 proc expand_function(function: Function): Result[Function, string] =
-  case function.kind:
+  variant function:
   of FK_EXTERN: return ok(function)
   of FK_USER:
     let new_steps = ? flatten_statements(function.steps)

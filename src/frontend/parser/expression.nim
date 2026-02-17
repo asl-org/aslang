@@ -1,6 +1,7 @@
 import results, strformat
 
 import core, identifier, arg, initializer, pattern
+import ../../utils
 
 # =============================================================================
 # Mutually Recursive Types: Expression, Statement, Case, Else, Match
@@ -73,20 +74,20 @@ proc new_expression*(variable: Identifier): Expression =
   Expression(kind: EK_VARIABLE, variable: variable)
 
 proc location*(expression: Expression): Location =
-  case expression.kind:
-  of EK_MATCH: expression.match.location
-  of EK_FNCALL: expression.fncall.location
-  of EK_INIT: expression.init.location
-  of EK_STRUCT_GET: expression.struct_get.location
-  of EK_VARIABLE: expression.variable.location
+  variant expression:
+  of EK_MATCH(m): m.location
+  of EK_FNCALL(fncall): fncall.location
+  of EK_INIT(init): init.location
+  of EK_STRUCT_GET(struct_get): struct_get.location
+  of EK_VARIABLE(variable): variable.location
 
 proc asl*(expression: Expression, indent: string): seq[string] =
-  case expression.kind:
-  of EK_MATCH: expression.match.asl(indent)
-  of EK_FNCALL: @[expression.fncall.asl]
-  of EK_INIT: @[expression.init.asl]
-  of EK_STRUCT_GET: @[expression.struct_get.asl]
-  of EK_VARIABLE: @[expression.variable.asl]
+  variant expression:
+  of EK_MATCH(m): m.asl(indent)
+  of EK_FNCALL(fncall): @[fncall.asl]
+  of EK_INIT(init): @[init.asl]
+  of EK_STRUCT_GET(struct_get): @[struct_get.asl]
+  of EK_VARIABLE(variable): @[variable.asl]
 
 proc kind*(expression: Expression): ExpressionKind = expression.kind
 
@@ -288,7 +289,7 @@ proc asl*(match: Match, indent: string): seq[string] =
     for line in case_block.asl(indent):
       lines.add(indent & line)
 
-  case match.kind:
+  variant match:
   of MK_CASE_ONLY: discard
   of MK_COMPLETE:
     for line in match.else_block.asl(indent):

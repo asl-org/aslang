@@ -1,6 +1,8 @@
 import strformat
 
-type Error* = ref object of RootObj
+import ../../utils
+
+struct Error:
   index: int
   message: string
 

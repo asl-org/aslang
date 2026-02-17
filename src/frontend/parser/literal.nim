@@ -1,6 +1,7 @@
 import results
 
 import core
+import ../../utils
 
 # =============================================================================
 # UnsignedIntegerLiteral
@@ -66,13 +67,11 @@ proc signed_integer_spec(parser: Parser): Result[SignedIntegerLiteral,
 # IntegerLiteral
 # =============================================================================
 
-type
-  IntegerLiteralKind* = enum
-    ILK_SIGNED, ILK_UNSIGNED
-  IntegerLiteral* = ref object of RootObj
-    case kind: IntegerLiteralKind
-    of ILK_SIGNED: signed: SignedIntegerLiteral
-    of ILK_UNSIGNED: unsigned: UnsignedIntegerLiteral
+union IntegerLiteral:
+  ILK_SIGNED:
+    signed: SignedIntegerLiteral
+  ILK_UNSIGNED:
+    unsigned: UnsignedIntegerLiteral
 
 proc new_integer_literal(signed: SignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ILK_SIGNED, signed: signed)
@@ -81,24 +80,14 @@ proc new_integer_literal(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ILK_UNSIGNED, unsigned: unsigned)
 
 proc location*(integer: IntegerLiteral): Location =
-  case integer.kind:
-  of ILK_SIGNED: integer.signed.location
-  of ILK_UNSIGNED: integer.unsigned.location
-
-proc kind*(integer: IntegerLiteral): IntegerLiteralKind = integer.kind
-
-proc signed*(integer: IntegerLiteral): SignedIntegerLiteral =
-  do_assert integer.kind == ILK_SIGNED, "expected signed integer but found unsigned"
-  integer.signed
-
-proc unsigned*(integer: IntegerLiteral): UnsignedIntegerLiteral =
-  do_assert integer.kind == ILK_UNSIGNED, "expected unsigned integer but found signed"
-  integer.unsigned
+  variant integer:
+  of ILK_SIGNED(signed): signed.location
+  of ILK_UNSIGNED(unsigned): unsigned.location
 
 proc asl*(integer: IntegerLiteral): string =
-  case integer.kind:
-  of ILK_SIGNED: integer.signed.asl
-  of ILK_UNSIGNED: integer.unsigned.asl
+  variant integer:
+  of ILK_SIGNED(signed): signed.asl
+  of ILK_UNSIGNED(unsigned): unsigned.asl
 
 proc integer_spec(parser: Parser): Result[IntegerLiteral, core.Error] =
   var errors: seq[core.Error]
@@ -121,7 +110,7 @@ proc integer_spec(parser: Parser): Result[IntegerLiteral, core.Error] =
 # FloatLiteral
 # =============================================================================
 
-type FloatLiteral* = ref object of RootObj
+struct FloatLiteral:
   value: string
   location: Location
 
@@ -129,9 +118,6 @@ proc new_float_literal(first: IntegerLiteral,
     second: UnsignedIntegerLiteral): FloatLiteral =
   let value = first.asl & "." & second.asl
   FloatLiteral(value: value, location: first.location)
-
-proc location*(float_literal: FloatLiteral): Location =
-  float_literal.location
 
 proc asl*(float_literal: FloatLiteral): string =
   float_literal.value
@@ -147,15 +133,12 @@ proc float_spec(parser: Parser): Result[FloatLiteral, core.Error] =
 # StringLiteral
 # =============================================================================
 
-type StringLiteral* = ref object of RootObj
+struct StringLiteral:
   value: string
   location: Location
 
 proc new_string_literal*(value: string, location: Location): StringLiteral =
   StringLiteral(value: value, location: location)
-
-proc location*(string_literal: StringLiteral): Location =
-  string_literal.location
 
 proc asl*(string_literal: StringLiteral): string =
   string_literal.value
@@ -168,14 +151,13 @@ proc string_spec(parser: Parser): Result[StringLiteral, core.Error] =
 # Literal (variant type)
 # =============================================================================
 
-type
-  LiteralKind* = enum
-    LK_INTEGER, LK_FLOAT, LK_STRING
-  Literal* = ref object of RootObj
-    case kind: LiteralKind
-    of LK_INTEGER: integer_literal: IntegerLiteral
-    of LK_FLOAT: float_literal: FloatLiteral
-    of LK_STRING: string_literal: StringLiteral
+union Literal:
+  LK_INTEGER:
+    integer_literal: IntegerLiteral
+  LK_FLOAT:
+    float_literal: FloatLiteral
+  LK_STRING:
+    string_literal: StringLiteral
 
 proc new_literal*(integer_literal: IntegerLiteral): Literal =
   Literal(kind: LK_INTEGER, integer_literal: integer_literal)
@@ -187,30 +169,16 @@ proc new_literal*(string_literal: StringLiteral): Literal =
   Literal(kind: LK_STRING, string_literal: string_literal)
 
 proc location*(literal: Literal): Location =
-  case literal.kind:
-  of LK_INTEGER: literal.integer_literal.location
-  of LK_FLOAT: literal.float_literal.location
-  of LK_STRING: literal.string_literal.location
-
-proc kind*(literal: Literal): LiteralKind = literal.kind
-
-proc integer_literal*(literal: Literal): IntegerLiteral =
-  do_assert literal.kind == LK_INTEGER, "expected integer literal"
-  literal.integer_literal
-
-proc float_literal*(literal: Literal): FloatLiteral =
-  do_assert literal.kind == LK_FLOAT, "expected float literal"
-  literal.float_literal
-
-proc string_literal*(literal: Literal): StringLiteral =
-  do_assert literal.kind == LK_STRING, "expected string literal"
-  literal.string_literal
+  variant literal:
+  of LK_INTEGER(integer_literal): integer_literal.location
+  of LK_FLOAT(float_literal): float_literal.location
+  of LK_STRING(string_literal): string_literal.location
 
 proc asl*(literal: Literal): string =
-  case literal.kind:
-  of LK_INTEGER: literal.integer_literal.asl
-  of LK_FLOAT: literal.float_literal.asl
-  of LK_STRING: literal.string_literal.asl
+  variant literal:
+  of LK_INTEGER(integer_literal): integer_literal.asl
+  of LK_FLOAT(float_literal): float_literal.asl
+  of LK_STRING(string_literal): string_literal.asl
 
 proc literal_spec*(parser: Parser): Result[Literal, core.Error] =
   var errors: seq[core.Error]

@@ -1,21 +1,19 @@
 import results, strformat, tables, hashes
 
 import core, identifier, defs, struct, generic, function
+import ../../utils
 
 # =============================================================================
 # ModuleDefinition
 # =============================================================================
 
-type ModuleDefinition* = ref object of RootObj
+struct ModuleDefinition:
   name: Identifier
   location: Location
 
 proc new_module_definition*(name: Identifier,
     location: Location): ModuleDefinition =
   ModuleDefinition(name: name, location: location)
-
-proc location*(def: ModuleDefinition): Location =
-  def.location
 
 proc asl*(def: ModuleDefinition): string =
   fmt"module {def.name.asl}:"
@@ -36,7 +34,7 @@ proc module_definition_spec*(parser: Parser): Result[ModuleDefinition,
 # Module
 # =============================================================================
 
-type Module* = ref object of RootObj
+struct Module:
   def: ModuleDefinition
   generics_repo: Repo[Generic]
   data: Data
@@ -52,7 +50,7 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
       return err(err_parser_empty_module_with_generics(def.location, def.name.asl))
 
   let maybe_generics_repo = new_repo(generics, @[new_index[Generic]("name",
-      name, true)])
+      proc(g: Generic): Identifier = g.name, true)])
   if maybe_generics_repo.is_err:
     let error = maybe_generics_repo.error
     let generic = error.current
@@ -61,10 +59,9 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
           generic.name.asl, predefined_generic_location))
   let generics_repo = maybe_generics_repo.get
 
-  case data.kind:
-  of DK_UNION:
-    let union = data.union
-    for branch in union.branches:
+  variant data:
+  of DK_UNION(parsed_union):
+    for branch in parsed_union.branches:
       let maybe_generic = generics_repo.find("name", branch.name)
       if maybe_generic.is_ok:
         let generic = maybe_generic.get[0]
@@ -90,10 +87,9 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
       return err(err_parser_function_generic_conflict(function.location,
           function.name.asl, generic.location, generic.name.asl))
 
-    case data.kind:
-    of DK_UNION:
-      let union = data.union
-      let maybe_branch = union.find_branch(function.name)
+    variant data:
+    of DK_UNION(parsed_union):
+      let maybe_branch = parsed_union.find_branch(function.name)
       if maybe_branch.is_ok:
         let branch = maybe_branch.get
         return err(err_parser_function_struct_conflict(function.location,
@@ -106,11 +102,9 @@ proc new_module*(def: ModuleDefinition, generics: seq[Generic],
 
 proc hash*(module: Module): Hash = module.def.hash
 proc `==`*(self: Module, other: Module): bool = self.hash == other.hash
-proc def*(module: Module): ModuleDefinition = module.def
 proc name*(module: Module): Identifier = module.def.name
 proc location*(module: Module): Location = module.def.location
 proc generics*(module: Module): seq[Generic] = module.generics_repo.items
-proc data*(module: Module): Data = module.data
 proc functions*(module: Module): seq[Function] = module.functions_repo.items
 
 proc find_generic*(module: Module, name: Identifier): Result[Generic, string] =

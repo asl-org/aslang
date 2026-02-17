@@ -1,6 +1,7 @@
 import results, strformat, strutils, tables, sequtils
 
 import core, identifier, literal
+import ../../utils
 
 # =============================================================================
 # MatchDefinition
@@ -68,15 +69,12 @@ proc keyword_value_identifier_spec(parser: Parser): Result[(Identifier,
 # StructPattern
 # =============================================================================
 
-type
-  StructPatternKind* = enum
-    SPK_DEFAULT, SPK_NAMED
-  StructPattern* = ref object of RootObj
-    location: Location
-    args: seq[(Identifier, Identifier)]
-    case kind: StructPatternKind
-    of SPK_DEFAULT: discard
-    of SPK_NAMED: struct: Identifier
+union StructPattern:
+  location: Location
+  args: seq[(Identifier, Identifier)]
+  SPK_DEFAULT
+  SPK_NAMED:
+    struct: Identifier
 
 proc new_struct_pattern*(args: seq[(Identifier, Identifier)],
     location: Location): Result[StructPattern, core.Error] =
@@ -107,27 +105,19 @@ proc new_struct_pattern*(args: seq[(Identifier, Identifier)],
 
 proc new_struct_pattern*(struct: Identifier, pattern: StructPattern): Result[
     StructPattern, core.Error] =
-  case pattern.kind:
+  variant pattern:
   of SPK_DEFAULT:
     ok(StructPattern(kind: SPK_NAMED, location: struct.location, struct: struct,
         args: pattern.args))
   of SPK_NAMED:
     err(err_parser_struct_conversion_error(struct.location))
 
-proc location*(pattern: StructPattern): Location = pattern.location
-proc kind*(pattern: StructPattern): StructPatternKind = pattern.kind
-proc args*(pattern: StructPattern): seq[(Identifier, Identifier)] = pattern.args
-
-proc struct*(pattern: StructPattern): Identifier =
-  do_assert pattern.kind == SPK_NAMED, fmt"{pattern.location} expected a named struct"
-  pattern.struct
-
 proc asl*(pattern: StructPattern): string =
   var args: seq[string]
   for (key, val) in pattern.args:
     args.add(fmt"{key.asl}: {val.asl}")
 
-  case pattern.kind:
+  variant pattern:
   of SPK_DEFAULT: "{ " & args.join(", ") & " }"
   of SPK_NAMED: pattern.struct.asl & " { " & args.join(", ") & " }"
 
@@ -157,13 +147,11 @@ proc struct_pattern_spec*(parser: Parser): Result[StructPattern, core.Error] =
 # CasePattern
 # =============================================================================
 
-type
-  CasePatternKind* = enum
-    CPK_LITERAL, CPK_STRUCT
-  CasePattern* = ref object of RootObj
-    case kind: CasePatternKind
-    of CPK_LITERAL: literal: Literal
-    of CPK_STRUCT: struct: StructPattern
+union CasePattern:
+  CPK_LITERAL:
+    literal: Literal
+  CPK_STRUCT:
+    struct: StructPattern
 
 proc new_case_pattern*(literal: Literal): CasePattern =
   CasePattern(kind: CPK_LITERAL, literal: literal)
@@ -172,24 +160,14 @@ proc new_case_pattern*(struct: StructPattern): CasePattern =
   CasePattern(kind: CPK_STRUCT, struct: struct)
 
 proc location*(pattern: CasePattern): Location =
-  case pattern.kind:
-  of CPK_LITERAL: pattern.literal.location
-  of CPK_STRUCT: pattern.struct.location
-
-proc kind*(pattern: CasePattern): CasePatternKind = pattern.kind
-
-proc literal*(pattern: CasePattern): Literal =
-  do_assert pattern.kind == CPK_LITERAL, fmt"{pattern.location} expected literal case pattern"
-  pattern.literal
-
-proc struct*(pattern: CasePattern): StructPattern =
-  do_assert pattern.kind == CPK_STRUCT, fmt"{pattern.location} expected struct case pattern"
-  pattern.struct
+  variant pattern:
+  of CPK_LITERAL(literal): literal.location
+  of CPK_STRUCT(struct): struct.location
 
 proc asl*(pattern: CasePattern): string =
-  case pattern.kind:
-  of CPK_LITERAL: pattern.literal.asl
-  of CPK_STRUCT: pattern.struct.asl
+  variant pattern:
+  of CPK_LITERAL(literal): literal.asl
+  of CPK_STRUCT(struct): struct.asl
 
 proc case_pattern_spec*(parser: Parser): Result[CasePattern, core.Error] =
   var errors: seq[core.Error]
@@ -209,16 +187,13 @@ proc case_pattern_spec*(parser: Parser): Result[CasePattern, core.Error] =
 # CaseDefinition
 # =============================================================================
 
-type CaseDefinition* = ref object of RootObj
+struct CaseDefinition:
   pattern: CasePattern
   location: Location
 
 proc new_case_definition*(pattern: CasePattern,
     location: Location): CaseDefinition =
   CaseDefinition(pattern: pattern, location: location)
-
-proc location*(def: CaseDefinition): Location = def.location
-proc pattern*(def: CaseDefinition): CasePattern = def.pattern
 
 proc asl*(def: CaseDefinition): string =
   fmt"case {def.pattern.asl}:"

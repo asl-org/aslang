@@ -1,12 +1,13 @@
 import results, strformat, strutils, sequtils, re, tables, hashes
 
 import core, module, function, identifier, defs
+import ../../utils
 
 # =============================================================================
 # File
 # =============================================================================
 
-type File* = ref object of RootObj
+struct File:
   path: string
   indent: int
   modules_repo: Repo[Module]
@@ -48,8 +49,6 @@ proc new_file*(path: string, indent: int, modules: seq[Module],
   ok(File(path: path, indent: indent, modules_repo: modules_repo,
       functions_repo: functions_repo))
 
-proc path*(file: File): string = file.path
-proc indent*(file: File): int = file.indent
 proc modules*(file: File): seq[Module] = file.modules_repo.items
 proc functions*(file: File): seq[Function] = file.functions_repo.items
 

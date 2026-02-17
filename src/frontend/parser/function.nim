@@ -1,12 +1,13 @@
 import results
 
 import core, identifier, defs, expression
+import ../../utils
 
 # =============================================================================
 # UserFunction
 # =============================================================================
 
-type UserFunction* = ref object of RootObj
+struct UserFunction:
   def: FunctionDefinition
   steps: seq[Statement]
 
@@ -20,7 +21,7 @@ proc new_user_function*(def: FunctionDefinition, steps: seq[Statement]): Result[
 # ExternFunction
 # =============================================================================
 
-type ExternFunction* = ref object of RootObj
+struct ExternFunction:
   def: FunctionDefinition
   extern: string
   expanded: bool
@@ -30,22 +31,15 @@ proc new_extern_function*(def: FunctionDefinition,
   ExternFunction(def: def, extern: extern, expanded: expanded)
 
 proc name*(function: ExternFunction): Identifier = function.def.name
-proc def*(function: ExternFunction): FunctionDefinition = function.def
-proc extern*(function: ExternFunction): string = function.extern
-proc expanded*(function: ExternFunction): bool = function.expanded
 
 # =============================================================================
 # Function (Unified)
 # =============================================================================
 
-type FunctionKind* = enum
-  FK_USER, FK_EXTERN
-
-type Function* = ref object of RootObj
-  case kind*: FunctionKind
-  of FK_USER:
+union Function:
+  FK_USER:
     user_func: UserFunction
-  of FK_EXTERN:
+  FK_EXTERN:
     extern_func: ExternFunction
 
 proc new_function*(user_func: UserFunction): Function =
@@ -55,21 +49,17 @@ proc new_function*(extern_func: ExternFunction): Function =
   Function(kind: FK_EXTERN, extern_func: extern_func)
 
 proc def*(function: Function): FunctionDefinition =
-  case function.kind:
-  of FK_USER: function.user_func.def
-  of FK_EXTERN: function.extern_func.def
+  variant function:
+  of FK_USER(user_func): user_func.def
+  of FK_EXTERN(extern_func): extern_func.def
 
 proc steps*(function: Function): seq[Statement] =
-  case function.kind:
-  of FK_USER: function.user_func.steps
+  variant function:
+  of FK_USER(user_func): user_func.steps
   of FK_EXTERN: @[]
 
 proc location*(function: Function): Location = function.def.location
 proc name*(function: Function): Identifier = function.def.name
-
-proc extern_func*(function: Function): ExternFunction =
-  do_assert function.kind == FK_EXTERN, "expected extern function"
-  function.extern_func
 
 proc asl*(function: Function, indent: string): seq[string] =
   let header = function.def.asl

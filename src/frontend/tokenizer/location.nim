@@ -1,8 +1,9 @@
 import strformat, hashes
 
 import cursor
+import ../../utils
 
-type Location* = ref object of RootObj
+struct Location:
   filename: string
   head: Cursor
   tail: Cursor
@@ -12,8 +13,6 @@ proc new_location*(filename: string, head: Cursor, tail: Cursor): Location =
 
 proc new_location*(filename: string): Location =
   Location(filename: filename)
-
-proc tail*(location: Location): Cursor = location.tail
 
 proc `$`*(location: Location): string =
   fmt"{location.filename}:{location.head}"

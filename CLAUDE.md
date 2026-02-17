@@ -8,7 +8,7 @@ ASLang (A Software Language) is a compiler for a new programming language design
 - **Source files:** `.asl`
 - **Target:** C code, then compiled to native executables via GCC
 - **Runtime:** Custom C runtime library (`runtime.c` / `runtime.h`)
-- **Codebase:** ~7,600 lines of Nim across 74 source files
+- **Codebase:** ~9,100 lines of Nim across 90 source files
 
 ## Build and Test
 
@@ -29,7 +29,7 @@ bash test.sh
 
 ### Test Categories
 
-- **Documentation examples** (`examples/docs/`): `struct.asl`, `union.asl`, `generic_struct.asl`, `generic_union.asl`
+- **Documentation examples** (`examples/docs/`): `struct.asl`, `union.asl`, `generic_struct.asl`, `generic_union.asl`, `nested_expr.asl`, `reassignment.asl`
 - **Project Euler solutions** (`examples/project-euler/`): `problem001.asl` through `problem010.asl`
 
 ### Memory Sanitization
@@ -44,7 +44,7 @@ bash sanitize.sh
 ## Compilation Pipeline
 
 ```
-Source (.asl) -> Tokenizer -> Parser -> Resolver -> Analyzer -> Codegen -> C Code -> GCC -> Binary
+Source (.asl) → Tokenizer → Parser → Expander → Resolver → Analyzer → Lowering → Optimizer → Emitter → C Code → GCC → Binary
 ```
 
 The pipeline is implemented as a clean chain in `src/compiler.nim`:
@@ -52,25 +52,34 @@ The pipeline is implemented as a clean chain in `src/compiler.nim`:
 ```nim
 let tokens = ? tokenize(filename, content)
 let file = ? parse(filename, tokens)
-let resolved_file = ? resolve(file)
+let expanded = ? expand(file)
+let resolved_file = ? resolve(expanded)
 let analyzed_file = ? analyze(resolved_file)
-let code = ? analyzed_file.c()
+let program = ? generate(analyzed_file)
+let optimized = optimize(program)
+let code = emit(optimized)
 ```
 
-### 1. Tokenizer (`src/codegen/analyzer/resolver/parser/tokenizer.nim` + `tokenizer/`)
+### 1. Tokenizer (`src/frontend/tokenizer.nim` + `tokenizer/`)
 - Reads raw source files and converts text into tokens
 - Token types: operators, brackets, literals (string, digits, alphabets), whitespace, comments
 - Tracks source location (filename, line, column, index) for error reporting
 - Key function: `tokenize(filename, content) -> Result[seq[Token], string]`
 
-### 2. Parser (`src/codegen/analyzer/resolver/parser.nim` + `parser/`)
+### 2. Parser (`src/frontend/parser.nim` + `parser/`)
 - Consumes tokens and produces unresolved AST
 - Top-level type: `File` containing modules and file-level functions
 - Modules contain generics, data (struct or union), and functions
 - `parser.nim` acts as an import/export hub following Nim convention
 - Key function: `parse(path, tokens) -> Result[File, string]`
 
-### 3. Resolver (`src/codegen/analyzer/resolver.nim` + `resolver/`)
+### 3. Expander (`src/frontend/expander.nim` + `expander/`)
+- Desugaring pass between parser and resolver
+- Expands struct/union shorthand into canonical form
+- Generates implicit functions (e.g., `byte_size`, `read`, `write` for structs)
+- Key function: `expand(file) -> Result[File, string]`
+
+### 4. Resolver (`src/middle/resolver.nim` + `resolver/`)
 - Assigns types to identifiers (variables, modules)
 - Produces `Resolved*` versions of AST nodes
 - Tracks module dependencies and detects circular dependencies
@@ -78,66 +87,93 @@ let code = ? analyzed_file.c()
 - Validates numeric literal ranges for target types
 - Key function: `resolve(file) -> Result[ResolvedFile, string]`
 
-### 4. Analyzer (`src/codegen/analyzer.nim` + `analyzer/`)
+### 5. Analyzer (`src/middle/analyzer.nim` + `analyzer/`)
 - Performs semantic analysis and validation
 - Validates that types follow defined constraints
 - Produces `Analyzed*` versions of AST nodes
 - Performs monomorphization (instantiates generic types with concrete types)
+- Computes `FunctionMetadata` for user functions (via `func_metadata.nim`) and data functions (via `data_metadata.nim`)
 - Key function: `analyze(resolved_file) -> Result[AnalyzedFile, string]`
 
-### 5. Codegen (`src/codegen.nim` + `codegen/`)
+### 6. Lowering (`src/backend/lowering.nim` + `lowering/`)
+- Converts Analyzed* types to C IR nodes (`CProgram`)
+- Assembles complete C programs with includes, typedefs, forward declarations, and definitions
+- Adds runtime function metadata (from `runtime_metadata.nim`) to the C IR program
+- Key function: `generate(analyzed_file) -> Result[CProgram, string]`
 
-Four-phase pipeline: Generate → Optimize → Emit
+### 7. Optimizer (`src/backend/optimizer.nim` → `lifetime.nim` → `lifetime/`)
+- Scope-based lifetime analysis on C IR
+- Injects `free()` calls for heap-allocated values at scope exit
+- **Two-pass architecture:**
+  - Pass 1: Infers function metadata from C IR call sites (fills gaps from analyzer metadata)
+  - Pass 2: Walks C IR statements, tracks allocations per scope, generates frees
+- **Status match lifetime handling:** OWNED Status matches get per-branch freeing (Ok branches: extractions + shell freed; else branches: inner-free + shell freed if status doesn't escape)
+- **TCO-aware free placement:** Detects tail-call patterns and inserts frees before the tail call to preserve GCC/Clang tail-call optimization
+- **Reassignment tracking:** Frees old value before variable reassignment of allocated variables
+- Key function: `optimize(program) -> CProgram`
 
-    AnalyzedFile → generate() → CProgram → optimize() → emit() → C string
-
-- **IR** (`codegen/ir/`): C intermediate representation types (CType, CExpr, CStmt, CDecl, CProgram)
-- **Generator** (`codegen/generator/`): Converts Analyzed* types to C IR nodes
-- **Optimizer** (`codegen/optimizer/`): Scope-based lifetime analysis, injects System_free() calls
-- **Emitter** (`codegen/emitter/`): Serializes C IR to C source strings
-- Key function: `c(analyzed_file) -> Result[string, string]`
-- Configurable via environment: `CC` (default: gcc), `CFLAGS` (default: -O3)
+### 8. Emitter (`src/backend/emitter.nim`)
+- Serializes C IR to C source strings
+- Recursive `emit` procs for each C IR type (CType, CExpr, CStmt, CDecl, CProgram)
+- Key function: `emit(program) -> string`
 
 ## Project Structure
 
 ```
 src/
   aslang.nim                    # CLI entry point (arg parsing, invokes compile)
-  compiler.nim                  # Compilation orchestration (tokenize -> parse -> resolve -> analyze -> codegen -> gcc)
-  codegen.nim                   # Import/export hub (imports analyzer + generator/gen_file, exports both)
-  codegen/
-    # C IR layer (intermediate representation)
-    ir/
-      types.nim                 # CType, CExpr, CStmt, CDecl, CProgram, FunctionMetadata
-      constructors.nim          # Pure constructors: c_void, c_named, c_call, c_if, c_program, etc.
-    # Generator layer (Analyzed* → C IR)
-    generator/
-      gen_file.nim              # Top-level CProgram assembly + entry point c*()
-      gen_file_def.nim          # File-level typedefs/decls/defs
-      gen_module.nim            # Generic dispatch switch generation
-      gen_module_def.nim        # Module typedefs/decls/defs
-      gen_function.nim          # User function → C IR
-      gen_expression.nim        # Expression/statement/match/case → C IR
-      gen_fncall.nim            # Function call → C IR (boxing, impl_id dispatch)
-      gen_initializer.nim       # Struct/literal initialization → C IR
-      gen_struct.nim            # Struct/union/data → C IR (get/set/init/byte_size/read/write)
-      gen_struct_get.nim        # AnalyzedStructGet → C IR
-      gen_func_def.nim          # Function name/declaration generation
-      gen_generic.nim           # Generic forward declarations
-      gen_module_ref.nim        # Module ref → CType/byte_size
-      gen_arg_def.nim           # Argument definition → C parameter
-      gen_arg.nim               # Argument → C expression
-      gen_struct_ref.nim        # Data ref name generation
-      gen_literal.nim           # Literal typedef/init generation
-    # Optimizer layer
-    optimizer/
-      lifetime.nim              # Scope-based lifetime analysis + System_free injection
-    # Emitter layer
-    emitter/
-      emit.nim                  # Recursive C IR → string serializers
+  compiler.nim                  # Compilation orchestration (tokenize → parse → expand → resolve → analyze → generate → optimize → emit → gcc)
+  metadata.nim                  # Shared metadata types: FunctionMetadata, AllocKind
+  temp_counter.nim              # Temporary variable counter for codegen
 
-    # Analyzer layer (Analyzed* types, semantic analysis)
-    analyzer.nim                # Import/export hub for analyzer layer
+  # --- Frontend: Source → AST ---
+  frontend/
+    tokenizer.nim               # Tokenizer hub + tokenize()
+    tokenizer/
+      location.nim              # Source position tracking (Location, Cursor)
+      cursor.nim                # Character cursor
+      token.nim                 # Token type (kind, value, location)
+      spec.nim                  # Token specifications (matchers)
+      constants.nim             # Operator/special character definitions
+      error.nim                 # Tokenizer errors
+    parser.nim                  # Parser hub + parse()
+    parser/
+      core.nim                  # Parser infrastructure (Parser type, indent/space handling, combinators)
+      repo.nim                  # Repo[T] - flexible indexed lookups with duplicate detection
+      identifier.nim            # Identifier type and parsing
+      module_ref.nim            # ModuleRef (recursive, supports generics like Array[Item])
+      literal.nim               # Literal types (IntegerLiteral, FloatLiteral, StringLiteral)
+      defs.nim                  # StructDefinition, ArgumentDefinition, FunctionDefinition
+      struct.nim                # Struct, UnionBranch, Union, Data
+      struct_ref.nim            # StructRef parsing
+      arg.nim                   # Argument, FunctionCall
+      function_ref.nim          # FunctionRef parsing
+      initializer.nim           # LiteralInit, StructRef, StructInit, Initializer, StructGet
+      pattern.nim               # MatchDefinition, StructPattern, CasePattern, CaseDefinition
+      expression.nim            # Expression, Statement, Case, Else, Match (mutually recursive)
+      generic.nim               # Generic type (default or constrained with function defs)
+      function.nim              # UserFunction, ExternFunction, Function
+      module.nim                # Module (generics, data, functions)
+      file.nim                  # File (top-level container)
+    expander.nim                # Expander hub + expand()
+    expander/
+      expand_file.nim           # File-level expansion
+      expand_expression.nim     # Expression expansion
+      expand_struct.nim         # Struct expansion (implicit function generation)
+      expand_union.nim          # Union expansion (implicit function generation)
+
+  # --- Middle: Semantic Analysis ---
+  middle/
+    resolver.nim                # Resolver hub + resolve() + cycle detection + literal validation
+    resolver/
+      module_ref.nim            # ResolvedModuleRef
+      defs.nim                  # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct, ResolvedData
+      fncall.nim                # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
+      initializer.nim           # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
+      expression.nim            # ResolvedExpression, ResolvedStatement, ResolvedUserFunction, ResolvedFunction
+      module.nim                # ResolvedGeneric, ResolvedModule
+      file.nim                  # ResolvedFile
+    analyzer.nim                # Analyzer hub (imports and re-exports all analyzer modules)
     analyzer/
       module_ref.nim            # AnalyzedModuleRef, AnalyzedImpl (generic instantiation)
       arg_def.nim               # AnalyzedArgumentDefinition
@@ -145,7 +181,6 @@ src/
       struct.nim                # AnalyzedStruct, AnalyzedUnionBranch, AnalyzedUnion, AnalyzedData
       struct_ref.nim            # AnalyzedStructRef, AnalyzedUnionRef, AnalyzedDataRef
       struct_init.nim           # AnalyzedStructInit
-      struct_get.nim            # AnalyzedStructGet (field access)
       struct_pattern.nim        # AnalyzedStructPattern
       case_pattern.nim          # AnalyzedCasePattern
       literal.nim               # Literal analysis
@@ -160,51 +195,48 @@ src/
       module_def.nim            # AnalyzedModuleDefinition
       file_def.nim              # AnalyzedFileDefinition, FunctionScope
       file.nim                  # AnalyzedFile (top-level analysis)
+      data_metadata.nim         # compute_data_metadata: struct/union function metadata (byte_size, read, write, init, get, set)
+      func_metadata.nim         # compute_user_metadata: user function metadata with match walking + allocated_vars tracking
 
-      # Resolver layer (Resolved* types, type assignment)
-      resolver.nim              # Type resolution entry point + cycle detection + literal validation
-      resolver/
-        module_ref.nim          # ResolvedModuleRef
-        defs.nim                # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct, ResolvedUnionBranch, ResolvedUnion, ResolvedData
-        fncall.nim              # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
-        initializer.nim         # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
-        expression.nim          # ResolvedExpression, ResolvedStatement, ResolvedCase, ResolvedElse, ResolvedMatch, ResolvedUserFunction, ResolvedExternFunction, ResolvedFunction
-        module.nim              # ResolvedGeneric, ResolvedModule
-        file.nim                # ResolvedFile
-
-        # Parser layer (unresolved AST)
-        parser.nim              # Parser hub + native module initialization + parse()
-        parser/
-          tokenizer.nim         # Tokenizer hub
-          tokenizer/
-            location.nim        # Source position tracking (Location, Cursor)
-            cursor.nim          # Character cursor
-            token.nim           # Token type (kind, value, location)
-            spec.nim            # Token specifications (matchers)
-            constants.nim       # Operator/special character definitions
-            error.nim           # Tokenizer errors
-          core.nim              # Parser infrastructure (Parser type, indent/space handling, combinators)
-          repo.nim              # Repo[T] - flexible indexed lookups with duplicate detection
-          identifier.nim        # Identifier type and parsing
-          module_ref.nim        # ModuleRef (recursive, supports generics like Array[Item])
-          literal.nim           # Literal types (IntegerLiteral, FloatLiteral, StringLiteral)
-          defs.nim              # StructDefinition, ArgumentDefinition, FunctionDefinition
-          struct.nim            # Struct, UnionBranch, Union, Data
-          arg.nim               # Argument, FunctionRef, FunctionCall
-          initializer.nim       # LiteralInit, StructRef, StructInit, Initializer, StructGet
-          pattern.nim           # MatchDefinition, StructPattern, CasePattern, CaseDefinition
-          expression.nim        # Expression, Statement, Case, Else, Match (mutually recursive)
-          generic.nim           # Generic type (default or constrained with function defs)
-          function.nim          # UserFunction, ExternFunction, Function
-          module.nim            # Module (generics, data, functions)
-          file.nim              # File (top-level container)
+  # --- Backend: C IR + Code Generation ---
+  backend/
+    ir/
+      types.nim                 # CType, CExpr, CStmt, CDecl, CProgram (C intermediate representation)
+      constructors.nim          # Pure constructors: c_void, c_named, c_call, c_if, c_program, etc.
+    lowering.nim                # Lowering hub + generate()
+    lowering/
+      lower_file.nim            # Top-level CProgram assembly + runtime metadata merging
+      lower_file_def.nim        # File-level typedefs/decls/defs
+      lower_module.nim          # Generic dispatch switch generation
+      lower_module_def.nim      # Module typedefs/decls/defs
+      lower_function.nim        # User function → C IR
+      lower_expression.nim      # Expression/statement/match/case → C IR
+      lower_fncall.nim          # Function call → C IR (boxing, impl_id dispatch)
+      lower_initializer.nim     # Struct/literal initialization → C IR
+      lower_struct.nim          # Struct/union/data → C IR (get/set/init/byte_size/read/write)
+      lower_func_def.nim        # Function name/declaration generation
+      lower_generic.nim         # Generic forward declarations
+      lower_module_ref.nim      # Module ref → CType/byte_size
+      lower_arg_def.nim         # Argument definition → C parameter
+      lower_arg.nim             # Argument → C expression
+      lower_struct_ref.nim      # Data ref name generation
+      lower_literal.nim         # Literal typedef/init generation
+    optimizer.nim               # Optimizer hub
+    lifetime.nim                # Lifetime hub
+    lifetime/
+      analysis.nim              # Tree traversal: optimize_stmts, optimize_if, TCO detection, Status match handling
+      scope.nim                 # Scope-based tracking: allocations, consumed, reassignments, free generation
+      runtime_metadata.nim      # Static FunctionMetadata for runtime C functions (System_*, Array_*, String_*, etc.)
+    emitter.nim                 # Recursive C IR → string serializers (emit procs)
 
 examples/
-  docs/                         # Language feature examples (4 files)
+  docs/                         # Language feature examples (6 files)
     struct.asl                  # Struct definitions and usage
     union.asl                   # Discriminated unions
     generic_struct.asl          # Generic struct instantiation
     generic_union.asl           # Generic union patterns
+    nested_expr.asl             # Nested expressions
+    reassignment.asl            # Variable reassignment
   project-euler/                # Project Euler solutions (10 files)
     problem001.asl - problem010.asl
 
@@ -217,83 +249,95 @@ aslang.nimble                   # Nim package manifest
 
 ### Import Hierarchies
 
-#### Parser Layer Import Order
+#### Frontend Layer
 
 ```
-parser.nim (hub - imports and re-exports all submodules)
-  ├── parser/tokenizer       # No dependencies
-  ├── parser/core            # No dependencies
-  ├── parser/repo            # No dependencies
-  ├── parser/identifier      # Depends on core
-  ├── parser/module_ref      # Depends on identifier, core
-  ├── parser/defs            # Depends on identifier, module_ref, core
-  ├── parser/literal         # Depends on identifier, core
-  ├── parser/struct          # Depends on defs, identifier, module_ref, core
-  ├── parser/arg             # Depends on identifier, module_ref, literal, core
-  ├── parser/initializer     # Depends on identifier, module_ref, literal, arg, core
-  ├── parser/pattern         # Depends on identifier, literal, core
-  ├── parser/expression      # Depends on identifier, arg, initializer, pattern, core
-  ├── parser/generic         # Depends on identifier, module_ref, defs, core
-  ├── parser/function        # Depends on identifier, module_ref, defs, expression, core
-  ├── parser/module          # Depends on identifier, module_ref, defs, struct, generic, function, core
-  └── parser/file            # Depends on module, function, core
+frontend/tokenizer.nim (hub)
+  ├── tokenizer/location        # Source position tracking
+  ├── tokenizer/cursor          # Character cursor
+  ├── tokenizer/token           # Token type
+  ├── tokenizer/spec            # Token matchers
+  ├── tokenizer/constants       # Operators/special chars
+  └── tokenizer/error           # Tokenizer errors
+
+frontend/parser.nim (hub - imports tokenizer + all parser submodules)
+  ├── parser/core               # Parser infrastructure
+  ├── parser/repo               # Indexed lookups
+  ├── parser/identifier         # Depends on core
+  ├── parser/module_ref         # Depends on identifier, core
+  ├── parser/defs               # Depends on identifier, module_ref, core
+  ├── parser/literal            # Depends on identifier, core
+  ├── parser/struct             # Depends on defs, identifier, module_ref, core
+  ├── parser/struct_ref         # Depends on identifier, module_ref, core
+  ├── parser/arg                # Depends on identifier, module_ref, literal, core
+  ├── parser/function_ref       # Depends on identifier, module_ref, core
+  ├── parser/initializer        # Depends on identifier, module_ref, literal, arg, core
+  ├── parser/pattern            # Depends on identifier, literal, core
+  ├── parser/expression         # Depends on identifier, arg, initializer, pattern, core
+  ├── parser/generic            # Depends on identifier, module_ref, defs, core
+  ├── parser/function           # Depends on identifier, module_ref, defs, expression, core
+  ├── parser/module             # Depends on identifier, module_ref, defs, struct, generic, function, core
+  └── parser/file               # Depends on module, function, core
+
+frontend/expander.nim (hub)
+  └── expander/expand_file      # Imports expand_expression, expand_struct, expand_union
 ```
 
-#### Resolver Layer Import Chain
-
-Each file imports `parser` (the hub) to get all parser types:
+#### Middle Layer
 
 ```
-resolver.nim (entry point - cycle detection, literal validation, topological sort)
-  ├── resolver/module_ref    # ResolvedModuleRef
-  ├── resolver/defs          # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct, ResolvedData
-  ├── resolver/fncall        # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
-  ├── resolver/initializer   # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
-  ├── resolver/expression    # ResolvedExpression, ResolvedStatement, ResolvedUserFunction, ResolvedFunction
-  ├── resolver/module        # ResolvedGeneric, ResolvedModule
-  └── resolver/file          # ResolvedFile
+middle/resolver.nim (hub - imports frontend/parser, all resolver submodules)
+  ├── resolver/module_ref       # ResolvedModuleRef
+  ├── resolver/defs             # ResolvedArgumentDefinition, ResolvedFunctionDefinition, ResolvedStruct, ResolvedData
+  ├── resolver/fncall           # ResolvedFunctionRef, ResolvedFunctionCall, ResolvedStructGet, ResolvedVariable
+  ├── resolver/initializer      # ResolvedLiteralInit, ResolvedStructRef, ResolvedStructInit, ResolvedInitializer
+  ├── resolver/expression       # ResolvedExpression, ResolvedStatement, ResolvedUserFunction, ResolvedFunction
+  ├── resolver/module           # ResolvedGeneric, ResolvedModule
+  └── resolver/file             # ResolvedFile
+
+middle/analyzer.nim (hub - imports resolver, all analyzer submodules)
+  ├── analyzer/module_ref       # AnalyzedModuleRef, AnalyzedImpl
+  ├── analyzer/arg_def          # AnalyzedArgumentDefinition
+  ├── analyzer/func_def         # AnalyzedFunctionDefinition
+  ├── analyzer/expression       # AnalyzedExpression, AnalyzedStatement, AnalyzedMatch
+  ├── analyzer/function         # AnalyzedUserFunction, AnalyzedFunction (calls compute_user_metadata)
+  ├── analyzer/module           # AnalyzedModule
+  ├── analyzer/module_def       # AnalyzedModuleDefinition
+  ├── analyzer/file_def         # AnalyzedFileDefinition, FunctionScope
+  ├── analyzer/file             # AnalyzedFile
+  ├── analyzer/data_metadata    # compute_data_metadata (struct/union function metadata)
+  ├── analyzer/func_metadata    # compute_user_metadata (user function metadata with match walking)
+  └── ... (remaining analyzer files)
 ```
 
-#### Analyzer Layer Import Chain
+#### Backend Layer
 
 ```
-analyzer.nim (hub - imports resolver and all analyzer modules, exports both)
-  analyzer/file.nim          # AnalyzedFile (imports all other analyzer modules)
-  analyzer/function.nim      # AnalyzedUserFunction, AnalyzedFunction
-  analyzer/expression.nim    # AnalyzedExpression, AnalyzedStatement, AnalyzedMatch, etc.
-  analyzer/module.nim        # AnalyzedModule
-  analyzer/module_def.nim    # AnalyzedModuleDefinition
-  analyzer/file_def.nim      # AnalyzedFileDefinition, FunctionScope
-  analyzer/func_def.nim      # AnalyzedFunctionDefinition
-  analyzer/module_ref.nim    # AnalyzedModuleRef, AnalyzedImpl
-  analyzer/arg_def.nim       # AnalyzedArgumentDefinition
-  ... (remaining analyzer files)
-```
+backend/lowering.nim (hub)
+  └── lowering/lower_file.nim   # Entry point: generate() → Result[CProgram, string]
+      → lower_file_def          # File typedefs/decls/defs
+      → lower_module            # Generic dispatch generation
+        → lower_module_def      # Module typedefs/decls/defs
+      → lower_function          # User function generation
+        → lower_expression      # Expression/statement/match generation
+          → lower_fncall        # Function call generation
+          → lower_initializer   # Initialization generation
+      → lower_struct            # Struct/union C code generation
+      → lower_func_def          # Function name/declaration
+      → lower_generic           # Generic forward declarations
+      → lower_module_ref        # Type/byte_size from module ref
+      → lower_arg_def, lower_arg  # Argument generation
+      → lower_struct_ref        # Data ref naming
+      → lower_literal           # Literal type/init
 
-#### Codegen Layer Import Chain
+backend/optimizer.nim → lifetime.nim → lifetime/analysis.nim
+  └── lifetime/scope.nim        # Scope construction + free generation
+  └── lifetime/runtime_metadata.nim  # Static metadata for runtime functions
 
-```
-codegen.nim (hub - imports analyzer hub + generator/gen_file, exports both)
-  codegen/generator/gen_file.nim    # Entry point: c*() → Result[string, string]
-    → gen_file_def.nim              # File typedefs/decls/defs
-    → gen_module.nim                # Generic dispatch generation
-      → gen_module_def.nim          # Module typedefs/decls/defs
-    → gen_function.nim              # User function generation
-      → gen_expression.nim          # Expression/statement/match generation
-        → gen_fncall.nim            # Function call generation
-        → gen_initializer.nim       # Initialization generation
-        → gen_struct_get.nim        # Field access generation
-    → gen_struct.nim                # Struct/union C code generation
-    → gen_func_def.nim              # Function name/declaration
-    → gen_generic.nim               # Generic forward declarations
-    → gen_module_ref.nim            # Type/byte_size from module ref
-    → gen_arg_def.nim, gen_arg.nim  # Argument generation
-    → gen_struct_ref.nim            # Data ref naming
-    → gen_literal.nim               # Literal type/init
-  codegen/optimizer/lifetime.nim    # CProgram → CProgram (optimized)
-  codegen/emitter/emit.nim          # CProgram → string
-  codegen/ir/types.nim              # C IR type definitions
-  codegen/ir/constructors.nim       # C IR constructors
+backend/emitter.nim             # CProgram → string (recursive emit procs)
+
+backend/ir/types.nim            # C IR type definitions
+backend/ir/constructors.nim     # C IR constructors
 ```
 
 ## ASLang Language Syntax
@@ -584,7 +628,7 @@ type
 | `AnalyzedFileDefinition` | File definition with FunctionScope support |
 | `AnalyzedModuleRef` | Variant: AMRK_GENERIC (generic ref) or AMRK_MODULE (concrete module with impls) |
 | `AnalyzedImpl` | Generic implementation binding (module_ref + constraint function defs) |
-| `AnalyzedFunctionDefinition` | Concrete function signature |
+| `AnalyzedFunctionDefinition` | Concrete function signature with metadata |
 | `AnalyzedArgumentDefinition` | Parameter with analyzed module ref |
 | `AnalyzedFunction` | Variant of user or extern function |
 | `AnalyzedExpression` | Expression variant (match, fncall, init, struct_get, variable) |
@@ -597,6 +641,13 @@ type
 | `AnalyzedCasePattern` | Pattern in a case block (literal or struct) |
 | `FunctionScope` | Variable scope tracking during analysis |
 
+### Shared Metadata Types (`src/metadata.nim`)
+
+| Type | Description |
+|------|-------------|
+| `AllocKind` | `AK_PLAIN` (heap alloc), `AK_STATUS_OWNED` (Status with owned inner pointer), `AK_STATUS_BORROWED` (Status with borrowed inner pointer) |
+| `FunctionMetadata` | Analysis flags: `allocates`, `mutates_args`, `reads_only`, `returns_allocated`, `alloc_kind`, `consumes_args`, `is_union_extraction` |
+
 ### C IR Layer (Intermediate Representation)
 
 | Type | Description |
@@ -605,8 +656,37 @@ type
 | `CExpr` | C expression: literal, ident, call, binary, cast |
 | `CStmt` | C statement: decl, assign, return, expr, if, switch, block, comment, raw |
 | `CDecl` | C declaration: typedef, func_decl, func_def, extern, include |
-| `CProgram` | Complete C program: includes, typedefs, forward_decls, definitions, main |
-| `FunctionMetadata` | Analysis flags: allocates, mutates_args, reads_only, returns_allocated |
+| `CProgram` | Complete C program: includes, typedefs, forward_decls, definitions, main, metadata |
+
+## Optimizer Details
+
+The optimizer (`src/backend/lifetime/`) performs scope-based lifetime analysis on the C IR to inject memory management.
+
+### Scope Analysis (`scope.nim`)
+- Tracks: `allocations` (variables that own heap memory), `consumed` (variables whose ownership transferred), `alloc_kinds` (AllocKind per variable), `reassign_frees` (frees before variable reassignment)
+- Allocation detection: `_init` calls, `System_box_*`, `System_allocate`, and calls to functions with `returns_allocated` metadata
+- Consumption detection: variables used as function call arguments (to consuming functions), direct aliasing (`y = x`), and variables inside if/switch/block bodies
+- OWNED Status match variables are marked consumed at parent scope (freed per-branch by `optimize_if`)
+
+### Status Match Lifetime (`analysis.nim`)
+- Detects `if(status->id == TAG)` patterns as Status match arms
+- Ok branches: extractions (via `_get_value` calls) + status shell tracked as `extra_allocs`
+- Else branches: if status doesn't escape (not returned/aliased), injects `free(inner_pointer)` + `free(shell)`
+- Alias-aware escape detection: checks both direct exit and aliased exit patterns
+
+### TCO-Aware Free Placement (`analysis.nim`)
+- `find_tail_call_idx`: detects when the scope's exit variable is produced by a function call (tail-call candidate)
+- Frees are inserted BEFORE the tail call declaration, enabling GCC/Clang to apply tail-call optimization
+- Critical for deeply recursive functions (e.g., `mark_non_prime` in problem003 with ~387K recursions)
+- Uses standard `free()` (not `System_free`) so GCC recognizes known semantics and can reorder
+
+### Metadata Flow
+1. **Analyzer level** (`func_metadata.nim`): `compute_user_metadata` walks analyzed AST, tracking `allocated_vars` set to detect functions that return allocated values through match branches
+2. **Lowering level** (`lower_file.nim`): Merges analyzer metadata with runtime metadata from `runtime_metadata.nim`
+3. **Optimizer level** (`analysis.nim`): `collect_metadata` infers remaining gaps from C IR call sites
+
+### Known Limitation: Analyzer Metadata Gap
+The analyzer doesn't have access to runtime function metadata (e.g., `Array_get.returns_allocated = true` from `runtime_metadata.nim`). This means user functions that call extern allocators through match patterns may not get correct `returns_allocated` at the analyzer level. The optimizer's `collect_metadata` partially compensates at the C IR level, but only for functions not already in the metadata table.
 
 ## Common Patterns
 
@@ -623,7 +703,7 @@ proc err_no_default_struct(location: Location, module_name: string): string =
 
 ### Monomorphization
 
-Generic modules are instantiated per concrete type usage. The analyzer collects all implementations (`AnalyzedImpl`) from usage sites, then the codegen generates separate C code for each concrete instantiation.
+Generic modules are instantiated per concrete type usage. The analyzer collects all implementations (`AnalyzedImpl`) from usage sites, then the lowering generates separate C code for each concrete instantiation.
 
 ## Refactoring Guidelines
 
@@ -644,7 +724,7 @@ Generic modules are instantiated per concrete type usage. The analyzer collects 
 
 The C runtime (`runtime.c` / `runtime.h`) provides:
 
-- **Type mappings**: `S8`->`int8_t`, `U64`->`uint64_t`, `String`->`char*`, `Pointer`->`void*`, etc.
+- **Type mappings**: `S8`->`int8_t`, `U64`->`uint64_t`, `String`->`char*`, `Pointer`->`uintptr_t`, etc.
 - **Memory**: `System_allocate`, `System_free`, `System_box_*`
 - **I/O**: `System_print_*` for all primitive types
 - **Arithmetic**: `add`, `subtract`, `multiply`, `quotient`, `remainder` for numeric types
@@ -655,6 +735,8 @@ The C runtime (`runtime.c` / `runtime.h`) provides:
 - **String**: `String_get` returning `Status[U8]`
 - **Array**: `Array_init`, `Array_set`, `Array_get` with Status-based error handling
 
+Note: `Pointer` in generated C is `typedef uintptr_t Pointer` (unsigned long), NOT `void*`. The optimizer casts to `(void*)` when calling standard `free()`.
+
 ## Architectural Recommendations
 
 If reimplementing from scratch, these are the major changes guided by four fundamental principles.
@@ -663,7 +745,6 @@ If reimplementing from scratch, these are the major changes guided by four funda
 
 **Current violations:**
 - `FunctionScope.set()` mutates the table in-place AND returns self — callers can't tell if they hold a shared or independent reference
-- `collect_consumed_args()` in lifetime.nim takes `var HashSet[string]` instead of returning a set
 - `generic_impls` merge pattern creates a new Table on every call via mutable accumulation
 
 **Recommendations:**
@@ -673,7 +754,7 @@ If reimplementing from scratch, these are the major changes guided by four funda
 
 ### Principle 2: Side Effects on the Outermost Layer
 
-**Current state:** compiler.nim already isolates I/O (file read/write, gcc exec) from the pure pipeline (tokenize → parse → resolve → analyze → c). Strong foundation.
+**Current state:** compiler.nim already isolates I/O (file read/write, gcc exec) from the pure pipeline (tokenize → parse → expand → resolve → analyze → generate → optimize → emit). Strong foundation.
 
 **Recommendation:** Push the last side effect (`exec_cmd` for gcc) out of compiler.nim into aslang.nim. Return a `CompilationResult` (c_code, output_file, command) from the pure pipeline — aslang.nim handles file writes and process execution. This makes the entire compiler testable without filesystem or process side effects.
 
@@ -685,18 +766,15 @@ If reimplementing from scratch, these are the major changes guided by four funda
 3. Error types degrade at layer boundaries — `parse()` converts `Result[T, Error]` to `Result[T, string]`, losing structured info
 
 **Recommendations:**
-- Flatten directory structure — replace 4-deep nesting (`codegen/analyzer/resolver/parser/tokenizer/`) with flat layers (`tokenizer/`, `parser/`, `resolver/`, `analyzer/`, `codegen/`). Each imports only from the layer directly below.
 - Use typed errors at every boundary — `TokenError`, `ParseError`, `ResolveError` instead of degrading to `string`
 - Introduce a `visit` proc pattern that forces exhaustive handling instead of `do_assert` accessor pattern
 
 ### Principle 4: Spatial and Temporal Locality
 
 **Current violations:**
-1. Understanding "modules" requires reading `parser/module.nim`, `resolver/module.nim`, `analyzer/module.nim`, and `generator/gen_module.nim` — 4 files across 4 directories
-2. `analyze_def` has 20+ overloads across 7 files — searching for the right overload is non-local
-3. `analyzer.nim` hub imports and re-exports 22 modules — no visible structure
+1. Understanding "modules" requires reading `parser/module.nim`, `resolver/module.nim`, `analyzer/module.nim`, and `lowering/lower_module.nim` — 4 files across 3 directories
+2. `analyzer.nim` hub imports and re-exports 22+ modules — no visible structure
 
 **Recommendations:**
-- Organize by domain concept instead of compiler phase: `src/module/` contains `types.nim`, `parse.nim`, `resolve.nim`, `analyze.nim`, `generate.nim`
-- Replace `analyze_def` overloading with explicitly named procs: `analyze_module_ref()`, `analyze_func_def()`, `analyze_file_def()`
+- Organize by domain concept instead of compiler phase: `src/module/` contains `types.nim`, `parse.nim`, `resolve.nim`, `analyze.nim`, `lower.nim`
 - Replace `Repo[T]` (125-line generic B-tree index) with simple `validate_unique` + `seq[T]` with `filter_it` — collections never exceed 20 items

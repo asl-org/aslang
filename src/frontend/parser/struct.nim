@@ -1,8 +1,9 @@
 import results, strformat, tables
 
 import core, defs, identifier
+import ../../utils
 
-type Struct* = ref object of RootObj
+struct Struct:
   def: StructDefinition
   fields_repo: Repo[ArgumentDefinition]
 
@@ -14,7 +15,7 @@ proc new_struct*(def: StructDefinition, fields: seq[
     return err(err_parser_struct_too_long(def.location, fields.len))
 
   let maybe_fields_repo = new_repo(fields, @[new_index[ArgumentDefinition](
-      "name", name, true)])
+      "name", proc(arg: ArgumentDefinition): Identifier = arg.name, true)])
   if maybe_fields_repo.is_ok:
     ok(Struct(def: def, fields_repo: maybe_fields_repo.get))
   else:
@@ -47,7 +48,7 @@ proc struct_spec(parser: Parser, indent: int): Result[Struct,
       indent + 1, strict_empty_line_spec)
   new_struct(def, fields)
 
-type ParsedLiteral* = ref object of RootObj
+struct ParsedLiteral:
   literal_type: Identifier
   location: Location
 
@@ -55,7 +56,6 @@ proc new_parsed_literal(literal_type: Identifier,
     location: Location): ParsedLiteral =
   ParsedLiteral(literal_type: literal_type, location: location)
 
-proc location*(literal: ParsedLiteral): Location = literal.location
 proc asl*(literal: ParsedLiteral): string = literal.literal_type.asl
 
 proc literal_spec(parser: Parser, indent: int): Result[ParsedLiteral,
@@ -68,7 +68,7 @@ proc literal_spec(parser: Parser, indent: int): Result[ParsedLiteral,
   let literal_type = ? parser.expect(identifier_spec)
   ok(new_parsed_literal(literal_type, literal_keyword.location))
 
-type UnionBranch* = ref object of RootObj
+struct UnionBranch:
   name: Identifier
   fields_repo: Repo[ArgumentDefinition]
 
@@ -80,7 +80,7 @@ proc new_union_branch*(branch_name: Identifier, fields: seq[
     return err(err_parser_union_branch_too_long(branch_name.location, fields.len))
 
   let maybe_fields_repo = new_repo(fields, @[new_index[ArgumentDefinition](
-      "name", name, true)])
+      "name", proc(arg: ArgumentDefinition): Identifier = arg.name, true)])
   if maybe_fields_repo.is_ok:
     ok(UnionBranch(name: branch_name, fields_repo: maybe_fields_repo.get))
   else:
@@ -91,7 +91,6 @@ proc new_union_branch*(branch_name: Identifier, fields: seq[
           predefined_field_location))
 
 proc location*(branch: UnionBranch): Location = branch.name.location
-proc name*(branch: UnionBranch): Identifier = branch.name
 proc fields*(branch: UnionBranch): seq[ArgumentDefinition] = branch.fields_repo.items
 
 proc union_branch_spec(parser: Parser, indent: int): Result[UnionBranch,
@@ -106,7 +105,7 @@ proc union_branch_spec(parser: Parser, indent: int): Result[UnionBranch,
       indent + 1, strict_empty_line_spec)
   new_union_branch(name, fields)
 
-type Union* = ref object of RootObj
+struct Union:
   location: Location
   branches_repo: Repo[UnionBranch]
 
@@ -118,7 +117,7 @@ proc new_union*(location: Location, branches: seq[
     return err(err_parser_union_branch_too_long(location, branches.len))
 
   let maybe_branches_repo = new_repo(branches, @[new_index[UnionBranch]("name",
-      name, true)])
+      proc(branch: UnionBranch): Identifier = branch.name, true)])
   if maybe_branches_repo.is_ok:
     ok(Union(location: location, branches_repo: maybe_branches_repo.get))
   else:
@@ -128,7 +127,6 @@ proc new_union*(location: Location, branches: seq[
     err(err_parser_arg_already_defined(branch.location, branch.name.asl,
         predefined_branch_location))
 
-proc location*(union: Union): Location = union.location
 proc branches*(union: Union): seq[UnionBranch] = union.branches_repo.items
 
 proc find_branch*(union: Union, name: Identifier): Result[UnionBranch, string] =
@@ -150,15 +148,14 @@ proc union_spec(parser: Parser, indent: int): Result[Union, core.Error] =
       optional_empty_line_spec)
   new_union(union_keyword.location, branches)
 
-type
-  DataKind* = enum
-    DK_NONE, DK_LITERAL, DK_STRUCT, DK_UNION
-  Data* = ref object of RootObj
-    case kind: DataKind
-    of DK_NONE: discard
-    of DK_LITERAL: literal: ParsedLiteral
-    of DK_STRUCT: struct: Struct
-    of DK_UNION: union: Union
+union Data:
+  DK_NONE
+  DK_LITERAL:
+    literal: ParsedLiteral
+  DK_STRUCT:
+    struct: Struct
+  DK_UNION:
+    union: Union
 
 proc new_data*(): Data =
   Data(kind: DK_NONE)
@@ -171,17 +168,6 @@ proc new_data(struct: Struct): Data =
 
 proc new_data(literal: ParsedLiteral): Data =
   Data(kind: DK_LITERAL, literal: literal)
-
-proc kind*(data: Data): DataKind = data.kind
-proc literal*(data: Data): ParsedLiteral =
-  do_assert data.kind == DK_LITERAL, "[UNREACHABLE] expected a literal"
-  data.literal
-proc struct*(data: Data): Struct =
-  do_assert data.kind == DK_STRUCT, "[UNREACHABLE] expected a struct"
-  data.struct
-proc union*(data: Data): Union =
-  do_assert data.kind == DK_UNION, "[UNREACHABLE] expected a union"
-  data.union
 
 proc data_spec*(parser: Parser, indent: int): Result[Data, core.Error] =
   let maybe_union = parser.expect(union_spec, indent)

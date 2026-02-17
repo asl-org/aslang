@@ -2,8 +2,9 @@ import results, hashes, strutils
 
 import core
 import ../../temp_counter
+import ../../utils
 
-type Identifier* = ref object of RootObj
+struct Identifier:
   name: string
   location: Location
 
@@ -25,9 +26,6 @@ proc new_identifier*(name: string): Identifier =
 proc new_identifier*(location: Location): Identifier =
   let name = next_temp()
   Identifier(name: name, location: location)
-
-proc location*(identifier: Identifier): Location =
-  identifier.location
 
 proc asl*(identifier: Identifier): string =
   identifier.name

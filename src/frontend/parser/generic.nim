@@ -1,21 +1,18 @@
 import results, strformat, tables, hashes
 
 import core, identifier, defs
+import ../../utils
 
 # =============================================================================
 # Generic
 # =============================================================================
 
-type
-  GenericKind* = enum
-    GK_DEFAULT, GK_CONSTRAINED
-  Generic* = ref object of RootObj
-    name: Identifier
-    location: Location
-    defs_repo: Repo[FunctionDefinition]
-    case kind: GenericKind
-    of GK_DEFAULT: discard
-    of GK_CONSTRAINED: defs: seq[FunctionDefinition]
+union Generic:
+  name: Identifier
+  location: Location
+  defs_repo: Repo[FunctionDefinition]
+  GK_DEFAULT
+  GK_CONSTRAINED
 
 proc new_generic*(name: Identifier, location: Location): Generic =
   Generic(kind: GK_DEFAULT, name: name, location: location)
@@ -37,19 +34,13 @@ proc new_generic*(name: Identifier, defs: seq[FunctionDefinition],
   ok(Generic(kind: GK_CONSTRAINED, name: name, defs_repo: maybe_defs_repo.get,
       location: location))
 
-proc location*(generic: Generic): Location =
-  generic.location
-
 proc defs*(generic: Generic): seq[FunctionDefinition] =
-  case generic.kind:
+  variant generic:
   of GK_DEFAULT: @[]
   of GK_CONSTRAINED: generic.defs_repo.items
 
-proc name*(generic: Generic): Identifier =
-  generic.name
-
 proc asl*(generic: Generic, indent: string): seq[string] =
-  case generic.kind:
+  variant generic:
   of GK_DEFAULT:
     @[fmt"generic {generic.name.asl}"]
   of GK_CONSTRAINED:

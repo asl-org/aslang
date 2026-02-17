@@ -1,6 +1,7 @@
 import results, strformat, strutils
 
 import core, identifier, literal
+import ../../utils
 import struct_ref
 export struct_ref
 import function_ref
@@ -44,11 +45,11 @@ proc new_argument*(struct_init: StructInit): Argument =
   Argument(kind: AK_STRUCT_INIT, struct_init: struct_init)
 
 proc location*(arg: Argument): Location =
-  case arg.kind:
-  of AK_LITERAL: arg.literal.location
-  of AK_VARIABLE: arg.variable.location
-  of AK_FNCALL: arg.fncall.fnref.location
-  of AK_STRUCT_INIT: arg.struct_init.struct_ref.location
+  variant arg:
+  of AK_LITERAL(literal): literal.location
+  of AK_VARIABLE(variable): variable.location
+  of AK_FNCALL(fncall): fncall.fnref.location
+  of AK_STRUCT_INIT(struct_init): struct_init.struct_ref.location
 
 proc kind*(arg: Argument): ArgumentKind = arg.kind
 
@@ -134,11 +135,11 @@ proc asl*(init: StructInit): string =
 # --- Argument asl (deferred due to mutual recursion) ---
 
 proc asl*(arg: Argument): string =
-  case arg.kind:
-  of AK_LITERAL: arg.literal.asl
-  of AK_VARIABLE: arg.variable.asl
-  of AK_FNCALL: arg.fncall.asl
-  of AK_STRUCT_INIT: arg.struct_init.asl
+  variant arg:
+  of AK_LITERAL(literal): literal.asl
+  of AK_VARIABLE(variable): variable.asl
+  of AK_FNCALL(fncall): fncall.asl
+  of AK_STRUCT_INIT(struct_init): struct_init.asl
 
 # =============================================================================
 # Parser specs (with forward declarations for mutual recursion)
