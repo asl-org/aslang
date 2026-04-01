@@ -4,18 +4,25 @@ type
   AslCommandKind* = enum
     cmdBuild
 
-  AslCommand* = ref object of RootObj
+  AslCommand* = object
     kind: AslCommandKind
     filename: string
     outputFile: string
     indentWidth: uint8
     debug: bool
 
+proc `$`(cmdKind: AslCommandKind): string =
+  case cmdKind:
+  of cmdBuild: "build"
+
 proc kind*(cmd: AslCommand): AslCommandKind = cmd.kind
 proc filename*(cmd: AslCommand): string = cmd.filename
 proc outputFile*(cmd: AslCommand): string = cmd.outputFile
 proc indentWidth*(cmd: AslCommand): uint8 = cmd.indentWidth
 proc debug*(cmd: AslCommand): bool = cmd.debug
+proc `$`*(cmd: AslCommand): string =
+  let debug = if cmd.debug: fmt"--debug" else: ""
+  fmt"asl {cmd.kind} {cmd.filename} --output={cmd.outputFile} --indent-width={cmd.indentWidth} {debug}"
 
 const Usage = """Usage: asl <command> [options]
 
@@ -43,7 +50,8 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
 
       let (_, _, ext) = buildOpts.filename.splitFile()
       if ext != ".asl":
-        return err("[ERROR] - Source file must have a '.asl' extension, got: " & buildOpts.filename)
+        return err("[ERROR] - Source file must have a '.asl' extension, got: " &
+            buildOpts.filename)
 
       let outputFile =
         if buildOpts.output == "": buildOpts.filename.changeFileExt("")

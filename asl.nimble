@@ -10,8 +10,8 @@ bin           = @["asl"]
 # Dependencies
 
 requires "nim >= 2.2.0"
-requires "results >= 0.5.0"
-requires "argparse >= 4.0.0"
+requires "results == 0.5.1"
+requires "argparse == 4.0.2"
 
 # Strict compile options
 switch("warning", "UnusedImport")
