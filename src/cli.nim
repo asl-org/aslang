@@ -54,5 +54,5 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
       ))
     else:
       err(Usage)
-  except:
+  except CatchableError:
     err(fmt"[ERROR] - {getCurrentExceptionMsg()}" & "\n" & Usage)
