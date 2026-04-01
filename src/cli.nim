@@ -61,11 +61,11 @@ proc kind*(cmd: AslCommand): AslCommandKind = cmd.kind
 proc build*(cmd: AslCommand): Result[AslBuildCommand, string] =
   case cmd.kind:
   of ackBuild: ok(cmd.build)
-  else: err("Property `build` is not available on `AslCommand` object")
+  else: err("Property `build` is not available on `AslCommand` object.")
 proc help*(cmd: AslCommand): Result[AslHelpCommand, string] =
   case cmd.kind:
   of ackHelp: ok(cmd.help)
-  else: err("Property `help` is not available on `AslCommand` object")
+  else: err("Property `help` is not available on `AslCommand` object.")
 
 proc `$`*(cmd: AslCommand): string =
   case cmd.kind:
@@ -87,7 +87,7 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
 
       let (_, _, ext) = buildOpts.filename.splitFile()
       if ext != ".asl":
-        return err(fmt"source file must have a '.asl' extension, got: {buildOpts.filename}")
+        return err(fmt"source file `{buildOpts.filename}` must have a '.asl' extension.")
 
       let outputFile =
         if buildOpts.output == "": buildOpts.filename.changeFileExt("")
