@@ -1,4 +1,4 @@
-import argparse, strformat, results
+import argparse, strformat, results, os
 
 type
   AslCommandKind* = enum
@@ -40,6 +40,10 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
     let opts = p.parse(args)
     if opts.argparseBuildOpts.is_some:
       let buildOpts = opts.argparseBuildOpts.get
+
+      let (_, _, ext) = buildOpts.filename.splitFile()
+      if ext != ".asl":
+        return err("[ERROR] - Source file must have a '.asl' extension, got: " & buildOpts.filename)
 
       let outputFile =
         if buildOpts.output == "": buildOpts.filename.changeFileExt("")

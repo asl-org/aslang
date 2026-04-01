@@ -1,7 +1,5 @@
 # Bugs & Issues
 
-- [ ] **Output file can overwrite the source** (`cli.nim:45`) — If the source has no extension (e.g., `asl build myfile`), `changeFileExt("")` returns `myfile` — the output path is the same as the input. The compiler would silently destroy the source file.
-
 - [ ] **No input file existence check** — The CLI parses the filename but never validates it exists. The user gets no useful error if they typo a filename — it'll blow up later with a less helpful message from whatever stage tries to read it.
 
 - [ ] **`parseInt(...).uint8` is fragile** (`cli.nim:53`) — Currently safe because `choices = @["2", "4"]`, but if `argparse` is ever bypassed or the constraint relaxed, `parseInt` can throw a `ValueError` that gets caught by the bare `except` — turning a bad `--indent-width` into an opaque error.
@@ -19,3 +17,5 @@
 - [x] **Bare `except:` swallows all errors** (`cli.nim:57`) — Was catching everything including `Defect`, `OutOfMemoryError`, `AccessViolationDefect`, etc. Fixed by narrowing to `except CatchableError:`.
 
 - [ ] **`except CatchableError:` is still broad** (`cli.nim:57`) [low priority] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed. A tighter catch ensures unexpected recoverable errors from dependency bugs surface rather than being masked as CLI usage errors.
+
+- [x] **Output file can overwrite the source** (`cli.nim:45`) — Fixed by enforcing `.asl` extension on source files. `splitFile()` validates the extension before proceeding, so `changeFileExt("")` is now always safe.
