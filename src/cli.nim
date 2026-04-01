@@ -1,29 +1,5 @@
 import argparse, strformat, results, os
 
-type
-  AslCommandKind* = enum
-    cmdBuild
-
-  AslCommand* = object
-    kind: AslCommandKind
-    filename: string
-    outputFile: string
-    indentWidth: uint8
-    debug: bool
-
-proc `$`(cmdKind: AslCommandKind): string =
-  case cmdKind:
-  of cmdBuild: "build"
-
-proc kind*(cmd: AslCommand): AslCommandKind = cmd.kind
-proc filename*(cmd: AslCommand): string = cmd.filename
-proc outputFile*(cmd: AslCommand): string = cmd.outputFile
-proc indentWidth*(cmd: AslCommand): uint8 = cmd.indentWidth
-proc debug*(cmd: AslCommand): bool = cmd.debug
-proc `$`*(cmd: AslCommand): string =
-  let debug = if cmd.debug: fmt"--debug" else: ""
-  fmt"asl {cmd.kind} {cmd.filename} --output={cmd.outputFile} --indent-width={cmd.indentWidth} {debug}"
-
 const Usage = """Usage: asl <command> [options]
 
 Commands:
@@ -35,6 +11,67 @@ Options:
   [-o|--output]=<file>  Output binary path (default: input filename without extension)
   [-h|--help]           Show this help message"""
 
+
+type AslBuildCommand* = object
+  filename: string
+  outputFile: string
+  indentWidth: uint8
+  debug: bool
+
+proc newAslBuildCommand(filename: string, outputFile: string,
+    indentWidth: uint8, debug: bool): AslBuildCommand =
+  AslBuildCommand(filename: filename, outputFile: outputFile,
+      indentWidth: indentWidth, debug: debug)
+
+proc filename*(cmd: AslBuildCommand): string = cmd.filename
+proc outputFile*(cmd: AslBuildCommand): string = cmd.outputFile
+proc indentWidth*(cmd: AslBuildCommand): uint8 = cmd.indentWidth
+proc debug*(cmd: AslBuildCommand): bool = cmd.debug
+
+proc `$`*(cmd: AslBuildCommand): string =
+  let debug = if cmd.debug: fmt"--debug" else: ""
+  fmt"build {cmd.filename} --output={cmd.outputFile} --indent-width={cmd.indentWidth} {debug}"
+
+type AslHelpCommand* = object
+  help: string
+
+proc newAslHelpCommand(): AslHelpCommand =
+  AslHelpCommand(help: Usage)
+
+proc help*(cmd: AslHelpCommand): string = cmd.help
+proc `$`(cmd: AslHelpCommand): string = "--help"
+
+type
+  AslCommandKind* = enum
+    ackBuild
+    ackHelp
+
+  AslCommand* = object
+    case kind: AslCommandKind
+    of ackBuild: build: AslBuildCommand
+    of ackHelp: help: AslHelpCommand
+
+proc newAslCommand(build: AslBuildCommand): AslCommand =
+  AslCommand(kind: ackBuild, build: build)
+
+proc newAslCommand(help: AslHelpCommand): AslCommand =
+  AslCommand(kind: ackHelp, help: help)
+
+proc kind*(cmd: AslCommand): AslCommandKind = cmd.kind
+proc build*(cmd: AslCommand): Result[AslBuildCommand, string] =
+  case cmd.kind:
+  of ackBuild: ok(cmd.build)
+  else: err("Property `build` is not available on `AslCommand` object")
+proc help*(cmd: AslCommand): Result[AslHelpCommand, string] =
+  case cmd.kind:
+  of ackHelp: ok(cmd.help)
+  else: err("Property `help` is not available on `AslCommand` object")
+
+proc `$`*(cmd: AslCommand): string =
+  case cmd.kind:
+  of ackBuild: fmt"asl {cmd.build}"
+  of ackHelp: fmt"asl {cmd.help}"
+
 proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
   var p = newParser:
     command("build"):
@@ -45,26 +82,24 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
 
   try:
     let opts = p.parse(args)
-    if opts.argparseBuildOpts.is_some:
+    if opts.argparseBuildOpts.isSome:
       let buildOpts = opts.argparseBuildOpts.get
 
       let (_, _, ext) = buildOpts.filename.splitFile()
       if ext != ".asl":
-        return err("[ERROR] - Source file must have a '.asl' extension, got: " &
-            buildOpts.filename)
+        return err(fmt"source file must have a '.asl' extension, got: {buildOpts.filename}")
 
       let outputFile =
         if buildOpts.output == "": buildOpts.filename.changeFileExt("")
         else: buildOpts.output
 
-      ok(AslCommand(
-        kind: cmdBuild,
-        filename: buildOpts.filename,
-        debug: buildOpts.debug,
-        outputFile: outputFile,
-        indentWidth: parseInt(buildOpts.indentWidth).uint8,
-      ))
+      let indentWidth = parseInt(buildOpts.indentWidth).uint8
+      let buildCmd = newAslBuildCommand(buildOpts.filename, outputFile,
+          indentWidth, buildOpts.debug)
+      ok(newAslCommand(buildCmd))
     else:
-      err(Usage)
+      ok(newAslCommand(newAslHelpCommand()))
+  except ShortCircuit:
+    ok(newAslCommand(newAslHelpCommand()))
   except CatchableError:
-    err(fmt"[ERROR] - {getCurrentExceptionMsg()}" & "\n" & Usage)
+    err(getCurrentExceptionMsg() & "\n\n" & Usage)
