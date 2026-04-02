@@ -42,3 +42,17 @@
 - Invalid UTF-8 errors should report byte position, not line:col — editors can't render the broken bytes meaningfully anyway, so byte offset is more actionable.
 - BOM (`U+FEFF`) is rejected everywhere — intentional strict policy for ASL source files.
 - When a bug is already fixed by prior changes, verify before attempting a fix — avoids redundant edits.
+
+## 2026-04-02 07:12 — Tokenizer design and debug infrastructure
+
+- The tokenizer is intentionally dumb — it's a per-rune character classifier. Multi-character tokens, keywords, strings, numbers, indentation, and comment handling are all parser concerns.
+- Name functions for what they actually check. `validateUtf8` was renamed to `isCompilerSafe` — it checks for dangerous codepoints, not UTF-8 encoding validity.
+- Nim `set` can't hold `uint32` values properly (warning for >65535). Use typed `array` with `contains`-based `in` lookup instead.
+- `r.uint32 <= 0x7F` is the correct way to check if a rune is ASCII — it's a semantic check. `r.size == 1` gives the same result but answers a different question.
+- `r.char` only works safely for ASCII runes. For non-ASCII it truncates to the low byte.
+- All valid ASCII is valid UTF-8 — ASCII (0x00–0x7F) is a subset of UTF-8.
+- Debug dump flags (`--dump-tokens`, future `--dump-ast`, etc.) should be per-stage. Dump to stdout so it can be piped. Gate behind the flag — never dump unconditionally. Pipeline continues after dumping.
+- Empty files are valid — the tokenizer returns an empty `seq[Token]` and the parser handles structural validation.
+- Trailing newlines are normalized by the tokenizer — inject a newline token at the end if missing, so the parser always sees a consistent stream.
+- Span tracking (start + end position) is unnecessary when the tokenizer is single-character. Can be added later if the tokenizer becomes multi-character.
+- Null bytes get rejected as unknown tokens by the existing `else` branch — no special handling needed.

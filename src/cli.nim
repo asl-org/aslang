@@ -7,6 +7,7 @@ Commands:
 
 Options:
   --debug               Emit source location comments in generated C
+  --dump-tokens         Dump token stream to stdout after tokenization
   --indent-width=<N>    Spaces per indentation level (default: 2)
   [-o|--output]=<file>  Output binary path (default: input filename without extension)
   [-h|--help]           Show this help message"""
@@ -17,20 +18,26 @@ type AslBuildCommand* = object
   outputFile: string
   indentWidth: uint8
   debug: bool
+  dumpTokens: bool
 
 proc newAslBuildCommand(filename: string, outputFile: string,
-    indentWidth: uint8, debug: bool): AslBuildCommand =
+    indentWidth: uint8, debug: bool, dumpTokens: bool): AslBuildCommand =
   AslBuildCommand(filename: filename, outputFile: outputFile,
-      indentWidth: indentWidth, debug: debug)
+      indentWidth: indentWidth, debug: debug, dumpTokens: dumpTokens)
 
 proc filename*(cmd: AslBuildCommand): string = cmd.filename
 proc outputFile*(cmd: AslBuildCommand): string = cmd.outputFile
 proc indentWidth*(cmd: AslBuildCommand): uint8 = cmd.indentWidth
 proc debug*(cmd: AslBuildCommand): bool = cmd.debug
+proc dumpTokens*(cmd: AslBuildCommand): bool = cmd.dumpTokens
 
 proc `$`*(cmd: AslBuildCommand): string =
-  let debug = if cmd.debug: fmt"--debug" else: ""
-  fmt"build {cmd.filename} --output={cmd.outputFile} --indent-width={cmd.indentWidth} {debug}"
+  var debugFlags: seq[string]
+  if cmd.debug: debugFlags.add("--debug")
+  if cmd.dumpTokens: debugFlags.add("--dump-tokens")
+
+  let debugFlagsStr = debugFlags.join(" ")
+  fmt"build {cmd.filename} --output={cmd.outputFile} --indent-width={cmd.indentWidth} {debugFlagsStr}"
 
 type AslHelpCommand* = object
   help: string
@@ -76,9 +83,10 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
   var p = newParser:
     command("build"):
       arg("filename", nargs = 1)
-      flag("--debug")
       option("-o", "--output")
       option("--indent-width", default = some("2"), choices = @["2", "4"])
+      flag("--debug")
+      flag("--dump-tokens")
 
   try:
     let opts = p.parse(args)
@@ -95,7 +103,7 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
 
       let indentWidth = parseInt(buildOpts.indentWidth).uint8
       let buildCmd = newAslBuildCommand(buildOpts.filename, outputFile,
-          indentWidth, buildOpts.debug)
+          indentWidth, buildOpts.debug, buildOpts.dumpTokens)
       ok(newAslCommand(buildCmd))
     else:
       ok(newAslCommand(newAslHelpCommand()))

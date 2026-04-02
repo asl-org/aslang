@@ -34,7 +34,7 @@ const InvisibleCodepoints: array[18, uint32] = [
   0x206A, 0x206B, 0x206C, 0x206D, 0x206E, 0x206F, # DEPRECATED FORMATTING
 ]
 
-proc validateUtf8(r: Rune): Result[void, string] =
+proc isCompilerSafe(r: Rune): Result[void, string] =
   let codepoint = r.uint32
   if codepoint in BidiCodepoints:
     return err(fmt"bidirectional control codepoint U+{codepoint:04X} encountered")
@@ -77,15 +77,21 @@ type Token* = ref object
 proc newToken(kind: TokenKind, value: string, loc: Location): Token =
   Token(kind: kind, value: value, loc: loc)
 
-proc `$`*(token: Token): string = fmt"{token.loc} {token.kind}"
+proc `$`*(token: Token): string =
+  let repr =
+    case token.kind:
+    of tkNewline: "'\\n'"
+    else: fmt"'{token.value}'"
+  fmt"{token.loc} {token.kind} {repr}"
 
-proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
+proc tokenize*(source: string, filepath: string,
+    dumpTokens: bool = false): Result[seq[Token], string] =
   const Punctuations = "`~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?"
 
   var loc = newLocation()
   var tokens: seq[Token]
   for r in runes(source):
-    let maybeValid = validateUtf8(r)
+    let maybeValid = isCompilerSafe(r)
     if maybeValid.isErr: return err(fmt"{filepath}:{loc} {maybeValid.error}")
 
     let kind =
@@ -104,5 +110,11 @@ proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   # Normalize trailing newline character handling
   let trailingNewline = newToken(tkNewline, "\n", loc)
   tokens.add(trailingNewline)
+
+  # Dump tokens
+  if dumpTokens:
+    echo fmt"--- // START {filepath} tokens ({tokens.len}) ---"
+    for token in tokens: echo token
+    echo fmt"--- // END {filepath} ---"
 
   ok(tokens)

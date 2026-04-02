@@ -19,8 +19,7 @@ proc readFileSafe(filepath: string): Result[string, string] =
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let source = ? readFileSafe(filepath)
-  let tokens = ? tokenize(source, filepath)
-  for token in tokens: echo(token)
+  let tokens = ? tokenize(source, filepath, opts.dumpTokens)
   ok(source)
 
 when isMainModule:
