@@ -1,20 +1,26 @@
-import os, results, strformat
+import os, results, strformat, unicode
 
-import cli
+import cli, tokenizer
 
 proc readFileSafe(filepath: string): Result[string, string] =
   const MaxFileByteSize = 1 * 1024 * 1024 # 1 MB
   try:
     let fileByteSize = getFileSize(filepath)
     if fileByteSize > MaxFileByteSize:
-      err(fmt"File `{filepath}` exceeds 1 MB limit ({fileByteSize} bytes).")
+      err(fmt"{filepath} file exceeds 1 MB limit ({fileByteSize} bytes).")
     else:
-      ok(readFile(filepath))
+      let source = readFile(filepath)
+      let pos = validateUtf8(source)
+      if pos == -1: ok(source)
+      else: err(fmt"{filepath} invalid UTF-8 byte at position {pos}.")
   except IOError:
-    err(fmt"Failed to read file `{filepath}`.")
+    err(fmt"{filepath} failed to read file.")
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
-  let source = ? readFileSafe(opts.filename.absolutePath)
+  let filepath = opts.filename.absolutePath
+  let source = ? readFileSafe(filepath)
+  let tokens = ? tokenize(source, filepath)
+  for token in tokens: echo(token)
   ok(source)
 
 when isMainModule:
@@ -24,14 +30,14 @@ when isMainModule:
     quit(1)
 
   let command = maybeCommand.get
-  if command.help.isOk:
+  echo(fmt"[COMMAND] - {command}")
+  case command.kind:
+  of ackHelp:
     let helpCmd = command.help.get
     echo(helpCmd.help)
     quit(0)
-  elif command.build.isOk:
+  of ackBuild:
     let buildCmd = command.build.get
-    if buildCmd.debug: echo(fmt"[COMMAND] - {command}")
-
     let maybeSuccess = compile(buildCmd)
     if maybeSuccess.isErr:
       stderr.writeLine(fmt"[ERROR] - {maybeSuccess.error}")

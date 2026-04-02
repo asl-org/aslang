@@ -39,7 +39,7 @@ proc newAslHelpCommand(): AslHelpCommand =
   AslHelpCommand(help: Usage)
 
 proc help*(cmd: AslHelpCommand): string = cmd.help
-proc `$`(cmd: AslHelpCommand): string = "--help"
+proc `$`*(cmd: AslHelpCommand): string = "--help"
 
 type
   AslCommandKind* = enum
@@ -61,11 +61,11 @@ proc kind*(cmd: AslCommand): AslCommandKind = cmd.kind
 proc build*(cmd: AslCommand): Result[AslBuildCommand, string] =
   case cmd.kind:
   of ackBuild: ok(cmd.build)
-  else: err("Property `build` is not available on `AslCommand` object.")
+  else: err("property `build` is not available on `AslCommand` object.")
 proc help*(cmd: AslCommand): Result[AslHelpCommand, string] =
   case cmd.kind:
   of ackHelp: ok(cmd.help)
-  else: err("Property `help` is not available on `AslCommand` object.")
+  else: err("property `help` is not available on `AslCommand` object.")
 
 proc `$`*(cmd: AslCommand): string =
   case cmd.kind:
