@@ -16,18 +16,18 @@ Options:
 type AslBuildCommand* = object
   filename: string
   outputFile: string
-  indentWidth: uint8
+  indentWidth: uint32
   debug: bool
   dumpTokens: bool
 
 proc newAslBuildCommand(filename: string, outputFile: string,
-    indentWidth: uint8, debug: bool, dumpTokens: bool): AslBuildCommand =
+    indentWidth: uint32, debug: bool, dumpTokens: bool): AslBuildCommand =
   AslBuildCommand(filename: filename, outputFile: outputFile,
       indentWidth: indentWidth, debug: debug, dumpTokens: dumpTokens)
 
 proc filename*(cmd: AslBuildCommand): string = cmd.filename
 proc outputFile*(cmd: AslBuildCommand): string = cmd.outputFile
-proc indentWidth*(cmd: AslBuildCommand): uint8 = cmd.indentWidth
+proc indentWidth*(cmd: AslBuildCommand): uint32 = cmd.indentWidth
 proc debug*(cmd: AslBuildCommand): bool = cmd.debug
 proc dumpTokens*(cmd: AslBuildCommand): bool = cmd.dumpTokens
 
@@ -101,7 +101,7 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
         if buildOpts.output == "": buildOpts.filename.changeFileExt("")
         else: buildOpts.output
 
-      let indentWidth = parseInt(buildOpts.indentWidth).uint8
+      let indentWidth = parseInt(buildOpts.indentWidth).uint32
       let buildCmd = newAslBuildCommand(buildOpts.filename, outputFile,
           indentWidth, buildOpts.debug, buildOpts.dumpTokens)
       ok(newAslCommand(buildCmd))

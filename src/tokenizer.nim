@@ -45,14 +45,14 @@ proc isCompilerSafe(r: Rune): Result[void, string] =
   else:
     ok()
 
-type Location = object
+type Location* = object
   line: int
   col: int
 
 proc newLocation(line, col: int): Location =
   Location(line: line, col: col)
 
-proc newLocation(): Location = newLocation(1, 1)
+proc newLocation*(): Location = newLocation(1, 1)
 
 proc advance(loc: Location, line: bool = false): Location =
   var location = loc
@@ -63,10 +63,16 @@ proc advance(loc: Location, line: bool = false): Location =
     location.col += 1
   return location
 
+proc `<`*(a, b: Location): bool =
+  if a.line == b.line:
+    a.col < b.col
+  else:
+    a.line < b.line
+
 proc `$`(loc: Location): string =
   fmt"{loc.line}:{loc.col}"
 
-type TokenKind = enum
+type TokenKind* = enum
   tkPunctuation, tkSpace, tkNewline, tkAlphabet, tkDigit, tkUtf8
 
 type Token* = ref object
@@ -77,12 +83,17 @@ type Token* = ref object
 proc newToken(kind: TokenKind, value: string, loc: Location): Token =
   Token(kind: kind, value: value, loc: loc)
 
+proc kind*(token: Token): TokenKind = token.kind
+proc value*(token: Token): string = token.value
+proc loc*(token: Token): Location = token.loc
+
+proc repr*(token: Token): string =
+  case token.kind:
+  of tkNewline: "'\\n'"
+  else: fmt"'{token.value}'"
+
 proc `$`*(token: Token): string =
-  let repr =
-    case token.kind:
-    of tkNewline: "'\\n'"
-    else: fmt"'{token.value}'"
-  fmt"{token.loc} {token.kind} {repr}"
+  fmt"{token.loc} {token.kind} {token.repr}"
 
 proc tokenize*(source: string, filepath: string,
     dumpTokens: bool = false): Result[seq[Token], string] =

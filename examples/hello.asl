@@ -1,3 +1,3 @@
 module App:
-  func start(): u8
-    println("Hello, world!")
+  func start(sys: System): u8
+    System.println("Hello, world!")
