@@ -271,7 +271,7 @@ proc newAssignment(target: string, expression: Expression,
   Assignment(target: target, expression: expression, loc: loc)
 
 proc value(assignment: Assignment): string =
-  fmt"{assignment.value} = {assignment.expression.value}"
+  fmt"{assignment.target} = {assignment.expression.value}"
 
 type
   StatementKind = enum
@@ -297,7 +297,7 @@ proc value(statement: Statement): string =
   of skAssignment: statement.assignment.value
   of skExpr: statement.expression.value
 
-type StatementList = ref object of RootObj
+type StatementList = ref object
   statements: seq[Statement]
 
 proc newStatementList(statements: seq[Statement]): StatementList =
@@ -333,7 +333,8 @@ proc newFunctionList(functions: seq[Function]): FunctionList =
   FunctionList(functions: functions)
 
 proc loc(funclist: FunctionList): Location =
-  funclist.functions[0].loc
+  if funclist.functions.len == 0: newLocation()
+  else: funclist.functions[0].loc
 
 proc value(funclist: FunctionList): string =
   funclist.functions.mapIt(it.value).join("\n")
@@ -365,7 +366,7 @@ proc value(file: File): string =
 
 type
   AslNodeKind = enum
-    ankIdentifier, ankComment, ankEmptyLine, ankIndetation
+    ankIdentifier, ankComment, ankEmptyLine, ankIndentation
     ankArgType, ankArgDef, ankArgDefList, ankFuncDef
     ankArgList
     ankStrContent, ankStrLit, ankFuncCall
@@ -376,7 +377,7 @@ type
     of ankEmptyLine: line: EmptyLine
     of ankComment: comment: Comment
     of ankIdentifier: identifier: Identifier
-    of ankIndetation: indentation: Indentation
+    of ankIndentation: indentation: Indentation
     of ankArgType: argType: ArgumentType
     of ankArgDef: argDef: ArgumentDefinition
     of ankArgDefList: argDefList: ArgumentDefinitionList
@@ -404,7 +405,7 @@ proc newAslNode(identifier: Identifier): AslNode =
   AslNode(kind: ankIdentifier, identifier: identifier)
 
 proc newAslNode(indentation: Indentation): AslNode =
-  AslNode(kind: ankIndetation, indentation: indentation)
+  AslNode(kind: ankIndentation, indentation: indentation)
 
 proc newAslNode(argType: ArgumentType): AslNode =
   AslNode(kind: ankArgType, argType: argType)
@@ -459,12 +460,12 @@ proc loc(node: AslNode): Location =
   of ankEmptyLine: node.line.loc
   of ankComment: node.comment.loc
   of ankIdentifier: node.identifier.loc
-  of ankIndetation: node.indentation.loc
+  of ankIndentation: node.indentation.loc
   of ankArgType: node.argType.loc
   of ankArgDef: node.argDef.loc
   of ankArgDefList: node.argDefList.loc
   of ankFuncDef: node.funcDef.loc
-  of ankStrContent: node.strLit.loc
+  of ankStrContent: node.strContent.loc
   of ankStrLit: node.strLit.loc
   of ankArgList: node.argList.loc
   of ankFuncCall: node.fncall.loc
@@ -482,7 +483,7 @@ proc value(node: AslNode): string =
   of ankEmptyLine: node.line.value
   of ankComment: node.comment.value
   of ankIdentifier: node.identifier.value
-  of ankIndetation: node.indentation.value
+  of ankIndentation: node.indentation.value
   of ankArgType: node.argType.value
   of ankArgDef: node.argDef.value
   of ankArgDefList: node.argDefList.value
@@ -492,7 +493,7 @@ proc value(node: AslNode): string =
   of ankArgList: node.argList.value
   of ankFuncCall: node.fncall.value
   of ankExpression: node.expression.value
-  of ankAssignment: node.expression.value
+  of ankAssignment: node.assignment.value
   of ankStatement: node.statement.value
   of ankStatementList: node.statementList.value
   of ankFunction: node.function.value
@@ -774,7 +775,7 @@ proc parseStringContent(parser: Parser): Result[AslNode, ParserError] =
     if token.value != "\"":
       return ok(newAslNode(newStringContent(token.value, token.loc)))
     else:
-      errors.add(newParserError("expected a valid string character but found '{token.value}'", token.loc))
+      errors.add(newParserError(fmt"expected a valid string character but found '{token.value}'", token.loc))
   else:
     errors.add(maybeStrChar.error)
 
@@ -884,15 +885,6 @@ proc parseAssignment(parser: Parser): Result[AslNode, ParserError] =
 proc parseStatement(parser: Parser): Result[AslNode, ParserError] =
   var errors: seq[ParserError]
 
-  let maybeExpression = parser.parse(parseExpression)
-  if maybeExpression.isOk:
-    let exprNode = maybeExpression.get
-    assert exprNode.kind == ankExpression, "expected expression"
-    return ok(newAslNode(newStatement(exprNode.expression)))
-  else:
-    errors.add(maybeExpression.error)
-
-
   let maybeAssignment = parser.parse(parseAssignment)
   if maybeAssignment.isOk:
     let assignmentNode = maybeAssignment.get
@@ -901,6 +893,14 @@ proc parseStatement(parser: Parser): Result[AslNode, ParserError] =
     return ok(newAslNode(newStatement(assignment)))
   else:
     errors.add(maybeAssignment.error)
+
+  let maybeExpression = parser.parse(parseExpression)
+  if maybeExpression.isOk:
+    let exprNode = maybeExpression.get
+    assert exprNode.kind == ankExpression, "expected expression"
+    return ok(newAslNode(newStatement(exprNode.expression)))
+  else:
+    errors.add(maybeExpression.error)
 
   err(max(errors))
 
@@ -920,6 +920,9 @@ proc parseStatementList(parser: Parser, level: uint32): Result[AslNode, ParserEr
     if maybeIndentation.isErr: break
 
     maybeStatement = parser.parse(parseStatement)
+
+  if statements.len == 0:
+    return err(newParserError("expected at least one statement", parser.loc))
 
   ok(newAslNode(newStatementList(statements)))
 

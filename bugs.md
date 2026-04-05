@@ -2,6 +2,21 @@
 
 ## Open
 
+### Parser bugs
+
+- [x] **`Assignment.value` infinite recursion** (`parser.nim:274`) [high] — Fixed. `assignment.value` → `assignment.target`.
+- [x] **`ankStrContent` accesses wrong variant** (`parser.nim:467`) [high] — Fixed. `node.strLit.loc` → `node.strContent.loc`.
+- [x] **`ankAssignment` accesses wrong variant** (`parser.nim:495`) [high] — Fixed. `node.expression.value` → `node.assignment.value`.
+- [x] **Missing `fmt` in string error** (`parser.nim:777`) [medium] — Fixed. Added `fmt` prefix.
+- [x] **No empty-list validation before creating AST nodes** (`parser.nim`) [medium] — Fixed. `StatementList` now rejects empty at parse time. `FunctionList.loc` is now empty-safe. `ArgumentList` and `ArgumentDefinitionList` already stored `loc` directly — no fix needed.
+- [x] **`StatementList.loc` crashes on empty list** (`parser.nim:307`) [medium] — Fixed. `parseStatementList` now returns an error if empty, so `[0]` access is safe by construction.
+- [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`parser.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context. Will likely be addressed as part of parser re-architecture.
+- [x] **Typo `ankIndetation`** (`parser.nim`) [medium] — Fixed. Renamed all 5 occurrences to `ankIndentation`.
+- [x] **`StatementList` uses `ref object of RootObj`** (`parser.nim:300`) [low] — Fixed. Changed to plain `ref object`.
+- [x] **`parseStatement` tries expression before assignment** (`parser.nim:885`) [low] — Fixed. Assignment is now tried first since `=` disambiguates earlier.
+
+### Other
+
 - [ ] **`except CatchableError:` is still broad** (`cli.nim:105`) [low] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed.
 - [ ] **`Token` is `ref object`** (`tokenizer.nim:72`) [low] — Each token is heap-allocated. For a tokenizer producing thousands of tokens, a plain `object` in `seq[Token]` avoids GC pressure since tokens are small (enum + string + two ints).
 

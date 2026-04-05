@@ -56,3 +56,14 @@
 - Trailing newlines are normalized by the tokenizer — inject a newline token at the end if missing, so the parser always sees a consistent stream.
 - Span tracking (start + end position) is unnecessary when the tokenizer is single-character. Can be added later if the tokenizer becomes multi-character.
 - Null bytes get rejected as unknown tokens by the existing `else` branch — no special handling needed.
+
+## 2026-04-05 10:55 — Parser audit and design observations
+
+- The parser is a recursive descent backtracking parser built on top of a dumb single-character tokenizer. It combines raw tokens into multi-character constructs (identifiers, strings, numbers, etc.) — this complexity lives in the parser by design, not the tokenizer.
+- Checkpoint/restore pattern for backtracking: `parse` procs save `parser.index`, try a spec, and restore on failure. Clean and predictable.
+- `ParserError` with `Location` and `<` operator lets `max(errors)` pick the deepest error — the one that got furthest before failing. Good heuristic for error reporting in backtracking parsers.
+- Inline vs block parser specs (`InlineParserSpec` vs `BlockParserSpec`) separate parsers that don't care about indentation from those that do (via `level: uint32`).
+- Watch for variant object field access bugs — accessing `node.strLit` when you meant `node.strContent` compiles if both variants have the same field types but is a runtime bug. Nim's variant objects don't protect against this at compile time when using `ref object`.
+- Self-referential `value` procs are a common copy-paste bug — `assignment.value` calling itself instead of `assignment.target` causes infinite recursion.
+- When two parse alternatives start with the same token pattern (e.g., expression and assignment both start with an identifier), ordering matters for performance. Put the one with the earlier disambiguator first (assignment has `=` after the identifier).
+- `ref object of RootObj` should not appear unless inheritance is needed — it was found on `StatementList` with nothing inheriting from it.
