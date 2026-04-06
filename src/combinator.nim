@@ -244,3 +244,41 @@ proc contained*[T](name: string, open: string, inner: Spec[T],
     discard ? parser.consumePunctuation(close)
     ok(result)
   )
+
+# ============================================================
+# Leaf token specs
+# ============================================================
+
+proc tokenSpec*(kind: TokenKind, tokenRepr: string): Spec[Token] =
+  Spec[Token](
+    name: tokenRepr,
+    parseFn: proc(parser: Parser): Result[Token, ParserError] =
+    parser.consume(kind, tokenRepr)
+  )
+
+proc punctuationSpec*(value: string): Spec[Token] =
+  Spec[Token](
+    name: "'" & value & "'",
+    parseFn: proc(parser: Parser): Result[Token, ParserError] =
+    parser.consumePunctuation(value)
+  )
+
+proc anyTokenSpec*(tokenRepr: string): Spec[Token] =
+  Spec[Token](
+    name: tokenRepr,
+    parseFn: proc(parser: Parser): Result[Token, ParserError] =
+    parser.consume(tokenRepr)
+  )
+
+proc anyTokenExceptNewlineSpec*(tokenRepr: string): Spec[Token] =
+  Spec[Token](
+    name: tokenRepr,
+    parseFn: proc(parser: Parser): Result[Token, ParserError] =
+    parser.consumeExceptNewline(tokenRepr)
+  )
+
+let spaceSpec* = tokenSpec(tkSpace, "space ' '")
+let newlineSpec* = tokenSpec(tkNewline, "newline '\\n'")
+let alphabetSpec* = tokenSpec(tkAlphabet, "alphabet [a-zA-Z]")
+let digitSpec* = tokenSpec(tkDigit, "digit [0-9]")
+let utf8Spec* = tokenSpec(tkUtf8, "utf8 character")
