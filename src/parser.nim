@@ -26,13 +26,14 @@ proc `$`*(error: ParserError): string =
 
 type
   Parser* = ref object
+    filepath*: string
     indentWidth*: uint32
     tokens*: seq[Token]
     index*: int
     level*: uint32
 
-proc newParser*(indentWidth: uint32, tokens: seq[Token]): Parser =
-  Parser(indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
+proc newParser*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Parser =
+  Parser(filepath: filepath, indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
 
 proc done*(parser: Parser): bool =
   parser.index == parser.tokens.len
@@ -444,6 +445,14 @@ type FunctionList = ref object
 proc newFunctionList(functions: seq[Function]): FunctionList =
   FunctionList(functions: functions)
 
+type Import = ref object
+  names: seq[string]
+  source: string
+  loc: Location
+
+proc newImport(names: seq[string], source: string, loc: Location): Import =
+  Import(names: names, source: source, loc: loc)
+
 type Generic = ref object
   name: string
   funcDefs: seq[FunctionDefinition]
@@ -477,17 +486,18 @@ proc newFileItem(generic: Generic): FileItem =
 
 type File = ref object
   path: string
+  imports: seq[Import]
   modules: seq[Module]
   generics: seq[Generic]
 
-proc newFile(path: string, items: seq[FileItem]): File =
+proc newFile(path: string, imports: seq[Import], items: seq[FileItem]): File =
   var modules: seq[Module]
   var generics: seq[Generic]
   for item in items:
     case item.kind:
     of fikModule: modules.add(item.module)
     of fikGeneric: generics.add(item.generic)
-  File(path: path, modules: modules, generics: generics)
+  File(path: path, imports: imports, modules: modules, generics: generics)
 
 # ============================================================
 # Grammar specs
@@ -768,19 +778,31 @@ let funcBlockSpec = Spec[Function](
 let functionListSpec = any(funcBlockSpec).map("function_list",
   proc(fns: seq[Function]): FunctionList = newFunctionList(fns))
 
-type BlockHeader = tuple[name: string, loc: Location]
+type ModuleHeader = tuple[name: string, loc: Location]
 
-proc blockHeaderSpec(keyword: string): Spec[BlockHeader] =
-  Spec[BlockHeader](
-    name: keyword & "_header",
-    parseFn: proc(parser: Parser): Result[BlockHeader, ParserError] =
-    let loc = ? parser.run(keywordSpec(keyword))
-    discard ? parser.run(spacesSpec)
-    let nameIdent = ? parser.run(identifierSpec)
-    discard parser.run(spacesSpec)
-    discard ? parser.run(punctuationSpec(":"))
-    ok((nameIdent.name, loc))
-  )
+let moduleHeaderSpec = Spec[ModuleHeader](
+  name: "module_header",
+  parseFn: proc(parser: Parser): Result[ModuleHeader, ParserError] =
+  let loc = ? parser.run(keywordSpec("module"))
+  discard ? parser.run(spacesSpec)
+  let nameIdent = ? parser.run(identifierSpec)
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  ok((nameIdent.name, loc))
+)
+
+type GenericHeader = tuple[name: string, loc: Location]
+
+let genericHeaderSpec = Spec[GenericHeader](
+  name: "generic_header",
+  parseFn: proc(parser: Parser): Result[GenericHeader, ParserError] =
+  let loc = ? parser.run(keywordSpec("generic"))
+  discard ? parser.run(spacesSpec)
+  let nameIdent = ? parser.run(identifierSpec)
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  ok((nameIdent.name, loc))
+)
 
 # Function definition line: indentation + function signature + newline
 let functionDefinitionLineSpec = Spec[FunctionDefinition](
@@ -794,11 +816,11 @@ let functionDefinitionLineSpec = Spec[FunctionDefinition](
 
 let functionDefinitionListSpec = atLeastOne(functionDefinitionLineSpec)
 
-let genericSpec = blockSpec("generic", blockHeaderSpec("generic"), functionDefinitionListSpec,
-  proc(h: BlockHeader, b: seq[FunctionDefinition]): Generic = newGeneric(h.name, b, h.loc))
+let genericSpec = blockSpec("generic", genericHeaderSpec, functionDefinitionListSpec,
+  proc(h: GenericHeader, b: seq[FunctionDefinition]): Generic = newGeneric(h.name, b, h.loc))
 
-let moduleSpec = blockSpec("module", blockHeaderSpec("module"), functionListSpec,
-  proc(h: BlockHeader, b: FunctionList): Module = newModule(h.name, b, h.loc))
+let moduleSpec = blockSpec("module", moduleHeaderSpec, functionListSpec,
+  proc(h: ModuleHeader, b: FunctionList): Module = newModule(h.name, b, h.loc))
 
 let fileItemSpec = oneOf("file_item", [
   moduleSpec.map("module_item",
@@ -806,6 +828,32 @@ let fileItemSpec = oneOf("file_item", [
   genericSpec.map("generic_item",
     proc(v: Generic): FileItem = newFileItem(v)),
 ])
+
+# import { Name, Name } from "path"
+let importLineSpec = Spec[Import](
+  name: "import_line",
+  parseFn: proc(parser: Parser): Result[Import, ParserError] =
+  let loc = ? parser.run(keywordSpec("import"))
+  discard ? parser.run(spacesSpec)
+  let names = ? parser.run(contained("import_names", "{",
+    separatedBy(identifierSpec, commaWithSpacesSpec), "}"))
+  discard ? parser.run(spacesSpec)
+  discard ? parser.run(keywordSpec("from"))
+  discard ? parser.run(spacesSpec)
+  let source = ? parser.run(stringLiteralSpec)
+  discard ? parser.run(ignorableLineSpec)
+  var nameStrings: seq[string]
+  for n in names: nameStrings.add(n.name)
+  ok(newImport(nameStrings, source.content, loc))
+)
+
+let importBlockSpec = Spec[Import](
+  name: "import_block",
+  parseFn: proc(parser: Parser): Result[Import, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
+  let imp = ? parser.run(importLineSpec)
+  ok(imp)
+)
 
 let fileItemBlockSpec = Spec[FileItem](
   name: "file_item_block",
@@ -815,19 +863,21 @@ let fileItemBlockSpec = Spec[FileItem](
   ok(item)
 )
 
-let fileSpec = Spec[seq[FileItem]](
+# file: import* (module | generic)*
+let fileSpec = Spec[File](
   name: "file",
-  parseFn: proc(parser: Parser): Result[seq[FileItem], ParserError] =
+  parseFn: proc(parser: Parser): Result[File, ParserError] =
+  let imports = ? parser.run(any(importBlockSpec))
   let items = ? parser.run(any(fileItemBlockSpec))
   discard parser.run(any(ignorableLineSpec))
-  ok(items)
+  ok(newFile(parser.filepath, imports, items))
 )
 
 proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
     File, string] =
-  let parser = newParser(indentWidth, tokens)
-  let maybeItems = parser.run(fileSpec)
-  if maybeItems.isErr:
-    err(fmt"{filepath}:{maybeItems.error}")
+  let parser = newParser(filepath, indentWidth, tokens)
+  let maybeFile = parser.run(fileSpec)
+  if maybeFile.isErr:
+    err(fmt"{filepath}:{maybeFile.error}")
   else:
-    ok(newFile(filepath, maybeItems.get))
+    ok(maybeFile.get)

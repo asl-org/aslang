@@ -85,7 +85,7 @@
 ## 2026-04-06 — Parser combinator refactor execution
 
 - `separatorSpec(sep)` factory generalizes the "optional_spaces separator optional_spaces" pattern. Used for `,`, `:`, `=` — adding a new separator is one line.
-- `escapedCharSpec(char)` and `escapedAlphaSpec(char)` factories decompose string escape handling into individual specs composed via `oneOf`. Adding a new escape sequence (e.g., `\r`) is one line + adding to the `oneOf` array.
+- `escapedSpec(char, charSpec)` factory unifies punctuation and alphabet escape handling. Adding a new escape sequence is one line + adding to the `oneOf` array.
 - `unescapedStringCharSpec` must reject both `"` and `\` — not just `"`. The old code only rejected `"`, which would have caused `\` to be consumed as a regular character instead of starting an escape sequence.
 - Nim's `result` is a special variable inside procs (implicit return value). Naming a local variable `result` inside combinator closures triggers `ResultShadowed` warnings. Use `res` or `maybeValue` instead.
 - Nim's `options` module (`Option[T]`, `isSome`, `get`) must be explicitly imported in `parser.nim` — the linter removed the re-export from `combinator.nim`.
@@ -94,5 +94,12 @@
 - When `any(combinator)` backtracks a failed iteration, it also undoes any "ignorable line" consumption from within that iteration. This can leave trailing newlines unconsumed. The `fileSpec` loop needs `if parser.done(): break` after consuming ignorable lines to handle trailing whitespace at end of file.
 - `statementListSpec` is `atLeastOne(statementLineSpec)` where each statementLine is `indentation + statement + newline`. The combinator replaces a 15-line manual while loop with a one-liner.
 - `functionListSpec` is `any(functionBlockSpec)` where each block skips leading ignorable lines then parses a function. `any` backtracks the ignorable line consumption if no function follows.
-- Block-level specs (statementList, function, functionList, module) are factory procs returning `Spec[T]`. The `level: uint32` is captured in the closure, and `parser.indentWidth` is accessed from the parser at parse time.
+- Block-level specs (statementList, function, functionList, module) are simple `let` declarations, not factory procs. `parser.level` is a field on Parser — `blockSpec` increments it for body parsing, `run` saves/restores it on backtracking alongside `parser.index`.
+- `blockSpec[H, B, R](name, header, body, combine)` is the higher-level combinator for indented blocks: `indentation + header + newline + body(level+1)`. Used by `functionSpec`, `moduleSpec`, `genericSpec`. Adding a new block type is: define header spec, pick a body spec, one `blockSpec` call.
+- Don't over-generalize header specs — `moduleHeaderSpec` and `genericHeaderSpec` look the same today (`keyword name :`) but may diverge (e.g., function definition is already a different header shape). Keep them separate.
+- `parser.filepath` belongs on Parser — it's needed by `fileSpec` to construct `File` directly. Without it, you'd need intermediate tuple types (`FileContent`) to pass data between `fileSpec` and the `parse*` entry point.
+- `File` stores `imports`, `modules`, `generics` as separate arrays. `newFile` accepts `seq[FileItem]` and filters by kind — the sum type (`FileItem`) is only used during parsing, the `File` type keeps the concerns separated.
+- Import syntax: `import { Name, Name } from "path"`. Uses `contained` for the braced name list and `separatedBy` for comma-separated identifiers. `keywordSpec("from")` matches the source keyword.
+- File grammar is `import* (module | generic)*` — imports must come before modules/generics. `fileSpec` parses `any(importBlockSpec)` first, then `any(fileItemBlockSpec)`.
+- `value` procs on AST types became dead code after the combinator refactor — the `compile` function in `asl.nim` discards the parsed `File` and returns the raw source. Removing them also eliminated the `strutils`/`sequtils` imports.
 - Linters may add `?` to `discard parser.run(...)` calls, turning optional parses into required ones. This silently breaks parsing when the consumed element isn't always present (e.g., optional spaces before `(`). Review linter changes carefully on Result-returning expressions.
