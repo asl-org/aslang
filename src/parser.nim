@@ -9,8 +9,6 @@ type EmptyLine = ref object
 proc newEmptyLine(loc: Location): EmptyLine =
   EmptyLine(loc: loc)
 
-# proc value(line: EmptyLine): string = "\n"
-
 type
   Comment = ref object
     content: string
@@ -18,8 +16,6 @@ type
 
 proc newComment(content: string, loc: Location): Comment =
   Comment(content: content, loc: loc)
-
-# proc value(comment: Comment): string = fmt"#{comment.content}\n"
 
 type
   Identifier = ref object
@@ -29,17 +25,12 @@ type
 proc newIdentifier(name: string, loc: Location): Identifier =
   Identifier(name: name, loc: loc)
 
-# proc value(identifier: Identifier): string = identifier.name
-
 type Indentation = ref object
   indentation: uint32
   loc: Location
 
 proc newIndentation(indentation: uint32, loc: Location): Indentation =
   Indentation(indentation: indentation, loc: loc)
-
-# proc value(indentation: Indentation): string =
-#   " ".repeat(indentation.indentation)
 
 type ArgumentType = ref object
   root: string
@@ -71,9 +62,6 @@ proc newArgumentDefinition(name: string, argType: ArgumentType,
     loc: Location): ArgumentDefinition =
   ArgumentDefinition(name: name, argType: argType, loc: loc)
 
-# proc value(argDef: ArgumentDefinition): string =
-#   fmt"{argDef.name}: {argDef.argType.value}"
-
 type ArgumentDefinitionList = ref object
   argDefs: seq[ArgumentDefinition]
   loc: Location
@@ -81,11 +69,6 @@ type ArgumentDefinitionList = ref object
 proc newArgumentDefinitionList(argDefs: seq[ArgumentDefinition],
     loc: Location): ArgumentDefinitionList =
   ArgumentDefinitionList(argDefs: argDefs, loc: loc)
-
-# proc value(argDefList: ArgumentDefinitionList): string =
-#   let argDefs = argDefList.argDefs.mapIt(it.value)
-#   let argDefsJoined = argDefs.join(", ")
-#   fmt"({argDefsJoined})"
 
 type FunctionDefinition = ref object
   name: string
@@ -97,9 +80,6 @@ proc newFunctionDefinition(name: string, argDefList: ArgumentDefinitionList,
     returns: ArgumentType, loc: Location): FunctionDefinition =
   FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
 
-# proc value(def: FunctionDefinition): string =
-#   fmt"func {def.name}{def.argDefList.value}: {def.returns.value}"
-
 type StringContent = ref object
   content: string
   loc: Location
@@ -107,9 +87,6 @@ type StringContent = ref object
 proc newStringContent(content: string,
     loc: Location): StringContent =
   StringContent(content: content, loc: loc)
-
-# proc value(strContent: StringContent): string =
-#   strContent.content
 
 type
   ArgumentList = ref object
@@ -151,9 +128,6 @@ proc newFunctionCall(argType: ArgumentType, name: string,
     argList: ArgumentList): FunctionCall =
   FunctionCall(argType: argType, name: name, argList: argList)
 
-# proc loc(fncall: FunctionCall): Location =
-#   fncall.argType.loc
-
 proc value(fncall: FunctionCall): string =
   fmt"{fncall.argType.value}.{fncall.name}{fncall.argList.value}"
 
@@ -162,11 +136,6 @@ proc newExpression(strLit: StringLiteral): Expression =
 
 proc newExpression(fncall: FunctionCall): Expression =
   Expression(kind: ekFnCall, fncall: fncall)
-
-# proc loc(expression: Expression): Location =
-#   case expression.kind:
-#   of ekFnCall: expression.fncall.loc
-#   of ekStrLit: expression.strLit.loc
 
 proc value(expression: Expression): string =
   case expression.kind:
@@ -182,9 +151,6 @@ proc newAssignment(target: string, expression: Expression,
     loc: Location): Assignment =
   Assignment(target: target, expression: expression, loc: loc)
 
-# proc value(assignment: Assignment): string =
-#   fmt"{assignment.target} = {assignment.expression.value}"
-
 type
   StatementKind = enum
     skAssignment, skExpr
@@ -199,27 +165,11 @@ proc newStatement(assignment: Assignment): Statement =
 proc newStatement(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
 
-# proc loc(statement: Statement): Location =
-#   case statement.kind:
-#   of skAssignment: statement.assignment.loc
-#   of skExpr: statement.expression.loc
-
-# proc value(statement: Statement): string =
-#   case statement.kind:
-#   of skAssignment: statement.assignment.value
-#   of skExpr: statement.expression.value
-
 type StatementList = ref object
   statements: seq[Statement]
 
 proc newStatementList(statements: seq[Statement]): StatementList =
   StatementList(statements: statements)
-
-# proc loc(statementList: StatementList): Location =
-#   statementList.statements[0].loc
-
-# proc value(statementList: StatementList): string =
-#   statementList.statements.mapIt(it.value).join("\n")
 
 type Function = ref object
   def: FunctionDefinition
@@ -229,27 +179,11 @@ proc newFunction(def: FunctionDefinition,
     statementList: StatementList): Function =
   Function(def: def, statementList: statementList)
 
-# proc loc(function: Function): Location =
-#   function.def.loc
-
-# proc value(function: Function): string =
-#   # TODO: Consider the `parser.indentWidth`
-#   let statements = function.statementList.statements.mapIt("  " &
-#       it.value).join("\n")
-#   [function.def.value, statements].join("\n")
-
 type FunctionList = ref object
   functions: seq[Function]
 
 proc newFunctionList(functions: seq[Function]): FunctionList =
   FunctionList(functions: functions)
-
-# proc loc(funclist: FunctionList): Location =
-#   if funclist.functions.len == 0: newLocation()
-#   else: funclist.functions[0].loc
-
-# proc value(funclist: FunctionList): string =
-#   funclist.functions.mapIt(it.value).join("\n")
 
 type Module = ref object
   name: string
@@ -259,177 +193,12 @@ type Module = ref object
 proc newModule(name: string, funcList: FunctionList, loc: Location): Module =
   Module(name: name, funcList: funcList, loc: loc)
 
-# proc value(module: Module): string =
-#   # TODO: complete the function
-#   fmt"module {module.name}:" & "\n" & module.funcList.functions.mapIt(
-#       it.value).join("\n\n")
-
 type File = ref object
   path: string
   modules: seq[Module]
 
 proc newFile(path: string, modules: seq[Module]): File =
   File(path: path, modules: modules)
-
-# proc loc(file: File): Location = newLocation()
-# proc value(file: File): string =
-#   file.modules.mapIt(it.value).join("\n\n")
-
-
-type
-  AslNodeKind = enum
-    ankIdentifier, ankComment, ankEmptyLine, ankIndentation
-    ankArgType, ankArgDef, ankArgDefList, ankFuncDef
-    ankArgList
-    ankStrContent, ankStrLit, ankFuncCall
-    ankExpression, ankAssignment, ankStatement, ankStatementList
-    ankFunction, ankFunctionList, ankModule, ankFile
-  AslNode = ref object
-    case kind: AslNodeKind
-    of ankEmptyLine: line: EmptyLine
-    of ankComment: comment: Comment
-    of ankIdentifier: identifier: Identifier
-    of ankIndentation: indentation: Indentation
-    of ankArgType: argType: ArgumentType
-    of ankArgDef: argDef: ArgumentDefinition
-    of ankArgDefList: argDefList: ArgumentDefinitionList
-    of ankFuncDef: funcDef: FunctionDefinition
-    of ankStrContent: strContent: StringContent
-    of ankStrLit: strLit: StringLiteral
-    of ankArgList: argList: ArgumentList
-    of ankFuncCall: fncall: FunctionCall
-    of ankExpression: expression: Expression
-    of ankAssignment: assignment: Assignment
-    of ankStatement: statement: Statement
-    of ankStatementList: statementList: StatementList
-    of ankFunction: function: Function
-    of ankFunctionList: funcList: FunctionList
-    of ankModule: module: Module
-    of ankFile: file: File
-
-# proc newAslNode(line: EmptyLine): AslNode =
-#   AslNode(kind: ankEmptyLine, line: line)
-
-# proc newAslNode(comment: Comment): AslNode =
-#   AslNode(kind: ankComment, comment: comment)
-
-# proc newAslNode(identifier: Identifier): AslNode =
-#   AslNode(kind: ankIdentifier, identifier: identifier)
-
-# proc newAslNode(indentation: Indentation): AslNode =
-#   AslNode(kind: ankIndentation, indentation: indentation)
-
-# proc newAslNode(argType: ArgumentType): AslNode =
-#   AslNode(kind: ankArgType, argType: argType)
-
-# proc newAslNode(argDef: ArgumentDefinition): AslNode =
-#   AslNode(kind: ankArgDef, argDef: argDef)
-
-# proc newAslNode(argDefList: ArgumentDefinitionList): AslNode =
-#   AslNode(kind: ankArgDefList, argDefList: argDefList)
-
-proc newAslNode(funcDef: FunctionDefinition): AslNode =
-  AslNode(kind: ankFuncDef, funcDef: funcDef)
-
-# proc newAslNode(strContent: StringContent): AslNode =
-#   AslNode(kind: ankStrContent, strContent: strContent)
-
-# proc newAslNode(strLit: StringLiteral): AslNode =
-#   AslNode(kind: ankStrLit, strLit: strLit)
-
-# proc newAslNode(argList: ArgumentList): AslNode =
-#   AslNode(kind: ankArgList, argList: argList)
-
-# proc newAslNode(fncall: FunctionCall): AslNode =
-#   AslNode(kind: ankFuncCall, fncall: fncall)
-
-# proc newAslNode(expression: Expression): AslNode =
-#   AslNode(kind: ankExpression, expression: expression)
-
-# proc newAslNode(assignment: Assignment): AslNode =
-#   AslNode(kind: ankAssignment, assignment: assignment)
-
-# proc newAslNode(statement: Statement): AslNode =
-#   AslNode(kind: ankStatement, statement: statement)
-
-proc newAslNode(statementList: StatementList): AslNode =
-  AslNode(kind: ankStatementList, statementList: statementList)
-
-proc newAslNode(function: Function): AslNode =
-  AslNode(kind: ankFunction, function: function)
-
-proc newAslNode(funcList: FunctionList): AslNode =
-  AslNode(kind: ankFunctionList, funcList: funcList)
-
-proc newAslNode(module: Module): AslNode =
-  AslNode(kind: ankModule, module: module)
-
-proc newAslNode(file: File): AslNode =
-  AslNode(kind: ankFile, file: file)
-
-# proc loc(node: AslNode): Location =
-#   case node.kind:
-#   of ankEmptyLine: node.line.loc
-#   of ankComment: node.comment.loc
-#   of ankIdentifier: node.identifier.loc
-#   of ankIndentation: node.indentation.loc
-#   of ankArgType: node.argType.loc
-#   of ankArgDef: node.argDef.loc
-#   of ankArgDefList: node.argDefList.loc
-#   of ankFuncDef: node.funcDef.loc
-#   of ankStrContent: node.strContent.loc
-#   of ankStrLit: node.strLit.loc
-#   of ankArgList: node.argList.loc
-#   of ankFuncCall: node.fncall.loc
-#   of ankExpression: node.expression.loc
-#   of ankAssignment: node.assignment.loc
-#   of ankStatement: node.statement.loc
-#   of ankStatementList: node.statementList.loc
-#   of ankFunction: node.function.loc
-#   of ankFunctionList: node.funcList.loc
-#   of ankModule: node.module.loc
-#   of ankFile: node.file.loc
-
-# proc value(node: AslNode): string =
-#   case node.kind:
-#   of ankEmptyLine: node.line.value
-#   of ankComment: node.comment.value
-#   of ankIdentifier: node.identifier.value
-#   of ankIndentation: node.indentation.value
-#   of ankArgType: node.argType.value
-#   of ankArgDef: node.argDef.value
-#   of ankArgDefList: node.argDefList.value
-#   of ankFuncDef: node.funcDef.value
-#   of ankStrContent: node.strContent.value
-#   of ankStrLit: node.strLit.value
-#   of ankArgList: node.argList.value
-#   of ankFuncCall: node.fncall.value
-#   of ankExpression: node.expression.value
-#   of ankAssignment: node.assignment.value
-#   of ankStatement: node.statement.value
-#   of ankStatementList: node.statementList.value
-#   of ankFunction: node.function.value
-#   of ankFunctionList: node.funcList.value
-#   of ankModule: node.module.value
-#   of ankFile: node.file.value
-
-type InlineParserSpec = proc(parser: Parser): Result[AslNode, ParserError]
-type BlockParserSpec = proc(parser: Parser, level: uint32): Result[AslNode, ParserError]
-
-proc parse(parser: Parser, spec: InlineParserSpec): Result[AslNode, ParserError] =
-  let checkpoint = parser.index
-  let maybeSuccess = spec(parser)
-  if maybeSuccess.isErr: parser.index = checkpoint
-  return maybeSuccess
-
-proc parse(parser: Parser, spec: BlockParserSpec, level: uint32): Result[
-    AslNode, ParserError] =
-  let checkpoint = parser.index
-  let maybeSuccess = spec(parser, level)
-  if maybeSuccess.isErr:
-    parser.index = checkpoint
-  return maybeSuccess
-
 
 # ============================================================
 # Combinator-based specs
