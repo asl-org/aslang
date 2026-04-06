@@ -1,4 +1,4 @@
-import strformat, strutils, sequtils, results, options
+import strformat, results, options
 
 import tokenizer
 
@@ -328,15 +328,6 @@ proc newArgumentType(root: string, impls: seq[ArgumentType],
     loc: Location): ArgumentType =
   ArgumentType(root: root, loc: loc, impls: impls)
 
-proc value(argType: ArgumentType): string =
-  if argType.impls.len == 0:
-    argType.root
-  else:
-    var implValues: seq[string]
-    for impl in argType.impls: implValues.add(impl.value)
-    let implValuesJoined = implValues.join(", ")
-    fmt"{argType.root}[{implValuesJoined}]"
-
 type ArgumentDefinition = ref object
   name: string
   argType: ArgumentType
@@ -396,35 +387,18 @@ type
 proc newArgumentList(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
 
-proc value(expression: Expression): string
-
-proc value(argList: ArgumentList): string =
-  let args = argList.args.mapIt(it.value).join(", ")
-  fmt"({args})"
-
 proc newStringLiteral(content: string, loc: Location): StringLiteral =
   StringLiteral(content: content, loc: loc)
-
-proc value(strLit: StringLiteral): string =
-  strLit.content
 
 proc newFunctionCall(argType: ArgumentType, name: string,
     argList: ArgumentList): FunctionCall =
   FunctionCall(argType: argType, name: name, argList: argList)
-
-proc value(fncall: FunctionCall): string =
-  fmt"{fncall.argType.value}.{fncall.name}{fncall.argList.value}"
 
 proc newExpression(strLit: StringLiteral): Expression =
   Expression(kind: ekStrLit, strLit: strLit)
 
 proc newExpression(fncall: FunctionCall): Expression =
   Expression(kind: ekFnCall, fncall: fncall)
-
-proc value(expression: Expression): string =
-  case expression.kind:
-  of ekFnCall: expression.fncall.value
-  of ekStrLit: expression.strLit.value
 
 type Assignment = ref object
   target: string
