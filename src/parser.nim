@@ -30,10 +30,11 @@ type
     indentWidth*: uint32
     tokens*: seq[Token]
     index*: int
+    level*: uint32
 
 proc newParser*(filepath: string, indentWidth: uint32,
     tokens: seq[Token]): Parser =
-  Parser(filepath: filepath, indentWidth: indentWidth, tokens: tokens, index: 0)
+  Parser(filepath: filepath, indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
 
 proc done*(parser: Parser): bool =
   parser.index == parser.tokens.len
@@ -117,10 +118,12 @@ proc newSpec*[T](name: string): Spec[T] =
 
 proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   assert spec.parseFn != nil, "spec '" & spec.name & "' has no implementation"
-  let checkpoint = parser.index
+  let indexCheckpoint = parser.index
+  let levelCheckpoint = parser.level
   let maybeValue = spec.parseFn(parser)
   if maybeValue.isErr:
-    parser.index = checkpoint
+    parser.index = indexCheckpoint
+    parser.level = levelCheckpoint
   return maybeValue
 
 # ============================================================
@@ -520,20 +523,19 @@ let ignorableLineSpec = oneOf("ignorable_line", [
   commentSpec.map("comment_loc", proc(v: Comment): Location = v.loc),
 ])
 
-proc indentationSpec(level: uint32): Spec[Indentation] =
-  Spec[Indentation](
-    name: "indentation",
-    parseFn: proc(parser: Parser): Result[Indentation, ParserError] =
-    let loc = parser.loc
-    let spaces = ? parser.run(any(spaceSpec))
-    let count = spaces.len.uint32
-    let expected = parser.indentWidth * level
-    if count != expected:
-      let msg = fmt"indentation error expected {expected} but found {count} space(s)"
-      err(newParserError(msg, loc))
-    else:
-      ok(newIndentation(count, loc))
-  )
+let indentationSpec = Spec[Indentation](
+  name: "indentation",
+  parseFn: proc(parser: Parser): Result[Indentation, ParserError] =
+  let loc = parser.loc
+  let spaces = ? parser.run(any(spaceSpec))
+  let count = spaces.len.uint32
+  let expected = parser.indentWidth * parser.level
+  if count != expected:
+    let msg = fmt"indentation error expected {expected} but found {count} space(s)"
+    err(newParserError(msg, loc))
+  else:
+    ok(newIndentation(count, loc))
+)
 
 proc escapedSpec(character: string, charSpec: Spec[Token]): Spec[StringContent] =
   Spec[StringContent](
@@ -695,69 +697,78 @@ let statementSpec = oneOf("statement", [
     proc(v: Expression): Statement = newStatement(v)),
 ])
 
-proc statementLineSpec(level: uint32): Spec[Statement] =
-  Spec[Statement](
-    name: "statement_line",
-    parseFn: proc(parser: Parser): Result[Statement, ParserError] =
-    discard ? parser.run(indentationSpec(level))
-    let statement = ? parser.run(statementSpec)
+let statementLineSpec = Spec[Statement](
+  name: "statement_line",
+  parseFn: proc(parser: Parser): Result[Statement, ParserError] =
+  discard ? parser.run(indentationSpec)
+  let statement = ? parser.run(statementSpec)
+  discard ? parser.run(ignorableLineSpec)
+  ok(statement)
+)
+
+let statementListSpec = atLeastOne(statementLineSpec).map("statement_list",
+  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts))
+
+proc blockSpec[H, B, R](name: string,
+    header: Spec[H], body: Spec[B],
+    combine: proc(h: H, b: B): R): Spec[R] =
+  Spec[R](
+    name: name,
+    parseFn: proc(parser: Parser): Result[R, ParserError] =
+    discard ? parser.run(indentationSpec)
+    let h = ? parser.run(header)
     discard ? parser.run(ignorableLineSpec)
-    ok(statement)
+    parser.level += 1
+    let b = ? parser.run(body)
+    parser.level -= 1
+    ok(combine(h, b))
   )
 
-proc statementListSpec(level: uint32): Spec[StatementList] =
-  atLeastOne(statementLineSpec(level)).map("statement_list",
-    proc(stmts: seq[Statement]): StatementList = newStatementList(stmts))
+let functionSpec = blockSpec("function", functionDefinitionSpec, statementListSpec,
+  proc(h: FunctionDefinition, b: StatementList): Function = newFunction(h, b))
 
-proc functionSpec(level: uint32): Spec[Function] =
-  Spec[Function](
-    name: "function",
-    parseFn: proc(parser: Parser): Result[Function, ParserError] =
-    discard ? parser.run(indentationSpec(level))
-    let funcDef = ? parser.run(functionDefinitionSpec)
-    discard ? parser.run(ignorableLineSpec)
-    let stmtList = ? parser.run(statementListSpec(level + 1))
-    ok(newFunction(funcDef, stmtList))
-  )
+# Each function block skips leading ignorable lines then parses a function.
+# any() backtracks the ignorable line consumption if no function follows.
+let funcBlockSpec = Spec[Function](
+  name: "function_block",
+  parseFn: proc(parser: Parser): Result[Function, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
+  let f = ? parser.run(functionSpec)
+  ok(f)
+)
 
-proc functionListSpec(level: uint32): Spec[FunctionList] =
-  # Each function block skips leading ignorable lines then parses a function.
-  # any() backtracks the ignorable line consumption if no function follows.
-  let funcBlockSpec = Spec[Function](
-    name: "function_block",
-    parseFn: proc(parser: Parser): Result[Function, ParserError] =
-    discard parser.run(any(ignorableLineSpec))
-    let f = ? parser.run(functionSpec(level))
-    ok(f)
-  )
-  any(funcBlockSpec).map("function_list",
-    proc(fns: seq[Function]): FunctionList = newFunctionList(fns))
+let functionListSpec = any(funcBlockSpec).map("function_list",
+  proc(fns: seq[Function]): FunctionList = newFunctionList(fns))
 
-proc moduleSpec(level: uint32): Spec[Module] =
-  Spec[Module](
-    name: "module",
-    parseFn: proc(parser: Parser): Result[Module, ParserError] =
-    discard ? parser.run(indentationSpec(level))
-    let moduleLoc = ? parser.run(keywordSpec("module"))
-    discard ? parser.run(spacesSpec)
-    let moduleNameIdent = ? parser.run(identifierSpec)
-    discard parser.run(spacesSpec)
-    discard ? parser.run(punctuationSpec(":"))
-    discard ? parser.run(ignorableLineSpec)
-    discard parser.run(any(ignorableLineSpec))
-    let funcList = ? parser.run(functionListSpec(level + 1))
-    ok(newModule(moduleNameIdent.name, funcList, moduleLoc))
-  )
+type ModuleHeader = tuple[name: string, loc: Location]
+
+let moduleHeaderSpec = Spec[ModuleHeader](
+  name: "module_header",
+  parseFn: proc(parser: Parser): Result[ModuleHeader, ParserError] =
+  let moduleLoc = ? parser.run(keywordSpec("module"))
+  discard ? parser.run(spacesSpec)
+  let moduleNameIdent = ? parser.run(identifierSpec)
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  ok((moduleNameIdent.name, moduleLoc))
+)
+
+let moduleSpec = blockSpec("module", moduleHeaderSpec, functionListSpec,
+  proc(h: ModuleHeader, b: FunctionList): Module = newModule(h.name, b, h.loc))
+
+let moduleBlockSpec = Spec[Module](
+  name: "module_block",
+  parseFn: proc(parser: Parser): Result[Module, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
+  let m = ? parser.run(moduleSpec)
+  ok(m)
+)
 
 let fileSpec = Spec[File](
   name: "file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
-  var modules: seq[Module]
-  while not parser.done():
-    discard parser.run(any(ignorableLineSpec))
-    if parser.done(): break
-    let module = ? parser.run(moduleSpec(0))
-    modules.add(module)
+  let modules = ? parser.run(any(moduleBlockSpec))
+  discard parser.run(any(ignorableLineSpec))
   ok(newFile(parser.filepath, modules))
 )
 
