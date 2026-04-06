@@ -71,8 +71,8 @@ proc newArgumentDefinition(name: string, argType: ArgumentType,
     loc: Location): ArgumentDefinition =
   ArgumentDefinition(name: name, argType: argType, loc: loc)
 
-proc value(argDef: ArgumentDefinition): string =
-  fmt"{argDef.name}: {argDef.argType.value}"
+# proc value(argDef: ArgumentDefinition): string =
+#   fmt"{argDef.name}: {argDef.argType.value}"
 
 type ArgumentDefinitionList = ref object
   argDefs: seq[ArgumentDefinition]
@@ -82,10 +82,10 @@ proc newArgumentDefinitionList(argDefs: seq[ArgumentDefinition],
     loc: Location): ArgumentDefinitionList =
   ArgumentDefinitionList(argDefs: argDefs, loc: loc)
 
-proc value(argDefList: ArgumentDefinitionList): string =
-  let argDefs = argDefList.argDefs.mapIt(it.value)
-  let argDefsJoined = argDefs.join(", ")
-  fmt"({argDefsJoined})"
+# proc value(argDefList: ArgumentDefinitionList): string =
+#   let argDefs = argDefList.argDefs.mapIt(it.value)
+#   let argDefsJoined = argDefs.join(", ")
+#   fmt"({argDefsJoined})"
 
 type FunctionDefinition = ref object
   name: string
@@ -97,8 +97,8 @@ proc newFunctionDefinition(name: string, argDefList: ArgumentDefinitionList,
     returns: ArgumentType, loc: Location): FunctionDefinition =
   FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
 
-proc value(def: FunctionDefinition): string =
-  fmt"func {def.name}{def.argDefList.value}: {def.returns.value}"
+# proc value(def: FunctionDefinition): string =
+#   fmt"func {def.name}{def.argDefList.value}: {def.returns.value}"
 
 type StringContent = ref object
   content: string
@@ -108,8 +108,8 @@ proc newStringContent(content: string,
     loc: Location): StringContent =
   StringContent(content: content, loc: loc)
 
-proc value(strContent: StringContent): string =
-  strContent.content
+# proc value(strContent: StringContent): string =
+#   strContent.content
 
 type
   ArgumentList = ref object
@@ -151,8 +151,8 @@ proc newFunctionCall(argType: ArgumentType, name: string,
     argList: ArgumentList): FunctionCall =
   FunctionCall(argType: argType, name: name, argList: argList)
 
-proc loc(fncall: FunctionCall): Location =
-  fncall.argType.loc
+# proc loc(fncall: FunctionCall): Location =
+#   fncall.argType.loc
 
 proc value(fncall: FunctionCall): string =
   fmt"{fncall.argType.value}.{fncall.name}{fncall.argList.value}"
@@ -163,10 +163,10 @@ proc newExpression(strLit: StringLiteral): Expression =
 proc newExpression(fncall: FunctionCall): Expression =
   Expression(kind: ekFnCall, fncall: fncall)
 
-proc loc(expression: Expression): Location =
-  case expression.kind:
-  of ekFnCall: expression.fncall.loc
-  of ekStrLit: expression.strLit.loc
+# proc loc(expression: Expression): Location =
+#   case expression.kind:
+#   of ekFnCall: expression.fncall.loc
+#   of ekStrLit: expression.strLit.loc
 
 proc value(expression: Expression): string =
   case expression.kind:
@@ -182,8 +182,8 @@ proc newAssignment(target: string, expression: Expression,
     loc: Location): Assignment =
   Assignment(target: target, expression: expression, loc: loc)
 
-proc value(assignment: Assignment): string =
-  fmt"{assignment.target} = {assignment.expression.value}"
+# proc value(assignment: Assignment): string =
+#   fmt"{assignment.target} = {assignment.expression.value}"
 
 type
   StatementKind = enum
@@ -199,15 +199,15 @@ proc newStatement(assignment: Assignment): Statement =
 proc newStatement(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
 
-proc loc(statement: Statement): Location =
-  case statement.kind:
-  of skAssignment: statement.assignment.loc
-  of skExpr: statement.expression.loc
+# proc loc(statement: Statement): Location =
+#   case statement.kind:
+#   of skAssignment: statement.assignment.loc
+#   of skExpr: statement.expression.loc
 
-proc value(statement: Statement): string =
-  case statement.kind:
-  of skAssignment: statement.assignment.value
-  of skExpr: statement.expression.value
+# proc value(statement: Statement): string =
+#   case statement.kind:
+#   of skAssignment: statement.assignment.value
+#   of skExpr: statement.expression.value
 
 type StatementList = ref object
   statements: seq[Statement]
@@ -229,14 +229,14 @@ proc newFunction(def: FunctionDefinition,
     statementList: StatementList): Function =
   Function(def: def, statementList: statementList)
 
-proc loc(function: Function): Location =
-  function.def.loc
+# proc loc(function: Function): Location =
+#   function.def.loc
 
-proc value(function: Function): string =
-  # TODO: Consider the `parser.indentWidth`
-  let statements = function.statementList.statements.mapIt("  " &
-      it.value).join("\n")
-  [function.def.value, statements].join("\n")
+# proc value(function: Function): string =
+#   # TODO: Consider the `parser.indentWidth`
+#   let statements = function.statementList.statements.mapIt("  " &
+#       it.value).join("\n")
+#   [function.def.value, statements].join("\n")
 
 type FunctionList = ref object
   functions: seq[Function]
@@ -259,10 +259,10 @@ type Module = ref object
 proc newModule(name: string, funcList: FunctionList, loc: Location): Module =
   Module(name: name, funcList: funcList, loc: loc)
 
-proc value(module: Module): string =
-  # TODO: complete the function
-  fmt"module {module.name}:" & "\n" & module.funcList.functions.mapIt(
-      it.value).join("\n\n")
+# proc value(module: Module): string =
+#   # TODO: complete the function
+#   fmt"module {module.name}:" & "\n" & module.funcList.functions.mapIt(
+#       it.value).join("\n\n")
 
 type File = ref object
   path: string
@@ -337,20 +337,20 @@ proc newAslNode(funcDef: FunctionDefinition): AslNode =
 # proc newAslNode(strLit: StringLiteral): AslNode =
 #   AslNode(kind: ankStrLit, strLit: strLit)
 
-proc newAslNode(argList: ArgumentList): AslNode =
-  AslNode(kind: ankArgList, argList: argList)
+# proc newAslNode(argList: ArgumentList): AslNode =
+#   AslNode(kind: ankArgList, argList: argList)
 
-proc newAslNode(fncall: FunctionCall): AslNode =
-  AslNode(kind: ankFuncCall, fncall: fncall)
+# proc newAslNode(fncall: FunctionCall): AslNode =
+#   AslNode(kind: ankFuncCall, fncall: fncall)
 
-proc newAslNode(expression: Expression): AslNode =
-  AslNode(kind: ankExpression, expression: expression)
+# proc newAslNode(expression: Expression): AslNode =
+#   AslNode(kind: ankExpression, expression: expression)
 
-proc newAslNode(assignment: Assignment): AslNode =
-  AslNode(kind: ankAssignment, assignment: assignment)
+# proc newAslNode(assignment: Assignment): AslNode =
+#   AslNode(kind: ankAssignment, assignment: assignment)
 
-proc newAslNode(statement: Statement): AslNode =
-  AslNode(kind: ankStatement, statement: statement)
+# proc newAslNode(statement: Statement): AslNode =
+#   AslNode(kind: ankStatement, statement: statement)
 
 proc newAslNode(statementList: StatementList): AslNode =
   AslNode(kind: ankStatementList, statementList: statementList)
@@ -620,221 +620,140 @@ let argumentDefinitionListSpec = Spec[ArgumentDefinitionList](
   ok(newArgumentDefinitionList(argDefs, openParen.loc))
 )
 
-proc parseFunctionDefinition(parser: Parser): Result[AslNode, ParserError] =
+let functionDefinitionSpec = Spec[FunctionDefinition](
+  name: "function_definition",
+  parseFn: proc(parser: Parser): Result[FunctionDefinition, ParserError] =
   let funcLoc = ? parser.run(keywordSpec("func"))
-
   discard ? parser.run(spacesSpec)
-
   let funcName = ? parser.run(identifierSpec)
-
   discard parser.run(spacesSpec)
-
   let argDefList = ? parser.run(argumentDefinitionListSpec)
-
-  discard parser.run(spacesSpec)
-
-  discard ? parser.consumePunctuation(":")
-  discard parser.run(spacesSpec)
-
+  discard ? parser.run(colonWithSpacesSpec)
   let returnType = ? parser.run(argumentTypeSpec)
+  ok(newFunctionDefinition(funcName.name, argDefList, returnType, funcLoc))
+)
 
-  ok(newAslNode(newFunctionDefinition(funcName.name, argDefList, returnType,
-      funcLoc)))
+# Forward-declared because expressions appear inside argument lists
+# of function calls, creating a mutual recursion:
+# expression -> functionCall -> argumentList -> expression
+let expressionSpec = newSpec[Expression]("expression")
 
-proc parseExpression(parser: Parser): Result[AslNode, ParserError]
+let argumentListSpec = Spec[ArgumentList](
+  name: "argument_list",
+  parseFn: proc(parser: Parser): Result[ArgumentList, ParserError] =
+  let loc = parser.loc
+  let args = ? parser.run(contained("argument_list", "(",
+    separatedBy(expressionSpec, commaWithSpacesSpec), ")"))
+  ok(newArgumentList(args, loc))
+)
 
-proc parseArgumentList(parser: Parser): Result[AslNode, ParserError] =
-  let openParen = ? parser.consumePunctuation("(")
-
-  discard parser.run(spacesSpec)
-
-  var args: seq[Expression]
-  var maybeArgument = parser.parse(parseExpression)
-  while maybeArgument.isOk:
-    let exprNode = maybeArgument.get
-    assert exprNode.kind == ankExpression, "expected an expression"
-    args.add(exprNode.expression)
-
-    discard parser.run(spacesSpec)
-
-    let maybeComma = parser.consumePunctuation(",")
-    if maybeComma.isErr: break
-
-    discard parser.run(spacesSpec)
-    maybeArgument = parser.parse(parseExpression)
-
-  discard ? parser.consumePunctuation(")")
-  ok(newAslNode(newArgumentList(args, openParen.loc)))
-
-proc parseFunctionCall(parser: Parser): Result[AslNode, ParserError] =
+let functionCallSpec = Spec[FunctionCall](
+  name: "function_call",
+  parseFn: proc(parser: Parser): Result[FunctionCall, ParserError] =
   let argType = ? parser.run(argumentTypeSpec)
-
-  discard ? parser.consumePunctuation(".")
-
+  discard ? parser.run(punctuationSpec("."))
   let funcNameIdent = ? parser.run(identifierSpec)
-
   discard parser.run(spacesSpec)
+  let argList = ? parser.run(argumentListSpec)
+  ok(newFunctionCall(argType, funcNameIdent.name, argList))
+)
 
-  let argListNode = ? parser.parse(parseArgumentList)
-  assert argListNode.kind == ankArgList, "expected an argument list"
-  let argList = argListNode.argList
+expressionSpec.parseFn = oneOf("expression", [
+  stringLiteralSpec.map("string_expression",
+    proc(v: StringLiteral): Expression = newExpression(v)),
+  functionCallSpec.map("fncall_expression",
+    proc(v: FunctionCall): Expression = newExpression(v)),
+]).parseFn
 
-  ok(newAslNode(newFunctionCall(argType, funcNameIdent.name, argList)))
+let equalsSeparatorSpec = separatorSpec("=")
 
-proc parseExpression(parser: Parser): Result[AslNode, ParserError] =
-  var errors: seq[ParserError]
-
-  let maybeStringLiteral = parser.run(stringLiteralSpec)
-  if maybeStringLiteral.isOk:
-    return ok(newAslNode(newExpression(maybeStringLiteral.get)))
-  else:
-    errors.add(maybeStringLiteral.error)
-
-  let maybeFunctionCallNode = parser.parse(parseFunctionCall)
-  if maybeFunctionCallNode.isOk:
-    let fncallNode = maybeFunctionCallNode.get
-    assert fncallNode.kind == ankFuncCall, "expected fncall"
-    return ok(newAslNode(newExpression(fncallNode.fncall)))
-  else:
-    errors.add(maybeFunctionCallNode.error)
-
-  err(max(errors))
-
-proc parseAssignment(parser: Parser): Result[AslNode, ParserError] =
+let assignmentSpec = Spec[Assignment](
+  name: "assignment",
+  parseFn: proc(parser: Parser): Result[Assignment, ParserError] =
   let targetIdent = ? parser.run(identifierSpec)
-  let target = targetIdent.name
+  discard ? parser.run(equalsSeparatorSpec)
+  let expression = ? parser.run(expressionSpec)
+  ok(newAssignment(targetIdent.name, expression, targetIdent.loc))
+)
 
-  discard parser.run(spacesSpec)
+let statementSpec = oneOf("statement", [
+  assignmentSpec.map("assignment_statement",
+    proc(v: Assignment): Statement = newStatement(v)),
+  expressionSpec.map("expression_statement",
+    proc(v: Expression): Statement = newStatement(v)),
+])
 
-  discard ? parser.consumePunctuation("=")
-
-  discard parser.run(spacesSpec)
-
-  let expressionNode = ? parser.parse(parseExpression)
-  assert expressionNode.kind == ankExpression, "expected expression"
-  let expression = expressionNode.expression
-
-  ok(newAslNode(newAssignment(target, expression, targetIdent.loc)))
-
-
-proc parseStatement(parser: Parser): Result[AslNode, ParserError] =
-  var errors: seq[ParserError]
-
-  let maybeAssignment = parser.parse(parseAssignment)
-  if maybeAssignment.isOk:
-    let assignmentNode = maybeAssignment.get
-    assert assignmentNode.kind == ankAssignment, "expected assignment"
-    let assignment = assignmentNode.assignment
-    return ok(newAslNode(newStatement(assignment)))
-  else:
-    errors.add(maybeAssignment.error)
-
-  let maybeExpression = parser.parse(parseExpression)
-  if maybeExpression.isOk:
-    let exprNode = maybeExpression.get
-    assert exprNode.kind == ankExpression, "expected expression"
-    return ok(newAslNode(newStatement(exprNode.expression)))
-  else:
-    errors.add(maybeExpression.error)
-
-  err(max(errors))
-
-proc parseStatementList(parser: Parser, level: uint32): Result[AslNode, ParserError] =
-  var statements: seq[Statement]
-  discard ? parser.run(indentationSpec(level))
-
-  var maybeStatement = parser.parse(parseStatement)
-  while maybeStatement.isOk:
-    let statementNode = maybeStatement.get
-    assert statementNode.kind == ankStatement, "expected statement"
-    statements.add(statementNode.statement)
-
+proc statementLineSpec(level: uint32): Spec[Statement] =
+  Spec[Statement](
+    name: "statement_line",
+    parseFn: proc(parser: Parser): Result[Statement, ParserError] =
+    discard ? parser.run(indentationSpec(level))
+    let statement = ? parser.run(statementSpec)
     discard ? parser.run(ignorableLineSpec)
+    ok(statement)
+  )
 
-    let maybeIndentation = parser.run(indentationSpec(level))
-    if maybeIndentation.isErr: break
+proc statementListSpec(level: uint32): Spec[StatementList] =
+  atLeastOne(statementLineSpec(level)).map("statement_list",
+    proc(stmts: seq[Statement]): StatementList = newStatementList(stmts))
 
-    maybeStatement = parser.parse(parseStatement)
+proc functionSpec(level: uint32): Spec[Function] =
+  Spec[Function](
+    name: "function",
+    parseFn: proc(parser: Parser): Result[Function, ParserError] =
+    discard ? parser.run(indentationSpec(level))
+    let funcDef = ? parser.run(functionDefinitionSpec)
+    discard ? parser.run(ignorableLineSpec)
+    let stmtList = ? parser.run(statementListSpec(level + 1))
+    ok(newFunction(funcDef, stmtList))
+  )
 
-  if statements.len == 0:
-    return err(newParserError("expected at least one statement", parser.loc))
+proc functionListSpec(level: uint32): Spec[FunctionList] =
+  # Each function block skips leading ignorable lines then parses a function.
+  # any() backtracks the ignorable line consumption if no function follows.
+  let funcBlockSpec = Spec[Function](
+    name: "function_block",
+    parseFn: proc(parser: Parser): Result[Function, ParserError] =
+    discard parser.run(any(ignorableLineSpec))
+    let f = ? parser.run(functionSpec(level))
+    ok(f)
+  )
+  any(funcBlockSpec).map("function_list",
+    proc(fns: seq[Function]): FunctionList = newFunctionList(fns))
 
-  ok(newAslNode(newStatementList(statements)))
+proc moduleSpec(level: uint32): Spec[Module] =
+  Spec[Module](
+    name: "module",
+    parseFn: proc(parser: Parser): Result[Module, ParserError] =
+    discard ? parser.run(indentationSpec(level))
+    let moduleLoc = ? parser.run(keywordSpec("module"))
+    discard ? parser.run(spacesSpec)
+    let moduleNameIdent = ? parser.run(identifierSpec)
+    discard parser.run(spacesSpec)
+    discard ? parser.run(punctuationSpec(":"))
+    discard ? parser.run(ignorableLineSpec)
+    discard parser.run(any(ignorableLineSpec))
+    let funcList = ? parser.run(functionListSpec(level + 1))
+    ok(newModule(moduleNameIdent.name, funcList, moduleLoc))
+  )
 
-proc parseFunction(parser: Parser, level: uint32): Result[AslNode, ParserError] =
-  discard ? parser.run(indentationSpec(level))
-  let funcDefNode = ? parser.parse(parseFunctionDefinition)
-  assert funcDefNode.kind == ankFuncDef, "expected a function definition"
-  let funcDef = funcDefNode.funcDef
-  discard ? parser.run(ignorableLineSpec)
-  let statementListNode = ? parser.parse(parseStatementList, level + 1)
-  assert statementListNode.kind == ankStatementList, "expected statement list"
-  let statementList = statementListNode.statementList
-
-  ok(newAslNode(newFunction(funcDef, statementList)))
-
-proc parseFunctionList(parser: Parser, level: uint32): Result[AslNode, ParserError] =
-  var functions: seq[Function]
-  var maybeFunction = parser.parse(parseFunction, level)
-  while maybeFunction.isOk:
-    let functionNode = maybeFunction.get
-    assert functionNode.kind == ankFunction, "expected a function"
-    functions.add(functionNode.function)
-
-    # consume other empty lines
-    var maybeLine = parser.run(ignorableLineSpec)
-    while maybeLine.isOk: maybeLine = parser.run(ignorableLineSpec)
-
-    maybeFunction = parser.parse(parseFunction, level)
-
-  ok(newAslNode(newFunctionList(functions)))
-
-proc parseModule(parser: Parser, level: uint32): Result[AslNode, ParserError] =
-  discard ? parser.run(indentationSpec(level))
-
-  let moduleLoc = ? parser.run(keywordSpec("module"))
-
-  discard ? parser.run(spacesSpec)
-
-  let moduleNameIdent = ? parser.run(identifierSpec)
-  let moduleName = moduleNameIdent.name
-
-  discard parser.run(spacesSpec)
-
-  discard ? parser.consumePunctuation(":")
-
-  # required new line
-  discard ? parser.run(ignorableLineSpec)
-
-  # consume other empty lines
-  var maybeLine = parser.run(ignorableLineSpec)
-  while maybeLine.isOk: maybeLine = parser.run(ignorableLineSpec)
-
-  let funcListNode = ? parser.parse(parseFunctionList, level + 1)
-  assert funcListNode.kind == ankFunctionList, "expected function list"
-  ok(newAslNode(newModule(moduleName, funcListNode.funcList,
-      moduleLoc)))
-
-proc parseFile(parser: Parser): Result[AslNode, ParserError] =
+let fileSpec = Spec[File](
+  name: "file",
+  parseFn: proc(parser: Parser): Result[File, ParserError] =
   var modules: seq[Module]
   while not parser.done():
-    var maybeIgnorableLine = parser.run(ignorableLineSpec)
-    while maybeIgnorableLine.isOk:
-      maybeIgnorableLine = parser.run(ignorableLineSpec)
-
-    let moduleNode = ? parser.parse(parseModule, 0)
-    assert moduleNode.kind == ankModule, "expected module"
-    modules.add(moduleNode.module)
-
-  ok(newAslNode(newFile(parser.filepath, modules)))
+    discard parser.run(any(ignorableLineSpec))
+    if parser.done(): break
+    let module = ? parser.run(moduleSpec(0))
+    modules.add(module)
+  ok(newFile(parser.filepath, modules))
+)
 
 proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
     File, string] =
   let parser = newParser(filepath, indentWidth, tokens)
-  let maybeFile = parseFile(parser)
+  let maybeFile = parser.run(fileSpec)
   if maybeFile.isErr:
     err(fmt"{filepath}:{maybeFile.error}")
   else:
-    let fileNode = maybeFile.get
-    assert fileNode.kind == ankFile, "expected file"
-    ok(fileNode.file)
+    ok(maybeFile.get)
