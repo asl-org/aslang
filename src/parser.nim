@@ -508,6 +508,57 @@ proc indentationSpec(level: uint32): Spec[Indentation] =
       ok(newIndentation(count, loc))
   )
 
+let escapedStringCharSpec = Spec[StringContent](
+  name: "escaped_string_character",
+  parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
+  let backslash = ? parser.run(punctuationSpec("\\"))
+
+  let maybeBS = parser.run(punctuationSpec("\\"))
+  if maybeBS.isOk:
+    return ok(newStringContent("\\\\", backslash.loc))
+
+  let maybeDQ = parser.run(punctuationSpec("\""))
+  if maybeDQ.isOk:
+    return ok(newStringContent("\\\"", backslash.loc))
+
+  let maybeAlpha = parser.run(alphabetSpec)
+  if maybeAlpha.isOk:
+    let token = maybeAlpha.get
+    if token.value notin "tn":
+      return err(newParserError("strings only support '\\t' and '\\n'", token.loc))
+    return ok(newStringContent("\\" & token.value, backslash.loc))
+  err(newParserError("expected escape character", parser.loc))
+)
+
+let stringContentSpec = Spec[StringContent](
+  name: "string_content",
+  parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
+  let maybeEscaped = parser.run(escapedStringCharSpec)
+  if maybeEscaped.isOk:
+    return ok(maybeEscaped.get)
+  let maybeChar = parser.run(anyTokenExceptNewlineSpec("unescaped string character"))
+  if maybeChar.isOk:
+    let token = maybeChar.get
+    if token.value != "\"":
+      return ok(newStringContent(token.value, token.loc))
+    else:
+      return err(newParserError(
+        fmt"expected a valid string character but found '{token.value}'", token.loc))
+  err(maybeChar.error)
+)
+
+let stringLiteralSpec = Spec[StringLiteral](
+  name: "string_literal",
+  parseFn: proc(parser: Parser): Result[StringLiteral, ParserError] =
+  let openQuote = ? parser.run(punctuationSpec("\""))
+  var content = "\""
+  let chars = ? parser.run(any(stringContentSpec))
+  for ch in chars: content.add(ch.content)
+  discard ? parser.run(punctuationSpec("\""))
+  content.add("\"")
+  ok(newStringLiteral(content, openQuote.loc))
+)
+
 proc parseArgumentType(parser: Parser): Result[AslNode, ParserError] =
   let rootIdent = ? parser.run(identifierSpec)
 
@@ -599,72 +650,6 @@ proc parseFunctionDefinition(parser: Parser): Result[AslNode, ParserError] =
   ok(newAslNode(newFunctionDefinition(funcName.name, argDefList, returnType,
       funcLoc)))
 
-proc parseEscapedStringCharacter(parser: Parser): Result[AslNode, ParserError] =
-  var errors: seq[ParserError]
-  let backslash = ? parser.consumePunctuation("\\")
-
-  let maybeBackSlash = parser.consumePunctuation("\\")
-  if maybeBackSlash.isOk:
-    return ok(newAslNode(newStringContent("\\\\", backslash.loc)))
-  else:
-    errors.add(maybeBackSlash.error)
-
-  let maybeDoubleQuote = parser.consumePunctuation("\"")
-  if maybeDoubleQuote.isOk:
-    return ok(newAslNode(newStringContent("\\\"", backslash.loc)))
-  else:
-    errors.add(maybeDoubleQuote.error)
-
-  let maybeAlphabet = parser.consumeAlphabet()
-  if maybeAlphabet.isOk:
-    let token = maybeAlphabet.get
-    if token.value notin "tn":
-      return err(newParserError("strings only support '\\t' and '\\n'", token.loc))
-    else:
-      return ok(newAslNode(newStringContent("\\" & token.value,
-          backslash.loc)))
-  else:
-    errors.add(maybeAlphabet.error)
-
-  err(max(errors))
-
-proc parseStringContent(parser: Parser): Result[AslNode, ParserError] =
-  var errors: seq[ParserError]
-
-  let maybeEscaped = parser.parse(parseEscapedStringCharacter)
-  if maybeEscaped.isOk: return maybeEscaped
-  else: errors.add(maybeEscaped.error)
-
-  let maybeStrChar = parser.consumeExceptNewline("unescaped string character")
-  if maybeStrChar.isOk:
-    let token = maybeStrChar.get
-    if token.value != "\"":
-      return ok(newAslNode(newStringContent(token.value, token.loc)))
-    else:
-      errors.add(newParserError(fmt"expected a valid string character but found '{token.value}'", token.loc))
-  else:
-    errors.add(maybeStrChar.error)
-
-  err(max(errors))
-
-proc parseStringLiteral(parser: Parser): Result[AslNode, ParserError] =
-  var content: string
-  let leftDoubleQuote = ? parser.consumePunctuation("\"")
-  content.add("\"")
-
-  var maybeStrContent = parser.parse(parseStringContent)
-  while maybeStrContent.isOk:
-    let strContentNode = maybeStrContent.get
-    assert strContentNode.kind == ankStrContent, "expected a string character"
-    content.add(strContentNode.value)
-
-    maybeStrContent = parser.parse(parseStringContent)
-
-  discard ? parser.consumePunctuation("\"")
-  content.add("\"")
-
-  ok(newAslNode(newStringLiteral(content, leftDoubleQuote.loc)))
-
 proc parseExpression(parser: Parser): Result[AslNode, ParserError]
 
 proc parseArgumentList(parser: Parser): Result[AslNode, ParserError] =
@@ -710,13 +695,11 @@ proc parseFunctionCall(parser: Parser): Result[AslNode, ParserError] =
 proc parseExpression(parser: Parser): Result[AslNode, ParserError] =
   var errors: seq[ParserError]
 
-  let maybeStringLiteralNode = parser.parse(parseStringLiteral)
-  if maybeStringLiteralNode.isOk:
-    let stringLiteralNode = maybeStringLiteralNode.get
-    assert stringLiteralNode.kind == ankStrLit, "expected string literal"
-    return ok(newAslNode(newExpression(stringLiteralNode.strLit)))
+  let maybeStringLiteral = parser.run(stringLiteralSpec)
+  if maybeStringLiteral.isOk:
+    return ok(newAslNode(newExpression(maybeStringLiteral.get)))
   else:
-    errors.add(maybeStringLiteralNode.error)
+    errors.add(maybeStringLiteral.error)
 
   let maybeFunctionCallNode = parser.parse(parseFunctionCall)
   if maybeFunctionCallNode.isOk:
