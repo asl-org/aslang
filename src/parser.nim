@@ -508,44 +508,56 @@ proc indentationSpec(level: uint32): Spec[Indentation] =
       ok(newIndentation(count, loc))
   )
 
-let escapedStringCharSpec = Spec[StringContent](
-  name: "escaped_string_character",
-  parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
-  let backslash = ? parser.run(punctuationSpec("\\"))
+proc escapedCharSpec(character: string): Spec[StringContent] =
+  Spec[StringContent](
+    name: "'\\" & character & "'",
+    parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
+    let backslash = ? parser.run(punctuationSpec("\\"))
+    discard ? parser.run(punctuationSpec(character))
+    let output = "\\" & character
+    ok(newStringContent(output, backslash.loc))
+  )
 
-  let maybeBS = parser.run(punctuationSpec("\\"))
-  if maybeBS.isOk:
-    return ok(newStringContent("\\\\", backslash.loc))
-
-  let maybeDQ = parser.run(punctuationSpec("\""))
-  if maybeDQ.isOk:
-    return ok(newStringContent("\\\"", backslash.loc))
-
-  let maybeAlpha = parser.run(alphabetSpec)
-  if maybeAlpha.isOk:
-    let token = maybeAlpha.get
-    if token.value notin "tn":
-      return err(newParserError("strings only support '\\t' and '\\n'", token.loc))
-    return ok(newStringContent("\\" & token.value, backslash.loc))
-  err(newParserError("expected escape character", parser.loc))
-)
-
-let stringContentSpec = Spec[StringContent](
-  name: "string_content",
-  parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
-  let maybeEscaped = parser.run(escapedStringCharSpec)
-  if maybeEscaped.isOk:
-    return ok(maybeEscaped.get)
-  let maybeChar = parser.run(anyTokenExceptNewlineSpec("unescaped string character"))
-  if maybeChar.isOk:
-    let token = maybeChar.get
-    if token.value != "\"":
-      return ok(newStringContent(token.value, token.loc))
-    else:
+proc escapedAlphaSpec(character: string): Spec[StringContent] =
+  Spec[StringContent](
+    name: "'\\" & character & "'",
+    parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
+    let backslash = ? parser.run(punctuationSpec("\\"))
+    let token = ? parser.run(alphabetSpec)
+    if token.value != character:
       return err(newParserError(
-        fmt"expected a valid string character but found '{token.value}'", token.loc))
-  err(maybeChar.error)
+        fmt"expected '\\{character}' but found '\\{token.value}'", token.loc))
+
+    let output = "\\" & character
+    ok(newStringContent(output, backslash.loc))
+  )
+
+let escapedBackslash = escapedCharSpec("\\") # '\\'
+let escapedDoubleQuote = escapedCharSpec("\"") # '\"'
+let escapedNewline = escapedAlphaSpec("n") # '\n'
+let escapedTab = escapedAlphaSpec("t") # '\t'
+
+let escapedStringCharSpec = oneOf("escaped_string_character", [
+  escapedBackslash,
+  escapedDoubleQuote,
+  escapedNewline,
+  escapedTab,
+])
+
+let unescapedStringCharSpec = Spec[StringContent](
+  name: "unescaped_string_character",
+  parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
+  let token = ? parser.run(anyTokenExceptNewlineSpec("unescaped string character"))
+  if token.value == "\"" or token.value == "\\":
+    return err(newParserError(
+      fmt"expected a valid string character but found '{token.value}'", token.loc))
+  ok(newStringContent(token.value, token.loc))
 )
+
+let stringContentSpec = oneOf("string_content", [
+  escapedStringCharSpec,
+  unescapedStringCharSpec,
+])
 
 let stringLiteralSpec = Spec[StringLiteral](
   name: "string_literal",
