@@ -81,3 +81,18 @@
 - `map` combinator bridges between parse results and AST nodes. E.g., `stringLiteralSpec.map("string_expr", proc(s): Expression = newExpression(s))` converts a `Spec[StringLiteral]` to `Spec[Expression]` for use in `oneOf`.
 - Block-level (indentation-aware) specs need `level: uint32` — handled by closures that capture the level, not by a separate spec type.
 - `contained[T](name, open, inner: Spec[T], close) -> Spec[T]` is a higher-level combinator for delimited containers. It handles: open delimiter, optional whitespace, inner spec, optional whitespace, close delimiter. Composes with `separatedBy` — container handles delimiters, `separatedBy` handles comma-separated content. Captures three recurring patterns in the parser: `(..args)`, `[..types]`, `{..fields}`.
+
+## 2026-04-06 — Parser combinator refactor execution
+
+- `separatorSpec(sep)` factory generalizes the "optional_spaces separator optional_spaces" pattern. Used for `,`, `:`, `=` — adding a new separator is one line.
+- `escapedCharSpec(char)` and `escapedAlphaSpec(char)` factories decompose string escape handling into individual specs composed via `oneOf`. Adding a new escape sequence (e.g., `\r`) is one line + adding to the `oneOf` array.
+- `unescapedStringCharSpec` must reject both `"` and `\` — not just `"`. The old code only rejected `"`, which would have caused `\` to be consumed as a regular character instead of starting an escape sequence.
+- Nim's `result` is a special variable inside procs (implicit return value). Naming a local variable `result` inside combinator closures triggers `ResultShadowed` warnings. Use `res` or `maybeValue` instead.
+- Nim's `options` module (`Option[T]`, `isSome`, `get`) must be explicitly imported in `parser.nim` — the linter removed the re-export from `combinator.nim`.
+- Forward-declared specs (`newSpec[T]`) work because `Spec[T]` is `ref object` — closures capture the ref, not the parseFn. When the parseFn is set later, all closures see the update at parse time. Two forward-declared specs in the parser: `argumentTypeSpec` (self-referential generics) and `expressionSpec` (mutual recursion with argumentList via functionCall).
+- `expressionSpec.parseFn = oneOf(...).parseFn` — assign the parseFn from a combinator result to a forward-declared spec. The `oneOf` creates a new spec; we extract its parseFn and assign it to the existing ref.
+- When `any(combinator)` backtracks a failed iteration, it also undoes any "ignorable line" consumption from within that iteration. This can leave trailing newlines unconsumed. The `fileSpec` loop needs `if parser.done(): break` after consuming ignorable lines to handle trailing whitespace at end of file.
+- `statementListSpec` is `atLeastOne(statementLineSpec)` where each statementLine is `indentation + statement + newline`. The combinator replaces a 15-line manual while loop with a one-liner.
+- `functionListSpec` is `any(functionBlockSpec)` where each block skips leading ignorable lines then parses a function. `any` backtracks the ignorable line consumption if no function follows.
+- Block-level specs (statementList, function, functionList, module) are factory procs returning `Spec[T]`. The `level: uint32` is captured in the closure, and `parser.indentWidth` is accessed from the parser at parse time.
+- Linters may add `?` to `discard parser.run(...)` calls, turning optional parses into required ones. This silently breaks parsing when the consumed element isn't always present (e.g., optional spaces before `(`). Review linter changes carefully on Result-returning expressions.

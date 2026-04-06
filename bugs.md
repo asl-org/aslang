@@ -17,23 +17,23 @@
 
 ### Parser combinator refactor
 
-- [ ] **PSR-01: Create combinator module with `Spec[T]` and core combinators** (`src/combinator.nim`) [high] — New file. Define `Spec[T] = ref object` with `name` and `parseFn`. Implement `run` (with checkpoint/restore), `oneOf`, `any`, `atLeastOne`, `optional`, `separatedBy`, `map`, `contained`. `contained[T](name, open, inner: Spec[T], close) -> Spec[T]` handles delimited containers (parens, brackets, braces) — open delimiter, optional whitespace, inner spec, optional whitespace, close delimiter. This is the foundation — no existing code changes yet, just the new module.
+- [x] **PSR-01: Create combinator module with `Spec[T]` and core combinators** (`src/combinator.nim`) [high] — Done. `Spec[T]`, `run`, `oneOf`, `any`, `atLeastOne`, `optional`, `separatedBy`, `map`, `contained`, plus `Parser`/`ParserError`/consume procs moved from parser.nim.
 
-- [ ] **PSR-02: Implement leaf token specs** (`src/combinator.nim`) [high] — Define base specs that match single tokens: `tokenSpec(kind, repr) -> Spec[Token]`, `punctuationSpec(value) -> Spec[Token]`, `spaceSpec -> Spec[Token]`, `newlineSpec -> Spec[Token]`, `alphabetSpec -> Spec[Token]`, `digitSpec -> Spec[Token]`, `utf8Spec -> Spec[Token]`, `anyTokenExceptNewline -> Spec[Token]`. These replace the `consume*` procs as the building blocks for higher-level specs.
+- [x] **PSR-02: Implement leaf token specs** (`src/combinator.nim`) [high] — Done. `tokenSpec`, `punctuationSpec`, `anyTokenSpec`, `anyTokenExceptNewlineSpec` factories and `spaceSpec`, `newlineSpec`, `alphabetSpec`, `digitSpec`, `utf8Spec` constants.
 
-- [ ] **PSR-03: Convert identifier parsing to combinators** (`src/parser.nim`) [high] — Replace `parseIdentifierHead`, `parseIdentifierTail`, `parseIdentifier` with combinator-based `identifierHeadSpec`, `identifierTailSpec`, `identifierSpec`. Also add `keywordSpec(name) -> Spec[Location]` helper. First real integration of the combinator module into the parser. Verify the existing parse tests still pass.
+- [x] **PSR-03: Convert identifier parsing to combinators** (`src/parser.nim`) [high] — Done. `identifierSpec`, `keywordSpec`, helper char specs. All 8 callers updated. Fixed `result` shadowing warnings in combinator closures.
 
-- [ ] **PSR-04: Convert comment, empty line, and indentation parsing** (`src/parser.nim`) [medium] — Replace `parseComment`, `parseEmptyLine`, `parseIgnorableLine`, `parseSpaces`, `parseIndentation` with combinator specs. `parseIgnorableLine` becomes `oneOf("ignorable_line", [emptyLineSpec, commentSpec])`. Indentation specs take `level` via closure capture.
+- [x] **PSR-04: Convert comment, empty line, and indentation parsing** (`src/parser.nim`) [medium] — Done. `spacesSpec`, `emptyLineSpec`, `commentSpec`, `ignorableLineSpec`, `indentationSpec(level)`. Fixed comment parsing to stop at newlines.
 
-- [ ] **PSR-05: Convert string literal parsing to combinators** (`src/parser.nim`) [medium] — Replace `parseEscapedStringCharacter`, `parseStringContent`, `parseStringLiteral` with combinator specs. Tests `any` combinator (zero or more string content characters) and `oneOf` (escaped vs unescaped).
+- [x] **PSR-05: Convert string literal parsing** (`src/parser.nim`) [medium] — Done. `escapedCharSpec`/`escapedAlphaSpec` factories, individual escape specs (`escapedBackslash`, `escapedDoubleQuote`, `escapedNewline`, `escapedTab`), `unescapedStringCharSpec`, `stringContentSpec`, `stringLiteralSpec`.
 
-- [ ] **PSR-06: Convert type and argument definition parsing** (`src/parser.nim`) [medium] — Replace `parseArgumentType`, `parseArgumentDefinition`, `parseArgumentDefinitionList` with combinator specs. `argumentTypeSpec` is forward-declared and self-referential (generic params contain argument types). Tests recursive `Spec[T]` via forward declaration. Uses `separatedBy` for comma-separated arg defs and type params.
+- [x] **PSR-06: Convert type and argument definition parsing** (`src/parser.nim`) [medium] — Done. `argumentTypeSpec` (forward-declared, self-referential), `argumentDefinitionSpec`, `argumentDefinitionListSpec`. Introduced `separatorSpec` factory and `commaWithSpacesSpec`/`colonWithSpacesSpec`.
 
-- [ ] **PSR-07: Convert expression, assignment, and statement parsing** (`src/parser.nim`) [high] — Replace `parseExpression`, `parseFunctionCall`, `parseArgumentList`, `parseAssignment`, `parseStatement` with combinator specs. `expressionSpec` is forward-declared and recursive (expressions appear inside argument lists of function calls). Uses `oneOf` for expression/statement alternatives and `map` to bridge sub-parsers into `Expression`/`Statement` variant types.
+- [x] **PSR-07: Convert expression, assignment, and statement parsing** (`src/parser.nim`) [high] — Done. `expressionSpec` (forward-declared, mutual recursion with `argumentListSpec`), `functionCallSpec`, `assignmentSpec`, `statementSpec` via `oneOf` + `map`.
 
-- [ ] **PSR-08: Convert function, module, and file parsing** (`src/parser.nim`) [medium] — Replace `parseFunctionDefinition`, `parseFunction`, `parseFunctionList`, `parseStatementList`, `parseModule`, `parseFile` with combinator specs. These are block-level (indentation-aware) — `level` is captured via closures. Uses `atLeastOne` for statement lists, `any` for function lists.
+- [x] **PSR-08: Convert function, module, and file parsing** (`src/parser.nim`) [medium] — Done. `functionDefinitionSpec`, `statementLineSpec`/`statementListSpec` (atLeastOne), `functionSpec`/`functionListSpec` (any), `moduleSpec`, `fileSpec`. Block-level specs use factory procs capturing indentation level.
 
-- [ ] **PSR-09: Delete `AslNode` infrastructure** (`src/parser.nim`) [high] — Remove `AslNodeKind` enum, `AslNode` variant object, all 20 `newAslNode` overloads, dispatching `loc(AslNode)` and `value(AslNode)` procs, `InlineParserSpec` and `BlockParserSpec` type aliases. ~200 lines deleted. Should be a no-op change — all callers already use concrete types from prior bugs.
+- [x] **PSR-09: Delete `AslNode` infrastructure** (`src/parser.nim`) [high] — Done. Removed `AslNodeKind`, `AslNode`, all `newAslNode` overloads, `loc`/`value` dispatch procs, `InlineParserSpec`, `BlockParserSpec`, old `parse` overloads, and all commented-out dead code. -231 lines.
 
 ### Other
 
