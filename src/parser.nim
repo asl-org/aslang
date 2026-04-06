@@ -561,33 +561,22 @@ proc indentationSpec(level: uint32): Spec[Indentation] =
       ok(newIndentation(count, loc))
   )
 
-proc escapedCharSpec(character: string): Spec[StringContent] =
+proc escapedSpec(character: string, charSpec: Spec[Token]): Spec[StringContent] =
   Spec[StringContent](
     name: "'\\" & character & "'",
     parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
     let backslash = ? parser.run(punctuationSpec("\\"))
-    discard ? parser.run(punctuationSpec(character))
-    let output = "\\" & character
-    ok(newStringContent(output, backslash.loc))
-  )
-
-proc escapedAlphaSpec(character: string): Spec[StringContent] =
-  Spec[StringContent](
-    name: "'\\" & character & "'",
-    parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
-    let backslash = ? parser.run(punctuationSpec("\\"))
-    let token = ? parser.run(alphabetSpec)
+    let token = ? parser.run(charSpec)
     if token.value != character:
       return err(newParserError(
         fmt"expected '\\{character}' but found '\\{token.value}'", token.loc))
-    let output = "\\" & character
-    ok(newStringContent(output, backslash.loc))
+    ok(newStringContent("\\" & character, backslash.loc))
   )
 
-let escapedBackslash = escapedCharSpec("\\")
-let escapedDoubleQuote = escapedCharSpec("\"")
-let escapedNewline = escapedAlphaSpec("n")
-let escapedTab = escapedAlphaSpec("t")
+let escapedBackslash = escapedSpec("\\", punctuationSpec("\\"))
+let escapedDoubleQuote = escapedSpec("\"", punctuationSpec("\""))
+let escapedNewline = escapedSpec("n", alphabetSpec)
+let escapedTab = escapedSpec("t", alphabetSpec)
 
 let escapedStringCharSpec = oneOf("escaped_string_character", [
   escapedBackslash,
@@ -663,13 +652,10 @@ let argumentDefinitionSpec = Spec[ArgumentDefinition](
 let argumentDefinitionListSpec = Spec[ArgumentDefinitionList](
   name: "argument_definition_list",
   parseFn: proc(parser: Parser): Result[ArgumentDefinitionList, ParserError] =
-  let openParen = ? parser.run(punctuationSpec("("))
-  discard parser.run(any(spaceSpec))
-  let argDefs = ? parser.run(separatedBy(argumentDefinitionSpec,
-      commaWithSpacesSpec))
-  discard parser.run(any(spaceSpec))
-  discard ? parser.run(punctuationSpec(")"))
-  ok(newArgumentDefinitionList(argDefs, openParen.loc))
+  let loc = parser.loc
+  let argDefs = ? parser.run(contained("argument_definition_list", "(",
+    separatedBy(argumentDefinitionSpec, commaWithSpacesSpec), ")"))
+  ok(newArgumentDefinitionList(argDefs, loc))
 )
 
 let functionDefinitionSpec = Spec[FunctionDefinition](

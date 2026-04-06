@@ -2,6 +2,12 @@
 
 ## Open
 
+### Parser cleanup
+
+- [ ] **PSR-10: Use `contained` in `argumentDefinitionListSpec`** (`src/parser.nim`) [low] — Replace manual `punctuationSpec("(")` + `any(spaceSpec)` + `separatedBy` + `any(spaceSpec)` + `punctuationSpec(")")` with `contained("arg_def_list", "(", separatedBy(...), ")")`, matching `argumentListSpec`'s pattern.
+
+- [ ] **PSR-11: Merge `escapedCharSpec` and `escapedAlphaSpec` into one factory** (`src/parser.nim`) [low] — Both do `backslash + char`. Unify into a single `escapedSpec(char, charSpec)` that takes the character string and the spec to match it. Eliminates the duplicated backslash handling.
+
 ### Parser bugs
 
 - [x] **`Assignment.value` infinite recursion** (`parser.nim:274`) [high] — Fixed. `assignment.value` → `assignment.target`.
