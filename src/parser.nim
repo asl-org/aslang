@@ -26,15 +26,13 @@ proc `$`*(error: ParserError): string =
 
 type
   Parser* = ref object
-    filepath*: string
     indentWidth*: uint32
     tokens*: seq[Token]
     index*: int
     level*: uint32
 
-proc newParser*(filepath: string, indentWidth: uint32,
-    tokens: seq[Token]): Parser =
-  Parser(filepath: filepath, indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
+proc newParser*(indentWidth: uint32, tokens: seq[Token]): Parser =
+  Parser(indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
 
 proc done*(parser: Parser): bool =
   parser.index == parser.tokens.len
@@ -764,19 +762,19 @@ let moduleBlockSpec = Spec[Module](
   ok(m)
 )
 
-let fileSpec = Spec[File](
+let fileSpec = Spec[seq[Module]](
   name: "file",
-  parseFn: proc(parser: Parser): Result[File, ParserError] =
+  parseFn: proc(parser: Parser): Result[seq[Module], ParserError] =
   let modules = ? parser.run(any(moduleBlockSpec))
   discard parser.run(any(ignorableLineSpec))
-  ok(newFile(parser.filepath, modules))
+  ok(modules)
 )
 
 proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
     File, string] =
-  let parser = newParser(filepath, indentWidth, tokens)
-  let maybeFile = parser.run(fileSpec)
-  if maybeFile.isErr:
-    err(fmt"{filepath}:{maybeFile.error}")
+  let parser = newParser(indentWidth, tokens)
+  let maybeModules = parser.run(fileSpec)
+  if maybeModules.isErr:
+    err(fmt"{filepath}:{maybeModules.error}")
   else:
-    ok(maybeFile.get)
+    ok(newFile(filepath, maybeModules.get))
