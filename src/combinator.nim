@@ -118,10 +118,10 @@ proc newSpec*[T](name: string): Spec[T] =
 proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   assert spec.parseFn != nil, "spec '" & spec.name & "' has no implementation"
   let checkpoint = parser.index
-  let result = spec.parseFn(parser)
-  if result.isErr:
+  let maybeValue = spec.parseFn(parser)
+  if maybeValue.isErr:
     parser.index = checkpoint
-  result
+  return maybeValue
 
 # ============================================================
 # Combinators
@@ -136,11 +136,11 @@ proc oneOf*[T](name: string, specs: openArray[Spec[T]]): Spec[T] =
     var errors: seq[ParserError]
     for spec in captured:
       let checkpoint = parser.index
-      let result = spec.parseFn(parser)
-      if result.isOk:
-        return result
+      let maybeValue = spec.parseFn(parser)
+      if maybeValue.isOk:
+        return maybeValue
       parser.index = checkpoint
-      errors.add(result.error)
+      errors.add(maybeValue.error)
     err(max(errors))
   )
 
@@ -151,11 +151,11 @@ proc any*[T](spec: Spec[T]): Spec[seq[T]] =
     var items: seq[T]
     while true:
       let checkpoint = parser.index
-      let result = spec.parseFn(parser)
-      if result.isErr:
+      let maybeValue = spec.parseFn(parser)
+      if maybeValue.isErr:
         parser.index = checkpoint
         break
-      items.add(result.get)
+      items.add(maybeValue.get)
     ok(items)
   )
 
@@ -172,11 +172,11 @@ proc atLeastOne*[T](spec: Spec[T]): Spec[seq[T]] =
     items.add(first.get)
     while true:
       let cp = parser.index
-      let result = spec.parseFn(parser)
-      if result.isErr:
+      let maybeValue = spec.parseFn(parser)
+      if maybeValue.isErr:
         parser.index = cp
         break
-      items.add(result.get)
+      items.add(maybeValue.get)
     ok(items)
   )
 
@@ -185,12 +185,12 @@ proc optional*[T](spec: Spec[T]): Spec[Option[T]] =
     name: spec.name & "?",
     parseFn: proc(parser: Parser): Result[Option[T], ParserError] =
     let checkpoint = parser.index
-    let result = spec.parseFn(parser)
-    if result.isErr:
+    let maybeValue = spec.parseFn(parser)
+    if maybeValue.isErr:
       parser.index = checkpoint
       ok(none(T))
     else:
-      ok(some(result.get))
+      ok(some(maybeValue.get))
   )
 
 proc map*[T, U](spec: Spec[T], name: string,
@@ -198,11 +198,11 @@ proc map*[T, U](spec: Spec[T], name: string,
   Spec[U](
     name: name,
     parseFn: proc(parser: Parser): Result[U, ParserError] =
-    let result = spec.parseFn(parser)
-    if result.isErr:
-      err(result.error)
+    let maybeValue = spec.parseFn(parser)
+    if maybeValue.isErr:
+      err(maybeValue.error)
     else:
-      ok(fn(result.get))
+      ok(fn(maybeValue.get))
   )
 
 proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
@@ -239,10 +239,10 @@ proc contained*[T](name: string, open: string, inner: Spec[T],
     parseFn: proc(parser: Parser): Result[T, ParserError] =
     discard ? parser.consumePunctuation(open)
     while parser.consumeSpace().isOk: discard
-    let result = ? inner.parseFn(parser)
+    let maybeValue = ? inner.parseFn(parser)
     while parser.consumeSpace().isOk: discard
     discard ? parser.consumePunctuation(close)
-    ok(result)
+    ok(maybeValue)
   )
 
 # ============================================================

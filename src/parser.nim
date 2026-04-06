@@ -431,6 +431,41 @@ proc parse(parser: Parser, spec: BlockParserSpec, level: uint32): Result[
   return maybeSuccess
 
 
+# ============================================================
+# Combinator-based specs
+# ============================================================
+
+let identifierHeadCharSpec = oneOf("identifier_head", [
+  punctuationSpec("_"),
+  alphabetSpec,
+])
+
+let identifierTailCharSpec = oneOf("identifier_tail", [
+  identifierHeadCharSpec,
+  digitSpec,
+])
+
+let identifierSpec = Spec[Identifier](
+  name: "identifier",
+  parseFn: proc(parser: Parser): Result[Identifier, ParserError] =
+  let head = ? parser.run(identifierHeadCharSpec)
+  let tails = ? parser.run(any(identifierTailCharSpec))
+  var content = head.value
+  for tail in tails: content.add(tail.value)
+  ok(newIdentifier(content, head.loc))
+)
+
+proc keywordSpec(keyword: string): Spec[Location] =
+  Spec[Location](
+    name: "'" & keyword & "'",
+    parseFn: proc(parser: Parser): Result[Location, ParserError] =
+    let ident = ? parser.run(identifierSpec)
+    if ident.name != keyword:
+      let msg = fmt"expected keyword '{keyword}' but found '{ident.name}'"
+      return err(newParserError(msg, ident.loc))
+    ok(ident.loc)
+  )
+
 proc parseSpaces(parser: Parser): Result[AslNode, ParserError] =
   let loc = parser.loc
 
@@ -493,69 +528,12 @@ proc parseIndentation(parser: Parser, level: uint32): Result[AslNode, ParserErro
   else:
     ok(newAslNode(newIndentation(spaces, loc)))
 
-proc parseIdentifierHead(parser: Parser): Result[AslNode, ParserError] =
-  var errors: seq[ParserError]
-
-  let maybeUnderscore = parser.consumePunctuation("_")
-  if maybeUnderscore.isOk:
-    let underscore = maybeUnderscore.get
-    return ok(newAslNode(newIdentifier(underscore.value, underscore.loc)))
-  else:
-    errors.add(maybeUnderscore.error)
-
-  let maybeAlphabet = parser.consumeAlphabet()
-  if maybeAlphabet.isOk:
-    let alphabet = maybeAlphabet.get
-    return ok(newAslNode(newIdentifier(alphabet.value, alphabet.loc)))
-  else:
-    errors.add(maybeAlphabet.error)
-
-  err(max(errors))
-
-proc parseIdentifierTail(parser: Parser): Result[AslNode, ParserError] =
-  var errors: seq[ParserError]
-
-  let maybeIdentifierHead = parser.parse(parseIdentifierHead)
-  if maybeIdentifierHead.isOk:
-    return maybeIdentifierHead
-  else:
-    errors.add(maybeIdentifierHead.error)
-
-  let maybeDigit = parser.consumeDigit()
-  if maybeDigit.isOk:
-    let digit = maybeDigit.get
-    return ok(newAslNode(newIdentifier(digit.value, digit.loc)))
-  else:
-    errors.add(maybeDigit.error)
-
-  err(max(errors))
-
-proc parseIdentifier(parser: Parser): Result[AslNode, ParserError] =
-  var identifierContent: string
-
-  let identifierHead = ? parser.parse(parseIdentifierHead)
-
-  assert identifierHead.kind == ankIdentifier, "expected identifier in parseIdentifier"
-  identifierContent.add(identifierHead.identifier.name)
-
-  var identifierTail: AslNode
-  var maybeIdentifierTail = parser.parse(parseIdentifierTail)
-  while maybeIdentifierTail.isOk:
-    identifierTail = maybeIdentifierTail.get
-
-    assert identifierTail.kind == ankIdentifier, "expected identifier in parseIdentifier"
-    identifierContent.add(identifierTail.identifier.name)
-    maybeIdentifierTail = parser.parse(parseIdentifierTail)
-
-  ok(newAslNode(newIdentifier(identifierContent,
-      identifierHead.identifier.loc)))
-
 proc parseArgumentType(parser: Parser): Result[AslNode, ParserError] =
-  let rootArgType = ? parser.parse(parseIdentifier)
+  let rootIdent = ? parser.run(identifierSpec)
 
   let maybeOpenSquare = parser.consumePunctuation("[")
   if maybeOpenSquare.isErr:
-    return ok(newAslNode(newArgumentType(rootArgType.value, rootArgType.loc)))
+    return ok(newAslNode(newArgumentType(rootIdent.name, rootIdent.loc)))
 
   var impls: seq[ArgumentType]
   discard parser.parse(parseSpaces)
@@ -576,10 +554,10 @@ proc parseArgumentType(parser: Parser): Result[AslNode, ParserError] =
 
   discard ? parser.consumePunctuation("]")
 
-  ok(newAslNode(newArgumentType(rootArgType.value, impls, rootArgType.loc)))
+  ok(newAslNode(newArgumentType(rootIdent.name, impls, rootIdent.loc)))
 
 proc parseArgumentDefinition(parser: Parser): Result[AslNode, ParserError] =
-  let argName = ? parser.parse(parseIdentifier)
+  let argName = ? parser.run(identifierSpec)
   discard parser.parse(parseSpaces)
 
   discard ? parser.consumePunctuation(":")
@@ -589,7 +567,7 @@ proc parseArgumentDefinition(parser: Parser): Result[AslNode, ParserError] =
   assert argTypeNode.kind == ankArgType, "expected argument type"
   let argType = argTypeNode.argType
 
-  ok(newAslNode(newArgumentDefinition(argName.value, argType, argName.loc)))
+  ok(newAslNode(newArgumentDefinition(argName.name, argType, argName.loc)))
 
 proc parseArgumentDefinitionList(parser: Parser): Result[AslNode, ParserError] =
   let openParen = ? parser.consumePunctuation("(")
@@ -617,15 +595,11 @@ proc parseArgumentDefinitionList(parser: Parser): Result[AslNode, ParserError] =
   ok(newAslNode(newArgumentDefinitionList(argDefList, openParen.loc)))
 
 proc parseFunctionDefinition(parser: Parser): Result[AslNode, ParserError] =
-  let funcKeyword = ? parser.parse(parseIdentifier)
-  assert funcKeyword.kind == ankIdentifier, "expected identifier"
-  if funcKeyword.value != "func":
-    let msg = fmt"expected macro 'func' but found '{funcKeyword.value}'"
-    return err(newParserError(msg, funcKeyword.loc))
+  let funcLoc = ? parser.run(keywordSpec("func"))
 
   discard ? parser.parse(parseSpaces)
 
-  let funcName = ? parser.parse(parseIdentifier)
+  let funcName = ? parser.run(identifierSpec)
 
   discard parser.parse(parseSpaces)
 
@@ -642,8 +616,8 @@ proc parseFunctionDefinition(parser: Parser): Result[AslNode, ParserError] =
   assert returnTypeNode.kind == ankArgType, "expected argument type"
   let returnType = returnTypeNode.argType
 
-  ok(newAslNode(newFunctionDefinition(funcName.value, argDefList, returnType,
-      funcKeyword.loc)))
+  ok(newAslNode(newFunctionDefinition(funcName.name, argDefList, returnType,
+      funcLoc)))
 
 proc parseEscapedStringCharacter(parser: Parser): Result[AslNode, ParserError] =
   var errors: seq[ParserError]
@@ -743,9 +717,7 @@ proc parseFunctionCall(parser: Parser): Result[AslNode, ParserError] =
 
   discard ? parser.consumePunctuation(".")
 
-  let funcNameNode = ? parser.parse(parseIdentifier)
-  assert funcNameNode.kind == ankIdentifier, "expected identifier"
-  let funcName = funcNameNode.value
+  let funcNameIdent = ? parser.run(identifierSpec)
 
   discard parser.parse(parseSpaces)
 
@@ -753,7 +725,7 @@ proc parseFunctionCall(parser: Parser): Result[AslNode, ParserError] =
   assert argListNode.kind == ankArgList, "expected an argument list"
   let argList = argListNode.argList
 
-  ok(newAslNode(newFunctionCall(argType, funcName, argList)))
+  ok(newAslNode(newFunctionCall(argType, funcNameIdent.name, argList)))
 
 proc parseExpression(parser: Parser): Result[AslNode, ParserError] =
   var errors: seq[ParserError]
@@ -777,9 +749,8 @@ proc parseExpression(parser: Parser): Result[AslNode, ParserError] =
   err(max(errors))
 
 proc parseAssignment(parser: Parser): Result[AslNode, ParserError] =
-  let targetNode = ? parser.parse(parseIdentifier)
-  assert targetNode.kind == ankIdentifier, "expected identifier"
-  let target = targetNode.identifier.value
+  let targetIdent = ? parser.run(identifierSpec)
+  let target = targetIdent.name
 
   discard parser.parse(parseSpaces)
 
@@ -791,7 +762,7 @@ proc parseAssignment(parser: Parser): Result[AslNode, ParserError] =
   assert expressionNode.kind == ankExpression, "expected expression"
   let expression = expressionNode.expression
 
-  ok(newAslNode(newAssignment(target, expression, targetNode.loc)))
+  ok(newAslNode(newAssignment(target, expression, targetIdent.loc)))
 
 
 proc parseStatement(parser: Parser): Result[AslNode, ParserError] =
@@ -869,17 +840,12 @@ proc parseFunctionList(parser: Parser, level: uint32): Result[AslNode, ParserErr
 proc parseModule(parser: Parser, level: uint32): Result[AslNode, ParserError] =
   discard ? parser.parse(parseIndentation, level)
 
-  let moduleKeyword = ? parser.parse(parseIdentifier)
-  assert moduleKeyword.kind == ankIdentifier, "expected identifier"
-  if moduleKeyword.value != "module":
-    let msg = fmt"expected macro 'module' but found '{moduleKeyword.value}'"
-    return err(newParserError(msg, moduleKeyword.loc))
+  let moduleLoc = ? parser.run(keywordSpec("module"))
 
   discard ? parser.parse(parseSpaces)
 
-  let moduleNameNode = ? parser.parse(parseIdentifier)
-  assert moduleNameNode.kind == ankIdentifier, "expected identifier"
-  let moduleName = moduleNameNode.value
+  let moduleNameIdent = ? parser.run(identifierSpec)
+  let moduleName = moduleNameIdent.name
 
   discard parser.parse(parseSpaces)
 
@@ -895,7 +861,7 @@ proc parseModule(parser: Parser, level: uint32): Result[AslNode, ParserError] =
   let funcListNode = ? parser.parse(parseFunctionList, level + 1)
   assert funcListNode.kind == ankFunctionList, "expected function list"
   ok(newAslNode(newModule(moduleName, funcListNode.funcList,
-      moduleKeyword.loc)))
+      moduleLoc)))
 
 proc parseFile(parser: Parser): Result[AslNode, ParserError] =
   var modules: seq[Module]
