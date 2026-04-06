@@ -15,6 +15,26 @@
 - [x] **`StatementList` uses `ref object of RootObj`** (`parser.nim:300`) [low] — Fixed. Changed to plain `ref object`.
 - [x] **`parseStatement` tries expression before assignment** (`parser.nim:885`) [low] — Fixed. Assignment is now tried first since `=` disambiguates earlier.
 
+### Parser combinator refactor
+
+- [ ] **PSR-01: Create combinator module with `Spec[T]` and core combinators** (`src/combinator.nim`) [high] — New file. Define `Spec[T] = ref object` with `name` and `parseFn`. Implement `run` (with checkpoint/restore), `oneOf`, `any`, `atLeastOne`, `optional`, `separatedBy`, `map`, `contained`. `contained[T](name, open, inner: Spec[T], close) -> Spec[T]` handles delimited containers (parens, brackets, braces) — open delimiter, optional whitespace, inner spec, optional whitespace, close delimiter. This is the foundation — no existing code changes yet, just the new module.
+
+- [ ] **PSR-02: Implement leaf token specs** (`src/combinator.nim`) [high] — Define base specs that match single tokens: `tokenSpec(kind, repr) -> Spec[Token]`, `punctuationSpec(value) -> Spec[Token]`, `spaceSpec -> Spec[Token]`, `newlineSpec -> Spec[Token]`, `alphabetSpec -> Spec[Token]`, `digitSpec -> Spec[Token]`, `utf8Spec -> Spec[Token]`, `anyTokenExceptNewline -> Spec[Token]`. These replace the `consume*` procs as the building blocks for higher-level specs.
+
+- [ ] **PSR-03: Convert identifier parsing to combinators** (`src/parser.nim`) [high] — Replace `parseIdentifierHead`, `parseIdentifierTail`, `parseIdentifier` with combinator-based `identifierHeadSpec`, `identifierTailSpec`, `identifierSpec`. Also add `keywordSpec(name) -> Spec[Location]` helper. First real integration of the combinator module into the parser. Verify the existing parse tests still pass.
+
+- [ ] **PSR-04: Convert comment, empty line, and indentation parsing** (`src/parser.nim`) [medium] — Replace `parseComment`, `parseEmptyLine`, `parseIgnorableLine`, `parseSpaces`, `parseIndentation` with combinator specs. `parseIgnorableLine` becomes `oneOf("ignorable_line", [emptyLineSpec, commentSpec])`. Indentation specs take `level` via closure capture.
+
+- [ ] **PSR-05: Convert string literal parsing to combinators** (`src/parser.nim`) [medium] — Replace `parseEscapedStringCharacter`, `parseStringContent`, `parseStringLiteral` with combinator specs. Tests `any` combinator (zero or more string content characters) and `oneOf` (escaped vs unescaped).
+
+- [ ] **PSR-06: Convert type and argument definition parsing** (`src/parser.nim`) [medium] — Replace `parseArgumentType`, `parseArgumentDefinition`, `parseArgumentDefinitionList` with combinator specs. `argumentTypeSpec` is forward-declared and self-referential (generic params contain argument types). Tests recursive `Spec[T]` via forward declaration. Uses `separatedBy` for comma-separated arg defs and type params.
+
+- [ ] **PSR-07: Convert expression, assignment, and statement parsing** (`src/parser.nim`) [high] — Replace `parseExpression`, `parseFunctionCall`, `parseArgumentList`, `parseAssignment`, `parseStatement` with combinator specs. `expressionSpec` is forward-declared and recursive (expressions appear inside argument lists of function calls). Uses `oneOf` for expression/statement alternatives and `map` to bridge sub-parsers into `Expression`/`Statement` variant types.
+
+- [ ] **PSR-08: Convert function, module, and file parsing** (`src/parser.nim`) [medium] — Replace `parseFunctionDefinition`, `parseFunction`, `parseFunctionList`, `parseStatementList`, `parseModule`, `parseFile` with combinator specs. These are block-level (indentation-aware) — `level` is captured via closures. Uses `atLeastOne` for statement lists, `any` for function lists.
+
+- [ ] **PSR-09: Delete `AslNode` infrastructure** (`src/parser.nim`) [high] — Remove `AslNodeKind` enum, `AslNode` variant object, all 20 `newAslNode` overloads, dispatching `loc(AslNode)` and `value(AslNode)` procs, `InlineParserSpec` and `BlockParserSpec` type aliases. ~200 lines deleted. Should be a no-op change — all callers already use concrete types from prior bugs.
+
 ### Other
 
 - [ ] **`except CatchableError:` is still broad** (`cli.nim:105`) [low] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed.

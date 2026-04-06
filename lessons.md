@@ -67,3 +67,17 @@
 - Self-referential `value` procs are a common copy-paste bug — `assignment.value` calling itself instead of `assignment.target` causes infinite recursion.
 - When two parse alternatives start with the same token pattern (e.g., expression and assignment both start with an identifier), ordering matters for performance. Put the one with the earlier disambiguator first (assignment has `=` after the identifier).
 - `ref object of RootObj` should not appear unless inheritance is needed — it was found on `StatementList` with nothing inheriting from it.
+
+## 2026-04-06 — Parser combinator architecture design
+
+- The `AslNode` variant object is the main obstacle to adding new syntax — every new node type requires ~6 touch points (enum, variant field, constructor, loc dispatch, value dispatch, assert at call site). It exists solely as a uniform return type for parse functions.
+- The real AST types (`Expression`, `Statement`, `Module`, etc.) are already independent `ref object`s. `AslNode` is a redundant wrapper — eliminate it by making parse functions return concrete types.
+- Parser combinators absorb the repetitive patterns: `oneOf` replaces the try-collect-errors-return-max pattern (~5 instances), `any`/`atLeastOne` replace the while-isOk loops (~8 instances), `separatedBy` replaces the A-comma-A loops (~3 instances).
+- `Spec[T] = ref object` with generic `T` is the right combinator type for Nim. Being a `ref object` enables forward declaration for recursive grammars — create the spec with `parseFn: nil`, fill in the implementation later. Closures in other specs that capture this ref see the updated `parseFn` at parse time.
+- Every `Spec` carries a `name: string` for two reasons: (1) error messages — `oneOf` can say "expected {spec.name}" when all alternatives fail, (2) identity — forward-declared specs are identifiable before they have an implementation.
+- Sequencing should NOT be a combinator — just use normal Nim code with `?` operator. The `run` method on each sub-parse provides backtracking. The caller's `run` restores the index if the whole sequence fails. This hybrid (declarative combinators + imperative sequencing) is the pragmatic sweet spot for Nim.
+- Core combinator set: `oneOf[T](name, specs) -> Spec[T]`, `any[T](spec) -> Spec[seq[T]]`, `atLeastOne[T](spec) -> Spec[seq[T]]`, `optional[T](spec) -> Spec[Option[T]]`, `separatedBy[T,S](spec, sep) -> Spec[seq[T]]`, `map[T,U](spec, name, fn) -> Spec[U]`.
+- `run[T](parser, spec) -> Result[T, ParserError]` replaces both `InlineParserSpec` and `BlockParserSpec` — generic over return type, with automatic checkpoint/restore.
+- `map` combinator bridges between parse results and AST nodes. E.g., `stringLiteralSpec.map("string_expr", proc(s): Expression = newExpression(s))` converts a `Spec[StringLiteral]` to `Spec[Expression]` for use in `oneOf`.
+- Block-level (indentation-aware) specs need `level: uint32` — handled by closures that capture the level, not by a separate spec type.
+- `contained[T](name, open, inner: Spec[T], close) -> Spec[T]` is a higher-level combinator for delimited containers. It handles: open delimiter, optional whitespace, inner spec, optional whitespace, close delimiter. Composes with `separatedBy` — container handles delimiters, `separatedBy` handles comma-separated content. Captures three recurring patterns in the parser: `(..args)`, `[..types]`, `{..fields}`.
