@@ -466,67 +466,47 @@ proc keywordSpec(keyword: string): Spec[Location] =
     ok(ident.loc)
   )
 
-proc parseSpaces(parser: Parser): Result[AslNode, ParserError] =
+let spacesSpec = atLeastOne(spaceSpec)
+
+let emptyLineSpec = Spec[EmptyLine](
+  name: "empty_line",
+  parseFn: proc(parser: Parser): Result[EmptyLine, ParserError] =
   let loc = parser.loc
+  discard ? parser.run(any(spaceSpec))
+  discard ? parser.run(newlineSpec)
+  ok(newEmptyLine(loc))
+)
 
-  var spaces: uint32 = 0
-  var maybeSpace = parser.consumeSpace()
-  while maybeSpace.isOk:
-    spaces += 1
-    maybeSpace = parser.consumeSpace()
-
-  if spaces == 0:
-    err(newParserError(fmt"expected spaces", loc))
-  else:
-    ok(newAslNode(newIndentation(spaces, loc)))
-
-proc parseEmptyLine(parser: Parser): Result[AslNode, ParserError] =
-  discard parser.parse(parseSpaces)
-  let newline = ? parser.consumeNewline()
-  ok(newAslNode(newEmptyLine(newline.loc)))
-
-proc parseComment(parser: Parser): Result[AslNode, ParserError] =
-  let hashtag = ? parser.consumePunctuation("#")
-
+let commentSpec = Spec[Comment](
+  name: "comment",
+  parseFn: proc(parser: Parser): Result[Comment, ParserError] =
+  let hashtag = ? parser.run(punctuationSpec("#"))
+  let chars = ? parser.run(any(anyTokenExceptNewlineSpec("comment character")))
   var content: string
-  var maybeToken = parser.consume("any character except new line '\n'")
-  # NOTE: consume all tokens until we hit the new line character
-  while maybeToken.isOk:
-    content.add(maybeToken.get.value)
-    maybeToken = parser.consume("any character except new line '\n'")
+  for ch in chars: content.add(ch.value)
+  discard ? parser.run(newlineSpec)
+  ok(newComment(content, hashtag.loc))
+)
 
-  discard ? consumeNewline(parser)
+let ignorableLineSpec = oneOf("ignorable_line", [
+  emptyLineSpec.map("empty_line_loc", proc(v: EmptyLine): Location = v.loc),
+  commentSpec.map("comment_loc", proc(v: Comment): Location = v.loc),
+])
 
-  ok(newAslNode(newComment(content, hashtag.loc)))
-
-proc parseIgnorableLine(parser: Parser): Result[AslNode, ParserError] =
-  var errors: seq[ParserError]
-
-  let maybeEmptyLine = parser.parse(parseEmptyLine)
-  if maybeEmptyLine.isOk: return maybeEmptyLine
-  else: errors.add(maybeEmptyLine.error)
-
-  let maybeComment = parser.parse(parseComment)
-  if maybeComment.isOk: return maybeComment
-  else: errors.add(maybeComment.error)
-
-  err(max(errors))
-
-proc parseIndentation(parser: Parser, level: uint32): Result[AslNode, ParserError] =
-  var spaces: uint32 = 0
-  let loc = parser.loc
-  var maybeSpace = consumeSpace(parser)
-  while maybeSpace.isOk:
-    spaces += 1
-    maybeSpace = consumeSpace(parser)
-
-  let expectedSpaces = parser.indentWidth * level
-
-  if spaces != expectedSpaces:
-    let msg = fmt"indentation error expected {expectedSpaces} but found {spaces} space(s)"
-    err(newParserError(msg, loc))
-  else:
-    ok(newAslNode(newIndentation(spaces, loc)))
+proc indentationSpec(level: uint32): Spec[Indentation] =
+  Spec[Indentation](
+    name: "indentation",
+    parseFn: proc(parser: Parser): Result[Indentation, ParserError] =
+    let loc = parser.loc
+    let spaces = ? parser.run(any(spaceSpec))
+    let count = spaces.len.uint32
+    let expected = parser.indentWidth * level
+    if count != expected:
+      let msg = fmt"indentation error expected {expected} but found {count} space(s)"
+      err(newParserError(msg, loc))
+    else:
+      ok(newIndentation(count, loc))
+  )
 
 proc parseArgumentType(parser: Parser): Result[AslNode, ParserError] =
   let rootIdent = ? parser.run(identifierSpec)
@@ -536,7 +516,7 @@ proc parseArgumentType(parser: Parser): Result[AslNode, ParserError] =
     return ok(newAslNode(newArgumentType(rootIdent.name, rootIdent.loc)))
 
   var impls: seq[ArgumentType]
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
   var maybeArgType = parser.parse(parseArgumentType)
   while maybeArgType.isOk:
     let implType = maybeArgType.get
@@ -544,12 +524,12 @@ proc parseArgumentType(parser: Parser): Result[AslNode, ParserError] =
     assert implType.kind == ankArgType, "expected argument type"
     impls.add(implType.argType)
 
-    discard parser.parse(parseSpaces)
+    discard parser.run(spacesSpec)
 
     let maybeComma = parser.consumePunctuation(",")
     if maybeComma.isErr: break
 
-    discard parser.parse(parseSpaces)
+    discard parser.run(spacesSpec)
     maybeArgType = parser.parse(parseArgumentType)
 
   discard ? parser.consumePunctuation("]")
@@ -558,10 +538,10 @@ proc parseArgumentType(parser: Parser): Result[AslNode, ParserError] =
 
 proc parseArgumentDefinition(parser: Parser): Result[AslNode, ParserError] =
   let argName = ? parser.run(identifierSpec)
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   discard ? parser.consumePunctuation(":")
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   let argTypeNode = ? parser.parse(parseArgumentType)
   assert argTypeNode.kind == ankArgType, "expected argument type"
@@ -572,7 +552,7 @@ proc parseArgumentDefinition(parser: Parser): Result[AslNode, ParserError] =
 proc parseArgumentDefinitionList(parser: Parser): Result[AslNode, ParserError] =
   let openParen = ? parser.consumePunctuation("(")
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   var argDefList: seq[ArgumentDefinition]
   var maybeArgDef = parser.parse(parseArgumentDefinition)
@@ -582,12 +562,12 @@ proc parseArgumentDefinitionList(parser: Parser): Result[AslNode, ParserError] =
     assert argDefNode.kind == ankArgDef, "expected argument definition"
     argDefList.add(argDefNode.argDef)
 
-    discard parser.parse(parseSpaces)
+    discard parser.run(spacesSpec)
 
     var maybeComma = parser.consumePunctuation(",")
     if maybeComma.isErr: break
 
-    discard parser.parse(parseSpaces)
+    discard parser.run(spacesSpec)
 
     maybeArgDef = parser.parse(parseArgumentDefinition)
 
@@ -597,20 +577,20 @@ proc parseArgumentDefinitionList(parser: Parser): Result[AslNode, ParserError] =
 proc parseFunctionDefinition(parser: Parser): Result[AslNode, ParserError] =
   let funcLoc = ? parser.run(keywordSpec("func"))
 
-  discard ? parser.parse(parseSpaces)
+  discard ? parser.run(spacesSpec)
 
   let funcName = ? parser.run(identifierSpec)
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   let argDefListNode = ? parser.parse(parseArgumentDefinitionList)
   assert argDefListNode.kind == ankArgDefList, "expected argument definition list"
   let argDefList = argDefListNode.argDefList
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   discard ? parser.consumePunctuation(":")
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   let returnTypeNode = ? parser.parse(parseArgumentType)
   assert returnTypeNode.kind == ankArgType, "expected argument type"
@@ -690,7 +670,7 @@ proc parseExpression(parser: Parser): Result[AslNode, ParserError]
 proc parseArgumentList(parser: Parser): Result[AslNode, ParserError] =
   let openParen = ? parser.consumePunctuation("(")
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   var args: seq[Expression]
   var maybeArgument = parser.parse(parseExpression)
@@ -699,12 +679,12 @@ proc parseArgumentList(parser: Parser): Result[AslNode, ParserError] =
     assert exprNode.kind == ankExpression, "expected an expression"
     args.add(exprNode.expression)
 
-    discard parser.parse(parseSpaces)
+    discard parser.run(spacesSpec)
 
     let maybeComma = parser.consumePunctuation(",")
     if maybeComma.isErr: break
 
-    discard parser.parse(parseSpaces)
+    discard parser.run(spacesSpec)
     maybeArgument = parser.parse(parseExpression)
 
   discard ? parser.consumePunctuation(")")
@@ -719,7 +699,7 @@ proc parseFunctionCall(parser: Parser): Result[AslNode, ParserError] =
 
   let funcNameIdent = ? parser.run(identifierSpec)
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   let argListNode = ? parser.parse(parseArgumentList)
   assert argListNode.kind == ankArgList, "expected an argument list"
@@ -752,11 +732,11 @@ proc parseAssignment(parser: Parser): Result[AslNode, ParserError] =
   let targetIdent = ? parser.run(identifierSpec)
   let target = targetIdent.name
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   discard ? parser.consumePunctuation("=")
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   let expressionNode = ? parser.parse(parseExpression)
   assert expressionNode.kind == ankExpression, "expected expression"
@@ -789,7 +769,7 @@ proc parseStatement(parser: Parser): Result[AslNode, ParserError] =
 
 proc parseStatementList(parser: Parser, level: uint32): Result[AslNode, ParserError] =
   var statements: seq[Statement]
-  discard ? parser.parse(parseIndentation, level)
+  discard ? parser.run(indentationSpec(level))
 
   var maybeStatement = parser.parse(parseStatement)
   while maybeStatement.isOk:
@@ -797,9 +777,9 @@ proc parseStatementList(parser: Parser, level: uint32): Result[AslNode, ParserEr
     assert statementNode.kind == ankStatement, "expected statement"
     statements.add(statementNode.statement)
 
-    discard ? parser.parse(parseIgnorableLine)
+    discard ? parser.run(ignorableLineSpec)
 
-    let maybeIndentation = parser.parse(parseIndentation, level)
+    let maybeIndentation = parser.run(indentationSpec(level))
     if maybeIndentation.isErr: break
 
     maybeStatement = parser.parse(parseStatement)
@@ -810,11 +790,11 @@ proc parseStatementList(parser: Parser, level: uint32): Result[AslNode, ParserEr
   ok(newAslNode(newStatementList(statements)))
 
 proc parseFunction(parser: Parser, level: uint32): Result[AslNode, ParserError] =
-  discard ? parser.parse(parseIndentation, level)
+  discard ? parser.run(indentationSpec(level))
   let funcDefNode = ? parser.parse(parseFunctionDefinition)
   assert funcDefNode.kind == ankFuncDef, "expected a function definition"
   let funcDef = funcDefNode.funcDef
-  discard ? parser.parse(parseIgnorableLine)
+  discard ? parser.run(ignorableLineSpec)
   let statementListNode = ? parser.parse(parseStatementList, level + 1)
   assert statementListNode.kind == ankStatementList, "expected statement list"
   let statementList = statementListNode.statementList
@@ -830,33 +810,33 @@ proc parseFunctionList(parser: Parser, level: uint32): Result[AslNode, ParserErr
     functions.add(functionNode.function)
 
     # consume other empty lines
-    var maybeLine = parser.parse(parseIgnorableLine)
-    while maybeLine.isOk: maybeLine = parser.parse(parseIgnorableLine)
+    var maybeLine = parser.run(ignorableLineSpec)
+    while maybeLine.isOk: maybeLine = parser.run(ignorableLineSpec)
 
     maybeFunction = parser.parse(parseFunction, level)
 
   ok(newAslNode(newFunctionList(functions)))
 
 proc parseModule(parser: Parser, level: uint32): Result[AslNode, ParserError] =
-  discard ? parser.parse(parseIndentation, level)
+  discard ? parser.run(indentationSpec(level))
 
   let moduleLoc = ? parser.run(keywordSpec("module"))
 
-  discard ? parser.parse(parseSpaces)
+  discard ? parser.run(spacesSpec)
 
   let moduleNameIdent = ? parser.run(identifierSpec)
   let moduleName = moduleNameIdent.name
 
-  discard parser.parse(parseSpaces)
+  discard parser.run(spacesSpec)
 
   discard ? parser.consumePunctuation(":")
 
   # required new line
-  discard ? parser.parse(parseIgnorableLine)
+  discard ? parser.run(ignorableLineSpec)
 
   # consume other empty lines
-  var maybeLine = parser.parse(parseIgnorableLine)
-  while maybeLine.isOk: maybeLine = parser.parse(parseIgnorableLine)
+  var maybeLine = parser.run(ignorableLineSpec)
+  while maybeLine.isOk: maybeLine = parser.run(ignorableLineSpec)
 
   let funcListNode = ? parser.parse(parseFunctionList, level + 1)
   assert funcListNode.kind == ankFunctionList, "expected function list"
@@ -866,9 +846,9 @@ proc parseModule(parser: Parser, level: uint32): Result[AslNode, ParserError] =
 proc parseFile(parser: Parser): Result[AslNode, ParserError] =
   var modules: seq[Module]
   while not parser.done():
-    var maybeIgnorableLine = parser.parse(parseIgnorableLine)
+    var maybeIgnorableLine = parser.run(ignorableLineSpec)
     while maybeIgnorableLine.isOk:
-      maybeIgnorableLine = parser.parse(parseIgnorableLine)
+      maybeIgnorableLine = parser.run(ignorableLineSpec)
 
     let moduleNode = ? parser.parse(parseModule, 0)
     assert moduleNode.kind == ankModule, "expected module"
