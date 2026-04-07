@@ -8,6 +8,26 @@
 
 - [x] **PSR-11: Merge `escapedCharSpec` and `escapedAlphaSpec` into one factory** (`src/parser.nim`) [low] — Done. Unified into `escapedSpec(char, charSpec)`.
 
+### Combinator backtracking bugs
+
+- [ ] **PSR-12: `any` combinator doesn't backtrack per iteration** (`src/parser.nim`) [high] — Calls `spec.parseFn(parser)` directly without saving/restoring index. If a spec partially consumes tokens and then fails, those tokens are lost. Should checkpoint/restore each iteration like `oneOf` does.
+
+- [ ] **PSR-13: `separatedBy` doesn't backtrack failed elements** (`src/parser.nim`) [high] — First element and sep+element pairs don't save/restore on partial failure. If an element partially consumes then fails, the consumption isn't undone within `separatedBy`.
+
+- [ ] **PSR-14: `optional` doesn't backtrack on partial failure** (`src/parser.nim`) [high] — If the inner spec partially consumes tokens then fails, the consumption isn't undone. Should save/restore around the inner spec call.
+
+### Parser cleanup (round 2)
+
+- [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
+
+- [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
+
+- [ ] **PSR-17: Unwrap `ArgumentDefinitionList` and `ArgumentList`** (`src/parser.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDefinition` and `FunctionCall`.
+
+- [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
+
+- [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser.nim`) [low] — `importBlockSpec`, `fileItemBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
+
 ### Parser bugs
 
 - [x] **`Assignment.value` infinite recursion** (`parser.nim:274`) [high] — Fixed. `assignment.value` → `assignment.target`.
