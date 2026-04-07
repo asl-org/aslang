@@ -20,7 +20,7 @@
 
 - [ ] **PSR-24: Add integer literal expression** (`src/parser.nim`) [high] — Support signed and unsigned integers as expressions. Grammar: `("-")? digit+`. New `ExpressionKind` variant `ekIntLit` with `IntegerLiteral` AST type. Unblocks parsing of `problem001.asl`.
 
-- [ ] **PSR-25: blockSpec body errors should be hard failures** (`src/parser.nim`) [high] — When a block header parses successfully but the body fails, the error is swallowed by `any` which silently returns partial results. The reported error becomes a misleading indentation mismatch at a higher level. Fix: after the header succeeds, call body directly (bypass `run`'s backtracking) so body errors propagate as non-recoverable.
+- [x] **PSR-25: blockSpec body errors should be hard failures** (`src/parser.nim`) [high] — Done. Added `fatal` flag to `ParserError`. `blockSpec` marks body errors as fatal after header succeeds. `run` skips backtracking for fatal errors. `any` propagates fatal errors instead of silently succeeding.
 
 - [ ] **PSR-26: Add typed literal expression** (`src/parser.nim`) [medium] — `u8 0` syntax: `Type space value`. Needed for `problem001.asl` line 13. New expression kind for type-qualified literals.
 

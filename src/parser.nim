@@ -10,6 +10,7 @@ type
   ParserError* = ref object
     loc*: Location
     msg*: string
+    fatal*: bool
 
 proc newParserError*(msg: string, loc: Location): ParserError =
   ParserError(msg: msg, loc: loc)
@@ -109,7 +110,7 @@ proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   let indexCheckpoint = parser.index
   let levelCheckpoint = parser.level
   let maybeValue = spec.parseFn(parser)
-  if maybeValue.isErr:
+  if maybeValue.isErr and not maybeValue.error.fatal:
     parser.index = indexCheckpoint
     parser.level = levelCheckpoint
   return maybeValue
@@ -139,7 +140,9 @@ proc any*[T](spec: Spec[T]): Spec[seq[T]] =
     var items: seq[T]
     while true:
       let maybeValue = parser.run(spec)
-      if maybeValue.isErr: break
+      if maybeValue.isErr:
+        if maybeValue.error.fatal: return err(maybeValue.error)
+        break
       items.add(maybeValue.get)
     ok(items)
   )
@@ -1025,10 +1028,15 @@ proc blockSpec[H, B, R](name: string,
     discard ? parser.run(indentationSpec)
     let h = ? parser.run(header)
     discard ? parser.run(ignorableLineSpec)
+    # After header succeeds, body errors are fatal — they propagate
+    # through run and any without backtracking or being swallowed.
     parser.level += 1
-    let b = ? parser.run(body)
+    let bodyResult = body.parseFn(parser)
     parser.level -= 1
-    ok(combine(decorators, h, b))
+    if bodyResult.isErr:
+      bodyResult.error.fatal = true
+      return err(bodyResult.error)
+    ok(combine(decorators, h, bodyResult.get))
   )
 
 let functionSpec = blockSpec("function", functionDefinitionSpec,
