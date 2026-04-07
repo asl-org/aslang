@@ -357,12 +357,33 @@ type
     name: string
     argList: ArgumentList
 
+  Getter = ref object
+    source: string
+    property: string
+    loc: Location
+
+  KeywordArgument = ref object
+    name: string
+    expression: Expression
+    loc: Location
+
+  KeywordArgumentList = ref object
+    args: seq[KeywordArgument]
+    loc: Location
+
+  Initializer = ref object
+    argType: ArgumentType
+    kwargList: KeywordArgumentList
+    loc: Location
+
   ExpressionKind = enum
-    ekFnCall, ekStrLit
+    ekFnCall, ekStrLit, ekGetter, ekInitializer
   Expression = ref object
     case kind: ExpressionKind
     of ekFnCall: fncall: FunctionCall
     of ekStrLit: strLit: StringLiteral
+    of ekGetter: getter: Getter
+    of ekInitializer: initializer: Initializer
 
 proc newArgumentList(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
@@ -380,6 +401,27 @@ proc newExpression(strLit: StringLiteral): Expression =
 proc newExpression(fncall: FunctionCall): Expression =
   Expression(kind: ekFnCall, fncall: fncall)
 
+proc newGetter(source: string, property: string, loc: Location): Getter =
+  Getter(source: source, property: property, loc: loc)
+
+proc newKeywordArgument(name: string, expression: Expression,
+    loc: Location): KeywordArgument =
+  KeywordArgument(name: name, expression: expression, loc: loc)
+
+proc newKeywordArgumentList(args: seq[KeywordArgument],
+    loc: Location): KeywordArgumentList =
+  KeywordArgumentList(args: args, loc: loc)
+
+proc newInitializer(argType: ArgumentType, kwargList: KeywordArgumentList,
+    loc: Location): Initializer =
+  Initializer(argType: argType, kwargList: kwargList, loc: loc)
+
+proc newExpression(getter: Getter): Expression =
+  Expression(kind: ekGetter, getter: getter)
+
+proc newExpression(initializer: Initializer): Expression =
+  Expression(kind: ekInitializer, initializer: initializer)
+
 proc asl(expr: Expression): string
 
 proc asl(strLit: StringLiteral): string = strLit.content
@@ -394,10 +436,28 @@ proc asl(argList: ArgumentList): string =
 proc asl(fncall: FunctionCall): string =
   fmt"{asl(fncall.argType)}.{fncall.name}{asl(fncall.argList)}"
 
+proc asl(getter: Getter): string =
+  fmt"{getter.source}.{getter.property}"
+
+proc asl(kwarg: KeywordArgument): string =
+  fmt"{kwarg.name}: {asl(kwarg.expression)}"
+
+proc asl(kwargList: KeywordArgumentList): string =
+  result = "{ "
+  for i, arg in kwargList.args:
+    if i > 0: result.add(", ")
+    result.add(asl(arg))
+  result.add(" }")
+
+proc asl(initializer: Initializer): string =
+  fmt"{asl(initializer.argType)} {asl(initializer.kwargList)}"
+
 proc asl(expr: Expression): string =
   case expr.kind:
   of ekStrLit: asl(expr.strLit)
   of ekFnCall: asl(expr.fncall)
+  of ekGetter: asl(expr.getter)
+  of ekInitializer: asl(expr.initializer)
 
 type Assignment = ref object
   target: string
@@ -782,11 +842,51 @@ let functionCallSpec = Spec[FunctionCall](
   ok(newFunctionCall(argType, funcNameIdent.name, argList))
 )
 
+let kwargSpec = Spec[KeywordArgument](
+  name: "keyword_argument",
+  parseFn: proc(parser: Parser): Result[KeywordArgument, ParserError] =
+  let name = ? parser.run(identifierSpec)
+  discard ? parser.run(colonWithSpacesSpec)
+  let expression = ? parser.run(expressionSpec)
+  ok(newKeywordArgument(name.name, expression, name.loc))
+)
+
+let kwargListSpec = Spec[KeywordArgumentList](
+  name: "keyword_argument_list",
+  parseFn: proc(parser: Parser): Result[KeywordArgumentList, ParserError] =
+  let loc = parser.loc
+  let args = ? parser.run(contained("keyword_argument_list", "{",
+    separatedBy(kwargSpec, commaWithSpacesSpec), "}"))
+  ok(newKeywordArgumentList(args, loc))
+)
+
+let initializerSpec = Spec[Initializer](
+  name: "initializer",
+  parseFn: proc(parser: Parser): Result[Initializer, ParserError] =
+  let argType = ? parser.run(argumentTypeSpec)
+  discard parser.run(spacesSpec)
+  let kwargList = ? parser.run(kwargListSpec)
+  ok(newInitializer(argType, kwargList, argType.loc))
+)
+
+let getterSpec = Spec[Getter](
+  name: "getter",
+  parseFn: proc(parser: Parser): Result[Getter, ParserError] =
+  let source = ? parser.run(identifierSpec)
+  discard ? parser.run(punctuationSpec("."))
+  let property = ? parser.run(identifierSpec)
+  ok(newGetter(source.name, property.name, source.loc))
+)
+
 expressionSpec.parseFn = oneOf("expression", [
   stringLiteralSpec.map("string_expression",
     proc(v: StringLiteral): Expression = newExpression(v)),
+  initializerSpec.map("initializer_expression",
+    proc(v: Initializer): Expression = newExpression(v)),
   functionCallSpec.map("fncall_expression",
     proc(v: FunctionCall): Expression = newExpression(v)),
+  getterSpec.map("getter_expression",
+    proc(v: Getter): Expression = newExpression(v)),
 ]).parseFn
 
 let equalsSeparatorSpec = separatorSpec("=")

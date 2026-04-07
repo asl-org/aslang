@@ -7,4 +7,5 @@ generic Key:
 module App:
   @export
   func start(sys: System): u8
+    arr = Array[u32] { name: "test", allocator: sys.allocator }
     System.println("Hello, world!")

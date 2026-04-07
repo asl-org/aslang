@@ -12,6 +12,10 @@
 
 - [x] **PSR-20: Add decorator support** (`src/parser.nim`) [medium] — Done. Introduces `Decorator` AST type (`@identifier`). `blockSpec` parses zero or more decorator lines before the block header. Function, Generic, and Module carry `decorators: seq[Decorator]`. Linter round-trips decorators at correct indentation. First decorator: `@export` for module/function visibility.
 
+- [x] **PSR-21: Add getter expression** (`src/parser.nim`) [medium] — Done. `source.property` as `Getter` AST type. Tried after function call in `oneOf` since function call is more specific (requires `(`).
+
+- [x] **PSR-22: Add initializer expression** (`src/parser.nim`) [medium] — Done. `Type { name: expr, name: expr }` as `Initializer` with `KeywordArgumentList` (mirrors `ArgumentList` using `contained` + `separatedBy`). `KeywordArgument` holds `name: string`, `expression: Expression`.
+
 ### Combinator backtracking bugs
 
 - [x] **PSR-12: `any` combinator doesn't backtrack per iteration** (`src/parser.nim`) [high] — Fixed. Replaced `spec.parseFn(parser)` with `parser.run(spec)` which handles checkpoint/restore automatically.
