@@ -830,6 +830,9 @@ let fileSpec = Spec[File](
   let imports = ? parser.run(any(importBlockSpec))
   let items = ? parser.run(any(fileItemBlockSpec))
   discard parser.run(any(ignorableLineSpec))
+  if not parser.done():
+    # Force a parse attempt to get a specific error message
+    discard ? parser.run(fileItemSpec)
   ok(newFile(parser.filepath, imports, items))
 )
 
