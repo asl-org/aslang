@@ -8,6 +8,10 @@
 
 - [x] **PSR-11: Merge `escapedCharSpec` and `escapedAlphaSpec` into one factory** (`src/parser.nim`) [low] — Done. Unified into `escapedSpec(char, charSpec)`.
 
+### Parser features
+
+- [x] **PSR-20: Add decorator support** (`src/parser.nim`) [medium] — Done. Introduces `Decorator` AST type (`@identifier`). `blockSpec` parses zero or more decorator lines before the block header. Function, Generic, and Module carry `decorators: seq[Decorator]`. Linter round-trips decorators at correct indentation. First decorator: `@export` for module/function visibility.
+
 ### Combinator backtracking bugs
 
 - [x] **PSR-12: `any` combinator doesn't backtrack per iteration** (`src/parser.nim`) [high] — Fixed. Replaced `spec.parseFn(parser)` with `parser.run(spec)` which handles checkpoint/restore automatically.

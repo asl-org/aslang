@@ -235,6 +235,16 @@ proc anyTokenExceptNewlineSpec*(tokenRepr: string): Spec[Token] =
 # AST types
 # ============================================================
 
+type Decorator = ref object
+  name: string
+  loc: Location
+
+proc newDecorator(name: string, loc: Location): Decorator =
+  Decorator(name: name, loc: loc)
+
+proc asl(decorator: Decorator): string =
+  fmt"@{decorator.name}"
+
 type EmptyLine = ref object
   loc: Location
 
@@ -427,14 +437,17 @@ proc newStatementList(statements: seq[Statement]): StatementList =
   StatementList(statements: statements)
 
 type Function = ref object
+  decorators: seq[Decorator]
   def: FunctionDefinition
   statementList: StatementList
 
-proc newFunction(def: FunctionDefinition,
+proc newFunction(decorators: seq[Decorator], def: FunctionDefinition,
     statementList: StatementList): Function =
-  Function(def: def, statementList: statementList)
+  Function(decorators: decorators, def: def, statementList: statementList)
 
 proc asl(fn: Function, indentWidth: uint32): seq[string] =
+  for d in fn.decorators:
+    result.add(asl(d))
   result.add(asl(fn.def))
   let indent = " ".repeat(indentWidth)
   for stmt in fn.statementList.statements:
@@ -462,29 +475,36 @@ proc asl(imp: Import): string =
   result.add(fmt" }} from {imp.source}")
 
 type Generic = ref object
+  decorators: seq[Decorator]
   name: string
   funcDefs: seq[FunctionDefinition]
   loc: Location
 
-proc newGeneric(name: string, funcDefs: seq[FunctionDefinition],
-    loc: Location): Generic =
-  Generic(name: name, funcDefs: funcDefs, loc: loc)
+proc newGeneric(decorators: seq[Decorator], name: string,
+    funcDefs: seq[FunctionDefinition], loc: Location): Generic =
+  Generic(decorators: decorators, name: name, funcDefs: funcDefs, loc: loc)
 
 proc asl(gen: Generic, indentWidth: uint32): seq[string] =
+  for d in gen.decorators:
+    result.add(asl(d))
   result.add(fmt"generic {gen.name}:")
   let indent = " ".repeat(indentWidth)
   for funcDef in gen.funcDefs:
     result.add(fmt"{indent}{asl(funcDef)}")
 
 type Module = ref object
+  decorators: seq[Decorator]
   name: string
   funcList: FunctionList
   loc: Location
 
-proc newModule(name: string, funcList: FunctionList, loc: Location): Module =
-  Module(name: name, funcList: funcList, loc: loc)
+proc newModule(decorators: seq[Decorator], name: string,
+    funcList: FunctionList, loc: Location): Module =
+  Module(decorators: decorators, name: name, funcList: funcList, loc: loc)
 
 proc asl(module: Module, indentWidth: uint32): seq[string] =
+  for d in module.decorators:
+    result.add(asl(d))
   result.add(fmt"module {module.name}:")
   let indent = " ".repeat(indentWidth)
   for i, fn in module.funcList.functions:
@@ -799,24 +819,36 @@ let statementLineSpec = Spec[Statement](
 let statementListSpec = atLeastOne(statementLineSpec).map("statement_list",
   proc(stmts: seq[Statement]): StatementList = newStatementList(stmts))
 
+let decoratorLineSpec = Spec[Decorator](
+  name: "decorator_line",
+  parseFn: proc(parser: Parser): Result[Decorator, ParserError] =
+  discard ? parser.run(indentationSpec)
+  discard ? parser.run(punctuationSpec("@"))
+  let name = ? parser.run(identifierSpec)
+  discard ? parser.run(ignorableLineSpec)
+  ok(newDecorator(name.name, name.loc))
+)
+
 proc blockSpec[H, B, R](name: string,
     header: Spec[H], body: Spec[B],
-    combine: proc(h: H, b: B): R): Spec[R] =
+    combine: proc(decorators: seq[Decorator], h: H, b: B): R): Spec[R] =
   Spec[R](
     name: name,
     parseFn: proc(parser: Parser): Result[R, ParserError] =
+    let decorators = ? parser.run(any(decoratorLineSpec))
     discard ? parser.run(indentationSpec)
     let h = ? parser.run(header)
     discard ? parser.run(ignorableLineSpec)
     parser.level += 1
     let b = ? parser.run(body)
     parser.level -= 1
-    ok(combine(h, b))
+    ok(combine(decorators, h, b))
   )
 
 let functionSpec = blockSpec("function", functionDefinitionSpec,
   statementListSpec,
-  proc(h: FunctionDefinition, b: StatementList): Function = newFunction(h, b))
+  proc(d: seq[Decorator], h: FunctionDefinition, b: StatementList): Function =
+    newFunction(d, h, b))
 
 # Each function block skips leading ignorable lines then parses a function.
 # any() backtracks the ignorable line consumption if no function follows.
@@ -871,11 +903,12 @@ let functionDefinitionListSpec = atLeastOne(functionDefinitionLineSpec)
 
 let genericSpec = blockSpec("generic", genericHeaderSpec,
   functionDefinitionListSpec,
-  proc(h: GenericHeader, b: seq[FunctionDefinition]): Generic = newGeneric(
-      h.name, b, h.loc))
+  proc(d: seq[Decorator], h: GenericHeader, b: seq[FunctionDefinition]): Generic =
+    newGeneric(d, h.name, b, h.loc))
 
 let moduleSpec = blockSpec("module", moduleHeaderSpec, functionListSpec,
-  proc(h: ModuleHeader, b: FunctionList): Module = newModule(h.name, b, h.loc))
+  proc(d: seq[Decorator], h: ModuleHeader, b: FunctionList): Module =
+    newModule(d, h.name, b, h.loc))
 
 let fileItemSpec = oneOf("file_item", [
   moduleSpec.map("module_item",
