@@ -354,6 +354,22 @@ type
     content: string
     loc: Location
 
+  UnsignedIntegerLiteral = ref object
+    value: string
+    loc: Location
+
+  SignedIntegerLiteral = ref object
+    sign: string
+    value: UnsignedIntegerLiteral
+    loc: Location
+
+  IntegerLiteralKind = enum
+    ilkSigned, ilkUnsigned
+  IntegerLiteral = ref object
+    case kind: IntegerLiteralKind
+    of ilkSigned: signed: SignedIntegerLiteral
+    of ilkUnsigned: unsigned: UnsignedIntegerLiteral
+
   FunctionCall = ref object
     argType: ArgumentType
     name: string
@@ -379,11 +395,12 @@ type
     loc: Location
 
   ExpressionKind = enum
-    ekFnCall, ekStrLit, ekGetter, ekInitializer, ekVariable
+    ekFnCall, ekStrLit, ekIntLit, ekGetter, ekInitializer, ekVariable
   Expression = ref object
     case kind: ExpressionKind
     of ekFnCall: fncall: FunctionCall
     of ekStrLit: strLit: StringLiteral
+    of ekIntLit: intLit: IntegerLiteral
     of ekGetter: getter: Getter
     of ekInitializer: initializer: Initializer
     of ekVariable: variable: Identifier
@@ -422,6 +439,22 @@ proc newInitializer(argType: ArgumentType, kwargList: KeywordArgumentList,
 proc newExpression(getter: Getter): Expression =
   Expression(kind: ekGetter, getter: getter)
 
+proc newUnsignedIntegerLiteral(value: string, loc: Location): UnsignedIntegerLiteral =
+  UnsignedIntegerLiteral(value: value, loc: loc)
+
+proc newSignedIntegerLiteral(sign: string, value: UnsignedIntegerLiteral,
+    loc: Location): SignedIntegerLiteral =
+  SignedIntegerLiteral(sign: sign, value: value, loc: loc)
+
+proc newIntegerLiteral(signed: SignedIntegerLiteral): IntegerLiteral =
+  IntegerLiteral(kind: ilkSigned, signed: signed)
+
+proc newIntegerLiteral(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
+  IntegerLiteral(kind: ilkUnsigned, unsigned: unsigned)
+
+proc newExpression(intLit: IntegerLiteral): Expression =
+  Expression(kind: ekIntLit, intLit: intLit)
+
 proc newExpression(initializer: Initializer): Expression =
   Expression(kind: ekInitializer, initializer: initializer)
 
@@ -431,6 +464,16 @@ proc newExpression(variable: Identifier): Expression =
 proc asl(expr: Expression): string
 
 proc asl(strLit: StringLiteral): string = strLit.content
+
+proc asl(unsigned: UnsignedIntegerLiteral): string = unsigned.value
+
+proc asl(signed: SignedIntegerLiteral): string =
+  fmt"{signed.sign}{asl(signed.value)}"
+
+proc asl(intLit: IntegerLiteral): string =
+  case intLit.kind:
+  of ilkSigned: asl(intLit.signed)
+  of ilkUnsigned: asl(intLit.unsigned)
 
 proc asl(argList: ArgumentList): string =
   result = "("
@@ -461,6 +504,7 @@ proc asl(initializer: Initializer): string =
 proc asl(expr: Expression): string =
   case expr.kind:
   of ekStrLit: asl(expr.strLit)
+  of ekIntLit: asl(expr.intLit)
   of ekFnCall: asl(expr.fncall)
   of ekGetter: asl(expr.getter)
   of ekInitializer: asl(expr.initializer)
@@ -885,9 +929,41 @@ let getterSpec = Spec[Getter](
   ok(newGetter(source.name, property.name, source.loc))
 )
 
+# digit+
+let unsignedIntegerLiteralSpec = Spec[UnsignedIntegerLiteral](
+  name: "unsigned_integer_literal",
+  parseFn: proc(parser: Parser): Result[UnsignedIntegerLiteral, ParserError] =
+  let loc = parser.loc
+  let digits = ? parser.run(atLeastOne(digitSpec))
+  var value: string
+  for d in digits: value.add(d.value)
+  ok(newUnsignedIntegerLiteral(value, loc))
+)
+
+# (+ | -) digit+
+let signedIntegerLiteralSpec = Spec[SignedIntegerLiteral](
+  name: "signed_integer_literal",
+  parseFn: proc(parser: Parser): Result[SignedIntegerLiteral, ParserError] =
+  let signToken = ? parser.run(oneOf("sign", [
+    punctuationSpec("+"),
+    punctuationSpec("-"),
+  ]))
+  let uint = ? parser.run(unsignedIntegerLiteralSpec)
+  ok(newSignedIntegerLiteral(signToken.value, uint, signToken.loc))
+)
+
+let integerLiteralSpec = oneOf("integer_literal", [
+  signedIntegerLiteralSpec.map("signed_int",
+    proc(v: SignedIntegerLiteral): IntegerLiteral = newIntegerLiteral(v)),
+  unsignedIntegerLiteralSpec.map("unsigned_int",
+    proc(v: UnsignedIntegerLiteral): IntegerLiteral = newIntegerLiteral(v)),
+])
+
 expressionSpec.parseFn = oneOf("expression", [
   stringLiteralSpec.map("string_expression",
     proc(v: StringLiteral): Expression = newExpression(v)),
+  integerLiteralSpec.map("integer_expression",
+    proc(v: IntegerLiteral): Expression = newExpression(v)),
   initializerSpec.map("initializer_expression",
     proc(v: Initializer): Expression = newExpression(v)),
   functionCallSpec.map("fncall_expression",
@@ -919,6 +995,7 @@ let statementSpec = oneOf("statement", [
 let statementLineSpec = Spec[Statement](
   name: "statement_line",
   parseFn: proc(parser: Parser): Result[Statement, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
   discard ? parser.run(indentationSpec)
   let statement = ? parser.run(statementSpec)
   discard ? parser.run(ignorableLineSpec)
