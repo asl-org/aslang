@@ -20,8 +20,8 @@ proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let source = ? readFileSafe(filepath)
   let tokens = ? tokenize(source, filepath, opts.dumpTokens)
-  discard ? parse(filepath, opts.indentWidth, tokens)
-  ok(source)
+  let file = ? parse(filepath, opts.indentWidth, tokens)
+  ok(file.asl(opts.indentWidth))
 
 when isMainModule:
   let maybeCommand = parseCliArgs(commandLineParams())

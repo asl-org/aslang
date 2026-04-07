@@ -1,4 +1,4 @@
-import strformat, results, options
+import strformat, strutils, results, options
 
 import tokenizer
 
@@ -276,6 +276,15 @@ proc newArgumentType(root: string, impls: seq[ArgumentType],
     loc: Location): ArgumentType =
   ArgumentType(root: root, loc: loc, impls: impls)
 
+proc asl(argType: ArgumentType): string =
+  result = argType.root
+  if argType.impls.len > 0:
+    result.add("[")
+    for i, impl in argType.impls:
+      if i > 0: result.add(", ")
+      result.add(asl(impl))
+    result.add("]")
+
 type ArgumentDefinition = ref object
   name: string
   argType: ArgumentType
@@ -285,6 +294,9 @@ proc newArgumentDefinition(name: string, argType: ArgumentType,
     loc: Location): ArgumentDefinition =
   ArgumentDefinition(name: name, argType: argType, loc: loc)
 
+proc asl(argDef: ArgumentDefinition): string =
+  fmt"{argDef.name}: {asl(argDef.argType)}"
+
 type ArgumentDefinitionList = ref object
   argDefs: seq[ArgumentDefinition]
   loc: Location
@@ -292,6 +304,13 @@ type ArgumentDefinitionList = ref object
 proc newArgumentDefinitionList(argDefs: seq[ArgumentDefinition],
     loc: Location): ArgumentDefinitionList =
   ArgumentDefinitionList(argDefs: argDefs, loc: loc)
+
+proc asl(argDefList: ArgumentDefinitionList): string =
+  result = "("
+  for i, argDef in argDefList.argDefs:
+    if i > 0: result.add(", ")
+    result.add(asl(argDef))
+  result.add(")")
 
 type FunctionDefinition = ref object
   name: string
@@ -302,6 +321,9 @@ type FunctionDefinition = ref object
 proc newFunctionDefinition(name: string, argDefList: ArgumentDefinitionList,
     returns: ArgumentType, loc: Location): FunctionDefinition =
   FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
+
+proc asl(funcDef: FunctionDefinition): string =
+  fmt"func {funcDef.name}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
 
 type StringContent = ref object
   content: string
@@ -348,6 +370,25 @@ proc newExpression(strLit: StringLiteral): Expression =
 proc newExpression(fncall: FunctionCall): Expression =
   Expression(kind: ekFnCall, fncall: fncall)
 
+proc asl(expr: Expression): string
+
+proc asl(strLit: StringLiteral): string = strLit.content
+
+proc asl(argList: ArgumentList): string =
+  result = "("
+  for i, arg in argList.args:
+    if i > 0: result.add(", ")
+    result.add(asl(arg))
+  result.add(")")
+
+proc asl(fncall: FunctionCall): string =
+  fmt"{asl(fncall.argType)}.{fncall.name}{asl(fncall.argList)}"
+
+proc asl(expr: Expression): string =
+  case expr.kind:
+  of ekStrLit: asl(expr.strLit)
+  of ekFnCall: asl(expr.fncall)
+
 type Assignment = ref object
   target: string
   expression: Expression
@@ -356,6 +397,9 @@ type Assignment = ref object
 proc newAssignment(target: string, expression: Expression,
     loc: Location): Assignment =
   Assignment(target: target, expression: expression, loc: loc)
+
+proc asl(assignment: Assignment): string =
+  fmt"{assignment.target} = {asl(assignment.expression)}"
 
 type
   StatementKind = enum
@@ -371,6 +415,11 @@ proc newStatement(assignment: Assignment): Statement =
 proc newStatement(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
 
+proc asl(stmt: Statement): string =
+  case stmt.kind:
+  of skAssignment: asl(stmt.assignment)
+  of skExpr: asl(stmt.expression)
+
 type StatementList = ref object
   statements: seq[Statement]
 
@@ -384,6 +433,12 @@ type Function = ref object
 proc newFunction(def: FunctionDefinition,
     statementList: StatementList): Function =
   Function(def: def, statementList: statementList)
+
+proc asl(fn: Function, indentWidth: uint32): seq[string] =
+  result.add(asl(fn.def))
+  let indent = " ".repeat(indentWidth)
+  for stmt in fn.statementList.statements:
+    result.add(fmt"{indent}{asl(stmt)}")
 
 type FunctionList = ref object
   functions: seq[Function]
@@ -399,6 +454,13 @@ type Import = ref object
 proc newImport(names: seq[string], source: string, loc: Location): Import =
   Import(names: names, source: source, loc: loc)
 
+proc asl(imp: Import): string =
+  result = "import { "
+  for i, name in imp.names:
+    if i > 0: result.add(", ")
+    result.add(name)
+  result.add(fmt" }} from {imp.source}")
+
 type Generic = ref object
   name: string
   funcDefs: seq[FunctionDefinition]
@@ -408,6 +470,12 @@ proc newGeneric(name: string, funcDefs: seq[FunctionDefinition],
     loc: Location): Generic =
   Generic(name: name, funcDefs: funcDefs, loc: loc)
 
+proc asl(gen: Generic, indentWidth: uint32): seq[string] =
+  result.add(fmt"generic {gen.name}:")
+  let indent = " ".repeat(indentWidth)
+  for funcDef in gen.funcDefs:
+    result.add(fmt"{indent}{asl(funcDef)}")
+
 type Module = ref object
   name: string
   funcList: FunctionList
@@ -415,6 +483,14 @@ type Module = ref object
 
 proc newModule(name: string, funcList: FunctionList, loc: Location): Module =
   Module(name: name, funcList: funcList, loc: loc)
+
+proc asl(module: Module, indentWidth: uint32): seq[string] =
+  result.add(fmt"module {module.name}:")
+  let indent = " ".repeat(indentWidth)
+  for i, fn in module.funcList.functions:
+    if i > 0: result.add("")
+    for line in asl(fn, indentWidth):
+      result.add(fmt"{indent}{line}")
 
 type
   FileItemKind = enum
@@ -444,6 +520,24 @@ proc newFile(path: string, imports: seq[Import], items: seq[FileItem]): File =
     of fikModule: modules.add(item.module)
     of fikGeneric: generics.add(item.generic)
   File(path: path, imports: imports, modules: modules, generics: generics)
+
+proc asl*(file: File, indentWidth: uint32): string =
+  var lines: seq[string]
+  for imp in file.imports:
+    lines.add(asl(imp))
+  if file.imports.len > 0 and (file.generics.len > 0 or file.modules.len > 0):
+    lines.add("")
+  for i, gen in file.generics:
+    if i > 0: lines.add("")
+    for line in asl(gen, indentWidth):
+      lines.add(line)
+  if file.generics.len > 0 and file.modules.len > 0:
+    lines.add("")
+  for i, module in file.modules:
+    if i > 0: lines.add("")
+    for line in asl(module, indentWidth):
+      lines.add(line)
+  lines.join("\n") & "\n"
 
 # ============================================================
 # Grammar specs
@@ -517,6 +611,7 @@ let emptyLineSpec = Spec[EmptyLine](
 let commentSpec = Spec[Comment](
   name: "comment",
   parseFn: proc(parser: Parser): Result[Comment, ParserError] =
+  discard parser.run(any(spaceSpec))
   let hashtag = ? parser.run(hashSpec)
   let chars = ? parser.run(any(anyTokenExceptNewlineSpec("comment character")))
   var content: string
