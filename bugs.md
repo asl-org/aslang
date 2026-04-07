@@ -16,6 +16,8 @@
 
 - [x] **PSR-22: Add initializer expression** (`src/parser.nim`) [medium] — Done. `Type { name: expr, name: expr }` as `Initializer` with `KeywordArgumentList` (mirrors `ArgumentList` using `contained` + `separatedBy`). `KeywordArgument` holds `name: string`, `expression: Expression`.
 
+- [x] **PSR-23: Add variable as expression** (`src/parser.nim`) [medium] — Done. Bare identifier as `ekVariable` variant reusing `Identifier`. Last in `oneOf` since all other expressions start with an identifier.
+
 ### Combinator backtracking bugs
 
 - [x] **PSR-12: `any` combinator doesn't backtrack per iteration** (`src/parser.nim`) [high] — Fixed. Replaced `spec.parseFn(parser)` with `parser.run(spec)` which handles checkpoint/restore automatically.

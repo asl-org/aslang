@@ -267,6 +267,8 @@ type
 proc newIdentifier(name: string, loc: Location): Identifier =
   Identifier(name: name, loc: loc)
 
+proc asl(identifier: Identifier): string = identifier.name
+
 type Space = ref object
   spaces: uint32
   loc: Location
@@ -377,13 +379,14 @@ type
     loc: Location
 
   ExpressionKind = enum
-    ekFnCall, ekStrLit, ekGetter, ekInitializer
+    ekFnCall, ekStrLit, ekGetter, ekInitializer, ekVariable
   Expression = ref object
     case kind: ExpressionKind
     of ekFnCall: fncall: FunctionCall
     of ekStrLit: strLit: StringLiteral
     of ekGetter: getter: Getter
     of ekInitializer: initializer: Initializer
+    of ekVariable: variable: Identifier
 
 proc newArgumentList(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
@@ -422,6 +425,9 @@ proc newExpression(getter: Getter): Expression =
 proc newExpression(initializer: Initializer): Expression =
   Expression(kind: ekInitializer, initializer: initializer)
 
+proc newExpression(variable: Identifier): Expression =
+  Expression(kind: ekVariable, variable: variable)
+
 proc asl(expr: Expression): string
 
 proc asl(strLit: StringLiteral): string = strLit.content
@@ -458,6 +464,7 @@ proc asl(expr: Expression): string =
   of ekFnCall: asl(expr.fncall)
   of ekGetter: asl(expr.getter)
   of ekInitializer: asl(expr.initializer)
+  of ekVariable: asl(expr.variable)
 
 type Assignment = ref object
   target: string
@@ -887,6 +894,8 @@ expressionSpec.parseFn = oneOf("expression", [
     proc(v: FunctionCall): Expression = newExpression(v)),
   getterSpec.map("getter_expression",
     proc(v: Getter): Expression = newExpression(v)),
+  identifierSpec.map("variable_expression",
+    proc(v: Identifier): Expression = newExpression(v)),
 ]).parseFn
 
 let equalsSeparatorSpec = separatorSpec("=")
