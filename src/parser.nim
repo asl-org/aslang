@@ -32,7 +32,8 @@ type
     index*: int
     level*: uint32
 
-proc newParser*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Parser =
+proc newParser*(filepath: string, indentWidth: uint32, tokens: seq[
+    Token]): Parser =
   Parser(filepath: filepath, indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
 
 proc done*(parser: Parser): bool =
@@ -68,7 +69,7 @@ proc consumeExceptNewline*(parser: Parser,
     parser.index += 1
     ok(token)
 
-proc consume*(parser: Parser, kind: TokenKind,
+proc consumeTokenKind*(parser: Parser, kind: TokenKind,
     tokenRepr: string): Result[Token, ParserError] =
   let token = ? parser.peek(tokenRepr)
   if token.kind != kind:
@@ -89,19 +90,7 @@ proc consumePunctuation*(parser: Parser,
     ok(token)
 
 proc consumeSpace*(parser: Parser): Result[Token, ParserError] =
-  parser.consume(tkSpace, "space ' '")
-
-proc consumeNewline*(parser: Parser): Result[Token, ParserError] =
-  parser.consume(tkNewline, "newline '\\n'")
-
-proc consumeDigit*(parser: Parser): Result[Token, ParserError] =
-  parser.consume(tkDigit, "digit [0-9]")
-
-proc consumeAlphabet*(parser: Parser): Result[Token, ParserError] =
-  parser.consume(tkAlphabet, "alphabet [a-zA-Z]")
-
-proc consumeUtf8*(parser: Parser): Result[Token, ParserError] =
-  parser.consume(tkUtf8, "utf8 character")
+  parser.consumeTokenKind(tkSpace, "space ' '")
 
 # ============================================================
 # Spec[T] — named, typed parser combinator
@@ -137,11 +126,8 @@ proc oneOf*[T](name: string, specs: openArray[Spec[T]]): Spec[T] =
     parseFn: proc(parser: Parser): Result[T, ParserError] =
     var errors: seq[ParserError]
     for spec in captured:
-      let checkpoint = parser.index
-      let maybeValue = spec.parseFn(parser)
-      if maybeValue.isOk:
-        return maybeValue
-      parser.index = checkpoint
+      let maybeValue = parser.run(spec)
+      if maybeValue.isOk: return maybeValue
       errors.add(maybeValue.error)
     err(max(errors))
   )
@@ -152,11 +138,8 @@ proc any*[T](spec: Spec[T]): Spec[seq[T]] =
     parseFn: proc(parser: Parser): Result[seq[T], ParserError] =
     var items: seq[T]
     while true:
-      let checkpoint = parser.index
-      let maybeValue = spec.parseFn(parser)
-      if maybeValue.isErr:
-        parser.index = checkpoint
-        break
+      let maybeValue = parser.run(spec)
+      if maybeValue.isErr: break
       items.add(maybeValue.get)
     ok(items)
   )
@@ -165,20 +148,10 @@ proc atLeastOne*[T](spec: Spec[T]): Spec[seq[T]] =
   Spec[seq[T]](
     name: spec.name & "+",
     parseFn: proc(parser: Parser): Result[seq[T], ParserError] =
-    var items: seq[T]
-    let checkpoint = parser.index
-    let first = spec.parseFn(parser)
-    if first.isErr:
-      parser.index = checkpoint
-      return err(first.error)
-    items.add(first.get)
-    while true:
-      let cp = parser.index
-      let maybeValue = spec.parseFn(parser)
-      if maybeValue.isErr:
-        parser.index = cp
-        break
-      items.add(maybeValue.get)
+    let first = ? parser.run(spec)
+    var items = @[first]
+    let rest = ? parser.run(any(spec))
+    items.add(rest)
     ok(items)
   )
 
@@ -186,13 +159,9 @@ proc optional*[T](spec: Spec[T]): Spec[Option[T]] =
   Spec[Option[T]](
     name: spec.name & "?",
     parseFn: proc(parser: Parser): Result[Option[T], ParserError] =
-    let checkpoint = parser.index
-    let maybeValue = spec.parseFn(parser)
-    if maybeValue.isErr:
-      parser.index = checkpoint
-      ok(none(T))
-    else:
-      ok(some(maybeValue.get))
+    let maybeValue = parser.run(spec)
+    if maybeValue.isErr: ok(none(T))
+    else: ok(some(maybeValue.get))
   )
 
 proc map*[T, U](spec: Spec[T], name: string,
@@ -200,37 +169,27 @@ proc map*[T, U](spec: Spec[T], name: string,
   Spec[U](
     name: name,
     parseFn: proc(parser: Parser): Result[U, ParserError] =
-    let maybeValue = spec.parseFn(parser)
-    if maybeValue.isErr:
-      err(maybeValue.error)
-    else:
-      ok(fn(maybeValue.get))
+    let value = ? parser.run(spec)
+    ok(fn(value))
   )
 
 proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
+  let pairSpec = Spec[T](
+    name: spec.name & "_pair",
+    parseFn: proc(parser: Parser): Result[T, ParserError] =
+    discard ? parser.run(sep)
+    let elem = ? parser.run(spec)
+    ok(elem)
+  )
   Spec[seq[T]](
     name: spec.name & "...",
     parseFn: proc(parser: Parser): Result[seq[T], ParserError] =
     var items: seq[T]
-    # First element — optional
-    let checkpoint = parser.index
-    let first = spec.parseFn(parser)
-    if first.isErr:
-      parser.index = checkpoint
-      return ok(items)
-    items.add(first.get)
-    # Subsequent (sep element)* pairs
-    while true:
-      let cp = parser.index
-      let sepResult = sep.parseFn(parser)
-      if sepResult.isErr:
-        parser.index = cp
-        break
-      let elem = spec.parseFn(parser)
-      if elem.isErr:
-        parser.index = cp
-        break
-      items.add(elem.get)
+    let first = parser.run(spec)
+    if first.isOk:
+      items.add(first.get)
+      let rest = ? parser.run(any(pairSpec))
+      items.add(rest)
     ok(items)
   )
 
@@ -241,7 +200,7 @@ proc contained*[T](name: string, open: string, inner: Spec[T],
     parseFn: proc(parser: Parser): Result[T, ParserError] =
     discard ? parser.consumePunctuation(open)
     while parser.consumeSpace().isOk: discard
-    let maybeValue = ? inner.parseFn(parser)
+    let maybeValue = ? parser.run(inner)
     while parser.consumeSpace().isOk: discard
     discard ? parser.consumePunctuation(close)
     ok(maybeValue)
@@ -255,7 +214,7 @@ proc tokenSpec*(kind: TokenKind, tokenRepr: string): Spec[Token] =
   Spec[Token](
     name: tokenRepr,
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consume(kind, tokenRepr)
+    parser.consumeTokenKind(kind, tokenRepr)
   )
 
 proc punctuationSpec*(value: string): Spec[Token] =
@@ -265,25 +224,12 @@ proc punctuationSpec*(value: string): Spec[Token] =
     parser.consumePunctuation(value)
   )
 
-proc anyTokenSpec*(tokenRepr: string): Spec[Token] =
-  Spec[Token](
-    name: tokenRepr,
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consume(tokenRepr)
-  )
-
 proc anyTokenExceptNewlineSpec*(tokenRepr: string): Spec[Token] =
   Spec[Token](
     name: tokenRepr,
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
     parser.consumeExceptNewline(tokenRepr)
   )
-
-let spaceSpec* = tokenSpec(tkSpace, "space ' '")
-let newlineSpec* = tokenSpec(tkNewline, "newline '\\n'")
-let alphabetSpec* = tokenSpec(tkAlphabet, "alphabet [a-zA-Z]")
-let digitSpec* = tokenSpec(tkDigit, "digit [0-9]")
-let utf8Spec* = tokenSpec(tkUtf8, "utf8 character")
 
 # ============================================================
 # AST types
@@ -311,12 +257,12 @@ type
 proc newIdentifier(name: string, loc: Location): Identifier =
   Identifier(name: name, loc: loc)
 
-type Indentation = ref object
-  indentation: uint32
+type Space = ref object
+  spaces: uint32
   loc: Location
 
-proc newIndentation(indentation: uint32, loc: Location): Indentation =
-  Indentation(indentation: indentation, loc: loc)
+proc newSpace(spaces: uint32, loc: Location): Space =
+  Space(spaces: spaces, loc: loc)
 
 type ArgumentType = ref object
   root: string
@@ -503,8 +449,31 @@ proc newFile(path: string, imports: seq[Import], items: seq[FileItem]): File =
 # Grammar specs
 # ============================================================
 
+
+let spaceSpec = tokenSpec(tkSpace, "space ' '")
+let newlineSpec = tokenSpec(tkNewline, "newline '\\n'")
+let alphabetSpec = tokenSpec(tkAlphabet, "alphabet [a-zA-Z]")
+let digitSpec = tokenSpec(tkDigit, "digit [0-9]")
+let underscoreSpec = punctuationSpec("_")
+let hashSpec = punctuationSpec("#")
+let backslashSpec = punctuationSpec("\\")
+let doubleQuoteSpec = punctuationSpec("\"")
+
+proc separatorSpec(sep: string): Spec[Token] =
+  Spec[Token](
+    name: "'" & sep & "'",
+    parseFn: proc(parser: Parser): Result[Token, ParserError] =
+    discard ? parser.run(any(spaceSpec))
+    let token = ? parser.run(punctuationSpec(sep))
+    discard ? parser.run(any(spaceSpec))
+    ok(token)
+  )
+
+let commaWithSpacesSpec = separatorSpec(",")
+let colonWithSpacesSpec = separatorSpec(":")
+
 let identifierHeadCharSpec = oneOf("identifier_head", [
-  punctuationSpec("_"),
+  underscoreSpec,
   alphabetSpec,
 ])
 
@@ -548,7 +517,7 @@ let emptyLineSpec = Spec[EmptyLine](
 let commentSpec = Spec[Comment](
   name: "comment",
   parseFn: proc(parser: Parser): Result[Comment, ParserError] =
-  let hashtag = ? parser.run(punctuationSpec("#"))
+  let hashtag = ? parser.run(hashSpec)
   let chars = ? parser.run(any(anyTokenExceptNewlineSpec("comment character")))
   var content: string
   for ch in chars: content.add(ch.value)
@@ -561,9 +530,9 @@ let ignorableLineSpec = oneOf("ignorable_line", [
   commentSpec.map("comment_loc", proc(v: Comment): Location = v.loc),
 ])
 
-let indentationSpec = Spec[Indentation](
+let indentationSpec = Spec[Space](
   name: "indentation",
-  parseFn: proc(parser: Parser): Result[Indentation, ParserError] =
+  parseFn: proc(parser: Parser): Result[Space, ParserError] =
   let loc = parser.loc
   let spaces = ? parser.run(any(spaceSpec))
   let count = spaces.len.uint32
@@ -572,14 +541,15 @@ let indentationSpec = Spec[Indentation](
     let msg = fmt"indentation error expected {expected} but found {count} space(s)"
     err(newParserError(msg, loc))
   else:
-    ok(newIndentation(count, loc))
+    ok(newSpace(count, loc))
 )
 
-proc escapedSpec(character: string, charSpec: Spec[Token]): Spec[StringContent] =
+proc escapedSpec(character: string, charSpec: Spec[Token]): Spec[
+    StringContent] =
   Spec[StringContent](
     name: "'\\" & character & "'",
     parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
-    let backslash = ? parser.run(punctuationSpec("\\"))
+    let backslash = ? parser.run(backslashSpec)
     let token = ? parser.run(charSpec)
     if token.value != character:
       return err(newParserError(
@@ -587,8 +557,8 @@ proc escapedSpec(character: string, charSpec: Spec[Token]): Spec[StringContent] 
     ok(newStringContent("\\" & character, backslash.loc))
   )
 
-let escapedBackslash = escapedSpec("\\", punctuationSpec("\\"))
-let escapedDoubleQuote = escapedSpec("\"", punctuationSpec("\""))
+let escapedBackslash = escapedSpec("\\", backslashSpec)
+let escapedDoubleQuote = escapedSpec("\"", doubleQuoteSpec)
 let escapedNewline = escapedSpec("n", alphabetSpec)
 let escapedTab = escapedSpec("t", alphabetSpec)
 
@@ -617,27 +587,14 @@ let stringContentSpec = oneOf("string_content", [
 let stringLiteralSpec = Spec[StringLiteral](
   name: "string_literal",
   parseFn: proc(parser: Parser): Result[StringLiteral, ParserError] =
-  let openQuote = ? parser.run(punctuationSpec("\""))
+  let openQuote = ? parser.run(doubleQuoteSpec)
   var content = "\""
   let chars = ? parser.run(any(stringContentSpec))
   for ch in chars: content.add(ch.content)
-  discard ? parser.run(punctuationSpec("\""))
+  discard ? parser.run(doubleQuoteSpec)
   content.add("\"")
   ok(newStringLiteral(content, openQuote.loc))
 )
-
-proc separatorSpec(sep: string): Spec[Token] =
-  Spec[Token](
-    name: "'" & sep & "'",
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    discard ? parser.run(any(spaceSpec))
-    let token = ? parser.run(punctuationSpec(sep))
-    discard ? parser.run(any(spaceSpec))
-    ok(token)
-  )
-
-let commaWithSpacesSpec = separatorSpec(",")
-let colonWithSpacesSpec = separatorSpec(":")
 
 # Forward-declared via newSpec because argumentTypeSpec is self-referential:
 # type params like Map[String, List[Int]] contain nested argument types.
@@ -762,7 +719,8 @@ proc blockSpec[H, B, R](name: string,
     ok(combine(h, b))
   )
 
-let functionSpec = blockSpec("function", functionDefinitionSpec, statementListSpec,
+let functionSpec = blockSpec("function", functionDefinitionSpec,
+  statementListSpec,
   proc(h: FunctionDefinition, b: StatementList): Function = newFunction(h, b))
 
 # Each function block skips leading ignorable lines then parses a function.
@@ -816,8 +774,10 @@ let functionDefinitionLineSpec = Spec[FunctionDefinition](
 
 let functionDefinitionListSpec = atLeastOne(functionDefinitionLineSpec)
 
-let genericSpec = blockSpec("generic", genericHeaderSpec, functionDefinitionListSpec,
-  proc(h: GenericHeader, b: seq[FunctionDefinition]): Generic = newGeneric(h.name, b, h.loc))
+let genericSpec = blockSpec("generic", genericHeaderSpec,
+  functionDefinitionListSpec,
+  proc(h: GenericHeader, b: seq[FunctionDefinition]): Generic = newGeneric(
+      h.name, b, h.loc))
 
 let moduleSpec = blockSpec("module", moduleHeaderSpec, functionListSpec,
   proc(h: ModuleHeader, b: FunctionList): Module = newModule(h.name, b, h.loc))

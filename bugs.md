@@ -10,11 +10,11 @@
 
 ### Combinator backtracking bugs
 
-- [ ] **PSR-12: `any` combinator doesn't backtrack per iteration** (`src/parser.nim`) [high] — Calls `spec.parseFn(parser)` directly without saving/restoring index. If a spec partially consumes tokens and then fails, those tokens are lost. Should checkpoint/restore each iteration like `oneOf` does.
+- [x] **PSR-12: `any` combinator doesn't backtrack per iteration** (`src/parser.nim`) [high] — Fixed. Replaced `spec.parseFn(parser)` with `parser.run(spec)` which handles checkpoint/restore automatically.
 
-- [ ] **PSR-13: `separatedBy` doesn't backtrack failed elements** (`src/parser.nim`) [high] — First element and sep+element pairs don't save/restore on partial failure. If an element partially consumes then fails, the consumption isn't undone within `separatedBy`.
+- [x] **PSR-13: `separatedBy` doesn't backtrack failed elements** (`src/parser.nim`) [high] — Fixed. Sep+element wrapped into a `pairSpec` so `run` backtracks both atomically. All internal calls use `parser.run`.
 
-- [ ] **PSR-14: `optional` doesn't backtrack on partial failure** (`src/parser.nim`) [high] — If the inner spec partially consumes tokens then fails, the consumption isn't undone. Should save/restore around the inner spec call.
+- [x] **PSR-14: `optional` doesn't backtrack on partial failure** (`src/parser.nim`) [high] — Fixed. Replaced `spec.parseFn(parser)` with `parser.run(spec)`.
 
 ### Parser cleanup (round 2)
 
