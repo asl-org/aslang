@@ -373,6 +373,10 @@ type
     of ilkSigned: signed: SignedIntegerLiteral
     of ilkUnsigned: unsigned: UnsignedIntegerLiteral
 
+  FloatLiteral = ref object
+    value: string
+    loc: Location
+
   FunctionCall = ref object
     argType: ArgumentType
     name: string
@@ -393,11 +397,12 @@ type
     loc: Location
 
   LiteralKind = enum
-    lkString, lkInteger
+    lkString, lkInteger, lkFloat
   Literal = ref object
     case kind: LiteralKind
     of lkString: strLit: StringLiteral
     of lkInteger: intLit: IntegerLiteral
+    of lkFloat: floatLit: FloatLiteral
 
   PrimitiveInitializer = ref object
     typeName: string
@@ -417,12 +422,11 @@ type
     of ikNonPrimitive: nonPrimitive: NonPrimitiveInitializer
 
   ExpressionKind = enum
-    ekFnCall, ekStrLit, ekIntLit, ekGetter, ekInitializer, ekVariable
+    ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable
   Expression = ref object
     case kind: ExpressionKind
+    of ekLiteral: literal: Literal
     of ekFnCall: fncall: FunctionCall
-    of ekStrLit: strLit: StringLiteral
-    of ekIntLit: intLit: IntegerLiteral
     of ekGetter: getter: Getter
     of ekInitializer: initializer: Initializer
     of ekVariable: variable: Identifier
@@ -437,8 +441,8 @@ proc newFunctionCall(argType: ArgumentType, name: string,
     argList: ArgumentList): FunctionCall =
   FunctionCall(argType: argType, name: name, argList: argList)
 
-proc newExpression(strLit: StringLiteral): Expression =
-  Expression(kind: ekStrLit, strLit: strLit)
+proc newExpression(literal: Literal): Expression =
+  Expression(kind: ekLiteral, literal: literal)
 
 proc newExpression(fncall: FunctionCall): Expression =
   Expression(kind: ekFnCall, fncall: fncall)
@@ -459,6 +463,9 @@ proc newLiteral(strLit: StringLiteral): Literal =
 
 proc newLiteral(intLit: IntegerLiteral): Literal =
   Literal(kind: lkInteger, intLit: intLit)
+
+proc newLiteral(floatLit: FloatLiteral): Literal =
+  Literal(kind: lkFloat, floatLit: floatLit)
 
 proc newPrimitiveInitializer(typeName: string, value: Literal,
     loc: Location): PrimitiveInitializer =
@@ -490,8 +497,8 @@ proc newIntegerLiteral(signed: SignedIntegerLiteral): IntegerLiteral =
 proc newIntegerLiteral(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ilkUnsigned, unsigned: unsigned)
 
-proc newExpression(intLit: IntegerLiteral): Expression =
-  Expression(kind: ekIntLit, intLit: intLit)
+proc newFloatLiteral(value: string, loc: Location): FloatLiteral =
+  FloatLiteral(value: value, loc: loc)
 
 proc newExpression(initializer: Initializer): Expression =
   Expression(kind: ekInitializer, initializer: initializer)
@@ -536,10 +543,13 @@ proc asl(kwargList: KeywordArgumentList): string =
     result.add(asl(arg))
   result.add(" }")
 
+proc asl(floatLit: FloatLiteral): string = floatLit.value
+
 proc asl(literal: Literal): string =
   case literal.kind:
   of lkString: asl(literal.strLit)
   of lkInteger: asl(literal.intLit)
+  of lkFloat: asl(literal.floatLit)
 
 proc asl(prim: PrimitiveInitializer): string =
   fmt"{prim.typeName} {asl(prim.value)}"
@@ -554,8 +564,7 @@ proc asl(initializer: Initializer): string =
 
 proc asl(expr: Expression): string =
   case expr.kind:
-  of ekStrLit: asl(expr.strLit)
-  of ekIntLit: asl(expr.intLit)
+  of ekLiteral: asl(expr.literal)
   of ekFnCall: asl(expr.fncall)
   of ekGetter: asl(expr.getter)
   of ekInitializer: asl(expr.initializer)
@@ -992,9 +1001,51 @@ let integerLiteralSpec = oneOf("integer_literal", [
     proc(v: UnsignedIntegerLiteral): IntegerLiteral = newIntegerLiteral(v)),
 ])
 
+# (+|-)? digit+ ("." digit+)? ((e|E) (+|-)? digit+)?
+# Must have either decimal part or exponent to distinguish from integer
+let floatLiteralSpec = Spec[FloatLiteral](
+  name: "float_literal",
+  parseFn: proc(parser: Parser): Result[FloatLiteral, ParserError] =
+  let loc = parser.loc
+  var value: string
+  let signSpec = oneOf("sign", [punctuationSpec("+"), punctuationSpec("-")])
+  # Optional sign
+  let maybeSign = parser.run(signSpec)
+  if maybeSign.isOk: value.add(maybeSign.get.value)
+  # Integer part (required)
+  let intDigits = ? parser.run(atLeastOne(digitSpec))
+  for d in intDigits: value.add(d.value)
+  # Decimal part (optional)
+  var hasDecimal = false
+  let maybeDot = parser.run(punctuationSpec("."))
+  if maybeDot.isOk:
+    hasDecimal = true
+    value.add(".")
+    let fracDigits = ? parser.run(atLeastOne(digitSpec))
+    for d in fracDigits: value.add(d.value)
+  # Exponent part (optional)
+  var hasExponent = false
+  let maybeE = parser.run(oneOf("exponent", [
+    alphabetSpec, alphabetSpec,
+  ]))
+  if maybeE.isOk and (maybeE.get.value == "e" or maybeE.get.value == "E"):
+    hasExponent = true
+    value.add(maybeE.get.value)
+    let maybeExpSign = parser.run(signSpec)
+    if maybeExpSign.isOk: value.add(maybeExpSign.get.value)
+    let expDigits = ? parser.run(atLeastOne(digitSpec))
+    for d in expDigits: value.add(d.value)
+  # Must have at least decimal or exponent to be a float
+  if not hasDecimal and not hasExponent:
+    return err(newParserError("expected '.' or 'e' for float literal", loc))
+  ok(newFloatLiteral(value, loc))
+)
+
 let literalSpec = oneOf("literal", [
   stringLiteralSpec.map("string_literal",
     proc(v: StringLiteral): Literal = newLiteral(v)),
+  floatLiteralSpec.map("float_literal",
+    proc(v: FloatLiteral): Literal = newLiteral(v)),
   integerLiteralSpec.map("integer_literal",
     proc(v: IntegerLiteral): Literal = newLiteral(v)),
 ])
@@ -1034,10 +1085,8 @@ let getterSpec = Spec[Getter](
 )
 
 expressionSpec.parseFn = oneOf("expression", [
-  stringLiteralSpec.map("string_expression",
-    proc(v: StringLiteral): Expression = newExpression(v)),
-  integerLiteralSpec.map("integer_expression",
-    proc(v: IntegerLiteral): Expression = newExpression(v)),
+  literalSpec.map("literal_expression",
+    proc(v: Literal): Expression = newExpression(v)),
   initializerSpec.map("initializer_expression",
     proc(v: Initializer): Expression = newExpression(v)),
   functionCallSpec.map("fncall_expression",

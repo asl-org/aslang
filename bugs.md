@@ -24,6 +24,8 @@
 
 - [x] **PSR-26: Initializer is primitive/non-primitive variant** (`src/parser.nim`) [medium] — Done. Primitive: `identifier space+ literal` (e.g., `u8 0`). Non-primitive: `argumentType { kwargs }`. Introduces `Literal` variant (string | integer), `PrimitiveInitializer`, `NonPrimitiveInitializer`. `problem001.asl` now parses successfully.
 
+- [x] **PSR-27: Add float literal expression** (`src/parser.nim`) [medium] — Done. Grammar: `(+|-)? digit+ ("." digit+)? ((e|E) (+|-)? digit+)?`, requires decimal or exponent. `FloatLiteral` AST type, `lkFloat` in `Literal`, `ekFloatLit` in `Expression`. Tried before integer in `oneOf`.
+
 ### Combinator backtracking bugs
 
 - [x] **PSR-12: `any` combinator doesn't backtrack per iteration** (`src/parser.nim`) [high] — Fixed. Replaced `spec.parseFn(parser)` with `parser.run(spec)` which handles checkpoint/restore automatically.
