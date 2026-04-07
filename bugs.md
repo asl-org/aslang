@@ -22,7 +22,7 @@
 
 - [x] **PSR-25: blockSpec body errors should be hard failures** (`src/parser.nim`) [high] — Done. Added `fatal` flag to `ParserError`. `blockSpec` marks body errors as fatal after header succeeds. `run` skips backtracking for fatal errors. `any` propagates fatal errors instead of silently succeeding.
 
-- [ ] **PSR-26: Add typed literal expression** (`src/parser.nim`) [medium] — `u8 0` syntax: `Type space value`. Needed for `problem001.asl` line 13. New expression kind for type-qualified literals.
+- [x] **PSR-26: Initializer is primitive/non-primitive variant** (`src/parser.nim`) [medium] — Done. Primitive: `identifier space+ literal` (e.g., `u8 0`). Non-primitive: `argumentType { kwargs }`. Introduces `Literal` variant (string | integer), `PrimitiveInitializer`, `NonPrimitiveInitializer`. `problem001.asl` now parses successfully.
 
 ### Combinator backtracking bugs
 

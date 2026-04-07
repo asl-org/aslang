@@ -392,10 +392,29 @@ type
     args: seq[KeywordArgument]
     loc: Location
 
-  Initializer = ref object
+  LiteralKind = enum
+    lkString, lkInteger
+  Literal = ref object
+    case kind: LiteralKind
+    of lkString: strLit: StringLiteral
+    of lkInteger: intLit: IntegerLiteral
+
+  PrimitiveInitializer = ref object
+    typeName: string
+    value: Literal
+    loc: Location
+
+  NonPrimitiveInitializer = ref object
     argType: ArgumentType
     kwargList: KeywordArgumentList
     loc: Location
+
+  InitializerKind = enum
+    ikPrimitive, ikNonPrimitive
+  Initializer = ref object
+    case kind: InitializerKind
+    of ikPrimitive: primitive: PrimitiveInitializer
+    of ikNonPrimitive: nonPrimitive: NonPrimitiveInitializer
 
   ExpressionKind = enum
     ekFnCall, ekStrLit, ekIntLit, ekGetter, ekInitializer, ekVariable
@@ -435,9 +454,25 @@ proc newKeywordArgumentList(args: seq[KeywordArgument],
     loc: Location): KeywordArgumentList =
   KeywordArgumentList(args: args, loc: loc)
 
-proc newInitializer(argType: ArgumentType, kwargList: KeywordArgumentList,
-    loc: Location): Initializer =
-  Initializer(argType: argType, kwargList: kwargList, loc: loc)
+proc newLiteral(strLit: StringLiteral): Literal =
+  Literal(kind: lkString, strLit: strLit)
+
+proc newLiteral(intLit: IntegerLiteral): Literal =
+  Literal(kind: lkInteger, intLit: intLit)
+
+proc newPrimitiveInitializer(typeName: string, value: Literal,
+    loc: Location): PrimitiveInitializer =
+  PrimitiveInitializer(typeName: typeName, value: value, loc: loc)
+
+proc newNonPrimitiveInitializer(argType: ArgumentType,
+    kwargList: KeywordArgumentList, loc: Location): NonPrimitiveInitializer =
+  NonPrimitiveInitializer(argType: argType, kwargList: kwargList, loc: loc)
+
+proc newInitializer(primitive: PrimitiveInitializer): Initializer =
+  Initializer(kind: ikPrimitive, primitive: primitive)
+
+proc newInitializer(nonPrimitive: NonPrimitiveInitializer): Initializer =
+  Initializer(kind: ikNonPrimitive, nonPrimitive: nonPrimitive)
 
 proc newExpression(getter: Getter): Expression =
   Expression(kind: ekGetter, getter: getter)
@@ -501,8 +536,21 @@ proc asl(kwargList: KeywordArgumentList): string =
     result.add(asl(arg))
   result.add(" }")
 
+proc asl(literal: Literal): string =
+  case literal.kind:
+  of lkString: asl(literal.strLit)
+  of lkInteger: asl(literal.intLit)
+
+proc asl(prim: PrimitiveInitializer): string =
+  fmt"{prim.typeName} {asl(prim.value)}"
+
+proc asl(nonPrim: NonPrimitiveInitializer): string =
+  fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
+
 proc asl(initializer: Initializer): string =
-  fmt"{asl(initializer.argType)} {asl(initializer.kwargList)}"
+  case initializer.kind:
+  of ikPrimitive: asl(initializer.primitive)
+  of ikNonPrimitive: asl(initializer.nonPrimitive)
 
 proc asl(expr: Expression): string =
   case expr.kind:
@@ -914,24 +962,6 @@ let kwargListSpec = Spec[KeywordArgumentList](
   ok(newKeywordArgumentList(args, loc))
 )
 
-let initializerSpec = Spec[Initializer](
-  name: "initializer",
-  parseFn: proc(parser: Parser): Result[Initializer, ParserError] =
-  let argType = ? parser.run(argumentTypeSpec)
-  discard parser.run(spacesSpec)
-  let kwargList = ? parser.run(kwargListSpec)
-  ok(newInitializer(argType, kwargList, argType.loc))
-)
-
-let getterSpec = Spec[Getter](
-  name: "getter",
-  parseFn: proc(parser: Parser): Result[Getter, ParserError] =
-  let source = ? parser.run(identifierSpec)
-  discard ? parser.run(punctuationSpec("."))
-  let property = ? parser.run(identifierSpec)
-  ok(newGetter(source.name, property.name, source.loc))
-)
-
 # digit+
 let unsignedIntegerLiteralSpec = Spec[UnsignedIntegerLiteral](
   name: "unsigned_integer_literal",
@@ -961,6 +991,47 @@ let integerLiteralSpec = oneOf("integer_literal", [
   unsignedIntegerLiteralSpec.map("unsigned_int",
     proc(v: UnsignedIntegerLiteral): IntegerLiteral = newIntegerLiteral(v)),
 ])
+
+let literalSpec = oneOf("literal", [
+  stringLiteralSpec.map("string_literal",
+    proc(v: StringLiteral): Literal = newLiteral(v)),
+  integerLiteralSpec.map("integer_literal",
+    proc(v: IntegerLiteral): Literal = newLiteral(v)),
+])
+
+let nonPrimitiveInitializerSpec = Spec[NonPrimitiveInitializer](
+  name: "non_primitive_initializer",
+  parseFn: proc(parser: Parser): Result[NonPrimitiveInitializer, ParserError] =
+  let argType = ? parser.run(argumentTypeSpec)
+  discard parser.run(spacesSpec)
+  let kwargList = ? parser.run(kwargListSpec)
+  ok(newNonPrimitiveInitializer(argType, kwargList, argType.loc))
+)
+
+let primitiveInitializerSpec = Spec[PrimitiveInitializer](
+  name: "primitive_initializer",
+  parseFn: proc(parser: Parser): Result[PrimitiveInitializer, ParserError] =
+  let typeName = ? parser.run(identifierSpec)
+  discard ? parser.run(spacesSpec)
+  let value = ? parser.run(literalSpec)
+  ok(newPrimitiveInitializer(typeName.name, value, typeName.loc))
+)
+
+let initializerSpec = oneOf("initializer", [
+  nonPrimitiveInitializerSpec.map("non_primitive",
+    proc(v: NonPrimitiveInitializer): Initializer = newInitializer(v)),
+  primitiveInitializerSpec.map("primitive",
+    proc(v: PrimitiveInitializer): Initializer = newInitializer(v)),
+])
+
+let getterSpec = Spec[Getter](
+  name: "getter",
+  parseFn: proc(parser: Parser): Result[Getter, ParserError] =
+  let source = ? parser.run(identifierSpec)
+  discard ? parser.run(punctuationSpec("."))
+  let property = ? parser.run(identifierSpec)
+  ok(newGetter(source.name, property.name, source.loc))
+)
 
 expressionSpec.parseFn = oneOf("expression", [
   stringLiteralSpec.map("string_expression",
