@@ -122,3 +122,13 @@
 - Union block: `union:` + variant lines. Each `VariantDefinition` has a name and optional fields in braces (`Free { usage: u32 }`). Fields reuse `ArgumentDefinition` inside `contained("{", separatedBy(...), "}")`.
 - Nameless block headers (`struct:`, `union:`) return just `Location` from their header spec. `blockSpec` handles them the same as named headers — the combine function ignores the location if not needed.
 - Module body became a composite spec (`ModuleBody` tuple) since `blockSpec` takes a single body spec. The tuple `(Option[DataBlock], FunctionList)` is unpacked in the combine function.
+
+## 2026-04-08 — Match expressions and decorator scoping
+
+- Match is a block expression (`ekMatch`) not a block statement — it can be assigned (`y = match x:`) or standalone. Parsed separately in `statementLineSpec` since it handles its own indentation via `blockSpec`. `expressionSpec` intentionally excludes match to prevent it from appearing in inline contexts (function call arguments, etc.).
+- Match expression as subject of another match is explicitly rejected in `matchBodySpec` with a guard check (`subject.kind == ekMatch`). Currently also implicitly prevented because `expressionSpec` doesn't include match, but the explicit check protects against future changes.
+- `statementLineSpec` tries match patterns (standalone and assigned) before inline statements. Match handles its own indentation via `blockSpec`, so it's tried before `indentationSpec` is consumed for inline statements.
+- `statementListSpec` is forward-declared (`newSpec`) for mutual recursion: match → caseBlock → statementList → statementLine → match.
+- Block statements need multi-line formatting. `aslBlock(stmt, indentWidth)` returns `seq[string]` — dispatches to `asl(matchExpr, indentWidth)` for match, wraps in `@[asl(stmt)]` for inline. Match assignment formatting: first line is `target = match subject:`, rest are case block lines.
+- Not all blocks support decorators. `blockSpec` (plain) is for case, struct, union, generic. `decoratedBlockSpec` adds decorator parsing for module and function only. This prevents accidental `@export` on blocks that don't support it.
+- Types involved in mutual recursion must share one `type` block: `Expression`, `Assignment`, `CasePattern`, `CaseBlock`, `MatchExpression`, `Statement`, `StatementList` all reference each other and must be defined together.

@@ -1266,7 +1266,29 @@ let decoratorLineSpec = Spec[Decorator](
   ok(newDecorator(name.name, name.loc))
 )
 
+# Block without decorator support (case, struct, union, generic)
 proc blockSpec[H, B, R](name: string,
+    header: Spec[H], body: Spec[B],
+    combine: proc(h: H, b: B): R): Spec[R] =
+  Spec[R](
+    name: name,
+    parseFn: proc(parser: Parser): Result[R, ParserError] =
+    discard ? parser.run(indentationSpec)
+    let h = ? parser.run(header)
+    discard ? parser.run(ignorableLineSpec)
+    # After header succeeds, body errors are fatal — they propagate
+    # through run and any without backtracking or being swallowed.
+    parser.level += 1
+    let bodyResult = body.parseFn(parser)
+    parser.level -= 1
+    if bodyResult.isErr:
+      bodyResult.error.fatal = true
+      return err(bodyResult.error)
+    ok(combine(h, bodyResult.get))
+  )
+
+# Block with decorator support (module, function)
+proc decoratedBlockSpec[H, B, R](name: string,
     header: Spec[H], body: Spec[B],
     combine: proc(decorators: seq[Decorator], h: H, b: B): R): Spec[R] =
   Spec[R](
@@ -1276,8 +1298,6 @@ proc blockSpec[H, B, R](name: string,
     discard ? parser.run(indentationSpec)
     let h = ? parser.run(header)
     discard ? parser.run(ignorableLineSpec)
-    # After header succeeds, body errors are fatal — they propagate
-    # through run and any without backtracking or being swallowed.
     parser.level += 1
     let bodyResult = body.parseFn(parser)
     parser.level -= 1
@@ -1318,7 +1338,7 @@ proc loc(pattern: CasePattern): Location =
   of cpkVariable: pattern.variable.loc
 
 let caseBlockSpec = blockSpec("case", caseHeaderSpec, statementListSpec,
-  proc(d: seq[Decorator], h: CasePattern, b: StatementList): CaseBlock =
+  proc(h: CasePattern, b: StatementList): CaseBlock =
     newCaseBlock(h, b, h.loc))
 
 let inlineStatementSpec = oneOf("inline_statement", [
@@ -1390,7 +1410,7 @@ let statementLineSpec = Spec[Statement](
 statementListSpec.parseFn = atLeastOne(statementLineSpec).map("statement_list",
   proc(stmts: seq[Statement]): StatementList = newStatementList(stmts)).parseFn
 
-let functionSpec = blockSpec("function", functionDefinitionSpec,
+let functionSpec = decoratedBlockSpec("function", functionDefinitionSpec,
   statementListSpec,
   proc(d: seq[Decorator], h: FunctionDefinition, b: StatementList): Function =
     newFunction(d, h, b))
@@ -1448,8 +1468,8 @@ let functionDefinitionListSpec = atLeastOne(functionDefinitionLineSpec)
 
 let genericSpec = blockSpec("generic", genericHeaderSpec,
   functionDefinitionListSpec,
-  proc(d: seq[Decorator], h: GenericHeader, b: seq[FunctionDefinition]): Generic =
-    newGeneric(d, h.name, b, h.loc))
+  proc(h: GenericHeader, b: seq[FunctionDefinition]): Generic =
+    newGeneric(@[], h.name, b, h.loc))
 
 # struct: field+ (field is identifier ":" argumentType)
 let structHeaderSpec = Spec[Location](
@@ -1474,7 +1494,7 @@ let fieldLineSpec = Spec[ArgumentDefinition](
 
 let structSpec = blockSpec("struct", structHeaderSpec,
   atLeastOne(fieldLineSpec),
-  proc(d: seq[Decorator], h: Location, b: seq[ArgumentDefinition]): Struct =
+  proc(h: Location, b: seq[ArgumentDefinition]): Struct =
     newStruct(b, h))
 
 # union: variant+ (variant is identifier space* ("{" argDef, argDef "}")?)
@@ -1504,7 +1524,7 @@ let unionHeaderSpec = Spec[Location](
 
 let unionSpec = blockSpec("union", unionHeaderSpec,
   atLeastOne(variantDefinitionLineSpec),
-  proc(d: seq[Decorator], h: Location, b: seq[VariantDefinition]): Union =
+  proc(h: Location, b: seq[VariantDefinition]): Union =
     newUnion(b, h))
 
 let dataBlockSpec = oneOf("data_block", [
@@ -1525,7 +1545,7 @@ let moduleBodySpec = Spec[ModuleBody](
   ok((data, funcList))
 )
 
-let moduleSpec = blockSpec("module", moduleHeaderSpec, moduleBodySpec,
+let moduleSpec = decoratedBlockSpec("module", moduleHeaderSpec, moduleBodySpec,
   proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Module =
     newModule(d, h.name, b.data, b.funcList, h.loc))
 
