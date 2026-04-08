@@ -500,12 +500,23 @@ type
     expression: Expression
     loc: Location
 
+  VariantPatternField = ref object
+    name: string
+    binding: string
+    loc: Location
+
+  VariantPattern = ref object
+    variantName: string
+    fields: seq[VariantPatternField]
+    loc: Location
+
   CasePatternKind = enum
-    cpkIntegerLiteral, cpkVariable
+    cpkIntegerLiteral, cpkVariable, cpkVariant
   CasePattern = ref object
     case kind: CasePatternKind
     of cpkIntegerLiteral: intLit: IntegerLiteral
     of cpkVariable: variable: Identifier
+    of cpkVariant: variant: VariantPattern
 
   CaseBlock = ref object
     pattern: CasePattern
@@ -680,10 +691,32 @@ proc newCasePattern(intLit: IntegerLiteral): CasePattern =
 proc newCasePattern(variable: Identifier): CasePattern =
   CasePattern(kind: cpkVariable, variable: variable)
 
+proc newVariantPatternField(name: string, binding: string,
+    loc: Location): VariantPatternField =
+  VariantPatternField(name: name, binding: binding, loc: loc)
+
+proc newVariantPattern(variantName: string, fields: seq[VariantPatternField],
+    loc: Location): VariantPattern =
+  VariantPattern(variantName: variantName, fields: fields, loc: loc)
+
+proc newCasePattern(variant: VariantPattern): CasePattern =
+  CasePattern(kind: cpkVariant, variant: variant)
+
+proc asl(field: VariantPatternField): string =
+  fmt"{field.name}: {field.binding}"
+
+proc asl(variant: VariantPattern): string =
+  result = fmt"{variant.variantName} {{ "
+  for i, field in variant.fields:
+    if i > 0: result.add(", ")
+    result.add(asl(field))
+  result.add(" }")
+
 proc asl(pattern: CasePattern): string =
   case pattern.kind:
   of cpkIntegerLiteral: asl(pattern.intLit)
   of cpkVariable: asl(pattern.variable)
+  of cpkVariant: asl(pattern.variant)
 
 proc newCaseBlock(pattern: CasePattern, body: StatementList,
     loc: Location): CaseBlock =
@@ -1307,9 +1340,32 @@ proc decoratedBlockSpec[H, B, R](name: string,
     ok(combine(decorators, h, bodyResult.get))
   )
 
+# Variant pattern field: name ":" binding (both identifiers)
+let variantPatternFieldSpec = Spec[VariantPatternField](
+  name: "variant_pattern_field",
+  parseFn: proc(parser: Parser): Result[VariantPatternField, ParserError] =
+  let name = ? parser.run(identifierSpec)
+  discard ? parser.run(colonWithSpacesSpec)
+  let binding = ? parser.run(identifierSpec)
+  ok(newVariantPatternField(name.name, binding.name, name.loc))
+)
+
+# Variant pattern: VariantName { field: binding, field: binding }
+let variantPatternSpec = Spec[VariantPattern](
+  name: "variant_pattern",
+  parseFn: proc(parser: Parser): Result[VariantPattern, ParserError] =
+  let name = ? parser.run(identifierSpec)
+  discard parser.run(spacesSpec)
+  let fields = ? parser.run(contained("variant_fields", "{",
+    separatedBy(variantPatternFieldSpec, commaWithSpacesSpec), "}"))
+  ok(newVariantPattern(name.name, fields, name.loc))
+)
+
 let casePatternSpec = oneOf("case_pattern", [
   integerLiteralSpec.map("integer_pattern",
     proc(v: IntegerLiteral): CasePattern = newCasePattern(v)),
+  variantPatternSpec.map("variant_pattern",
+    proc(v: VariantPattern): CasePattern = newCasePattern(v)),
   identifierSpec.map("variable_pattern",
     proc(v: Identifier): CasePattern = newCasePattern(v)),
 ])
@@ -1336,6 +1392,7 @@ proc loc(pattern: CasePattern): Location =
     of ilkSigned: pattern.intLit.signed.loc
     of ilkUnsigned: pattern.intLit.unsigned.loc
   of cpkVariable: pattern.variable.loc
+  of cpkVariant: pattern.variant.loc
 
 let caseBlockSpec = blockSpec("case", caseHeaderSpec, statementListSpec,
   proc(h: CasePattern, b: StatementList): CaseBlock =
