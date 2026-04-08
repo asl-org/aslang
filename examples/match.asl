@@ -7,3 +7,10 @@ module App:
         System.println("one")
       case other:
         System.println("something else")
+
+  func label(x: i64): str
+    y = match x:
+      case 0:
+        Str.from("zero")
+      case n:
+        Str.from(n)

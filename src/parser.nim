@@ -485,7 +485,7 @@ type
     of ikNonPrimitive: nonPrimitive: NonPrimitiveInitializer
 
   ExpressionKind = enum
-    ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable
+    ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable, ekMatch
   Expression = ref object
     case kind: ExpressionKind
     of ekLiteral: literal: Literal
@@ -493,6 +493,39 @@ type
     of ekGetter: getter: Getter
     of ekInitializer: initializer: Initializer
     of ekVariable: variable: Identifier
+    of ekMatch: match: MatchExpression
+
+  Assignment = ref object
+    target: string
+    expression: Expression
+    loc: Location
+
+  CasePatternKind = enum
+    cpkIntegerLiteral, cpkVariable
+  CasePattern = ref object
+    case kind: CasePatternKind
+    of cpkIntegerLiteral: intLit: IntegerLiteral
+    of cpkVariable: variable: Identifier
+
+  CaseBlock = ref object
+    pattern: CasePattern
+    body: StatementList
+    loc: Location
+
+  MatchExpression = ref object
+    subject: Expression
+    cases: seq[CaseBlock]
+    loc: Location
+
+  StatementKind = enum
+    skAssignment, skExpr
+  Statement = ref object
+    case kind: StatementKind
+    of skAssignment: assignment: Assignment
+    of skExpr: expression: Expression
+
+  StatementList = ref object
+    statements: seq[Statement]
 
 proc newArgumentList(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
@@ -632,11 +665,7 @@ proc asl(expr: Expression): string =
   of ekGetter: asl(expr.getter)
   of ekInitializer: asl(expr.initializer)
   of ekVariable: asl(expr.variable)
-
-type Assignment = ref object
-  target: string
-  expression: Expression
-  loc: Location
+  of ekMatch: "" # match is a block expression, use aslBlock
 
 proc newAssignment(target: string, expression: Expression,
     loc: Location): Assignment =
@@ -644,35 +673,6 @@ proc newAssignment(target: string, expression: Expression,
 
 proc asl(assignment: Assignment): string =
   fmt"{assignment.target} = {asl(assignment.expression)}"
-
-type
-  CasePatternKind = enum
-    cpkIntegerLiteral, cpkVariable
-  CasePattern = ref object
-    case kind: CasePatternKind
-    of cpkIntegerLiteral: intLit: IntegerLiteral
-    of cpkVariable: variable: Identifier
-
-  CaseBlock = ref object
-    pattern: CasePattern
-    body: StatementList
-    loc: Location
-
-  MatchExpression = ref object
-    subject: Expression
-    cases: seq[CaseBlock]
-    loc: Location
-
-  StatementKind = enum
-    skAssignment, skExpr, skMatch
-  Statement = ref object
-    case kind: StatementKind
-    of skAssignment: assignment: Assignment
-    of skExpr: expression: Expression
-    of skMatch: match: MatchExpression
-
-  StatementList = ref object
-    statements: seq[Statement]
 
 proc newCasePattern(intLit: IntegerLiteral): CasePattern =
   CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
@@ -693,20 +693,26 @@ proc newMatchExpression(subject: Expression, cases: seq[CaseBlock],
     loc: Location): MatchExpression =
   MatchExpression(subject: subject, cases: cases, loc: loc)
 
+proc newExpression(match: MatchExpression): Expression =
+  Expression(kind: ekMatch, match: match)
+
 proc newStatement(assignment: Assignment): Statement =
   Statement(kind: skAssignment, assignment: assignment)
 
 proc newStatement(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
 
-proc newStatement(match: MatchExpression): Statement =
-  Statement(kind: skMatch, match: match)
-
 proc newStatementList(statements: seq[Statement]): StatementList =
   StatementList(statements: statements)
 
 proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string]
 proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string]
+
+proc isBlockStatement(stmt: Statement): bool =
+  case stmt.kind:
+  of skExpr: stmt.expression.kind == ekMatch
+  of skAssignment:
+    stmt.assignment.expression.kind == ekMatch
 
 proc asl(stmt: Statement): string
 proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string]
@@ -715,12 +721,18 @@ proc asl(stmt: Statement): string =
   case stmt.kind:
   of skAssignment: asl(stmt.assignment)
   of skExpr: asl(stmt.expression)
-  of skMatch: "" # match is a block statement, use aslBlock instead
 
 proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string] =
+  if not stmt.isBlockStatement:
+    return @[asl(stmt)]
   case stmt.kind:
-  of skMatch: asl(stmt.match, indentWidth)
-  else: @[asl(stmt)]
+  of skExpr:
+    result = asl(stmt.expression.match, indentWidth)
+  of skAssignment:
+    let matchLines = asl(stmt.assignment.expression.match, indentWidth)
+    result.add(fmt"{stmt.assignment.target} = {matchLines[0]}")
+    for i in 1..<matchLines.len:
+      result.add(matchLines[i])
 
 proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
   result.add(fmt"case {asl(caseBlock.pattern)}:")
@@ -1309,29 +1321,6 @@ let caseBlockSpec = blockSpec("case", caseHeaderSpec, statementListSpec,
   proc(d: seq[Decorator], h: CasePattern, b: StatementList): CaseBlock =
     newCaseBlock(h, b, h.loc))
 
-# match expression: "match" space+ expression ":"
-let matchHeaderSpec = Spec[Expression](
-  name: "match_header",
-  parseFn: proc(parser: Parser): Result[Expression, ParserError] =
-  discard ? parser.run(keywordSpec("match"))
-  discard ? parser.run(spacesSpec)
-  let subject = ? parser.run(expressionSpec)
-  discard parser.run(spacesSpec)
-  discard ? parser.run(punctuationSpec(":"))
-  ok(subject)
-)
-
-let matchExpressionSpec = blockSpec("match", matchHeaderSpec,
-  atLeastOne(Spec[CaseBlock](
-    name: "case_block_line",
-    parseFn: proc(parser: Parser): Result[CaseBlock, ParserError] =
-    discard parser.run(any(ignorableLineSpec))
-    let cb = ? parser.run(caseBlockSpec)
-    ok(cb)
-  )),
-  proc(d: seq[Decorator], h: Expression, b: seq[CaseBlock]): MatchExpression =
-    newMatchExpression(h, b, newLocation()))
-
 let inlineStatementSpec = oneOf("inline_statement", [
   assignmentSpec.map("assignment_statement",
     proc(v: Assignment): Statement = newStatement(v)),
@@ -1339,18 +1328,60 @@ let inlineStatementSpec = oneOf("inline_statement", [
     proc(v: Expression): Statement = newStatement(v)),
 ])
 
-let matchStatementSpec = matchExpressionSpec.map("match_statement",
-  proc(v: MatchExpression): Statement = newStatement(v))
+# Match body: parses "match" keyword + subject + ":" + newline + caseBlocks
+# Does NOT consume indentation — caller handles that
+let matchBodySpec = Spec[MatchExpression](
+  name: "match_body",
+  parseFn: proc(parser: Parser): Result[MatchExpression, ParserError] =
+  let loc = ? parser.run(keywordSpec("match"))
+  discard ? parser.run(spacesSpec)
+  # Match expressions cannot be the subject of another match expression.
+  # expressionSpec intentionally excludes match (match is parsed separately
+  # in statementLineSpec). This check guards against future changes that
+  # might add match to expressionSpec.
+  let subject = ? parser.run(expressionSpec)
+  if subject.kind == ekMatch:
+    return err(newParserError(
+      "match expression cannot be the subject of another match", loc))
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  discard ? parser.run(ignorableLineSpec)
+  parser.level += 1
+  let casesBody = atLeastOne(Spec[CaseBlock](
+    name: "case_block_line",
+    parseFn: proc(parser: Parser): Result[CaseBlock, ParserError] =
+    discard parser.run(any(ignorableLineSpec))
+    let cb = ? parser.run(caseBlockSpec)
+    ok(cb)
+  ))
+  let casesResult = casesBody.parseFn(parser)
+  parser.level -= 1
+  if casesResult.isErr:
+    casesResult.error.fatal = true
+    return err(casesResult.error)
+  ok(newMatchExpression(subject, casesResult.get, loc))
+)
 
 let statementLineSpec = Spec[Statement](
   name: "statement_line",
   parseFn: proc(parser: Parser): Result[Statement, ParserError] =
   discard parser.run(any(ignorableLineSpec))
-  # Try match first — it handles its own indentation via blockSpec
-  let maybeMatch = parser.run(matchStatementSpec)
-  if maybeMatch.isOk: return ok(maybeMatch.get)
-  # Inline statements: indentation + statement + newline
   discard ? parser.run(indentationSpec)
+  # Try match assignment: identifier = match ...:
+  let maybeMatchAssign = parser.run(Spec[Statement](
+    name: "match_assignment",
+    parseFn: proc(parser: Parser): Result[Statement, ParserError] =
+    let target = ? parser.run(identifierSpec)
+    discard ? parser.run(equalsSeparatorSpec)
+    let matchExpr = ? parser.run(matchBodySpec)
+    ok(newStatement(newAssignment(target.name, newExpression(matchExpr), target.loc)))
+  ))
+  if maybeMatchAssign.isOk: return ok(maybeMatchAssign.get)
+  # Try standalone match: match ...:
+  let maybeMatch = parser.run(matchBodySpec)
+  if maybeMatch.isOk:
+    return ok(newStatement(newExpression(maybeMatch.get)))
+  # Inline statements: statement + newline
   let statement = ? parser.run(inlineStatementSpec)
   discard ? parser.run(ignorableLineSpec)
   ok(statement)
