@@ -1,4 +1,4 @@
-import { Sample } from "../sample.asl"
+import { Sample } from "./sample.asl"
 
 generic Key:
   func hash(key: Key): u128

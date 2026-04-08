@@ -577,7 +577,8 @@ proc newInitializer(nonPrimitive: NonPrimitiveInitializer): Initializer =
 proc newExpression(getter: Getter): Expression =
   Expression(kind: ekGetter, getter: getter)
 
-proc newUnsignedIntegerLiteral(value: string, loc: Location): UnsignedIntegerLiteral =
+proc newUnsignedIntegerLiteral(value: string,
+    loc: Location): UnsignedIntegerLiteral =
   UnsignedIntegerLiteral(value: value, loc: loc)
 
 proc newSignedIntegerLiteral(sign: string, value: UnsignedIntegerLiteral,
@@ -600,6 +601,10 @@ proc newExpression(variable: Identifier): Expression =
   Expression(kind: ekVariable, variable: variable)
 
 proc asl(expr: Expression): string
+
+proc value*(strLit: StringLiteral): string =
+  ## Returns the string content without surrounding quotes.
+  strLit.content[1 .. ^2]
 
 proc asl(strLit: StringLiteral): string = strLit.content
 
@@ -791,7 +796,7 @@ type FunctionList = ref object
 proc newFunctionList(functions: seq[Function]): FunctionList =
   FunctionList(functions: functions)
 
-type Import = ref object
+type Import* = ref object
   names: seq[string]
   source: string
   loc: Location
@@ -799,12 +804,14 @@ type Import = ref object
 proc newImport(names: seq[string], source: string, loc: Location): Import =
   Import(names: names, source: source, loc: loc)
 
+proc source*(imp: Import): string = imp.source
+
 proc asl(imp: Import): string =
   result = "import { "
   for i, name in imp.names:
     if i > 0: result.add(", ")
     result.add(name)
-  result.add(fmt" }} from {imp.source}")
+  result.add(fmt" }} from ""{imp.source}""")
 
 type Generic = ref object
   decorators: seq[Decorator]
@@ -864,7 +871,7 @@ proc newFileItem(module: Module): FileItem =
 proc newFileItem(generic: Generic): FileItem =
   FileItem(kind: fikGeneric, generic: generic)
 
-type File = ref object
+type File* = ref object
   path: string
   imports: seq[Import]
   modules: seq[Module]
@@ -878,6 +885,9 @@ proc newFile(path: string, imports: seq[Import], items: seq[FileItem]): File =
     of fikModule: modules.add(item.module)
     of fikGeneric: generics.add(item.generic)
   File(path: path, imports: imports, modules: modules, generics: generics)
+
+proc path*(file: File): string = file.path
+proc imports*(file: File): seq[Import] = file.imports
 
 proc asl*(file: File, indentWidth: uint32): string =
   var lines: seq[string]
@@ -1377,7 +1387,7 @@ proc loc(pattern: CasePattern): Location =
 
 let caseBlockSpec = blockSpec("case", caseHeaderSpec, statementListSpec,
   proc(h: CasePattern, b: StatementList): CaseBlock =
-    newCaseBlock(h, b, h.loc))
+  newCaseBlock(h, b, h.loc))
 
 let inlineStatementSpec = oneOf("inline_statement", [
   assignmentSpec.map("assignment_statement",
@@ -1451,7 +1461,7 @@ statementListSpec.parseFn = atLeastOne(statementLineSpec).map("statement_list",
 let functionSpec = decoratedBlockSpec("function", functionDefinitionSpec,
   statementListSpec,
   proc(d: seq[Decorator], h: FunctionDefinition, b: StatementList): Function =
-    newFunction(d, h, b))
+  newFunction(d, h, b))
 
 # Each function block skips leading ignorable lines then parses a function.
 # any() backtracks the ignorable line consumption if no function follows.
@@ -1507,7 +1517,7 @@ let functionDefinitionListSpec = atLeastOne(functionDefinitionLineSpec)
 let genericSpec = blockSpec("generic", genericHeaderSpec,
   functionDefinitionListSpec,
   proc(h: GenericHeader, b: seq[FunctionDefinition]): Generic =
-    newGeneric(@[], h.name, b, h.loc))
+  newGeneric(@[], h.name, b, h.loc))
 
 # struct: field+ (field is identifier ":" argumentType)
 let structHeaderSpec = Spec[Location](
@@ -1533,7 +1543,7 @@ let fieldLineSpec = Spec[ArgumentDefinition](
 let structSpec = blockSpec("struct", structHeaderSpec,
   atLeastOne(fieldLineSpec),
   proc(h: Location, b: seq[ArgumentDefinition]): Struct =
-    newStruct(b, h))
+  newStruct(b, h))
 
 # union: variant+ (variant is identifier space* ("{" argDef, argDef "}")?)
 let variantDefinitionLineSpec = Spec[VariantDefinition](
@@ -1563,7 +1573,7 @@ let unionHeaderSpec = Spec[Location](
 let unionSpec = blockSpec("union", unionHeaderSpec,
   atLeastOne(variantDefinitionLineSpec),
   proc(h: Location, b: seq[VariantDefinition]): Union =
-    newUnion(b, h))
+  newUnion(b, h))
 
 let dataBlockSpec = oneOf("data_block", [
   structSpec.map("struct_data",
@@ -1585,7 +1595,7 @@ let moduleBodySpec = Spec[ModuleBody](
 
 let moduleSpec = decoratedBlockSpec("module", moduleHeaderSpec, moduleBodySpec,
   proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Module =
-    newModule(d, h.name, b.data, b.funcList, h.loc))
+  newModule(d, h.name, b.data, b.funcList, h.loc))
 
 let fileItemSpec = oneOf("file_item", [
   moduleSpec.map("module_item",
@@ -1609,7 +1619,7 @@ let importLineSpec = Spec[Import](
   discard ? parser.run(strictLine)
   var nameStrings: seq[string]
   for n in names: nameStrings.add(n.name)
-  ok(newImport(nameStrings, source.content, loc))
+  ok(newImport(nameStrings, source.value, loc))
 )
 
 let importBlockSpec = Spec[Import](
@@ -1649,3 +1659,73 @@ proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
     err(fmt"{filepath}:{maybeFile.error}")
   else:
     ok(maybeFile.get)
+
+# ============================================================
+# Recursive file resolution
+# ============================================================
+
+import os, unicode, tables, deques, sets
+import utils
+
+proc readFileSafe(filepath: string): Result[string, string] =
+  const MaxFileByteSize = 1 * 1024 * 1024 # 1 MB
+  try:
+    let fileByteSize = getFileSize(filepath)
+    if fileByteSize > MaxFileByteSize:
+      err(fmt"{filepath} file exceeds 1 MB limit ({fileByteSize} bytes).")
+    else:
+      let source = readFile(filepath)
+      let pos = validateUtf8(source)
+      if pos == -1: ok(source)
+      else: err(fmt"{filepath} invalid UTF-8 byte at position {pos}.")
+  except IOError:
+    err(fmt"{filepath} failed to read file.")
+
+proc parseFile(filepath: string, indentWidth: uint32,
+    dumpTokens: bool): Result[File, string] =
+  let source = ? readFileSafe(filepath)
+  let tokens = ? tokenize(source, filepath, dumpTokens)
+  parse(filepath, indentWidth, tokens)
+
+proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
+  ## Resolves an import path relative to the importing file.
+  ## Rejects paths that escape to parent directories.
+  if source.startsWith(".."):
+    return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
+  let dir = importingFile.parentDir
+  ok((dir / source).absolutePath)
+
+proc parseAll*(rootPath: string, indentWidth: uint32,
+    dumpTokens: bool): Result[seq[File], string] =
+  ## BFS through imports, tokenize + parse each file.
+  ## Returns files in topological order: leaves first, root last.
+  var parsed: Table[string, File]
+  var queued: HashSet[string]
+  var queue: Deque[string]
+
+  queue.addLast(rootPath)
+  queued.incl(rootPath)
+
+  while queue.len > 0:
+    let current = queue.popFirst()
+    let file = ? parseFile(current, indentWidth, dumpTokens)
+    parsed[current] = file
+
+    for imp in file.imports:
+      let depPath = ? resolveImportPath(imp.source, current)
+      if depPath notin queued:
+        queue.addLast(depPath)
+        queued.incl(depPath)
+
+  # Topological sort with cycle detection (leaves first, root last)
+  let getNeighbors = proc(path: string): seq[string] =
+    if parsed.hasKey(path):
+      for imp in parsed[path].imports:
+        let depPath = resolveImportPath(imp.source, path)
+        if depPath.isOk: result.add(depPath.get)
+  let sortedPaths = ? topoSort(rootPath, getNeighbors)
+
+  var files: seq[File]
+  for path in sortedPaths:
+    files.add(parsed[path])
+  ok(files)

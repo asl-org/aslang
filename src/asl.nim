@@ -1,27 +1,12 @@
-import os, results, strformat, unicode
+import os, results, strformat
 
-import cli, tokenizer, parser
-
-proc readFileSafe(filepath: string): Result[string, string] =
-  const MaxFileByteSize = 1 * 1024 * 1024 # 1 MB
-  try:
-    let fileByteSize = getFileSize(filepath)
-    if fileByteSize > MaxFileByteSize:
-      err(fmt"{filepath} file exceeds 1 MB limit ({fileByteSize} bytes).")
-    else:
-      let source = readFile(filepath)
-      let pos = validateUtf8(source)
-      if pos == -1: ok(source)
-      else: err(fmt"{filepath} invalid UTF-8 byte at position {pos}.")
-  except IOError:
-    err(fmt"{filepath} failed to read file.")
+import cli, parser
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
-  let source = ? readFileSafe(filepath)
-  let tokens = ? tokenize(source, filepath, opts.dumpTokens)
-  let file = ? parse(filepath, opts.indentWidth, tokens)
-  ok(file.asl(opts.indentWidth))
+  let files = ? parseAll(filepath, opts.indentWidth, opts.dumpTokens)
+  let root = files[^1]
+  ok(root.asl(opts.indentWidth))
 
 when isMainModule:
   let maybeCommand = parseCliArgs(commandLineParams())
