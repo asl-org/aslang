@@ -327,6 +327,69 @@ proc asl(argDefList: ArgumentDefinitionList): string =
     result.add(asl(argDef))
   result.add(")")
 
+type Struct = ref object
+  fields: seq[ArgumentDefinition]
+  loc: Location
+
+proc newStruct(fields: seq[ArgumentDefinition], loc: Location): Struct =
+  Struct(fields: fields, loc: loc)
+
+proc asl(s: Struct, indentWidth: uint32): seq[string] =
+  result.add("struct:")
+  let indent = " ".repeat(indentWidth)
+  for field in s.fields:
+    result.add(fmt"{indent}{asl(field)}")
+
+type VariantDefinition = ref object
+  name: string
+  fields: seq[ArgumentDefinition]
+  loc: Location
+
+proc newVariantDefinition(name: string, fields: seq[ArgumentDefinition],
+    loc: Location): VariantDefinition =
+  VariantDefinition(name: name, fields: fields, loc: loc)
+
+proc asl(varDef: VariantDefinition): string =
+  result = varDef.name
+  if varDef.fields.len > 0:
+    result.add(" { ")
+    for i, field in varDef.fields:
+      if i > 0: result.add(", ")
+      result.add(asl(field))
+    result.add(" }")
+
+type Union = ref object
+  variants: seq[VariantDefinition]
+  loc: Location
+
+proc newUnion(variants: seq[VariantDefinition], loc: Location): Union =
+  Union(variants: variants, loc: loc)
+
+proc asl(u: Union, indentWidth: uint32): seq[string] =
+  result.add("union:")
+  let indent = " ".repeat(indentWidth)
+  for variant in u.variants:
+    result.add(fmt"{indent}{asl(variant)}")
+
+type
+  DataBlockKind = enum
+    dbkStruct, dbkUnion
+  DataBlock = ref object
+    case kind: DataBlockKind
+    of dbkStruct: struct: Struct
+    of dbkUnion: union: Union
+
+proc newDataBlock(s: Struct): DataBlock =
+  DataBlock(kind: dbkStruct, struct: s)
+
+proc newDataBlock(u: Union): DataBlock =
+  DataBlock(kind: dbkUnion, union: u)
+
+proc asl(db: DataBlock, indentWidth: uint32): seq[string] =
+  case db.kind:
+  of dbkStruct: asl(db.struct, indentWidth)
+  of dbkUnion: asl(db.union, indentWidth)
+
 type FunctionDefinition = ref object
   name: string
   argDefList: ArgumentDefinitionList
@@ -666,18 +729,24 @@ proc asl(gen: Generic, indentWidth: uint32): seq[string] =
 type Module = ref object
   decorators: seq[Decorator]
   name: string
+  data: Option[DataBlock]
   funcList: FunctionList
   loc: Location
 
 proc newModule(decorators: seq[Decorator], name: string,
-    funcList: FunctionList, loc: Location): Module =
-  Module(decorators: decorators, name: name, funcList: funcList, loc: loc)
+    data: Option[DataBlock], funcList: FunctionList, loc: Location): Module =
+  Module(decorators: decorators, name: name, data: data,
+    funcList: funcList, loc: loc)
 
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
     result.add(asl(d))
   result.add(fmt"module {module.name}:")
   let indent = " ".repeat(indentWidth)
+  if module.data.isSome:
+    for line in asl(module.data.get, indentWidth):
+      result.add(fmt"{indent}{line}")
+    result.add("")
   for i, fn in module.funcList.functions:
     if i > 0: result.add("")
     for line in asl(fn, indentWidth):
@@ -1220,9 +1289,83 @@ let genericSpec = blockSpec("generic", genericHeaderSpec,
   proc(d: seq[Decorator], h: GenericHeader, b: seq[FunctionDefinition]): Generic =
     newGeneric(d, h.name, b, h.loc))
 
-let moduleSpec = blockSpec("module", moduleHeaderSpec, functionListSpec,
-  proc(d: seq[Decorator], h: ModuleHeader, b: FunctionList): Module =
-    newModule(d, h.name, b, h.loc))
+# struct: field+ (field is identifier ":" argumentType)
+let structHeaderSpec = Spec[Location](
+  name: "struct_header",
+  parseFn: proc(parser: Parser): Result[Location, ParserError] =
+  let loc = ? parser.run(keywordSpec("struct"))
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  ok(loc)
+)
+
+# Each field line: indentation + argumentDefinition + newline
+let fieldLineSpec = Spec[ArgumentDefinition](
+  name: "field_line",
+  parseFn: proc(parser: Parser): Result[ArgumentDefinition, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
+  discard ? parser.run(indentationSpec)
+  let argDef = ? parser.run(argumentDefinitionSpec)
+  discard ? parser.run(ignorableLineSpec)
+  ok(argDef)
+)
+
+let structSpec = blockSpec("struct", structHeaderSpec,
+  atLeastOne(fieldLineSpec),
+  proc(d: seq[Decorator], h: Location, b: seq[ArgumentDefinition]): Struct =
+    newStruct(b, h))
+
+# union: variant+ (variant is identifier space* ("{" argDef, argDef "}")?)
+let variantDefinitionLineSpec = Spec[VariantDefinition](
+  name: "variant_definition_line",
+  parseFn: proc(parser: Parser): Result[VariantDefinition, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
+  discard ? parser.run(indentationSpec)
+  let name = ? parser.run(identifierSpec)
+  discard parser.run(spacesSpec)
+  let maybeFields = ? parser.run(optional(contained("variant_fields", "{",
+    separatedBy(argumentDefinitionSpec, commaWithSpacesSpec), "}")))
+  var fields: seq[ArgumentDefinition]
+  if maybeFields.isSome: fields = maybeFields.get
+  discard ? parser.run(ignorableLineSpec)
+  ok(newVariantDefinition(name.name, fields, name.loc))
+)
+
+let unionHeaderSpec = Spec[Location](
+  name: "union_header",
+  parseFn: proc(parser: Parser): Result[Location, ParserError] =
+  let loc = ? parser.run(keywordSpec("union"))
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  ok(loc)
+)
+
+let unionSpec = blockSpec("union", unionHeaderSpec,
+  atLeastOne(variantDefinitionLineSpec),
+  proc(d: seq[Decorator], h: Location, b: seq[VariantDefinition]): Union =
+    newUnion(b, h))
+
+let dataBlockSpec = oneOf("data_block", [
+  structSpec.map("struct_data",
+    proc(v: Struct): DataBlock = newDataBlock(v)),
+  unionSpec.map("union_data",
+    proc(v: Union): DataBlock = newDataBlock(v)),
+])
+
+# Module body: optional data block + function list
+type ModuleBody = tuple[data: Option[DataBlock], funcList: FunctionList]
+
+let moduleBodySpec = Spec[ModuleBody](
+  name: "module_body",
+  parseFn: proc(parser: Parser): Result[ModuleBody, ParserError] =
+  let data = ? parser.run(optional(dataBlockSpec))
+  let funcList = ? parser.run(functionListSpec)
+  ok((data, funcList))
+)
+
+let moduleSpec = blockSpec("module", moduleHeaderSpec, moduleBodySpec,
+  proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Module =
+    newModule(d, h.name, b.data, b.funcList, h.loc))
 
 let fileItemSpec = oneOf("file_item", [
   moduleSpec.map("module_item",
