@@ -646,12 +646,52 @@ proc asl(assignment: Assignment): string =
   fmt"{assignment.target} = {asl(assignment.expression)}"
 
 type
+  CasePatternKind = enum
+    cpkIntegerLiteral, cpkVariable
+  CasePattern = ref object
+    case kind: CasePatternKind
+    of cpkIntegerLiteral: intLit: IntegerLiteral
+    of cpkVariable: variable: Identifier
+
+  CaseBlock = ref object
+    pattern: CasePattern
+    body: StatementList
+    loc: Location
+
+  MatchExpression = ref object
+    subject: Expression
+    cases: seq[CaseBlock]
+    loc: Location
+
   StatementKind = enum
-    skAssignment, skExpr
+    skAssignment, skExpr, skMatch
   Statement = ref object
     case kind: StatementKind
     of skAssignment: assignment: Assignment
     of skExpr: expression: Expression
+    of skMatch: match: MatchExpression
+
+  StatementList = ref object
+    statements: seq[Statement]
+
+proc newCasePattern(intLit: IntegerLiteral): CasePattern =
+  CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
+
+proc newCasePattern(variable: Identifier): CasePattern =
+  CasePattern(kind: cpkVariable, variable: variable)
+
+proc asl(pattern: CasePattern): string =
+  case pattern.kind:
+  of cpkIntegerLiteral: asl(pattern.intLit)
+  of cpkVariable: asl(pattern.variable)
+
+proc newCaseBlock(pattern: CasePattern, body: StatementList,
+    loc: Location): CaseBlock =
+  CaseBlock(pattern: pattern, body: body, loc: loc)
+
+proc newMatchExpression(subject: Expression, cases: seq[CaseBlock],
+    loc: Location): MatchExpression =
+  MatchExpression(subject: subject, cases: cases, loc: loc)
 
 proc newStatement(assignment: Assignment): Statement =
   Statement(kind: skAssignment, assignment: assignment)
@@ -659,16 +699,42 @@ proc newStatement(assignment: Assignment): Statement =
 proc newStatement(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
 
+proc newStatement(match: MatchExpression): Statement =
+  Statement(kind: skMatch, match: match)
+
+proc newStatementList(statements: seq[Statement]): StatementList =
+  StatementList(statements: statements)
+
+proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string]
+proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string]
+
+proc asl(stmt: Statement): string
+proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string]
+
 proc asl(stmt: Statement): string =
   case stmt.kind:
   of skAssignment: asl(stmt.assignment)
   of skExpr: asl(stmt.expression)
+  of skMatch: "" # match is a block statement, use aslBlock instead
 
-type StatementList = ref object
-  statements: seq[Statement]
+proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string] =
+  case stmt.kind:
+  of skMatch: asl(stmt.match, indentWidth)
+  else: @[asl(stmt)]
 
-proc newStatementList(statements: seq[Statement]): StatementList =
-  StatementList(statements: statements)
+proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
+  result.add(fmt"case {asl(caseBlock.pattern)}:")
+  let indent = " ".repeat(indentWidth)
+  for s in caseBlock.body.statements:
+    for line in aslBlock(s, indentWidth):
+      result.add(fmt"{indent}{line}")
+
+proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string] =
+  result.add(fmt"match {asl(matchExpr.subject)}:")
+  let indent = " ".repeat(indentWidth)
+  for cb in matchExpr.cases:
+    for line in asl(cb, indentWidth):
+      result.add(fmt"{indent}{line}")
 
 type Function = ref object
   decorators: seq[Decorator]
@@ -685,7 +751,8 @@ proc asl(fn: Function, indentWidth: uint32): seq[string] =
   result.add(asl(fn.def))
   let indent = " ".repeat(indentWidth)
   for stmt in fn.statementList.statements:
-    result.add(fmt"{indent}{asl(stmt)}")
+    for line in aslBlock(stmt, indentWidth):
+      result.add(fmt"{indent}{line}")
 
 type FunctionList = ref object
   functions: seq[Function]
@@ -1177,26 +1244,6 @@ let assignmentSpec = Spec[Assignment](
   ok(newAssignment(targetIdent.name, expression, targetIdent.loc))
 )
 
-let statementSpec = oneOf("statement", [
-  assignmentSpec.map("assignment_statement",
-    proc(v: Assignment): Statement = newStatement(v)),
-  expressionSpec.map("expression_statement",
-    proc(v: Expression): Statement = newStatement(v)),
-])
-
-let statementLineSpec = Spec[Statement](
-  name: "statement_line",
-  parseFn: proc(parser: Parser): Result[Statement, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
-  discard ? parser.run(indentationSpec)
-  let statement = ? parser.run(statementSpec)
-  discard ? parser.run(ignorableLineSpec)
-  ok(statement)
-)
-
-let statementListSpec = atLeastOne(statementLineSpec).map("statement_list",
-  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts))
-
 let decoratorLineSpec = Spec[Decorator](
   name: "decorator_line",
   parseFn: proc(parser: Parser): Result[Decorator, ParserError] =
@@ -1227,6 +1274,90 @@ proc blockSpec[H, B, R](name: string,
       return err(bodyResult.error)
     ok(combine(decorators, h, bodyResult.get))
   )
+
+let casePatternSpec = oneOf("case_pattern", [
+  integerLiteralSpec.map("integer_pattern",
+    proc(v: IntegerLiteral): CasePattern = newCasePattern(v)),
+  identifierSpec.map("variable_pattern",
+    proc(v: Identifier): CasePattern = newCasePattern(v)),
+])
+
+# Forward declare statementListSpec for mutual recursion:
+# match -> caseBlock -> statementList -> statementLine -> statement -> match
+let statementListSpec = newSpec[StatementList]("statement_list")
+
+let caseHeaderSpec = Spec[CasePattern](
+  name: "case_header",
+  parseFn: proc(parser: Parser): Result[CasePattern, ParserError] =
+  discard ? parser.run(keywordSpec("case"))
+  discard ? parser.run(spacesSpec)
+  let pattern = ? parser.run(casePatternSpec)
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  ok(pattern)
+)
+
+proc loc(pattern: CasePattern): Location =
+  case pattern.kind:
+  of cpkIntegerLiteral:
+    case pattern.intLit.kind:
+    of ilkSigned: pattern.intLit.signed.loc
+    of ilkUnsigned: pattern.intLit.unsigned.loc
+  of cpkVariable: pattern.variable.loc
+
+let caseBlockSpec = blockSpec("case", caseHeaderSpec, statementListSpec,
+  proc(d: seq[Decorator], h: CasePattern, b: StatementList): CaseBlock =
+    newCaseBlock(h, b, h.loc))
+
+# match expression: "match" space+ expression ":"
+let matchHeaderSpec = Spec[Expression](
+  name: "match_header",
+  parseFn: proc(parser: Parser): Result[Expression, ParserError] =
+  discard ? parser.run(keywordSpec("match"))
+  discard ? parser.run(spacesSpec)
+  let subject = ? parser.run(expressionSpec)
+  discard parser.run(spacesSpec)
+  discard ? parser.run(punctuationSpec(":"))
+  ok(subject)
+)
+
+let matchExpressionSpec = blockSpec("match", matchHeaderSpec,
+  atLeastOne(Spec[CaseBlock](
+    name: "case_block_line",
+    parseFn: proc(parser: Parser): Result[CaseBlock, ParserError] =
+    discard parser.run(any(ignorableLineSpec))
+    let cb = ? parser.run(caseBlockSpec)
+    ok(cb)
+  )),
+  proc(d: seq[Decorator], h: Expression, b: seq[CaseBlock]): MatchExpression =
+    newMatchExpression(h, b, newLocation()))
+
+let inlineStatementSpec = oneOf("inline_statement", [
+  assignmentSpec.map("assignment_statement",
+    proc(v: Assignment): Statement = newStatement(v)),
+  expressionSpec.map("expression_statement",
+    proc(v: Expression): Statement = newStatement(v)),
+])
+
+let matchStatementSpec = matchExpressionSpec.map("match_statement",
+  proc(v: MatchExpression): Statement = newStatement(v))
+
+let statementLineSpec = Spec[Statement](
+  name: "statement_line",
+  parseFn: proc(parser: Parser): Result[Statement, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
+  # Try match first — it handles its own indentation via blockSpec
+  let maybeMatch = parser.run(matchStatementSpec)
+  if maybeMatch.isOk: return ok(maybeMatch.get)
+  # Inline statements: indentation + statement + newline
+  discard ? parser.run(indentationSpec)
+  let statement = ? parser.run(inlineStatementSpec)
+  discard ? parser.run(ignorableLineSpec)
+  ok(statement)
+)
+
+statementListSpec.parseFn = atLeastOne(statementLineSpec).map("statement_list",
+  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts)).parseFn
 
 let functionSpec = blockSpec("function", functionDefinitionSpec,
   statementListSpec,

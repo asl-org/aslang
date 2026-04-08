@@ -2,6 +2,13 @@
 
 ## Open
 
+### Match expression
+
+- [x] **PSR-31: Add CasePattern AST type** — Done. `oneOf(integerLiteral, identifier)` variant.
+- [x] **PSR-32: Add CaseBlock AST type and spec** — Done. `case pattern: statementList` using `blockSpec`.
+- [x] **PSR-33: Add MatchExpression AST type and spec** — Done. `match expr: caseBlock+` using `blockSpec`. `skMatch` variant in Statement.
+- [x] **PSR-34: Wire match into statementSpec** — Done. Match tried before indentation in `statementLineSpec` since it handles its own indentation via `blockSpec`. `aslBlock` dispatches block statements to multi-line formatting.
+
 ### Parser cleanup (round 2)
 
 - [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
