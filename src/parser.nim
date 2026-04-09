@@ -453,22 +453,29 @@ type
     of lkInteger: intLit: IntegerLiteral
     of lkFloat: floatLit: FloatLiteral
 
-  PrimitiveInitializer = ref object
+  LiteralInitializer = ref object
     typeName: string
     value: Literal
     loc: Location
 
-  NonPrimitiveInitializer = ref object
+  StructInitializer = ref object
     argType: ArgumentType
     kwargList: KeywordArgumentList
     loc: Location
 
+  UnionInitializer = ref object
+    argType: ArgumentType
+    variantName: string
+    kwargList: KeywordArgumentList
+    loc: Location
+
   InitializerKind = enum
-    ikPrimitive, ikNonPrimitive
+    ikLiteral, ikStruct, ikUnion
   Initializer = ref object
     case kind: InitializerKind
-    of ikPrimitive: primitive: PrimitiveInitializer
-    of ikNonPrimitive: nonPrimitive: NonPrimitiveInitializer
+    of ikLiteral: literal: LiteralInitializer
+    of ikStruct: struct: StructInitializer
+    of ikUnion: union: UnionInitializer
 
   ExpressionKind = enum
     ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable, ekMatch
@@ -560,19 +567,27 @@ proc newLiteral(intLit: IntegerLiteral): Literal =
 proc newLiteral(floatLit: FloatLiteral): Literal =
   Literal(kind: lkFloat, floatLit: floatLit)
 
-proc newPrimitiveInitializer(typeName: string, value: Literal,
-    loc: Location): PrimitiveInitializer =
-  PrimitiveInitializer(typeName: typeName, value: value, loc: loc)
+proc newLiteralInitializer(typeName: string, value: Literal,
+    loc: Location): LiteralInitializer =
+  LiteralInitializer(typeName: typeName, value: value, loc: loc)
 
-proc newNonPrimitiveInitializer(argType: ArgumentType,
-    kwargList: KeywordArgumentList, loc: Location): NonPrimitiveInitializer =
-  NonPrimitiveInitializer(argType: argType, kwargList: kwargList, loc: loc)
+proc newStructInitializer(argType: ArgumentType,
+    kwargList: KeywordArgumentList, loc: Location): StructInitializer =
+  StructInitializer(argType: argType, kwargList: kwargList, loc: loc)
 
-proc newInitializer(primitive: PrimitiveInitializer): Initializer =
-  Initializer(kind: ikPrimitive, primitive: primitive)
+proc newInitializer(literal: LiteralInitializer): Initializer =
+  Initializer(kind: ikLiteral, literal: literal)
 
-proc newInitializer(nonPrimitive: NonPrimitiveInitializer): Initializer =
-  Initializer(kind: ikNonPrimitive, nonPrimitive: nonPrimitive)
+proc newInitializer(struct: StructInitializer): Initializer =
+  Initializer(kind: ikStruct, struct: struct)
+
+proc newUnionInitializer(argType: ArgumentType, variantName: string,
+    kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
+  UnionInitializer(argType: argType, variantName: variantName,
+    kwargList: kwargList, loc: loc)
+
+proc newInitializer(union: UnionInitializer): Initializer =
+  Initializer(kind: ikUnion, union: union)
 
 proc newExpression(getter: Getter): Expression =
   Expression(kind: ekGetter, getter: getter)
@@ -649,16 +664,20 @@ proc asl(literal: Literal): string =
   of lkInteger: asl(literal.intLit)
   of lkFloat: asl(literal.floatLit)
 
-proc asl(prim: PrimitiveInitializer): string =
+proc asl(prim: LiteralInitializer): string =
   fmt"{prim.typeName} {asl(prim.value)}"
 
-proc asl(nonPrim: NonPrimitiveInitializer): string =
+proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
+
+proc asl(unionInit: UnionInitializer): string =
+  fmt"{asl(unionInit.argType)}.{unionInit.variantName} {asl(unionInit.kwargList)}"
 
 proc asl(initializer: Initializer): string =
   case initializer.kind:
-  of ikPrimitive: asl(initializer.primitive)
-  of ikNonPrimitive: asl(initializer.nonPrimitive)
+  of ikLiteral: asl(initializer.literal)
+  of ikStruct: asl(initializer.struct)
+  of ikUnion: asl(initializer.union)
 
 proc asl(expr: Expression): string =
   case expr.kind:
@@ -1222,29 +1241,45 @@ let literalSpec = oneOf("literal", [
     proc(v: IntegerLiteral): Literal = newLiteral(v)),
 ])
 
-let nonPrimitiveInitializerSpec = Spec[NonPrimitiveInitializer](
-  name: "non_primitive_initializer",
-  parseFn: proc(parser: Parser): Result[NonPrimitiveInitializer, ParserError] =
+# Type.Variant { fields }
+let unionInitializerSpec = Spec[UnionInitializer](
+  name: "union_initializer",
+  parseFn: proc(parser: Parser): Result[UnionInitializer, ParserError] =
+  let argType = ? parser.run(argumentTypeSpec)
+  discard ? parser.run(punctuationSpec("."))
+  let variantName = ? parser.run(identifierSpec)
+  discard parser.run(optionalSpace)
+  let kwargList = ? parser.run(kwargListSpec)
+  ok(newUnionInitializer(argType, variantName.name, kwargList, argType.loc))
+)
+
+# Type { fields }
+let structInitializerSpec = Spec[StructInitializer](
+  name: "struct_initializer",
+  parseFn: proc(parser: Parser): Result[StructInitializer, ParserError] =
   let argType = ? parser.run(argumentTypeSpec)
   discard parser.run(optionalSpace)
   let kwargList = ? parser.run(kwargListSpec)
-  ok(newNonPrimitiveInitializer(argType, kwargList, argType.loc))
+  ok(newStructInitializer(argType, kwargList, argType.loc))
 )
 
-let primitiveInitializerSpec = Spec[PrimitiveInitializer](
-  name: "primitive_initializer",
-  parseFn: proc(parser: Parser): Result[PrimitiveInitializer, ParserError] =
+# type literal
+let literalInitializerSpec = Spec[LiteralInitializer](
+  name: "literal_initializer",
+  parseFn: proc(parser: Parser): Result[LiteralInitializer, ParserError] =
   let typeName = ? parser.run(identifierSpec)
   discard ? parser.run(strictSpace)
   let value = ? parser.run(literalSpec)
-  ok(newPrimitiveInitializer(typeName.name, value, typeName.loc))
+  ok(newLiteralInitializer(typeName.name, value, typeName.loc))
 )
 
 let initializerSpec = oneOf("initializer", [
-  nonPrimitiveInitializerSpec.map("non_primitive",
-    proc(v: NonPrimitiveInitializer): Initializer = newInitializer(v)),
-  primitiveInitializerSpec.map("primitive",
-    proc(v: PrimitiveInitializer): Initializer = newInitializer(v)),
+  unionInitializerSpec.map("union",
+    proc(v: UnionInitializer): Initializer = newInitializer(v)),
+  structInitializerSpec.map("struct",
+    proc(v: StructInitializer): Initializer = newInitializer(v)),
+  literalInitializerSpec.map("literal",
+    proc(v: LiteralInitializer): Initializer = newInitializer(v)),
 ])
 
 let getterSpec = Spec[Getter](

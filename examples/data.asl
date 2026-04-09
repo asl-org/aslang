@@ -4,7 +4,7 @@ module User:
     age: u32
 
   func new(n: str, a: u32): User
-    User.init(n, a)
+    User { name: n, age: a }
 
 module Plan:
   union:
@@ -12,6 +12,7 @@ module Plan:
     Pro { users: u32, credits: u32 }
 
   func describe(plan: Plan): str
+    free = Plan.Free { usage: u32 100 }
     match plan:
       case Free { usage: usage }:
         Str.from(usage)

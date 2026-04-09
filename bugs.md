@@ -11,6 +11,8 @@
 
 - [x] **PSR-35: Add variant pattern to case blocks** (`src/parser.nim`) [medium] — Done. `VariantPattern` with `variantName` + `seq[VariantPatternField]` (name: binding pairs). Uses `contained` + `separatedBy` for `{ field: binding }`. Tried before variable in `casePatternSpec` `oneOf` since `{` disambiguates.
 
+- [x] **PSR-37: Add union initializer expression** (`src/parser.nim`) [medium] — Done. `Type.Variant { fields }` as `UnionInitializer`. Tried before non-primitive and function call in `oneOf` since all start with `argumentType` but disambiguate by `.Variant {` vs `{` vs `.method(`.
+
 ### Dependency resolution
 
 - [ ] **PSR-36: Recursive BFS dependency resolver with cycle detection** (`src/parser.nim` or `src/asl.nim`) [high] — After parsing the root file, extract import sources, tokenize+parse each dependency, and recurse. BFS traversal ensures dependencies are resolved breadth-first. Detect cycles by tracking the current resolution path — if a file is encountered that's already on the path, report the cycle with the full dependency chain. Returns all parsed Files in dependency order.
