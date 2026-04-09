@@ -4,7 +4,7 @@ import cli, parser
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
-  let files = ? parseAll(filepath, opts.indentWidth, opts.dumpTokens)
+  let files = ? parse(filepath, opts.indentWidth, opts.dumpTokens)
   let root = files[^1]
   ok(root.asl(opts.indentWidth))
 

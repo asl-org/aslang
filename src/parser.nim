@@ -7,18 +7,18 @@ import tokenizer
 # ============================================================
 
 type
-  ParserError* = ref object
-    loc*: Location
-    msg*: string
-    fatal*: bool
+  ParserError = ref object
+    loc: Location
+    msg: string
+    fatal: bool
 
-proc newParserError*(msg: string, loc: Location): ParserError =
+proc newParserError(msg: string, loc: Location): ParserError =
   ParserError(msg: msg, loc: loc)
 
-proc `<`*(err1: ParserError, err2: ParserError): bool =
+proc `<`(err1: ParserError, err2: ParserError): bool =
   err1.loc < err2.loc
 
-proc `$`*(error: ParserError): string =
+proc `$`(error: ParserError): string =
   fmt"{error.loc} {error.msg}"
 
 # ============================================================
@@ -26,21 +26,21 @@ proc `$`*(error: ParserError): string =
 # ============================================================
 
 type
-  Parser* = ref object
-    filepath*: string
-    indentWidth*: uint32
-    tokens*: seq[Token]
-    index*: int
-    level*: uint32
+  Parser = ref object
+    filepath: string
+    indentWidth: uint32
+    tokens: seq[Token]
+    index: int
+    level: uint32
 
-proc newParser*(filepath: string, indentWidth: uint32, tokens: seq[
+proc newParser(filepath: string, indentWidth: uint32, tokens: seq[
     Token]): Parser =
   Parser(filepath: filepath, indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
 
-proc done*(parser: Parser): bool =
+proc done(parser: Parser): bool =
   parser.index == parser.tokens.len
 
-proc loc*(parser: Parser): Location =
+proc loc(parser: Parser): Location =
   if parser.done(): parser.tokens[^1].loc
   else: parser.tokens[parser.index].loc
 
@@ -48,19 +48,19 @@ proc loc*(parser: Parser): Location =
 # Token consumption
 # ============================================================
 
-proc peek*(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
+proc peek(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   if parser.done():
     let msg = fmt"expected {tokenRepr} but reached end of token stream"
     err(newParserError(msg, parser.loc))
   else:
     ok(parser.tokens[parser.index])
 
-proc consume*(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
+proc consume(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   let token = ? parser.peek(tokenRepr)
   parser.index += 1
   ok(token)
 
-proc consumeExceptNewline*(parser: Parser,
+proc consumeExceptNewline(parser: Parser,
     tokenRepr: string): Result[Token, ParserError] =
   let token = ? parser.peek(tokenRepr)
   if token.kind == tkNewline:
@@ -70,7 +70,7 @@ proc consumeExceptNewline*(parser: Parser,
     parser.index += 1
     ok(token)
 
-proc consumeTokenKind*(parser: Parser, kind: TokenKind,
+proc consumeTokenKind(parser: Parser, kind: TokenKind,
     tokenRepr: string): Result[Token, ParserError] =
   let token = ? parser.peek(tokenRepr)
   if token.kind != kind:
@@ -80,7 +80,7 @@ proc consumeTokenKind*(parser: Parser, kind: TokenKind,
     parser.index += 1
     ok(token)
 
-proc consumePunctuation*(parser: Parser,
+proc consumePunctuation(parser: Parser,
     value: string): Result[Token, ParserError] =
   let token = ? parser.peek(fmt"punctuation '{value}'")
   if token.kind != tkPunctuation or token.value != value:
@@ -90,7 +90,7 @@ proc consumePunctuation*(parser: Parser,
     parser.index += 1
     ok(token)
 
-proc consumeSpace*(parser: Parser): Result[Token, ParserError] =
+proc consumeSpace(parser: Parser): Result[Token, ParserError] =
   parser.consumeTokenKind(tkSpace, "space ' '")
 
 # ============================================================
@@ -102,10 +102,10 @@ type
     name*: string
     parseFn*: proc(parser: Parser): Result[T, ParserError]
 
-proc newSpec*[T](name: string): Spec[T] =
+proc newSpec[T](name: string): Spec[T] =
   Spec[T](name: name, parseFn: nil)
 
-proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
+proc run[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   assert spec.parseFn != nil, "spec '" & spec.name & "' has no implementation"
   let indexCheckpoint = parser.index
   let levelCheckpoint = parser.level
@@ -119,7 +119,7 @@ proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
 # Combinators
 # ============================================================
 
-proc oneOf*[T](name: string, specs: openArray[Spec[T]]): Spec[T] =
+proc oneOf[T](name: string, specs: openArray[Spec[T]]): Spec[T] =
   let captured = @specs
   assert captured.len > 0, "oneOf requires at least one alternative"
   Spec[T](
@@ -133,7 +133,7 @@ proc oneOf*[T](name: string, specs: openArray[Spec[T]]): Spec[T] =
     err(max(errors))
   )
 
-proc any*[T](spec: Spec[T]): Spec[seq[T]] =
+proc any[T](spec: Spec[T]): Spec[seq[T]] =
   Spec[seq[T]](
     name: spec.name & "*",
     parseFn: proc(parser: Parser): Result[seq[T], ParserError] =
@@ -147,7 +147,7 @@ proc any*[T](spec: Spec[T]): Spec[seq[T]] =
     ok(items)
   )
 
-proc atLeastOne*[T](spec: Spec[T]): Spec[seq[T]] =
+proc atLeastOne[T](spec: Spec[T]): Spec[seq[T]] =
   Spec[seq[T]](
     name: spec.name & "+",
     parseFn: proc(parser: Parser): Result[seq[T], ParserError] =
@@ -158,7 +158,7 @@ proc atLeastOne*[T](spec: Spec[T]): Spec[seq[T]] =
     ok(items)
   )
 
-proc optional*[T](spec: Spec[T]): Spec[Option[T]] =
+proc optional[T](spec: Spec[T]): Spec[Option[T]] =
   Spec[Option[T]](
     name: spec.name & "?",
     parseFn: proc(parser: Parser): Result[Option[T], ParserError] =
@@ -167,7 +167,7 @@ proc optional*[T](spec: Spec[T]): Spec[Option[T]] =
     else: ok(some(maybeValue.get))
   )
 
-proc map*[T, U](spec: Spec[T], name: string,
+proc map[T, U](spec: Spec[T], name: string,
     fn: proc(v: T): U): Spec[U] =
   Spec[U](
     name: name,
@@ -176,7 +176,7 @@ proc map*[T, U](spec: Spec[T], name: string,
     ok(fn(value))
   )
 
-proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
+proc separatedBy[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
   let pairSpec = Spec[T](
     name: spec.name & "_pair",
     parseFn: proc(parser: Parser): Result[T, ParserError] =
@@ -196,7 +196,7 @@ proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
     ok(items)
   )
 
-proc contained*[T](name: string, open: string, inner: Spec[T],
+proc contained[T](name: string, open: string, inner: Spec[T],
     close: string): Spec[T] =
   Spec[T](
     name: name,
@@ -213,21 +213,21 @@ proc contained*[T](name: string, open: string, inner: Spec[T],
 # Leaf token specs
 # ============================================================
 
-proc tokenSpec*(kind: TokenKind, tokenRepr: string): Spec[Token] =
+proc tokenSpec(kind: TokenKind, tokenRepr: string): Spec[Token] =
   Spec[Token](
     name: tokenRepr,
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
     parser.consumeTokenKind(kind, tokenRepr)
   )
 
-proc punctuationSpec*(value: string): Spec[Token] =
+proc punctuationSpec(value: string): Spec[Token] =
   Spec[Token](
     name: "'" & value & "'",
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
     parser.consumePunctuation(value)
   )
 
-proc anyTokenExceptNewlineSpec*(tokenRepr: string): Spec[Token] =
+proc anyTokenExceptNewlineSpec(tokenRepr: string): Spec[Token] =
   Spec[Token](
     name: tokenRepr,
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
@@ -617,7 +617,7 @@ proc newExpression(variable: Identifier): Expression =
 
 proc asl(expr: Expression): string
 
-proc value*(strLit: StringLiteral): string =
+proc value(strLit: StringLiteral): string =
   ## Returns the string content without surrounding quotes.
   strLit.content[1 .. ^2]
 
@@ -837,7 +837,7 @@ type Import* = ref object
 proc newImport(names: seq[ImportName], source: string, loc: Location): Import =
   Import(names: names, source: source, loc: loc)
 
-proc source*(imp: Import): string = imp.source
+proc source(imp: Import): string = imp.source
 
 proc asl(imp: Import): string =
   result = "import { "
@@ -919,8 +919,8 @@ proc newFile(path: string, imports: seq[Import], items: seq[FileItem]): File =
     of fikGeneric: generics.add(item.generic)
   File(path: path, imports: imports, modules: modules, generics: generics)
 
-proc path*(file: File): string = file.path
-proc imports*(file: File): seq[Import] = file.imports
+proc path(file: File): string = file.path
+proc imports(file: File): seq[Import] = file.imports
 
 proc asl*(file: File, indentWidth: uint32): string =
   var lines: seq[string]
@@ -1714,7 +1714,7 @@ let fileSpec = Spec[File](
   ok(newFile(parser.filepath, imports, items))
 )
 
-proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
+proc parse(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
     File, string] =
   let parser = newParser(filepath, indentWidth, tokens)
   let maybeFile = parser.run(fileSpec)
@@ -1750,7 +1750,7 @@ proc parseFile(filepath: string, indentWidth: uint32,
   let tokens = ? tokenize(source, filepath, dumpTokens)
   parse(filepath, indentWidth, tokens)
 
-proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
+proc resolveImportPath(source: string, importingFile: string): Result[string, string] =
   ## Resolves an import path relative to the importing file.
   ## Rejects paths that escape to parent directories.
   if source.startsWith(".."):
@@ -1758,8 +1758,8 @@ proc resolveImportPath*(source: string, importingFile: string): Result[string, s
   let dir = importingFile.parentDir
   ok((dir / source).absolutePath)
 
-proc parseAll*(rootPath: string, indentWidth: uint32,
-    dumpTokens: bool): Result[seq[File], string] =
+proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
+    seq[File], string] =
   ## BFS through imports, tokenize + parse each file.
   ## Returns files in topological order: leaves first, root last.
   var parsed: Table[string, File]
