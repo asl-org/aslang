@@ -815,12 +815,26 @@ type FunctionList = ref object
 proc newFunctionList(functions: seq[Function]): FunctionList =
   FunctionList(functions: functions)
 
+type ImportName = ref object
+  name: string
+  alias: string # empty if no alias
+  loc: Location
+
+proc newImportName(name: string, alias: string, loc: Location): ImportName =
+  ImportName(name: name, alias: alias, loc: loc)
+
+proc asl(importName: ImportName): string =
+  if importName.alias.len > 0:
+    fmt"{importName.name} as {importName.alias}"
+  else:
+    importName.name
+
 type Import* = ref object
-  names: seq[string]
+  names: seq[ImportName]
   source: string
   loc: Location
 
-proc newImport(names: seq[string], source: string, loc: Location): Import =
+proc newImport(names: seq[ImportName], source: string, loc: Location): Import =
   Import(names: names, source: source, loc: loc)
 
 proc source*(imp: Import): string = imp.source
@@ -829,7 +843,7 @@ proc asl(imp: Import): string =
   result = "import { "
   for i, name in imp.names:
     if i > 0: result.add(", ")
-    result.add(name)
+    result.add(asl(name))
   result.add(fmt" }} from ""{imp.source}""")
 
 type Generic = ref object
@@ -1640,21 +1654,35 @@ let fileItemSpec = oneOf("file_item", [
 ])
 
 # import { Name, Name } from "path"
+# identifier ("as" identifier)?
+let importNameSpec = Spec[ImportName](
+  name: "import_name",
+  parseFn: proc(parser: Parser): Result[ImportName, ParserError] =
+  let name = ? parser.run(identifierSpec)
+  let maybeAs = parser.run(strictSpace)
+  if maybeAs.isErr:
+    return ok(newImportName(name.name, "", name.loc))
+  let maybeAsKeyword = parser.run(keywordSpec("as"))
+  if maybeAsKeyword.isErr:
+    return ok(newImportName(name.name, "", name.loc))
+  discard ? parser.run(strictSpace)
+  let alias = ? parser.run(identifierSpec)
+  ok(newImportName(name.name, alias.name, name.loc))
+)
+
 let importLineSpec = Spec[Import](
   name: "import_line",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.run(keywordSpec("import"))
   discard ? parser.run(strictSpace)
   let names = ? parser.run(contained("import_names", "{",
-    separatedBy(identifierSpec, commaWithSpacesSpec), "}"))
+    separatedBy(importNameSpec, commaWithSpacesSpec), "}"))
   discard ? parser.run(strictSpace)
   discard ? parser.run(keywordSpec("from"))
   discard ? parser.run(strictSpace)
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(strictLine)
-  var nameStrings: seq[string]
-  for n in names: nameStrings.add(n.name)
-  ok(newImport(nameStrings, source.value, loc))
+  ok(newImport(names, source.value, loc))
 )
 
 let importBlockSpec = Spec[Import](

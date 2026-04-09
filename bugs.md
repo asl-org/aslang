@@ -13,6 +13,8 @@
 
 - [x] **PSR-37: Add union initializer expression** (`src/parser.nim`) [medium] — Done. `Type.Variant { fields }` as `UnionInitializer`. Tried before non-primitive and function call in `oneOf` since all start with `argumentType` but disambiguate by `.Variant {` vs `{` vs `.method(`.
 
+- [x] **PSR-38: Add import aliasing** (`src/parser.nim`) [medium] — Done. `ImportName` type with `name` and optional `alias` (empty string if none). `importNameSpec` parses `identifier ("as" identifier)?`. Import stores `seq[ImportName]` instead of `seq[string]`.
+
 ### Dependency resolution
 
 - [ ] **PSR-36: Recursive BFS dependency resolver with cycle detection** (`src/parser.nim` or `src/asl.nim`) [high] — After parsing the root file, extract import sources, tokenize+parse each dependency, and recurse. BFS traversal ensures dependencies are resolved breadth-first. Detect cycles by tracking the current resolution path — if a file is encountered that's already on the path, report the cycle with the full dependency chain. Returns all parsed Files in dependency order.
