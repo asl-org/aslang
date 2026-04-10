@@ -244,12 +244,15 @@ proc asl(decorator: Decorator): string =
   fmt"@{decorator.name}"
 
 type
-  Identifier = ref object
+  Identifier* = ref object
     name: string
     loc: Location
 
 proc newIdentifier(name: string, loc: Location): Identifier =
   Identifier(name: name, loc: loc)
+
+proc name*(id: Identifier): string = id.name
+proc loc*(id: Identifier): Location = id.loc
 
 proc asl(identifier: Identifier): string = identifier.name
 
