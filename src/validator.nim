@@ -201,11 +201,12 @@ proc indexFile(file: File): Result[IndexedFile, string] =
 
   for impIdx, imp in file.imports:
     for nameIdx, n in imp.names:
-      let visible = if n.alias.len > 0: n.alias else: n.name.name
+      let visibleIdent = if n.alias.isSome: n.alias.get else: n.name
+      let visible = visibleIdent.name
       if indexed.moduleIndex.hasKey(visible) or
           indexed.genericIndex.hasKey(visible) or
           indexed.importIndex.hasKey(visible):
-        return err(fmt"{file.path}:{n.name.loc}: duplicate name '{visible}'")
+        return err(fmt"{file.path}:{visibleIdent.loc}: duplicate name '{visible}'")
       indexed.importIndex[visible] = (impIdx, nameIdx)
 
   ok(indexed)
