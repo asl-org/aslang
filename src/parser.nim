@@ -55,11 +55,6 @@ proc peek(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   else:
     ok(parser.tokens[parser.index])
 
-proc consume(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
-  let token = ? parser.peek(tokenRepr)
-  parser.index += 1
-  ok(token)
-
 proc consumeExceptNewline(parser: Parser,
     tokenRepr: string): Result[Token, ParserError] =
   let token = ? parser.peek(tokenRepr)
@@ -617,11 +612,9 @@ proc newExpression(variable: Identifier): Expression =
 
 proc asl(expr: Expression): string
 
-proc value(strLit: StringLiteral): string =
-  ## Returns the string content without surrounding quotes.
-  strLit.content[1 .. ^2]
+proc value(strLit: StringLiteral): string = strLit.content
 
-proc asl(strLit: StringLiteral): string = strLit.content
+proc asl(strLit: StringLiteral): string = fmt"""{strLit.content}"""
 
 proc asl(unsigned: UnsignedIntegerLiteral): string = unsigned.value
 
@@ -837,7 +830,7 @@ type Import* = ref object
 proc newImport(names: seq[ImportName], source: string, loc: Location): Import =
   Import(names: names, source: source, loc: loc)
 
-proc source(imp: Import): string = imp.source
+# proc source(imp: Import): string = imp.source
 
 proc asl(imp: Import): string =
   result = "import { "
@@ -973,8 +966,8 @@ let ignorableLineSpec = Spec[Location](
   name: "ignorable_line",
   parseFn: proc(parser: Parser): Result[Location, ParserError] =
   let loc = parser.loc
-  discard parser.run(optionalSpace)
-  discard parser.run(optional(commentSpec))
+  discard ? parser.run(any(spaceSpec))
+  discard ? parser.run(optional(commentSpec))
   discard ? parser.run(newlineSpec)
   ok(loc)
 )
@@ -986,9 +979,9 @@ proc separatorSpec(sep: string): Spec[Token] =
   Spec[Token](
     name: "'" & sep & "'",
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    discard ? parser.run(optionalSpace)
+    discard ? parser.run(any(spaceSpec))
     let token = ? parser.run(punctuationSpec(sep))
-    discard ? parser.run(optionalSpace)
+    discard ? parser.run(any(spaceSpec))
     ok(token)
   )
 
@@ -1030,7 +1023,8 @@ let indentationSpec = Spec[Space](
   name: "indentation",
   parseFn: proc(parser: Parser): Result[Space, ParserError] =
   let loc = parser.loc
-  let spaces = ? parser.run(optionalSpace)
+  let spaces = ? parser.run(any(spaceSpec))
+
   let count = spaces.len.uint32
   let expected = parser.indentWidth * parser.level
   if count != expected:
@@ -1058,14 +1052,14 @@ let escapedDoubleQuote = escapedSpec("\"", doubleQuoteSpec)
 let escapedNewline = escapedSpec("n", alphabetSpec)
 let escapedTab = escapedSpec("t", alphabetSpec)
 
-let escapedStringCharSpec = oneOf("escaped_string_character", [
+let escapedStringContentSpec = oneOf("escaped_string_character", [
   escapedBackslash,
   escapedDoubleQuote,
   escapedNewline,
   escapedTab,
 ])
 
-let unescapedStringCharSpec = Spec[StringContent](
+let unescapedStringContentSpec = Spec[StringContent](
   name: "unescaped_string_character",
   parseFn: proc(parser: Parser): Result[StringContent, ParserError] =
   let token = ? parser.run(anyTokenExceptNewlineSpec("unescaped string character"))
@@ -1076,19 +1070,17 @@ let unescapedStringCharSpec = Spec[StringContent](
 )
 
 let stringContentSpec = oneOf("string_content", [
-  escapedStringCharSpec,
-  unescapedStringCharSpec,
+  escapedStringContentSpec,
+  unescapedStringContentSpec,
 ])
 
 let stringLiteralSpec = Spec[StringLiteral](
   name: "string_literal",
   parseFn: proc(parser: Parser): Result[StringLiteral, ParserError] =
   let openQuote = ? parser.run(doubleQuoteSpec)
-  var content = "\""
   let chars = ? parser.run(any(stringContentSpec))
-  for ch in chars: content.add(ch.content)
+  var content: string; for ch in chars: content.add(ch.content)
   discard ? parser.run(doubleQuoteSpec)
-  content.add("\"")
   ok(newStringLiteral(content, openQuote.loc))
 )
 
