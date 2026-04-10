@@ -1,0 +1,70 @@
+space: " "
+double_quote: "\""
+backslash: "\\"
+left_curly: "{"
+right_curly: "}"
+colon: ":"
+newline: "\n"
+hashtag: "#"
+
+import_keyword: "import"
+from_keyword: "from"
+module_keyword: "module"
+generic_keyword: "generic"
+struct_keyword: "struct"
+union_keyword: "union"
+
+escaped_new_line_char: "n"
+escapable_tab_char: "t"
+
+anything_except_new_line: .*
+
+comment: hashtag anything_except_new_line*
+empty_line: space+ comment? newline
+
+escapable_string_char: double_quote | backslash | escaped_new_line_char | escapable_tab_char
+escaped_string_char: backslash escapable_string_char
+unescaped_string_char: anything_except_new_line
+string_content: escaped_string_char | unescaped_string_char
+string_literal: double_quote string_content double_quote
+
+identifier_head: underscore | alphabet
+identifier_tail: identifier_head | digit
+identifier: identifier_head identifier_tail*
+
+import_name_leading: identifier space* comma
+import_name_last: identifier
+comma_separated_import_names: import_name_leading* import_name_last
+
+import_name_list: left_curly space* comma_separated_import_names space* right_curly
+
+import_statement: import_keyword space+ import_name_list space+ from_keyword space+ string_literal empty_line+
+
+struct_header: indent(1) struct_keyword space+ identifier space* colon empty_line+
+struct_field: identifier space* argument_type empty_line+
+struct_body: indent(2) struct_field+
+struct_block: struct_header struct_body
+
+union_header: indent(1) union_keyword space* colon empty_line+
+branch_header: identifier space* colon empty_line+
+branch_body: indent(3) struct_field+
+branch_block: branch_header branch_body
+union_body: indent(2) branch_block+
+union_block: union_header union_body
+
+
+function_header: indent(1) function_def empty_line+
+function_body: indent(2) statement+
+function_block: function_header function_body
+
+data_block: struct_block | union_block
+function_block: function_header function_body
+
+module_header: indent(0) module_keyword space+ identifier space* colon empty_line+
+module_body: indent(1) data_block function_block*
+
+module_block: module_header module_body
+
+file_item: module_block | generic_block
+
+file: empty_line* import_statement* file_item*

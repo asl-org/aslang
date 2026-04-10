@@ -1,12 +1,12 @@
-import os, results, strformat
+import os, results, strformat, sequtils, strutils
 
 import cli, parser
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let files = ? parse(filepath, opts.indentWidth, opts.dumpTokens)
-  let root = files[^1]
-  ok(root.asl(opts.indentWidth))
+  # let lintedFile = root.asl(opts.indentWidth)
+  ok(files.mapIt(it.path).join("\n"))
 
 when isMainModule:
   let maybeCommand = parseCliArgs(commandLineParams())

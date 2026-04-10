@@ -919,8 +919,7 @@ proc newFile(path: string, imports: seq[Import], items: seq[FileItem]): File =
     of fikGeneric: generics.add(item.generic)
   File(path: path, imports: imports, modules: modules, generics: generics)
 
-proc path(file: File): string = file.path
-proc imports(file: File): seq[Import] = file.imports
+proc path*(file: File): string = file.path
 
 proc asl*(file: File, indentWidth: uint32): string =
   var lines: seq[string]
@@ -954,6 +953,14 @@ let hashSpec = punctuationSpec("#")
 let backslashSpec = punctuationSpec("\\")
 let doubleQuoteSpec = punctuationSpec("\"")
 
+let commentSpec = Spec[Location](
+  name: "comment",
+  parseFn: proc(parser: Parser): Result[Location, ParserError] =
+  let hashtag = ? parser.run(hashSpec)
+  discard parser.run(any(anyTokenExceptNewlineSpec("comment character")))
+  ok(hashtag.loc)
+)
+
 # ============================================================
 # Implicit separators
 # ============================================================
@@ -967,9 +974,7 @@ let ignorableLineSpec = Spec[Location](
   parseFn: proc(parser: Parser): Result[Location, ParserError] =
   let loc = parser.loc
   discard parser.run(optionalSpace)
-  let maybeHash = parser.run(hashSpec)
-  if maybeHash.isOk:
-    discard parser.run(any(anyTokenExceptNewlineSpec("comment character")))
+  discard parser.run(optional(commentSpec))
   discard ? parser.run(newlineSpec)
   ok(loc)
 )

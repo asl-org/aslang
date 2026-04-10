@@ -1,4 +1,4 @@
-module Solver:
+module Solution:
   func sum(a: i64): i64
     b = i64.add(a, 1)
     c = i64.multiply(a, b)
