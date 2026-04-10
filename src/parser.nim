@@ -329,19 +329,19 @@ proc asl(s: Struct, indentWidth: uint32): seq[string] =
     result.add(fmt"{indent}{asl(field)}")
 
 type VariantDefinition* = ref object
-  name: string
+  name: Identifier
   fields: seq[ArgumentDefinition]
   loc: Location
 
-proc name*(v: VariantDefinition): string = v.name
+proc name*(v: VariantDefinition): Identifier = v.name
 proc fields*(v: VariantDefinition): seq[ArgumentDefinition] = v.fields
 
-proc newVariantDefinition(name: string, fields: seq[ArgumentDefinition],
+proc newVariantDefinition(name: Identifier, fields: seq[ArgumentDefinition],
     loc: Location): VariantDefinition =
   VariantDefinition(name: name, fields: fields, loc: loc)
 
 proc asl(varDef: VariantDefinition): string =
-  result = varDef.name
+  result = varDef.name.name
   if varDef.fields.len > 0:
     result.add(" { ")
     for i, field in varDef.fields:
@@ -1644,7 +1644,7 @@ let variantDefinitionLineSpec = Spec[VariantDefinition](
   var fields: seq[ArgumentDefinition]
   if maybeFields.isSome: fields = maybeFields.get
   discard ? parser.run(strictLine)
-  ok(newVariantDefinition(name.name, fields, name.loc))
+  ok(newVariantDefinition(name, fields, name.loc))
 )
 
 let unionHeaderSpec = Spec[Location](

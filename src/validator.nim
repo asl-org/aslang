@@ -131,16 +131,16 @@ proc indexVariant(v: VariantDefinition,
   let indexed = IndexedVariant(variant: v)
   for i, f in v.fields:
     if indexed.fieldIndex.hasKey(f.name.name):
-      return err(fmt"{path}:{f.name.loc}: variant '{v.name}': duplicate field '{f.name.name}'")
+      return err(fmt"{path}:{f.name.loc}: variant '{v.name.name}': duplicate field '{f.name.name}'")
     indexed.fieldIndex[f.name.name] = i
   ok(indexed)
 
 proc indexUnion(u: Union, path: string): Result[IndexedUnion, string] =
   let indexed = IndexedUnion(union: u)
   for i, v in u.variants:
-    if indexed.variantIndex.hasKey(v.name):
-      return err(fmt"{path}: union: duplicate variant '{v.name}'")
-    indexed.variantIndex[v.name] = i
+    if indexed.variantIndex.hasKey(v.name.name):
+      return err(fmt"{path}:{v.name.loc}: union: duplicate variant '{v.name.name}'")
+    indexed.variantIndex[v.name.name] = i
     indexed.variants.add(? indexVariant(v, path))
   ok(indexed)
 
