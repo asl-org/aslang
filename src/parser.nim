@@ -285,18 +285,18 @@ proc asl(argType: ArgumentType): string =
     result.add("]")
 
 type ArgumentDefinition* = ref object
-  name: string
+  name: Identifier
   argType: ArgumentType
   loc: Location
 
-proc name*(argDef: ArgumentDefinition): string = argDef.name
+proc name*(argDef: ArgumentDefinition): Identifier = argDef.name
 
-proc newArgumentDefinition(name: string, argType: ArgumentType,
+proc newArgumentDefinition(name: Identifier, argType: ArgumentType,
     loc: Location): ArgumentDefinition =
   ArgumentDefinition(name: name, argType: argType, loc: loc)
 
 proc asl(argDef: ArgumentDefinition): string =
-  fmt"{argDef.name}: {asl(argDef.argType)}"
+  fmt"{argDef.name.name}: {asl(argDef.argType)}"
 
 type ArgumentDefinitionList = ref object
   argDefs: seq[ArgumentDefinition]
@@ -1145,7 +1145,7 @@ let argumentDefinitionSpec = Spec[ArgumentDefinition](
   let argName = ? parser.run(identifierSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let argType = ? parser.run(argumentTypeSpec)
-  ok(newArgumentDefinition(argName.name, argType, argName.loc))
+  ok(newArgumentDefinition(argName, argType, argName.loc))
 )
 
 let argumentDefinitionListSpec = Spec[ArgumentDefinitionList](

@@ -121,18 +121,18 @@ proc findVariant*(u: IndexedUnion, name: string): int =
 proc indexStruct(s: Struct, path: string): Result[IndexedStruct, string] =
   let indexed = IndexedStruct(struct: s)
   for i, f in s.fields:
-    if indexed.fieldIndex.hasKey(f.name):
-      return err(fmt"{path}: struct: duplicate field '{f.name}'")
-    indexed.fieldIndex[f.name] = i
+    if indexed.fieldIndex.hasKey(f.name.name):
+      return err(fmt"{path}:{f.name.loc}: struct: duplicate field '{f.name.name}'")
+    indexed.fieldIndex[f.name.name] = i
   ok(indexed)
 
 proc indexVariant(v: VariantDefinition,
     path: string): Result[IndexedVariant, string] =
   let indexed = IndexedVariant(variant: v)
   for i, f in v.fields:
-    if indexed.fieldIndex.hasKey(f.name):
-      return err(fmt"{path}: variant '{v.name}': duplicate field '{f.name}'")
-    indexed.fieldIndex[f.name] = i
+    if indexed.fieldIndex.hasKey(f.name.name):
+      return err(fmt"{path}:{f.name.loc}: variant '{v.name}': duplicate field '{f.name.name}'")
+    indexed.fieldIndex[f.name.name] = i
   ok(indexed)
 
 proc indexUnion(u: Union, path: string): Result[IndexedUnion, string] =
