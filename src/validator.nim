@@ -156,7 +156,7 @@ proc indexData(db: DataBlock, path: string): Result[IndexedData, string] =
 proc indexModule(m: Module, path: string): Result[IndexedModule, string] =
   # Rule 4: module must have data or at least one function
   if m.data.isNone and m.functions.len == 0:
-    return err(fmt"{path}: module '{m.name}': must have a data block or at least one function")
+    return err(fmt"{path}:{m.name.loc}: module '{m.name.name}': must have a data block or at least one function")
 
   let indexed = IndexedModule(module: m)
   for i, fn in m.functions:
@@ -184,11 +184,11 @@ proc indexFile(file: File): Result[IndexedFile, string] =
 
   # Modules, generics, and import visible names share one namespace.
   for i, m in file.modules:
-    if indexed.moduleIndex.hasKey(m.name) or
-        indexed.genericIndex.hasKey(m.name) or
-        indexed.importIndex.hasKey(m.name):
-      return err(fmt"{file.path}: duplicate name '{m.name}'")
-    indexed.moduleIndex[m.name] = i
+    if indexed.moduleIndex.hasKey(m.name.name) or
+        indexed.genericIndex.hasKey(m.name.name) or
+        indexed.importIndex.hasKey(m.name.name):
+      return err(fmt"{file.path}:{m.name.loc}: duplicate name '{m.name.name}'")
+    indexed.moduleIndex[m.name.name] = i
     indexed.modules.add(? indexModule(m, file.path))
 
   for i, g in file.generics:

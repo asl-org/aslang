@@ -892,16 +892,16 @@ proc asl(gen: Generic, indentWidth: uint32): seq[string] =
 
 type Module* = ref object
   decorators: seq[Decorator]
-  name: string
+  name: Identifier
   data: Option[DataBlock]
   funcList: FunctionList
   loc: Location
 
-proc name*(m: Module): string = m.name
+proc name*(m: Module): Identifier = m.name
 proc data*(m: Module): Option[DataBlock] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
 
-proc newModule(decorators: seq[Decorator], name: string,
+proc newModule(decorators: seq[Decorator], name: Identifier,
     data: Option[DataBlock], funcList: FunctionList, loc: Location): Module =
   Module(decorators: decorators, name: name, data: data,
     funcList: funcList, loc: loc)
@@ -909,7 +909,7 @@ proc newModule(decorators: seq[Decorator], name: string,
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
     result.add(asl(d))
-  result.add(fmt"module {module.name}:")
+  result.add(fmt"module {module.name.name}:")
   let indent = " ".repeat(indentWidth)
   if module.data.isSome:
     for line in asl(module.data.get, indentWidth):
@@ -1562,7 +1562,7 @@ let funcBlockSpec = Spec[Function](
 let functionListSpec = any(funcBlockSpec).map("function_list",
   proc(fns: seq[Function]): FunctionList = newFunctionList(fns))
 
-type ModuleHeader = tuple[name: string, loc: Location]
+type ModuleHeader = tuple[name: Identifier, loc: Location]
 
 let moduleHeaderSpec = Spec[ModuleHeader](
   name: "module_header",
@@ -1572,7 +1572,7 @@ let moduleHeaderSpec = Spec[ModuleHeader](
   let nameIdent = ? parser.run(identifierSpec)
   discard parser.run(optionalSpace)
   discard ? parser.run(punctuationSpec(":"))
-  ok((nameIdent.name, loc))
+  ok((nameIdent, loc))
 )
 
 type GenericHeader = tuple[name: string, loc: Location]
