@@ -281,10 +281,12 @@ proc asl(argType: ArgumentType): string =
       result.add(asl(impl))
     result.add("]")
 
-type ArgumentDefinition = ref object
+type ArgumentDefinition* = ref object
   name: string
   argType: ArgumentType
   loc: Location
+
+proc name*(argDef: ArgumentDefinition): string = argDef.name
 
 proc newArgumentDefinition(name: string, argType: ArgumentType,
     loc: Location): ArgumentDefinition =
@@ -308,9 +310,11 @@ proc asl(argDefList: ArgumentDefinitionList): string =
     result.add(asl(argDef))
   result.add(")")
 
-type Struct = ref object
+type Struct* = ref object
   fields: seq[ArgumentDefinition]
   loc: Location
+
+proc fields*(s: Struct): seq[ArgumentDefinition] = s.fields
 
 proc newStruct(fields: seq[ArgumentDefinition], loc: Location): Struct =
   Struct(fields: fields, loc: loc)
@@ -321,10 +325,13 @@ proc asl(s: Struct, indentWidth: uint32): seq[string] =
   for field in s.fields:
     result.add(fmt"{indent}{asl(field)}")
 
-type VariantDefinition = ref object
+type VariantDefinition* = ref object
   name: string
   fields: seq[ArgumentDefinition]
   loc: Location
+
+proc name*(v: VariantDefinition): string = v.name
+proc fields*(v: VariantDefinition): seq[ArgumentDefinition] = v.fields
 
 proc newVariantDefinition(name: string, fields: seq[ArgumentDefinition],
     loc: Location): VariantDefinition =
@@ -339,9 +346,11 @@ proc asl(varDef: VariantDefinition): string =
       result.add(asl(field))
     result.add(" }")
 
-type Union = ref object
+type Union* = ref object
   variants: seq[VariantDefinition]
   loc: Location
+
+proc variants*(u: Union): seq[VariantDefinition] = u.variants
 
 proc newUnion(variants: seq[VariantDefinition], loc: Location): Union =
   Union(variants: variants, loc: loc)
@@ -353,12 +362,22 @@ proc asl(u: Union, indentWidth: uint32): seq[string] =
     result.add(fmt"{indent}{asl(variant)}")
 
 type
-  DataBlockKind = enum
+  DataBlockKind* = enum
     dbkStruct, dbkUnion
-  DataBlock = ref object
+  DataBlock* = ref object
     case kind: DataBlockKind
     of dbkStruct: struct: Struct
     of dbkUnion: union: Union
+
+proc kind*(db: DataBlock): DataBlockKind = db.kind
+proc struct*(db: DataBlock): Struct =
+  assert db.kind == dbkStruct,
+    fmt"DataBlock.struct accessed but kind is {db.kind}"
+  db.struct
+proc union*(db: DataBlock): Union =
+  assert db.kind == dbkUnion,
+    fmt"DataBlock.union accessed but kind is {db.kind}"
+  db.union
 
 proc newDataBlock(s: Struct): DataBlock =
   DataBlock(kind: dbkStruct, struct: s)
@@ -371,11 +390,13 @@ proc asl(db: DataBlock, indentWidth: uint32): seq[string] =
   of dbkStruct: asl(db.struct, indentWidth)
   of dbkUnion: asl(db.union, indentWidth)
 
-type FunctionDefinition = ref object
+type FunctionDefinition* = ref object
   name: string
   argDefList: ArgumentDefinitionList
   returns: ArgumentType
   loc: Location
+
+proc name*(fd: FunctionDefinition): string = fd.name
 
 proc newFunctionDefinition(name: string, argDefList: ArgumentDefinitionList,
     returns: ArgumentType, loc: Location): FunctionDefinition =
@@ -784,10 +805,12 @@ proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string] =
     for line in asl(cb, indentWidth):
       result.add(fmt"{indent}{line}")
 
-type Function = ref object
+type Function* = ref object
   decorators: seq[Decorator]
   def: FunctionDefinition
   statementList: StatementList
+
+proc name*(fn: Function): string = fn.def.name
 
 proc newFunction(decorators: seq[Decorator], def: FunctionDefinition,
     statementList: StatementList): Function =
@@ -808,10 +831,13 @@ type FunctionList = ref object
 proc newFunctionList(functions: seq[Function]): FunctionList =
   FunctionList(functions: functions)
 
-type ImportName = ref object
+type ImportName* = ref object
   name: string
   alias: string # empty if no alias
   loc: Location
+
+proc name*(n: ImportName): string = n.name
+proc alias*(n: ImportName): string = n.alias
 
 proc newImportName(name: string, alias: string, loc: Location): ImportName =
   ImportName(name: name, alias: alias, loc: loc)
@@ -830,7 +856,8 @@ type Import* = ref object
 proc newImport(names: seq[ImportName], source: string, loc: Location): Import =
   Import(names: names, source: source, loc: loc)
 
-# proc source(imp: Import): string = imp.source
+proc names*(imp: Import): seq[ImportName] = imp.names
+proc source*(imp: Import): string = imp.source
 
 proc asl(imp: Import): string =
   result = "import { "
@@ -839,11 +866,14 @@ proc asl(imp: Import): string =
     result.add(asl(name))
   result.add(fmt" }} from ""{imp.source}""")
 
-type Generic = ref object
+type Generic* = ref object
   decorators: seq[Decorator]
   name: string
   funcDefs: seq[FunctionDefinition]
   loc: Location
+
+proc name*(g: Generic): string = g.name
+proc funcDefs*(g: Generic): seq[FunctionDefinition] = g.funcDefs
 
 proc newGeneric(decorators: seq[Decorator], name: string,
     funcDefs: seq[FunctionDefinition], loc: Location): Generic =
@@ -857,12 +887,16 @@ proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   for funcDef in gen.funcDefs:
     result.add(fmt"{indent}{asl(funcDef)}")
 
-type Module = ref object
+type Module* = ref object
   decorators: seq[Decorator]
   name: string
   data: Option[DataBlock]
   funcList: FunctionList
   loc: Location
+
+proc name*(m: Module): string = m.name
+proc data*(m: Module): Option[DataBlock] = m.data
+proc functions*(m: Module): seq[Function] = m.funcList.functions
 
 proc newModule(decorators: seq[Decorator], name: string,
     data: Option[DataBlock], funcList: FunctionList, loc: Location): Module =
@@ -913,6 +947,9 @@ proc newFile(path: string, imports: seq[Import], items: seq[FileItem]): File =
   File(path: path, imports: imports, modules: modules, generics: generics)
 
 proc path*(file: File): string = file.path
+proc imports*(file: File): seq[Import] = file.imports
+proc modules*(file: File): seq[Module] = file.modules
+proc generics*(file: File): seq[Generic] = file.generics
 
 proc asl*(file: File, indentWidth: uint32): string =
   var lines: seq[string]

@@ -59,6 +59,10 @@
 - [x] **PSR-13** — Fixed `separatedBy` backtracking: sep+element wrapped into atomic `pairSpec`.
 - [x] **PSR-14** — Fixed `optional` backtracking.
 
+### Block indexing and validation
+
+- [x] **PSR-39: Block indexing, validation rules, and lookup infrastructure** (`src/validator.nim`, `src/parser.nim`, `src/asl.nim`) — Done. New `src/validator.nim` owns all indexing. Wrapper types (`IndexedFile`, `IndexedModule`, `IndexedGeneric`, `IndexedStruct`, `IndexedUnion`, `IndexedVariant`, `IndexedData`) wrap raw AST with `Table[string, int]` / `Table[string, seq[int]]` indices. Six validation rules collapsed: rules #3/#5/#6 already enforced by grammar, rules #2/#4 enforced during indexing, rule #1 is a free side effect of index construction (modules/generics/imports share one file-level namespace). Function overloading supported via `Table[string, seq[int]]`; all other blocks are `Table[string, int]`. Public `find*` lookups return `-1` / `@[]` on miss. `App` root type wraps `seq[IndexedFile]` with a path-keyed file index. `parser.nim` exports AST types (`Module`, `Generic`, `Function`, `FunctionDefinition`, `DataBlock`, `DataBlockKind`, `Struct`, `Union`, `VariantDefinition`, `ArgumentDefinition`, `ImportName`) and gains readonly accessor procs; `DataBlock.struct`/`.union` assert the variant before returning. `asl.nim:compile` calls `validator.index(files)` after `parser.parse`. Negative test fixtures live in `examples/errors/`, positive overloading fixture in `examples/overload.asl`.
+
 ### Parser features (PSR-20 to PSR-30)
 
 - [x] **PSR-20** — Decorator support (`@identifier`). `blockSpec` parses decorators before header.
