@@ -192,11 +192,11 @@ proc indexFile(file: File): Result[IndexedFile, string] =
     indexed.modules.add(? indexModule(m, file.path))
 
   for i, g in file.generics:
-    if indexed.moduleIndex.hasKey(g.name) or
-        indexed.genericIndex.hasKey(g.name) or
-        indexed.importIndex.hasKey(g.name):
-      return err(fmt"{file.path}: duplicate name '{g.name}'")
-    indexed.genericIndex[g.name] = i
+    if indexed.moduleIndex.hasKey(g.name.name) or
+        indexed.genericIndex.hasKey(g.name.name) or
+        indexed.importIndex.hasKey(g.name.name):
+      return err(fmt"{file.path}:{g.name.loc}: duplicate name '{g.name.name}'")
+    indexed.genericIndex[g.name.name] = i
     indexed.generics.add(? indexGeneric(g, file.path))
 
   for impIdx, imp in file.imports:

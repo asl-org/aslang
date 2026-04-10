@@ -871,21 +871,21 @@ proc asl(imp: Import): string =
 
 type Generic* = ref object
   decorators: seq[Decorator]
-  name: string
+  name: Identifier
   funcDefs: seq[FunctionDefinition]
   loc: Location
 
-proc name*(g: Generic): string = g.name
+proc name*(g: Generic): Identifier = g.name
 proc funcDefs*(g: Generic): seq[FunctionDefinition] = g.funcDefs
 
-proc newGeneric(decorators: seq[Decorator], name: string,
+proc newGeneric(decorators: seq[Decorator], name: Identifier,
     funcDefs: seq[FunctionDefinition], loc: Location): Generic =
   Generic(decorators: decorators, name: name, funcDefs: funcDefs, loc: loc)
 
 proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   for d in gen.decorators:
     result.add(asl(d))
-  result.add(fmt"generic {gen.name}:")
+  result.add(fmt"generic {gen.name.name}:")
   let indent = " ".repeat(indentWidth)
   for funcDef in gen.funcDefs:
     result.add(fmt"{indent}{asl(funcDef)}")
@@ -1575,7 +1575,7 @@ let moduleHeaderSpec = Spec[ModuleHeader](
   ok((nameIdent, loc))
 )
 
-type GenericHeader = tuple[name: string, loc: Location]
+type GenericHeader = tuple[name: Identifier, loc: Location]
 
 let genericHeaderSpec = Spec[GenericHeader](
   name: "generic_header",
@@ -1585,7 +1585,7 @@ let genericHeaderSpec = Spec[GenericHeader](
   let nameIdent = ? parser.run(identifierSpec)
   discard parser.run(optionalSpace)
   discard ? parser.run(punctuationSpec(":"))
-  ok((nameIdent.name, loc))
+  ok((nameIdent, loc))
 )
 
 # Function definition line: indentation + function signature + newline
