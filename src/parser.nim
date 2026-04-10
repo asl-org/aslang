@@ -835,21 +835,21 @@ proc newFunctionList(functions: seq[Function]): FunctionList =
   FunctionList(functions: functions)
 
 type ImportName* = ref object
-  name: string
+  name: Identifier
   alias: string # empty if no alias
   loc: Location
 
-proc name*(n: ImportName): string = n.name
+proc name*(n: ImportName): Identifier = n.name
 proc alias*(n: ImportName): string = n.alias
 
-proc newImportName(name: string, alias: string, loc: Location): ImportName =
+proc newImportName(name: Identifier, alias: string, loc: Location): ImportName =
   ImportName(name: name, alias: alias, loc: loc)
 
 proc asl(importName: ImportName): string =
   if importName.alias.len > 0:
-    fmt"{importName.name} as {importName.alias}"
+    fmt"{importName.name.name} as {importName.alias}"
   else:
-    importName.name
+    importName.name.name
 
 type Import* = ref object
   names: seq[ImportName]
@@ -1698,13 +1698,13 @@ let importNameSpec = Spec[ImportName](
   let name = ? parser.run(identifierSpec)
   let maybeAs = parser.run(strictSpace)
   if maybeAs.isErr:
-    return ok(newImportName(name.name, "", name.loc))
+    return ok(newImportName(name, "", name.loc))
   let maybeAsKeyword = parser.run(keywordSpec("as"))
   if maybeAsKeyword.isErr:
-    return ok(newImportName(name.name, "", name.loc))
+    return ok(newImportName(name, "", name.loc))
   discard ? parser.run(strictSpace)
   let alias = ? parser.run(identifierSpec)
-  ok(newImportName(name.name, alias.name, name.loc))
+  ok(newImportName(name, alias.name, name.loc))
 )
 
 let importLineSpec = Spec[Import](
