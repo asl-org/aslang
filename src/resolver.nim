@@ -27,6 +27,10 @@ type
     fields: seq[ResolvedField]
     loc: Location
 
+  ResolvedUnion* = ref object
+    variants: seq[ResolvedVariant]
+    loc: Location
+
   ResolvedImportName* = ref object
     id: int                               # index in imp.names
     name: Identifier
@@ -93,6 +97,12 @@ proc resolveVariant(v: VariantDefinition, id: int): ResolvedVariant =
   for i, f in v.fields:
     rv.fields.add(resolveField(f, i))
   rv
+
+proc resolveUnion(u: Union): ResolvedUnion =
+  let ru = ResolvedUnion(loc: u.loc)
+  for i, v in u.variants:
+    ru.variants.add(resolveVariant(v, i))
+  ru
 
 proc resolveImportName(n: ImportName, id: int): ResolvedImportName =
   ResolvedImportName(

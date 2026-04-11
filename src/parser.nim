@@ -357,6 +357,7 @@ type Union* = ref object
   loc: Location
 
 proc variants*(u: Union): seq[VariantDefinition] = u.variants
+proc loc*(u: Union): Location = u.loc
 
 proc newUnion(variants: seq[VariantDefinition], loc: Location): Union =
   Union(variants: variants, loc: loc)
