@@ -11,6 +11,12 @@ type File = parser.File
 # ============================================================
 
 type
+  ResolvedField* = ref object            # struct field or variant field
+    id: int                               # index in parent fields list
+    name: Identifier
+    argType: ArgumentType                 # raw until Phase 2
+    loc: Location
+
   ResolvedImportName* = ref object
     id: int                               # index in imp.names
     name: Identifier

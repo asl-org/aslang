@@ -262,7 +262,7 @@ type Space = ref object
 proc newSpace(spaces: uint32, loc: Location): Space =
   Space(spaces: spaces, loc: loc)
 
-type ArgumentType = ref object
+type ArgumentType* = ref object
   root: Identifier
   impls: seq[ArgumentType]
   loc: Location
@@ -289,6 +289,8 @@ type ArgumentDefinition* = ref object
   loc: Location
 
 proc name*(argDef: ArgumentDefinition): Identifier = argDef.name
+proc argType*(argDef: ArgumentDefinition): ArgumentType = argDef.argType
+proc loc*(argDef: ArgumentDefinition): Location = argDef.loc
 
 proc newArgumentDefinition(name: Identifier, argType: ArgumentType,
     loc: Location): ArgumentDefinition =
