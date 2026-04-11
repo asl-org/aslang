@@ -55,7 +55,7 @@ type
     id: int                               # index in file.modules
     decorators: seq[Decorator]            # raw
     name: Identifier
-    data: Option[DataBlock]               # raw, wired later
+    data: Option[ResolvedData]
     functions: seq[Function]              # raw, wired later
     loc: Location
 
@@ -142,11 +142,14 @@ proc resolveImport(imp: Import, id: int, importingPath: string,
   ok(ri)
 
 proc resolveModule(m: Module, id: int): ResolvedModule =
+  let resolvedData =
+    if m.data.isSome: some(resolveData(m.data.get))
+    else: none(ResolvedData)
   ResolvedModule(
     id: id,
     decorators: m.decorators,
     name: m.name,
-    data: m.data,
+    data: resolvedData,
     functions: m.functions,
     loc: m.loc,
   )
