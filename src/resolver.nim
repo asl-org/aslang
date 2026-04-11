@@ -7,6 +7,109 @@ export parser, tokenizer, validator
 type File = parser.File
 
 # ============================================================
+# Built-in primitive types
+# ============================================================
+
+const primitives* = [
+  # Fixed-width integers
+  "i8", "i16", "i32", "i64",
+  "u8", "u16", "u32", "u64",
+  # Fixed-width floats
+  "f32", "f64",
+  # Raw pointer
+  "pointer",
+  # Built-in containers and types
+  "String", "List", "Map", "Array", "Status",
+]
+
+proc primitiveId*(name: string): int =
+  ## Returns the index of `name` in the primitives table, or -1.
+  for i, p in primitives:
+    if p == name: return i
+  -1
+
+# ============================================================
+# ResolvedArgumentType
+# ============================================================
+
+type
+  ResolvedArgumentTypeKind* = enum
+    ratPrimitive
+    ratModule
+    ratGeneric
+    ratImported
+
+  ResolvedArgumentType* = ref object
+    argType: ArgumentType             # raw AST — source of root, loc
+    impls: seq[ResolvedArgumentType]  # recursively resolved type params
+    case kind: ResolvedArgumentTypeKind
+    of ratPrimitive: primitiveId: int  # index in primitives table
+    of ratModule:    moduleId: int     # index in current file's modules
+    of ratGeneric:   genericId: int    # index in current file's generics
+    of ratImported:
+      importId: int     # index in current file's imports
+      importTypeId: int # index in import.types
+
+proc argType*(t: ResolvedArgumentType): ArgumentType = t.argType
+proc impls*(t: ResolvedArgumentType): seq[ResolvedArgumentType] = t.impls
+proc loc*(t: ResolvedArgumentType): Location = t.argType.loc
+proc kind*(t: ResolvedArgumentType): ResolvedArgumentTypeKind = t.kind
+proc primitiveId*(t: ResolvedArgumentType): int =
+  assert t.kind == ratPrimitive,
+    fmt"ResolvedArgumentType.primitiveId accessed but kind is {t.kind}"
+  t.primitiveId
+proc moduleId*(t: ResolvedArgumentType): int =
+  assert t.kind == ratModule,
+    fmt"ResolvedArgumentType.moduleId accessed but kind is {t.kind}"
+  t.moduleId
+proc genericId*(t: ResolvedArgumentType): int =
+  assert t.kind == ratGeneric,
+    fmt"ResolvedArgumentType.genericId accessed but kind is {t.kind}"
+  t.genericId
+proc importId*(t: ResolvedArgumentType): int =
+  assert t.kind == ratImported,
+    fmt"ResolvedArgumentType.importId accessed but kind is {t.kind}"
+  t.importId
+proc importTypeId*(t: ResolvedArgumentType): int =
+  assert t.kind == ratImported,
+    fmt"ResolvedArgumentType.importTypeId accessed but kind is {t.kind}"
+  t.importTypeId
+
+proc resolveArgumentType(a: ArgumentType, file: IndexedFile,
+    importingPath: string): Result[ResolvedArgumentType, string] =
+  var impls: seq[ResolvedArgumentType]
+  for impl in a.impls:
+    impls.add(? resolveArgumentType(impl, file, importingPath))
+
+  let root = a.root.value
+
+  # 1. Primitive built-in?
+  let primId = primitiveId(root)
+  if primId >= 0:
+    return ok(ResolvedArgumentType(argType: a, impls: impls,
+      kind: ratPrimitive, primitiveId: primId))
+
+  # 2. Module in current file?
+  let modId = file.findModule(root)
+  if modId >= 0:
+    return ok(ResolvedArgumentType(argType: a, impls: impls,
+      kind: ratModule, moduleId: modId))
+
+  # 3. Generic in current file?
+  let genId = file.findGeneric(root)
+  if genId >= 0:
+    return ok(ResolvedArgumentType(argType: a, impls: impls,
+      kind: ratGeneric, genericId: genId))
+
+  # 4. Imported name?
+  let (impId, impNameId) = file.findImport(root)
+  if impId >= 0:
+    return ok(ResolvedArgumentType(argType: a, impls: impls,
+      kind: ratImported, importId: impId, importTypeId: impNameId))
+
+  err(fmt"{importingPath}:{a.loc}: unknown type '{root}'")
+
+# ============================================================
 # ResolvedField (struct field or variant field)
 # ============================================================
 

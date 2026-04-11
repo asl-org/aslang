@@ -267,6 +267,10 @@ type ArgumentType* = ref object
   impls: seq[ArgumentType]
   loc: Location
 
+proc root*(a: ArgumentType): Identifier = a.root
+proc impls*(a: ArgumentType): seq[ArgumentType] = a.impls
+proc loc*(a: ArgumentType): Location = a.loc
+
 proc newArgumentType(root: Identifier, loc: Location): ArgumentType =
   ArgumentType(root: root, loc: loc)
 
