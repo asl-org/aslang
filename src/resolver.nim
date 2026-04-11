@@ -17,6 +17,10 @@ type
     argType: ArgumentType                 # raw until Phase 2
     loc: Location
 
+  ResolvedStruct* = ref object
+    fields: seq[ResolvedField]
+    loc: Location
+
   ResolvedImportName* = ref object
     id: int                               # index in imp.names
     name: Identifier
@@ -59,6 +63,20 @@ type
 # ============================================================
 # Resolution
 # ============================================================
+
+proc resolveField(f: ArgumentDefinition, id: int): ResolvedField =
+  ResolvedField(
+    id: id,
+    name: f.name,
+    argType: f.argType,
+    loc: f.loc,
+  )
+
+proc resolveStruct(s: Struct): ResolvedStruct =
+  let rs = ResolvedStruct(loc: s.loc)
+  for i, f in s.fields:
+    rs.fields.add(resolveField(f, i))
+  rs
 
 proc resolveImportName(n: ImportName, id: int): ResolvedImportName =
   ResolvedImportName(

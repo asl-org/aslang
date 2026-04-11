@@ -319,6 +319,7 @@ type Struct* = ref object
   loc: Location
 
 proc fields*(s: Struct): seq[ArgumentDefinition] = s.fields
+proc loc*(s: Struct): Location = s.loc
 
 proc newStruct(fields: seq[ArgumentDefinition], loc: Location): Struct =
   Struct(fields: fields, loc: loc)
