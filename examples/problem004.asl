@@ -1,3 +1,7 @@
+# Project Euler #4 style exercise — palindrome loop. Exercises
+# match on signed integer literals (case -1, case 1), tail-recursive
+# loops via function recursion, and primitive literal initializers
+# with named types (U8 1, U8 0).
 module Example:
   func max(a: u64, b: u64): u64
     op = u64.compare(a, b)

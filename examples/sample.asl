@@ -1,3 +1,7 @@
+# Aggregator file — exercises import aliasing ("as Solution1"),
+# multiple import statements from different files, and cross-file
+# module references (Solution1.start through Solution10.start).
+# This is the file referenced by examples/hello.asl.
 import { Solution as Solution1 } from "./problem001.asl"
 import { Solution as Solution2 } from "./problem002.asl"
 import { Solution as Solution3 } from "./problem003.asl"

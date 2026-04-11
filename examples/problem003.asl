@@ -1,3 +1,8 @@
+# Project Euler #3 style exercise — heavy union-variant matching.
+# Exercises struct data block (Bitset holding Array[u8]), union
+# initializers via Status[u8].Ok / Status[Bitset].Err, variant
+# patterns with field bindings (case Ok { value: value }), nested
+# match expressions, and generic type parameters on method calls.
 module Bitset:
   struct:
     arr: Array[u8]

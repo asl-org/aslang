@@ -1,3 +1,9 @@
+# Project Euler #10 style exercise — sum of primes via sieve.
+# The largest single-file example: three top-level modules (Utils,
+# Bitset, Solver) in one file, struct with generic Array[u8] field,
+# deeply nested union-variant patterns, cross-module function calls
+# (Bitset.get from Solver), and Error struct-initializer literals
+# embedded inside union variants.
 module Utils:
   func div_ceil(a: u64, b: u64): u64
     c = u64.add(a, b)

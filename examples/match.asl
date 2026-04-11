@@ -1,3 +1,8 @@
+# Match expression forms — exercises standalone match statement,
+# integer-literal case patterns (case 0, case 1), variable binding
+# patterns (case other, case n), and match-as-assignment
+# (y = match x: ...). Both functions here are body-only; no calls
+# from outside.
 module App:
   func classify(x: i64): str
     match x:

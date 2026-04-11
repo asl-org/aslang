@@ -1,3 +1,9 @@
+# Data blocks — one file with two modules, one backed by a struct
+# data block (User { name, age }) and the other by a union data
+# block (Plan with Free / Pro variants each carrying named fields).
+# Also exercises struct initializer (User { name: n, age: a }),
+# union initializer (Plan.Free { usage: u32 100 }), and variant
+# patterns with field bindings inside a match expression.
 module User:
   struct:
     name: str

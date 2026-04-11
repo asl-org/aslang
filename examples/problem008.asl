@@ -1,3 +1,7 @@
+# Project Euler #8 style exercise — exercises function overloading
+# (three solve functions with different arity/types in the same
+# module), long string literals spanning a single source line, and
+# U8.subtract / u64.from primitive conversions.
 module Solver:
   func max(a: u64, b: u64): u64
     cmp = u64.compare(a, b)

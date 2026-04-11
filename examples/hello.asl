@@ -1,3 +1,6 @@
+# Minimal "Hello, world" — exercises import-from aggregator file,
+# @export decorators on module and function, a generic with a single
+# func def, and a call to System.println.
 import { Sample } from "./sample.asl"
 
 generic Key:

@@ -1,3 +1,8 @@
+# Project Euler #7 style exercise — the first file with multiple
+# top-level modules in the same file (Bitset and Example), each
+# with its own struct/functions. Also exercises the 'pointer'
+# primitive type and negative signed-integer literal initializers
+# (i64 -1).
 module Bitset:
   struct:
     ptr: pointer

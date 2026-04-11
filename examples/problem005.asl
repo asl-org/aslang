@@ -1,3 +1,7 @@
+# Project Euler #5 style exercise — gcd/lcm via Euclidean recursion.
+# Exercises integer comparison with signed literal patterns
+# (case -1), mutually-calling functions within a module, and
+# tail-recursive loops.
 module Example:
   func gcd(a: u64, b: u64): u64
     op = u64.compare(b, 0)

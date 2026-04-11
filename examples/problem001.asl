@@ -1,3 +1,7 @@
+# Project Euler #1 style exercise — covers module with multiple
+# functions, primitive-method calls (i64.add, i64.quotient,
+# i64.subtract, i64.multiply), local-variable assignments, and a
+# primitive literal initializer (U8 0).
 module Solution:
   func sum(a: i64): i64
     b = i64.add(a, 1)

@@ -1790,6 +1790,8 @@ import utils
 
 proc readFileSafe(filepath: string): Result[string, string] =
   const MaxFileByteSize = 1 * 1024 * 1024 # 1 MB
+  if not fileExists(filepath):
+    return err(fmt"{filepath}: file not found")
   try:
     let fileByteSize = getFileSize(filepath)
     if fileByteSize > MaxFileByteSize:
@@ -1799,7 +1801,7 @@ proc readFileSafe(filepath: string): Result[string, string] =
       let pos = validateUtf8(source)
       if pos == -1: ok(source)
       else: err(fmt"{filepath} invalid UTF-8 byte at position {pos}.")
-  except IOError:
+  except CatchableError:
     err(fmt"{filepath} failed to read file.")
 
 proc parseFile(filepath: string, indentWidth: uint32,

@@ -1,3 +1,7 @@
+# Project Euler #2 style exercise — exercises match-as-expression
+# with integer-literal patterns (case 0, case 1) and wildcard
+# (case _), function recursion, and assignment-from-match
+# (ans = match c: ...).
 module Solver:
   func apply(a: i64, b: i64, c: i64): i64
     ans = match c:
