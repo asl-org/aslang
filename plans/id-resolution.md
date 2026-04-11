@@ -17,56 +17,30 @@ each module, each function, each expression.
 
 ## Vocabulary
 
-### Global ID
-Every block in the `App` tree has a **global id** — a typed value
-that encodes the full path from the root to the block as a sequence
-of local positions. A module's global id is `(fileId, moduleId)`.
-A function's global id is `(fileId, moduleId, functionId)`. A
-variant field's global id is `(fileId, moduleId, variantId, fieldId)`.
+### Local ID
+Every block stores a single `id: int` — its position in its
+immediate parent's list. That's it. No typed id objects, no
+ancestor path encoding.
 
-Each block kind has its own strongly-typed id so that the type
-system prevents mixing them up. The id is stored on the block
-itself so a resolved node is self-contained: given a
-`ResolvedFunction` you already know its file, its module, and its
-local position without walking back up the tree.
-
-Within an id the terminal field is always named `id` (the local
-position in the immediate parent); the preceding fields name each
-ancestor level: `file`, `module`, `generic`, `function`, `variant`,
-`import`, etc. Examples:
+Navigation from the root is an explicit chain of `seq` accesses:
 
 ```nim
-type
-  FileId* = object
-    id: int              # index in app.files
-
-  ModuleId* = object
-    file: int            # index in app.files
-    id: int              # index in file.modules
-
-  FunctionId* = object
-    file: int
-    module: int
-    id: int              # index in module.functions
-
-  VariantFieldId* = object
-    file: int
-    module: int
-    variant: int
-    id: int              # index in variant.fields
+app.files[0].modules[1].functions[2]   # function at index 2
+app.files[0].modules[1].data.get.union.variants[0].fields[1]  # variant field
 ```
 
-The denormalized ancestor fields (each level keeps copies of its
-parent's positions) trade a few bytes per block for O(1) navigation
-from any id back to the root.
+A richer "global id" — a full ancestor path encoded as a typed
+value — was considered and rejected for Phase 1 because it
+complicates lookups (each typed id needs its own lookup proc) and
+is speculative infrastructure until Phase 2 or 3 actually needs
+cross-block references.
 
 ### Ref
-For Phase 1 the only cross-scope reference that gets resolved is
-imports → target file (`ResolvedImport.targetFileId: FileId`). A
-richer `Ref` tagged union that handles primitives /
-cross-file-module / cross-file-generic / locals / params / etc.
-belongs to Phases 2 and 3. It's mentioned here only so the reader
-knows what's coming.
+For Phase 1 the only cross-block reference that gets resolved is
+imports → target file (`ResolvedImport.targetFileId: int` — a plain
+index into `ResolvedApp.files`). Phase 2 will introduce a richer
+`Ref` tagged union for type references in signatures; Phase 3 will
+extend it further for expression resolution. Not in scope here.
 
 ### Primitives
 Primitive types (`u8`, `u16`, `u32`, `u64`, `u128`, `i8`, `i16`,
@@ -123,93 +97,21 @@ Anything marked **"needs type info"** cannot be resolved without
 expression type inference. These force a type-checker pass before
 the resolver can finish.
 
-## Complete ID Type List (Phase 1)
+## Two semantic categories for `ArgumentDefinition`
 
-10 typed ID objects cover every declaration kind. The raw parser
-`ArgumentDefinition` appears in four contexts, which the resolver
-splits into two semantic categories:
+The raw parser `ArgumentDefinition` appears in four contexts. The
+resolver splits them into two semantic categories — each gets its
+own resolved type so the type system prevents confusing data
+members with computation inputs:
 
-- **Fields** (data members): struct fields and variant fields.
-  Identified by **`FieldId`**.
-- **Arguments** (computation inputs): function params, funcDef
-  params, and — when Phase 3 lands — temporary local bindings
-  inside function bodies. Identified by **`ArgumentId`**.
+- **`ResolvedField`** — data members: struct fields and variant
+  fields.
+- **`ResolvedArgument`** — computation inputs: function params,
+  funcDef params, and (Phase 3) temporary local bindings inside
+  function bodies.
 
-```nim
-type
-  FileId* = object
-    id: int                   # index in app.files
-
-  ModuleId* = object
-    file: int
-    id: int                   # index in file.modules
-
-  GenericId* = object
-    file: int
-    id: int                   # index in file.generics
-
-  ImportId* = object
-    file: int
-    id: int                   # index in file.imports
-
-  ImportNameId* = object
-    file: int
-    importStmt: int           # parent import statement
-    id: int                   # index in imp.names
-
-  FunctionId* = object
-    file: int
-    module: int
-    id: int                   # index in module.functions
-
-  FuncDefId* = object         # inside a generic block
-    file: int
-    generic: int
-    id: int                   # index in generic.funcDefs
-
-  VariantId* = object
-    file: int
-    module: int
-    id: int                   # index in union.variants
-
-  # Data members: struct fields and variant fields
-  FieldParentKind* = enum
-    fpkStruct                  # parent = ModuleId
-                               # (struct is implicit: module.data.struct)
-    fpkVariant                 # parent = VariantId
-
-  FieldId* = object
-    id: int                   # local position in owner's fields list
-    case parentKind*: FieldParentKind
-    of fpkStruct:  structParent*: ModuleId
-    of fpkVariant: variantParent*: VariantId
-
-  # Computation inputs: function / funcDef params (and Phase 3 locals)
-  ArgumentParentKind* = enum
-    apkFunction                # parent = FunctionId
-    apkFuncDef                 # parent = FuncDefId
-    # Phase 3 will add apkLocal for temporary bindings inside
-    # function bodies — same ArgumentId shape, different parent.
-
-  ArgumentId* = object
-    id: int                   # local position in owner's params list
-    case parentKind*: ArgumentParentKind
-    of apkFunction: functionParent*: FunctionId
-    of apkFuncDef:  funcDefParent*: FuncDefId
-```
-
-Each resolved block type carries the corresponding global id as its
-first field (e.g. `ResolvedModule.id: ModuleId`,
-`ResolvedFunction.id: FunctionId`, `ResolvedField.id: FieldId`,
-`ResolvedArgument.id: ArgumentId`).
-
-The ancestor chain is preserved through the tagged `parent*Id`:
-a struct field's `FieldId` carries a `ModuleId` (→ `file` +
-`module`), giving the full path `file → module → struct → field`.
-A variant field's `FieldId` carries a `VariantId` (→ `file` +
-`module` + `variant`), giving `file → module → variant → field`.
-A funcDef parameter's `ArgumentId` carries a `FuncDefId` (→ `file`
-+ `generic` + `funcDef`), giving `file → generic → funcDef → param`.
+The two types are structurally identical (id + name + argType +
+loc) but distinct at the type level.
 
 ## Resolved Types (Mirror of `Indexed*`)
 
@@ -217,30 +119,30 @@ A funcDef parameter's `ArgumentId` carries a `FuncDefId` (→ `file`
 type
   ResolvedApp* = ref object
     files: seq[ResolvedFile]
-    fileIndex: Table[string, FileId]     # absolute path → FileId
+    fileIndex: Table[string, int]        # absolute path → index in files
 
   ResolvedFile* = ref object
-    id: FileId
+    id: int                              # index in app.files
     path: string
     imports: seq[ResolvedImport]
     modules: seq[ResolvedModule]
     generics: seq[ResolvedGeneric]
 
   ResolvedImport* = ref object
-    id: ImportId
+    id: int                              # index in file.imports
     source: string
-    targetFileId: FileId
+    targetFileId: int                    # index in app.files
     names: seq[ResolvedImportName]
     loc: Location
 
   ResolvedImportName* = ref object
-    id: ImportNameId
+    id: int                              # index in imp.names
     name: Identifier
     alias: Option[Identifier]
     loc: Location
 
   ResolvedModule* = ref object
-    id: ModuleId
+    id: int                              # index in file.modules
     decorators: seq[Decorator]           # raw until later
     name: Identifier
     data: Option[ResolvedData]
@@ -248,20 +150,20 @@ type
     loc: Location
 
   ResolvedGeneric* = ref object
-    id: GenericId
+    id: int                              # index in file.generics
     decorators: seq[Decorator]
     name: Identifier
     funcDefs: seq[ResolvedFuncDef]
     loc: Location
 
   ResolvedField* = ref object            # struct field or variant field
-    id: FieldId
+    id: int                              # index in parent's fields list
     name: Identifier
     argType: ArgumentType                # raw until Phase 2
     loc: Location
 
   ResolvedArgument* = ref object         # function or funcDef parameter
-    id: ArgumentId
+    id: int                              # index in parent's params list
     name: Identifier
     argType: ArgumentType                # raw until Phase 2
     loc: Location
@@ -271,7 +173,7 @@ type
     loc: Location
 
   ResolvedVariant* = ref object
-    id: VariantId
+    id: int                              # index in union.variants
     name: Identifier
     fields: seq[ResolvedField]
     loc: Location
@@ -288,7 +190,7 @@ type
     of rdkUnion: union: ResolvedUnion
 
   ResolvedFunction* = ref object
-    id: FunctionId
+    id: int                              # index in module.functions
     decorators: seq[Decorator]
     name: Identifier
     params: seq[ResolvedArgument]
@@ -297,19 +199,17 @@ type
     loc: Location
 
   ResolvedFuncDef* = ref object
-    id: FuncDefId
+    id: int                              # index in generic.funcDefs
     name: Identifier
     params: seq[ResolvedArgument]
     returns: ArgumentType
     loc: Location
 ```
 
-`ResolvedField` and `ResolvedArgument` are structurally identical
-but carry different id types (`FieldId` vs `ArgumentId`) to reflect
-the two semantic categories. The type system prevents passing a
-struct field where a function parameter is expected and vice
-versa — useful when Phase 3 starts resolving expression references
-to field accesses vs. variable lookups.
+Every id is a plain `int` — the local position in the immediate
+parent's list. `ResolvedField` and `ResolvedArgument` are
+structurally identical but distinct types so the type system
+catches mixing up a struct field with a function parameter.
 
 ## Phasing
 
@@ -426,122 +326,90 @@ Before starting even Phase 1, lock down:
 
 ## Phase 1 Commit Sequence
 
-Phase 1 breaks into **17 bite-sized commits**. Each one adds exactly
-one id type + its corresponding block type (or one wiring step),
-compiles cleanly, and leaves every existing example working. Target
-~20–50 line diffs per commit — same pacing as PSR-40.
+Phase 1 breaks into **15 bite-sized commits**. Each one adds one
+block type (or one wiring step), compiles cleanly, and leaves
+every existing example working. Target ~20–50 line diffs per
+commit.
 
 Each commit lives entirely in `src/resolver.nim` except R1 which
-also touches `src/asl.nim` and R17 which touches the docs.
+also touches `src/asl.nim` and R15 which touches the docs.
 
 ### Skeleton
 
-- **R1** — **Create `src/resolver.nim`.** Empty `ResolvedApp* = ref
-  object`. Stub `proc resolve*(app: App): Result[ResolvedApp,
-  string] = ok(ResolvedApp())`. Wire into `asl.nim:compile`
-  right after `validator.index`. Pipeline builds, output unchanged.
+- **R1** — **Create `src/resolver.nim`.** ✅ *committed as `ee23b7d`*.
 
 ### File level
 
-- **R2** — **`FileId` + `ResolvedFile{id, path}`.** Add
-  `files: seq[ResolvedFile]` and `fileIndex: Table[string, FileId]`
-  to `ResolvedApp`. `resolve` iterates `app.files` building
-  `ResolvedFile(id: FileId(id: i), path: f.file.path)`.
+- **R2** — **`ResolvedFile{id, path}`.** Add `files:
+  seq[ResolvedFile]` and `fileIndex: Table[string, int]` to
+  `ResolvedApp`. `resolve` iterates `app.files` building
+  `ResolvedFile(id: i, path: f.file.path)`.
 
 ### Imports
 
-- **R3** — **`ImportId` + `ResolvedImport{id, source,
-  targetFileId}`.** Wire `imports: seq[ResolvedImport]` into
-  `ResolvedFile`. `targetFileId` from `ResolvedApp.fileIndex`
-  lookup of the resolved import path.
-- **R4** — **`ImportNameId` + `ResolvedImportName{id, name,
-  alias}`.** Wire `names: seq[ResolvedImportName]` into
-  `ResolvedImport`.
+- **R3** — **`ResolvedImport{id, source, targetFileId}`.** Wire
+  `imports: seq[ResolvedImport]` into `ResolvedFile`.
+  `targetFileId` comes from `ResolvedApp.fileIndex` lookup of the
+  absolute import path.
+- **R4** — **`ResolvedImportName{id, name, alias}`.** Wire `names:
+  seq[ResolvedImportName]` into `ResolvedImport`.
 
 ### Modules and generics (skeletons, body raw)
 
-- **R5** — **`ModuleId` + `ResolvedModule{id, decorators, name,
-  loc}`.** `data` and `functions` stay as raw AST pointers for
-  now; wired in later commits. Wire `modules:
-  seq[ResolvedModule]` into `ResolvedFile`.
-- **R6** — **`GenericId` + `ResolvedGeneric{id, decorators, name,
-  loc}`.** `funcDefs` stays raw. Wire `generics:
+- **R5** — **`ResolvedModule{id, decorators, name, loc}` skeleton.**
+  `data` and `functions` stay as raw AST pointers; wired in later
+  commits. Wire `modules: seq[ResolvedModule]` into `ResolvedFile`.
+- **R6** — **`ResolvedGeneric{id, decorators, name, loc}`
+  skeleton.** `funcDefs` stays raw. Wire `generics:
   seq[ResolvedGeneric]` into `ResolvedFile`.
 
-### Field infrastructure
+### Struct / variant / union
 
-- **R7** — **`FieldParentKind` + `FieldId` (variant) +
-  `ResolvedField{id, name, argType, loc}`.** Sets up the data-
-  member type used by struct fields and variant fields. Defines
-  the type + a factory helper
-  `newFieldId(parentKind, parentId, localId)`. Stand-alone — not
-  wired into anything yet.
-
-### Struct path
-
+- **R7** — **`ResolvedField{id, name, argType, loc}`.** Type used
+  by both struct fields and variant fields. Stand-alone.
 - **R8** — **`ResolvedStruct{fields, loc}`.** Helper
-  `resolveStruct(s: Struct, parent: ModuleId): ResolvedStruct`
-  builds `ResolvedField` entries with `parentKind=fpkStruct`.
-
-### Union path
-
-- **R9** — **`VariantId` + `ResolvedVariant{id, name, fields,
-  loc}`.** Helper `resolveVariant(v: VariantDefinition, parent:
-  ModuleId, localId: int)` builds `ResolvedField` entries with
-  `parentKind=fpkVariant`.
+  `resolveStruct(s: Struct): ResolvedStruct` assigns positional
+  ids to fields.
+- **R9** — **`ResolvedVariant{id, name, fields, loc}`.** Helper
+  `resolveVariant(v: VariantDefinition, localId: int)`.
 - **R10** — **`ResolvedUnion{variants, loc}`.** Helper
-  `resolveUnion(u: Union, parent: ModuleId): ResolvedUnion`.
-
-### Data block + module wiring
-
-- **R11** — **`ResolvedData` tagged union** (`rdkStruct | rdkUnion`).
-  Helper `resolveData(db: DataBlock, parent: ModuleId):
-  ResolvedData`.
+  `resolveUnion(u: Union): ResolvedUnion`.
+- **R11** — **`ResolvedData` tagged union** (`rdkStruct |
+  rdkUnion`). Helper `resolveData(db: DataBlock): ResolvedData`.
 - **R12** — **Wire `ResolvedData` into `ResolvedModule.data`.**
   `data` field switches from raw `Option[DataBlock]` to
-  `Option[ResolvedData]`. `resolveModule` now calls
-  `resolveData`.
+  `Option[ResolvedData]`.
 
-### Argument infrastructure
+### Functions
 
-- **R13** — **`ArgumentParentKind` + `ArgumentId` (variant) +
-  `ResolvedArgument{id, name, argType, loc}`.** Sets up the
-  computation-input type used by function params, funcDef
-  params, and (Phase 3) local bindings. Defines the type +
-  factory helper. Stand-alone.
-
-### Module functions
-
-- **R14** — **`FunctionId` + `ResolvedFunction{id, decorators,
-  name, params, returns, body, loc}`.** `body: StatementList`
-  stays raw. Helper `resolveFunction(fn: Function, parent:
-  ModuleId, localId: int)` builds `ResolvedArgument` params with
-  `parentKind=apkFunction`. Wire `functions:
-  seq[ResolvedFunction]` into `ResolvedModule`.
+- **R13** — **`ResolvedArgument{id, name, argType, loc}` +
+  `ResolvedFunction{id, decorators, name, params, returns, body,
+  loc}`.** `ResolvedArgument` is the computation-input type used
+  by function params and funcDef params. `ResolvedFunction.body`
+  stays raw `StatementList`. Helper `resolveFunction(fn: Function,
+  localId: int)` assigns positional ids to params. Wire
+  `functions: seq[ResolvedFunction]` into `ResolvedModule`.
 
 ### Generic funcDefs
 
-- **R15** — **`FuncDefId` + `ResolvedFuncDef{id, name, params,
-  returns, loc}`.** Helper `resolveFuncDef(fd:
-  FunctionDefinition, parent: GenericId, localId: int)` builds
-  `ResolvedArgument` params with `parentKind=apkFuncDef`. Wire
-  `funcDefs: seq[ResolvedFuncDef]` into `ResolvedGeneric`.
+- **R14** — **`ResolvedFuncDef{id, name, params, returns, loc}`.**
+  Helper `resolveFuncDef(fd: FunctionDefinition, localId: int)`
+  assigns positional ids to params. Wire `funcDefs:
+  seq[ResolvedFuncDef]` into `ResolvedGeneric`.
 
 ### Close-out
 
-- **R16** — **Accessor surface pass.** Every new type gets
-  readonly `proc foo*()` accessors (same pattern as parser.nim).
-  One focused pass rather than sprinkled through R2–R15.
-- **R17** — **Docs: mark PSR-41 Phase 1 resolved in `bugs.md`,
-  retrospective entry in `lessons.md`.**
+- **R15** — **Accessor surface pass + docs.** Readonly `proc
+  foo*()` accessors for every private field across the new
+  resolver types, same pattern as parser.nim. Mark PSR-41 Phase 1
+  resolved in `bugs.md` and add a retrospective entry to
+  `lessons.md`.
 
-After R17: every declaration in the App tree carries a typed
-global id (`FileId`, `ModuleId`, `FunctionId`, `FieldId`,
-`ArgumentId`, etc.). A caller can navigate
-`app.files[fnId.file].modules[fnId.module].functions[fnId.id]`
-in O(depth). Function bodies and type references remain raw —
-they become IDs in Phase 2 (signature type refs) and Phase 3
-(expression resolution), each a separate PSR.
+After R15: every declaration in the App tree carries a local `id`
+that is its position in its immediate parent's list. Navigation
+is explicit: `app.files[i].modules[j].functions[k]`. Function
+bodies, type references, and expression resolution stay for later
+PSRs.
 
 ## Verification
 
