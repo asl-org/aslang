@@ -446,7 +446,7 @@ type
 
   FunctionCall = ref object
     argType: ArgumentType
-    name: string
+    name: Identifier
     argList: ArgumentList
 
   Getter = ref object
@@ -455,7 +455,7 @@ type
     loc: Location
 
   KeywordArgument = ref object
-    name: string
+    name: Identifier
     expression: Expression
     loc: Location
 
@@ -555,7 +555,7 @@ proc newArgumentList(args: seq[Expression], loc: Location): ArgumentList =
 proc newStringLiteral(content: string, loc: Location): StringLiteral =
   StringLiteral(content: content, loc: loc)
 
-proc newFunctionCall(argType: ArgumentType, name: string,
+proc newFunctionCall(argType: ArgumentType, name: Identifier,
     argList: ArgumentList): FunctionCall =
   FunctionCall(argType: argType, name: name, argList: argList)
 
@@ -568,7 +568,7 @@ proc newExpression(fncall: FunctionCall): Expression =
 proc newGetter(source: string, property: string, loc: Location): Getter =
   Getter(source: source, property: property, loc: loc)
 
-proc newKeywordArgument(name: string, expression: Expression,
+proc newKeywordArgument(name: Identifier, expression: Expression,
     loc: Location): KeywordArgument =
   KeywordArgument(name: name, expression: expression, loc: loc)
 
@@ -657,13 +657,13 @@ proc asl(argList: ArgumentList): string =
   result.add(")")
 
 proc asl(fncall: FunctionCall): string =
-  fmt"{asl(fncall.argType)}.{fncall.name}{asl(fncall.argList)}"
+  fmt"{asl(fncall.argType)}.{fncall.name.name}{asl(fncall.argList)}"
 
 proc asl(getter: Getter): string =
   fmt"{getter.source}.{getter.property}"
 
 proc asl(kwarg: KeywordArgument): string =
-  fmt"{kwarg.name}: {asl(kwarg.expression)}"
+  fmt"{kwarg.name.name}: {asl(kwarg.expression)}"
 
 proc asl(kwargList: KeywordArgumentList): string =
   result = "{ "
@@ -1192,7 +1192,7 @@ let functionCallSpec = Spec[FunctionCall](
   let funcNameIdent = ? parser.run(identifierSpec)
   discard parser.run(optionalSpace)
   let argList = ? parser.run(argumentListSpec)
-  ok(newFunctionCall(argType, funcNameIdent.name, argList))
+  ok(newFunctionCall(argType, funcNameIdent, argList))
 )
 
 let kwargSpec = Spec[KeywordArgument](
@@ -1201,7 +1201,7 @@ let kwargSpec = Spec[KeywordArgument](
   let name = ? parser.run(identifierSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let expression = ? parser.run(expressionSpec)
-  ok(newKeywordArgument(name.name, expression, name.loc))
+  ok(newKeywordArgument(name, expression, name.loc))
 )
 
 let kwargListSpec = Spec[KeywordArgumentList](
