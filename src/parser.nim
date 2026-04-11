@@ -337,6 +337,7 @@ type VariantDefinition* = ref object
 
 proc name*(v: VariantDefinition): Identifier = v.name
 proc fields*(v: VariantDefinition): seq[ArgumentDefinition] = v.fields
+proc loc*(v: VariantDefinition): Location = v.loc
 
 proc newVariantDefinition(name: Identifier, fields: seq[ArgumentDefinition],
     loc: Location): VariantDefinition =

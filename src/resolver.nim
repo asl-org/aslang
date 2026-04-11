@@ -21,6 +21,12 @@ type
     fields: seq[ResolvedField]
     loc: Location
 
+  ResolvedVariant* = ref object
+    id: int                               # index in union.variants
+    name: Identifier
+    fields: seq[ResolvedField]
+    loc: Location
+
   ResolvedImportName* = ref object
     id: int                               # index in imp.names
     name: Identifier
@@ -77,6 +83,16 @@ proc resolveStruct(s: Struct): ResolvedStruct =
   for i, f in s.fields:
     rs.fields.add(resolveField(f, i))
   rs
+
+proc resolveVariant(v: VariantDefinition, id: int): ResolvedVariant =
+  let rv = ResolvedVariant(
+    id: id,
+    name: v.name,
+    loc: v.loc,
+  )
+  for i, f in v.fields:
+    rv.fields.add(resolveField(f, i))
+  rv
 
 proc resolveImportName(n: ImportName, id: int): ResolvedImportName =
   ResolvedImportName(
