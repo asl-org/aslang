@@ -450,8 +450,8 @@ type
     argList: ArgumentList
 
   Getter = ref object
-    source: string
-    property: string
+    source: Identifier
+    property: Identifier
     loc: Location
 
   KeywordArgument = ref object
@@ -565,7 +565,8 @@ proc newExpression(literal: Literal): Expression =
 proc newExpression(fncall: FunctionCall): Expression =
   Expression(kind: ekFnCall, fncall: fncall)
 
-proc newGetter(source: string, property: string, loc: Location): Getter =
+proc newGetter(source: Identifier, property: Identifier,
+    loc: Location): Getter =
   Getter(source: source, property: property, loc: loc)
 
 proc newKeywordArgument(name: Identifier, expression: Expression,
@@ -660,7 +661,7 @@ proc asl(fncall: FunctionCall): string =
   fmt"{asl(fncall.argType)}.{fncall.name.name}{asl(fncall.argList)}"
 
 proc asl(getter: Getter): string =
-  fmt"{getter.source}.{getter.property}"
+  fmt"{getter.source.name}.{getter.property.name}"
 
 proc asl(kwarg: KeywordArgument): string =
   fmt"{kwarg.name.name}: {asl(kwarg.expression)}"
@@ -1339,7 +1340,7 @@ let getterSpec = Spec[Getter](
   let source = ? parser.run(identifierSpec)
   discard ? parser.run(punctuationSpec("."))
   let property = ? parser.run(identifierSpec)
-  ok(newGetter(source.name, property.name, source.loc))
+  ok(newGetter(source, property, source.loc))
 )
 
 expressionSpec.parseFn = oneOf("expression", [
