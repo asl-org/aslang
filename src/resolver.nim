@@ -53,6 +53,13 @@ type
     body: StatementList                   # raw — Phase 3 resolves
     loc: Location
 
+  ResolvedFuncDef* = ref object
+    id: int                               # index in generic.funcDefs
+    name: Identifier
+    params: seq[ResolvedArgument]
+    returns: ArgumentType                 # raw
+    loc: Location
+
   ResolvedImportName* = ref object
     id: int                               # index in imp.names
     name: Identifier
@@ -78,7 +85,7 @@ type
     id: int                               # index in file.generics
     decorators: seq[Decorator]            # raw
     name: Identifier
-    funcDefs: seq[FunctionDefinition]     # raw, wired later
+    funcDefs: seq[ResolvedFuncDef]
     loc: Location
 
   ResolvedFile* = ref object
@@ -154,6 +161,17 @@ proc resolveFunction(fn: Function, id: int): ResolvedFunction =
     rf.params.add(resolveArgument(p, i))
   rf
 
+proc resolveFuncDef(fd: FunctionDefinition, id: int): ResolvedFuncDef =
+  let rfd = ResolvedFuncDef(
+    id: id,
+    name: fd.name,
+    returns: fd.returns,
+    loc: fd.loc,
+  )
+  for i, p in fd.params:
+    rfd.params.add(resolveArgument(p, i))
+  rfd
+
 proc resolveImportName(n: ImportName, id: int): ResolvedImportName =
   ResolvedImportName(
     id: id,
@@ -193,13 +211,15 @@ proc resolveModule(m: Module, id: int): ResolvedModule =
   rm
 
 proc resolveGeneric(g: Generic, id: int): ResolvedGeneric =
-  ResolvedGeneric(
+  let rg = ResolvedGeneric(
     id: id,
     decorators: g.decorators,
     name: g.name,
-    funcDefs: g.funcDefs,
     loc: g.loc,
   )
+  for i, fd in g.funcDefs:
+    rg.funcDefs.add(resolveFuncDef(fd, i))
+  rg
 
 proc resolveFile(f: IndexedFile, id: int,
     fileIndex: Table[string, int]): Result[ResolvedFile, string] =
