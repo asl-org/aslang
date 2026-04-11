@@ -263,19 +263,19 @@ proc newSpace(spaces: uint32, loc: Location): Space =
   Space(spaces: spaces, loc: loc)
 
 type ArgumentType = ref object
-  root: string
+  root: Identifier
   impls: seq[ArgumentType]
   loc: Location
 
-proc newArgumentType(root: string, loc: Location): ArgumentType =
+proc newArgumentType(root: Identifier, loc: Location): ArgumentType =
   ArgumentType(root: root, loc: loc)
 
-proc newArgumentType(root: string, impls: seq[ArgumentType],
+proc newArgumentType(root: Identifier, impls: seq[ArgumentType],
     loc: Location): ArgumentType =
   ArgumentType(root: root, loc: loc, impls: impls)
 
 proc asl(argType: ArgumentType): string =
-  result = argType.root
+  result = argType.root.name
   if argType.impls.len > 0:
     result.add("[")
     for i, impl in argType.impls:
@@ -1135,9 +1135,9 @@ argumentTypeSpec.parseFn = proc(parser: Parser): Result[ArgumentType, ParserErro
     contained("type_params", "[",
       separatedBy(argumentTypeSpec, commaWithSpacesSpec), "]")))
   if maybeImpls.isSome:
-    ok(newArgumentType(rootIdent.name, maybeImpls.get, rootIdent.loc))
+    ok(newArgumentType(rootIdent, maybeImpls.get, rootIdent.loc))
   else:
-    ok(newArgumentType(rootIdent.name, rootIdent.loc))
+    ok(newArgumentType(rootIdent, rootIdent.loc))
 
 let argumentDefinitionSpec = Spec[ArgumentDefinition](
   name: "argument_definition",
