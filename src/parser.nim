@@ -881,6 +881,8 @@ type Generic* = ref object
 
 proc name*(g: Generic): Identifier = g.name
 proc funcDefs*(g: Generic): seq[FunctionDefinition] = g.funcDefs
+proc decorators*(g: Generic): seq[Decorator] = g.decorators
+proc loc*(g: Generic): Location = g.loc
 
 proc newGeneric(decorators: seq[Decorator], name: Identifier,
     funcDefs: seq[FunctionDefinition], loc: Location): Generic =

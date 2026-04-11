@@ -32,11 +32,19 @@ type
     functions: seq[Function]              # raw, wired later
     loc: Location
 
+  ResolvedGeneric* = ref object
+    id: int                               # index in file.generics
+    decorators: seq[Decorator]            # raw
+    name: Identifier
+    funcDefs: seq[FunctionDefinition]     # raw, wired later
+    loc: Location
+
   ResolvedFile* = ref object
     id: int                               # index in app.files
     path: string
     imports: seq[ResolvedImport]
     modules: seq[ResolvedModule]
+    generics: seq[ResolvedGeneric]
 
   ResolvedApp* = ref object
     files: seq[ResolvedFile]
@@ -79,6 +87,15 @@ proc resolveModule(m: Module, id: int): ResolvedModule =
     loc: m.loc,
   )
 
+proc resolveGeneric(g: Generic, id: int): ResolvedGeneric =
+  ResolvedGeneric(
+    id: id,
+    decorators: g.decorators,
+    name: g.name,
+    funcDefs: g.funcDefs,
+    loc: g.loc,
+  )
+
 proc resolveFile(f: IndexedFile, id: int,
     fileIndex: Table[string, int]): Result[ResolvedFile, string] =
   let rf = ResolvedFile(id: id, path: f.file.path)
@@ -86,6 +103,8 @@ proc resolveFile(f: IndexedFile, id: int,
     rf.imports.add(? resolveImport(imp, impIdx, f.file.path, fileIndex))
   for mIdx, m in f.file.modules:
     rf.modules.add(resolveModule(m, mIdx))
+  for gIdx, g in f.file.generics:
+    rf.generics.add(resolveGeneric(g, gIdx))
   ok(rf)
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
