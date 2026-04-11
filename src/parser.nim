@@ -233,16 +233,6 @@ proc anyTokenExceptNewlineSpec(tokenRepr: string): Spec[Token] =
 # AST types
 # ============================================================
 
-type Decorator = ref object
-  name: string
-  loc: Location
-
-proc newDecorator(name: string, loc: Location): Decorator =
-  Decorator(name: name, loc: loc)
-
-proc asl(decorator: Decorator): string =
-  fmt"@{decorator.name}"
-
 type
   Identifier* = ref object
     name: string
@@ -255,6 +245,15 @@ proc name*(id: Identifier): string = id.name
 proc loc*(id: Identifier): Location = id.loc
 
 proc asl(identifier: Identifier): string = identifier.name
+
+type Decorator = ref object
+  name: Identifier
+
+proc newDecorator(name: Identifier): Decorator =
+  Decorator(name: name)
+
+proc asl(decorator: Decorator): string =
+  fmt"@{decorator.name.name}"
 
 type Space = ref object
   spaces: uint32
@@ -1374,7 +1373,7 @@ let decoratorLineSpec = Spec[Decorator](
   discard ? parser.run(punctuationSpec("@"))
   let name = ? parser.run(identifierSpec)
   discard ? parser.run(strictLine)
-  ok(newDecorator(name.name, name.loc))
+  ok(newDecorator(name))
 )
 
 # Block without decorator support (case, struct, union, generic)
