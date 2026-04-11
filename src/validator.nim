@@ -160,7 +160,7 @@ proc indexModule(m: Module, path: string): Result[IndexedModule, string] =
 
   let indexed = IndexedModule(module: m)
   for i, fn in m.functions:
-    indexed.functionIndex.mgetOrPut(fn.name, @[]).add(i)
+    indexed.functionIndex.mgetOrPut(fn.name.name, @[]).add(i)
 
   if m.data.isSome:
     indexed.data = some(? indexData(m.data.get, path))
@@ -172,7 +172,7 @@ proc indexGeneric(g: Generic,
     path: string): Result[IndexedGeneric, string] =
   let indexed = IndexedGeneric(generic: g)
   for i, fd in g.funcDefs:
-    indexed.funcDefIndex.mgetOrPut(fd.name, @[]).add(i)
+    indexed.funcDefIndex.mgetOrPut(fd.name.name, @[]).add(i)
   ok(indexed)
 
 proc indexFile(file: File): Result[IndexedFile, string] =

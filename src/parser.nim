@@ -394,19 +394,19 @@ proc asl(db: DataBlock, indentWidth: uint32): seq[string] =
   of dbkUnion: asl(db.union, indentWidth)
 
 type FunctionDefinition* = ref object
-  name: string
+  name: Identifier
   argDefList: ArgumentDefinitionList
   returns: ArgumentType
   loc: Location
 
-proc name*(fd: FunctionDefinition): string = fd.name
+proc name*(fd: FunctionDefinition): Identifier = fd.name
 
-proc newFunctionDefinition(name: string, argDefList: ArgumentDefinitionList,
+proc newFunctionDefinition(name: Identifier, argDefList: ArgumentDefinitionList,
     returns: ArgumentType, loc: Location): FunctionDefinition =
   FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
 
 proc asl(funcDef: FunctionDefinition): string =
-  fmt"func {funcDef.name}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
+  fmt"func {funcDef.name.name}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
 
 type StringContent = ref object
   content: string
@@ -813,7 +813,7 @@ type Function* = ref object
   def: FunctionDefinition
   statementList: StatementList
 
-proc name*(fn: Function): string = fn.def.name
+proc name*(fn: Function): Identifier = fn.def.name
 
 proc newFunction(decorators: seq[Decorator], def: FunctionDefinition,
     statementList: StatementList): Function =
@@ -1168,7 +1168,7 @@ let functionDefinitionSpec = Spec[FunctionDefinition](
   let argDefList = ? parser.run(argumentDefinitionListSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let returnType = ? parser.run(argumentTypeSpec)
-  ok(newFunctionDefinition(funcName.name, argDefList, returnType, funcLoc))
+  ok(newFunctionDefinition(funcName, argDefList, returnType, funcLoc))
 )
 
 # Forward-declared because expressions appear inside argument lists
