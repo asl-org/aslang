@@ -1,11 +1,12 @@
 import os, results, strformat, sequtils, strutils
 
-import cli, parser, validator
+import cli, parser, validator, resolver
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let files = ? parse(filepath, opts.indentWidth, opts.dumpTokens)
   let app = ? index(files)
+  let _ = ? resolve(app)
   # let lintedFile = app.files[^1].file.asl(opts.indentWidth)
   ok(app.files.mapIt(it.file.path).join("\n"))
 

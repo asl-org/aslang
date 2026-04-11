@@ -19,6 +19,10 @@
 
 - [ ] **PSR-36: Recursive BFS dependency resolver with cycle detection** (`src/parser.nim` or `src/asl.nim`) [high] — After parsing the root file, extract import sources, tokenize+parse each dependency, and recurse. BFS traversal ensures dependencies are resolved breadth-first. Detect cycles by tracking the current resolution path — if a file is encountered that's already on the path, report the cycle with the full dependency chain. Returns all parsed Files in dependency order.
 
+### Name resolution
+
+- [ ] **PSR-41: ID-based name resolution (App tree)** (`src/validator.nim` or new `src/resolver.nim`) [high] — The whole goal of indexing was so downstream phases can speak in integer IDs rather than re-looking-up string names. Build `ResolvedApp` / `ResolvedFile` / `ResolvedModule` / … wrapper types that mirror the `App` tree but replace every `Identifier` with an integer ID (its position in the containing list) or a richer `Ref` for cross-scope references. Resolution runs top-down: app → file → module → function → statement → expression, threading scope context. Three natural slices — declarations only, signature-level type refs, function-body references — each with its own complexity and cost. See `plans/id-resolution.md` for full inventory and phase breakdown.
+
 ### Parser cleanup (round 2)
 
 - [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
