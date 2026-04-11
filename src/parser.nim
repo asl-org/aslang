@@ -863,6 +863,7 @@ proc newImport(names: seq[ImportName], source: string, loc: Location): Import =
 
 proc names*(imp: Import): seq[ImportName] = imp.names
 proc source*(imp: Import): string = imp.source
+proc loc*(imp: Import): Location = imp.loc
 
 proc asl(imp: Import): string =
   result = "import { "
@@ -1789,7 +1790,7 @@ proc parseFile(filepath: string, indentWidth: uint32,
   let tokens = ? tokenize(source, filepath, dumpTokens)
   parse(filepath, indentWidth, tokens)
 
-proc resolveImportPath(source: string, importingFile: string): Result[string, string] =
+proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
   ## Resolves an import path relative to the importing file.
   ## Rejects paths that escape to parent directories.
   if source.startsWith(".."):

@@ -1,7 +1,7 @@
-import results, tables
+import results, strformat, tables
 
-import parser, validator
-export parser, validator
+import parser, tokenizer, validator
+export parser, tokenizer, validator
 
 # Disambiguate against syncio.File
 type File = parser.File
@@ -11,9 +11,16 @@ type File = parser.File
 # ============================================================
 
 type
+  ResolvedImport* = ref object
+    id: int                               # index in file.imports
+    source: string
+    targetFileId: int                     # index in app.files
+    loc: Location
+
   ResolvedFile* = ref object
     id: int                               # index in app.files
     path: string
+    imports: seq[ResolvedImport]
 
   ResolvedApp* = ref object
     files: seq[ResolvedFile]
@@ -23,13 +30,31 @@ type
 # Resolution
 # ============================================================
 
-proc resolveFile(f: IndexedFile, id: int): ResolvedFile =
-  ResolvedFile(id: id, path: f.file.path)
+proc resolveImport(imp: Import, id: int, importingPath: string,
+    fileIndex: Table[string, int]): Result[ResolvedImport, string] =
+  let absPath = ? resolveImportPath(imp.source, importingPath)
+  if absPath notin fileIndex:
+    return err(fmt"{importingPath}: import target '{imp.source}' not found in file index")
+  ok(ResolvedImport(
+    id: id,
+    source: imp.source,
+    targetFileId: fileIndex[absPath],
+    loc: imp.loc,
+  ))
+
+proc resolveFile(f: IndexedFile, id: int,
+    fileIndex: Table[string, int]): Result[ResolvedFile, string] =
+  let rf = ResolvedFile(id: id, path: f.file.path)
+  for impIdx, imp in f.file.imports:
+    rf.imports.add(? resolveImport(imp, impIdx, f.file.path, fileIndex))
+  ok(rf)
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   let resolved = ResolvedApp()
+  # First pass: build fileIndex so imports can look up their targets.
   for i, f in app.files:
-    let rf = resolveFile(f, i)
-    resolved.files.add(rf)
-    resolved.fileIndex[rf.path] = i
+    resolved.fileIndex[f.file.path] = i
+  # Second pass: resolve each file.
+  for i, f in app.files:
+    resolved.files.add(? resolveFile(f, i, resolved.fileIndex))
   ok(resolved)
