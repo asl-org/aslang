@@ -41,6 +41,7 @@
 - [ ] **`except CatchableError:` is still broad** (`cli.nim:105`) [low] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed.
 - [ ] **`Token` is `ref object`** (`tokenizer.nim:72`) [low] — Each token is heap-allocated. For a tokenizer producing thousands of tokens, a plain `object` in `seq[Token]` avoids GC pressure since tokens are small (enum + string + two ints).
 - [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`parser.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context.
+- [x] **`readFileSafe` crashes on missing files** (`parser.nim`) — Caught only `IOError`, but on macOS `getFileSize` throws `OSError` for a missing file — the parser propagated an unhandled exception. Fixed by calling `fileExists` up front and catching `CatchableError` for everything else. Surfaced while building the `examples/errors/missing_file.asl` fixture.
 
 ## Resolved
 
