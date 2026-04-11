@@ -472,7 +472,7 @@ type
     of lkFloat: floatLit: FloatLiteral
 
   LiteralInitializer = ref object
-    typeName: string
+    typeName: Identifier
     value: Literal
     loc: Location
 
@@ -483,7 +483,7 @@ type
 
   UnionInitializer = ref object
     argType: ArgumentType
-    variantName: string
+    variantName: Identifier
     kwargList: KeywordArgumentList
     loc: Location
 
@@ -586,7 +586,7 @@ proc newLiteral(intLit: IntegerLiteral): Literal =
 proc newLiteral(floatLit: FloatLiteral): Literal =
   Literal(kind: lkFloat, floatLit: floatLit)
 
-proc newLiteralInitializer(typeName: string, value: Literal,
+proc newLiteralInitializer(typeName: Identifier, value: Literal,
     loc: Location): LiteralInitializer =
   LiteralInitializer(typeName: typeName, value: value, loc: loc)
 
@@ -600,7 +600,7 @@ proc newInitializer(literal: LiteralInitializer): Initializer =
 proc newInitializer(struct: StructInitializer): Initializer =
   Initializer(kind: ikStruct, struct: struct)
 
-proc newUnionInitializer(argType: ArgumentType, variantName: string,
+proc newUnionInitializer(argType: ArgumentType, variantName: Identifier,
     kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
   UnionInitializer(argType: argType, variantName: variantName,
     kwargList: kwargList, loc: loc)
@@ -682,13 +682,13 @@ proc asl(literal: Literal): string =
   of lkFloat: asl(literal.floatLit)
 
 proc asl(prim: LiteralInitializer): string =
-  fmt"{prim.typeName} {asl(prim.value)}"
+  fmt"{prim.typeName.name} {asl(prim.value)}"
 
 proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
 
 proc asl(unionInit: UnionInitializer): string =
-  fmt"{asl(unionInit.argType)}.{unionInit.variantName} {asl(unionInit.kwargList)}"
+  fmt"{asl(unionInit.argType)}.{unionInit.variantName.name} {asl(unionInit.kwargList)}"
 
 proc asl(initializer: Initializer): string =
   case initializer.kind:
@@ -1302,7 +1302,7 @@ let unionInitializerSpec = Spec[UnionInitializer](
   let variantName = ? parser.run(identifierSpec)
   discard parser.run(optionalSpace)
   let kwargList = ? parser.run(kwargListSpec)
-  ok(newUnionInitializer(argType, variantName.name, kwargList, argType.loc))
+  ok(newUnionInitializer(argType, variantName, kwargList, argType.loc))
 )
 
 # Type { fields }
@@ -1322,7 +1322,7 @@ let literalInitializerSpec = Spec[LiteralInitializer](
   let typeName = ? parser.run(identifierSpec)
   discard ? parser.run(strictSpace)
   let value = ? parser.run(literalSpec)
-  ok(newLiteralInitializer(typeName.name, value, typeName.loc))
+  ok(newLiteralInitializer(typeName, value, typeName.loc))
 )
 
 let initializerSpec = oneOf("initializer", [
