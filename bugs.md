@@ -21,7 +21,8 @@
 
 ### Name resolution
 
-- [ ] **PSR-41: ID-based name resolution (App tree)** (`src/validator.nim` or new `src/resolver.nim`) [high] — The whole goal of indexing was so downstream phases can speak in integer IDs rather than re-looking-up string names. Build `ResolvedApp` / `ResolvedFile` / `ResolvedModule` / … wrapper types that mirror the `App` tree but replace every `Identifier` with an integer ID (its position in the containing list) or a richer `Ref` for cross-scope references. Resolution runs top-down: app → file → module → function → statement → expression, threading scope context. Three natural slices — declarations only, signature-level type refs, function-body references — each with its own complexity and cost. See `plans/id-resolution.md` for full inventory and phase breakdown.
+- [ ] **PSR-41 Phase 2: Signature-level type references** (`src/resolver.nim`) [medium] — Resolve `ArgumentType.root` everywhere it appears in a signature (struct/variant field types, function parameter types, return types). Each type reference becomes a `Ref` pointing at one of: primitive, current-file module, current-file generic, imported module, imported generic. Function bodies still untouched. See `plans/id-resolution.md` Phase 2 for design.
+- [ ] **PSR-41 Phase 3: Function-body / expression resolution** (`src/resolver.nim`) [large] — Resolve `Assignment.target`, `Expression.variable`, `Getter.source/property`, `FunctionCall.name`, pattern bindings, etc. Requires expression type inference (Getter.property needs the source's type; VariantPattern.variantName needs the subject's type). Effectively a compact type checker; needs a separate detailed plan before execution.
 
 ### Parser cleanup (round 2)
 
@@ -62,6 +63,10 @@
 - [x] **PSR-12** — Fixed `any` backtracking: `parser.run(spec)` instead of `spec.parseFn(parser)`.
 - [x] **PSR-13** — Fixed `separatedBy` backtracking: sep+element wrapped into atomic `pairSpec`.
 - [x] **PSR-14** — Fixed `optional` backtracking.
+
+### Name resolution (resolved)
+
+- [x] **PSR-41 Phase 1: ID-based structural resolution of the App tree** (`src/resolver.nim`) — Done in 15 bite-sized commits (R1–R15). New `src/resolver.nim` owns a parallel `Resolved*` wrapper tree: `ResolvedApp → ResolvedFile → ResolvedModule / ResolvedGeneric → ResolvedFunction / ResolvedFuncDef → ResolvedArgument`; `ResolvedModule.data: Option[ResolvedData]` holds `ResolvedStruct` / `ResolvedUnion` → `ResolvedVariant` → `ResolvedField`. Every declaration carries a local `int id` (its position in its immediate parent). Typed global ids were considered and rejected as speculative — can be layered in later if Phase 2/3 need cross-block navigation. Function bodies (`StatementList`), type references (`ArgumentType`), and `ResolvedImportName.name`/`alias` stay raw; Phases 2 and 3 (separate entries above) resolve them.
 
 ### Location tracking
 

@@ -100,6 +100,89 @@ type
     fileIndex: Table[string, int]         # absolute path → index in files
 
 # ============================================================
+# Readonly accessors
+# ============================================================
+
+proc id*(f: ResolvedField): int = f.id
+proc name*(f: ResolvedField): Identifier = f.name
+proc argType*(f: ResolvedField): ArgumentType = f.argType
+proc loc*(f: ResolvedField): Location = f.loc
+
+proc fields*(s: ResolvedStruct): seq[ResolvedField] = s.fields
+proc loc*(s: ResolvedStruct): Location = s.loc
+
+proc id*(v: ResolvedVariant): int = v.id
+proc name*(v: ResolvedVariant): Identifier = v.name
+proc fields*(v: ResolvedVariant): seq[ResolvedField] = v.fields
+proc loc*(v: ResolvedVariant): Location = v.loc
+
+proc variants*(u: ResolvedUnion): seq[ResolvedVariant] = u.variants
+proc loc*(u: ResolvedUnion): Location = u.loc
+
+proc kind*(d: ResolvedData): ResolvedDataKind = d.kind
+proc struct*(d: ResolvedData): ResolvedStruct =
+  assert d.kind == rdkStruct,
+    fmt"ResolvedData.struct accessed but kind is {d.kind}"
+  d.struct
+proc union*(d: ResolvedData): ResolvedUnion =
+  assert d.kind == rdkUnion,
+    fmt"ResolvedData.union accessed but kind is {d.kind}"
+  d.union
+
+proc id*(a: ResolvedArgument): int = a.id
+proc name*(a: ResolvedArgument): Identifier = a.name
+proc argType*(a: ResolvedArgument): ArgumentType = a.argType
+proc loc*(a: ResolvedArgument): Location = a.loc
+
+proc id*(fn: ResolvedFunction): int = fn.id
+proc decorators*(fn: ResolvedFunction): seq[Decorator] = fn.decorators
+proc name*(fn: ResolvedFunction): Identifier = fn.name
+proc params*(fn: ResolvedFunction): seq[ResolvedArgument] = fn.params
+proc returns*(fn: ResolvedFunction): ArgumentType = fn.returns
+proc body*(fn: ResolvedFunction): StatementList = fn.body
+proc loc*(fn: ResolvedFunction): Location = fn.loc
+
+proc id*(fd: ResolvedFuncDef): int = fd.id
+proc name*(fd: ResolvedFuncDef): Identifier = fd.name
+proc params*(fd: ResolvedFuncDef): seq[ResolvedArgument] = fd.params
+proc returns*(fd: ResolvedFuncDef): ArgumentType = fd.returns
+proc loc*(fd: ResolvedFuncDef): Location = fd.loc
+
+proc id*(n: ResolvedImportName): int = n.id
+proc name*(n: ResolvedImportName): Identifier = n.name
+proc alias*(n: ResolvedImportName): Option[Identifier] = n.alias
+proc loc*(n: ResolvedImportName): Location = n.loc
+
+proc id*(imp: ResolvedImport): int = imp.id
+proc source*(imp: ResolvedImport): string = imp.source
+proc targetFileId*(imp: ResolvedImport): int = imp.targetFileId
+proc names*(imp: ResolvedImport): seq[ResolvedImportName] = imp.names
+proc loc*(imp: ResolvedImport): Location = imp.loc
+
+proc id*(m: ResolvedModule): int = m.id
+proc decorators*(m: ResolvedModule): seq[Decorator] = m.decorators
+proc name*(m: ResolvedModule): Identifier = m.name
+proc data*(m: ResolvedModule): Option[ResolvedData] = m.data
+proc functions*(m: ResolvedModule): seq[ResolvedFunction] = m.functions
+proc loc*(m: ResolvedModule): Location = m.loc
+
+proc id*(g: ResolvedGeneric): int = g.id
+proc decorators*(g: ResolvedGeneric): seq[Decorator] = g.decorators
+proc name*(g: ResolvedGeneric): Identifier = g.name
+proc funcDefs*(g: ResolvedGeneric): seq[ResolvedFuncDef] = g.funcDefs
+proc loc*(g: ResolvedGeneric): Location = g.loc
+
+proc id*(f: ResolvedFile): int = f.id
+proc path*(f: ResolvedFile): string = f.path
+proc imports*(f: ResolvedFile): seq[ResolvedImport] = f.imports
+proc modules*(f: ResolvedFile): seq[ResolvedModule] = f.modules
+proc generics*(f: ResolvedFile): seq[ResolvedGeneric] = f.generics
+
+proc files*(app: ResolvedApp): seq[ResolvedFile] = app.files
+proc findFile*(app: ResolvedApp, path: string): int =
+  app.fileIndex.getOrDefault(path, -1)
+
+# ============================================================
 # Resolution
 # ============================================================
 
