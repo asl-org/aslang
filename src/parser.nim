@@ -842,6 +842,7 @@ type ImportName* = ref object
 
 proc name*(n: ImportName): Identifier = n.name
 proc alias*(n: ImportName): Option[Identifier] = n.alias
+proc loc*(n: ImportName): Location = n.loc
 
 proc newImportName(name: Identifier, alias: Option[Identifier],
     loc: Location): ImportName =
