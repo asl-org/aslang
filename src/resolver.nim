@@ -217,57 +217,91 @@ proc resolveFuncDef(fd: FunctionDefinition, id: int): ResolvedFuncDef =
   newResolvedFuncDef(id, fd.name, params, fd.returns, fd.loc)
 
 # ============================================================
-# ResolvedImportName
+# ResolvedImportType
 # ============================================================
 
-type ResolvedImportName* = ref object
-  id: int # index in imp.names
-  name: Identifier
-  alias: Option[Identifier]
-  loc: Location
+type
+  ResolvedImportTypeKind* = enum
+    ritModule, ritGeneric
 
-proc newResolvedImportName(id: int, name: Identifier,
-    alias: Option[Identifier], loc: Location): ResolvedImportName =
-  ResolvedImportName(id: id, name: name, alias: alias, loc: loc)
+  ResolvedImportType* = ref object
+    id: int                 # index in imp.names
+    importName: ImportName  # raw AST — source of name, alias, loc
+    case kind: ResolvedImportTypeKind
+    of ritModule:  moduleId: int  # index in target file's modules
+    of ritGeneric: genericId: int # index in target file's generics
 
-proc id*(n: ResolvedImportName): int = n.id
-proc name*(n: ResolvedImportName): Identifier = n.name
-proc alias*(n: ResolvedImportName): Option[Identifier] = n.alias
-proc loc*(n: ResolvedImportName): Location = n.loc
+proc newResolvedImportType(id: int, importName: ImportName,
+    moduleId: int): ResolvedImportType =
+  ResolvedImportType(id: id, importName: importName,
+    kind: ritModule, moduleId: moduleId)
 
-proc resolveImportName(n: ImportName, id: int): ResolvedImportName =
-  newResolvedImportName(id, n.name, n.alias, n.loc)
+proc newResolvedImportType(id: int, importName: ImportName,
+    genericId: int, isGeneric: bool): ResolvedImportType =
+  # isGeneric exists only to disambiguate the overload from the
+  # module variant above; both carry a single int payload.
+  discard isGeneric
+  ResolvedImportType(id: id, importName: importName,
+    kind: ritGeneric, genericId: genericId)
+
+proc id*(t: ResolvedImportType): int = t.id
+proc importName*(t: ResolvedImportType): ImportName = t.importName
+proc name*(t: ResolvedImportType): Identifier = t.importName.name
+proc alias*(t: ResolvedImportType): Option[Identifier] = t.importName.alias
+proc loc*(t: ResolvedImportType): Location = t.importName.loc
+proc kind*(t: ResolvedImportType): ResolvedImportTypeKind = t.kind
+proc moduleId*(t: ResolvedImportType): int =
+  assert t.kind == ritModule,
+    fmt"ResolvedImportType.moduleId accessed but kind is {t.kind}"
+  t.moduleId
+proc genericId*(t: ResolvedImportType): int =
+  assert t.kind == ritGeneric,
+    fmt"ResolvedImportType.genericId accessed but kind is {t.kind}"
+  t.genericId
+
+proc resolveImportType(n: ImportName, id: int,
+    target: IndexedFile,
+    importingPath: string): Result[ResolvedImportType, string] =
+  let key = n.name.value
+  let mId = target.findModule(key)
+  if mId >= 0:
+    return ok(newResolvedImportType(id, n, mId))
+  let gId = target.findGeneric(key)
+  if gId >= 0:
+    return ok(newResolvedImportType(id, n, gId, isGeneric = true))
+  err(fmt"{importingPath}:{n.loc}: import name '{key}' not found in '{target.file.path}'")
 
 # ============================================================
 # ResolvedImport
 # ============================================================
 
 type ResolvedImport* = ref object
-  id: int           # index in file.imports
-  source: string
-  targetFileId: int # index in app.files
-  names: seq[ResolvedImportName]
-  loc: Location
+  id: int              # index in file.imports
+  imp: Import          # raw AST — source of source, loc, raw names
+  targetFileId: int    # index in app.files
+  types: seq[ResolvedImportType]
 
-proc newResolvedImport(id: int, source: string, targetFileId: int,
-    names: seq[ResolvedImportName], loc: Location): ResolvedImport =
-  ResolvedImport(id: id, source: source, targetFileId: targetFileId,
-    names: names, loc: loc)
+proc newResolvedImport(id: int, imp: Import, targetFileId: int,
+    types: seq[ResolvedImportType]): ResolvedImport =
+  ResolvedImport(id: id, imp: imp, targetFileId: targetFileId, types: types)
 
-proc id*(imp: ResolvedImport): int = imp.id
-proc source*(imp: ResolvedImport): string = imp.source
-proc targetFileId*(imp: ResolvedImport): int = imp.targetFileId
-proc names*(imp: ResolvedImport): seq[ResolvedImportName] = imp.names
-proc loc*(imp: ResolvedImport): Location = imp.loc
+proc id*(r: ResolvedImport): int = r.id
+proc imp*(r: ResolvedImport): Import = r.imp
+proc source*(r: ResolvedImport): string = r.imp.source
+proc targetFileId*(r: ResolvedImport): int = r.targetFileId
+proc types*(r: ResolvedImport): seq[ResolvedImportType] = r.types
+proc loc*(r: ResolvedImport): Location = r.imp.loc
 
-proc resolveImport(imp: Import, id: int,
-    fileIndex: Table[string, int]): Result[ResolvedImport, string] =
-  if imp.path notin fileIndex:
-    return err(fmt"import target '{imp.source}' not found in file index")
-  var names: seq[ResolvedImportName]
+proc resolveImport(imp: Import, id: int, app: App,
+    importingPath: string): Result[ResolvedImport, string] =
+  let targetFileId = app.findFile(imp.path)
+  if targetFileId < 0:
+    return err(fmt"{importingPath}:{imp.loc}: import target '{imp.source}' not found in file index")
+  let target = app.files[targetFileId]
+  var types: seq[ResolvedImportType]
   for nIdx, n in imp.names:
-    names.add(resolveImportName(n, nIdx))
-  ok(newResolvedImport(id, imp.source, fileIndex[imp.path], names, imp.loc))
+    types.add(? resolveImportType(n, nIdx, target, importingPath))
+  ok(newResolvedImport(id, imp, targetFileId, types))
 
 # ============================================================
 # ResolvedModule
@@ -356,10 +390,10 @@ proc modules*(f: ResolvedFile): seq[ResolvedModule] = f.modules
 proc generics*(f: ResolvedFile): seq[ResolvedGeneric] = f.generics
 
 proc resolveFile(f: IndexedFile, id: int,
-    fileIndex: Table[string, int]): Result[ResolvedFile, string] =
+    app: App): Result[ResolvedFile, string] =
   var imports: seq[ResolvedImport]
   for impIdx, imp in f.file.imports:
-    imports.add(? resolveImport(imp, impIdx, fileIndex))
+    imports.add(? resolveImport(imp, impIdx, app, f.file.path))
   var modules: seq[ResolvedModule]
   for mIdx, m in f.file.modules:
     modules.add(resolveModule(m, mIdx))
@@ -385,12 +419,11 @@ proc findFile*(app: ResolvedApp, path: string): int =
   app.fileIndex.getOrDefault(path, -1)
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
-  # First pass: build fileIndex so imports can look up their targets.
+  # app already has fileIndex populated by the validator.
+  # Build a matching index for ResolvedApp in the same order.
   var fileIndex: Table[string, int]
-  for i, f in app.files:
-    fileIndex[f.file.path] = i
-  # Second pass: resolve each file.
   var files: seq[ResolvedFile]
   for i, f in app.files:
-    files.add(? resolveFile(f, i, fileIndex))
+    fileIndex[f.file.path] = i
+    files.add(? resolveFile(f, i, app))
   ok(newResolvedApp(files, fileIndex))

@@ -3,15 +3,15 @@
 # module references (Solution1.start through Solution10.start).
 # This is the file referenced by examples/hello.asl.
 import { Solution as Solution1 } from "./problem001.asl"
-import { Solution as Solution2 } from "./problem002.asl"
-import { Solution as Solution3 } from "./problem003.asl"
-import { Solution as Solution4 } from "./problem004.asl"
-import { Solution as Solution5 } from "./problem005.asl"
-import { Solution as Solution6 } from "./problem006.asl"
-import { Solution as Solution7 } from "./problem007.asl"
-import { Solution as Solution8 } from "./problem008.asl"
-import { Solution as Solution9 } from "./problem009.asl"
-import { Solution as Solution10 } from "./problem010.asl"
+import { Solver   as Solution2 } from "./problem002.asl"
+import { Bitset   as Solution3 } from "./problem003.asl"
+import { Example  as Solution4 } from "./problem004.asl"
+import { Example  as Solution5 } from "./problem005.asl"
+import { Solver   as Solution6 } from "./problem006.asl"
+import { Example  as Solution7 } from "./problem007.asl"
+import { Solver   as Solution8 } from "./problem008.asl"
+import { Solver   as Solution9 } from "./problem009.asl"
+import { Solver   as Solution10 } from "./problem010.asl"
 
 
 module Sample:
