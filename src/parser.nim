@@ -404,6 +404,9 @@ type FunctionDefinition* = ref object
   loc: Location
 
 proc name*(fd: FunctionDefinition): Identifier = fd.name
+proc params*(fd: FunctionDefinition): seq[ArgumentDefinition] = fd.argDefList.argDefs
+proc returns*(fd: FunctionDefinition): ArgumentType = fd.returns
+proc loc*(fd: FunctionDefinition): Location = fd.loc
 
 proc newFunctionDefinition(name: Identifier, argDefList: ArgumentDefinitionList,
     returns: ArgumentType, loc: Location): FunctionDefinition =
@@ -551,7 +554,7 @@ type
     of skAssignment: assignment: Assignment
     of skExpr: expression: Expression
 
-  StatementList = ref object
+  StatementList* = ref object
     statements: seq[Statement]
 
 proc newArgumentList(args: seq[Expression], loc: Location): ArgumentList =
@@ -820,6 +823,9 @@ type Function* = ref object
   statementList: StatementList
 
 proc name*(fn: Function): Identifier = fn.def.name
+proc def*(fn: Function): FunctionDefinition = fn.def
+proc statementList*(fn: Function): StatementList = fn.statementList
+proc decorators*(fn: Function): seq[Decorator] = fn.decorators
 
 proc newFunction(decorators: seq[Decorator], def: FunctionDefinition,
     statementList: StatementList): Function =

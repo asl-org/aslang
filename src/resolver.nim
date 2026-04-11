@@ -38,6 +38,21 @@ type
     of rdkStruct: struct: ResolvedStruct
     of rdkUnion: union: ResolvedUnion
 
+  ResolvedArgument* = ref object         # function or funcDef parameter
+    id: int                               # index in parent params list
+    name: Identifier
+    argType: ArgumentType                 # raw until Phase 2
+    loc: Location
+
+  ResolvedFunction* = ref object
+    id: int                               # index in module.functions
+    decorators: seq[Decorator]            # raw
+    name: Identifier
+    params: seq[ResolvedArgument]
+    returns: ArgumentType                 # raw
+    body: StatementList                   # raw — Phase 3 resolves
+    loc: Location
+
   ResolvedImportName* = ref object
     id: int                               # index in imp.names
     name: Identifier
@@ -56,7 +71,7 @@ type
     decorators: seq[Decorator]            # raw
     name: Identifier
     data: Option[ResolvedData]
-    functions: seq[Function]              # raw, wired later
+    functions: seq[ResolvedFunction]
     loc: Location
 
   ResolvedGeneric* = ref object
@@ -118,6 +133,27 @@ proc resolveData(db: DataBlock): ResolvedData =
   of dbkUnion:
     ResolvedData(kind: rdkUnion, union: resolveUnion(db.union))
 
+proc resolveArgument(a: ArgumentDefinition, id: int): ResolvedArgument =
+  ResolvedArgument(
+    id: id,
+    name: a.name,
+    argType: a.argType,
+    loc: a.loc,
+  )
+
+proc resolveFunction(fn: Function, id: int): ResolvedFunction =
+  let rf = ResolvedFunction(
+    id: id,
+    decorators: fn.decorators,
+    name: fn.def.name,
+    returns: fn.def.returns,
+    body: fn.statementList,
+    loc: fn.def.loc,
+  )
+  for i, p in fn.def.params:
+    rf.params.add(resolveArgument(p, i))
+  rf
+
 proc resolveImportName(n: ImportName, id: int): ResolvedImportName =
   ResolvedImportName(
     id: id,
@@ -145,14 +181,16 @@ proc resolveModule(m: Module, id: int): ResolvedModule =
   let resolvedData =
     if m.data.isSome: some(resolveData(m.data.get))
     else: none(ResolvedData)
-  ResolvedModule(
+  let rm = ResolvedModule(
     id: id,
     decorators: m.decorators,
     name: m.name,
     data: resolvedData,
-    functions: m.functions,
     loc: m.loc,
   )
+  for i, fn in m.functions:
+    rm.functions.add(resolveFunction(fn, i))
+  rm
 
 proc resolveGeneric(g: Generic, id: int): ResolvedGeneric =
   ResolvedGeneric(
