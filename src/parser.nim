@@ -253,7 +253,7 @@ proc newDecorator(name: Identifier): Decorator =
   Decorator(name: name)
 
 proc asl(decorator: Decorator): string =
-  fmt"@{decorator.name.value}"
+  fmt"@{asl(decorator.name)}"
 
 type Space = ref object
   spaces: uint32
@@ -275,7 +275,7 @@ proc newArgumentType(root: Identifier, impls: seq[ArgumentType],
   ArgumentType(root: root, loc: loc, impls: impls)
 
 proc asl(argType: ArgumentType): string =
-  result = argType.root.value
+  result = asl(argType.root)
   if argType.impls.len > 0:
     result.add("[")
     for i, impl in argType.impls:
@@ -295,7 +295,7 @@ proc newArgumentDefinition(name: Identifier, argType: ArgumentType,
   ArgumentDefinition(name: name, argType: argType, loc: loc)
 
 proc asl(argDef: ArgumentDefinition): string =
-  fmt"{argDef.name.value}: {asl(argDef.argType)}"
+  fmt"{asl(argDef.name)}: {asl(argDef.argType)}"
 
 type ArgumentDefinitionList = ref object
   argDefs: seq[ArgumentDefinition]
@@ -340,7 +340,7 @@ proc newVariantDefinition(name: Identifier, fields: seq[ArgumentDefinition],
   VariantDefinition(name: name, fields: fields, loc: loc)
 
 proc asl(varDef: VariantDefinition): string =
-  result = varDef.name.value
+  result = asl(varDef.name)
   if varDef.fields.len > 0:
     result.add(" { ")
     for i, field in varDef.fields:
@@ -405,7 +405,7 @@ proc newFunctionDefinition(name: Identifier, argDefList: ArgumentDefinitionList,
   FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
 
 proc asl(funcDef: FunctionDefinition): string =
-  fmt"func {funcDef.name.value}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
+  fmt"func {asl(funcDef.name)}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
 
 type StringContent = ref object
   content: string
@@ -658,13 +658,13 @@ proc asl(argList: ArgumentList): string =
   result.add(")")
 
 proc asl(fncall: FunctionCall): string =
-  fmt"{asl(fncall.argType)}.{fncall.name.value}{asl(fncall.argList)}"
+  fmt"{asl(fncall.argType)}.{asl(fncall.name)}{asl(fncall.argList)}"
 
 proc asl(getter: Getter): string =
-  fmt"{getter.source.value}.{getter.property.value}"
+  fmt"{asl(getter.source)}.{asl(getter.property)}"
 
 proc asl(kwarg: KeywordArgument): string =
-  fmt"{kwarg.name.value}: {asl(kwarg.expression)}"
+  fmt"{asl(kwarg.name)}: {asl(kwarg.expression)}"
 
 proc asl(kwargList: KeywordArgumentList): string =
   result = "{ "
@@ -682,13 +682,13 @@ proc asl(literal: Literal): string =
   of lkFloat: asl(literal.floatLit)
 
 proc asl(prim: LiteralInitializer): string =
-  fmt"{prim.typeName.value} {asl(prim.value)}"
+  fmt"{asl(prim.typeName)} {asl(prim.value)}"
 
 proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
 
 proc asl(unionInit: UnionInitializer): string =
-  fmt"{asl(unionInit.argType)}.{unionInit.variantName.value} {asl(unionInit.kwargList)}"
+  fmt"{asl(unionInit.argType)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
 
 proc asl(initializer: Initializer): string =
   case initializer.kind:
@@ -710,7 +710,7 @@ proc newAssignment(target: Identifier, expression: Expression,
   Assignment(target: target, expression: expression, loc: loc)
 
 proc asl(assignment: Assignment): string =
-  fmt"{assignment.target.value} = {asl(assignment.expression)}"
+  fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
 
 proc newCasePattern(intLit: IntegerLiteral): CasePattern =
   CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
@@ -731,10 +731,10 @@ proc newCasePattern(variant: VariantPattern): CasePattern =
   CasePattern(kind: cpkVariant, variant: variant)
 
 proc asl(field: VariantPatternField): string =
-  fmt"{field.name.value}: {field.binding.value}"
+  fmt"{asl(field.name)}: {asl(field.binding)}"
 
 proc asl(variant: VariantPattern): string =
-  result = fmt"{variant.variantName.value} {{ "
+  result = fmt"{asl(variant.variantName)} {{ "
   for i, field in variant.fields:
     if i > 0: result.add(", ")
     result.add(asl(field))
@@ -791,7 +791,7 @@ proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string] =
     result = asl(stmt.expression.match, indentWidth)
   of skAssignment:
     let matchLines = asl(stmt.assignment.expression.match, indentWidth)
-    result.add(fmt"{stmt.assignment.target.value} = {matchLines[0]}")
+    result.add(fmt"{asl(stmt.assignment.target)} = {matchLines[0]}")
     for i in 1..<matchLines.len:
       result.add(matchLines[i])
 
@@ -849,9 +849,9 @@ proc newImportName(name: Identifier, alias: Option[Identifier],
 
 proc asl(importName: ImportName): string =
   if importName.alias.isSome:
-    fmt"{importName.name.value} as {importName.alias.get.value}"
+    fmt"{asl(importName.name)} as {asl(importName.alias.get)}"
   else:
-    importName.name.value
+    asl(importName.name)
 
 type Import* = ref object
   names: seq[ImportName]
@@ -887,7 +887,7 @@ proc newGeneric(decorators: seq[Decorator], name: Identifier,
 proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   for d in gen.decorators:
     result.add(asl(d))
-  result.add(fmt"generic {gen.name.value}:")
+  result.add(fmt"generic {asl(gen.name)}:")
   let indent = " ".repeat(indentWidth)
   for funcDef in gen.funcDefs:
     result.add(fmt"{indent}{asl(funcDef)}")
@@ -911,7 +911,7 @@ proc newModule(decorators: seq[Decorator], name: Identifier,
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
     result.add(asl(d))
-  result.add(fmt"module {module.name.value}:")
+  result.add(fmt"module {asl(module.name)}:")
   let indent = " ".repeat(indentWidth)
   if module.data.isSome:
     for line in asl(module.data.get, indentWidth):
