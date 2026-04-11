@@ -868,6 +868,7 @@ proc asl(importName: ImportName): string =
 type Import* = ref object
   names: seq[ImportName]
   source: string
+  path: string # absolute path of the imported file; set during BFS in parse*
   loc: Location
 
 proc newImport(names: seq[ImportName], source: string, loc: Location): Import =
@@ -875,6 +876,7 @@ proc newImport(names: seq[ImportName], source: string, loc: Location): Import =
 
 proc names*(imp: Import): seq[ImportName] = imp.names
 proc source*(imp: Import): string = imp.source
+proc path*(imp: Import): string = imp.path
 proc loc*(imp: Import): Location = imp.loc
 
 proc asl(imp: Import): string =
@@ -1806,7 +1808,7 @@ proc parseFile(filepath: string, indentWidth: uint32,
   let tokens = ? tokenize(source, filepath, dumpTokens)
   parse(filepath, indentWidth, tokens)
 
-proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
+proc resolveImportPath(source: string, importingFile: string): Result[string, string] =
   ## Resolves an import path relative to the importing file.
   ## Rejects paths that escape to parent directories.
   if source.startsWith(".."):
@@ -1832,6 +1834,7 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
 
     for imp in file.imports:
       let depPath = ? resolveImportPath(imp.source, current)
+      imp.path = depPath
       if depPath notin queued:
         queue.addLast(depPath)
         queued.incl(depPath)
@@ -1840,8 +1843,7 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
   let getNeighbors = proc(path: string): seq[string] =
     if parsed.hasKey(path):
       for imp in parsed[path].imports:
-        let depPath = resolveImportPath(imp.source, path)
-        if depPath.isOk: result.add(depPath.get)
+        result.add(imp.path)
   let sortedPaths = ? topoSort(rootPath, getNeighbors)
 
   var files: seq[File]
