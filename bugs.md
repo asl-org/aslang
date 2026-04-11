@@ -19,10 +19,6 @@
 
 - [ ] **PSR-36: Recursive BFS dependency resolver with cycle detection** (`src/parser.nim` or `src/asl.nim`) [high] — After parsing the root file, extract import sources, tokenize+parse each dependency, and recurse. BFS traversal ensures dependencies are resolved breadth-first. Detect cycles by tracking the current resolution path — if a file is encountered that's already on the path, report the cycle with the full dependency chain. Returns all parsed Files in dependency order.
 
-### Location tracking
-
-- [ ] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser.nim`, `src/validator.nim`) [high] — Validator error messages for duplicate names (`module Foo` twice, duplicate struct field, etc.) point to the file but not the exact `line:col` because the AST stores names as raw `string`, throwing away the `Location` returned by `identifierSpec`. Refactor every name-bearing field in the AST to hold an `Identifier` (name + loc), export `Identifier` with readonly accessors, update every `newX` constructor and every `asl()` formatter to go through the identifier, and thread the location into validator error messages. Affects ~17 AST types and ~24 `identifierSpec` parse sites. Sequenced as 14 bite-sized commits (C1–C14) in `plans/name-identifiers.md`.
-
 ### Parser cleanup (round 2)
 
 - [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
@@ -62,6 +58,10 @@
 - [x] **PSR-12** — Fixed `any` backtracking: `parser.run(spec)` instead of `spec.parseFn(parser)`.
 - [x] **PSR-13** — Fixed `separatedBy` backtracking: sep+element wrapped into atomic `pairSpec`.
 - [x] **PSR-14** — Fixed `optional` backtracking.
+
+### Location tracking
+
+- [x] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser.nim`, `src/validator.nim`) — Done in 14 bite-sized commits (C1–C14). Every name-bearing field in the AST (`Module.name`, `Generic.name`, `ArgumentDefinition.name`, `VariantDefinition.name`, `ImportName.name`, `ImportName.alias`, `FunctionDefinition.name`, `Decorator.name`, `ArgumentType.root`, `FunctionCall.name`, `KeywordArgument.name`, `Getter.source`, `Getter.property`, `LiteralInitializer.typeName`, `UnionInitializer.variantName`, `Assignment.target`, `VariantPatternField.name`, `VariantPatternField.binding`, `VariantPattern.variantName`) now holds an `Identifier` carrying a `Location`. `ImportName.alias` flipped from `""`-sentinel `string` to `Option[Identifier]`. `Decorator.loc` deleted (redundant once the name carries its own loc). Validator errors now report exact `line:col`. `Identifier.name` renamed to `Identifier.value` so the common chain reads `m.name.value` / `m.name.loc` instead of the awkward `m.name.name`. Plan in `plans/name-identifiers.md`.
 
 ### Block indexing and validation
 

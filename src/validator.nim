@@ -121,26 +121,26 @@ proc findVariant*(u: IndexedUnion, name: string): int =
 proc indexStruct(s: Struct, path: string): Result[IndexedStruct, string] =
   let indexed = IndexedStruct(struct: s)
   for i, f in s.fields:
-    if indexed.fieldIndex.hasKey(f.name.name):
-      return err(fmt"{path}:{f.name.loc}: struct: duplicate field '{f.name.name}'")
-    indexed.fieldIndex[f.name.name] = i
+    if indexed.fieldIndex.hasKey(f.name.value):
+      return err(fmt"{path}:{f.name.loc}: struct: duplicate field '{f.name.value}'")
+    indexed.fieldIndex[f.name.value] = i
   ok(indexed)
 
 proc indexVariant(v: VariantDefinition,
     path: string): Result[IndexedVariant, string] =
   let indexed = IndexedVariant(variant: v)
   for i, f in v.fields:
-    if indexed.fieldIndex.hasKey(f.name.name):
-      return err(fmt"{path}:{f.name.loc}: variant '{v.name.name}': duplicate field '{f.name.name}'")
-    indexed.fieldIndex[f.name.name] = i
+    if indexed.fieldIndex.hasKey(f.name.value):
+      return err(fmt"{path}:{f.name.loc}: variant '{v.name.value}': duplicate field '{f.name.value}'")
+    indexed.fieldIndex[f.name.value] = i
   ok(indexed)
 
 proc indexUnion(u: Union, path: string): Result[IndexedUnion, string] =
   let indexed = IndexedUnion(union: u)
   for i, v in u.variants:
-    if indexed.variantIndex.hasKey(v.name.name):
-      return err(fmt"{path}:{v.name.loc}: union: duplicate variant '{v.name.name}'")
-    indexed.variantIndex[v.name.name] = i
+    if indexed.variantIndex.hasKey(v.name.value):
+      return err(fmt"{path}:{v.name.loc}: union: duplicate variant '{v.name.value}'")
+    indexed.variantIndex[v.name.value] = i
     indexed.variants.add(? indexVariant(v, path))
   ok(indexed)
 
@@ -156,11 +156,11 @@ proc indexData(db: DataBlock, path: string): Result[IndexedData, string] =
 proc indexModule(m: Module, path: string): Result[IndexedModule, string] =
   # Rule 4: module must have data or at least one function
   if m.data.isNone and m.functions.len == 0:
-    return err(fmt"{path}:{m.name.loc}: module '{m.name.name}': must have a data block or at least one function")
+    return err(fmt"{path}:{m.name.loc}: module '{m.name.value}': must have a data block or at least one function")
 
   let indexed = IndexedModule(module: m)
   for i, fn in m.functions:
-    indexed.functionIndex.mgetOrPut(fn.name.name, @[]).add(i)
+    indexed.functionIndex.mgetOrPut(fn.name.value, @[]).add(i)
 
   if m.data.isSome:
     indexed.data = some(? indexData(m.data.get, path))
@@ -172,7 +172,7 @@ proc indexGeneric(g: Generic,
     path: string): Result[IndexedGeneric, string] =
   let indexed = IndexedGeneric(generic: g)
   for i, fd in g.funcDefs:
-    indexed.funcDefIndex.mgetOrPut(fd.name.name, @[]).add(i)
+    indexed.funcDefIndex.mgetOrPut(fd.name.value, @[]).add(i)
   ok(indexed)
 
 proc indexFile(file: File): Result[IndexedFile, string] =
@@ -184,25 +184,25 @@ proc indexFile(file: File): Result[IndexedFile, string] =
 
   # Modules, generics, and import visible names share one namespace.
   for i, m in file.modules:
-    if indexed.moduleIndex.hasKey(m.name.name) or
-        indexed.genericIndex.hasKey(m.name.name) or
-        indexed.importIndex.hasKey(m.name.name):
-      return err(fmt"{file.path}:{m.name.loc}: duplicate name '{m.name.name}'")
-    indexed.moduleIndex[m.name.name] = i
+    if indexed.moduleIndex.hasKey(m.name.value) or
+        indexed.genericIndex.hasKey(m.name.value) or
+        indexed.importIndex.hasKey(m.name.value):
+      return err(fmt"{file.path}:{m.name.loc}: duplicate name '{m.name.value}'")
+    indexed.moduleIndex[m.name.value] = i
     indexed.modules.add(? indexModule(m, file.path))
 
   for i, g in file.generics:
-    if indexed.moduleIndex.hasKey(g.name.name) or
-        indexed.genericIndex.hasKey(g.name.name) or
-        indexed.importIndex.hasKey(g.name.name):
-      return err(fmt"{file.path}:{g.name.loc}: duplicate name '{g.name.name}'")
-    indexed.genericIndex[g.name.name] = i
+    if indexed.moduleIndex.hasKey(g.name.value) or
+        indexed.genericIndex.hasKey(g.name.value) or
+        indexed.importIndex.hasKey(g.name.value):
+      return err(fmt"{file.path}:{g.name.loc}: duplicate name '{g.name.value}'")
+    indexed.genericIndex[g.name.value] = i
     indexed.generics.add(? indexGeneric(g, file.path))
 
   for impIdx, imp in file.imports:
     for nameIdx, n in imp.names:
       let visibleIdent = if n.alias.isSome: n.alias.get else: n.name
-      let visible = visibleIdent.name
+      let visible = visibleIdent.value
       if indexed.moduleIndex.hasKey(visible) or
           indexed.genericIndex.hasKey(visible) or
           indexed.importIndex.hasKey(visible):

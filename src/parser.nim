@@ -235,16 +235,16 @@ proc anyTokenExceptNewlineSpec(tokenRepr: string): Spec[Token] =
 
 type
   Identifier* = ref object
-    name: string
+    value: string
     loc: Location
 
-proc newIdentifier(name: string, loc: Location): Identifier =
-  Identifier(name: name, loc: loc)
+proc newIdentifier(value: string, loc: Location): Identifier =
+  Identifier(value: value, loc: loc)
 
-proc name*(id: Identifier): string = id.name
+proc value*(id: Identifier): string = id.value
 proc loc*(id: Identifier): Location = id.loc
 
-proc asl(identifier: Identifier): string = identifier.name
+proc asl(identifier: Identifier): string = identifier.value
 
 type Decorator = ref object
   name: Identifier
@@ -253,7 +253,7 @@ proc newDecorator(name: Identifier): Decorator =
   Decorator(name: name)
 
 proc asl(decorator: Decorator): string =
-  fmt"@{decorator.name.name}"
+  fmt"@{decorator.name.value}"
 
 type Space = ref object
   spaces: uint32
@@ -275,7 +275,7 @@ proc newArgumentType(root: Identifier, impls: seq[ArgumentType],
   ArgumentType(root: root, loc: loc, impls: impls)
 
 proc asl(argType: ArgumentType): string =
-  result = argType.root.name
+  result = argType.root.value
   if argType.impls.len > 0:
     result.add("[")
     for i, impl in argType.impls:
@@ -295,7 +295,7 @@ proc newArgumentDefinition(name: Identifier, argType: ArgumentType,
   ArgumentDefinition(name: name, argType: argType, loc: loc)
 
 proc asl(argDef: ArgumentDefinition): string =
-  fmt"{argDef.name.name}: {asl(argDef.argType)}"
+  fmt"{argDef.name.value}: {asl(argDef.argType)}"
 
 type ArgumentDefinitionList = ref object
   argDefs: seq[ArgumentDefinition]
@@ -340,7 +340,7 @@ proc newVariantDefinition(name: Identifier, fields: seq[ArgumentDefinition],
   VariantDefinition(name: name, fields: fields, loc: loc)
 
 proc asl(varDef: VariantDefinition): string =
-  result = varDef.name.name
+  result = varDef.name.value
   if varDef.fields.len > 0:
     result.add(" { ")
     for i, field in varDef.fields:
@@ -405,7 +405,7 @@ proc newFunctionDefinition(name: Identifier, argDefList: ArgumentDefinitionList,
   FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
 
 proc asl(funcDef: FunctionDefinition): string =
-  fmt"func {funcDef.name.name}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
+  fmt"func {funcDef.name.value}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
 
 type StringContent = ref object
   content: string
@@ -507,17 +507,17 @@ type
     of ekMatch: match: MatchExpression
 
   Assignment = ref object
-    target: string
+    target: Identifier
     expression: Expression
     loc: Location
 
   VariantPatternField = ref object
-    name: string
-    binding: string
+    name: Identifier
+    binding: Identifier
     loc: Location
 
   VariantPattern = ref object
-    variantName: string
+    variantName: Identifier
     fields: seq[VariantPatternField]
     loc: Location
 
@@ -658,13 +658,13 @@ proc asl(argList: ArgumentList): string =
   result.add(")")
 
 proc asl(fncall: FunctionCall): string =
-  fmt"{asl(fncall.argType)}.{fncall.name.name}{asl(fncall.argList)}"
+  fmt"{asl(fncall.argType)}.{fncall.name.value}{asl(fncall.argList)}"
 
 proc asl(getter: Getter): string =
-  fmt"{getter.source.name}.{getter.property.name}"
+  fmt"{getter.source.value}.{getter.property.value}"
 
 proc asl(kwarg: KeywordArgument): string =
-  fmt"{kwarg.name.name}: {asl(kwarg.expression)}"
+  fmt"{kwarg.name.value}: {asl(kwarg.expression)}"
 
 proc asl(kwargList: KeywordArgumentList): string =
   result = "{ "
@@ -682,13 +682,13 @@ proc asl(literal: Literal): string =
   of lkFloat: asl(literal.floatLit)
 
 proc asl(prim: LiteralInitializer): string =
-  fmt"{prim.typeName.name} {asl(prim.value)}"
+  fmt"{prim.typeName.value} {asl(prim.value)}"
 
 proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
 
 proc asl(unionInit: UnionInitializer): string =
-  fmt"{asl(unionInit.argType)}.{unionInit.variantName.name} {asl(unionInit.kwargList)}"
+  fmt"{asl(unionInit.argType)}.{unionInit.variantName.value} {asl(unionInit.kwargList)}"
 
 proc asl(initializer: Initializer): string =
   case initializer.kind:
@@ -705,12 +705,12 @@ proc asl(expr: Expression): string =
   of ekVariable: asl(expr.variable)
   of ekMatch: "" # match is a block expression, use aslBlock
 
-proc newAssignment(target: string, expression: Expression,
+proc newAssignment(target: Identifier, expression: Expression,
     loc: Location): Assignment =
   Assignment(target: target, expression: expression, loc: loc)
 
 proc asl(assignment: Assignment): string =
-  fmt"{assignment.target} = {asl(assignment.expression)}"
+  fmt"{assignment.target.value} = {asl(assignment.expression)}"
 
 proc newCasePattern(intLit: IntegerLiteral): CasePattern =
   CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
@@ -718,11 +718,12 @@ proc newCasePattern(intLit: IntegerLiteral): CasePattern =
 proc newCasePattern(variable: Identifier): CasePattern =
   CasePattern(kind: cpkVariable, variable: variable)
 
-proc newVariantPatternField(name: string, binding: string,
+proc newVariantPatternField(name: Identifier, binding: Identifier,
     loc: Location): VariantPatternField =
   VariantPatternField(name: name, binding: binding, loc: loc)
 
-proc newVariantPattern(variantName: string, fields: seq[VariantPatternField],
+proc newVariantPattern(variantName: Identifier,
+    fields: seq[VariantPatternField],
     loc: Location): VariantPattern =
   VariantPattern(variantName: variantName, fields: fields, loc: loc)
 
@@ -730,10 +731,10 @@ proc newCasePattern(variant: VariantPattern): CasePattern =
   CasePattern(kind: cpkVariant, variant: variant)
 
 proc asl(field: VariantPatternField): string =
-  fmt"{field.name}: {field.binding}"
+  fmt"{field.name.value}: {field.binding.value}"
 
 proc asl(variant: VariantPattern): string =
-  result = fmt"{variant.variantName} {{ "
+  result = fmt"{variant.variantName.value} {{ "
   for i, field in variant.fields:
     if i > 0: result.add(", ")
     result.add(asl(field))
@@ -790,7 +791,7 @@ proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string] =
     result = asl(stmt.expression.match, indentWidth)
   of skAssignment:
     let matchLines = asl(stmt.assignment.expression.match, indentWidth)
-    result.add(fmt"{stmt.assignment.target} = {matchLines[0]}")
+    result.add(fmt"{stmt.assignment.target.value} = {matchLines[0]}")
     for i in 1..<matchLines.len:
       result.add(matchLines[i])
 
@@ -848,9 +849,9 @@ proc newImportName(name: Identifier, alias: Option[Identifier],
 
 proc asl(importName: ImportName): string =
   if importName.alias.isSome:
-    fmt"{importName.name.name} as {importName.alias.get.name}"
+    fmt"{importName.name.value} as {importName.alias.get.value}"
   else:
-    importName.name.name
+    importName.name.value
 
 type Import* = ref object
   names: seq[ImportName]
@@ -886,7 +887,7 @@ proc newGeneric(decorators: seq[Decorator], name: Identifier,
 proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   for d in gen.decorators:
     result.add(asl(d))
-  result.add(fmt"generic {gen.name.name}:")
+  result.add(fmt"generic {gen.name.value}:")
   let indent = " ".repeat(indentWidth)
   for funcDef in gen.funcDefs:
     result.add(fmt"{indent}{asl(funcDef)}")
@@ -910,7 +911,7 @@ proc newModule(decorators: seq[Decorator], name: Identifier,
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
     result.add(asl(d))
-  result.add(fmt"module {module.name.name}:")
+  result.add(fmt"module {module.name.value}:")
   let indent = " ".repeat(indentWidth)
   if module.data.isSome:
     for line in asl(module.data.get, indentWidth):
@@ -1054,8 +1055,8 @@ proc keywordSpec(keyword: string): Spec[Location] =
     name: "'" & keyword & "'",
     parseFn: proc(parser: Parser): Result[Location, ParserError] =
     let ident = ? parser.run(identifierSpec)
-    if ident.name != keyword:
-      let msg = fmt"expected keyword '{keyword}' but found '{ident.name}'"
+    if ident.value != keyword:
+      let msg = fmt"expected keyword '{keyword}' but found '{ident.value}'"
       return err(newParserError(msg, ident.loc))
     ok(ident.loc)
   )
@@ -1364,7 +1365,7 @@ let assignmentSpec = Spec[Assignment](
   let targetIdent = ? parser.run(identifierSpec)
   discard ? parser.run(equalsSeparatorSpec)
   let expression = ? parser.run(expressionSpec)
-  ok(newAssignment(targetIdent.name, expression, targetIdent.loc))
+  ok(newAssignment(targetIdent, expression, targetIdent.loc))
 )
 
 let decoratorLineSpec = Spec[Decorator](
@@ -1425,7 +1426,7 @@ let variantPatternFieldSpec = Spec[VariantPatternField](
   let name = ? parser.run(identifierSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let binding = ? parser.run(identifierSpec)
-  ok(newVariantPatternField(name.name, binding.name, name.loc))
+  ok(newVariantPatternField(name, binding, name.loc))
 )
 
 # Variant pattern: VariantName { field: binding, field: binding }
@@ -1436,7 +1437,7 @@ let variantPatternSpec = Spec[VariantPattern](
   discard parser.run(optionalSpace)
   let fields = ? parser.run(contained("variant_fields", "{",
     separatedBy(variantPatternFieldSpec, commaWithSpacesSpec), "}"))
-  ok(newVariantPattern(name.name, fields, name.loc))
+  ok(newVariantPattern(name, fields, name.loc))
 )
 
 let casePatternSpec = oneOf("case_pattern", [
@@ -1529,7 +1530,7 @@ let statementLineSpec = Spec[Statement](
     let target = ? parser.run(identifierSpec)
     discard ? parser.run(equalsSeparatorSpec)
     let matchExpr = ? parser.run(matchBodySpec)
-    ok(newStatement(newAssignment(target.name, newExpression(matchExpr), target.loc)))
+    ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
   ))
   if maybeMatchAssign.isOk: return ok(maybeMatchAssign.get)
   # Try standalone match: match ...:
