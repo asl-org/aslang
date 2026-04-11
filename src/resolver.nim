@@ -31,6 +31,13 @@ type
     variants: seq[ResolvedVariant]
     loc: Location
 
+  ResolvedDataKind* = enum
+    rdkStruct, rdkUnion
+  ResolvedData* = ref object
+    case kind: ResolvedDataKind
+    of rdkStruct: struct: ResolvedStruct
+    of rdkUnion: union: ResolvedUnion
+
   ResolvedImportName* = ref object
     id: int                               # index in imp.names
     name: Identifier
@@ -103,6 +110,13 @@ proc resolveUnion(u: Union): ResolvedUnion =
   for i, v in u.variants:
     ru.variants.add(resolveVariant(v, i))
   ru
+
+proc resolveData(db: DataBlock): ResolvedData =
+  case db.kind:
+  of dbkStruct:
+    ResolvedData(kind: rdkStruct, struct: resolveStruct(db.struct))
+  of dbkUnion:
+    ResolvedData(kind: rdkUnion, union: resolveUnion(db.union))
 
 proc resolveImportName(n: ImportName, id: int): ResolvedImportName =
   ResolvedImportName(
