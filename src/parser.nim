@@ -246,7 +246,7 @@ proc loc*(id: Identifier): Location = id.loc
 
 proc asl(identifier: Identifier): string = identifier.value
 
-type Decorator = ref object
+type Decorator* = ref object
   name: Identifier
 
 proc newDecorator(name: Identifier): Decorator =
@@ -904,6 +904,8 @@ type Module* = ref object
 proc name*(m: Module): Identifier = m.name
 proc data*(m: Module): Option[DataBlock] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
+proc decorators*(m: Module): seq[Decorator] = m.decorators
+proc loc*(m: Module): Location = m.loc
 
 proc newModule(decorators: seq[Decorator], name: Identifier,
     data: Option[DataBlock], funcList: FunctionList, loc: Location): Module =

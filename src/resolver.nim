@@ -24,10 +24,19 @@ type
     names: seq[ResolvedImportName]
     loc: Location
 
+  ResolvedModule* = ref object
+    id: int                               # index in file.modules
+    decorators: seq[Decorator]            # raw
+    name: Identifier
+    data: Option[DataBlock]               # raw, wired later
+    functions: seq[Function]              # raw, wired later
+    loc: Location
+
   ResolvedFile* = ref object
     id: int                               # index in app.files
     path: string
     imports: seq[ResolvedImport]
+    modules: seq[ResolvedModule]
 
   ResolvedApp* = ref object
     files: seq[ResolvedFile]
@@ -60,11 +69,23 @@ proc resolveImport(imp: Import, id: int, importingPath: string,
     ri.names.add(resolveImportName(n, nIdx))
   ok(ri)
 
+proc resolveModule(m: Module, id: int): ResolvedModule =
+  ResolvedModule(
+    id: id,
+    decorators: m.decorators,
+    name: m.name,
+    data: m.data,
+    functions: m.functions,
+    loc: m.loc,
+  )
+
 proc resolveFile(f: IndexedFile, id: int,
     fileIndex: Table[string, int]): Result[ResolvedFile, string] =
   let rf = ResolvedFile(id: id, path: f.file.path)
   for impIdx, imp in f.file.imports:
     rf.imports.add(? resolveImport(imp, impIdx, f.file.path, fileIndex))
+  for mIdx, m in f.file.modules:
+    rf.modules.add(resolveModule(m, mIdx))
   ok(rf)
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
