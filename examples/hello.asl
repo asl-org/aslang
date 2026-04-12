@@ -4,7 +4,7 @@
 import { Sample } from "./sample.asl"
 
 generic Key:
-  func hash(key: Key): u128
+  func hash(key: Key): u64
 
 @export
 module App:

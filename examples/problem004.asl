@@ -11,7 +11,7 @@ module Example:
       case _:
         b
 
-  func eq(a: u64, b: u64): U8
+  func eq(a: u64, b: u64): u8
     op = u64.compare(a, b)
     _a = match op:
       case 0:
@@ -19,7 +19,7 @@ module Example:
       case _:
         U8 0
 
-  func is_palindrome_loop(a: u64, b: u64, c: u64): U8
+  func is_palindrome_loop(a: u64, b: u64, c: u64): u8
     op = u64.compare(c, 0)
     _a = match op:
       case 1:
@@ -32,7 +32,7 @@ module Example:
       case _:
         Example.eq(a, b)
 
-  func is_palindrome(a: u64): U8
+  func is_palindrome(a: u64): u8
     Example.is_palindrome_loop(a, 0, a)
 
   func update_ans(a: u64, k: u64): u64

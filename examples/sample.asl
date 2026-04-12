@@ -15,7 +15,7 @@ import { Solver   as Solution10 } from "./problem010.asl"
 
 
 module Sample:
-  func greet(): str
+  func greet(): String
     Str.from("hello from sample")
 
   func start(sys: System): u8

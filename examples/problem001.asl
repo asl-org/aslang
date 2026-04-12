@@ -13,7 +13,7 @@ module Solution:
     d = Solver.sum(c)
     i64.multiply(b, d)
 
-  func start(sys: System): U8
+  func start(sys: System): u8
     exit_success = U8 0
 
     a = Solver.count(999, 3)

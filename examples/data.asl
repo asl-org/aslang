@@ -17,7 +17,7 @@ module Plan:
     Free { usage: u32 }
     Pro { users: u32, credits: u32 }
 
-  func describe(plan: Plan): str
+  func describe(plan: Plan): String
     free = Plan.Free { usage: u32 100 }
     match plan:
       case Free { usage: usage }:

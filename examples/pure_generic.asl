@@ -3,5 +3,5 @@
 # generics alone — previously only exercised via hello.asl which
 # also has a module.
 generic Eq:
-  func eq(a: Eq, b: Eq): bool
-  func hash(a: Eq): u128
+  func eq(a: Eq, b: Eq): u8
+  func hash(a: Eq): u64

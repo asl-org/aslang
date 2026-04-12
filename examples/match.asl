@@ -4,7 +4,7 @@
 # (y = match x: ...). Both functions here are body-only; no calls
 # from outside.
 module App:
-  func classify(x: i64): str
+  func classify(x: i64): String
     match x:
       case 0:
         System.println("zero")
@@ -13,7 +13,7 @@ module App:
       case other:
         System.println("something else")
 
-  func label(x: i64): str
+  func label(x: i64): String
     y = match x:
       case 0:
         Str.from("zero")

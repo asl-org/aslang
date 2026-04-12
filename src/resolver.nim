@@ -244,22 +244,24 @@ proc resolveData(db: DataBlock,
 # ============================================================
 
 type ResolvedArgument* = ref object
-  id: int               # index in parent params list
+  id: int # index in parent params list
   name: Identifier
-  argType: ArgumentType # raw until Phase 2
+  argType: ResolvedArgumentType
   loc: Location
 
-proc newResolvedArgument(id: int, name: Identifier, argType: ArgumentType,
-    loc: Location): ResolvedArgument =
+proc newResolvedArgument(id: int, name: Identifier,
+    argType: ResolvedArgumentType, loc: Location): ResolvedArgument =
   ResolvedArgument(id: id, name: name, argType: argType, loc: loc)
 
 proc id*(a: ResolvedArgument): int = a.id
 proc name*(a: ResolvedArgument): Identifier = a.name
-proc argType*(a: ResolvedArgument): ArgumentType = a.argType
+proc argType*(a: ResolvedArgument): ResolvedArgumentType = a.argType
 proc loc*(a: ResolvedArgument): Location = a.loc
 
-proc resolveArgument(a: ArgumentDefinition, id: int): ResolvedArgument =
-  newResolvedArgument(id, a.name, a.argType, a.loc)
+proc resolveArgument(a: ArgumentDefinition, id: int,
+    file: IndexedFile): Result[ResolvedArgument, string] =
+  let argType = ? resolveArgumentType(a.argType, file)
+  ok(newResolvedArgument(id, a.name, argType, a.loc))
 
 # ============================================================
 # ResolvedFunction
@@ -270,13 +272,13 @@ type ResolvedFunction* = ref object
   decorators: seq[Decorator] # raw
   name: Identifier
   params: seq[ResolvedArgument]
-  returns: ArgumentType      # raw
+  returns: ResolvedArgumentType
   body: StatementList        # raw — Phase 3 resolves
   loc: Location
 
 proc newResolvedFunction(id: int, decorators: seq[Decorator],
     name: Identifier, params: seq[ResolvedArgument],
-    returns: ArgumentType, body: StatementList,
+    returns: ResolvedArgumentType, body: StatementList,
     loc: Location): ResolvedFunction =
   ResolvedFunction(id: id, decorators: decorators, name: name,
     params: params, returns: returns, body: body, loc: loc)
@@ -285,18 +287,20 @@ proc id*(fn: ResolvedFunction): int = fn.id
 proc decorators*(fn: ResolvedFunction): seq[Decorator] = fn.decorators
 proc name*(fn: ResolvedFunction): Identifier = fn.name
 proc params*(fn: ResolvedFunction): seq[ResolvedArgument] = fn.params
-proc returns*(fn: ResolvedFunction): ArgumentType = fn.returns
+proc returns*(fn: ResolvedFunction): ResolvedArgumentType = fn.returns
 proc body*(fn: ResolvedFunction): StatementList = fn.body
 proc loc*(fn: ResolvedFunction): Location = fn.loc
 
-proc resolveFunction(fn: Function, id: int): ResolvedFunction =
+proc resolveFunction(fn: Function, id: int,
+    file: IndexedFile): Result[ResolvedFunction, string] =
   var params: seq[ResolvedArgument]
   for i, p in fn.def.params:
-    params.add(resolveArgument(p, i))
-  newResolvedFunction(
+    params.add(? resolveArgument(p, i, file))
+  let returns = ? resolveArgumentType(fn.def.returns, file)
+  ok(newResolvedFunction(
     id, fn.decorators, fn.def.name, params,
-    fn.def.returns, fn.statementList, fn.def.loc,
-  )
+    returns, fn.statementList, fn.def.loc,
+  ))
 
 # ============================================================
 # ResolvedFuncDef
@@ -306,11 +310,11 @@ type ResolvedFuncDef* = ref object
   id: int # index in generic.funcDefs
   name: Identifier
   params: seq[ResolvedArgument]
-  returns: ArgumentType # raw
+  returns: ResolvedArgumentType
   loc: Location
 
 proc newResolvedFuncDef(id: int, name: Identifier,
-    params: seq[ResolvedArgument], returns: ArgumentType,
+    params: seq[ResolvedArgument], returns: ResolvedArgumentType,
     loc: Location): ResolvedFuncDef =
   ResolvedFuncDef(id: id, name: name, params: params,
     returns: returns, loc: loc)
@@ -318,14 +322,16 @@ proc newResolvedFuncDef(id: int, name: Identifier,
 proc id*(fd: ResolvedFuncDef): int = fd.id
 proc name*(fd: ResolvedFuncDef): Identifier = fd.name
 proc params*(fd: ResolvedFuncDef): seq[ResolvedArgument] = fd.params
-proc returns*(fd: ResolvedFuncDef): ArgumentType = fd.returns
+proc returns*(fd: ResolvedFuncDef): ResolvedArgumentType = fd.returns
 proc loc*(fd: ResolvedFuncDef): Location = fd.loc
 
-proc resolveFuncDef(fd: FunctionDefinition, id: int): ResolvedFuncDef =
+proc resolveFuncDef(fd: FunctionDefinition, id: int,
+    file: IndexedFile): Result[ResolvedFuncDef, string] =
   var params: seq[ResolvedArgument]
   for i, p in fd.params:
-    params.add(resolveArgument(p, i))
-  newResolvedFuncDef(id, fd.name, params, fd.returns, fd.loc)
+    params.add(? resolveArgument(p, i, file))
+  let returns = ? resolveArgumentType(fd.returns, file)
+  ok(newResolvedFuncDef(id, fd.name, params, returns, fd.loc))
 
 # ============================================================
 # ResolvedType
@@ -446,7 +452,7 @@ proc resolveModule(m: Module, id: int,
     else: none(ResolvedData)
   var functions: seq[ResolvedFunction]
   for i, fn in m.functions:
-    functions.add(resolveFunction(fn, i))
+    functions.add(? resolveFunction(fn, i, file))
   ok(newResolvedModule(id, m.decorators, m.name, data, functions, m.loc))
 
 # ============================================================
@@ -472,11 +478,12 @@ proc name*(g: ResolvedGeneric): Identifier = g.name
 proc funcDefs*(g: ResolvedGeneric): seq[ResolvedFuncDef] = g.funcDefs
 proc loc*(g: ResolvedGeneric): Location = g.loc
 
-proc resolveGeneric(g: Generic, id: int): ResolvedGeneric =
+proc resolveGeneric(g: Generic, id: int,
+    file: IndexedFile): Result[ResolvedGeneric, string] =
   var funcDefs: seq[ResolvedFuncDef]
   for i, fd in g.funcDefs:
-    funcDefs.add(resolveFuncDef(fd, i))
-  newResolvedGeneric(id, g.decorators, g.name, funcDefs, g.loc)
+    funcDefs.add(? resolveFuncDef(fd, i, file))
+  ok(newResolvedGeneric(id, g.decorators, g.name, funcDefs, g.loc))
 
 # ============================================================
 # ResolvedFile
@@ -511,7 +518,7 @@ proc resolveFile(f: IndexedFile, id: int,
     modules.add(? resolveModule(m, mIdx, f))
   var generics: seq[ResolvedGeneric]
   for gIdx, g in f.file.generics:
-    generics.add(resolveGeneric(g, gIdx))
+    generics.add(? resolveGeneric(g, gIdx, f))
   ok(newResolvedFile(id, f.file.path, imports, modules, generics))
 
 # ============================================================
