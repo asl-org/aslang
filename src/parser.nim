@@ -238,8 +238,13 @@ type
     value: string
     loc: Location
 
-proc newIdentifier(value: string, loc: Location): Identifier =
-  Identifier(value: value, loc: loc)
+proc newIdentifier(value: string, loc: Location): Result[Identifier, ParserError] =
+  if value.len > 256:
+    err(newParserError(fmt"identifier can be of max length 256", loc))
+  elif value.startsWith("__asl"):
+    err(newParserError(fmt"identifier can not start with '__asl'", loc))
+  else:
+    ok(Identifier(value: value, loc: loc))
 
 proc value*(id: Identifier): string = id.value
 proc loc*(id: Identifier): Location = id.loc
@@ -408,7 +413,8 @@ type FunctionDefinition* = ref object
   loc: Location
 
 proc name*(fd: FunctionDefinition): Identifier = fd.name
-proc params*(fd: FunctionDefinition): seq[ArgumentDefinition] = fd.argDefList.argDefs
+proc params*(fd: FunctionDefinition): seq[
+    ArgumentDefinition] = fd.argDefList.argDefs
 proc returns*(fd: FunctionDefinition): ArgumentType = fd.returns
 proc loc*(fd: FunctionDefinition): Location = fd.loc
 
@@ -1070,7 +1076,7 @@ let identifierSpec = Spec[Identifier](
   let tails = ? parser.run(any(identifierTailCharSpec))
   var content = head.value
   for tail in tails: content.add(tail.value)
-  ok(newIdentifier(content, head.loc))
+  newIdentifier(content, head.loc)
 )
 
 proc keywordSpec(keyword: string): Spec[Location] =
@@ -1817,10 +1823,14 @@ proc parseFile(filepath: string, indentWidth: uint32,
 proc resolveImportPath(source: string, importingFile: string): Result[string, string] =
   ## Resolves an import path relative to the importing file.
   ## Rejects paths that escape to parent directories.
-  if source.startsWith(".."):
+  ## Normalizes the resolved path so tricks like ./sub/../../escape
+  ## are caught — not just paths starting with "..".
+  let dir = normalizedPath(importingFile.parentDir)
+  let resolved = normalizedPath((dir / source).absolutePath)
+  let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
+  if not resolved.startsWith(dirPrefix):
     return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
-  let dir = importingFile.parentDir
-  ok((dir / source).absolutePath)
+  ok(resolved)
 
 proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
     seq[File], string] =
