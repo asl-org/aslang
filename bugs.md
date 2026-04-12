@@ -15,33 +15,28 @@
 
 - [x] **PSR-38: Add import aliasing** (`src/parser.nim`) [medium] — Done. `ImportName` type with `name` and optional `alias` (empty string if none). `importNameSpec` parses `identifier ("as" identifier)?`. Import stores `seq[ImportName]` instead of `seq[string]`.
 
-### Dependency resolution
-
-- [ ] **PSR-36: Recursive BFS dependency resolver with cycle detection** (`src/parser.nim` or `src/asl.nim`) [high] — After parsing the root file, extract import sources, tokenize+parse each dependency, and recurse. BFS traversal ensures dependencies are resolved breadth-first. Detect cycles by tracking the current resolution path — if a file is encountered that's already on the path, report the cycle with the full dependency chain. Returns all parsed Files in dependency order.
-
 ### Name resolution
 
-- [ ] **PSR-41 Phase 2: Signature-level type references** (`src/resolver.nim`) [medium] — Resolve `ArgumentType.root` everywhere it appears in a signature (struct/variant field types, function parameter types, return types). Each type reference becomes a `Ref` pointing at one of: primitive, current-file module, current-file generic, imported module, imported generic. Function bodies still untouched. See `plans/id-resolution.md` Phase 2 for design.
-- [ ] **PSR-41 Phase 3: Function-body / expression resolution** (`src/resolver.nim`) [large] — Resolve `Assignment.target`, `Expression.variable`, `Getter.source/property`, `FunctionCall.name`, pattern bindings, etc. Requires expression type inference (Getter.property needs the source's type; VariantPattern.variantName needs the subject's type). Effectively a compact type checker; needs a separate detailed plan before execution.
+- [ ] **PSR-41 Phase 3: Function-body / expression resolution** (`src/resolver/resolve.nim`) [large] — Resolve `Assignment.target`, `Expression.variable`, `Getter.source/property`, `FunctionCall.name`, pattern bindings, etc. Requires expression type inference (Getter.property needs the source's type; VariantPattern.variantName needs the subject's type). Effectively a compact type checker; needs a separate detailed plan before execution.
 
 ### Parser cleanup (round 2)
 
-- [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
+- [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser/grammar.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
 
-- [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
+- [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser/ast.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
 
-- [ ] **PSR-17: Unwrap `ArgumentDefinitionList` and `ArgumentList`** (`src/parser.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDefinition` and `FunctionCall`.
+- [ ] **PSR-17: Unwrap `ArgumentDefinitionList` and `ArgumentList`** (`src/parser/ast.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDefinition` and `FunctionCall`.
 
-- [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
+- [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser/grammar.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
 
-- [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser.nim`) [low] — `importBlockSpec`, `fileItemBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
+- [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser/combinators.nim`) [low] — `importBlockSpec`, `fileItemBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
 
 ### Other
 
-- [ ] **`except CatchableError:` is still broad** (`cli.nim:105`) [low] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed.
-- [ ] **`Token` is `ref object`** (`tokenizer.nim:72`) [low] — Each token is heap-allocated. For a tokenizer producing thousands of tokens, a plain `object` in `seq[Token]` avoids GC pressure since tokens are small (enum + string + two ints).
-- [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`parser.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context.
-- [x] **`readFileSafe` crashes on missing files** (`parser.nim`) — Caught only `IOError`, but on macOS `getFileSize` throws `OSError` for a missing file — the parser propagated an unhandled exception. Fixed by calling `fileExists` up front and catching `CatchableError` for everything else. Surfaced while building the `examples/errors/missing_file.asl` fixture.
+- [ ] **`except CatchableError:` is still broad** (`src/cli.nim:105`) [low] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed.
+- [ ] **`Token` is `ref object`** (`src/tokenizer/tokenizer.nim:72`) [low] — Each token is heap-allocated. For a tokenizer producing thousands of tokens, a plain `object` in `seq[Token]` avoids GC pressure since tokens are small (enum + string + two ints).
+- [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`src/parser/ast.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context.
+- [x] **`readFileSafe` crashes on missing files** (`src/parser/loader.nim`) — Caught only `IOError`, but on macOS `getFileSize` throws `OSError` for a missing file — the parser propagated an unhandled exception. Fixed by calling `fileExists` up front and catching `CatchableError` for everything else. Surfaced while building the `examples/errors/missing_file.asl` fixture.
 
 ## Resolved
 
@@ -65,9 +60,18 @@
 - [x] **PSR-13** — Fixed `separatedBy` backtracking: sep+element wrapped into atomic `pairSpec`.
 - [x] **PSR-14** — Fixed `optional` backtracking.
 
+### Project structure
+
+- [x] **Component directory modules** — Moved from flat `src/*.nim` to component directories: `src/tokenizer/`, `src/parser/` (5 files: ast, combinators, grammar, loader, parser entry), `src/validator/` (indexed, indexer, validator entry), `src/resolver/` (types, resolve, resolver entry). `src/nim.cfg` adds each component directory to the module search path via `path = "$projectDir/<component>"`. All cross-component imports use bare names (`import tokenizer`, `import parser`). No `../` imports anywhere. 35/35 tests pass.
+
+### Dependency resolution (resolved)
+
+- [x] **PSR-36: Recursive BFS dependency resolver with cycle detection** (`src/parser/loader.nim`) — Done. BFS traversal enqueues imports, `topoSort` (in `src/utils.nim`) performs DFS cycle detection + topological ordering. Cycle reported with full dependency chain. `Import.path` (absolute) set during BFS for downstream phases. `resolveImportPath` normalizes and validates against parent-directory escape.
+
 ### Name resolution (resolved)
 
-- [x] **PSR-41 Phase 1: ID-based structural resolution of the App tree** (`src/resolver.nim`) — Done in 15 bite-sized commits (R1–R15). New `src/resolver.nim` owns a parallel `Resolved*` wrapper tree: `ResolvedApp → ResolvedFile → ResolvedModule / ResolvedGeneric → ResolvedFunction / ResolvedFuncDef → ResolvedArgument`; `ResolvedModule.data: Option[ResolvedData]` holds `ResolvedStruct` / `ResolvedUnion` → `ResolvedVariant` → `ResolvedField`. Every declaration carries a local `int id` (its position in its immediate parent). Typed global ids were considered and rejected as speculative — can be layered in later if Phase 2/3 need cross-block navigation. Function bodies (`StatementList`), type references (`ArgumentType`), and `ResolvedImportName.name`/`alias` stay raw; Phases 2 and 3 (separate entries above) resolve them.
+- [x] **PSR-41 Phase 1: ID-based structural resolution of the App tree** (`src/resolver/`)
+- [x] **PSR-41 Phase 2: Signature-level type references** (`src/resolver/resolve.nim`) — Done. `resolveArgumentType` resolves every `ArgumentType.root` in struct/variant field types, function/funcDef parameter types, and return types. Priority: built-in primitive → current-file module → current-file generic → imported name. 17-entry built-in table (`i8..u64`, `f32`, `f64`, `ptr`, `String`, `List`, `Map`, `Array`, `Status`, `System`). `ResolvedArgumentType` is a tagged variant (`ratPrimitive | ratModule | ratGeneric | ratImported`) wrapping the raw `ArgumentType` by reference. Recursive on `impls` for nested generics like `Map[String, Array[u64]]`. Unknown types error with `file:line:col: unknown type 'X'`. Negative fixture `examples/errors/unknown_field_type.asl`. Example fixups: `str → String`, `U8 → u8`, `pointer → ptr`, `u128 → u64`, `bool → u8`. — Done in 15 bite-sized commits (R1–R15). New `src/resolver.nim` owns a parallel `Resolved*` wrapper tree: `ResolvedApp → ResolvedFile → ResolvedModule / ResolvedGeneric → ResolvedFunction / ResolvedFuncDef → ResolvedArgument`; `ResolvedModule.data: Option[ResolvedData]` holds `ResolvedStruct` / `ResolvedUnion` → `ResolvedVariant` → `ResolvedField`. Every declaration carries a local `int id` (its position in its immediate parent). Typed global ids were considered and rejected as speculative — can be layered in later if Phase 2/3 need cross-block navigation. Function bodies (`StatementList`), type references (`ArgumentType`), and `ResolvedImportName.name`/`alias` stay raw; Phases 2 and 3 (separate entries above) resolve them.
 
 ### Location tracking
 

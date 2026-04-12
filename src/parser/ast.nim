@@ -192,8 +192,9 @@ proc params*(fd: FunctionDefinition): seq[
 proc returns*(fd: FunctionDefinition): ArgumentType = fd.returns
 proc loc*(fd: FunctionDefinition): Location = fd.loc
 
-proc newFunctionDefinition*(name: Identifier, argDefList: ArgumentDefinitionList,
-    returns: ArgumentType, loc: Location): FunctionDefinition =
+proc newFunctionDefinition*(name: Identifier,
+    argDefList: ArgumentDefinitionList, returns: ArgumentType,
+    loc: Location): FunctionDefinition =
   FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
 
 proc asl(funcDef: FunctionDefinition): string =
