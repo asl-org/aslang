@@ -17,9 +17,11 @@ const primitives* = [
   # Fixed-width floats
   "f32", "f64",
   # Raw pointer
-  "pointer",
+  "ptr",
   # Built-in containers and types
   "String", "List", "Map", "Array", "Status",
+  # System interface
+  "System",
 ]
 
 proc primitiveId*(name: string): int =
@@ -75,11 +77,11 @@ proc importTypeId*(t: ResolvedArgumentType): int =
     fmt"ResolvedArgumentType.importTypeId accessed but kind is {t.kind}"
   t.importTypeId
 
-proc resolveArgumentType(a: ArgumentType, file: IndexedFile,
-    importingPath: string): Result[ResolvedArgumentType, string] =
+proc resolveArgumentType(a: ArgumentType,
+    file: IndexedFile): Result[ResolvedArgumentType, string] =
   var impls: seq[ResolvedArgumentType]
   for impl in a.impls:
-    impls.add(? resolveArgumentType(impl, file, importingPath))
+    impls.add(? resolveArgumentType(impl, file))
 
   let root = a.root.value
 
@@ -107,29 +109,31 @@ proc resolveArgumentType(a: ArgumentType, file: IndexedFile,
     return ok(ResolvedArgumentType(argType: a, impls: impls,
       kind: ratImported, importId: impId, importTypeId: impNameId))
 
-  err(fmt"{importingPath}:{a.loc}: unknown type '{root}'")
+  err(fmt"{file.file.path}:{a.loc}: unknown type '{root}'")
 
 # ============================================================
 # ResolvedField (struct field or variant field)
 # ============================================================
 
 type ResolvedField* = ref object
-  id: int               # index in parent fields list
+  id: int # index in parent fields list
   name: Identifier
-  argType: ArgumentType # raw until Phase 2
+  argType: ResolvedArgumentType
   loc: Location
 
-proc newResolvedField(id: int, name: Identifier, argType: ArgumentType,
-    loc: Location): ResolvedField =
+proc newResolvedField(id: int, name: Identifier,
+    argType: ResolvedArgumentType, loc: Location): ResolvedField =
   ResolvedField(id: id, name: name, argType: argType, loc: loc)
 
 proc id*(f: ResolvedField): int = f.id
 proc name*(f: ResolvedField): Identifier = f.name
-proc argType*(f: ResolvedField): ArgumentType = f.argType
+proc argType*(f: ResolvedField): ResolvedArgumentType = f.argType
 proc loc*(f: ResolvedField): Location = f.loc
 
-proc resolveField(f: ArgumentDefinition, id: int): ResolvedField =
-  newResolvedField(id, f.name, f.argType, f.loc)
+proc resolveField(f: ArgumentDefinition, id: int,
+    file: IndexedFile): Result[ResolvedField, string] =
+  let argType = ? resolveArgumentType(f.argType, file)
+  ok(newResolvedField(id, f.name, argType, f.loc))
 
 # ============================================================
 # ResolvedStruct
@@ -146,11 +150,12 @@ proc newResolvedStruct(fields: seq[ResolvedField],
 proc fields*(s: ResolvedStruct): seq[ResolvedField] = s.fields
 proc loc*(s: ResolvedStruct): Location = s.loc
 
-proc resolveStruct(s: Struct): ResolvedStruct =
+proc resolveStruct(s: Struct,
+    file: IndexedFile): Result[ResolvedStruct, string] =
   var fields: seq[ResolvedField]
   for i, f in s.fields:
-    fields.add(resolveField(f, i))
-  newResolvedStruct(fields, s.loc)
+    fields.add(? resolveField(f, i, file))
+  ok(newResolvedStruct(fields, s.loc))
 
 # ============================================================
 # ResolvedVariant
@@ -171,11 +176,12 @@ proc name*(v: ResolvedVariant): Identifier = v.name
 proc fields*(v: ResolvedVariant): seq[ResolvedField] = v.fields
 proc loc*(v: ResolvedVariant): Location = v.loc
 
-proc resolveVariant(v: VariantDefinition, id: int): ResolvedVariant =
+proc resolveVariant(v: VariantDefinition, id: int,
+    file: IndexedFile): Result[ResolvedVariant, string] =
   var fields: seq[ResolvedField]
   for i, f in v.fields:
-    fields.add(resolveField(f, i))
-  newResolvedVariant(id, v.name, fields, v.loc)
+    fields.add(? resolveField(f, i, file))
+  ok(newResolvedVariant(id, v.name, fields, v.loc))
 
 # ============================================================
 # ResolvedUnion
@@ -192,11 +198,12 @@ proc newResolvedUnion(variants: seq[ResolvedVariant],
 proc variants*(u: ResolvedUnion): seq[ResolvedVariant] = u.variants
 proc loc*(u: ResolvedUnion): Location = u.loc
 
-proc resolveUnion(u: Union): ResolvedUnion =
+proc resolveUnion(u: Union,
+    file: IndexedFile): Result[ResolvedUnion, string] =
   var variants: seq[ResolvedVariant]
   for i, v in u.variants:
-    variants.add(resolveVariant(v, i))
-  newResolvedUnion(variants, u.loc)
+    variants.add(? resolveVariant(v, i, file))
+  ok(newResolvedUnion(variants, u.loc))
 
 # ============================================================
 # ResolvedData (struct | union)
@@ -226,10 +233,11 @@ proc union*(d: ResolvedData): ResolvedUnion =
     fmt"ResolvedData.union accessed but kind is {d.kind}"
   d.union
 
-proc resolveData(db: DataBlock): ResolvedData =
+proc resolveData(db: DataBlock,
+    file: IndexedFile): Result[ResolvedData, string] =
   case db.kind:
-  of dbkStruct: newResolvedData(resolveStruct(db.struct))
-  of dbkUnion:  newResolvedData(resolveUnion(db.union))
+  of dbkStruct: ok(newResolvedData(? resolveStruct(db.struct, file)))
+  of dbkUnion:  ok(newResolvedData(? resolveUnion(db.union, file)))
 
 # ============================================================
 # ResolvedArgument (function or funcDef parameter)
@@ -431,14 +439,15 @@ proc data*(m: ResolvedModule): Option[ResolvedData] = m.data
 proc functions*(m: ResolvedModule): seq[ResolvedFunction] = m.functions
 proc loc*(m: ResolvedModule): Location = m.loc
 
-proc resolveModule(m: Module, id: int): ResolvedModule =
+proc resolveModule(m: Module, id: int,
+    file: IndexedFile): Result[ResolvedModule, string] =
   let data =
-    if m.data.isSome: some(resolveData(m.data.get))
+    if m.data.isSome: some(? resolveData(m.data.get, file))
     else: none(ResolvedData)
   var functions: seq[ResolvedFunction]
   for i, fn in m.functions:
     functions.add(resolveFunction(fn, i))
-  newResolvedModule(id, m.decorators, m.name, data, functions, m.loc)
+  ok(newResolvedModule(id, m.decorators, m.name, data, functions, m.loc))
 
 # ============================================================
 # ResolvedGeneric
@@ -499,7 +508,7 @@ proc resolveFile(f: IndexedFile, id: int,
     imports.add(? resolveImport(imp, impIdx, app, f.file.path))
   var modules: seq[ResolvedModule]
   for mIdx, m in f.file.modules:
-    modules.add(resolveModule(m, mIdx))
+    modules.add(? resolveModule(m, mIdx, f))
   var generics: seq[ResolvedGeneric]
   for gIdx, g in f.file.generics:
     generics.add(resolveGeneric(g, gIdx))

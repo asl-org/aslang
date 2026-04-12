@@ -3,7 +3,7 @@
 # fields and function signatures.
 module Cache:
   struct:
-    entries: Map[str, Array[u64]]
+    entries: Map[String, Array[u64]]
 
-  func get(c: Cache): Map[str, Array[u64]]
+  func get(c: Cache): Map[String, Array[u64]]
     c.entries

@@ -6,10 +6,10 @@
 # patterns with field bindings inside a match expression.
 module User:
   struct:
-    name: str
+    name: String
     age: u32
 
-  func new(n: str, a: u32): User
+  func new(n: String, a: u32): User
     User { name: n, age: a }
 
 module Plan:

@@ -5,7 +5,7 @@
 # (i64 -1).
 module Bitset:
   struct:
-    ptr: pointer
+    ptr: ptr
     size: u64
 
   func get(bitset: Bitset, bit: u64): i64
