@@ -833,7 +833,7 @@ let fileSpec = Spec[File](
   name: "file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
   let imports = ? parser.run(any(importBlockSpec))
-  let items = ? parser.run(any(fileItemBlockSpec))
+  let items = ? parser.run(atLeastOne(fileItemBlockSpec))
   discard parser.run(optionalLines)
   if not parser.done():
     # Force a parse attempt to get a specific error message

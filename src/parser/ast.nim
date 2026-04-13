@@ -785,7 +785,8 @@ type Generic* = ref object
   decorators: seq[Decorator]
   name: Identifier
   funcDefs: seq[FunctionDefinition]
-  funcDefIndex: Table[Identifier, Table[int, seq[int]]]
+  funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
+  funcDefIndex: Table[string, seq[int]]
   loc: Location
 
 proc name*(g: Generic): Identifier = g.name
@@ -795,15 +796,17 @@ proc loc*(g: Generic): Location = g.loc
 
 proc newGeneric*(decorators: seq[Decorator], name: Identifier,
     funcDefs: seq[FunctionDefinition], loc: Location): Result[Generic, ParserError] =
-  var funcDefIndex: Table[Identifier, Table[int, seq[int]]]
+  var funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
+  var funcDefIndex: Table[string, seq[int]]
   for index, def in funcDefs:
-    if def.name notin funcDefIndex:
-      funcDefIndex[def.name] = initTable[int, seq[int]]()
-    if def.arity notin funcDefIndex[def.name]:
-      funcDefIndex[def.name][def.arity] = newSeq[int]()
-    funcDefIndex[def.name][def.arity].add(index)
+    if def.name notin funcDefArityIndex:
+      funcDefArityIndex[def.name] = initTable[int, seq[int]]()
+    if def.arity notin funcDefArityIndex[def.name]:
+      funcDefArityIndex[def.name][def.arity] = newSeq[int]()
+    funcDefArityIndex[def.name][def.arity].add(index)
+    funcDefIndex.mgetOrPut(def.name.value, @[]).add(index)
   ok(Generic(decorators: decorators, name: name, funcDefs: funcDefs,
-      funcDefIndex: funcDefIndex, loc: loc))
+      funcDefArityIndex: funcDefArityIndex, funcDefIndex: funcDefIndex, loc: loc))
 
 proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   for d in gen.decorators:
@@ -818,6 +821,7 @@ type Module* = ref object
   name: Identifier
   data: Option[DataBlock]
   funcList: FunctionList
+  functionIndex: Table[string, seq[int]]
   loc: Location
 
 proc name*(m: Module): Identifier = m.name
@@ -831,7 +835,11 @@ proc newModule*(decorators: seq[Decorator], name: Identifier, data: Option[
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
     return err(newParserError(msg, loc))
-  ok(Module(decorators: decorators, name: name, data: data, funcList: funcList, loc: loc))
+  var functionIndex: Table[string, seq[int]]
+  for i, fn in funcList.functions:
+    functionIndex.mgetOrPut(fn.name.value, @[]).add(i)
+  ok(Module(decorators: decorators, name: name, data: data, funcList: funcList,
+    functionIndex: functionIndex, loc: loc))
 
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
@@ -866,6 +874,9 @@ type File* = ref object
   imports: seq[Import]
   modules: seq[Module]
   generics: seq[Generic]
+  moduleIndex: Table[string, int]
+  genericIndex: Table[string, int]
+  importIndex: Table[string, (int, int)]
 
 proc newFile*(path: string, imports: seq[Import], items: seq[FileItem]): Result[
     File, ParserError] =
@@ -876,33 +887,45 @@ proc newFile*(path: string, imports: seq[Import], items: seq[FileItem]): Result[
   #     return err(newParserError("", imp.loc))
   #   importedFileSet.incl(imp.path)
 
-  for imp in imports:
+  var modules: seq[Module]
+  var generics: seq[Generic]
+  var moduleIndex: Table[string, int]
+  var genericIndex: Table[string, int]
+  var importIndex: Table[string, (int, int)]
+  var typeMap: Table[Identifier, Identifier]
+
+  for impIdx, imp in imports:
     if imp.path == path:
       let msg = "importing the source file in itself is disallowed"
       return err(newParserError(msg, imp.loc))
+    for nameIdx, impType in imp.names:
+      let binding = if impType.alias.isSome: impType.alias.get else: impType.name
+      typeMap[binding] = binding
+      importIndex[binding.value] = (impIdx, nameIdx)
 
-  var modules: seq[Module]
-  var generics: seq[Generic]
-  var typeSet: Table[Identifier, Identifier]
   for item in items:
     case item.kind:
     of fikModule:
-      if item.module.name in typeSet:
-        let prev = typeSet[item.module.name]
+      if item.module.name in typeMap:
+        let prev = typeMap[item.module.name]
         let msg = fmt"duplicate module declaration encountered, see previous declaration at {prev.loc}"
         return err(newParserError(msg, item.module.loc))
       else:
-        typeSet[item.module.name] = item.module.name
+        typeMap[item.module.name] = item.module.name
+        moduleIndex[item.module.name.value] = modules.len
         modules.add(item.module)
     of fikGeneric:
-      if item.generic.name in typeSet:
-        let prev = typeSet[item.generic.name]
+      if item.generic.name in typeMap:
+        let prev = typeMap[item.generic.name]
         let msg = fmt"duplicate generic declaration encountered, see previous declaration at {prev.loc}"
         return err(newParserError(msg, item.generic.loc))
       else:
-        typeSet[item.generic.name] = item.generic.name
+        typeMap[item.generic.name] = item.generic.name
+        genericIndex[item.generic.name.value] = generics.len
         generics.add(item.generic)
-  ok(File(path: path, imports: imports, modules: modules, generics: generics))
+  ok(File(path: path, imports: imports, modules: modules, generics: generics,
+    moduleIndex: moduleIndex, genericIndex: genericIndex,
+    importIndex: importIndex))
 
 proc path*(file: File): string = file.path
 proc imports*(file: File): seq[Import] = file.imports
@@ -926,3 +949,45 @@ proc asl*(file: File, indentWidth: uint32): string =
     for line in asl(module, indentWidth):
       lines.add(line)
   lines.join("\n") & "\n"
+
+# ============================================================
+# App
+# ============================================================
+
+type App* = ref object
+  files*: seq[File]
+  fileIndex*: Table[string, int] # absolute path -> index in files
+
+proc newApp*(files: seq[File]): App =
+  var fileIndex: Table[string, int]
+  for i, f in files:
+    fileIndex[f.path] = i
+  App(files: files, fileIndex: fileIndex)
+
+# ============================================================
+# Lookup procs
+# ============================================================
+
+proc findFileId*(app: App, path: string): Result[int, string] =
+  if path in app.fileIndex: ok(app.fileIndex[path])
+  else: err(fmt"file '{path}' does not exists")
+
+proc findFile*(app: App, path: string): Result[File, string] =
+  let id = ? app.findFileId(path)
+  ok(app.files[id])
+
+proc findModuleId*(file: File, name: Identifier): Result[int, string] =
+  if name in file.moduleIndex: ok(file.moduleIndex[name])
+  else: err(fmt"module '{name.value}' does not exists")
+
+proc findGeneric*(file: File, name: string): int =
+  file.genericIndex.getOrDefault(name, -1)
+
+proc findImport*(file: File, visibleName: string): (int, int) =
+  file.importIndex.getOrDefault(visibleName, (-1, -1))
+
+proc findFunction*(module: Module, name: string): seq[int] =
+  module.functionIndex.getOrDefault(name, @[])
+
+proc findFuncDef*(generic: Generic, name: string): seq[int] =
+  generic.funcDefIndex.getOrDefault(name, @[])

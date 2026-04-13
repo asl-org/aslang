@@ -40,9 +40,9 @@ proc resolveImportPath(source: string, importingFile: string): Result[string, st
   ok(resolved)
 
 proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
-    seq[File], string] =
+    App, string] =
   ## BFS through imports, tokenize + parse each file.
-  ## Returns files in topological order: leaves first, root last.
+  ## Returns App with files in topological order: leaves first, root last.
   var parsed: Table[string, File]
   var queued: HashSet[string]
   var queue: Deque[string]
@@ -71,4 +71,4 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
   var files: seq[File]
   for path in sortedPaths:
     files.add(parsed[path])
-  ok(files)
+  ok(newApp(files))

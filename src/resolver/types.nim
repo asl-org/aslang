@@ -1,10 +1,7 @@
 import options, strformat, tables
 
-import tokenizer, parser, validator
-export validator
-
-# Disambiguate against syncio.File
-type File = parser.File
+import tokenizer, parser
+export parser
 
 # ============================================================
 # Built-in primitive types

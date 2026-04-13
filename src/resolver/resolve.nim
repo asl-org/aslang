@@ -1,6 +1,6 @@
 import options, results, strformat, tables
 
-import parser, validator, types
+import parser, types
 
 # Disambiguate against syncio.File
 type File = parser.File
@@ -10,7 +10,7 @@ type File = parser.File
 # ============================================================
 
 proc resolveArgumentType(a: ArgumentType,
-    file: IndexedFile): Result[ResolvedArgumentType, string] =
+    file: File): Result[ResolvedArgumentType, string] =
   var impls: seq[ResolvedArgumentType]
   for impl in a.impls:
     impls.add(? resolveArgumentType(impl, file))
@@ -41,14 +41,14 @@ proc resolveArgumentType(a: ArgumentType,
     return ok(ResolvedArgumentType(argType: a, impls: impls,
       kind: ratImported, importId: impId, importTypeId: impNameId))
 
-  err(fmt"{file.file.path}:{a.loc}: unknown type '{root}'")
+  err(fmt"{file.path}:{a.loc}: unknown type '{root}'")
 
 # ============================================================
 # resolveField
 # ============================================================
 
 proc resolveField(f: ArgumentDefinition, id: int,
-    file: IndexedFile): Result[ResolvedField, string] =
+    file: File): Result[ResolvedField, string] =
   let argType = ? resolveArgumentType(f.argType, file)
   ok(newResolvedField(id, f.name, argType, f.loc))
 
@@ -57,7 +57,7 @@ proc resolveField(f: ArgumentDefinition, id: int,
 # ============================================================
 
 proc resolveStruct(s: Struct,
-    file: IndexedFile): Result[ResolvedStruct, string] =
+    file: File): Result[ResolvedStruct, string] =
   var fields: seq[ResolvedField]
   for i, f in s.fields:
     fields.add(? resolveField(f, i, file))
@@ -68,7 +68,7 @@ proc resolveStruct(s: Struct,
 # ============================================================
 
 proc resolveVariant(v: VariantDefinition, id: int,
-    file: IndexedFile): Result[ResolvedVariant, string] =
+    file: File): Result[ResolvedVariant, string] =
   var fields: seq[ResolvedField]
   for i, f in v.fields:
     fields.add(? resolveField(f, i, file))
@@ -79,7 +79,7 @@ proc resolveVariant(v: VariantDefinition, id: int,
 # ============================================================
 
 proc resolveUnion(u: Union,
-    file: IndexedFile): Result[ResolvedUnion, string] =
+    file: File): Result[ResolvedUnion, string] =
   var variants: seq[ResolvedVariant]
   for i, v in u.variants:
     variants.add(? resolveVariant(v, i, file))
@@ -90,7 +90,7 @@ proc resolveUnion(u: Union,
 # ============================================================
 
 proc resolveData(db: DataBlock,
-    file: IndexedFile): Result[ResolvedData, string] =
+    file: File): Result[ResolvedData, string] =
   case db.kind:
   of dbkStruct: ok(newResolvedData(? resolveStruct(db.struct, file)))
   of dbkUnion:  ok(newResolvedData(? resolveUnion(db.union, file)))
@@ -100,7 +100,7 @@ proc resolveData(db: DataBlock,
 # ============================================================
 
 proc resolveArgument(a: ArgumentDefinition, id: int,
-    file: IndexedFile): Result[ResolvedArgument, string] =
+    file: File): Result[ResolvedArgument, string] =
   let argType = ? resolveArgumentType(a.argType, file)
   ok(newResolvedArgument(id, a.name, argType, a.loc))
 
@@ -109,7 +109,7 @@ proc resolveArgument(a: ArgumentDefinition, id: int,
 # ============================================================
 
 proc resolveFunction(fn: Function, id: int,
-    file: IndexedFile): Result[ResolvedFunction, string] =
+    file: File): Result[ResolvedFunction, string] =
   var params: seq[ResolvedArgument]
   for i, p in fn.def.params:
     params.add(? resolveArgument(p, i, file))
@@ -124,7 +124,7 @@ proc resolveFunction(fn: Function, id: int,
 # ============================================================
 
 proc resolveFuncDef(fd: FunctionDefinition, id: int,
-    file: IndexedFile): Result[ResolvedFuncDef, string] =
+    file: File): Result[ResolvedFuncDef, string] =
   var params: seq[ResolvedArgument]
   for i, p in fd.params:
     params.add(? resolveArgument(p, i, file))
@@ -136,7 +136,7 @@ proc resolveFuncDef(fd: FunctionDefinition, id: int,
 # ============================================================
 
 proc resolveType(n: ImportName, id: int,
-    target: IndexedFile,
+    target: File,
     importingPath: string): Result[ResolvedType, string] =
   let key = n.name.value
   let mId = target.findModule(key)
@@ -145,7 +145,7 @@ proc resolveType(n: ImportName, id: int,
   let gId = target.findGeneric(key)
   if gId >= 0:
     return ok(newResolvedType(id, n, gId, isGeneric = true))
-  err(fmt"{importingPath}:{n.loc}: import name '{key}' not found in '{target.file.path}'")
+  err(fmt"{importingPath}:{n.loc}: import name '{key}' not found in '{target.path}'")
 
 # ============================================================
 # resolveImport
@@ -167,7 +167,7 @@ proc resolveImport(imp: Import, id: int, app: App,
 # ============================================================
 
 proc resolveModule(m: Module, id: int,
-    file: IndexedFile): Result[ResolvedModule, string] =
+    file: File): Result[ResolvedModule, string] =
   let data =
     if m.data.isSome: some(? resolveData(m.data.get, file))
     else: none(ResolvedData)
@@ -181,7 +181,7 @@ proc resolveModule(m: Module, id: int,
 # ============================================================
 
 proc resolveGeneric(g: Generic, id: int,
-    file: IndexedFile): Result[ResolvedGeneric, string] =
+    file: File): Result[ResolvedGeneric, string] =
   var funcDefs: seq[ResolvedFuncDef]
   for i, fd in g.funcDefs:
     funcDefs.add(? resolveFuncDef(fd, i, file))
@@ -191,29 +191,29 @@ proc resolveGeneric(g: Generic, id: int,
 # resolveFile
 # ============================================================
 
-proc resolveFile(f: IndexedFile, id: int,
+proc resolveFile(f: File, id: int,
     app: App): Result[ResolvedFile, string] =
   var imports: seq[ResolvedImport]
-  for impIdx, imp in f.file.imports:
-    imports.add(? resolveImport(imp, impIdx, app, f.file.path))
+  for impIdx, imp in f.imports:
+    imports.add(? resolveImport(imp, impIdx, app, f.path))
   var modules: seq[ResolvedModule]
-  for mIdx, m in f.file.modules:
+  for mIdx, m in f.modules:
     modules.add(? resolveModule(m, mIdx, f))
   var generics: seq[ResolvedGeneric]
-  for gIdx, g in f.file.generics:
+  for gIdx, g in f.generics:
     generics.add(? resolveGeneric(g, gIdx, f))
-  ok(newResolvedFile(id, f.file.path, imports, modules, generics))
+  ok(newResolvedFile(id, f.path, imports, modules, generics))
 
 # ============================================================
 # resolve (public entry point)
 # ============================================================
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
-  # app already has fileIndex populated by the validator.
+  # app already has fileIndex populated by the parser.
   # Build a matching index for ResolvedApp in the same order.
   var fileIndex: Table[string, int]
   var files: seq[ResolvedFile]
   for i, f in app.files:
-    fileIndex[f.file.path] = i
+    fileIndex[f.path] = i
     files.add(? resolveFile(f, i, app))
   ok(newResolvedApp(files, fileIndex))
