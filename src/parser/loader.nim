@@ -57,7 +57,6 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
 
     for imp in file.imports:
       let depPath = ? resolveImportPath(imp.source, current)
-      imp.path = depPath
       if depPath notin queued:
         queue.addLast(depPath)
         queued.incl(depPath)

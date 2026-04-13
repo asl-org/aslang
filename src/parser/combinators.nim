@@ -44,6 +44,9 @@ proc loc*(parser: Parser): Location =
   if parser.done(): parser.tokens[^1].loc
   else: parser.tokens[parser.index].loc
 
+proc filepath*(parser: Parser): string = parser.filepath
+
+
 # ============================================================
 # Token consumption
 # ============================================================
@@ -169,6 +172,15 @@ proc map*[T, U](spec: Spec[T], name: string,
     parseFn: proc(parser: Parser): Result[U, ParserError] =
     let value = ? parser.run(spec)
     ok(fn(value))
+  )
+
+proc map*[T, U](spec: Spec[T], name: string,
+    fn: proc(v: T): Result[U, ParserError]): Spec[U] =
+  Spec[U](
+    name: name,
+    parseFn: proc(parser: Parser): Result[U, ParserError] =
+    let value = ? parser.run(spec)
+    fn(value)
   )
 
 proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =

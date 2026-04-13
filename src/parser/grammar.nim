@@ -1,6 +1,18 @@
-import strformat, results, options
+import strutils, strformat, results, options, os
 
 import tokenizer, ast, combinators
+
+proc resolveImportPath(source: string, importingFile: string): Result[string, string] =
+  ## Resolves an import path relative to the importing file.
+  ## Rejects paths that escape to parent directories.
+  ## Normalizes the resolved path so tricks like ./sub/../../escape
+  ## are caught — not just paths starting with "..".
+  let dir = normalizedPath(importingFile.parentDir)
+  let resolved = normalizedPath((dir / source).absolutePath)
+  let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
+  if not resolved.startsWith(dirPrefix):
+    return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
+  ok(resolved)
 
 # Disambiguate against system File (syncio.File)
 type File = ast.File
@@ -186,7 +198,7 @@ let argumentDefinitionListSpec = Spec[ArgumentDefinitionList](
   let loc = parser.loc
   let argDefs = ? parser.run(contained("argument_definition_list", "(",
     separatedBy(argumentDefinitionSpec, commaWithSpacesSpec), ")"))
-  ok(newArgumentDefinitionList(argDefs, loc))
+  newArgumentDefinitionList(argDefs, loc)
 )
 
 let functionDefinitionSpec = Spec[FunctionDefinition](
@@ -242,7 +254,7 @@ let kwargListSpec = Spec[KeywordArgumentList](
   let loc = parser.loc
   let args = ? parser.run(contained("keyword_argument_list", "{",
     separatedBy(kwargSpec, commaWithSpacesSpec), "}"))
-  ok(newKeywordArgumentList(args, loc))
+  newKeywordArgumentList(args, loc)
 )
 
 # digit+
@@ -429,6 +441,27 @@ proc blockSpec[H, B, R](name: string,
     ok(combine(h, bodyResult.get))
   )
 
+# Block without decorator support (case, struct, union, generic)
+proc blockSpec[H, B, R](name: string,
+    header: Spec[H], body: Spec[B],
+    combine: proc(h: H, b: B): Result[R, ParserError]): Spec[R] =
+  Spec[R](
+    name: name,
+    parseFn: proc(parser: Parser): Result[R, ParserError] =
+    discard ? parser.run(indentationSpec)
+    let h = ? parser.run(header)
+    discard ? parser.run(strictLine)
+    # After header succeeds, body errors are fatal — they propagate
+    # through run and any without backtracking or being swallowed.
+    parser.level += 1
+    let bodyResult = body.parseFn(parser)
+    parser.level -= 1
+    if bodyResult.isErr:
+      bodyResult.error.fatal = true
+      return err(bodyResult.error)
+    combine(h, bodyResult.get)
+  )
+
 # Block with decorator support (module, function)
 proc decoratedBlockSpec[H, B, R](name: string,
     header: Spec[H], body: Spec[B],
@@ -449,6 +482,27 @@ proc decoratedBlockSpec[H, B, R](name: string,
     ok(combine(decorators, h, bodyResult.get))
   )
 
+# Block with decorator support (module, function)
+proc decoratedBlockSpec[H, B, R](name: string,
+    header: Spec[H], body: Spec[B],
+    combine: proc(decorators: seq[Decorator], h: H, b: B): Result[R,
+        ParserError]): Spec[R] =
+  Spec[R](
+    name: name,
+    parseFn: proc(parser: Parser): Result[R, ParserError] =
+    let decorators = ? parser.run(any(decoratorLineSpec))
+    discard ? parser.run(indentationSpec)
+    let h = ? parser.run(header)
+    discard ? parser.run(strictLine)
+    parser.level += 1
+    let bodyResult = body.parseFn(parser)
+    parser.level -= 1
+    if bodyResult.isErr:
+      bodyResult.error.fatal = true
+      return err(bodyResult.error)
+    combine(decorators, h, bodyResult.get)
+  )
+
 # Variant pattern field: name ":" binding (both identifiers)
 let variantPatternFieldSpec = Spec[VariantPatternField](
   name: "variant_pattern_field",
@@ -467,7 +521,7 @@ let variantPatternSpec = Spec[VariantPattern](
   discard parser.run(optionalSpace)
   let fields = ? parser.run(contained("variant_fields", "{",
     separatedBy(variantPatternFieldSpec, commaWithSpacesSpec), "}"))
-  ok(newVariantPattern(name, fields, name.loc))
+  newVariantPattern(name, fields, name.loc)
 )
 
 let casePatternSpec = oneOf("case_pattern", [
@@ -592,7 +646,7 @@ let funcBlockSpec = Spec[Function](
 )
 
 let functionListSpec = any(funcBlockSpec).map("function_list",
-  proc(fns: seq[Function]): FunctionList = newFunctionList(fns))
+  proc(fns: seq[Function]): Result[FunctionList, ParserError] = newFunctionList(fns))
 
 type ModuleHeader = tuple[name: Identifier, loc: Location]
 
@@ -634,7 +688,7 @@ let functionDefinitionListSpec = atLeastOne(functionDefinitionLineSpec)
 
 let genericSpec = blockSpec("generic", genericHeaderSpec,
   functionDefinitionListSpec,
-  proc(h: GenericHeader, b: seq[FunctionDefinition]): Generic =
+  proc(h: GenericHeader, b: seq[FunctionDefinition]): Result[Generic, ParserError] =
   newGeneric(@[], h.name, b, h.loc))
 
 # struct: field+ (field is identifier ":" argumentType)
@@ -660,7 +714,7 @@ let fieldLineSpec = Spec[ArgumentDefinition](
 
 let structSpec = blockSpec("struct", structHeaderSpec,
   atLeastOne(fieldLineSpec),
-  proc(h: Location, b: seq[ArgumentDefinition]): Struct =
+  proc(h: Location, b: seq[ArgumentDefinition]): Result[Struct, ParserError] =
   newStruct(b, h))
 
 # union: variant+ (variant is identifier space* ("{" argDef, argDef "}")?)
@@ -676,7 +730,7 @@ let variantDefinitionLineSpec = Spec[VariantDefinition](
   var fields: seq[ArgumentDefinition]
   if maybeFields.isSome: fields = maybeFields.get
   discard ? parser.run(strictLine)
-  ok(newVariantDefinition(name, fields, name.loc))
+  newVariantDefinition(name, fields, name.loc)
 )
 
 let unionHeaderSpec = Spec[Location](
@@ -690,7 +744,7 @@ let unionHeaderSpec = Spec[Location](
 
 let unionSpec = blockSpec("union", unionHeaderSpec,
   atLeastOne(variantDefinitionLineSpec),
-  proc(h: Location, b: seq[VariantDefinition]): Union =
+  proc(h: Location, b: seq[VariantDefinition]): Result[Union, ParserError] =
   newUnion(b, h))
 
 let dataBlockSpec = oneOf("data_block", [
@@ -712,7 +766,7 @@ let moduleBodySpec = Spec[ModuleBody](
 )
 
 let moduleSpec = decoratedBlockSpec("module", moduleHeaderSpec, moduleBodySpec,
-  proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Module =
+  proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Result[Module, ParserError] =
   newModule(d, h.name, b.data, b.funcList, h.loc))
 
 let fileItemSpec = oneOf("file_item", [
@@ -751,7 +805,11 @@ let importLineSpec = Spec[Import](
   discard ? parser.run(strictSpace)
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(strictLine)
-  ok(newImport(names, source.value, loc))
+  let maybePath = resolveImportPath(source.value, parser.filepath)
+  if maybePath.isOk:
+    newImport(names, source.value, maybePath.get, loc)
+  else:
+    err(newParserError(maybePath.error, source.loc))
 )
 
 let importBlockSpec = Spec[Import](
@@ -780,7 +838,7 @@ let fileSpec = Spec[File](
   if not parser.done():
     # Force a parse attempt to get a specific error message
     discard ? parser.run(fileItemSpec)
-  ok(newFile(parser.filepath, imports, items))
+  newFile(parser.filepath, imports, items)
 )
 
 proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[

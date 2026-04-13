@@ -1,4 +1,4 @@
-import strformat, strutils, options, results
+import strformat, strutils, options, results, tables, hashes
 
 import tokenizer
 import combinators
@@ -22,6 +22,9 @@ proc newIdentifier*(value: string, loc: Location): Result[Identifier, ParserErro
 
 proc value*(id: Identifier): string = id.value
 proc loc*(id: Identifier): Location = id.loc
+
+proc hash(id: Identifier): Hash = hash(id.value)
+proc `==`(id: Identifier, other: Identifier): bool = hash(id) == hash(other)
 
 proc asl(identifier: Identifier): string = identifier.value
 
@@ -84,11 +87,22 @@ proc asl(argDef: ArgumentDefinition): string =
 
 type ArgumentDefinitionList* = ref object
   argDefs*: seq[ArgumentDefinition]
+  argDefIndex: Table[Identifier, int]
   loc: Location
 
 proc newArgumentDefinitionList*(argDefs: seq[ArgumentDefinition],
-    loc: Location): ArgumentDefinitionList =
-  ArgumentDefinitionList(argDefs: argDefs, loc: loc)
+    loc: Location): Result[ArgumentDefinitionList, ParserError] =
+  var argDefIndex: Table[Identifier, int]
+  for index, argDef in argDefs:
+    if argDef.name in argDefIndex:
+      let prev = argDefs[argDefIndex[argDef.name]]
+      let msg = fmt"duplicate argument encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, argDef.loc))
+    argDefIndex[argDef.name] = index
+  ok(ArgumentDefinitionList(argDefs: argDefs, argDefIndex: argDefIndex, loc: loc))
+
+proc arity(argDefList: ArgumentDefinitionList): int =
+  argDefList.argDefs.len
 
 proc asl(argDefList: ArgumentDefinitionList): string =
   result = "("
@@ -99,13 +113,21 @@ proc asl(argDefList: ArgumentDefinitionList): string =
 
 type Struct* = ref object
   fields: seq[ArgumentDefinition]
+  fieldIndex: Table[Identifier, int]
   loc: Location
 
 proc fields*(s: Struct): seq[ArgumentDefinition] = s.fields
 proc loc*(s: Struct): Location = s.loc
 
-proc newStruct*(fields: seq[ArgumentDefinition], loc: Location): Struct =
-  Struct(fields: fields, loc: loc)
+proc newStruct*(fields: seq[ArgumentDefinition], loc: Location): Result[Struct, ParserError] =
+  var fieldIndex: Table[Identifier, int]
+  for index, field in fields:
+    if field.name in fieldIndex:
+      let prev = fields[fieldIndex[field.name]]
+      let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, field.loc))
+    fieldIndex[field.name] = index
+  ok(Struct(fields: fields, fieldIndex: fieldIndex, loc: loc))
 
 proc asl(s: Struct, indentWidth: uint32): seq[string] =
   result.add("struct:")
@@ -116,6 +138,7 @@ proc asl(s: Struct, indentWidth: uint32): seq[string] =
 type VariantDefinition* = ref object
   name: Identifier
   fields: seq[ArgumentDefinition]
+  fieldIndex: Table[Identifier, int]
   loc: Location
 
 proc name*(v: VariantDefinition): Identifier = v.name
@@ -123,8 +146,15 @@ proc fields*(v: VariantDefinition): seq[ArgumentDefinition] = v.fields
 proc loc*(v: VariantDefinition): Location = v.loc
 
 proc newVariantDefinition*(name: Identifier, fields: seq[ArgumentDefinition],
-    loc: Location): VariantDefinition =
-  VariantDefinition(name: name, fields: fields, loc: loc)
+    loc: Location): Result[VariantDefinition, ParserError] =
+  var fieldIndex: Table[Identifier, int]
+  for index, field in fields:
+    if field.name in fieldIndex:
+      let prev = fields[fieldIndex[field.name]]
+      let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, field.loc))
+    fieldIndex[field.name] = index
+  ok(VariantDefinition(name: name, fields: fields, fieldIndex: fieldIndex, loc: loc))
 
 proc asl(varDef: VariantDefinition): string =
   result = asl(varDef.name)
@@ -137,13 +167,21 @@ proc asl(varDef: VariantDefinition): string =
 
 type Union* = ref object
   variants: seq[VariantDefinition]
+  variantIndex: Table[Identifier, int]
   loc: Location
 
 proc variants*(u: Union): seq[VariantDefinition] = u.variants
 proc loc*(u: Union): Location = u.loc
 
-proc newUnion*(variants: seq[VariantDefinition], loc: Location): Union =
-  Union(variants: variants, loc: loc)
+proc newUnion*(variants: seq[VariantDefinition], loc: Location): Result[Union, ParserError] =
+  var variantIndex: Table[Identifier, int]
+  for index, variant in variants:
+    if variant.name in variantIndex:
+      let prev = variants[variantIndex[variant.name]]
+      let msg = fmt"duplicate variant encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, variant.loc))
+    variantIndex[variant.name] = index
+  ok(Union(variants: variants, variantIndex: variantIndex, loc: loc))
 
 proc asl(u: Union, indentWidth: uint32): seq[string] =
   result.add("union:")
@@ -191,6 +229,7 @@ proc params*(fd: FunctionDefinition): seq[
     ArgumentDefinition] = fd.argDefList.argDefs
 proc returns*(fd: FunctionDefinition): ArgumentType = fd.returns
 proc loc*(fd: FunctionDefinition): Location = fd.loc
+proc arity(fd: FunctionDefinition): int = fd.argDefList.arity
 
 proc newFunctionDefinition*(name: Identifier,
     argDefList: ArgumentDefinitionList, returns: ArgumentType,
@@ -254,6 +293,7 @@ type
 
   KeywordArgumentList* = ref object
     args: seq[KeywordArgument]
+    argIndex: Table[Identifier, int]
     loc: Location
 
   LiteralKind* = enum
@@ -348,6 +388,8 @@ proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
 proc newStringLiteral*(content: string, loc: Location): StringLiteral =
   StringLiteral(content: content, loc: loc)
 
+proc loc*(strLit: StringLiteral): Location = strLit.loc
+
 proc newFunctionCall*(argType: ArgumentType, name: Identifier,
     argList: ArgumentList): FunctionCall =
   FunctionCall(argType: argType, name: name, argList: argList)
@@ -367,8 +409,19 @@ proc newKeywordArgument*(name: Identifier, expression: Expression,
   KeywordArgument(name: name, expression: expression, loc: loc)
 
 proc newKeywordArgumentList*(args: seq[KeywordArgument],
-    loc: Location): KeywordArgumentList =
-  KeywordArgumentList(args: args, loc: loc)
+    loc: Location): Result[KeywordArgumentList, ParserError] =
+  if args.len == 0:
+    let msg = "keyword argument list must contain at least 1 field"
+    return err(newParserError(msg, loc))
+
+  var argIndex: Table[Identifier, int]
+  for index, arg in args:
+    if arg.name in argIndex:
+      let prev = args[argIndex[arg.name]]
+      let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
+      return err(newParserError(msg, arg.loc))
+    argIndex[arg.name] = index
+  ok(KeywordArgumentList(args: args, argIndex: argIndex, loc: loc))
 
 proc newLiteral*(strLit: StringLiteral): Literal =
   Literal(kind: lkString, strLit: strLit)
@@ -517,8 +570,26 @@ proc newVariantPatternField*(name: Identifier, binding: Identifier,
 
 proc newVariantPattern*(variantName: Identifier,
     fields: seq[VariantPatternField],
-    loc: Location): VariantPattern =
-  VariantPattern(variantName: variantName, fields: fields, loc: loc)
+    loc: Location): Result[VariantPattern, ParserError] =
+  var nameIndex: Table[Identifier, int]
+  var bindingIndex: Table[Identifier, int]
+
+  for index, field in fields:
+    if field.name in nameIndex:
+      let prev = fields[nameIndex[field.name]].name
+      let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, field.name.loc))
+    else:
+      nameIndex[field.name] = index
+
+    if field.binding in bindingIndex:
+      let prev = fields[bindingIndex[field.binding]].binding
+      let msg = fmt"duplicate binding encountered, see previous binding at {prev.loc}"
+      return err(newParserError(msg, field.binding.loc))
+    else:
+      bindingIndex[field.binding] = index
+
+  ok(VariantPattern(variantName: variantName, fields: fields, loc: loc))
 
 proc loc*(vp: VariantPattern): Location = vp.loc
 
@@ -529,7 +600,7 @@ proc asl(field: VariantPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"
 
 proc asl(variant: VariantPattern): string =
-  result = fmt"{asl(variant.variantName)} {{ "
+  result = fmt"{asl(variant.variantName)} " & "{"
   for i, field in variant.fields:
     if i > 0: result.add(", ")
     result.add(asl(field))
@@ -613,6 +684,7 @@ proc name*(fn: Function): Identifier = fn.def.name
 proc def*(fn: Function): FunctionDefinition = fn.def
 proc statementList*(fn: Function): StatementList = fn.statementList
 proc decorators*(fn: Function): seq[Decorator] = fn.decorators
+proc arity*(fn: Function): int = fn.def.arity
 
 proc newFunction*(decorators: seq[Decorator], def: FunctionDefinition,
     statementList: StatementList): Function =
@@ -629,9 +701,19 @@ proc asl(fn: Function, indentWidth: uint32): seq[string] =
 
 type FunctionList* = ref object
   functions*: seq[Function]
+  functionIndex: Table[Identifier, Table[int, seq[int]]]
 
-proc newFunctionList*(functions: seq[Function]): FunctionList =
-  FunctionList(functions: functions)
+proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserError] =
+  var functionIndex: Table[Identifier, Table[int, seq[int]]]
+  for index, function in functions:
+    if function.name notin functionIndex:
+      functionIndex[function.name] = initTable[int, seq[int]]()
+    if function.arity notin functionIndex[function.name]:
+      functionIndex[function.name][function.arity] = newSeq[int]()
+    functionIndex[function.name][function.arity].add(index)
+  ok(FunctionList(functions: functions, functionIndex: functionIndex))
+
+proc len(fnlist: FunctionList): int = fnlist.functions.len
 
 type ImportName* = ref object
   name: Identifier
@@ -658,14 +740,39 @@ type Import* = ref object
   path: string # absolute path of the imported file; set during BFS in parse*
   loc: Location
 
-proc newImport*(names: seq[ImportName], source: string, loc: Location): Import =
-  Import(names: names, source: source, loc: loc)
+proc newImport*(names: seq[ImportName], source: string, path: string,
+    loc: Location): Result[Import, ParserError] =
+  var nameIndex: Table[Identifier, int]
+  var bindingIndex: Table[Identifier, int]
+  for index, importType in names:
+    if importType.name in nameIndex:
+      let prev = names[nameIndex[importType.name]]
+      let msg = fmt"duplicate import encountered, see previous import at {prev.loc}"
+      return err(newParserError(msg, importType.loc))
+    else:
+      nameIndex[importType.name] = index
+
+    let binding = if importType.alias.isSome: importType.alias.get else: importType.name
+    if binding in bindingIndex:
+      let prev = names[bindingIndex[binding]]
+      let msg = fmt"duplicate import binding encountered, see previous import at {prev.loc}"
+      return err(newParserError(msg, binding.loc))
+    else:
+      bindingIndex[binding] = index
+
+  ok(Import(names: names, source: source, path: path, loc: loc))
 
 proc names*(imp: Import): seq[ImportName] = imp.names
 proc source*(imp: Import): string = imp.source
 proc path*(imp: Import): string = imp.path
-proc `path=`*(imp: Import, p: string) = imp.path = p
 proc loc*(imp: Import): Location = imp.loc
+
+proc bindings(imp: Import): seq[Identifier] =
+  var bindings: seq[Identifier]
+  for impType in imp.names:
+    let binding = if impType.alias.isSome: impType.alias.get else: impType.name
+    bindings.add(binding)
+  return bindings
 
 proc asl(imp: Import): string =
   result = "import { "
@@ -678,6 +785,7 @@ type Generic* = ref object
   decorators: seq[Decorator]
   name: Identifier
   funcDefs: seq[FunctionDefinition]
+  funcDefIndex: Table[Identifier, Table[int, seq[int]]]
   loc: Location
 
 proc name*(g: Generic): Identifier = g.name
@@ -686,8 +794,16 @@ proc decorators*(g: Generic): seq[Decorator] = g.decorators
 proc loc*(g: Generic): Location = g.loc
 
 proc newGeneric*(decorators: seq[Decorator], name: Identifier,
-    funcDefs: seq[FunctionDefinition], loc: Location): Generic =
-  Generic(decorators: decorators, name: name, funcDefs: funcDefs, loc: loc)
+    funcDefs: seq[FunctionDefinition], loc: Location): Result[Generic, ParserError] =
+  var funcDefIndex: Table[Identifier, Table[int, seq[int]]]
+  for index, def in funcDefs:
+    if def.name notin funcDefIndex:
+      funcDefIndex[def.name] = initTable[int, seq[int]]()
+    if def.arity notin funcDefIndex[def.name]:
+      funcDefIndex[def.name][def.arity] = newSeq[int]()
+    funcDefIndex[def.name][def.arity].add(index)
+  ok(Generic(decorators: decorators, name: name, funcDefs: funcDefs,
+      funcDefIndex: funcDefIndex, loc: loc))
 
 proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   for d in gen.decorators:
@@ -710,10 +826,12 @@ proc functions*(m: Module): seq[Function] = m.funcList.functions
 proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
 
-proc newModule*(decorators: seq[Decorator], name: Identifier,
-    data: Option[DataBlock], funcList: FunctionList, loc: Location): Module =
-  Module(decorators: decorators, name: name, data: data,
-    funcList: funcList, loc: loc)
+proc newModule*(decorators: seq[Decorator], name: Identifier, data: Option[
+    DataBlock], funcList: FunctionList, loc: Location): Result[Module, ParserError] =
+  if data.isNone and funcList.len == 0:
+    let msg = "module must have at least 1 struct/union/function block"
+    return err(newParserError(msg, loc))
+  ok(Module(decorators: decorators, name: name, data: data, funcList: funcList, loc: loc))
 
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
@@ -749,14 +867,42 @@ type File* = ref object
   modules: seq[Module]
   generics: seq[Generic]
 
-proc newFile*(path: string, imports: seq[Import], items: seq[FileItem]): File =
+proc newFile*(path: string, imports: seq[Import], items: seq[FileItem]): Result[
+    File, ParserError] =
+  # TODO: Ensure that same file is not used in multiple import statements
+  # var importedFileSet: Hashset[string]
+  # for imp in imports:
+  #   if imp.path in importedFileSet:
+  #     return err(newParserError("", imp.loc))
+  #   importedFileSet.incl(imp.path)
+
+  for imp in imports:
+    if imp.path == path:
+      let msg = "importing the source file in itself is disallowed"
+      return err(newParserError(msg, imp.loc))
+
   var modules: seq[Module]
   var generics: seq[Generic]
+  var typeSet: Table[Identifier, Identifier]
   for item in items:
     case item.kind:
-    of fikModule: modules.add(item.module)
-    of fikGeneric: generics.add(item.generic)
-  File(path: path, imports: imports, modules: modules, generics: generics)
+    of fikModule:
+      if item.module.name in typeSet:
+        let prev = typeSet[item.module.name]
+        let msg = fmt"duplicate module declaration encountered, see previous declaration at {prev.loc}"
+        return err(newParserError(msg, item.module.loc))
+      else:
+        typeSet[item.module.name] = item.module.name
+        modules.add(item.module)
+    of fikGeneric:
+      if item.generic.name in typeSet:
+        let prev = typeSet[item.generic.name]
+        let msg = fmt"duplicate generic declaration encountered, see previous declaration at {prev.loc}"
+        return err(newParserError(msg, item.generic.loc))
+      else:
+        typeSet[item.generic.name] = item.generic.name
+        generics.add(item.generic)
+  ok(File(path: path, imports: imports, modules: modules, generics: generics))
 
 proc path*(file: File): string = file.path
 proc imports*(file: File): seq[Import] = file.imports
