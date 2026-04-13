@@ -120,6 +120,8 @@ proc fields*(s: Struct): seq[ArgumentDefinition] = s.fields
 proc loc*(s: Struct): Location = s.loc
 
 proc newStruct*(fields: seq[ArgumentDefinition], loc: Location): Result[Struct, ParserError] =
+  if fields.len == 0:
+    return err(newParserError("struct must have at least one field", loc))
   var fieldIndex: Table[Identifier, int]
   for index, field in fields:
     if field.name in fieldIndex:
