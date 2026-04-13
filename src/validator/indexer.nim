@@ -9,62 +9,48 @@ type File = parser.File
 # Indexing
 # ============================================================
 
-proc indexStruct(s: Struct, path: string): Result[IndexedStruct, string] =
+proc indexStruct(s: Struct): IndexedStruct =
   let indexed = IndexedStruct(struct: s)
   for i, f in s.fields:
-    if indexed.fieldIndex.hasKey(f.name.value):
-      return err(fmt"{path}:{f.name.loc}: struct: duplicate field '{f.name.value}'")
     indexed.fieldIndex[f.name.value] = i
-  ok(indexed)
+  indexed
 
-proc indexVariant(v: VariantDefinition,
-    path: string): Result[IndexedVariant, string] =
+proc indexVariant(v: VariantDefinition): IndexedVariant =
   let indexed = IndexedVariant(variant: v)
   for i, f in v.fields:
-    if indexed.fieldIndex.hasKey(f.name.value):
-      return err(fmt"{path}:{f.name.loc}: variant '{v.name.value}': duplicate field '{f.name.value}'")
     indexed.fieldIndex[f.name.value] = i
-  ok(indexed)
+  indexed
 
-proc indexUnion(u: Union, path: string): Result[IndexedUnion, string] =
+proc indexUnion(u: Union): IndexedUnion =
   let indexed = IndexedUnion(union: u)
   for i, v in u.variants:
-    if indexed.variantIndex.hasKey(v.name.value):
-      return err(fmt"{path}:{v.name.loc}: union: duplicate variant '{v.name.value}'")
     indexed.variantIndex[v.name.value] = i
-    indexed.variants.add(? indexVariant(v, path))
-  ok(indexed)
+    indexed.variants.add(indexVariant(v))
+  indexed
 
-proc indexData(db: DataBlock, path: string): Result[IndexedData, string] =
+proc indexData(db: DataBlock): IndexedData =
   case db.kind:
   of dbkStruct:
-    let s = ? indexStruct(db.struct, path)
-    ok(IndexedData(kind: idkStruct, struct: s))
+    IndexedData(kind: idkStruct, struct: indexStruct(db.struct))
   of dbkUnion:
-    let u = ? indexUnion(db.union, path)
-    ok(IndexedData(kind: idkUnion, union: u))
+    IndexedData(kind: idkUnion, union: indexUnion(db.union))
 
-proc indexModule(m: Module, path: string): Result[IndexedModule, string] =
-  # Rule 4: module must have data or at least one function
-  if m.data.isNone and m.functions.len == 0:
-    return err(fmt"{path}:{m.name.loc}: module '{m.name.value}': must have a data block or at least one function")
-
+proc indexModule(m: Module): IndexedModule =
   let indexed = IndexedModule(module: m)
   for i, fn in m.functions:
     indexed.functionIndex.mgetOrPut(fn.name.value, @[]).add(i)
 
   if m.data.isSome:
-    indexed.data = some(? indexData(m.data.get, path))
+    indexed.data = some(indexData(m.data.get))
   else:
     indexed.data = none(IndexedData)
-  ok(indexed)
+  indexed
 
-proc indexGeneric(g: Generic,
-    path: string): Result[IndexedGeneric, string] =
+proc indexGeneric(g: Generic): IndexedGeneric =
   let indexed = IndexedGeneric(generic: g)
   for i, fd in g.funcDefs:
     indexed.funcDefIndex.mgetOrPut(fd.name.value, @[]).add(i)
-  ok(indexed)
+  indexed
 
 proc indexFile(file: File): Result[IndexedFile, string] =
   # Rule 2: file must have at least one module or generic
@@ -73,22 +59,21 @@ proc indexFile(file: File): Result[IndexedFile, string] =
 
   let indexed = IndexedFile(file: file)
 
-  # Modules, generics, and import visible names share one namespace.
+  # Build module and generic indices.
+  # Duplicate module/generic names and module-generic conflicts are
+  # already caught by the parser (newFile's typeSet). Only the
+  # import-namespace conflict checks remain here.
   for i, m in file.modules:
-    if indexed.moduleIndex.hasKey(m.name.value) or
-        indexed.genericIndex.hasKey(m.name.value) or
-        indexed.importIndex.hasKey(m.name.value):
-      return err(fmt"{file.path}:{m.name.loc}: duplicate name '{m.name.value}'")
+    if indexed.importIndex.hasKey(m.name.value):
+      return err(fmt"{file.path}:{m.name.loc}: module name '{m.name.value}' conflicts with an imported name")
     indexed.moduleIndex[m.name.value] = i
-    indexed.modules.add(? indexModule(m, file.path))
+    indexed.modules.add(indexModule(m))
 
   for i, g in file.generics:
-    if indexed.moduleIndex.hasKey(g.name.value) or
-        indexed.genericIndex.hasKey(g.name.value) or
-        indexed.importIndex.hasKey(g.name.value):
-      return err(fmt"{file.path}:{g.name.loc}: duplicate name '{g.name.value}'")
+    if indexed.importIndex.hasKey(g.name.value):
+      return err(fmt"{file.path}:{g.name.loc}: generic name '{g.name.value}' conflicts with an imported name")
     indexed.genericIndex[g.name.value] = i
-    indexed.generics.add(? indexGeneric(g, file.path))
+    indexed.generics.add(indexGeneric(g))
 
   for impIdx, imp in file.imports:
     for nameIdx, n in imp.names:
@@ -97,7 +82,7 @@ proc indexFile(file: File): Result[IndexedFile, string] =
       if indexed.moduleIndex.hasKey(visible) or
           indexed.genericIndex.hasKey(visible) or
           indexed.importIndex.hasKey(visible):
-        return err(fmt"{file.path}:{visibleIdent.loc}: duplicate name '{visible}'")
+        return err(fmt"{file.path}:{visibleIdent.loc}: import name '{visible}' conflicts with an existing name")
       indexed.importIndex[visible] = (impIdx, nameIdx)
 
   ok(indexed)
