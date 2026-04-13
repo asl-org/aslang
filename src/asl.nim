@@ -1,11 +1,10 @@
 import os, results, strformat, sequtils, strutils
 
-import cli, parser, resolver
+import cli, parser
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens)
-  let _ = ? resolve(app)
   ok(app.files.mapIt(it.path).join("\n"))
 
 when isMainModule:

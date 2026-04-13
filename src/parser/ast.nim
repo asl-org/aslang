@@ -874,9 +874,8 @@ type File* = ref object
   imports: seq[Import]
   modules: seq[Module]
   generics: seq[Generic]
-  moduleIndex: Table[string, int]
-  genericIndex: Table[string, int]
-  importIndex: Table[string, (int, int)]
+  moduleIndex: Table[Identifier, int]
+  genericIndex: Table[Identifier, int]
 
 proc newFile*(path: string, imports: seq[Import], items: seq[FileItem]): Result[
     File, ParserError] =
@@ -889,43 +888,40 @@ proc newFile*(path: string, imports: seq[Import], items: seq[FileItem]): Result[
 
   var modules: seq[Module]
   var generics: seq[Generic]
-  var moduleIndex: Table[string, int]
-  var genericIndex: Table[string, int]
-  var importIndex: Table[string, (int, int)]
-  var typeMap: Table[Identifier, Identifier]
+  var moduleIndex: Table[Identifier, int]
+  var genericIndex: Table[Identifier, int]
+  var typeIndex: Table[Identifier, Identifier]
 
-  for impIdx, imp in imports:
+  for imp in imports:
     if imp.path == path:
       let msg = "importing the source file in itself is disallowed"
       return err(newParserError(msg, imp.loc))
-    for nameIdx, impType in imp.names:
+    for impType in imp.names:
       let binding = if impType.alias.isSome: impType.alias.get else: impType.name
-      typeMap[binding] = binding
-      importIndex[binding.value] = (impIdx, nameIdx)
+      typeIndex[binding] = binding
 
   for item in items:
     case item.kind:
     of fikModule:
-      if item.module.name in typeMap:
-        let prev = typeMap[item.module.name]
+      if item.module.name in typeIndex:
+        let prev = typeIndex[item.module.name]
         let msg = fmt"duplicate module declaration encountered, see previous declaration at {prev.loc}"
         return err(newParserError(msg, item.module.loc))
       else:
-        typeMap[item.module.name] = item.module.name
-        moduleIndex[item.module.name.value] = modules.len
+        typeIndex[item.module.name] = item.module.name
+        moduleIndex[item.module.name] = modules.len
         modules.add(item.module)
     of fikGeneric:
-      if item.generic.name in typeMap:
-        let prev = typeMap[item.generic.name]
+      if item.generic.name in typeIndex:
+        let prev = typeIndex[item.generic.name]
         let msg = fmt"duplicate generic declaration encountered, see previous declaration at {prev.loc}"
         return err(newParserError(msg, item.generic.loc))
       else:
-        typeMap[item.generic.name] = item.generic.name
-        genericIndex[item.generic.name.value] = generics.len
+        typeIndex[item.generic.name] = item.generic.name
+        genericIndex[item.generic.name] = generics.len
         generics.add(item.generic)
   ok(File(path: path, imports: imports, modules: modules, generics: generics,
-    moduleIndex: moduleIndex, genericIndex: genericIndex,
-    importIndex: importIndex))
+      moduleIndex: moduleIndex, genericIndex: genericIndex))
 
 proc path*(file: File): string = file.path
 proc imports*(file: File): seq[Import] = file.imports
@@ -980,14 +976,14 @@ proc findModuleId*(file: File, name: Identifier): Result[int, string] =
   if name in file.moduleIndex: ok(file.moduleIndex[name])
   else: err(fmt"module '{name.value}' does not exists")
 
-proc findGeneric*(file: File, name: string): int =
-  file.genericIndex.getOrDefault(name, -1)
+proc findModule*(file: File, name: Identifier): Result[Module, string] =
+  let id = ? file.findModuleId(name)
+  ok(file.modules[id])
 
-proc findImport*(file: File, visibleName: string): (int, int) =
-  file.importIndex.getOrDefault(visibleName, (-1, -1))
+proc findGenericId*(file: File, name: Identifier): Result[int, string] =
+  if name in file.genericIndex: ok(file.genericIndex[name])
+  else: err(fmt"generic '{name.value}' does not exists")
 
-proc findFunction*(module: Module, name: string): seq[int] =
-  module.functionIndex.getOrDefault(name, @[])
-
-proc findFuncDef*(generic: Generic, name: string): seq[int] =
-  generic.funcDefIndex.getOrDefault(name, @[])
+proc findGeneric*(file: File, name: Identifier): Result[Generic, string] =
+  let id = ? file.findGenericId(name)
+  ok(file.generics[id])
