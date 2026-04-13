@@ -948,6 +948,22 @@ proc asl*(file: File, indentWidth: uint32): string =
       lines.add(line)
   lines.join("\n") & "\n"
 
+proc findModuleId*(file: File, name: Identifier): Result[int, string] =
+  if name in file.moduleIndex: ok(file.moduleIndex[name])
+  else: err(fmt"module '{name.value}' does not exists")
+
+proc findModule*(file: File, name: Identifier): Result[Module, string] =
+  let id = ? file.findModuleId(name)
+  ok(file.modules[id])
+
+proc findGenericId*(file: File, name: Identifier): Result[int, string] =
+  if name in file.genericIndex: ok(file.genericIndex[name])
+  else: err(fmt"generic '{name.value}' does not exists")
+
+proc findGeneric*(file: File, name: Identifier): Result[Generic, string] =
+  let id = ? file.findGenericId(name)
+  ok(file.generics[id])
+
 # ============================================================
 # App
 # ============================================================
@@ -973,19 +989,3 @@ proc findFileId*(app: App, path: string): Result[int, string] =
 proc findFile*(app: App, path: string): Result[File, string] =
   let id = ? app.findFileId(path)
   ok(app.files[id])
-
-proc findModuleId*(file: File, name: Identifier): Result[int, string] =
-  if name in file.moduleIndex: ok(file.moduleIndex[name])
-  else: err(fmt"module '{name.value}' does not exists")
-
-proc findModule*(file: File, name: Identifier): Result[Module, string] =
-  let id = ? file.findModuleId(name)
-  ok(file.modules[id])
-
-proc findGenericId*(file: File, name: Identifier): Result[int, string] =
-  if name in file.genericIndex: ok(file.genericIndex[name])
-  else: err(fmt"generic '{name.value}' does not exists")
-
-proc findGeneric*(file: File, name: Identifier): Result[Generic, string] =
-  let id = ? file.findGenericId(name)
-  ok(file.generics[id])

@@ -15,9 +15,9 @@
 
 - [x] **PSR-38: Add import aliasing** (`src/parser.nim`) [medium] — Done. `ImportName` type with `name` and optional `alias` (empty string if none). `importNameSpec` parses `identifier ("as" identifier)?`. Import stores `seq[ImportName]` instead of `seq[string]`.
 
-### Name resolution
+### Parser bugs
 
-- [ ] **PSR-41 Phase 3: Function-body / expression resolution** (`src/resolver/resolve.nim`) [large] — Resolve `Assignment.target`, `Expression.variable`, `Getter.source/property`, `FunctionCall.name`, pattern bindings, etc. Requires expression type inference (Getter.property needs the source's type; VariantPattern.variantName needs the subject's type). Effectively a compact type checker; needs a separate detailed plan before execution.
+- [ ] **Blank line after `struct:` / `union:` bypasses `atLeastOne` in blockSpec** (`src/parser/grammar.nim`) [medium] — `struct:` followed by a blank line then `func` compiles as a module with only a function (struct silently discarded). `blockSpec` with `atLeastOne(fieldLineSpec)` should reject zero fields, but the blank line causes a backtrack that drops the struct entirely. `newStruct` has a defense-in-depth guard (`fields.len == 0` check) but it's never reached because `blockSpec` backtracks before calling the combine function. Needs investigation into how `blockSpec` handles empty bodies after header success.
 
 ### Parser cleanup (round 2)
 
@@ -62,24 +62,27 @@
 
 ### Project structure
 
-- [x] **Component directory modules** — Moved from flat `src/*.nim` to component directories: `src/tokenizer/`, `src/parser/` (5 files: ast, combinators, grammar, loader, parser entry), `src/validator/` (indexed, indexer, validator entry), `src/resolver/` (types, resolve, resolver entry). `src/nim.cfg` adds each component directory to the module search path via `path = "$projectDir/<component>"`. All cross-component imports use bare names (`import tokenizer`, `import parser`). No `../` imports anywhere. 35/35 tests pass.
+- [x] **Component directory modules** — `src/tokenizer/` and `src/parser/` (5 files: ast, combinators, grammar, loader, parser entry). `src/nim.cfg` adds each component directory to the module search path. All cross-component imports use bare names. No `../` imports anywhere.
 
-### Dependency resolution (resolved)
+### Validator absorbed into parser
 
-- [x] **PSR-36: Recursive BFS dependency resolver with cycle detection** (`src/parser/loader.nim`) — Done. BFS traversal enqueues imports, `topoSort` (in `src/utils.nim`) performs DFS cycle detection + topological ordering. Cycle reported with full dependency chain. `Import.path` (absolute) set during BFS for downstream phases. `resolveImportPath` normalizes and validates against parent-directory escape.
+- [x] **PSR-39 + validator deletion** — Originally a separate `src/validator/` component with `Indexed*` wrapper types and `Table` indices. Validation checks were progressively moved into parser constructors (`newStruct`, `newUnion`, `newVariantDefinition`, `newModule`, `newFile`, etc.) which enforce uniqueness at construction time. Remaining lookup indices (`functionIndex`, `funcDefIndex`, `moduleIndex`, `genericIndex`, `importIndex`, `fileIndex`) migrated directly onto parser AST types (`Module`, `Generic`, `File`, `App`). The `find*` lookup procs now live on the parser types. Validator deleted entirely — zero validation or indexing logic remains outside the parser.
 
-### Name resolution (resolved)
+### Resolver (deleted — to be rewritten)
 
-- [x] **PSR-41 Phase 1: ID-based structural resolution of the App tree** (`src/resolver/`)
-- [x] **PSR-41 Phase 2: Signature-level type references** (`src/resolver/resolve.nim`) — Done. `resolveArgumentType` resolves every `ArgumentType.root` in struct/variant field types, function/funcDef parameter types, and return types. Priority: built-in primitive → current-file module → current-file generic → imported name. 17-entry built-in table (`i8..u64`, `f32`, `f64`, `ptr`, `String`, `List`, `Map`, `Array`, `Status`, `System`). `ResolvedArgumentType` is a tagged variant (`ratPrimitive | ratModule | ratGeneric | ratImported`) wrapping the raw `ArgumentType` by reference. Recursive on `impls` for nested generics like `Map[String, Array[u64]]`. Unknown types error with `file:line:col: unknown type 'X'`. Negative fixture `examples/errors/unknown_field_type.asl`. Example fixups: `str → String`, `U8 → u8`, `pointer → ptr`, `u128 → u64`, `bool → u8`. — Done in 15 bite-sized commits (R1–R15). New `src/resolver.nim` owns a parallel `Resolved*` wrapper tree: `ResolvedApp → ResolvedFile → ResolvedModule / ResolvedGeneric → ResolvedFunction / ResolvedFuncDef → ResolvedArgument`; `ResolvedModule.data: Option[ResolvedData]` holds `ResolvedStruct` / `ResolvedUnion` → `ResolvedVariant` → `ResolvedField`. Every declaration carries a local `int id` (its position in its immediate parent). Typed global ids were considered and rejected as speculative — can be layered in later if Phase 2/3 need cross-block navigation. Function bodies (`StatementList`), type references (`ArgumentType`), and `ResolvedImportName.name`/`alias` stay raw; Phases 2 and 3 (separate entries above) resolve them.
+- [x] **PSR-41 Phases 1+2** — Built `Resolved*` wrapper types with local int ids and `ResolvedArgumentType` for signature-level type resolution. Subsequently deleted in full — the resolver will be rewritten from scratch. Built-in type canonicalization (`str → String`, `U8 → u8`, `pointer → ptr`) applied to examples during this phase and retained.
 
 ### Location tracking
 
-- [x] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser.nim`, `src/validator.nim`) — Done in 14 bite-sized commits (C1–C14). Every name-bearing field in the AST (`Module.name`, `Generic.name`, `ArgumentDefinition.name`, `VariantDefinition.name`, `ImportName.name`, `ImportName.alias`, `FunctionDefinition.name`, `Decorator.name`, `ArgumentType.root`, `FunctionCall.name`, `KeywordArgument.name`, `Getter.source`, `Getter.property`, `LiteralInitializer.typeName`, `UnionInitializer.variantName`, `Assignment.target`, `VariantPatternField.name`, `VariantPatternField.binding`, `VariantPattern.variantName`) now holds an `Identifier` carrying a `Location`. `ImportName.alias` flipped from `""`-sentinel `string` to `Option[Identifier]`. `Decorator.loc` deleted (redundant once the name carries its own loc). Validator errors now report exact `line:col`. `Identifier.name` renamed to `Identifier.value` so the common chain reads `m.name.value` / `m.name.loc` instead of the awkward `m.name.name`. Plan in `plans/name-identifiers.md`.
+- [x] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser/ast.nim`) — Every name-bearing field in the AST holds an `Identifier` (value + Location). `ImportName.alias` is `Option[Identifier]`. Error messages report exact `line:col`. `Identifier.value` is the textual name (renamed from `.name` to avoid `.name.name` stutter).
 
 ### Block indexing and validation
 
-- [x] **PSR-39: Block indexing, validation rules, and lookup infrastructure** (`src/validator.nim`, `src/parser.nim`, `src/asl.nim`) — Done. New `src/validator.nim` owns all indexing. Wrapper types (`IndexedFile`, `IndexedModule`, `IndexedGeneric`, `IndexedStruct`, `IndexedUnion`, `IndexedVariant`, `IndexedData`) wrap raw AST with `Table[string, int]` / `Table[string, seq[int]]` indices. Six validation rules collapsed: rules #3/#5/#6 already enforced by grammar, rules #2/#4 enforced during indexing, rule #1 is a free side effect of index construction (modules/generics/imports share one file-level namespace). Function overloading supported via `Table[string, seq[int]]`; all other blocks are `Table[string, int]`. Public `find*` lookups return `-1` / `@[]` on miss. `App` root type wraps `seq[IndexedFile]` with a path-keyed file index. `parser.nim` exports AST types (`Module`, `Generic`, `Function`, `FunctionDefinition`, `DataBlock`, `DataBlockKind`, `Struct`, `Union`, `VariantDefinition`, `ArgumentDefinition`, `ImportName`) and gains readonly accessor procs; `DataBlock.struct`/`.union` assert the variant before returning. `asl.nim:compile` calls `validator.index(files)` after `parser.parse`. Negative test fixtures live in `examples/errors/`, positive overloading fixture in `examples/overload.asl`.
+- [x] **PSR-39** — Lookup indices live directly on AST types. Validation rules enforced by parser constructors. `App` root type wraps `seq[File]` with path-keyed `fileIndex`. `find*` procs on `File`, `Module`, `Generic`, `App`.
+
+### Dependency resolution
+
+- [x] **PSR-36** — BFS multi-file import resolution in `src/parser/loader.nim`. Topological sort with cycle detection. `Import.path` (absolute) set during BFS. Parent-directory escape prevention via normalized path comparison.
 
 ### Parser features (PSR-20 to PSR-30)
 

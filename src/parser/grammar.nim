@@ -38,13 +38,6 @@ let commentSpec = Spec[Location](
   ok(hashtag.loc)
 )
 
-# ============================================================
-# Implicit separators
-# ============================================================
-
-let strictSpace = atLeastOne(spaceSpec)
-let optionalSpace = any(spaceSpec)
-
 # space* comment? newline
 let ignorableLineSpec = Spec[Location](
   name: "ignorable_line",
@@ -55,9 +48,6 @@ let ignorableLineSpec = Spec[Location](
   discard ? parser.run(newlineSpec)
   ok(loc)
 )
-
-let strictLine = ignorableLineSpec
-let optionalLines = any(ignorableLineSpec)
 
 proc separatorSpec(sep: string): Spec[Token] =
   Spec[Token](
@@ -175,9 +165,9 @@ let stringLiteralSpec = Spec[StringLiteral](
 let argumentTypeSpec = newSpec[ArgumentType]("argument_type")
 argumentTypeSpec.parseFn = proc(parser: Parser): Result[ArgumentType, ParserError] =
   let rootIdent = ? parser.run(identifierSpec)
-  let maybeImpls = ? parser.run(optional(
-    contained("type_params", "[",
-      separatedBy(argumentTypeSpec, commaWithSpacesSpec), "]")))
+  let typeParams = contained("type_params", "[", separatedBy(argumentTypeSpec,
+      commaWithSpacesSpec), "]")
+  let maybeImpls = ? parser.run(optional(typeParams))
   if maybeImpls.isSome:
     ok(newArgumentType(rootIdent, maybeImpls.get, rootIdent.loc))
   else:
@@ -205,9 +195,9 @@ let functionDefinitionSpec = Spec[FunctionDefinition](
   name: "function_definition",
   parseFn: proc(parser: Parser): Result[FunctionDefinition, ParserError] =
   let funcLoc = ? parser.run(keywordSpec("func"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let funcName = ? parser.run(identifierSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   let argDefList = ? parser.run(argumentDefinitionListSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let returnType = ? parser.run(argumentTypeSpec)
@@ -234,7 +224,7 @@ let functionCallSpec = Spec[FunctionCall](
   let argType = ? parser.run(argumentTypeSpec)
   discard ? parser.run(punctuationSpec("."))
   let funcNameIdent = ? parser.run(identifierSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   let argList = ? parser.run(argumentListSpec)
   ok(newFunctionCall(argType, funcNameIdent, argList))
 )
@@ -343,7 +333,7 @@ let unionInitializerSpec = Spec[UnionInitializer](
   let argType = ? parser.run(argumentTypeSpec)
   discard ? parser.run(punctuationSpec("."))
   let variantName = ? parser.run(identifierSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   let kwargList = ? parser.run(kwargListSpec)
   ok(newUnionInitializer(argType, variantName, kwargList, argType.loc))
 )
@@ -353,7 +343,7 @@ let structInitializerSpec = Spec[StructInitializer](
   name: "struct_initializer",
   parseFn: proc(parser: Parser): Result[StructInitializer, ParserError] =
   let argType = ? parser.run(argumentTypeSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   let kwargList = ? parser.run(kwargListSpec)
   ok(newStructInitializer(argType, kwargList, argType.loc))
 )
@@ -363,7 +353,7 @@ let literalInitializerSpec = Spec[LiteralInitializer](
   name: "literal_initializer",
   parseFn: proc(parser: Parser): Result[LiteralInitializer, ParserError] =
   let typeName = ? parser.run(identifierSpec)
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let value = ? parser.run(literalSpec)
   ok(newLiteralInitializer(typeName, value, typeName.loc))
 )
@@ -416,7 +406,7 @@ let decoratorLineSpec = Spec[Decorator](
   discard ? parser.run(indentationSpec)
   discard ? parser.run(punctuationSpec("@"))
   let name = ? parser.run(identifierSpec)
-  discard ? parser.run(strictLine)
+  discard ? parser.run(ignorableLineSpec)
   ok(newDecorator(name))
 )
 
@@ -429,7 +419,7 @@ proc blockSpec[H, B, R](name: string,
     parseFn: proc(parser: Parser): Result[R, ParserError] =
     discard ? parser.run(indentationSpec)
     let h = ? parser.run(header)
-    discard ? parser.run(strictLine)
+    discard ? parser.run(ignorableLineSpec)
     # After header succeeds, body errors are fatal — they propagate
     # through run and any without backtracking or being swallowed.
     parser.level += 1
@@ -450,7 +440,7 @@ proc blockSpec[H, B, R](name: string,
     parseFn: proc(parser: Parser): Result[R, ParserError] =
     discard ? parser.run(indentationSpec)
     let h = ? parser.run(header)
-    discard ? parser.run(strictLine)
+    discard ? parser.run(ignorableLineSpec)
     # After header succeeds, body errors are fatal — they propagate
     # through run and any without backtracking or being swallowed.
     parser.level += 1
@@ -472,7 +462,7 @@ proc decoratedBlockSpec[H, B, R](name: string,
     let decorators = ? parser.run(any(decoratorLineSpec))
     discard ? parser.run(indentationSpec)
     let h = ? parser.run(header)
-    discard ? parser.run(strictLine)
+    discard ? parser.run(ignorableLineSpec)
     parser.level += 1
     let bodyResult = body.parseFn(parser)
     parser.level -= 1
@@ -493,7 +483,7 @@ proc decoratedBlockSpec[H, B, R](name: string,
     let decorators = ? parser.run(any(decoratorLineSpec))
     discard ? parser.run(indentationSpec)
     let h = ? parser.run(header)
-    discard ? parser.run(strictLine)
+    discard ? parser.run(ignorableLineSpec)
     parser.level += 1
     let bodyResult = body.parseFn(parser)
     parser.level -= 1
@@ -518,7 +508,7 @@ let variantPatternSpec = Spec[VariantPattern](
   name: "variant_pattern",
   parseFn: proc(parser: Parser): Result[VariantPattern, ParserError] =
   let name = ? parser.run(identifierSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   let fields = ? parser.run(contained("variant_fields", "{",
     separatedBy(variantPatternFieldSpec, commaWithSpacesSpec), "}"))
   newVariantPattern(name, fields, name.loc)
@@ -541,9 +531,9 @@ let caseHeaderSpec = Spec[CasePattern](
   name: "case_header",
   parseFn: proc(parser: Parser): Result[CasePattern, ParserError] =
   discard ? parser.run(keywordSpec("case"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let pattern = ? parser.run(casePatternSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
   ok(pattern)
 )
@@ -574,7 +564,7 @@ let matchBodySpec = Spec[MatchExpression](
   name: "match_body",
   parseFn: proc(parser: Parser): Result[MatchExpression, ParserError] =
   let loc = ? parser.run(keywordSpec("match"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   # Match expressions cannot be the subject of another match expression.
   # expressionSpec intentionally excludes match (match is parsed separately
   # in statementLineSpec). This check guards against future changes that
@@ -583,14 +573,14 @@ let matchBodySpec = Spec[MatchExpression](
   if subject.kind == ekMatch:
     return err(newParserError(
       "match expression cannot be the subject of another match", loc))
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
-  discard ? parser.run(strictLine)
+  discard ? parser.run(ignorableLineSpec)
   parser.level += 1
   let casesBody = atLeastOne(Spec[CaseBlock](
     name: "case_block_line",
     parseFn: proc(parser: Parser): Result[CaseBlock, ParserError] =
-    discard parser.run(optionalLines)
+    discard parser.run(any(ignorableLineSpec))
     let cb = ? parser.run(caseBlockSpec)
     ok(cb)
   ))
@@ -605,7 +595,7 @@ let matchBodySpec = Spec[MatchExpression](
 let statementLineSpec = Spec[Statement](
   name: "statement_line",
   parseFn: proc(parser: Parser): Result[Statement, ParserError] =
-  discard parser.run(optionalLines)
+  discard parser.run(any(ignorableLineSpec))
   discard ? parser.run(indentationSpec)
   # Try match assignment: identifier = match ...:
   let maybeMatchAssign = parser.run(Spec[Statement](
@@ -623,7 +613,7 @@ let statementLineSpec = Spec[Statement](
     return ok(newStatement(newExpression(maybeMatch.get)))
   # Inline statements: statement + newline
   let statement = ? parser.run(inlineStatementSpec)
-  discard ? parser.run(strictLine)
+  discard ? parser.run(ignorableLineSpec)
   ok(statement)
 )
 
@@ -640,7 +630,7 @@ let functionSpec = decoratedBlockSpec("function", functionDefinitionSpec,
 let funcBlockSpec = Spec[Function](
   name: "function_block",
   parseFn: proc(parser: Parser): Result[Function, ParserError] =
-  discard parser.run(optionalLines)
+  discard parser.run(any(ignorableLineSpec))
   let f = ? parser.run(functionSpec)
   ok(f)
 )
@@ -654,9 +644,9 @@ let moduleHeaderSpec = Spec[ModuleHeader](
   name: "module_header",
   parseFn: proc(parser: Parser): Result[ModuleHeader, ParserError] =
   let loc = ? parser.run(keywordSpec("module"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let nameIdent = ? parser.run(identifierSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
   ok((nameIdent, loc))
 )
@@ -667,9 +657,9 @@ let genericHeaderSpec = Spec[GenericHeader](
   name: "generic_header",
   parseFn: proc(parser: Parser): Result[GenericHeader, ParserError] =
   let loc = ? parser.run(keywordSpec("generic"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let nameIdent = ? parser.run(identifierSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
   ok((nameIdent, loc))
 )
@@ -680,7 +670,7 @@ let functionDefinitionLineSpec = Spec[FunctionDefinition](
   parseFn: proc(parser: Parser): Result[FunctionDefinition, ParserError] =
   discard ? parser.run(indentationSpec)
   let funcDef = ? parser.run(functionDefinitionSpec)
-  discard ? parser.run(strictLine)
+  discard ? parser.run(ignorableLineSpec)
   ok(funcDef)
 )
 
@@ -696,7 +686,7 @@ let structHeaderSpec = Spec[Location](
   name: "struct_header",
   parseFn: proc(parser: Parser): Result[Location, ParserError] =
   let loc = ? parser.run(keywordSpec("struct"))
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
   ok(loc)
 )
@@ -705,10 +695,10 @@ let structHeaderSpec = Spec[Location](
 let fieldLineSpec = Spec[ArgumentDefinition](
   name: "field_line",
   parseFn: proc(parser: Parser): Result[ArgumentDefinition, ParserError] =
-  discard parser.run(optionalLines)
+  discard parser.run(any(ignorableLineSpec))
   discard ? parser.run(indentationSpec)
   let argDef = ? parser.run(argumentDefinitionSpec)
-  discard ? parser.run(strictLine)
+  discard ? parser.run(ignorableLineSpec)
   ok(argDef)
 )
 
@@ -721,15 +711,15 @@ let structSpec = blockSpec("struct", structHeaderSpec,
 let variantDefinitionLineSpec = Spec[VariantDefinition](
   name: "variant_definition_line",
   parseFn: proc(parser: Parser): Result[VariantDefinition, ParserError] =
-  discard parser.run(optionalLines)
+  discard parser.run(any(ignorableLineSpec))
   discard ? parser.run(indentationSpec)
   let name = ? parser.run(identifierSpec)
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   let maybeFields = ? parser.run(optional(contained("variant_fields", "{",
     separatedBy(argumentDefinitionSpec, commaWithSpacesSpec), "}")))
   var fields: seq[ArgumentDefinition]
   if maybeFields.isSome: fields = maybeFields.get
-  discard ? parser.run(strictLine)
+  discard ? parser.run(ignorableLineSpec)
   newVariantDefinition(name, fields, name.loc)
 )
 
@@ -737,7 +727,7 @@ let unionHeaderSpec = Spec[Location](
   name: "union_header",
   parseFn: proc(parser: Parser): Result[Location, ParserError] =
   let loc = ? parser.run(keywordSpec("union"))
-  discard parser.run(optionalSpace)
+  discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
   ok(loc)
 )
@@ -782,13 +772,13 @@ let importNameSpec = Spec[ImportName](
   name: "import_name",
   parseFn: proc(parser: Parser): Result[ImportName, ParserError] =
   let name = ? parser.run(identifierSpec)
-  let maybeAs = parser.run(strictSpace)
+  let maybeAs = parser.run(atLeastOne(spaceSpec))
   if maybeAs.isErr:
     return ok(newImportName(name, none(Identifier), name.loc))
   let maybeAsKeyword = parser.run(keywordSpec("as"))
   if maybeAsKeyword.isErr:
     return ok(newImportName(name, none(Identifier), name.loc))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let alias = ? parser.run(identifierSpec)
   ok(newImportName(name, some(alias), name.loc))
 )
@@ -797,14 +787,14 @@ let importLineSpec = Spec[Import](
   name: "import_line",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.run(keywordSpec("import"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let names = ? parser.run(contained("import_names", "{",
     separatedBy(importNameSpec, commaWithSpacesSpec), "}"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   discard ? parser.run(keywordSpec("from"))
-  discard ? parser.run(strictSpace)
+  discard ? parser.run(atLeastOne(spaceSpec))
   let source = ? parser.run(stringLiteralSpec)
-  discard ? parser.run(strictLine)
+  discard ? parser.run(ignorableLineSpec)
   let maybePath = resolveImportPath(source.value, parser.filepath)
   if maybePath.isOk:
     newImport(names, source.value, maybePath.get, loc)
@@ -815,7 +805,7 @@ let importLineSpec = Spec[Import](
 let importBlockSpec = Spec[Import](
   name: "import_block",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
-  discard parser.run(optionalLines)
+  discard parser.run(any(ignorableLineSpec))
   let imp = ? parser.run(importLineSpec)
   ok(imp)
 )
@@ -823,7 +813,7 @@ let importBlockSpec = Spec[Import](
 let fileItemBlockSpec = Spec[FileItem](
   name: "file_item_block",
   parseFn: proc(parser: Parser): Result[FileItem, ParserError] =
-  discard parser.run(optionalLines)
+  discard parser.run(any(ignorableLineSpec))
   let item = ? parser.run(fileItemSpec)
   ok(item)
 )
@@ -834,7 +824,7 @@ let fileSpec = Spec[File](
   parseFn: proc(parser: Parser): Result[File, ParserError] =
   let imports = ? parser.run(any(importBlockSpec))
   let items = ? parser.run(atLeastOne(fileItemBlockSpec))
-  discard parser.run(optionalLines)
+  discard parser.run(any(ignorableLineSpec))
   if not parser.done():
     # Force a parse attempt to get a specific error message
     discard ? parser.run(fileItemSpec)
