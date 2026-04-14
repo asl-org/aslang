@@ -12,14 +12,12 @@ import { User } from "./user.asl"
 generic Eq:
   func eq(a: Eq, b: Eq): u8
 
-@export
-module App:
+public module App:
   struct:
     name: String
     age: u32
 
-  @export
-  func start(sys: System): u8
+  public func start(sys: System): u8
     user = User { name: "Alice", age: 30 }
     result = match user.age:
       case 0:
@@ -45,7 +43,8 @@ module App:
   (`case Pro { credits: c }: ...`)
 - **Imports**: cross-file module/generic imports with aliasing
   (`import { User as U } from "./user.asl"`)
-- **Decorators**: `@export` on modules and functions
+- **Visibility**: `public` keyword on modules and functions to
+  mark them as exported
 - **Comments**: line comments starting with `#`
 
 ### Built-in Types

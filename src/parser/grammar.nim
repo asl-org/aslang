@@ -194,6 +194,10 @@ let argumentDefinitionListSpec = Spec[ArgumentDefinitionList](
 let functionDefinitionSpec = Spec[FunctionDefinition](
   name: "function_definition",
   parseFn: proc(parser: Parser): Result[FunctionDefinition, ParserError] =
+  let maybePublic = parser.run(keywordSpec("public"))
+  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
+  let public = maybePublic.isOk
+
   let funcLoc = ? parser.run(keywordSpec("func"))
   discard ? parser.run(atLeastOne(spaceSpec))
   let funcName = ? parser.run(identifierSpec)
@@ -201,7 +205,7 @@ let functionDefinitionSpec = Spec[FunctionDefinition](
   let argDefList = ? parser.run(argumentDefinitionListSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let returnType = ? parser.run(argumentTypeSpec)
-  ok(newFunctionDefinition(funcName, argDefList, returnType, funcLoc))
+  ok(newFunctionDefinition(public, funcName, argDefList, returnType, funcLoc))
 )
 
 # Forward-declared because expressions appear inside argument lists
@@ -638,17 +642,21 @@ let funcBlockSpec = Spec[Function](
 let functionListSpec = any(funcBlockSpec).map("function_list",
   proc(fns: seq[Function]): Result[FunctionList, ParserError] = newFunctionList(fns))
 
-type ModuleHeader = tuple[name: Identifier, loc: Location]
+type ModuleHeader = tuple[public: bool, name: Identifier, loc: Location]
 
 let moduleHeaderSpec = Spec[ModuleHeader](
   name: "module_header",
   parseFn: proc(parser: Parser): Result[ModuleHeader, ParserError] =
+  let maybePublic = parser.run(keywordSpec("public"))
+  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
+  let public = maybePublic.isOk
+
   let loc = ? parser.run(keywordSpec("module"))
   discard ? parser.run(atLeastOne(spaceSpec))
   let nameIdent = ? parser.run(identifierSpec)
   discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
-  ok((nameIdent, loc))
+  ok((public, nameIdent, loc))
 )
 
 type GenericHeader = tuple[name: Identifier, loc: Location]
@@ -757,7 +765,7 @@ let moduleBodySpec = Spec[ModuleBody](
 
 let moduleSpec = decoratedBlockSpec("module", moduleHeaderSpec, moduleBodySpec,
   proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Result[Module, ParserError] =
-  newModule(d, h.name, b.data, b.funcList, h.loc))
+  newModule(d, h.public, h.name, b.data, b.funcList, h.loc))
 
 let fileItemSpec = oneOf("file_item", [
   moduleSpec.map("module_item",

@@ -221,11 +221,13 @@ proc asl(db: DataBlock, indentWidth: uint32): seq[string] =
   of dbkUnion: asl(db.union, indentWidth)
 
 type FunctionDefinition* = ref object
+  public: bool
   name: Identifier
   argDefList: ArgumentDefinitionList
   returns: ArgumentType
   loc: Location
 
+proc public*(fd: FunctionDefinition): bool = fd.public
 proc name*(fd: FunctionDefinition): Identifier = fd.name
 proc params*(fd: FunctionDefinition): seq[
     ArgumentDefinition] = fd.argDefList.argDefs
@@ -233,13 +235,15 @@ proc returns*(fd: FunctionDefinition): ArgumentType = fd.returns
 proc loc*(fd: FunctionDefinition): Location = fd.loc
 proc arity(fd: FunctionDefinition): int = fd.argDefList.arity
 
-proc newFunctionDefinition*(name: Identifier,
+proc newFunctionDefinition*(public: bool, name: Identifier,
     argDefList: ArgumentDefinitionList, returns: ArgumentType,
     loc: Location): FunctionDefinition =
-  FunctionDefinition(name: name, argDefList: argDefList, returns: returns, loc: loc)
+  FunctionDefinition(public: public, name: name, argDefList: argDefList,
+      returns: returns, loc: loc)
 
 proc asl(funcDef: FunctionDefinition): string =
-  fmt"func {asl(funcDef.name)}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
+  let prefix = if funcDef.public: "public func" else: "func"
+  fmt"{prefix} {asl(funcDef.name)}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
 
 type StringContent* = ref object
   content*: string
@@ -820,33 +824,37 @@ proc asl(gen: Generic, indentWidth: uint32): seq[string] =
 
 type Module* = ref object
   decorators: seq[Decorator]
+  public: bool
   name: Identifier
   data: Option[DataBlock]
   funcList: FunctionList
   functionIndex: Table[string, seq[int]]
   loc: Location
 
+proc public*(m: Module): bool = m.public
 proc name*(m: Module): Identifier = m.name
 proc data*(m: Module): Option[DataBlock] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
 proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
 
-proc newModule*(decorators: seq[Decorator], name: Identifier, data: Option[
-    DataBlock], funcList: FunctionList, loc: Location): Result[Module, ParserError] =
+proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
+    data: Option[DataBlock], funcList: FunctionList, loc: Location): Result[
+        Module, ParserError] =
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
     return err(newParserError(msg, loc))
   var functionIndex: Table[string, seq[int]]
   for i, fn in funcList.functions:
     functionIndex.mgetOrPut(fn.name.value, @[]).add(i)
-  ok(Module(decorators: decorators, name: name, data: data, funcList: funcList,
-    functionIndex: functionIndex, loc: loc))
+  ok(Module(decorators: decorators, public: public, name: name, data: data,
+      funcList: funcList, functionIndex: functionIndex, loc: loc))
 
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
     result.add(asl(d))
-  result.add(fmt"module {asl(module.name)}:")
+  let prefix = if module.public: "public module" else: "module"
+  result.add(fmt"{prefix} {asl(module.name)}:")
   let indent = " ".repeat(indentWidth)
   if module.data.isSome:
     for line in asl(module.data.get, indentWidth):

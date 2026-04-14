@@ -86,7 +86,7 @@
 
 ### Parser features (PSR-20 to PSR-30)
 
-- [x] **PSR-20** — Decorator support (`@identifier`). `blockSpec` parses decorators before header.
+- [x] **PSR-20** — Decorator support (`@identifier`). `blockSpec` parses decorators before header. Note: `@export` replaced by `public` keyword on modules and functions; decorators still parsed but `@export` no longer used.
 - [x] **PSR-21** — Getter expression (`source.property`).
 - [x] **PSR-22** — Initializer expression (`Type { kwargs }`). `KeywordArgument`, `KeywordArgumentList`.
 - [x] **PSR-23** — Variable expression (bare identifier). Last in `oneOf`.
