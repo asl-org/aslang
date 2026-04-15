@@ -624,10 +624,28 @@ let statementLineSpec = Spec[Statement](
 statementListSpec.parseFn = atLeastOne(statementLineSpec).map("statement_list",
   proc(stmts: seq[Statement]): StatementList = newStatementList(stmts)).parseFn
 
-let functionSpec = decoratedBlockSpec("function", functionDefinitionSpec,
+let userFunctionSpec = decoratedBlockSpec("user_function", functionDefinitionSpec,
   statementListSpec,
   proc(d: seq[Decorator], h: FunctionDefinition, b: StatementList): Function =
-  newFunction(d, h, b))
+  newFunction(newUserFunction(d, h, b)))
+
+# @extern("symbol")
+# public func name(args): ReturnType
+let externFunctionSpec = Spec[Function](
+  name: "extern_function",
+  parseFn: proc(parser: Parser): Result[Function, ParserError] =
+  discard ? parser.run(indentationSpec)
+  discard ? parser.run(punctuationSpec("@"))
+  discard ? parser.run(keywordSpec("extern"))
+  discard parser.run(any(spaceSpec))
+  let loc = parser.loc
+  let symbol = ? parser.run(contained("extern_symbol", "(", stringLiteralSpec, ")"))
+  discard ? parser.run(ignorableLineSpec)
+  discard ? parser.run(indentationSpec)
+  let def = ? parser.run(functionDefinitionSpec)
+  discard ? parser.run(ignorableLineSpec)
+  ok(newFunction(newExternFunction(symbol.value, def, loc)))
+)
 
 # Each function block skips leading ignorable lines then parses a function.
 # any() backtracks the ignorable line consumption if no function follows.
@@ -635,8 +653,10 @@ let funcBlockSpec = Spec[Function](
   name: "function_block",
   parseFn: proc(parser: Parser): Result[Function, ParserError] =
   discard parser.run(any(ignorableLineSpec))
-  let f = ? parser.run(functionSpec)
-  ok(f)
+  let f = parser.run(externFunctionSpec)
+  if f.isOk: return ok(f.get)
+  let u = ? parser.run(userFunctionSpec)
+  ok(u)
 )
 
 let functionListSpec = any(funcBlockSpec).map("function_list",
@@ -710,6 +730,16 @@ let fieldLineSpec = Spec[ArgumentDefinition](
   ok(argDef)
 )
 
+let literalTypeSpec = Spec[LiteralType](
+  name: "literal_type",
+  parseFn: proc(parser: Parser): Result[LiteralType, ParserError] =
+  discard ? parser.run(indentationSpec)
+  let literalKeywordLoc = ? parser.run(keywordSpec("literal"))
+  discard ? parser.run(colonWithSpacesSpec)
+  let literalType = ? parser.run(stringLiteralSpec)
+  ok(newLiteralType(literalType, literalKeywordLoc))
+)
+
 let structSpec = blockSpec("struct", structHeaderSpec,
   atLeastOne(fieldLineSpec),
   proc(h: Location, b: seq[ArgumentDefinition]): Result[Struct, ParserError] =
@@ -746,6 +776,8 @@ let unionSpec = blockSpec("union", unionHeaderSpec,
   newUnion(b, h))
 
 let dataBlockSpec = oneOf("data_block", [
+  literalTypeSpec.map("literal_data",
+    proc(v: LiteralType): DataBlock = newDataBlock(v)),
   structSpec.map("struct_data",
     proc(v: Struct): DataBlock = newDataBlock(v)),
   unionSpec.map("union_data",
@@ -767,28 +799,28 @@ let moduleSpec = decoratedBlockSpec("module", moduleHeaderSpec, moduleBodySpec,
   proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Result[Module, ParserError] =
   newModule(d, h.public, h.name, b.data, b.funcList, h.loc))
 
-let fileItemSpec = oneOf("file_item", [
+let typeSpec = oneOf("type_block", [
   moduleSpec.map("module_item",
-    proc(v: Module): FileItem = newFileItem(v)),
+    proc(v: Module): Type = newType(v)),
   genericSpec.map("generic_item",
-    proc(v: Generic): FileItem = newFileItem(v)),
+    proc(v: Generic): Type = newType(v)),
 ])
 
 # import { Name, Name } from "path"
 # identifier ("as" identifier)?
-let importNameSpec = Spec[ImportName](
+let importedTypeSpec = Spec[ImportedType](
   name: "import_name",
-  parseFn: proc(parser: Parser): Result[ImportName, ParserError] =
+  parseFn: proc(parser: Parser): Result[ImportedType, ParserError] =
   let name = ? parser.run(identifierSpec)
   let maybeAs = parser.run(atLeastOne(spaceSpec))
   if maybeAs.isErr:
-    return ok(newImportName(name, none(Identifier), name.loc))
+    return ok(newImportedType(name, none(Identifier), name.loc))
   let maybeAsKeyword = parser.run(keywordSpec("as"))
   if maybeAsKeyword.isErr:
-    return ok(newImportName(name, none(Identifier), name.loc))
+    return ok(newImportedType(name, none(Identifier), name.loc))
   discard ? parser.run(atLeastOne(spaceSpec))
   let alias = ? parser.run(identifierSpec)
-  ok(newImportName(name, some(alias), name.loc))
+  ok(newImportedType(name, some(alias), name.loc))
 )
 
 let importLineSpec = Spec[Import](
@@ -797,7 +829,7 @@ let importLineSpec = Spec[Import](
   let loc = ? parser.run(keywordSpec("import"))
   discard ? parser.run(atLeastOne(spaceSpec))
   let names = ? parser.run(contained("import_names", "{",
-    separatedBy(importNameSpec, commaWithSpacesSpec), "}"))
+    separatedBy(importedTypeSpec, commaWithSpacesSpec), "}"))
   discard ? parser.run(atLeastOne(spaceSpec))
   discard ? parser.run(keywordSpec("from"))
   discard ? parser.run(atLeastOne(spaceSpec))
@@ -818,11 +850,11 @@ let importBlockSpec = Spec[Import](
   ok(imp)
 )
 
-let fileItemBlockSpec = Spec[FileItem](
-  name: "file_item_block",
-  parseFn: proc(parser: Parser): Result[FileItem, ParserError] =
+let typeBlockSpec = Spec[Type](
+  name: "type_block_block",
+  parseFn: proc(parser: Parser): Result[Type, ParserError] =
   discard parser.run(any(ignorableLineSpec))
-  let item = ? parser.run(fileItemSpec)
+  let item = ? parser.run(typeSpec)
   ok(item)
 )
 
@@ -831,11 +863,11 @@ let fileSpec = Spec[File](
   name: "file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
   let imports = ? parser.run(any(importBlockSpec))
-  let items = ? parser.run(atLeastOne(fileItemBlockSpec))
+  let items = ? parser.run(atLeastOne(typeBlockSpec))
   discard parser.run(any(ignorableLineSpec))
   if not parser.done():
     # Force a parse attempt to get a specific error message
-    discard ? parser.run(fileItemSpec)
+    discard ? parser.run(typeSpec)
   newFile(parser.filepath, imports, items)
 )
 

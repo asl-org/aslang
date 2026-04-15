@@ -23,8 +23,8 @@ proc newIdentifier*(value: string, loc: Location): Result[Identifier, ParserErro
 proc value*(id: Identifier): string = id.value
 proc loc*(id: Identifier): Location = id.loc
 
-proc hash(id: Identifier): Hash = hash(id.value)
-proc `==`(id: Identifier, other: Identifier): bool = hash(id) == hash(other)
+proc hash*(id: Identifier): Hash = hash(id.value)
+proc `==`*(id: Identifier, other: Identifier): bool = hash(id) == hash(other)
 
 proc asl(identifier: Identifier): string = identifier.value
 
@@ -111,6 +111,30 @@ proc asl(argDefList: ArgumentDefinitionList): string =
     result.add(asl(argDef))
   result.add(")")
 
+type StringLiteral* = ref object
+  content: string
+  loc: Location
+
+proc newStringLiteral*(content: string, loc: Location): StringLiteral =
+  StringLiteral(content: content, loc: loc)
+
+proc loc*(strLit: StringLiteral): Location = strLit.loc
+proc value*(strLit: StringLiteral): string = strLit.content
+proc asl(strLit: StringLiteral): string = fmt"""{strLit.content}"""
+
+type LiteralType* = ref object
+  value: StringLiteral
+  loc: Location
+
+proc newLiteralType*(value: StringLiteral, loc: Location): LiteralType =
+  LiteralType(value: value, loc: loc)
+
+proc content*(literalType: LiteralType): string = literalType.value.content
+proc loc*(literalType: LiteralType): Location = literalType.loc
+
+proc asl(l: LiteralType): seq[string] =
+  @[fmt"literal: {asl(l.value)}"]
+
 type Struct* = ref object
   fields: seq[ArgumentDefinition]
   fieldIndex: Table[Identifier, int]
@@ -193,13 +217,28 @@ proc asl(u: Union, indentWidth: uint32): seq[string] =
 
 type
   DataBlockKind* = enum
-    dbkStruct, dbkUnion
+    dbkLiteral, dbkStruct, dbkUnion
   DataBlock* = ref object
     case kind: DataBlockKind
+    of dbkLiteral: literal: LiteralType
     of dbkStruct: struct: Struct
     of dbkUnion: union: Union
 
+proc newDataBlock*(l: LiteralType): DataBlock =
+  DataBlock(kind: dbkLiteral, literal: l)
+
+proc newDataBlock*(s: Struct): DataBlock =
+  DataBlock(kind: dbkStruct, struct: s)
+
+proc newDataBlock*(u: Union): DataBlock =
+  DataBlock(kind: dbkUnion, union: u)
+
+
 proc kind*(db: DataBlock): DataBlockKind = db.kind
+proc literal*(db: DataBlock): LiteralType =
+  assert db.kind == dbkLiteral,
+    fmt"DataBlock.literal accessed but kind is {db.kind}"
+  db.literal
 proc struct*(db: DataBlock): Struct =
   assert db.kind == dbkStruct,
     fmt"DataBlock.struct accessed but kind is {db.kind}"
@@ -209,14 +248,9 @@ proc union*(db: DataBlock): Union =
     fmt"DataBlock.union accessed but kind is {db.kind}"
   db.union
 
-proc newDataBlock*(s: Struct): DataBlock =
-  DataBlock(kind: dbkStruct, struct: s)
-
-proc newDataBlock*(u: Union): DataBlock =
-  DataBlock(kind: dbkUnion, union: u)
-
 proc asl(db: DataBlock, indentWidth: uint32): seq[string] =
   case db.kind:
+  of dbkLiteral: asl(db.literal)
   of dbkStruct: asl(db.struct, indentWidth)
   of dbkUnion: asl(db.union, indentWidth)
 
@@ -229,7 +263,7 @@ type FunctionDefinition* = ref object
 
 proc public*(fd: FunctionDefinition): bool = fd.public
 proc name*(fd: FunctionDefinition): Identifier = fd.name
-proc params*(fd: FunctionDefinition): seq[
+proc args*(fd: FunctionDefinition): seq[
     ArgumentDefinition] = fd.argDefList.argDefs
 proc returns*(fd: FunctionDefinition): ArgumentType = fd.returns
 proc loc*(fd: FunctionDefinition): Location = fd.loc
@@ -256,10 +290,6 @@ proc newStringContent*(content: string,
 type
   ArgumentList* = ref object
     args: seq[Expression]
-    loc: Location
-
-  StringLiteral* = ref object
-    content: string
     loc: Location
 
   UnsignedIntegerLiteral* = ref object
@@ -391,14 +421,12 @@ type
 proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
 
-proc newStringLiteral*(content: string, loc: Location): StringLiteral =
-  StringLiteral(content: content, loc: loc)
-
-proc loc*(strLit: StringLiteral): Location = strLit.loc
-
 proc newFunctionCall*(argType: ArgumentType, name: Identifier,
     argList: ArgumentList): FunctionCall =
   FunctionCall(argType: argType, name: name, argList: argList)
+
+proc argType*(fncall: FunctionCall): ArgumentType = fncall.argType
+proc args*(fncall: FunctionCall): seq[Expression] = fncall.argList.args
 
 proc newExpression*(literal: Literal): Expression =
   Expression(kind: ekLiteral, literal: literal)
@@ -467,6 +495,8 @@ proc newUnsignedIntegerLiteral*(value: string,
     loc: Location): UnsignedIntegerLiteral =
   UnsignedIntegerLiteral(value: value, loc: loc)
 
+proc value*(literal: UnsignedIntegerLiteral): string = literal.value
+
 proc newSignedIntegerLiteral*(sign: string, value: UnsignedIntegerLiteral,
     loc: Location): SignedIntegerLiteral =
   SignedIntegerLiteral(sign: sign, value: value, loc: loc)
@@ -487,10 +517,6 @@ proc newExpression*(variable: Identifier): Expression =
   Expression(kind: ekVariable, variable: variable)
 
 proc asl(expr: Expression): string
-
-proc value*(strLit: StringLiteral): string = strLit.content
-
-proc asl(strLit: StringLiteral): string = fmt"""{strLit.content}"""
 
 proc asl(unsigned: UnsignedIntegerLiteral): string = unsigned.value
 
@@ -560,6 +586,9 @@ proc asl(expr: Expression): string =
 proc newAssignment*(target: Identifier, expression: Expression,
     loc: Location): Assignment =
   Assignment(target: target, expression: expression, loc: loc)
+
+proc target*(assignment: Assignment): Identifier = assignment.target
+proc expression*(assignment: Assignment): Expression = assignment.expression
 
 proc asl(assignment: Assignment): string =
   fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
@@ -681,22 +710,22 @@ proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string] =
     for line in asl(cb, indentWidth):
       result.add(fmt"{indent}{line}")
 
-type Function* = ref object
+type UserFunction* = ref object
   decorators: seq[Decorator]
   def: FunctionDefinition
   statementList: StatementList
 
-proc name*(fn: Function): Identifier = fn.def.name
-proc def*(fn: Function): FunctionDefinition = fn.def
-proc statementList*(fn: Function): StatementList = fn.statementList
-proc decorators*(fn: Function): seq[Decorator] = fn.decorators
-proc arity*(fn: Function): int = fn.def.arity
+proc name*(fn: UserFunction): Identifier = fn.def.name
+proc def*(fn: UserFunction): FunctionDefinition = fn.def
+proc statements*(fn: UserFunction): seq[Statement] = fn.statementList.statements
+proc decorators*(fn: UserFunction): seq[Decorator] = fn.decorators
+proc arity*(fn: UserFunction): int = fn.def.arity
 
-proc newFunction*(decorators: seq[Decorator], def: FunctionDefinition,
-    statementList: StatementList): Function =
-  Function(decorators: decorators, def: def, statementList: statementList)
+proc newUserFunction*(decorators: seq[Decorator], def: FunctionDefinition,
+    statementList: StatementList): UserFunction =
+  UserFunction(decorators: decorators, def: def, statementList: statementList)
 
-proc asl(fn: Function, indentWidth: uint32): seq[string] =
+proc asl(fn: UserFunction, indentWidth: uint32): seq[string] =
   for d in fn.decorators:
     result.add(asl(d))
   result.add(asl(fn.def))
@@ -704,6 +733,59 @@ proc asl(fn: Function, indentWidth: uint32): seq[string] =
   for stmt in fn.statementList.statements:
     for line in aslBlock(stmt, indentWidth):
       result.add(fmt"{indent}{line}")
+
+type ExternFunction* = ref object
+  symbol: string
+  def: FunctionDefinition
+  loc: Location
+
+proc symbol*(fn: ExternFunction): string = fn.symbol
+proc name*(fn: ExternFunction): Identifier = fn.def.name
+proc def*(fn: ExternFunction): FunctionDefinition = fn.def
+proc arity*(fn: ExternFunction): int = fn.def.arity
+proc loc*(fn: ExternFunction): Location = fn.loc
+
+proc newExternFunction*(symbol: string, def: FunctionDefinition,
+    loc: Location): ExternFunction =
+  ExternFunction(symbol: symbol, def: def, loc: loc)
+
+proc asl(fn: ExternFunction, indentWidth: uint32): seq[string] =
+  result.add(fmt"@extern(""{fn.symbol}"")")
+  result.add(asl(fn.def))
+
+type
+  FunctionKind* = enum
+    fkUser, fkExtern
+  Function* = ref object
+    case kind*: FunctionKind
+    of fkUser: user*: UserFunction
+    of fkExtern: extern*: ExternFunction
+
+proc newFunction*(user: UserFunction): Function =
+  Function(kind: fkUser, user: user)
+
+proc newFunction*(extern: ExternFunction): Function =
+  Function(kind: fkExtern, extern: extern)
+
+proc name*(fn: Function): Identifier =
+  case fn.kind:
+  of fkUser: fn.user.name
+  of fkExtern: fn.extern.name
+
+proc def*(fn: Function): FunctionDefinition =
+  case fn.kind:
+  of fkUser: fn.user.def
+  of fkExtern: fn.extern.def
+
+proc arity*(fn: Function): int =
+  case fn.kind:
+  of fkUser: fn.user.arity
+  of fkExtern: fn.extern.arity
+
+proc asl(fn: Function, indentWidth: uint32): seq[string] =
+  case fn.kind:
+  of fkUser: asl(fn.user, indentWidth)
+  of fkExtern: asl(fn.extern, indentWidth)
 
 type FunctionList* = ref object
   functions*: seq[Function]
@@ -721,32 +803,32 @@ proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserErro
 
 proc len(fnlist: FunctionList): int = fnlist.functions.len
 
-type ImportName* = ref object
+type ImportedType* = ref object
   name: Identifier
   alias: Option[Identifier]
   loc: Location
 
-proc name*(n: ImportName): Identifier = n.name
-proc alias*(n: ImportName): Option[Identifier] = n.alias
-proc loc*(n: ImportName): Location = n.loc
+proc name*(n: ImportedType): Identifier = n.name
+proc alias*(n: ImportedType): Option[Identifier] = n.alias
+proc loc*(n: ImportedType): Location = n.loc
 
-proc newImportName*(name: Identifier, alias: Option[Identifier],
-    loc: Location): ImportName =
-  ImportName(name: name, alias: alias, loc: loc)
+proc newImportedType*(name: Identifier, alias: Option[Identifier],
+    loc: Location): ImportedType =
+  ImportedType(name: name, alias: alias, loc: loc)
 
-proc asl(importName: ImportName): string =
-  if importName.alias.isSome:
-    fmt"{asl(importName.name)} as {asl(importName.alias.get)}"
+proc asl(importedType: ImportedType): string =
+  if importedType.alias.isSome:
+    fmt"{asl(importedType.name)} as {asl(importedType.alias.get)}"
   else:
-    asl(importName.name)
+    asl(importedType.name)
 
 type Import* = ref object
-  names: seq[ImportName]
+  names: seq[ImportedType]
   source: string
   path: string # absolute path of the imported file; set during BFS in parse*
   loc: Location
 
-proc newImport*(names: seq[ImportName], source: string, path: string,
+proc newImport*(names: seq[ImportedType], source: string, path: string,
     loc: Location): Result[Import, ParserError] =
   var nameIndex: Table[Identifier, int]
   var bindingIndex: Table[Identifier, int]
@@ -768,7 +850,7 @@ proc newImport*(names: seq[ImportName], source: string, path: string,
 
   ok(Import(names: names, source: source, path: path, loc: loc))
 
-proc names*(imp: Import): seq[ImportName] = imp.names
+proc names*(imp: Import): seq[ImportedType] = imp.names
 proc source*(imp: Import): string = imp.source
 proc path*(imp: Import): string = imp.path
 proc loc*(imp: Import): Location = imp.loc
@@ -866,18 +948,18 @@ proc asl(module: Module, indentWidth: uint32): seq[string] =
       result.add(fmt"{indent}{line}")
 
 type
-  FileItemKind* = enum
+  TypeKind* = enum
     fikModule, fikGeneric
-  FileItem* = ref object
-    case kind*: FileItemKind
+  Type* = ref object
+    case kind*: TypeKind
     of fikModule: module*: Module
     of fikGeneric: generic*: Generic
 
-proc newFileItem*(module: Module): FileItem =
-  FileItem(kind: fikModule, module: module)
+proc newType*(module: Module): Type =
+  Type(kind: fikModule, module: module)
 
-proc newFileItem*(generic: Generic): FileItem =
-  FileItem(kind: fikGeneric, generic: generic)
+proc newType*(generic: Generic): Type =
+  Type(kind: fikGeneric, generic: generic)
 
 type File* = ref object
   path: string
@@ -887,7 +969,7 @@ type File* = ref object
   moduleIndex: Table[Identifier, int]
   genericIndex: Table[Identifier, int]
 
-proc newFile*(path: string, imports: seq[Import], items: seq[FileItem]): Result[
+proc newFile*(path: string, imports: seq[Import], items: seq[Type]): Result[
     File, ParserError] =
   # TODO: Ensure that same file is not used in multiple import statements
   # var importedFileSet: Hashset[string]
@@ -985,6 +1067,8 @@ proc newApp*(files: seq[File]): App =
   for i, f in files:
     fileIndex[f.path] = i
   App(files: files, fileIndex: fileIndex)
+
+proc files*(app: App): seq[File] = app.files
 
 # ============================================================
 # Lookup procs

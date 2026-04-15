@@ -13,7 +13,7 @@
 
 - [x] **PSR-37: Add union initializer expression** (`src/parser.nim`) [medium] — Done. `Type.Variant { fields }` as `UnionInitializer`. Tried before non-primitive and function call in `oneOf` since all start with `argumentType` but disambiguate by `.Variant {` vs `{` vs `.method(`.
 
-- [x] **PSR-38: Add import aliasing** (`src/parser.nim`) [medium] — Done. `ImportName` type with `name` and optional `alias` (empty string if none). `importNameSpec` parses `identifier ("as" identifier)?`. Import stores `seq[ImportName]` instead of `seq[string]`.
+- [x] **PSR-38: Add import aliasing** (`src/parser.nim`) [medium] — Done. `ImportedType` type with `name` and optional `alias` (empty string if none). `importedTypeSpec` parses `identifier ("as" identifier)?`. Import stores `seq[ImportedType]` instead of `seq[string]`.
 
 ### Parser bugs
 
@@ -29,7 +29,7 @@
 
 - [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser/grammar.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
 
-- [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser/combinators.nim`) [low] — `importBlockSpec`, `fileItemBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
+- [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser/combinators.nim`) [low] — `importBlockSpec`, `typeBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
 
 ### Other
 
@@ -74,7 +74,7 @@
 
 ### Location tracking
 
-- [x] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser/ast.nim`) — Every name-bearing field in the AST holds an `Identifier` (value + Location). `ImportName.alias` is `Option[Identifier]`. Error messages report exact `line:col`. `Identifier.value` is the textual name (renamed from `.name` to avoid `.name.name` stutter).
+- [x] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser/ast.nim`) — Every name-bearing field in the AST holds an `Identifier` (value + Location). `ImportedType.alias` is `Option[Identifier]`. Error messages report exact `line:col`. `Identifier.value` is the textual name (renamed from `.name` to avoid `.name.name` stutter).
 
 ### Block indexing and validation
 
