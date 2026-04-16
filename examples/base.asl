@@ -592,7 +592,7 @@ public module Bitset:
     bits: Array[u8]
 
   public func init(size: u32): Bitset
-    size = u32.quotient(size + 7, 8)
+    size = u32.quotient(u32.add(size, 7), 8)
     bits = Array[u8].init(size)
     Bitset { bits: bits }
 

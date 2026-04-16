@@ -555,7 +555,18 @@ let caseBlockSpec = blockSpec("case", caseHeaderSpec, statementListSpec,
   proc(h: CasePattern, b: StatementList): CaseBlock =
   newCaseBlock(h, b, h.loc))
 
+let mutationSpec = Spec[Mutation](
+  name: "mutation",
+  parseFn: proc(parser: Parser): Result[Mutation, ParserError] =
+  let getter = ? parser.run(getterSpec)
+  discard ? parser.run(equalsSeparatorSpec)
+  let expression = ? parser.run(expressionSpec)
+  ok(newMutation(getter, expression, getter.loc))
+)
+
 let inlineStatementSpec = oneOf("inline_statement", [
+  mutationSpec.map("mutation_statement",
+    proc(v: Mutation): Statement = newStatement(v)),
   assignmentSpec.map("assignment_statement",
     proc(v: Assignment): Statement = newStatement(v)),
   expressionSpec.map("expression_statement",
@@ -679,17 +690,20 @@ let moduleHeaderSpec = Spec[ModuleHeader](
   ok((public, nameIdent, loc))
 )
 
-type GenericHeader = tuple[name: Identifier, loc: Location]
+type GenericHeader = tuple[public: bool, name: Identifier, loc: Location]
 
 let genericHeaderSpec = Spec[GenericHeader](
   name: "generic_header",
   parseFn: proc(parser: Parser): Result[GenericHeader, ParserError] =
+  let maybePublic = parser.run(keywordSpec("public"))
+  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
+  let public = maybePublic.isOk
   let loc = ? parser.run(keywordSpec("generic"))
   discard ? parser.run(atLeastOne(spaceSpec))
   let nameIdent = ? parser.run(identifierSpec)
   discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
-  ok((nameIdent, loc))
+  ok((public, nameIdent, loc))
 )
 
 # Function definition line: indentation + function signature + newline
@@ -707,7 +721,7 @@ let functionDefinitionListSpec = atLeastOne(functionDefinitionLineSpec)
 let genericSpec = blockSpec("generic", genericHeaderSpec,
   functionDefinitionListSpec,
   proc(h: GenericHeader, b: seq[FunctionDefinition]): Result[Generic, ParserError] =
-  newGeneric(@[], h.name, b, h.loc))
+  newGeneric(@[], h.public, h.name, b, h.loc))
 
 # struct: field+ (field is identifier ":" argumentType)
 let structHeaderSpec = Spec[Location](
@@ -784,20 +798,37 @@ let dataBlockSpec = oneOf("data_block", [
     proc(v: Union): DataBlock = newDataBlock(v)),
 ])
 
-# Module body: optional data block + function list
-type ModuleBody = tuple[data: Option[DataBlock], funcList: FunctionList]
+# requires(Generic, Generic, ...)
+let requiresSpec = Spec[Requires](
+  name: "requires",
+  parseFn: proc(parser: Parser): Result[Requires, ParserError] =
+  discard ? parser.run(indentationSpec)
+  let loc = ? parser.run(keywordSpec("requires"))
+  discard parser.run(any(spaceSpec))
+  let generics = ? parser.run(contained("requires_generics", "(",
+    separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
+  discard ? parser.run(ignorableLineSpec)
+  ok(newRequires(generics, loc))
+)
+
+# Module body: optional requires + optional data block + function list
+type ModuleBody = tuple[requires: Option[Requires], data: Option[DataBlock],
+    funcList: FunctionList]
 
 let moduleBodySpec = Spec[ModuleBody](
   name: "module_body",
   parseFn: proc(parser: Parser): Result[ModuleBody, ParserError] =
+  discard parser.run(any(ignorableLineSpec))
+  let requires = ? parser.run(optional(requiresSpec))
+  discard parser.run(any(ignorableLineSpec))
   let data = ? parser.run(optional(dataBlockSpec))
   let funcList = ? parser.run(functionListSpec)
-  ok((data, funcList))
+  ok((requires, data, funcList))
 )
 
 let moduleSpec = decoratedBlockSpec("module", moduleHeaderSpec, moduleBodySpec,
   proc(d: seq[Decorator], h: ModuleHeader, b: ModuleBody): Result[Module, ParserError] =
-  newModule(d, h.public, h.name, b.data, b.funcList, h.loc))
+  newModule(d, h.public, h.name, b.requires, b.data, b.funcList, h.loc))
 
 let typeSpec = oneOf("type_block", [
   moduleSpec.map("module_item",

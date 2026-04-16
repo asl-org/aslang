@@ -287,6 +287,7 @@ proc resolveStatement(app: App, file: File, fileScope: FileScope,
         assignment.expression, funcScope)
     # TODO: update the scope with target variable
     err("todo: resolve assigned statement")
+  of skMutation: err("todo: resolve mutation")
   of skExpr: err("todo: resolve expression")
 
 proc resolveUserFunction(app: App, file: File, fileScope: FileScope,

@@ -408,12 +408,18 @@ type
     cases: seq[CaseBlock]
     loc: Location
 
+  Mutation* = ref object
+    target: Getter
+    expression: Expression
+    loc: Location
+
   StatementKind* = enum
-    skAssignment, skExpr
+    skAssignment, skExpr, skMutation
   Statement* = ref object
     case kind*: StatementKind
     of skAssignment: assignment*: Assignment
     of skExpr: expression*: Expression
+    of skMutation: mutation*: Mutation
 
   StatementList* = ref object
     statements*: seq[Statement]
@@ -437,6 +443,10 @@ proc newExpression*(fncall: FunctionCall): Expression =
 proc newGetter*(source: Identifier, property: Identifier,
     loc: Location): Getter =
   Getter(source: source, property: property, loc: loc)
+
+proc source*(g: Getter): Identifier = g.source
+proc property*(g: Getter): Identifier = g.property
+proc loc*(g: Getter): Location = g.loc
 
 proc newKeywordArgument*(name: Identifier, expression: Expression,
     loc: Location): KeywordArgument =
@@ -593,6 +603,17 @@ proc expression*(assignment: Assignment): Expression = assignment.expression
 proc asl(assignment: Assignment): string =
   fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
 
+proc newMutation*(target: Getter, expression: Expression,
+    loc: Location): Mutation =
+  Mutation(target: target, expression: expression, loc: loc)
+
+proc target*(mutation: Mutation): Getter = mutation.target
+proc expression*(mutation: Mutation): Expression = mutation.expression
+proc loc*(mutation: Mutation): Location = mutation.loc
+
+proc asl(mutation: Mutation): string =
+  fmt"{asl(mutation.target)} = {asl(mutation.expression)}"
+
 proc newCasePattern*(intLit: IntegerLiteral): CasePattern =
   CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
 
@@ -664,6 +685,9 @@ proc newStatement*(assignment: Assignment): Statement =
 proc newStatement*(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
 
+proc newStatement*(mutation: Mutation): Statement =
+  Statement(kind: skMutation, mutation: mutation)
+
 proc newStatementList*(statements: seq[Statement]): StatementList =
   StatementList(statements: statements)
 
@@ -675,6 +699,7 @@ proc isBlockStatement(stmt: Statement): bool =
   of skExpr: stmt.expression.kind == ekMatch
   of skAssignment:
     stmt.assignment.expression.kind == ekMatch
+  of skMutation: false
 
 proc asl(stmt: Statement): string
 proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string]
@@ -682,6 +707,7 @@ proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string]
 proc asl(stmt: Statement): string =
   case stmt.kind:
   of skAssignment: asl(stmt.assignment)
+  of skMutation: asl(stmt.mutation)
   of skExpr: asl(stmt.expression)
 
 proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string] =
@@ -695,6 +721,8 @@ proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string] =
     result.add(fmt"{asl(stmt.assignment.target)} = {matchLines[0]}")
     for i in 1..<matchLines.len:
       result.add(matchLines[i])
+  of skMutation:
+    result = @[asl(stmt.mutation)]
 
 proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
   result.add(fmt"case {asl(caseBlock.pattern)}:")
@@ -871,18 +899,20 @@ proc asl(imp: Import): string =
 
 type Generic* = ref object
   decorators: seq[Decorator]
+  public: bool
   name: Identifier
   funcDefs: seq[FunctionDefinition]
   funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[string, seq[int]]
   loc: Location
 
+proc public*(g: Generic): bool = g.public
 proc name*(g: Generic): Identifier = g.name
 proc funcDefs*(g: Generic): seq[FunctionDefinition] = g.funcDefs
 proc decorators*(g: Generic): seq[Decorator] = g.decorators
 proc loc*(g: Generic): Location = g.loc
 
-proc newGeneric*(decorators: seq[Decorator], name: Identifier,
+proc newGeneric*(decorators: seq[Decorator], public: bool, name: Identifier,
     funcDefs: seq[FunctionDefinition], loc: Location): Result[Generic, ParserError] =
   var funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
   var funcDefIndex: Table[string, seq[int]]
@@ -893,21 +923,40 @@ proc newGeneric*(decorators: seq[Decorator], name: Identifier,
       funcDefArityIndex[def.name][def.arity] = newSeq[int]()
     funcDefArityIndex[def.name][def.arity].add(index)
     funcDefIndex.mgetOrPut(def.name.value, @[]).add(index)
-  ok(Generic(decorators: decorators, name: name, funcDefs: funcDefs,
+  ok(Generic(decorators: decorators, public: public, name: name, funcDefs: funcDefs,
       funcDefArityIndex: funcDefArityIndex, funcDefIndex: funcDefIndex, loc: loc))
 
 proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   for d in gen.decorators:
     result.add(asl(d))
-  result.add(fmt"generic {asl(gen.name)}:")
+  let prefix = if gen.public: "public generic" else: "generic"
+  result.add(fmt"{prefix} {asl(gen.name)}:")
   let indent = " ".repeat(indentWidth)
   for funcDef in gen.funcDefs:
     result.add(fmt"{indent}{asl(funcDef)}")
+
+type Requires* = ref object
+  generics: seq[Identifier]
+  loc: Location
+
+proc generics*(r: Requires): seq[Identifier] = r.generics
+proc loc*(r: Requires): Location = r.loc
+
+proc newRequires*(generics: seq[Identifier], loc: Location): Requires =
+  Requires(generics: generics, loc: loc)
+
+proc asl(r: Requires): string =
+  result = "requires("
+  for i, g in r.generics:
+    if i > 0: result.add(", ")
+    result.add(asl(g))
+  result.add(")")
 
 type Module* = ref object
   decorators: seq[Decorator]
   public: bool
   name: Identifier
+  requires: Option[Requires]
   data: Option[DataBlock]
   funcList: FunctionList
   functionIndex: Table[string, seq[int]]
@@ -915,22 +964,24 @@ type Module* = ref object
 
 proc public*(m: Module): bool = m.public
 proc name*(m: Module): Identifier = m.name
+proc requires*(m: Module): Option[Requires] = m.requires
 proc data*(m: Module): Option[DataBlock] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
 proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
 
 proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
-    data: Option[DataBlock], funcList: FunctionList, loc: Location): Result[
-        Module, ParserError] =
+    requires: Option[Requires], data: Option[DataBlock],
+    funcList: FunctionList, loc: Location): Result[Module, ParserError] =
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
     return err(newParserError(msg, loc))
   var functionIndex: Table[string, seq[int]]
   for i, fn in funcList.functions:
     functionIndex.mgetOrPut(fn.name.value, @[]).add(i)
-  ok(Module(decorators: decorators, public: public, name: name, data: data,
-      funcList: funcList, functionIndex: functionIndex, loc: loc))
+  ok(Module(decorators: decorators, public: public, name: name,
+      requires: requires, data: data, funcList: funcList,
+      functionIndex: functionIndex, loc: loc))
 
 proc asl(module: Module, indentWidth: uint32): seq[string] =
   for d in module.decorators:
@@ -938,6 +989,9 @@ proc asl(module: Module, indentWidth: uint32): seq[string] =
   let prefix = if module.public: "public module" else: "module"
   result.add(fmt"{prefix} {asl(module.name)}:")
   let indent = " ".repeat(indentWidth)
+  if module.requires.isSome:
+    result.add(fmt"{indent}{asl(module.requires.get)}")
+    result.add("")
   if module.data.isSome:
     for line in asl(module.data.get, indentWidth):
       result.add(fmt"{indent}{line}")
