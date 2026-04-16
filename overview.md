@@ -35,7 +35,9 @@ public module App:
 - **Unions**: sum types with named variants, each optionally carrying
   fields (`union: Free { usage: u32 }; Pro { credits: u32 }`)
 - **Functions**: typed, overloadable by parameter signature. Method
-  call syntax via `Type.method(args)`
+  call syntax via `Type.method(args)`. Two kinds: user functions
+  (with a body) and extern functions (`@extern("symbol")` linking
+  to an external implementation)
 - **Generics**: type-parameterized function signature blocks
   (`generic Eq: func eq(a: Eq, b: Eq): u8`)
 - **Pattern matching**: `match` expressions with integer literals,
@@ -77,9 +79,8 @@ Resolver ──── ResolvedApp   (Resolved* wrappers with integer IDs
 
 Orchestrated by `src/asl.nim`:
 ```nim
-let files = ? parse(filepath, indentWidth, dumpTokens)
-let app   = ? index(files)
-let _     = ? resolve(app)
+let app = ? parse(filepath, indentWidth, dumpTokens)
+? resolve(app)
 ```
 
 ### Phase 1: Tokenization
@@ -137,24 +138,26 @@ Rules enforced:
 - No duplicate variant names in unions
 - Functions allow overloading (`Table[string, seq[int]]`)
 
-### Phase 4: Resolution
+### Phase 4: Resolution (WIP)
 
-`src/resolver/{types, resolve}.nim`
+`src/resolver.nim`
 
-Wraps each `Indexed*` node in a `Resolved*` type carrying:
-- **Local ID**: integer position in the immediate parent list
-- **Resolved type references**: every `ArgumentType` in signatures
-  (struct/variant field types, function parameter types, return
-  types) resolved to one of four kinds:
-  - `ratPrimitive` — index into the 17-entry built-in table
-  - `ratModule` — index in current file's modules
-  - `ratGeneric` — index in current file's generics
-  - `ratImported` — (importId, importTypeId) pointing at the
-    import statement and the specific imported name
+Resolves names and types across the parsed AST. Builds a
+`FileScope` per file with a native type registry, then resolves
+each module's data blocks, function definitions (argument types
+and return types), and function bodies (expressions, statements).
 
-Import names are resolved to `ResolvedType` (either `rtkModule` or
-`rtkGeneric`) by looking up the name in the target file's indexed
-module/generic tables.
+- **ResolvedType**: tagged union — `rtkNative` (built-in),
+  `rtkModule` (file + module index), `rtkGeneric` (file + generic
+  index)
+- **ResolvedArgumentType**: resolved root type + recursively
+  resolved impl type parameters
+- **FunctionScope**: tracks function parameter bindings by name
+  for variable resolution in expressions
+
+Currently WIP — literal, variable, and function call expression
+resolution are partially implemented; match, getter, initializer
+are stubbed. Dispatches on `fkUser` / `fkExtern` function kinds.
 
 Function bodies (`StatementList`) remain raw — expression-level
 resolution requires type inference (Phase 3, not yet started).
@@ -163,38 +166,31 @@ resolution requires type inference (Phase 3, not yet started).
 
 ```
 src/
-  asl.nim                          entry point (35 LoC)
+  asl.nim                          entry point
   cli.nim                          CLI parsing via argparse
   utils.nim                        topological sort + cycle detection
   nim.cfg                          per-component module search paths
+  resolver.nim                     WIP name/type resolution
 
   tokenizer/
     tokenizer.nim                  token types + tokenize()
 
   parser/
     parser.nim                     re-exports ast + loader
-    ast.nim             (781 LoC)  AST types + constructors + accessors + asl()
-    combinators.nim     (230 LoC)  Spec[T] + combinator procs
-    grammar.nim         (793 LoC)  grammar specs + single-file parse
-    loader.nim           (75 LoC)  BFS multi-file resolution + parse*()
-
-  validator/
-    validator.nim                  re-exports indexed + indexer
-    indexed.nim         (115 LoC)  Indexed* types + find* lookups
-    indexer.nim         (112 LoC)  index* procs
-
-  resolver/
-    resolver.nim                   re-exports types + resolve
-    types.nim           (395 LoC)  Resolved* types + primitives table
-    resolve.nim         (219 LoC)  resolve* procs
+    ast.nim                        AST types + constructors + accessors + asl()
+    combinators.nim                Spec[T] + combinator procs
+    grammar.nim                    grammar specs + single-file parse
+    loader.nim                     BFS multi-file resolution + parse*()
 
 examples/
-  *.asl                            19 positive test fixtures
-  errors/*.asl                     17 negative test fixtures (each documented)
+  base.asl                         standard library definition (extern functions)
+  *.asl                            positive test fixtures
+  errors/*.asl                     negative test fixtures (each documented)
 
-test.sh                            regression runner (35 tests, exit-code based)
+test.sh                            regression runner (exit-code based)
 bugs.md                            issue tracker (open + resolved)
-lessons.md                         design retrospective (9 dated entries)
+lessons.md                         design retrospective
+overview.md                        this file
 ```
 
 Cross-component imports use bare names (`import tokenizer`,

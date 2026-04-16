@@ -15,6 +15,13 @@
 
 - [x] **PSR-38: Add import aliasing** (`src/parser.nim`) [medium] — Done. `ImportedType` type with `name` and optional `alias` (empty string if none). `importedTypeSpec` parses `identifier ("as" identifier)?`. Import stores `seq[ImportedType]` instead of `seq[string]`.
 
+### New grammar (needed for base.asl)
+
+- [ ] **`literal:` data block** — `literal: "u8"` inside a module declares the module as a built-in literal type. Needs a new `DataBlockKind` variant (`dbkLiteral` exists in AST but grammar doesn't parse it yet). `base.asl` uses this for every numeric module.
+- [ ] **`requires(TypeParam)` on modules** — `requires(Any)` declares that a module is parameterized (like `Array[Any]`). Not in the grammar yet. Used by `Array` and potentially other generic containers in `base.asl`.
+- [ ] **`public generic`** — `genericHeaderSpec` doesn't parse an optional `public` keyword prefix. `base.asl` has `public generic Any:` which fails at parse time.
+- [ ] **`Pointer` as a type name** — `base.asl` uses `Pointer` (capitalized) as a type for raw pointers. Currently the built-in is `ptr` (lowercase). Either add `Pointer` as a built-in alias or let it be resolved as a module type.
+
 ### Parser bugs
 
 - [ ] **Blank line after `struct:` / `union:` bypasses `atLeastOne` in blockSpec** (`src/parser/grammar.nim`) [medium] — `struct:` followed by a blank line then `func` compiles as a module with only a function (struct silently discarded). `blockSpec` with `atLeastOne(fieldLineSpec)` should reject zero fields, but the blank line causes a backtrack that drops the struct entirely. `newStruct` has a defense-in-depth guard (`fields.len == 0` check) but it's never reached because `blockSpec` backtracks before calling the combine function. Needs investigation into how `blockSpec` handles empty bodies after header success.
@@ -68,9 +75,17 @@
 
 - [x] **PSR-39 + validator deletion** — Originally a separate `src/validator/` component with `Indexed*` wrapper types and `Table` indices. Validation checks were progressively moved into parser constructors (`newStruct`, `newUnion`, `newVariantDefinition`, `newModule`, `newFile`, etc.) which enforce uniqueness at construction time. Remaining lookup indices (`functionIndex`, `funcDefIndex`, `moduleIndex`, `genericIndex`, `importIndex`, `fileIndex`) migrated directly onto parser AST types (`Module`, `Generic`, `File`, `App`). The `find*` lookup procs now live on the parser types. Validator deleted entirely — zero validation or indexing logic remains outside the parser.
 
-### Resolver (deleted — to be rewritten)
+### ExternFunction + Function union
 
-- [x] **PSR-41 Phases 1+2** — Built `Resolved*` wrapper types with local int ids and `ResolvedArgumentType` for signature-level type resolution. Subsequently deleted in full — the resolver will be rewritten from scratch. Built-in type canonicalization (`str → String`, `U8 → u8`, `pointer → ptr`) applied to examples during this phase and retained.
+- [x] **Function is now a tagged union** (`src/parser/ast.nim`, `src/parser/grammar.nim`) — `fkUser` (UserFunction: decorators + def + body) and `fkExtern` (ExternFunction: `@extern("symbol")` + def, no body). `externFunctionSpec` parses `@extern("symbol")` on one line, function definition at the same indentation on the next. `funcBlockSpec` tries extern first, falls back to user function. `Function.name`, `.def`, `.arity` dispatch on kind. Resolver dispatches via `resolveUserFunction` / `resolveExternFunction`.
+
+### Resolver (WIP rewrite)
+
+- [ ] **Resolver rewrite** (`src/resolver.nim`) — In progress. FileScope with native type registry, ResolvedType (rtkNative/rtkGeneric/rtkModule), resolveArgumentType, resolveFunctionDefinition with FunctionScope, resolveExpression (literal + variable done, fncall/getter/match/initializer stubbed), resolveStatement (assignment stubbed). All paths return `err("todo: ...")` for unfinished work.
+
+### Resolver (previous — deleted)
+
+- [x] **PSR-41 Phases 1+2** — Built `Resolved*` wrapper types with local int ids and `ResolvedArgumentType` for signature-level type resolution. Subsequently deleted in full. Built-in type canonicalization (`str → String`, `U8 → u8`, `pointer → ptr`) applied to examples during this phase and retained.
 
 ### Location tracking
 
