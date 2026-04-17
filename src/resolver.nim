@@ -74,9 +74,31 @@ proc resolveImport(app: App, file: File, scope: FileScope, imp: Import): Result[
     void, string] =
   err("todo: resolve imports")
 
-proc resolveLiteral(app: App, file: File, module: Module,
-    l: LiteralType): Result[void, string] =
-  err("todo: resolve literal type")
+type
+  ResolvedLiteralTypeKind = enum
+    rltkU8, rltkU16, rltkU32, rltkU64
+    rltkI8, rltkI16, rltkI32, rltkI64
+    rltkF32, rltkF64
+  ResolvedLiteralType = ref object
+    kind: ResolvedLiteralTypeKind
+
+proc newResolvedLiteralType(kind: ResolvedLiteralTypeKind): ResolvedLiteralType =
+  ResolvedLiteralType(kind: kind)
+
+proc resolveLiteralType(app: App, file: File, module: Module,
+    l: LiteralType): Result[ResolvedLiteralType, string] =
+  case l.content:
+  of "u8": ok(newResolvedLiteralType(rltkU8))
+  of "u16": ok(newResolvedLiteralType(rltkU16))
+  of "u32": ok(newResolvedLiteralType(rltkU32))
+  of "u64": ok(newResolvedLiteralType(rltkU64))
+  of "i8": ok(newResolvedLiteralType(rltkI8))
+  of "i16": ok(newResolvedLiteralType(rltkI16))
+  of "i32": ok(newResolvedLiteralType(rltkI32))
+  of "i64": ok(newResolvedLiteralType(rltkI64))
+  of "f32": ok(newResolvedLiteralType(rltkF32))
+  of "f64": ok(newResolvedLiteralType(rltkF64))
+  else: err(fmt"{file.path}:{l.loc} literal '{l.content}' is unsupported")
 
 proc resolveStruct(app: App, file: File, module: Module,
     struct: Struct): Result[void, string] =
@@ -86,13 +108,36 @@ proc resolveUnion(app: App, file: File, module: Module, union: Union): Result[
     void, string] =
   err("todo: resolve union")
 
+type
+  ResolvedDataKind = enum
+    rdkLiteral, rdkStruct, rdkUnion
+  ResolvedData = ref object
+    case kind: ResolvedDataKind
+    of rdkLiteral: literal: ResolvedLiteralType
+    of rdkStruct: discard
+    of rdkUnion: discard
+
+proc newResolvedData(literal: ResolvedLiteralType): ResolvedData =
+  ResolvedData(kind: rdkLiteral, literal: literal)
+
+proc newResolvedDataStruct(): ResolvedData =
+  ResolvedData(kind: rdkStruct)
+
+proc newResolvedDataUnion(): ResolvedData =
+  ResolvedData(kind: rdkUnion)
+
 proc resolveData(app: App, file: File, module: Module, data: DataBlock): Result[
-    void, string] =
+    ResolvedData, string] =
   case data.kind:
-  of dbkStruct: ? resolveStruct(app, file, module, data.struct)
-  of dbkUnion: ? resolveUnion(app, file, module, data.union)
-  of dbkLiteral: ? resolveLiteral(app, file, module, data.literal)
-  err("todo: resolve data block")
+  of dbkLiteral:
+    let resolvedLiteral = ? resolveLiteralType(app, file, module, data.literal)
+    ok(newResolvedData(resolvedLiteral))
+  of dbkStruct:
+    ? resolveStruct(app, file, module, data.struct)
+    ok(newResolvedDataStruct())
+  of dbkUnion:
+    ? resolveUnion(app, file, module, data.union)
+    ok(newResolvedDataUnion())
 
 type ResolvedArgumentType = ref object
   root: ResolvedType
@@ -146,16 +191,12 @@ proc newResolvedFunctionDefinition(args: seq[ResolvedArgumentType],
     returns: ResolvedArgumentType): ResolvedFunctionDefinition =
   ResolvedFunctionDefinition(args: args, returns: returns)
 
-proc resolveFunctionDefinition(app: App, file: File, fileScope: FileScope,
-    module: Module, def: FunctionDefinition,
-        funcScope: var FunctionScope): Result[
-    ResolvedFunctionDefinition, string] =
+proc resolveFunctionDefinition(app: App, file: File, fileScope: FileScope, module: Module, def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var argDefs: seq[ResolvedArgumentType]
   for index, argDef in def.args:
     let resolvedArgType = ? resolveArgumentDefinition(app, file, fileScope,
         module, argDef)
     argDefs.add(resolvedArgType)
-    funcScope = funcScope.addArg(argDef.name)
 
   let resolvedReturnType = ? resolveArgumentType(app, file, fileScope, module, def.returns)
   ok(newResolvedFunctionDefinition(argDefs, resolvedReturnType))
@@ -294,7 +335,9 @@ proc resolveUserFunction(app: App, file: File, fileScope: FileScope,
     module: Module, function: UserFunction): Result[void, string] =
   var funcScope = newFunctionScope()
   let funcDef = ? resolveFunctionDefinition(app, file, fileScope, module,
-      function.def, funcScope)
+      function.def)
+  for argDef in function.def.args:
+    funcScope = funcScope.addArg(argDef.name)
 
   for statement in function.statements:
     ? resolveStatement(app, file, fileScope, module, statement, funcScope)
@@ -304,7 +347,7 @@ proc resolveExternFunction(app: App, file: File, fileScope: FileScope,
     module: Module, function: ExternFunction): Result[void, string] =
   var funcScope = newFunctionScope()
   let funcDef = ? resolveFunctionDefinition(app, file, fileScope, module,
-      function.def, funcScope)
+      function.def)
   err("todo: resolve extern function")
 
 proc resolveFunction(app: App, file: File, fileScope: FileScope, module: Module,
@@ -316,7 +359,7 @@ proc resolveFunction(app: App, file: File, fileScope: FileScope, module: Module,
 proc resolveModule(app: App, file: File, fileScope: FileScope,
     module: Module): Result[void, string] =
   if module.data.isSome:
-    ? resolveData(app, file, module, module.data.get)
+    let resolvedData = ? resolveData(app, file, module, module.data.get)
 
   for function in module.functions:
     ? resolveFunction(app, file, fileScope, module, function)

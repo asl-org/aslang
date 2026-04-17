@@ -763,22 +763,22 @@ proc asl(fn: UserFunction, indentWidth: uint32): seq[string] =
       result.add(fmt"{indent}{line}")
 
 type ExternFunction* = ref object
-  symbol: string
+  ffi: string
   def: FunctionDefinition
   loc: Location
 
-proc symbol*(fn: ExternFunction): string = fn.symbol
+proc ffi*(fn: ExternFunction): string = fn.ffi
 proc name*(fn: ExternFunction): Identifier = fn.def.name
 proc def*(fn: ExternFunction): FunctionDefinition = fn.def
 proc arity*(fn: ExternFunction): int = fn.def.arity
 proc loc*(fn: ExternFunction): Location = fn.loc
 
-proc newExternFunction*(symbol: string, def: FunctionDefinition,
+proc newExternFunction*(ffi: string, def: FunctionDefinition,
     loc: Location): ExternFunction =
-  ExternFunction(symbol: symbol, def: def, loc: loc)
+  ExternFunction(ffi: ffi, def: def, loc: loc)
 
 proc asl(fn: ExternFunction, indentWidth: uint32): seq[string] =
-  result.add(fmt"@extern(""{fn.symbol}"")")
+  result.add(fmt"@extern(""{fn.ffi}"")")
   result.add(asl(fn.def))
 
 type
