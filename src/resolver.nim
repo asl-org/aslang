@@ -5,15 +5,6 @@ import parser
 
 type File = parser.File
 
-const NATIVE_TYPES = @["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
-    "f32", "f64", "String", "List", "Map", "System"]
-
-type ResolvedNativeType = ref object
-  name: string
-
-proc newResolvedNativeType(name: string): ResolvedNativeType =
-  ResolvedNativeType(name: name)
-
 type ResolvedGenericType = ref object
   file: int
   generic: int
@@ -22,28 +13,21 @@ type ResolvedModuleType = ref object
   file: int
   module: int
 
+proc newResolvedModuleType(file: int, module: int): ResolvedModuleType =
+  ResolvedModuleType(file: file, module: module)
+
 type
   ResolvedTypeKind = enum
-    rtkNative, rtkGeneric, rtkModule
+    rtkGeneric, rtkModule
   ResolvedType = ref object
     case kind: ResolvedTypeKind
     of rtkGeneric: generic: ResolvedGenericType
     of rtkModule: module: ResolvedModuleType
-    of rtkNative: native: ResolvedNativeType
 
-proc newResolvedType(native: ResolvedNativeType): ResolvedType =
-  ResolvedType(kind: rtkNative, native: native)
+proc newResolvedType(module: ResolvedModuleType): ResolvedType =
+  ResolvedType(kind: rtkModule, module: module)
 
 type FileScope = Table[Identifier, ResolvedType]
-
-proc newFileScope(): FileScope =
-  var scope: Table[Identifier, ResolvedType]
-  for intType in NATIVE_TYPES:
-    let maybeTypeName = newIdentifier(intType, newLocation())
-    assert(maybeTypeName.isOk, fmt"failed to build type registry for {intType}")
-    let resolvedNativeType = newResolvedNativeType(intType)
-    scope[maybeTypeName.get] = newResolvedType(resolvedNativeType)
-  return scope
 
 proc findType(scope: FileScope, name: Identifier): Result[ResolvedType, string] =
   if name in scope: ok(scope[name])
@@ -155,7 +139,6 @@ proc resolveArgumentType(app: App, file: File, fileScope: FileScope,
     if argType.impls.len > 0:
       return err(fmt"{argType.loc} generic '{argType.root.value}' does not accept impl types")
   of rtkModule: discard
-  of rtkNative: discard
 
   var resolvedImpls: seq[ResolvedArgumentType]
   for impl in argType.impls:
@@ -175,10 +158,6 @@ proc resolveArgumentDefinition(app: App, file: File, fileScope: FileScope,
     let argTypeModule = resolvedArgType.root.module
     let argModule = app.files[argTypeModule.file].modules[argTypeModule.module]
     if argModule.data.isNone:
-      return err("{argDef.argType.loc} module '{argModule.name.value}' is not a struct/union")
-  of rtkNative:
-    let argTypeNative = resolvedArgType.root.native
-    if argTypeNative.name == "System":
       return err("{argDef.argType.loc} module '{argModule.name.value}' is not a struct/union")
 
   ok(resolvedArgType)
@@ -278,10 +257,6 @@ proc resolveFunctionCall(app: App, file: File, fileScope: FileScope,
       fncall.argType)
 
   case resolvedArgType.root.kind:
-  of rtkNative:
-    let nativeType = resolvedArgType.root.native
-    let resolvedNativeType = ? fileScope.findType(nativeType.name)
-    return err("todo: resolve function name in native function call")
   of rtkGeneric: return err("todo: resolve function name in generic function call")
   of rtkModule: return err("todo: resolve function name in module function call")
 
@@ -343,38 +318,78 @@ proc resolveUserFunction(app: App, file: File, fileScope: FileScope,
     ? resolveStatement(app, file, fileScope, module, statement, funcScope)
   err("todo: resolve user function")
 
+type ResolvedExternFunction = ref object
+  ffi: string
+  funcDef: ResolvedFunctionDefinition
+
+proc newResolvedExternFunction(ffi: string, funcDef: ResolvedFunctionDefinition): ResolvedExternFunction =
+  ResolvedExternFunction(ffi: ffi, funcDef: funcDef)
+
 proc resolveExternFunction(app: App, file: File, fileScope: FileScope,
-    module: Module, function: ExternFunction): Result[void, string] =
-  var funcScope = newFunctionScope()
-  let funcDef = ? resolveFunctionDefinition(app, file, fileScope, module,
-      function.def)
-  err("todo: resolve extern function")
+    module: Module, function: ExternFunction): Result[ResolvedExternFunction, string] =
+  let funcDef = ? resolveFunctionDefinition(app, file, fileScope, module, function.def)
+  ok(newResolvedExternFunction(function.ffi, funcDef))
+
+type
+  ResolvedFunctionKind = enum
+    rfkExtern, rfkUser
+  ResolvedFunction = ref object
+    case kind: ResolvedFunctionKind
+    of rfkExtern: extern: ResolvedExternFunction
+    of rfkUser: discard
+
+proc newResolvedFunction(extern: ResolvedExternFunction): ResolvedFunction =
+  ResolvedFunction(kind: rfkExtern, extern: extern)
+
+proc newResolvedFunction(): ResolvedFunction =
+  ResolvedFunction(kind: rfkUser)
 
 proc resolveFunction(app: App, file: File, fileScope: FileScope, module: Module,
-    function: Function): Result[void, string] =
+    function: Function): Result[ResolvedFunction, string] =
   case function.kind:
-  of fkUser: resolveUserFunction(app, file, fileScope, module, function.user)
-  of fkExtern: resolveExternFunction(app, file, fileScope, module, function.extern)
+  of fkUser:
+    ? resolveUserFunction(app, file, fileScope, module, function.user)
+    ok(newResolvedFunction())
+  of fkExtern:
+    let resolvedExternFunc = ? resolveExternFunction(app, file, fileScope, module, function.extern)
+    ok(newResolvedFunction(resolvedExternFunc))
+
+type ResolvedModule = ref object
+  data: Option[ResolvedData]
+  functions: seq[ResolvedFunction]
+
+proc newResolvedModule(data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
+  ResolvedModule(data: data, functions: functions)
 
 proc resolveModule(app: App, file: File, fileScope: FileScope,
-    module: Module): Result[void, string] =
-  if module.data.isSome:
-    let resolvedData = ? resolveData(app, file, module, module.data.get)
+    module: Module): Result[ResolvedModule, string] =
+  let resolved_data_opt =
+    if module.data.isSome:
+      let resolvedData = ? resolveData(app, file, module, module.data.get)
+      some(resolvedData)
+    else:
+      none(ResolvedData)
 
+  var functions: seq[ResolvedFunction]
   for function in module.functions:
-    ? resolveFunction(app, file, fileScope, module, function)
+    let resolvedFunction = ? resolveFunction(app, file, fileScope, module, function)
+    functions.add(resolvedFunction)
 
-  err("todo: resolve modules")
+  ok(newResolvedModule(resolved_data_opt, functions))
 
-proc resolveFile(app: App, file: File): Result[void, string] =
-  var scope = newFileScope()
+proc resolveFile(app: App, file: File, id: int): Result[void, string] =
+  var scope: FileScope
   for imp in file.imports:
     ? resolveImport(app, file, scope, imp)
-  for module in file.modules:
-    ? resolveModule(app, file, scope, module)
+
+  var modules: seq[ResolvedModule]
+  for index, module in file.modules:
+    let resolvedModule = ? resolveModule(app, file, scope, module)
+    modules.add(resolvedModule)
+    scope[module.name] = newResolvedType(newResolvedModuleType(id, index))
   err("todo: resolve file")
 
 proc resolve*(app: App): Result[void, string] =
-  for file in app.files:
-    ? resolveFile(app, file)
+  for index, file in app.files:
+    ? resolveFile(app, file, index)
   err("todo: resolve app")

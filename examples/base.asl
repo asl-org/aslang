@@ -2,9 +2,6 @@ public module u8:
   literal: "u8"
 
   # core
-  @extern("u8_init")
-  public func init(value: u8): u8
-
   @extern("u8_read")
   public func read(ptr: Pointer, offset: u64): u8
 
@@ -54,9 +51,6 @@ public module u16:
   literal: "u16"
 
   # core
-  @extern("u16_init")
-  public func init(value: u16): u16
-
   @extern("u16_read")
   public func read(ptr: Pointer, offset: u64): u16
 
@@ -106,9 +100,6 @@ public module u32:
   literal: "u32"
 
   # core
-  @extern("u32_init")
-  public func init(value: u32): u32
-
   @extern("u32_read")
   public func read(ptr: Pointer, offset: u64): u32
 
@@ -158,9 +149,6 @@ public module u64:
   literal: "u64"
 
   # core
-  @extern("u64_init")
-  public func init(value: u64): u64
-
   @extern("u64_read")
   public func read(ptr: Pointer, offset: u64): u64
 
@@ -210,9 +198,6 @@ public module i8:
   literal: "i8"
 
   # core
-  @extern("i8_init")
-  public func init(value: i8): i8
-
   @extern("i8_read")
   public func read(ptr: Pointer, offset: u64): i8
 
@@ -262,9 +247,6 @@ public module i16:
   literal: "i16"
 
   # core
-  @extern("i16_init")
-  public func init(value: i16): i16
-
   @extern("i16_read")
   public func read(ptr: Pointer, offset: u64): i16
 
@@ -314,9 +296,6 @@ public module i32:
   literal: "i32"
 
   # core
-  @extern("i32_init")
-  public func init(value: i32): i32
-
   @extern("i32_read")
   public func read(ptr: Pointer, offset: u64): i32
 
@@ -366,9 +345,6 @@ public module i64:
   literal: "i64"
 
   # core
-  @extern("i64_init")
-  public func init(value: i64): i64
-
   @extern("i64_read")
   public func read(ptr: Pointer, offset: u64): i64
 
@@ -418,9 +394,6 @@ public module f32:
   literal: "f32"
 
   # core
-  @extern("f32_init")
-  public func init(value: f32): f32
-
   @extern("f32_read")
   public func read(ptr: Pointer, offset: u64): f32
 
@@ -466,9 +439,6 @@ public module f64:
   literal: "f64"
 
   # core
-  @extern("f64_init")
-  public func init(value: f64): f64
-
   @extern("f64_read")
   public func read(ptr: Pointer, offset: u64): f64
 
