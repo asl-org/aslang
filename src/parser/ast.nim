@@ -839,6 +839,8 @@ type ImportedType* = ref object
 proc name*(n: ImportedType): Identifier = n.name
 proc alias*(n: ImportedType): Option[Identifier] = n.alias
 proc loc*(n: ImportedType): Location = n.loc
+proc binding*(n: ImportedType): Identifier =
+  if n.alias.isSome: n.alias.get else: n.name
 
 proc newImportedType*(name: Identifier, alias: Option[Identifier],
     loc: Location): ImportedType =
@@ -1073,12 +1075,11 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
       let msg = "importing the source file in itself is disallowed"
       return err(newParserError(msg, imp.loc))
     for impType in imp.names:
-      let binding = if impType.alias.isSome: impType.alias.get else: impType.name
-      if binding in typeIndex:
-        let prev = types[typeIndex[binding]]
+      if impType.binding in typeIndex:
+        let prev = types[typeIndex[impType.binding]]
         let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
         return err(newParserError(msg, impType.loc))
-      typeIndex[binding] = types.len
+      typeIndex[impType.binding] = types.len
       types.add(newType(impType))
 
   for definedType in definedTypes:
