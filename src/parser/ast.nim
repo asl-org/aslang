@@ -883,13 +883,6 @@ proc source*(imp: Import): string = imp.source
 proc path*(imp: Import): string = imp.path
 proc loc*(imp: Import): Location = imp.loc
 
-proc bindings(imp: Import): seq[Identifier] =
-  var bindings: seq[Identifier]
-  for impType in imp.names:
-    let binding = if impType.alias.isSome: impType.alias.get else: impType.name
-    bindings.add(binding)
-  return bindings
-
 proc asl(imp: Import): string =
   result = "import { "
   for i, name in imp.names:
