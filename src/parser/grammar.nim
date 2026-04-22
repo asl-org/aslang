@@ -832,9 +832,9 @@ let moduleSpec = decoratedBlockSpec("module", moduleHeaderSpec, moduleBodySpec,
 
 let typeSpec = oneOf("type_block", [
   moduleSpec.map("module_item",
-    proc(v: Module): Type = newType(v)),
+    proc(v: Module): DefinedType = newDefinedType(v)),
   genericSpec.map("generic_item",
-    proc(v: Generic): Type = newType(v)),
+    proc(v: Generic): DefinedType = newDefinedType(v)),
 ])
 
 # import { Name, Name } from "path"
@@ -881,9 +881,9 @@ let importBlockSpec = Spec[Import](
   ok(imp)
 )
 
-let typeBlockSpec = Spec[Type](
+let definedTypeBlockSpec = Spec[DefinedType](
   name: "type_block_block",
-  parseFn: proc(parser: Parser): Result[Type, ParserError] =
+  parseFn: proc(parser: Parser): Result[DefinedType, ParserError] =
   discard parser.run(any(ignorableLineSpec))
   let item = ? parser.run(typeSpec)
   ok(item)
@@ -894,7 +894,7 @@ let fileSpec = Spec[File](
   name: "file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
   let imports = ? parser.run(any(importBlockSpec))
-  let items = ? parser.run(atLeastOne(typeBlockSpec))
+  let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
   discard parser.run(any(ignorableLineSpec))
   if not parser.done():
     # Force a parse attempt to get a specific error message

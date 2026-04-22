@@ -995,28 +995,68 @@ proc asl(module: Module, indentWidth: uint32): seq[string] =
       result.add(fmt"{indent}{line}")
 
 type
+  DefinedTypeKind* = enum
+    dtkModule, dtkGeneric
+  DefinedType* = ref object
+    case kind*: DefinedTypeKind
+    of dtkModule: module*: Module
+    of dtkGeneric: generic*: Generic
+
+proc newDefinedType*(module: Module): DefinedType =
+  DefinedType(kind: dtkModule, module: module)
+
+proc newDefinedType*(generic: Generic): DefinedType =
+  DefinedType(kind: dtkGeneric, generic: generic)
+
+proc name*(definedType: DefinedType): Identifier =
+  case definedType.kind:
+  of dtkModule: definedType.module.name
+  of dtkGeneric: definedType.generic.name
+
+proc loc*(definedType: DefinedType): Location =
+  case definedType.kind:
+  of dtkModule: definedType.module.loc
+  of dtkGeneric: definedType.generic.loc
+
+type
   TypeKind* = enum
-    fikModule, fikGeneric
+    tkImported, tkDefined
   Type* = ref object
-    case kind*: TypeKind
-    of fikModule: module*: Module
-    of fikGeneric: generic*: Generic
+    case kind: TypeKind
+    of tkImported: imported: ImportedType
+    of tkDefined: defined: DefinedType
 
-proc newType*(module: Module): Type =
-  Type(kind: fikModule, module: module)
+proc newType(imported: ImportedType): Type =
+  Type(kind: tkImported, imported: imported)
 
-proc newType*(generic: Generic): Type =
-  Type(kind: fikGeneric, generic: generic)
+proc newType(defined: DefinedType): Type =
+  Type(kind: tkDefined, defined: defined)
+
+proc kind*(typ: Type): TypeKind = typ.kind
+
+proc imported*(typ: Type): ImportedType =
+  assert typ.kind == tkImported,
+    fmt"Type.imported accessed but kind is {typ.kind}"
+  typ.imported
+
+proc defined*(typ: Type): DefinedType =
+  assert typ.kind == tkDefined,
+    fmt"Type.defined accessed but kind is {typ.kind}"
+  typ.defined
+
+proc loc*(typ: Type): Location =
+  case typ.kind:
+  of tkImported: typ.imported.loc
+  of tkDefined: typ.defined.loc
 
 type File* = ref object
   path: string
   imports: seq[Import]
-  modules: seq[Module]
-  generics: seq[Generic]
-  moduleIndex: Table[Identifier, int]
-  genericIndex: Table[Identifier, int]
+  definedTypes: seq[DefinedType]
+  types: seq[Type]
+  typeIndex: Table[Identifier, int]
 
-proc newFile*(path: string, imports: seq[Import], items: seq[Type]): Result[
+proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
   # TODO: Ensure that same file is not used in multiple import statements
   # var importedFileSet: Hashset[string]
@@ -1025,11 +1065,8 @@ proc newFile*(path: string, imports: seq[Import], items: seq[Type]): Result[
   #     return err(newParserError("", imp.loc))
   #   importedFileSet.incl(imp.path)
 
-  var modules: seq[Module]
-  var generics: seq[Generic]
-  var moduleIndex: Table[Identifier, int]
-  var genericIndex: Table[Identifier, int]
-  var typeIndex: Table[Identifier, Identifier]
+  var typeIndex: Table[Identifier, int]
+  var types: seq[Type]
 
   for imp in imports:
     if imp.path == path:
@@ -1037,69 +1074,44 @@ proc newFile*(path: string, imports: seq[Import], items: seq[Type]): Result[
       return err(newParserError(msg, imp.loc))
     for impType in imp.names:
       let binding = if impType.alias.isSome: impType.alias.get else: impType.name
-      typeIndex[binding] = binding
+      if binding in typeIndex:
+        let prev = types[typeIndex[binding]]
+        let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
+        return err(newParserError(msg, impType.loc))
+      typeIndex[binding] = types.len
+      types.add(newType(impType))
 
-  for item in items:
-    case item.kind:
-    of fikModule:
-      if item.module.name in typeIndex:
-        let prev = typeIndex[item.module.name]
-        let msg = fmt"duplicate module declaration encountered, see previous declaration at {prev.loc}"
-        return err(newParserError(msg, item.module.loc))
-      else:
-        typeIndex[item.module.name] = item.module.name
-        moduleIndex[item.module.name] = modules.len
-        modules.add(item.module)
-    of fikGeneric:
-      if item.generic.name in typeIndex:
-        let prev = typeIndex[item.generic.name]
-        let msg = fmt"duplicate generic declaration encountered, see previous declaration at {prev.loc}"
-        return err(newParserError(msg, item.generic.loc))
-      else:
-        typeIndex[item.generic.name] = item.generic.name
-        genericIndex[item.generic.name] = generics.len
-        generics.add(item.generic)
-  ok(File(path: path, imports: imports, modules: modules, generics: generics,
-      moduleIndex: moduleIndex, genericIndex: genericIndex))
+  for definedType in definedTypes:
+    if definedType.name in typeIndex:
+      let prev = types[typeIndex[definedType.name]]
+      let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, definedType.loc))
+    else:
+      typeIndex[definedType.name] = types.len
+      types.add(newType(definedType))
+  ok(File(path: path, imports: imports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
 
 proc path*(file: File): string = file.path
 proc imports*(file: File): seq[Import] = file.imports
-proc modules*(file: File): seq[Module] = file.modules
-proc generics*(file: File): seq[Generic] = file.generics
+proc definedTypes*(file: File): seq[DefinedType] = file.definedTypes
+proc types*(file: File): seq[Type] = file.types
 
 proc asl*(file: File, indentWidth: uint32): string =
   var lines: seq[string]
   for imp in file.imports:
     lines.add(asl(imp))
-  if file.imports.len > 0 and (file.generics.len > 0 or file.modules.len > 0):
+  if file.imports.len > 0 and file.definedTypes.len > 0:
     lines.add("")
-  for i, gen in file.generics:
+  for i, dt in file.definedTypes:
     if i > 0: lines.add("")
-    for line in asl(gen, indentWidth):
-      lines.add(line)
-  if file.generics.len > 0 and file.modules.len > 0:
-    lines.add("")
-  for i, module in file.modules:
-    if i > 0: lines.add("")
-    for line in asl(module, indentWidth):
-      lines.add(line)
+    case dt.kind:
+    of dtkModule:
+      for line in asl(dt.module, indentWidth):
+        lines.add(line)
+    of dtkGeneric:
+      for line in asl(dt.generic, indentWidth):
+        lines.add(line)
   lines.join("\n") & "\n"
-
-proc findModuleId*(file: File, name: Identifier): Result[int, string] =
-  if name in file.moduleIndex: ok(file.moduleIndex[name])
-  else: err(fmt"module '{name.value}' does not exists")
-
-proc findModule*(file: File, name: Identifier): Result[Module, string] =
-  let id = ? file.findModuleId(name)
-  ok(file.modules[id])
-
-proc findGenericId*(file: File, name: Identifier): Result[int, string] =
-  if name in file.genericIndex: ok(file.genericIndex[name])
-  else: err(fmt"generic '{name.value}' does not exists")
-
-proc findGeneric*(file: File, name: Identifier): Result[Generic, string] =
-  let id = ? file.findGenericId(name)
-  ok(file.generics[id])
 
 # ============================================================
 # App
