@@ -65,16 +65,23 @@ Source text
 Tokenizer ─── seq[Token]
   │
   ▼
-Parser ────── seq[File]     (raw AST, BFS multi-file, topo-sorted)
-  │
+Parser ────── App           (raw AST + uniqueness/structural checks
+  │                          enforced in constructors, BFS multi-file
+  │                          resolution, topo-sorted leaves-first,
+  │                          per-file typeIndex covering both imports
+  │                          and defined types)
   ▼
-Validator ─── App           (Indexed* wrappers with Table indices)
-  │
+Resolver ──── (WIP rewrite) Name/shape resolution only. For each
+  │                          file, validates that every ArgumentType
+  │                          inside data blocks and function
+  │                          signatures refers to something in scope.
+  │                          Function bodies are NOT resolved here —
+  │                          that belongs to the Analyzer.
   ▼
-Resolver ──── ResolvedApp   (Resolved* wrappers with integer IDs
-  │                          and resolved type references)
-  ▼
-(future: type checker, codegen)
+(future)
+  Analyzer  ── function-body resolution, overload resolution, generic
+               constraint satisfaction (unification + substitution).
+  Codegen   ── target emission (C or LLVM IR).
 ```
 
 Orchestrated by `src/asl.nim`:
@@ -82,6 +89,13 @@ Orchestrated by `src/asl.nim`:
 let app = ? parse(filepath, indentWidth, dumpTokens)
 ? resolve(app)
 ```
+
+There is no separate `Validator` phase. Every uniqueness / structural
+rule the validator used to enforce (duplicate names, empty blocks,
+import collisions, duplicate fields/variants) is now a precondition
+inside an AST constructor (`newStruct`, `newUnion`, `newModule`,
+`newFile`, etc.). Invalid AST nodes cannot be constructed, so no
+separate validation pass is needed.
 
 ### Phase 1: Tokenization
 
@@ -121,46 +135,51 @@ tokenize + parse each dependency, topological sort via DFS with
 cycle detection. Parent-directory escape prevention
 (`./sub/../../escape` caught by normalizing the resolved path).
 
-### Phase 3: Validation & Indexing
+### Phase 3: Parser-level indexing (absorbed)
 
-`src/validator/{indexed, indexer}.nim`
+The parser itself performs the uniqueness / structural checks that
+used to live in a separate validator. The lookup indices it builds
+during construction double as the validation mechanism (`Table`
+insertion fails on duplicate key).
 
-Wraps each raw AST node in an `Indexed*` type carrying
-`Table[string, int]` lookup indices. Building the index enforces
-uniqueness for free — duplicate names error during insertion.
+Indices on AST nodes:
+- `File.typeIndex` — `Identifier -> int` covering **both** imported
+  types and defined types (modules + generics) in one namespace.
+- `Module.functionIndex` / `Generic.funcDefIndex` — allow function
+  overloading by keying on `seq[int]`.
+- `Struct.fieldIndex`, `Union.variantIndex`, `VariantDefinition.fieldIndex`,
+  `ArgumentDefinitionList.argDefIndex` — per-block duplicate detection.
+- `App.fileIndex` — absolute path → file index.
 
-Rules enforced:
-- Modules, generics, and imported names share one file-level
-  namespace — no duplicates
-- Files must contain at least one module or generic
-- Modules must have a data block or at least one function
-- No duplicate field names in structs or variants
-- No duplicate variant names in unions
-- Functions allow overloading (`Table[string, seq[int]]`)
+Every `Type` in a file (imported or defined) is wrapped in a common
+`Type` umbrella (`tkImported | tkDefined`) so a single `typeIndex`
+lookup serves the resolver.
 
-### Phase 4: Resolution (WIP)
+### Phase 4: Resolution (WIP rewrite)
 
 `src/resolver.nim`
 
-Resolves names and types across the parsed AST. Builds a
-`FileScope` per file with a native type registry, then resolves
-each module's data blocks, function definitions (argument types
-and return types), and function bodies (expressions, statements).
+Currently a stub — being rewritten. Planned scope:
 
-- **ResolvedType**: tagged union — `rtkNative` (built-in),
-  `rtkModule` (file + module index), `rtkGeneric` (file + generic
-  index)
-- **ResolvedArgumentType**: resolved root type + recursively
-  resolved impl type parameters
-- **FunctionScope**: tracks function parameter bindings by name
-  for variable resolution in expressions
-
-Currently WIP — literal, variable, and function call expression
-resolution are partially implemented; match, getter, initializer
-are stubbed. Dispatches on `fkUser` / `fkExtern` function kinds.
-
-Function bodies (`StatementList`) remain raw — expression-level
-resolution requires type inference (Phase 3, not yet started).
+- **Two-pass walk per file** (files come topo-sorted leaves-first
+  from the loader, so imports are always resolved before use).
+  - Pass A (declare): register every defined-type name and every
+    imported-binding into a `FileScope` as `ResolvedRef`s (file id
+    + module/generic kind + index within file).
+  - Pass B (define): for each module, resolve its data block
+    (struct/union/literal) and each function signature. For each
+    generic, resolve each function signature. Every `ArgumentType`
+    root must look up in the scope; impls resolve recursively.
+- **Generic signature rule** — inside a generic block, a fn
+  argument/return type root may only resolve to the current generic
+  itself (self-reference) or a module. Other generics are rejected
+  at resolve time, keeping each generic's type world bounded.
+- **Not the resolver's job**: function bodies (statements,
+  expressions), overload resolution, generic constraint
+  satisfaction. Those belong to the Analyzer phase.
+- **No structural-size check** — all struct values are pointer-backed
+  at runtime, so mutual struct containment does not create infinite
+  types. Name cycles are the only cycles, and Pass A dissolves them.
 
 ## Project Structure
 
@@ -210,14 +229,15 @@ provide readonly access. Variant-field accessors assert the kind
 before returning (`assert db.kind == dbkStruct`).
 
 **Tagged unions** — `Expression`, `Statement`, `DataBlock`,
-`Initializer`, `CasePattern`, `ResolvedArgumentType`,
-`ResolvedData` all use `case kind:` discriminators with exhaustive
-matching.
+`Initializer`, `CasePattern`, `Function`, `DefinedType`, `Type` all
+use `case kind:` discriminators with exhaustive matching.
 
-**Parallel wrapper types per phase** — raw AST → `Indexed*` →
-`Resolved*`. Each layer adds information without mutating the
-previous. Keeps phase concerns separated (parsing doesn't know
-about indexing; indexing doesn't resolve types).
+**Uniqueness via indexed construction** — the parser builds
+`Table[Identifier, int]` lookup tables inside every constructor that
+takes a list of named children (fields, variants, function args,
+file-level types, ...). Duplicate insertion errors immediately, so
+the same index that speeds up downstream lookups also enforces
+uniqueness. No separate validation pass.
 
 **Reverse construction** — compute children first into local vars,
 then construct the parent once at the end via a `newX()` factory.
@@ -240,19 +260,26 @@ no output pattern matching.
 
 ## What's Next
 
-**PSR-41 Phase 3: Function body / expression resolution** — the
-only major open item. Requires resolving `Assignment.target`,
-`Expression.variable`, `Getter.source/property`, `FunctionCall`,
-pattern bindings, and union initializers inside function bodies.
-This crosses into type inference territory: `Getter.property` needs
-the source expression's type, `VariantPattern.variantName` needs
-the match subject's type, overload resolution needs argument types.
-Effectively a compact type checker.
+**Finish the Resolver rewrite** (`src/resolver.nim`) — narrow scope:
+two-pass walk per file, name and shape resolution only, enforce the
+generic-signature rule. No function-body work, no constraint
+satisfaction, no resolved type tree returned yet (produced later when
+an Analyzer consumer exists).
 
-After resolution, the next major phases would be:
-- **Type checking** — validate that resolved references are
-  type-compatible (assignment types match, function call arguments
-  match parameter types, match patterns cover the subject type)
-- **IR generation** — lower the resolved AST into an intermediate
-  representation suitable for optimization and code generation
-- **Code generation** — emit target code (likely C or LLVM IR)
+**Build the Analyzer** — new phase after the Resolver. Responsibilities:
+- Resolve every reference inside function bodies (`Assignment.target`,
+  `Expression.variable`, `Getter.source/property`, `FunctionCall`,
+  pattern bindings, initializers).
+- Overload resolution for function calls: filter candidates by name +
+  arity, unify each candidate's parameter types with argument types,
+  pick the unique survivor (reject on ambiguity for v1).
+- Generic constraint satisfaction: after unification binds a type
+  parameter (e.g., `Any := u8`), verify the bound type implements
+  every function signature the generic requires. Cache results.
+- Literal type inference: pin down `5` to `u8` / `u32` / etc. from
+  the expected parameter type at the call site.
+
+After analysis:
+- **IR generation** — lower the analyzed AST into an intermediate
+  representation suitable for optimization and code generation.
+- **Code generation** — emit target code (likely C or LLVM IR).

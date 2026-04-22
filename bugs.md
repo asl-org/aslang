@@ -79,9 +79,9 @@
 
 - [x] **Function is now a tagged union** (`src/parser/ast.nim`, `src/parser/grammar.nim`) — `fkUser` (UserFunction: decorators + def + body) and `fkExtern` (ExternFunction: `@extern("symbol")` + def, no body). `externFunctionSpec` parses `@extern("symbol")` on one line, function definition at the same indentation on the next. `funcBlockSpec` tries extern first, falls back to user function. `Function.name`, `.def`, `.arity` dispatch on kind. Resolver dispatches via `resolveUserFunction` / `resolveExternFunction`.
 
-### Resolver (WIP rewrite)
+### Resolver (WIP rewrite, 2026-04)
 
-- [ ] **Resolver rewrite** (`src/resolver.nim`) — In progress. FileScope with native type registry, ResolvedType (rtkNative/rtkGeneric/rtkModule), resolveArgumentType, resolveFunctionDefinition with FunctionScope, resolveExpression (literal + variable done, fncall/getter/match/initializer stubbed), resolveStatement (assignment stubbed). All paths return `err("todo: ...")` for unfinished work.
+- [ ] **Resolver rewrite** (`src/resolver.nim`) — In progress. Old resolver deleted (native types + body resolution dropped). New scope: name and shape resolution only — walks files in topo order, two passes per file (declare all defined+imported names into a `FileScope`, then resolve every `ArgumentType` inside data blocks and function signatures). Function bodies punted to a future Analyzer phase. Generic-signature rule (inside a generic block, arg/return type roots may only be self or a module) enforced during Pass B. No constraint-satisfaction checks on impl types — that's the Analyzer's job too.
 
 ### Resolver (previous — deleted)
 
