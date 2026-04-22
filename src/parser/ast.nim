@@ -86,7 +86,7 @@ proc asl(argDef: ArgumentDefinition): string =
   fmt"{asl(argDef.name)}: {asl(argDef.argType)}"
 
 type ArgumentDefinitionList* = ref object
-  argDefs*: seq[ArgumentDefinition]
+  argDefs: seq[ArgumentDefinition]
   argDefIndex: Table[Identifier, int]
   loc: Location
 
@@ -280,12 +280,14 @@ proc asl(funcDef: FunctionDefinition): string =
   fmt"{prefix} {asl(funcDef.name)}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
 
 type StringContent* = ref object
-  content*: string
+  content: string
   loc: Location
 
 proc newStringContent*(content: string,
     loc: Location): StringContent =
   StringContent(content: content, loc: loc)
+
+proc content*(sc: StringContent): string = sc.content
 
 type
   ArgumentList* = ref object
@@ -294,19 +296,19 @@ type
 
   UnsignedIntegerLiteral* = ref object
     value: string
-    loc*: Location
+    loc: Location
 
   SignedIntegerLiteral* = ref object
     sign: string
     value: UnsignedIntegerLiteral
-    loc*: Location
+    loc: Location
 
   IntegerLiteralKind* = enum
     ilkSigned, ilkUnsigned
   IntegerLiteral* = ref object
-    case kind*: IntegerLiteralKind
-    of ilkSigned: signed*: SignedIntegerLiteral
-    of ilkUnsigned: unsigned*: UnsignedIntegerLiteral
+    case kind: IntegerLiteralKind
+    of ilkSigned: signed: SignedIntegerLiteral
+    of ilkUnsigned: unsigned: UnsignedIntegerLiteral
 
   FloatLiteral* = ref object
     value: string
@@ -335,10 +337,10 @@ type
   LiteralKind* = enum
     lkString, lkInteger, lkFloat
   Literal* = ref object
-    case kind*: LiteralKind
-    of lkString: strLit*: StringLiteral
-    of lkInteger: intLit*: IntegerLiteral
-    of lkFloat: floatLit*: FloatLiteral
+    case kind: LiteralKind
+    of lkString: strLit: StringLiteral
+    of lkInteger: intLit: IntegerLiteral
+    of lkFloat: floatLit: FloatLiteral
 
   LiteralInitializer* = ref object
     typeName: Identifier
@@ -359,21 +361,21 @@ type
   InitializerKind* = enum
     ikLiteral, ikStruct, ikUnion
   Initializer* = ref object
-    case kind*: InitializerKind
-    of ikLiteral: literal*: LiteralInitializer
-    of ikStruct: struct*: StructInitializer
-    of ikUnion: union*: UnionInitializer
+    case kind: InitializerKind
+    of ikLiteral: literal: LiteralInitializer
+    of ikStruct: struct: StructInitializer
+    of ikUnion: union: UnionInitializer
 
   ExpressionKind* = enum
     ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable, ekMatch
   Expression* = ref object
-    case kind*: ExpressionKind
-    of ekLiteral: literal*: Literal
-    of ekFnCall: fncall*: FunctionCall
-    of ekGetter: getter*: Getter
-    of ekInitializer: initializer*: Initializer
-    of ekVariable: variable*: Identifier
-    of ekMatch: match*: MatchExpression
+    case kind: ExpressionKind
+    of ekLiteral: literal: Literal
+    of ekFnCall: fncall: FunctionCall
+    of ekGetter: getter: Getter
+    of ekInitializer: initializer: Initializer
+    of ekVariable: variable: Identifier
+    of ekMatch: match: MatchExpression
 
   Assignment* = ref object
     target: Identifier
@@ -393,10 +395,10 @@ type
   CasePatternKind* = enum
     cpkIntegerLiteral, cpkVariable, cpkVariant
   CasePattern* = ref object
-    case kind*: CasePatternKind
-    of cpkIntegerLiteral: intLit*: IntegerLiteral
-    of cpkVariable: variable*: Identifier
-    of cpkVariant: variant*: VariantPattern
+    case kind: CasePatternKind
+    of cpkIntegerLiteral: intLit: IntegerLiteral
+    of cpkVariable: variable: Identifier
+    of cpkVariant: variant: VariantPattern
 
   CaseBlock* = ref object
     pattern: CasePattern
@@ -416,13 +418,133 @@ type
   StatementKind* = enum
     skAssignment, skExpr, skMutation
   Statement* = ref object
-    case kind*: StatementKind
-    of skAssignment: assignment*: Assignment
-    of skExpr: expression*: Expression
-    of skMutation: mutation*: Mutation
+    case kind: StatementKind
+    of skAssignment: assignment: Assignment
+    of skExpr: expression: Expression
+    of skMutation: mutation: Mutation
 
   StatementList* = ref object
-    statements*: seq[Statement]
+    statements: seq[Statement]
+
+# ------------------------------------------------------------
+# Accessors for the variant + plain types declared in the block
+# above. Kept private-fields + exported accessor procs throughout.
+# ------------------------------------------------------------
+
+proc loc*(uil: UnsignedIntegerLiteral): Location = uil.loc
+proc loc*(sil: SignedIntegerLiteral): Location = sil.loc
+
+proc kind*(il: IntegerLiteral): IntegerLiteralKind = il.kind
+
+proc signed*(il: IntegerLiteral): SignedIntegerLiteral =
+  assert il.kind == ilkSigned,
+    fmt"IntegerLiteral.signed accessed but kind is {il.kind}"
+  il.signed
+
+proc unsigned*(il: IntegerLiteral): UnsignedIntegerLiteral =
+  assert il.kind == ilkUnsigned,
+    fmt"IntegerLiteral.unsigned accessed but kind is {il.kind}"
+  il.unsigned
+
+proc kind*(l: Literal): LiteralKind = l.kind
+
+proc strLit*(l: Literal): StringLiteral =
+  assert l.kind == lkString,
+    fmt"Literal.strLit accessed but kind is {l.kind}"
+  l.strLit
+
+proc intLit*(l: Literal): IntegerLiteral =
+  assert l.kind == lkInteger,
+    fmt"Literal.intLit accessed but kind is {l.kind}"
+  l.intLit
+
+proc floatLit*(l: Literal): FloatLiteral =
+  assert l.kind == lkFloat,
+    fmt"Literal.floatLit accessed but kind is {l.kind}"
+  l.floatLit
+
+proc kind*(i: Initializer): InitializerKind = i.kind
+
+proc literal*(i: Initializer): LiteralInitializer =
+  assert i.kind == ikLiteral,
+    fmt"Initializer.literal accessed but kind is {i.kind}"
+  i.literal
+
+proc struct*(i: Initializer): StructInitializer =
+  assert i.kind == ikStruct,
+    fmt"Initializer.struct accessed but kind is {i.kind}"
+  i.struct
+
+proc union*(i: Initializer): UnionInitializer =
+  assert i.kind == ikUnion,
+    fmt"Initializer.union accessed but kind is {i.kind}"
+  i.union
+
+proc kind*(e: Expression): ExpressionKind = e.kind
+
+proc literal*(e: Expression): Literal =
+  assert e.kind == ekLiteral,
+    fmt"Expression.literal accessed but kind is {e.kind}"
+  e.literal
+
+proc fncall*(e: Expression): FunctionCall =
+  assert e.kind == ekFnCall,
+    fmt"Expression.fncall accessed but kind is {e.kind}"
+  e.fncall
+
+proc getter*(e: Expression): Getter =
+  assert e.kind == ekGetter,
+    fmt"Expression.getter accessed but kind is {e.kind}"
+  e.getter
+
+proc initializer*(e: Expression): Initializer =
+  assert e.kind == ekInitializer,
+    fmt"Expression.initializer accessed but kind is {e.kind}"
+  e.initializer
+
+proc variable*(e: Expression): Identifier =
+  assert e.kind == ekVariable,
+    fmt"Expression.variable accessed but kind is {e.kind}"
+  e.variable
+
+proc match*(e: Expression): MatchExpression =
+  assert e.kind == ekMatch,
+    fmt"Expression.match accessed but kind is {e.kind}"
+  e.match
+
+proc kind*(cp: CasePattern): CasePatternKind = cp.kind
+
+proc intLit*(cp: CasePattern): IntegerLiteral =
+  assert cp.kind == cpkIntegerLiteral,
+    fmt"CasePattern.intLit accessed but kind is {cp.kind}"
+  cp.intLit
+
+proc variable*(cp: CasePattern): Identifier =
+  assert cp.kind == cpkVariable,
+    fmt"CasePattern.variable accessed but kind is {cp.kind}"
+  cp.variable
+
+proc variant*(cp: CasePattern): VariantPattern =
+  assert cp.kind == cpkVariant,
+    fmt"CasePattern.variant accessed but kind is {cp.kind}"
+  cp.variant
+
+proc kind*(s: Statement): StatementKind = s.kind
+
+proc assignment*(s: Statement): Assignment =
+  assert s.kind == skAssignment,
+    fmt"Statement.assignment accessed but kind is {s.kind}"
+  s.assignment
+
+proc expression*(s: Statement): Expression =
+  assert s.kind == skExpr,
+    fmt"Statement.expression accessed but kind is {s.kind}"
+  s.expression
+
+proc mutation*(s: Statement): Mutation =
+  assert s.kind == skMutation,
+    fmt"Statement.mutation accessed but kind is {s.kind}"
+  s.mutation
 
 proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
@@ -785,15 +907,27 @@ type
   FunctionKind* = enum
     fkUser, fkExtern
   Function* = ref object
-    case kind*: FunctionKind
-    of fkUser: user*: UserFunction
-    of fkExtern: extern*: ExternFunction
+    case kind: FunctionKind
+    of fkUser: user: UserFunction
+    of fkExtern: extern: ExternFunction
 
 proc newFunction*(user: UserFunction): Function =
   Function(kind: fkUser, user: user)
 
 proc newFunction*(extern: ExternFunction): Function =
   Function(kind: fkExtern, extern: extern)
+
+proc kind*(fn: Function): FunctionKind = fn.kind
+
+proc user*(fn: Function): UserFunction =
+  assert fn.kind == fkUser,
+    fmt"Function.user accessed but kind is {fn.kind}"
+  fn.user
+
+proc extern*(fn: Function): ExternFunction =
+  assert fn.kind == fkExtern,
+    fmt"Function.extern accessed but kind is {fn.kind}"
+  fn.extern
 
 proc name*(fn: Function): Identifier =
   case fn.kind:
@@ -816,7 +950,7 @@ proc asl(fn: Function, indentWidth: uint32): seq[string] =
   of fkExtern: asl(fn.extern, indentWidth)
 
 type FunctionList* = ref object
-  functions*: seq[Function]
+  functions: seq[Function]
   functionIndex: Table[Identifier, Table[int, seq[int]]]
 
 proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserError] =
@@ -1000,15 +1134,27 @@ type
   DefinedTypeKind* = enum
     dtkModule, dtkGeneric
   DefinedType* = ref object
-    case kind*: DefinedTypeKind
-    of dtkModule: module*: Module
-    of dtkGeneric: generic*: Generic
+    case kind: DefinedTypeKind
+    of dtkModule: module: Module
+    of dtkGeneric: generic: Generic
 
 proc newDefinedType*(module: Module): DefinedType =
   DefinedType(kind: dtkModule, module: module)
 
 proc newDefinedType*(generic: Generic): DefinedType =
   DefinedType(kind: dtkGeneric, generic: generic)
+
+proc kind*(dt: DefinedType): DefinedTypeKind = dt.kind
+
+proc module*(dt: DefinedType): Module =
+  assert dt.kind == dtkModule,
+    fmt"DefinedType.module accessed but kind is {dt.kind}"
+  dt.module
+
+proc generic*(dt: DefinedType): Generic =
+  assert dt.kind == dtkGeneric,
+    fmt"DefinedType.generic accessed but kind is {dt.kind}"
+  dt.generic
 
 proc name*(definedType: DefinedType): Identifier =
   case definedType.kind:
@@ -1119,8 +1265,8 @@ proc asl*(file: File, indentWidth: uint32): string =
 # ============================================================
 
 type App* = ref object
-  files*: seq[File]
-  fileIndex*: Table[string, int] # absolute path -> index in files
+  files: seq[File]
+  fileIndex: Table[string, int] # absolute path -> index in files
 
 proc newApp*(files: seq[File]): App =
   var fileIndex: Table[string, int]
