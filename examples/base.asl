@@ -481,6 +481,8 @@ public module f64:
   public func remainder(a: f64, b: f64): Status[f64]
 
 module Pointer:
+  literal: "pointer"
+
   # core
   @extern("pointer_read")
   public func read(ptr: Pointer, offset: u64): Pointer

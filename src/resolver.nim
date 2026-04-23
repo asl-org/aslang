@@ -7,7 +7,7 @@ type File = parser.File
 type ResolvedLiteralType = enum
   rltkU8, rltkU16, rltkU32, rltkU64
   rltkI8, rltkI16, rltkI32, rltkI64
-  rltkF32, rltkF64, rltkString
+  rltkF32, rltkF64, rltkString, rltkPointer
 
 proc resolveLiteralType(file: File, literal: LiteralType): Result[ResolvedLiteralType, string] =
   case literal.content:
@@ -22,6 +22,7 @@ proc resolveLiteralType(file: File, literal: LiteralType): Result[ResolvedLitera
   of "f32": ok(rltkF32)
   of "f64": ok(rltkF64)
   of "string": ok(rltkString)
+  of "pointer": ok(rltkPointer)
   else: err(fmt"{file.path}:{literal.loc} unsupported literal type encountered `{literal.content}`")
 
 proc resolveImport(app: App, file: File, imp: Import): Result[void, string] =
@@ -97,25 +98,80 @@ proc resolveArgumentType(app: App, file: File, module: Module, argType: Argument
     let resolvedDefinedType = ? resolveDefinedType(app, file, module, argType, rootType.definedType)
     ok(newResolvedArgumentType(resolvedDefinedType))
 
-proc resolveArgumentDefinition(app: App, file: File, module: Module, arg: ArgumentDefinition): Result[void, string] =
-  discard ? resolveArgumentType(app, file, module, arg.argType)
-  ok()
+proc resolveDataType(app: App, file: File, module: Module, arg: ArgumentType, resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
+  case resolvedArgumentType.kind:
+  of ratkImported: err("todo: resolve imported type argument definition")
+  of ratkDefined:
+    let resolvedDefinedType = resolvedArgumentType.definedType
+    case resolvedDefinedType.kind:
+    of rdtkGeneric: err("todo: resolve defined generic type argument definition")
+    of rdtkModule:
+      let resolvedDefinedModuleType = resolvedDefinedType.module
+      if resolvedDefinedModuleType.root.data.isSome:
+        ok()
+      else:
+        err(fmt"{file.path}:{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
 
-proc resolveFunctionDefinition(app: App, file: File, module: Module, def: FunctionDefinition): Result[void, string] =
+type ResolvedArgumentDefinition = ref object
+  argType: ResolvedArgumentType
+  name: Identifier
+
+proc newResolvedArgumentDefinition(argType: ResolvedArgumentType, name: Identifier): ResolvedArgumentDefinition =
+  ResolvedArgumentDefinition(name: name, argType: argType)
+
+proc resolveArgumentDefinition(app: App, file: File, module: Module, arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolvedArgumentType = ? resolveArgumentType(app, file, module, arg.argType)
+  ? resolveDataType(app, file, module, arg.argType, resolvedArgumentType)
+  ok(newResolvedArgumentDefinition(resolvedArgumentType, arg.name))
+
+type ResolvedFunctionDefinition = ref object
+  public: bool
+  name: Identifier
+  args: seq[ResolvedArgumentDefinition]
+  returns: ResolvedArgumentType
+
+proc newResolvedFunctionDefinition(public: bool, name: Identifier, args: seq[ResolvedArgumentDefinition], returns: ResolvedArgumentType): ResolvedFunctionDefinition =
+  ResolvedFunctionDefinition(public: public, name: name, args: args, returns: returns)
+
+proc resolveFunctionDefinition(app: App, file: File, module: Module, def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+  var resolvedArgs: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    ? resolveArgumentDefinition(app, file, module, arg)
+    let resolvedArg = ? resolveArgumentDefinition(app, file, module, arg)
+    resolvedArgs.add(resolvedArg)
 
-  discard ? resolveArgumentType(app, file, module, def.returns)
+  let resolvedReturnArgType = ? resolveArgumentType(app, file, module, def.returns)
+  ? resolveDataType(app, file, module,  def.returns, resolvedReturnArgType)
 
-  err("todo: resolve function definition")
+  ok(newResolvedFunctionDefinition(def.public, def.name, resolvedArgs, resolvedReturnArgType))
 
-proc resolveExternFunction(app: App, file: File, module: Module, function: ExternFunction): Result[void, string] =
-  resolveFunctionDefinition(app, file, module, function.def)
+type ResolvedExternFunction = ref object
+  ffi: string
+  def: ResolvedFunctionDefinition
 
-proc resolveFunction(app: App, file: File, module: Module, function: Function): Result[void, string] =
+proc newResolvedExternFunction(ffi: string, def: ResolvedFunctionDefinition): ResolvedExternFunction =
+  ResolvedExternFunction(ffi: ffi, def: def)
+
+proc resolveExternFunction(app: App, file: File, module: Module, function: ExternFunction): Result[ResolvedExternFunction, string] =
+  let resolvedFunctionDef = ? resolveFunctionDefinition(app, file, module, function.def)
+  ok(newResolvedExternFunction(function.ffi, resolvedFunctionDef))
+
+type
+  ResolvedFunctionKind = enum
+    rfkExtern, rfkUser
+  ResolvedFunction = ref object
+    case kind: ResolvedFunctionKind
+    of rfkExtern: extern: ResolvedExternFunction
+    of rfkUser: discard
+
+proc newResolvedFunction(extern: ResolvedExternFunction): ResolvedFunction =
+  ResolvedFunction(kind: rfkExtern, extern: extern)
+
+proc resolveFunction(app: App, file: File, module: Module, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
-  of fkExtern: resolveExternFunction(app, file, module, function.extern)
   of fkUser: err("todo: resolve user function")
+  of fkExtern:
+    let resolvedExternFunction = ? resolveExternFunction(app, file, module, function.extern)
+    ok(newResolvedFunction(resolvedExternFunction))
 
 proc resolveDataBlock(app: App, file: File, module: Module, data: DataBlock): Result[void, string] =
   case data.kind:
@@ -136,7 +192,7 @@ proc resolveModule(app: App, file: File, module: Module): Result[void, string] =
     ? resolveDataBlock(app, file, module, module.data.get)
 
   for function in module.functions:
-    ? resolveFunction(app, file, module, function)
+    discard ? resolveFunction(app, file, module, function)
 
   err("todo: resolve module")
 
