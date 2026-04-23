@@ -37,7 +37,7 @@ type
   ResolvedDefinedArgumentType = ref object
     case kind: ResolvedDefinedArgumentTypeKind
     of rdatkModule: module: ResolvedModuleArgumentType
-    of rdatkGeneric: discard
+    of rdatkGeneric: generic: Generic
   ResolvedArgumentTypeKind = enum
     ratkImported, ratkDefined
   ResolvedArgumentType = ref object
@@ -53,6 +53,9 @@ proc newResolvedModuleArgumentType(root: Module): ResolvedModuleArgumentType =
 
 proc newResolvedDefinedArgumentType(module: ResolvedModuleArgumentType): ResolvedDefinedArgumentType =
   ResolvedDefinedArgumentType(kind: rdatkModule, module: module)
+
+proc newResolvedDefinedArgumentType(generic: Generic): ResolvedDefinedArgumentType =
+  ResolvedDefinedArgumentType(kind: rdatkGeneric, generic: generic)
 
 proc newResolvedArgumentType(definedType: ResolvedDefinedArgumentType): ResolvedArgumentType =
   ResolvedArgumentType(kind: ratkDefined, definedType: definedType)
@@ -104,11 +107,69 @@ proc resolveModuleType(app: App, file: File, module: Module, argType: ArgumentTy
   else:
     err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
 
-proc resolveDefinedType(app: App, file: File, module: Module, argType: ArgumentType, definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
+proc resolveArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
+
+proc resolveModuleType(app: App, file: File, generic: Generic, argType: ArgumentType, root: Module): Result[ResolvedModuleArgumentType, string] =
+  # NOTE: requires block will override the inferred impl list
+  if root.requires.isSome:
+    return err("todo: resolve requires block in argument type")
+
+  # NOTE: infer the impl list from struct/union block
+  if root.data.isSome:
+    let dataBlock = root.data.get
+    case dataBlock.kind:
+    of dbkStruct:
+      return err(fmt"{file.path}:{dataBlock.loc} todo: resolve struct block in argument type")
+    of dbkLiteral:
+      if argType.impls.len == 0:
+        return ok(newResolvedModuleArgumentType(root))
+      else:
+        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
+    of dbkUnion:
+      var requires: seq[Generic]
+      let union = dataBlock.union
+      for variant in union.variants:
+        for field in variant.fields:
+          let fieldType = ? file.findType(field.argType.root)
+          case fieldType.kind:
+          of tkImported: return err("todo: resolve imported type field in union variant")
+          of tkDefined:
+            let definedFieldType = fieldType.definedType
+            case definedFieldType.kind:
+            of dtkModule: discard
+            of dtkGeneric: requires.add(definedFieldType.generic)
+
+      if argType.impls.len != requires.len:
+        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
+
+      var resolvedImpls: seq[ResolvedArgumentType]
+      for impl in argType.impls:
+        let resolvedImpl = ? resolveArgumentType(app, file, generic, impl)
+        resolvedImpls.add(resolvedImpl)
+
+      return ok(newResolvedModuleArgumentType(root, resolvedImpls))
+
+  if argType.impls.len == 0:
+    ok(newResolvedModuleArgumentType(root))
+  else:
+    err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
+
+proc resolveDefinedArgumentType(app: App, file: File, module: Module, argType: ArgumentType, definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
   case definedType.kind:
   of dtkGeneric: err("todo: resolve generic type")
   of dtkModule:
     let resolvedModuleType = ? resolveModuleType(app, file, module, argType, definedType.module)
+    ok(newResolvedDefinedArgumentType(resolvedModuleType))
+
+proc resolveDefinedArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType, definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
+  case definedType.kind:
+  of dtkGeneric:
+    if definedType.generic == generic:
+      ok(newResolvedDefinedArgumentType(definedType.generic))
+    else:
+      err(fmt"{file.path}:{definedType.loc} type `{definedType.name.asl}` is a generic and can not be used within the generic block")
+  of dtkModule:
+    let resolvedModuleType = ? resolveModuleType(app, file, generic, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
 
 proc resolveArgumentType(app: App, file: File, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string] =
@@ -116,7 +177,15 @@ proc resolveArgumentType(app: App, file: File, module: Module, argType: Argument
   case rootType.kind:
   of tkImported: err("todo: resolve imported type")
   of tkDefined:
-    let resolvedDefinedType = ? resolveDefinedType(app, file, module, argType, rootType.definedType)
+    let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, module, argType, rootType.definedType)
+    ok(newResolvedArgumentType(resolvedDefinedType))
+
+proc resolveArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string] =
+  let rootType = ? file.findType(argType.root)
+  case rootType.kind:
+  of tkImported: err("todo: resolve imported type")
+  of tkDefined:
+    let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, generic, argType, rootType.definedType)
     ok(newResolvedArgumentType(resolvedDefinedType))
 
 proc resolveDataType(app: App, file: File, module: Module, arg: ArgumentType, resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
@@ -125,7 +194,23 @@ proc resolveDataType(app: App, file: File, module: Module, arg: ArgumentType, re
   of ratkDefined:
     let resolvedDefinedType = resolvedArgumentType.definedType
     case resolvedDefinedType.kind:
-    of rdatkGeneric: err("todo: resolve defined generic type argument definition")
+    of rdatkGeneric:
+      err(fmt"{file.path}:{arg.loc} todo: resolve defined generic type argument definition")
+    of rdatkModule:
+      let resolvedDefinedModuleType = resolvedDefinedType.module
+      if resolvedDefinedModuleType.root.data.isSome:
+        ok()
+      else:
+        err(fmt"{file.path}:{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
+
+proc resolveDataType(app: App, file: File, generic: Generic, arg: ArgumentType, resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
+  case resolvedArgumentType.kind:
+  of ratkImported: err("todo: resolve imported type argument definition")
+  of ratkDefined:
+    let resolvedDefinedType = resolvedArgumentType.definedType
+    case resolvedDefinedType.kind:
+    of rdatkGeneric:
+      ok()
     of rdatkModule:
       let resolvedDefinedModuleType = resolvedDefinedType.module
       if resolvedDefinedModuleType.root.data.isSome:
@@ -145,6 +230,11 @@ proc resolveArgumentDefinition(app: App, file: File, module: Module, arg: Argume
   ? resolveDataType(app, file, module, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDefinition(resolvedArgumentType, arg.name))
 
+proc resolveArgumentDefinition(app: App, file: File, generic: Generic, arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+  let resolvedArgumentType = ? resolveArgumentType(app, file, generic, arg.argType)
+  ? resolveDataType(app, file, generic, arg.argType, resolvedArgumentType)
+  ok(newResolvedArgumentDefinition(resolvedArgumentType, arg.name))
+
 type ResolvedFunctionDefinition = ref object
   public: bool
   name: Identifier
@@ -162,6 +252,17 @@ proc resolveFunctionDefinition(app: App, file: File, module: Module, def: Functi
 
   let resolvedReturnArgType = ? resolveArgumentType(app, file, module, def.returns)
   ? resolveDataType(app, file, module,  def.returns, resolvedReturnArgType)
+
+  ok(newResolvedFunctionDefinition(def.public, def.name, resolvedArgs, resolvedReturnArgType))
+
+proc resolveFunctionDefinition(app: App, file: File, generic: Generic, def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+  var resolvedArgs: seq[ResolvedArgumentDefinition]
+  for arg in def.args:
+    let resolvedArg = ? resolveArgumentDefinition(app, file, generic, arg)
+    resolvedArgs.add(resolvedArg)
+
+  let resolvedReturnArgType = ? resolveArgumentType(app, file, generic, def.returns)
+  ? resolveDataType(app, file, generic,  def.returns, resolvedReturnArgType)
 
   ok(newResolvedFunctionDefinition(def.public, def.name, resolvedArgs, resolvedReturnArgType))
 
@@ -194,24 +295,34 @@ proc resolveFunction(app: App, file: File, module: Module, function: Function): 
     let resolvedExternFunction = ? resolveExternFunction(app, file, module, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))
 
+type ResolvedStruct = ref object
+
+proc resolveStruct(app: App, file: File, module: Module, struct: Struct): Result[ResolvedStruct, string] =
+  err("todo: resolve struct block")
+
 type
   ResolvedDataKind = enum
     rdkLiteral, rdkStruct, rdkUnion
   ResolvedData = ref object
     case kind: ResolvedDataKind
     of rdkLiteral: literal: ResolvedLiteralType
-    of rdkStruct: discard
+    of rdkStruct: struct: ResolvedStruct
     of rdkUnion: discard
 
 proc newResolvedData(literal: ResolvedLiteralType): ResolvedData =
   ResolvedData(kind: rdkLiteral, literal: literal)
+
+proc newResolvedData(struct: ResolvedStruct): ResolvedData =
+  ResolvedData(kind: rdkStruct, struct: struct)
 
 proc resolveDataBlock(app: App, file: File, module: Module, data: DataBlock): Result[ResolvedData, string] =
   case data.kind:
   of dbkLiteral:
     let resolvedLiteralType = ? resolveLiteralType(file, data.literal)
     ok(newResolvedData(resolvedLiteralType))
-  of dbkStruct: err("todo: resolve struct block")
+  of dbkStruct:
+    let resolvedStruct = ? resolveStruct(app, file, module, data.struct)
+    ok(newResolvedData(resolvedStruct))
   of dbkUnion: err("todo: resolve union block")
 
 type ResolvedModule = ref object
@@ -240,20 +351,44 @@ proc resolveModule(app: App, file: File, module: Module): Result[ResolvedModule,
 
   ok(newResolvedModule(resolvedData, resolvedFunctions))
 
+type ResolvedGeneric = ref object
+  public: bool
+  name: Identifier
+  funcDefs: seq[ResolvedFunctionDefinition]
+
+proc newResolvedGeneric(public: bool, name: Identifier, funcDefs: seq[ResolvedFunctionDefinition]): ResolvedGeneric =
+  ResolvedGeneric(public: public, name: name, funcDefs: funcDefs)
+
+proc resolveGeneric(app: App, file: File, generic: Generic): Result[ResolvedGeneric, string] =
+  if generic.decorators.len > 0:
+    return err(fmt"{file.path}:{generic.loc} todo: resolve generic decorators")
+
+  var resolvedFunctionDefs: seq[ResolvedFunctionDefinition]
+  for funcDef in generic.funcDefs:
+    let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, generic, funcDef)
+    resolvedFunctionDefs.add(resolvedFunctionDefinition)
+
+  ok(newResolvedGeneric(generic.public, generic.name, resolvedFunctionDefs))
+
 type
   ResolvedDefinedTypeKind = enum
     rdtkModule, rdtkGeneric
   ResolvedDefinedType = ref object
     case kind: ResolvedDefinedTypeKind
     of rdtkModule: module: ResolvedModule
-    of rdtkGeneric: discard
+    of rdtkGeneric: generic: ResolvedGeneric
 
 proc newResolvedDefinedType(module: ResolvedModule): ResolvedDefinedType =
   ResolvedDefinedType(kind: rdtkModule, module: module)
 
+proc newResolvedDefinedType(generic: ResolvedGeneric): ResolvedDefinedType =
+  ResolvedDefinedType(kind: rdtkGeneric, generic: generic)
+
 proc resolveDefinedType(app: App, file: File, definedType: DefinedType): Result[ResolvedDefinedType, string] =
   case definedType.kind:
-  of dtkGeneric: err("todo: resolve generic")
+  of dtkGeneric:
+    let resolvedGeneric = ? resolveGeneric(app, file, definedType.generic)
+    ok(newResolvedDefinedType(resolvedGeneric))
   of dtkModule:
     let resolvedModule = ? resolveModule(app, file, definedType.module)
     ok(newResolvedDefinedType(resolvedModule))

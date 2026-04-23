@@ -69,6 +69,9 @@ proc `<`*(a, b: Location): bool =
   else:
     a.line < b.line
 
+proc `==`*(a, b: Location): bool =
+  a.line == b.line and a.col == b.col
+
 proc `$`(loc: Location): string =
   fmt"{loc.line}:{loc.col}"
 
