@@ -26,7 +26,7 @@ proc loc*(id: Identifier): Location = id.loc
 proc hash*(id: Identifier): Hash = hash(id.value)
 proc `==`*(id: Identifier, other: Identifier): bool = hash(id) == hash(other)
 
-proc asl(identifier: Identifier): string = identifier.value
+proc asl*(identifier: Identifier): string = identifier.value
 
 type Decorator* = ref object
   name: Identifier
@@ -87,19 +87,19 @@ proc asl(argDef: ArgumentDefinition): string =
 
 type ArgumentDefinitionList* = ref object
   argDefs: seq[ArgumentDefinition]
-  argDefIndex: Table[Identifier, int]
+  argNameIndex: Table[Identifier, int]
   loc: Location
 
 proc newArgumentDefinitionList*(argDefs: seq[ArgumentDefinition],
     loc: Location): Result[ArgumentDefinitionList, ParserError] =
-  var argDefIndex: Table[Identifier, int]
+  var argNameIndex: Table[Identifier, int]
   for index, argDef in argDefs:
-    if argDef.name in argDefIndex:
-      let prev = argDefs[argDefIndex[argDef.name]]
+    if argDef.name in argNameIndex:
+      let prev = argDefs[argNameIndex[argDef.name]]
       let msg = fmt"duplicate argument encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, argDef.loc))
-    argDefIndex[argDef.name] = index
-  ok(ArgumentDefinitionList(argDefs: argDefs, argDefIndex: argDefIndex, loc: loc))
+    argNameIndex[argDef.name] = index
+  ok(ArgumentDefinitionList(argDefs: argDefs, argNameIndex: argNameIndex, loc: loc))
 
 proc arity(argDefList: ArgumentDefinitionList): int =
   argDefList.argDefs.len
@@ -247,6 +247,12 @@ proc union*(db: DataBlock): Union =
   assert db.kind == dbkUnion,
     fmt"DataBlock.union accessed but kind is {db.kind}"
   db.union
+
+proc loc*(db: DataBlock): Location =
+  case db.kind:
+  of dbkLiteral: db.literal.loc
+  of dbkStruct: db.struct.loc
+  of dbkUnion: db.union.loc
 
 proc asl(db: DataBlock, indentWidth: uint32): seq[string] =
   case db.kind:
@@ -955,6 +961,7 @@ type FunctionList* = ref object
 
 proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserError] =
   var functionIndex: Table[Identifier, Table[int, seq[int]]]
+  # TODO: ensure that there no duplicate function signatures
   for index, function in functions:
     if function.name notin functionIndex:
       functionIndex[function.name] = initTable[int, seq[int]]()
@@ -1172,13 +1179,13 @@ type
   Type* = ref object
     case kind: TypeKind
     of tkImported: imported: ImportedType
-    of tkDefined: defined: DefinedType
+    of tkDefined: definedType: DefinedType
 
 proc newType(imported: ImportedType): Type =
   Type(kind: tkImported, imported: imported)
 
-proc newType(defined: DefinedType): Type =
-  Type(kind: tkDefined, defined: defined)
+proc newType(definedType: DefinedType): Type =
+  Type(kind: tkDefined, definedType: definedType)
 
 proc kind*(typ: Type): TypeKind = typ.kind
 
@@ -1187,15 +1194,15 @@ proc imported*(typ: Type): ImportedType =
     fmt"Type.imported accessed but kind is {typ.kind}"
   typ.imported
 
-proc defined*(typ: Type): DefinedType =
+proc definedType*(typ: Type): DefinedType =
   assert typ.kind == tkDefined,
-    fmt"Type.defined accessed but kind is {typ.kind}"
-  typ.defined
+    fmt"Type.definedType accessed but kind is {typ.kind}"
+  typ.definedType
 
 proc loc*(typ: Type): Location =
   case typ.kind:
   of tkImported: typ.imported.loc
-  of tkDefined: typ.defined.loc
+  of tkDefined: typ.definedType.loc
 
 type File* = ref object
   path: string
@@ -1259,6 +1266,10 @@ proc asl*(file: File, indentWidth: uint32): string =
       for line in asl(dt.generic, indentWidth):
         lines.add(line)
   lines.join("\n") & "\n"
+
+proc findType*(file: File, name: Identifier): Result[Type, string] =
+  if name in file.typeIndex: ok(file.types[file.typeIndex[name]])
+  else: err(fmt"{file.path}:{name.loc} type `{name.asl}` does not exist in the scope")
 
 # ============================================================
 # App
