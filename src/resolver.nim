@@ -62,7 +62,7 @@ proc newResolvedArgumentType(definedType: ResolvedDefinedArgumentType): Resolved
 
 proc resolveArgumentType(app: App, file: File, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
-proc resolveModuleType(app: App, file: File, module: Module, argType: ArgumentType, root: Module): Result[ResolvedModuleArgumentType, string] =
+proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: ArgumentType, root: Module): Result[ResolvedModuleArgumentType, string] =
   # NOTE: requires block will override the inferred impl list
   if root.requires.isSome:
     return err("todo: resolve requires block in argument type")
@@ -71,13 +71,34 @@ proc resolveModuleType(app: App, file: File, module: Module, argType: ArgumentTy
   if root.data.isSome:
     let dataBlock = root.data.get
     case dataBlock.kind:
-    of dbkStruct:
-      return err(fmt"{file.path}:{dataBlock.loc} todo: resolve struct block in argument type")
     of dbkLiteral:
       if argType.impls.len == 0:
         return ok(newResolvedModuleArgumentType(root))
       else:
         return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
+    of dbkStruct:
+      var requires: seq[Generic]
+      let struct = dataBlock.struct
+      for field in struct.fields:
+        let fieldType = ? file.findType(field.argType.root)
+        case fieldType.kind:
+        of tkImported: return err("todo: resolve imported type field in union variant")
+        of tkDefined:
+          let definedFieldType = fieldType.definedType
+          case definedFieldType.kind:
+          of dtkModule: discard
+          of dtkGeneric: requires.add(definedFieldType.generic)
+
+      if argType.impls.len != requires.len:
+        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
+
+      var resolvedImpls: seq[ResolvedArgumentType]
+      for impl in argType.impls:
+        let resolvedImpl = ? resolveArgumentType(app, file, module, impl)
+        resolvedImpls.add(resolvedImpl)
+
+      return ok(newResolvedModuleArgumentType(root, resolvedImpls))
+
     of dbkUnion:
       var requires: seq[Generic]
       let union = dataBlock.union
@@ -109,7 +130,7 @@ proc resolveModuleType(app: App, file: File, module: Module, argType: ArgumentTy
 
 proc resolveArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
-proc resolveModuleType(app: App, file: File, generic: Generic, argType: ArgumentType, root: Module): Result[ResolvedModuleArgumentType, string] =
+proc resolveModuleArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType, root: Module): Result[ResolvedModuleArgumentType, string] =
   # NOTE: requires block will override the inferred impl list
   if root.requires.isSome:
     return err("todo: resolve requires block in argument type")
@@ -157,9 +178,12 @@ proc resolveModuleType(app: App, file: File, generic: Generic, argType: Argument
 proc resolveDefinedArgumentType(app: App, file: File, module: Module, argType: ArgumentType, definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
   case definedType.kind:
   of dtkGeneric:
-    err("todo: resolve generic type")
+    if argType.impls.len == 0:
+      ok(newResolvedDefinedArgumentType(definedType.generic))
+    else:
+      err(fmt"{file.path}:{definedType.loc} generic `{definedType.name.asl}` is not allowed to have impls")
   of dtkModule:
-    let resolvedModuleType = ? resolveModuleType(app, file, module, argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, module, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
 
 proc resolveDefinedArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType, definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
@@ -170,7 +194,7 @@ proc resolveDefinedArgumentType(app: App, file: File, generic: Generic, argType:
     else:
       err(fmt"{file.path}:{definedType.loc} type `{definedType.name.asl}` is a generic and can not be used within the generic block")
   of dtkModule:
-    let resolvedModuleType = ? resolveModuleType(app, file, generic, argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, generic, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
 
 proc resolveArgumentType(app: App, file: File, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string] =
@@ -196,7 +220,7 @@ proc resolveDataType(app: App, file: File, module: Module, arg: ArgumentType, re
     let resolvedDefinedType = resolvedArgumentType.definedType
     case resolvedDefinedType.kind:
     of rdatkGeneric:
-      err(fmt"{file.path}:{arg.loc} todo: resolve defined generic type argument definition")
+      ok()
     of rdatkModule:
       let resolvedDefinedModuleType = resolvedDefinedType.module
       if resolvedDefinedModuleType.root.data.isSome:
