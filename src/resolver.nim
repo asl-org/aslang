@@ -156,7 +156,8 @@ proc resolveModuleType(app: App, file: File, generic: Generic, argType: Argument
 
 proc resolveDefinedArgumentType(app: App, file: File, module: Module, argType: ArgumentType, definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
   case definedType.kind:
-  of dtkGeneric: err("todo: resolve generic type")
+  of dtkGeneric:
+    err("todo: resolve generic type")
   of dtkModule:
     let resolvedModuleType = ? resolveModuleType(app, file, module, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
@@ -296,9 +297,44 @@ proc resolveFunction(app: App, file: File, module: Module, function: Function): 
     ok(newResolvedFunction(resolvedExternFunction))
 
 type ResolvedStruct = ref object
+  fields: seq[ResolvedArgumentDefinition]
+
+proc newResolvedStruct(fields: seq[ResolvedArgumentDefinition]): ResolvedStruct =
+  ResolvedStruct(fields: fields)
 
 proc resolveStruct(app: App, file: File, module: Module, struct: Struct): Result[ResolvedStruct, string] =
-  err("todo: resolve struct block")
+  var resolvedFields: seq[ResolvedArgumentDefinition]
+  for field in struct.fields:
+    let resolvedField = ? resolveArgumentDefinition(app, file, module, field)
+    resolvedFields.add(resolvedField)
+  ok(newResolvedStruct(resolvedFields))
+
+type ResolvedVariant = ref object
+  name: Identifier
+  fields: seq[ResolvedArgumentDefinition]
+
+proc newResolvedVariant(name: Identifier, fields: seq[ResolvedArgumentDefinition]): ResolvedVariant =
+  ResolvedVariant(name: name, fields: fields)
+
+proc resolveVariant(app: App, file: File, module: Module, variant: VariantDefinition): Result[ResolvedVariant, string] =
+  var resolvedFields: seq[ResolvedArgumentDefinition]
+  for field in variant.fields:
+    let resolvedField = ? resolveArgumentDefinition(app, file, module, field)
+    resolvedFields.add(resolvedField)
+  ok(newResolvedVariant(variant.name, resolvedFields))
+
+type ResolvedUnion = ref object
+  variants: seq[ResolvedVariant]
+
+proc newResolvedUnion(variants: seq[ResolvedVariant]): ResolvedUnion =
+  ResolvedUnion(variants: variants)
+
+proc resolveUnion(app: App, file: File, module: Module, union: Union): Result[ResolvedUnion, string] =
+  var resolvedVariants: seq[ResolvedVariant]
+  for variant in union.variants:
+    let resolvedVariant = ? resolveVariant(app, file, module, variant)
+    resolvedVariants.add(resolvedVariant)
+  ok(newResolvedUnion(resolvedVariants))
 
 type
   ResolvedDataKind = enum
@@ -307,13 +343,16 @@ type
     case kind: ResolvedDataKind
     of rdkLiteral: literal: ResolvedLiteralType
     of rdkStruct: struct: ResolvedStruct
-    of rdkUnion: discard
+    of rdkUnion: union: ResolvedUnion
 
 proc newResolvedData(literal: ResolvedLiteralType): ResolvedData =
   ResolvedData(kind: rdkLiteral, literal: literal)
 
 proc newResolvedData(struct: ResolvedStruct): ResolvedData =
   ResolvedData(kind: rdkStruct, struct: struct)
+
+proc newResolvedData(union: ResolvedUnion): ResolvedData =
+  ResolvedData(kind: rdkUnion, union: union)
 
 proc resolveDataBlock(app: App, file: File, module: Module, data: DataBlock): Result[ResolvedData, string] =
   case data.kind:
@@ -323,7 +362,9 @@ proc resolveDataBlock(app: App, file: File, module: Module, data: DataBlock): Re
   of dbkStruct:
     let resolvedStruct = ? resolveStruct(app, file, module, data.struct)
     ok(newResolvedData(resolvedStruct))
-  of dbkUnion: err("todo: resolve union block")
+  of dbkUnion:
+    let resolvedUnion = ? resolveUnion(app, file, module, data.union)
+    ok(newResolvedData(resolvedUnion))
 
 type ResolvedModule = ref object
   data: Option[ResolvedData]
