@@ -871,15 +871,16 @@ type UserFunction* = ref object
   def: FunctionDefinition
   statementList: StatementList
 
+proc newUserFunction*(decorators: seq[Decorator], def: FunctionDefinition,
+    statementList: StatementList): UserFunction =
+  UserFunction(decorators: decorators, def: def, statementList: statementList)
+
+proc loc*(fn: UserFunction): Location = fn.def.loc
 proc name*(fn: UserFunction): Identifier = fn.def.name
 proc def*(fn: UserFunction): FunctionDefinition = fn.def
 proc statements*(fn: UserFunction): seq[Statement] = fn.statementList.statements
 proc decorators*(fn: UserFunction): seq[Decorator] = fn.decorators
 proc arity*(fn: UserFunction): int = fn.def.arity
-
-proc newUserFunction*(decorators: seq[Decorator], def: FunctionDefinition,
-    statementList: StatementList): UserFunction =
-  UserFunction(decorators: decorators, def: def, statementList: statementList)
 
 proc asl(fn: UserFunction, indentWidth: uint32): seq[string] =
   for d in fn.decorators:
@@ -934,6 +935,11 @@ proc extern*(fn: Function): ExternFunction =
   assert fn.kind == fkExtern,
     fmt"Function.extern accessed but kind is {fn.kind}"
   fn.extern
+
+proc loc*(fn: Function): Location =
+  case fn.kind:
+  of fkUser: fn.user.loc
+  of fkExtern: fn.extern.loc
 
 proc name*(fn: Function): Identifier =
   case fn.kind:

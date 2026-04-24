@@ -166,10 +166,14 @@ Currently a stub — being rewritten. Planned scope:
   - Pass A (declare): register every defined-type name and every
     imported-binding into a `FileScope` as `ResolvedRef`s (file id
     + module/generic kind + index within file).
-  - Pass B (define): for each module, resolve its data block
-    (struct/union/literal) and each function signature. For each
-    generic, resolve each function signature. Every `ArgumentType`
-    root must look up in the scope; impls resolve recursively.
+  - Pass B (define): for each module, resolve its `requires(...)`
+    clause (if any, declaring explicit type parameters), its data
+    block (struct/union/literal), and each function signature. For
+    each generic, resolve each function signature. Every
+    `ArgumentType` root must look up in the scope; impls resolve
+    recursively. When a module has no explicit `requires` but its
+    struct/union fields reference a generic, that generic is treated
+    as an inferred type parameter at use sites.
 - **Generic signature rule** — inside a generic block, a fn
   argument/return type root may only resolve to the current generic
   itself (self-reference) or a module. Other generics are rejected

@@ -315,7 +315,8 @@ proc newResolvedFunction(extern: ResolvedExternFunction): ResolvedFunction =
 
 proc resolveFunction(app: App, file: File, module: Module, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
-  of fkUser: err("todo: resolve user function")
+  of fkUser:
+    err(fmt"{file.path}:{function.loc} todo: resolve user function")
   of fkExtern:
     let resolvedExternFunction = ? resolveExternFunction(app, file, module, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))
@@ -391,18 +392,31 @@ proc resolveDataBlock(app: App, file: File, module: Module, data: DataBlock): Re
     ok(newResolvedData(resolvedUnion))
 
 type ResolvedModule = ref object
+  requires: seq[Generic]
   data: Option[ResolvedData]
   functions: seq[ResolvedFunction]
 
-proc newResolvedModule(data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
-  ResolvedModule(data: data, functions: functions)
+proc newResolvedModule(requires: seq[Generic], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
+  ResolvedModule(requires: requires, data: data, functions: functions)
 
 proc resolveModule(app: App, file: File, module: Module): Result[ResolvedModule, string] =
   if module.decorators.len > 0:
     return err("todo: resolve decorators")
 
+  var resolvedRequires: seq[Generic]
   if module.requires.isSome:
-    return err("todo: resolve requires block")
+    for generic in module.requires.get.generics:
+      let dataType = ? file.findType(generic)
+      case dataType.kind:
+      of tkImported:
+        return err("todo: resolve imported type in requires block")
+      of tkDefined:
+        let definedType = dataType.definedType
+        case definedType.kind:
+        of dtkModule:
+          return err(fmt"{file.path}:{generic.loc} type `{generic.asl}` is a module but expected generic")
+        of dtkGeneric:
+          resolvedRequires.add(definedType.generic)
 
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:
@@ -414,7 +428,7 @@ proc resolveModule(app: App, file: File, module: Module): Result[ResolvedModule,
     let resolvedFunction = ? resolveFunction(app, file, module, function)
     resolvedFunctions.add(resolvedFunction)
 
-  ok(newResolvedModule(resolvedData, resolvedFunctions))
+  ok(newResolvedModule(resolvedRequires, resolvedData, resolvedFunctions))
 
 type ResolvedGeneric = ref object
   public: bool
