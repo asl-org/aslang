@@ -302,6 +302,19 @@ proc resolveExternFunction(app: App, file: File, module: Module, function: Exter
   let resolvedFunctionDef = ? resolveFunctionDefinition(app, file, module, function.def)
   ok(newResolvedExternFunction(function.ffi, resolvedFunctionDef))
 
+proc resolveStatement(app: App, file: File, module: Module, statement: Statement): Result[void, string] =
+  err(fmt"{file.path}:{statement.loc} todo: resolve statement")
+
+proc resolveUserFunction(app: App, file: File, module: Module, function: UserFunction): Result[void, string] =
+  if function.decorators.len > 0:
+    return err(fmt"{file.path}:{function.loc} todo: resolve decorators in user function")
+
+  let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, module, function.def)
+  for statement in function.statements:
+    ? resolveStatement(app, file, module, statement)
+
+  err(fmt"{file.path}:{function.loc} todo: resolve user function")
+
 type
   ResolvedFunctionKind = enum
     rfkExtern, rfkUser
@@ -316,7 +329,8 @@ proc newResolvedFunction(extern: ResolvedExternFunction): ResolvedFunction =
 proc resolveFunction(app: App, file: File, module: Module, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
-    err(fmt"{file.path}:{function.loc} todo: resolve user function")
+    ? resolveUserFunction(app, file, module, function.user)
+    err(fmt"{file.path}:{function.loc} todo: return the User ResolvedFunction")
   of fkExtern:
     let resolvedExternFunction = ? resolveExternFunction(app, file, module, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))

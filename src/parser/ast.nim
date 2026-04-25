@@ -295,20 +295,33 @@ proc newStringContent*(content: string,
 
 proc content*(sc: StringContent): string = sc.content
 
+type UnsignedIntegerLiteral* = ref object
+  value: string
+  loc: Location
+
+proc newUnsignedIntegerLiteral*(value: string,
+    loc: Location): UnsignedIntegerLiteral =
+  UnsignedIntegerLiteral(value: value, loc: loc)
+
+proc value*(literal: UnsignedIntegerLiteral): string = literal.value
+proc loc*(uil: UnsignedIntegerLiteral): Location = uil.loc
+proc asl(unsigned: UnsignedIntegerLiteral): string = unsigned.value
+
+type SignedIntegerLiteral* = ref object
+  sign: string
+  value: UnsignedIntegerLiteral
+  loc: Location
+
+proc newSignedIntegerLiteral*(sign: string, value: UnsignedIntegerLiteral,
+    loc: Location): SignedIntegerLiteral =
+  SignedIntegerLiteral(sign: sign, value: value, loc: loc)
+
+proc loc*(sil: SignedIntegerLiteral): Location = sil.loc
+
+proc asl(signed: SignedIntegerLiteral): string =
+  fmt"{signed.sign}{asl(signed.value)}"
+
 type
-  ArgumentList* = ref object
-    args: seq[Expression]
-    loc: Location
-
-  UnsignedIntegerLiteral* = ref object
-    value: string
-    loc: Location
-
-  SignedIntegerLiteral* = ref object
-    sign: string
-    value: UnsignedIntegerLiteral
-    loc: Location
-
   IntegerLiteralKind* = enum
     ilkSigned, ilkUnsigned
   IntegerLiteral* = ref object
@@ -316,19 +329,217 @@ type
     of ilkSigned: signed: SignedIntegerLiteral
     of ilkUnsigned: unsigned: UnsignedIntegerLiteral
 
-  FloatLiteral* = ref object
-    value: string
+proc newIntegerLiteral*(signed: SignedIntegerLiteral): IntegerLiteral =
+  IntegerLiteral(kind: ilkSigned, signed: signed)
+
+proc newIntegerLiteral*(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
+  IntegerLiteral(kind: ilkUnsigned, unsigned: unsigned)
+
+proc kind*(il: IntegerLiteral): IntegerLiteralKind = il.kind
+
+proc signed*(il: IntegerLiteral): SignedIntegerLiteral =
+  assert il.kind == ilkSigned,
+    fmt"IntegerLiteral.signed accessed but kind is {il.kind}"
+  il.signed
+
+proc unsigned*(il: IntegerLiteral): UnsignedIntegerLiteral =
+  assert il.kind == ilkUnsigned,
+    fmt"IntegerLiteral.unsigned accessed but kind is {il.kind}"
+  il.unsigned
+
+proc loc(intLit: IntegerLiteral): Location =
+  case intLit.kind:
+  of ilkSigned: intLit.signed.loc
+  of ilkUnsigned: intLit.unsigned.loc
+
+proc asl(intLit: IntegerLiteral): string =
+  case intLit.kind:
+  of ilkSigned: asl(intLit.signed)
+  of ilkUnsigned: asl(intLit.unsigned)
+
+type FloatLiteral* = ref object
+  value: string
+  loc: Location
+
+proc newFloatLiteral*(value: string, loc: Location): FloatLiteral =
+  FloatLiteral(value: value, loc: loc)
+
+proc asl(floatLit: FloatLiteral): string = floatLit.value
+
+type
+  LiteralKind* = enum
+    lkString, lkInteger, lkFloat
+  Literal* = ref object
+    case kind: LiteralKind
+    of lkString: strLit: StringLiteral
+    of lkInteger: intLit: IntegerLiteral
+    of lkFloat: floatLit: FloatLiteral
+
+proc newLiteral*(strLit: StringLiteral): Literal =
+  Literal(kind: lkString, strLit: strLit)
+
+proc newLiteral*(intLit: IntegerLiteral): Literal =
+  Literal(kind: lkInteger, intLit: intLit)
+
+proc newLiteral*(floatLit: FloatLiteral): Literal =
+  Literal(kind: lkFloat, floatLit: floatLit)
+
+proc kind*(l: Literal): LiteralKind = l.kind
+
+proc strLit*(l: Literal): StringLiteral =
+  assert l.kind == lkString,
+    fmt"Literal.strLit accessed but kind is {l.kind}"
+  l.strLit
+
+proc intLit*(l: Literal): IntegerLiteral =
+  assert l.kind == lkInteger,
+    fmt"Literal.intLit accessed but kind is {l.kind}"
+  l.intLit
+
+proc floatLit*(l: Literal): FloatLiteral =
+  assert l.kind == lkFloat,
+    fmt"Literal.floatLit accessed but kind is {l.kind}"
+  l.floatLit
+
+proc loc(literal: Literal): Location =
+  case literal.kind:
+  of lkString: literal.strLit.loc
+  of lkInteger: literal.intLit.loc
+  of lkFloat: literal.floatLit.loc
+
+proc asl(literal: Literal): string =
+  case literal.kind:
+  of lkString: asl(literal.strLit)
+  of lkInteger: asl(literal.intLit)
+  of lkFloat: asl(literal.floatLit)
+
+type Getter* = ref object
+  source: Identifier
+  property: Identifier
+  loc: Location
+
+proc newGetter*(source: Identifier, property: Identifier,
+    loc: Location): Getter =
+  Getter(source: source, property: property, loc: loc)
+
+proc source*(g: Getter): Identifier = g.source
+proc property*(g: Getter): Identifier = g.property
+proc loc*(g: Getter): Location = g.loc
+
+proc asl(getter: Getter): string =
+  fmt"{asl(getter.source)}.{asl(getter.property)}"
+
+type LiteralInitializer* = ref object
+  typeName: Identifier
+  value: Literal
+  loc: Location
+
+proc newLiteralInitializer*(typeName: Identifier, value: Literal,
+    loc: Location): LiteralInitializer =
+  LiteralInitializer(typeName: typeName, value: value, loc: loc)
+
+proc asl(prim: LiteralInitializer): string =
+  fmt"{asl(prim.typeName)} {asl(prim.value)}"
+
+type VariantPatternField* = ref object
+  name: Identifier
+  binding: Identifier
+  loc: Location
+
+proc newVariantPatternField*(name: Identifier, binding: Identifier,
+    loc: Location): VariantPatternField =
+  VariantPatternField(name: name, binding: binding, loc: loc)
+
+proc asl(field: VariantPatternField): string =
+  fmt"{asl(field.name)}: {asl(field.binding)}"
+
+type VariantPattern* = ref object
+  variantName: Identifier
+  fields: seq[VariantPatternField]
+  loc: Location
+
+proc newVariantPattern*(variantName: Identifier,
+    fields: seq[VariantPatternField],
+    loc: Location): Result[VariantPattern, ParserError] =
+  var nameIndex: Table[Identifier, int]
+  var bindingIndex: Table[Identifier, int]
+
+  for index, field in fields:
+    if field.name in nameIndex:
+      let prev = fields[nameIndex[field.name]].name
+      let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, field.name.loc))
+    else:
+      nameIndex[field.name] = index
+
+    if field.binding in bindingIndex:
+      let prev = fields[bindingIndex[field.binding]].binding
+      let msg = fmt"duplicate binding encountered, see previous binding at {prev.loc}"
+      return err(newParserError(msg, field.binding.loc))
+    else:
+      bindingIndex[field.binding] = index
+
+  ok(VariantPattern(variantName: variantName, fields: fields, loc: loc))
+
+proc loc*(vp: VariantPattern): Location = vp.loc
+
+proc asl(variant: VariantPattern): string =
+  result = fmt"{asl(variant.variantName)} " & "{"
+  for i, field in variant.fields:
+    if i > 0: result.add(", ")
+    result.add(asl(field))
+  result.add(" }")
+
+type
+  CasePatternKind* = enum
+    cpkIntegerLiteral, cpkVariable, cpkVariant
+  CasePattern* = ref object
+    case kind: CasePatternKind
+    of cpkIntegerLiteral: intLit: IntegerLiteral
+    of cpkVariable: variable: Identifier
+    of cpkVariant: variant: VariantPattern
+
+proc newCasePattern*(intLit: IntegerLiteral): CasePattern =
+  CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
+
+proc newCasePattern*(variable: Identifier): CasePattern =
+  CasePattern(kind: cpkVariable, variable: variable)
+
+proc newCasePattern*(variant: VariantPattern): CasePattern =
+  CasePattern(kind: cpkVariant, variant: variant)
+
+proc kind*(cp: CasePattern): CasePatternKind = cp.kind
+
+proc intLit*(cp: CasePattern): IntegerLiteral =
+  assert cp.kind == cpkIntegerLiteral,
+    fmt"CasePattern.intLit accessed but kind is {cp.kind}"
+  cp.intLit
+
+proc variable*(cp: CasePattern): Identifier =
+  assert cp.kind == cpkVariable,
+    fmt"CasePattern.variable accessed but kind is {cp.kind}"
+  cp.variable
+
+proc variant*(cp: CasePattern): VariantPattern =
+  assert cp.kind == cpkVariant,
+    fmt"CasePattern.variant accessed but kind is {cp.kind}"
+  cp.variant
+
+proc asl(pattern: CasePattern): string =
+  case pattern.kind:
+  of cpkIntegerLiteral: asl(pattern.intLit)
+  of cpkVariable: asl(pattern.variable)
+  of cpkVariant: asl(pattern.variant)
+
+type
+  ArgumentList* = ref object
+    args: seq[Expression]
     loc: Location
 
   FunctionCall* = ref object
     argType: ArgumentType
     name: Identifier
     argList: ArgumentList
-
-  Getter* = ref object
-    source: Identifier
-    property: Identifier
-    loc: Location
 
   KeywordArgument* = ref object
     name: Identifier
@@ -338,19 +549,6 @@ type
   KeywordArgumentList* = ref object
     args: seq[KeywordArgument]
     argIndex: Table[Identifier, int]
-    loc: Location
-
-  LiteralKind* = enum
-    lkString, lkInteger, lkFloat
-  Literal* = ref object
-    case kind: LiteralKind
-    of lkString: strLit: StringLiteral
-    of lkInteger: intLit: IntegerLiteral
-    of lkFloat: floatLit: FloatLiteral
-
-  LiteralInitializer* = ref object
-    typeName: Identifier
-    value: Literal
     loc: Location
 
   StructInitializer* = ref object
@@ -372,39 +570,15 @@ type
     of ikStruct: struct: StructInitializer
     of ikUnion: union: UnionInitializer
 
-  ExpressionKind* = enum
-    ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable, ekMatch
-  Expression* = ref object
-    case kind: ExpressionKind
-    of ekLiteral: literal: Literal
-    of ekFnCall: fncall: FunctionCall
-    of ekGetter: getter: Getter
-    of ekInitializer: initializer: Initializer
-    of ekVariable: variable: Identifier
-    of ekMatch: match: MatchExpression
-
   Assignment* = ref object
     target: Identifier
     expression: Expression
     loc: Location
 
-  VariantPatternField* = ref object
-    name: Identifier
-    binding: Identifier
+  Mutation* = ref object
+    target: Getter
+    expression: Expression
     loc: Location
-
-  VariantPattern* = ref object
-    variantName: Identifier
-    fields: seq[VariantPatternField]
-    loc: Location
-
-  CasePatternKind* = enum
-    cpkIntegerLiteral, cpkVariable, cpkVariant
-  CasePattern* = ref object
-    case kind: CasePatternKind
-    of cpkIntegerLiteral: intLit: IntegerLiteral
-    of cpkVariable: variable: Identifier
-    of cpkVariant: variant: VariantPattern
 
   CaseBlock* = ref object
     pattern: CasePattern
@@ -416,10 +590,16 @@ type
     cases: seq[CaseBlock]
     loc: Location
 
-  Mutation* = ref object
-    target: Getter
-    expression: Expression
-    loc: Location
+  ExpressionKind* = enum
+    ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable, ekMatch
+  Expression* = ref object
+    case kind: ExpressionKind
+    of ekLiteral: literal: Literal
+    of ekFnCall: fncall: FunctionCall
+    of ekGetter: getter: Getter
+    of ekInitializer: initializer: Initializer
+    of ekVariable: variable: Identifier
+    of ekMatch: match: MatchExpression
 
   StatementKind* = enum
     skAssignment, skExpr, skMutation
@@ -437,37 +617,90 @@ type
 # above. Kept private-fields + exported accessor procs throughout.
 # ------------------------------------------------------------
 
-proc loc*(uil: UnsignedIntegerLiteral): Location = uil.loc
-proc loc*(sil: SignedIntegerLiteral): Location = sil.loc
+proc asl(expr: Expression): string
+proc asl(stmt: Statement): string
+proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string]
 
-proc kind*(il: IntegerLiteral): IntegerLiteralKind = il.kind
+# ArgumentList
+proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
+  ArgumentList(args: args, loc: loc)
 
-proc signed*(il: IntegerLiteral): SignedIntegerLiteral =
-  assert il.kind == ilkSigned,
-    fmt"IntegerLiteral.signed accessed but kind is {il.kind}"
-  il.signed
+proc asl(argList: ArgumentList): string =
+  result = "("
+  for i, arg in argList.args:
+    if i > 0: result.add(", ")
+    result.add(asl(arg))
+  result.add(")")
 
-proc unsigned*(il: IntegerLiteral): UnsignedIntegerLiteral =
-  assert il.kind == ilkUnsigned,
-    fmt"IntegerLiteral.unsigned accessed but kind is {il.kind}"
-  il.unsigned
+# FunctionCall
+proc newFunctionCall*(argType: ArgumentType, name: Identifier,
+    argList: ArgumentList): FunctionCall =
+  FunctionCall(argType: argType, name: name, argList: argList)
 
-proc kind*(l: Literal): LiteralKind = l.kind
+proc loc*(fncall: FunctionCall): Location =
+  fncall.argType.loc
 
-proc strLit*(l: Literal): StringLiteral =
-  assert l.kind == lkString,
-    fmt"Literal.strLit accessed but kind is {l.kind}"
-  l.strLit
+proc argType*(fncall: FunctionCall): ArgumentType = fncall.argType
+proc args*(fncall: FunctionCall): seq[Expression] = fncall.argList.args
 
-proc intLit*(l: Literal): IntegerLiteral =
-  assert l.kind == lkInteger,
-    fmt"Literal.intLit accessed but kind is {l.kind}"
-  l.intLit
+proc asl(fncall: FunctionCall): string =
+  fmt"{asl(fncall.argType)}.{asl(fncall.name)}{asl(fncall.argList)}"
 
-proc floatLit*(l: Literal): FloatLiteral =
-  assert l.kind == lkFloat,
-    fmt"Literal.floatLit accessed but kind is {l.kind}"
-  l.floatLit
+# KeywordArgument
+proc newKeywordArgument*(name: Identifier, expression: Expression,
+    loc: Location): KeywordArgument =
+  KeywordArgument(name: name, expression: expression, loc: loc)
+
+proc asl(kwarg: KeywordArgument): string =
+  fmt"{asl(kwarg.name)}: {asl(kwarg.expression)}"
+
+# KeywordArgumentList
+proc newKeywordArgumentList*(args: seq[KeywordArgument], loc: Location): Result[KeywordArgumentList, ParserError] =
+  if args.len == 0:
+    let msg = "keyword argument list must contain at least 1 field"
+    return err(newParserError(msg, loc))
+
+  var argIndex: Table[Identifier, int]
+  for index, arg in args:
+    if arg.name in argIndex:
+      let prev = args[argIndex[arg.name]]
+      let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
+      return err(newParserError(msg, arg.loc))
+    argIndex[arg.name] = index
+  ok(KeywordArgumentList(args: args, argIndex: argIndex, loc: loc))
+
+proc asl(kwargList: KeywordArgumentList): string =
+  result = "{ "
+  for i, arg in kwargList.args:
+    if i > 0: result.add(", ")
+    result.add(asl(arg))
+  result.add(" }")
+
+# StructInitializer
+proc newStructInitializer*(argType: ArgumentType, kwargList: KeywordArgumentList, loc: Location): StructInitializer =
+  StructInitializer(argType: argType, kwargList: kwargList, loc: loc)
+
+proc asl(nonPrim: StructInitializer): string =
+  fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
+
+# UnionInitializer
+proc newUnionInitializer*(argType: ArgumentType, variantName: Identifier,
+    kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
+  UnionInitializer(argType: argType, variantName: variantName,
+    kwargList: kwargList, loc: loc)
+
+proc asl(unionInit: UnionInitializer): string =
+  fmt"{asl(unionInit.argType)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
+
+# Initializer
+proc newInitializer*(literal: LiteralInitializer): Initializer =
+  Initializer(kind: ikLiteral, literal: literal)
+
+proc newInitializer*(struct: StructInitializer): Initializer =
+  Initializer(kind: ikStruct, struct: struct)
+
+proc newInitializer*(union: UnionInitializer): Initializer =
+  Initializer(kind: ikUnion, union: union)
 
 proc kind*(i: Initializer): InitializerKind = i.kind
 
@@ -485,6 +718,84 @@ proc union*(i: Initializer): UnionInitializer =
   assert i.kind == ikUnion,
     fmt"Initializer.union accessed but kind is {i.kind}"
   i.union
+
+proc loc(initializer: Initializer): Location =
+  case initializer.kind:
+  of ikLiteral: initializer.literal.loc
+  of ikStruct: initializer.struct.loc
+  of ikUnion: initializer.union.loc
+
+proc asl(initializer: Initializer): string =
+  case initializer.kind:
+  of ikLiteral: asl(initializer.literal)
+  of ikStruct: asl(initializer.struct)
+  of ikUnion: asl(initializer.union)
+
+# Assignment
+proc newAssignment*(target: Identifier, expression: Expression,
+    loc: Location): Assignment =
+  Assignment(target: target, expression: expression, loc: loc)
+
+proc target*(assignment: Assignment): Identifier = assignment.target
+proc expression*(assignment: Assignment): Expression = assignment.expression
+
+proc asl(assignment: Assignment): string =
+  fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
+
+# Mutation
+proc newMutation*(target: Getter, expression: Expression,
+    loc: Location): Mutation =
+  Mutation(target: target, expression: expression, loc: loc)
+
+proc target*(mutation: Mutation): Getter = mutation.target
+proc expression*(mutation: Mutation): Expression = mutation.expression
+proc loc*(mutation: Mutation): Location = mutation.loc
+
+proc asl(mutation: Mutation): string =
+  fmt"{asl(mutation.target)} = {asl(mutation.expression)}"
+
+# CaseBlock
+proc newCaseBlock*(pattern: CasePattern, body: StatementList,
+    loc: Location): CaseBlock =
+  CaseBlock(pattern: pattern, body: body, loc: loc)
+
+proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
+  result.add(fmt"case {asl(caseBlock.pattern)}:")
+  let indent = " ".repeat(indentWidth)
+  for s in caseBlock.body.statements:
+    for line in aslBlock(s, indentWidth):
+      result.add(fmt"{indent}{line}")
+
+# MatchExpression
+proc newMatchExpression*(subject: Expression, cases: seq[CaseBlock],
+    loc: Location): MatchExpression =
+  MatchExpression(subject: subject, cases: cases, loc: loc)
+
+proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string] =
+  result.add(fmt"match {asl(matchExpr.subject)}:")
+  let indent = " ".repeat(indentWidth)
+  for cb in matchExpr.cases:
+    for line in asl(cb, indentWidth):
+      result.add(fmt"{indent}{line}")
+
+# Expression
+proc newExpression*(literal: Literal): Expression =
+  Expression(kind: ekLiteral, literal: literal)
+
+proc newExpression*(fncall: FunctionCall): Expression =
+  Expression(kind: ekFnCall, fncall: fncall)
+
+proc newExpression*(getter: Getter): Expression =
+  Expression(kind: ekGetter, getter: getter)
+
+proc newExpression*(initializer: Initializer): Expression =
+  Expression(kind: ekInitializer, initializer: initializer)
+
+proc newExpression*(variable: Identifier): Expression =
+  Expression(kind: ekVariable, variable: variable)
+
+proc newExpression*(match: MatchExpression): Expression =
+  Expression(kind: ekMatch, match: match)
 
 proc kind*(e: Expression): ExpressionKind = e.kind
 
@@ -518,22 +829,33 @@ proc match*(e: Expression): MatchExpression =
     fmt"Expression.match accessed but kind is {e.kind}"
   e.match
 
-proc kind*(cp: CasePattern): CasePatternKind = cp.kind
+proc loc*(expression: Expression): Location =
+  case expression.kind:
+  of ekFnCall: expression.fncall.loc
+  of ekGetter: expression.getter.loc
+  of ekInitializer: expression.initializer.loc
+  of ekLiteral: expression.literal.loc
+  of ekMatch: expression.match.loc
+  of ekVariable: expression.variable.loc
 
-proc intLit*(cp: CasePattern): IntegerLiteral =
-  assert cp.kind == cpkIntegerLiteral,
-    fmt"CasePattern.intLit accessed but kind is {cp.kind}"
-  cp.intLit
+proc asl(expr: Expression): string =
+  case expr.kind:
+  of ekLiteral: asl(expr.literal)
+  of ekFnCall: asl(expr.fncall)
+  of ekGetter: asl(expr.getter)
+  of ekInitializer: asl(expr.initializer)
+  of ekVariable: asl(expr.variable)
+  of ekMatch: "" # match is a block expression, use aslBlock
 
-proc variable*(cp: CasePattern): Identifier =
-  assert cp.kind == cpkVariable,
-    fmt"CasePattern.variable accessed but kind is {cp.kind}"
-  cp.variable
+# Statement
+proc newStatement*(assignment: Assignment): Statement =
+  Statement(kind: skAssignment, assignment: assignment)
 
-proc variant*(cp: CasePattern): VariantPattern =
-  assert cp.kind == cpkVariant,
-    fmt"CasePattern.variant accessed but kind is {cp.kind}"
-  cp.variant
+proc newStatement*(expression: Expression): Statement =
+  Statement(kind: skExpr, expression: expression)
+
+proc newStatement*(mutation: Mutation): Statement =
+  Statement(kind: skMutation, mutation: mutation)
 
 proc kind*(s: Statement): StatementKind = s.kind
 
@@ -552,275 +874,11 @@ proc mutation*(s: Statement): Mutation =
     fmt"Statement.mutation accessed but kind is {s.kind}"
   s.mutation
 
-proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
-  ArgumentList(args: args, loc: loc)
-
-proc newFunctionCall*(argType: ArgumentType, name: Identifier,
-    argList: ArgumentList): FunctionCall =
-  FunctionCall(argType: argType, name: name, argList: argList)
-
-proc argType*(fncall: FunctionCall): ArgumentType = fncall.argType
-proc args*(fncall: FunctionCall): seq[Expression] = fncall.argList.args
-
-proc newExpression*(literal: Literal): Expression =
-  Expression(kind: ekLiteral, literal: literal)
-
-proc newExpression*(fncall: FunctionCall): Expression =
-  Expression(kind: ekFnCall, fncall: fncall)
-
-proc newGetter*(source: Identifier, property: Identifier,
-    loc: Location): Getter =
-  Getter(source: source, property: property, loc: loc)
-
-proc source*(g: Getter): Identifier = g.source
-proc property*(g: Getter): Identifier = g.property
-proc loc*(g: Getter): Location = g.loc
-
-proc newKeywordArgument*(name: Identifier, expression: Expression,
-    loc: Location): KeywordArgument =
-  KeywordArgument(name: name, expression: expression, loc: loc)
-
-proc newKeywordArgumentList*(args: seq[KeywordArgument],
-    loc: Location): Result[KeywordArgumentList, ParserError] =
-  if args.len == 0:
-    let msg = "keyword argument list must contain at least 1 field"
-    return err(newParserError(msg, loc))
-
-  var argIndex: Table[Identifier, int]
-  for index, arg in args:
-    if arg.name in argIndex:
-      let prev = args[argIndex[arg.name]]
-      let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
-      return err(newParserError(msg, arg.loc))
-    argIndex[arg.name] = index
-  ok(KeywordArgumentList(args: args, argIndex: argIndex, loc: loc))
-
-proc newLiteral*(strLit: StringLiteral): Literal =
-  Literal(kind: lkString, strLit: strLit)
-
-proc newLiteral*(intLit: IntegerLiteral): Literal =
-  Literal(kind: lkInteger, intLit: intLit)
-
-proc newLiteral*(floatLit: FloatLiteral): Literal =
-  Literal(kind: lkFloat, floatLit: floatLit)
-
-proc newLiteralInitializer*(typeName: Identifier, value: Literal,
-    loc: Location): LiteralInitializer =
-  LiteralInitializer(typeName: typeName, value: value, loc: loc)
-
-proc newStructInitializer*(argType: ArgumentType,
-    kwargList: KeywordArgumentList, loc: Location): StructInitializer =
-  StructInitializer(argType: argType, kwargList: kwargList, loc: loc)
-
-proc newInitializer*(literal: LiteralInitializer): Initializer =
-  Initializer(kind: ikLiteral, literal: literal)
-
-proc newInitializer*(struct: StructInitializer): Initializer =
-  Initializer(kind: ikStruct, struct: struct)
-
-proc newUnionInitializer*(argType: ArgumentType, variantName: Identifier,
-    kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
-  UnionInitializer(argType: argType, variantName: variantName,
-    kwargList: kwargList, loc: loc)
-
-proc newInitializer*(union: UnionInitializer): Initializer =
-  Initializer(kind: ikUnion, union: union)
-
-proc newExpression*(getter: Getter): Expression =
-  Expression(kind: ekGetter, getter: getter)
-
-proc newUnsignedIntegerLiteral*(value: string,
-    loc: Location): UnsignedIntegerLiteral =
-  UnsignedIntegerLiteral(value: value, loc: loc)
-
-proc value*(literal: UnsignedIntegerLiteral): string = literal.value
-
-proc newSignedIntegerLiteral*(sign: string, value: UnsignedIntegerLiteral,
-    loc: Location): SignedIntegerLiteral =
-  SignedIntegerLiteral(sign: sign, value: value, loc: loc)
-
-proc newIntegerLiteral*(signed: SignedIntegerLiteral): IntegerLiteral =
-  IntegerLiteral(kind: ilkSigned, signed: signed)
-
-proc newIntegerLiteral*(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
-  IntegerLiteral(kind: ilkUnsigned, unsigned: unsigned)
-
-proc newFloatLiteral*(value: string, loc: Location): FloatLiteral =
-  FloatLiteral(value: value, loc: loc)
-
-proc newExpression*(initializer: Initializer): Expression =
-  Expression(kind: ekInitializer, initializer: initializer)
-
-proc newExpression*(variable: Identifier): Expression =
-  Expression(kind: ekVariable, variable: variable)
-
-proc asl(expr: Expression): string
-
-proc asl(unsigned: UnsignedIntegerLiteral): string = unsigned.value
-
-proc asl(signed: SignedIntegerLiteral): string =
-  fmt"{signed.sign}{asl(signed.value)}"
-
-proc asl(intLit: IntegerLiteral): string =
-  case intLit.kind:
-  of ilkSigned: asl(intLit.signed)
-  of ilkUnsigned: asl(intLit.unsigned)
-
-proc asl(argList: ArgumentList): string =
-  result = "("
-  for i, arg in argList.args:
-    if i > 0: result.add(", ")
-    result.add(asl(arg))
-  result.add(")")
-
-proc asl(fncall: FunctionCall): string =
-  fmt"{asl(fncall.argType)}.{asl(fncall.name)}{asl(fncall.argList)}"
-
-proc asl(getter: Getter): string =
-  fmt"{asl(getter.source)}.{asl(getter.property)}"
-
-proc asl(kwarg: KeywordArgument): string =
-  fmt"{asl(kwarg.name)}: {asl(kwarg.expression)}"
-
-proc asl(kwargList: KeywordArgumentList): string =
-  result = "{ "
-  for i, arg in kwargList.args:
-    if i > 0: result.add(", ")
-    result.add(asl(arg))
-  result.add(" }")
-
-proc asl(floatLit: FloatLiteral): string = floatLit.value
-
-proc asl(literal: Literal): string =
-  case literal.kind:
-  of lkString: asl(literal.strLit)
-  of lkInteger: asl(literal.intLit)
-  of lkFloat: asl(literal.floatLit)
-
-proc asl(prim: LiteralInitializer): string =
-  fmt"{asl(prim.typeName)} {asl(prim.value)}"
-
-proc asl(nonPrim: StructInitializer): string =
-  fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
-
-proc asl(unionInit: UnionInitializer): string =
-  fmt"{asl(unionInit.argType)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
-
-proc asl(initializer: Initializer): string =
-  case initializer.kind:
-  of ikLiteral: asl(initializer.literal)
-  of ikStruct: asl(initializer.struct)
-  of ikUnion: asl(initializer.union)
-
-proc asl(expr: Expression): string =
-  case expr.kind:
-  of ekLiteral: asl(expr.literal)
-  of ekFnCall: asl(expr.fncall)
-  of ekGetter: asl(expr.getter)
-  of ekInitializer: asl(expr.initializer)
-  of ekVariable: asl(expr.variable)
-  of ekMatch: "" # match is a block expression, use aslBlock
-
-proc newAssignment*(target: Identifier, expression: Expression,
-    loc: Location): Assignment =
-  Assignment(target: target, expression: expression, loc: loc)
-
-proc target*(assignment: Assignment): Identifier = assignment.target
-proc expression*(assignment: Assignment): Expression = assignment.expression
-
-proc asl(assignment: Assignment): string =
-  fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
-
-proc newMutation*(target: Getter, expression: Expression,
-    loc: Location): Mutation =
-  Mutation(target: target, expression: expression, loc: loc)
-
-proc target*(mutation: Mutation): Getter = mutation.target
-proc expression*(mutation: Mutation): Expression = mutation.expression
-proc loc*(mutation: Mutation): Location = mutation.loc
-
-proc asl(mutation: Mutation): string =
-  fmt"{asl(mutation.target)} = {asl(mutation.expression)}"
-
-proc newCasePattern*(intLit: IntegerLiteral): CasePattern =
-  CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
-
-proc newCasePattern*(variable: Identifier): CasePattern =
-  CasePattern(kind: cpkVariable, variable: variable)
-
-proc newVariantPatternField*(name: Identifier, binding: Identifier,
-    loc: Location): VariantPatternField =
-  VariantPatternField(name: name, binding: binding, loc: loc)
-
-proc newVariantPattern*(variantName: Identifier,
-    fields: seq[VariantPatternField],
-    loc: Location): Result[VariantPattern, ParserError] =
-  var nameIndex: Table[Identifier, int]
-  var bindingIndex: Table[Identifier, int]
-
-  for index, field in fields:
-    if field.name in nameIndex:
-      let prev = fields[nameIndex[field.name]].name
-      let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
-      return err(newParserError(msg, field.name.loc))
-    else:
-      nameIndex[field.name] = index
-
-    if field.binding in bindingIndex:
-      let prev = fields[bindingIndex[field.binding]].binding
-      let msg = fmt"duplicate binding encountered, see previous binding at {prev.loc}"
-      return err(newParserError(msg, field.binding.loc))
-    else:
-      bindingIndex[field.binding] = index
-
-  ok(VariantPattern(variantName: variantName, fields: fields, loc: loc))
-
-proc loc*(vp: VariantPattern): Location = vp.loc
-
-proc newCasePattern*(variant: VariantPattern): CasePattern =
-  CasePattern(kind: cpkVariant, variant: variant)
-
-proc asl(field: VariantPatternField): string =
-  fmt"{asl(field.name)}: {asl(field.binding)}"
-
-proc asl(variant: VariantPattern): string =
-  result = fmt"{asl(variant.variantName)} " & "{"
-  for i, field in variant.fields:
-    if i > 0: result.add(", ")
-    result.add(asl(field))
-  result.add(" }")
-
-proc asl(pattern: CasePattern): string =
-  case pattern.kind:
-  of cpkIntegerLiteral: asl(pattern.intLit)
-  of cpkVariable: asl(pattern.variable)
-  of cpkVariant: asl(pattern.variant)
-
-proc newCaseBlock*(pattern: CasePattern, body: StatementList,
-    loc: Location): CaseBlock =
-  CaseBlock(pattern: pattern, body: body, loc: loc)
-
-proc newMatchExpression*(subject: Expression, cases: seq[CaseBlock],
-    loc: Location): MatchExpression =
-  MatchExpression(subject: subject, cases: cases, loc: loc)
-
-proc newExpression*(match: MatchExpression): Expression =
-  Expression(kind: ekMatch, match: match)
-
-proc newStatement*(assignment: Assignment): Statement =
-  Statement(kind: skAssignment, assignment: assignment)
-
-proc newStatement*(expression: Expression): Statement =
-  Statement(kind: skExpr, expression: expression)
-
-proc newStatement*(mutation: Mutation): Statement =
-  Statement(kind: skMutation, mutation: mutation)
-
-proc newStatementList*(statements: seq[Statement]): StatementList =
-  StatementList(statements: statements)
-
-proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string]
-proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string]
+proc loc*(statement: Statement): Location =
+  case statement.kind:
+  of skAssignment: statement.assignment.loc
+  of skExpr: statement.expression.loc
+  of skMutation: statement.mutation.loc
 
 proc isBlockStatement(stmt: Statement): bool =
   case stmt.kind:
@@ -828,9 +886,6 @@ proc isBlockStatement(stmt: Statement): bool =
   of skAssignment:
     stmt.assignment.expression.kind == ekMatch
   of skMutation: false
-
-proc asl(stmt: Statement): string
-proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string]
 
 proc asl(stmt: Statement): string =
   case stmt.kind:
@@ -852,19 +907,9 @@ proc aslBlock(stmt: Statement, indentWidth: uint32): seq[string] =
   of skMutation:
     result = @[asl(stmt.mutation)]
 
-proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
-  result.add(fmt"case {asl(caseBlock.pattern)}:")
-  let indent = " ".repeat(indentWidth)
-  for s in caseBlock.body.statements:
-    for line in aslBlock(s, indentWidth):
-      result.add(fmt"{indent}{line}")
-
-proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string] =
-  result.add(fmt"match {asl(matchExpr.subject)}:")
-  let indent = " ".repeat(indentWidth)
-  for cb in matchExpr.cases:
-    for line in asl(cb, indentWidth):
-      result.add(fmt"{indent}{line}")
+# StatementList
+proc newStatementList*(statements: seq[Statement]): StatementList =
+  StatementList(statements: statements)
 
 type UserFunction* = ref object
   decorators: seq[Decorator]
