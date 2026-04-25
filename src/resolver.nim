@@ -65,7 +65,16 @@ proc resolveArgumentType(app: App, file: File, module: Module, argType: Argument
 proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: ArgumentType, root: Module): Result[ResolvedModuleArgumentType, string] =
   # NOTE: requires block will override the inferred impl list
   if root.requires.isSome:
-    return err("todo: resolve requires block in argument type")
+    let expectedImplCount = root.requires.get.generics.len
+    if argType.impls.len != expectedImplCount:
+      return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` expects `{expectedImplCount}` impls but found `{argType.impls.len}`")
+
+    var resolvedImpls: seq[ResolvedArgumentType]
+    for impl in argType.impls:
+      let resolvedImpl = ? resolveArgumentType(app, file, module, impl)
+      resolvedImpls.add(resolvedImpl)
+
+    return ok(newResolvedModuleArgumentType(root, resolvedImpls))
 
   # NOTE: infer the impl list from struct/union block
   if root.data.isSome:
@@ -82,7 +91,8 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
       for field in struct.fields:
         let fieldType = ? file.findType(field.argType.root)
         case fieldType.kind:
-        of tkImported: return err("todo: resolve imported type field in union variant")
+        of tkImported:
+          return err("todo: resolve imported type field in union variant")
         of tkDefined:
           let definedFieldType = fieldType.definedType
           case definedFieldType.kind:
@@ -90,7 +100,7 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
           of dtkGeneric: requires.add(definedFieldType.generic)
 
       if argType.impls.len != requires.len:
-        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
+        return err(fmt"{file.path}:{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
       for impl in argType.impls:
@@ -106,7 +116,8 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
         for field in variant.fields:
           let fieldType = ? file.findType(field.argType.root)
           case fieldType.kind:
-          of tkImported: return err("todo: resolve imported type field in union variant")
+          of tkImported:
+            return err("todo: resolve imported type field in union variant")
           of tkDefined:
             let definedFieldType = fieldType.definedType
             case definedFieldType.kind:
@@ -114,7 +125,7 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
             of dtkGeneric: requires.add(definedFieldType.generic)
 
       if argType.impls.len != requires.len:
-        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
+        return err(fmt"{file.path}:{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
       for impl in argType.impls:
@@ -153,7 +164,8 @@ proc resolveModuleArgumentType(app: App, file: File, generic: Generic, argType: 
         for field in variant.fields:
           let fieldType = ? file.findType(field.argType.root)
           case fieldType.kind:
-          of tkImported: return err("todo: resolve imported type field in union variant")
+          of tkImported:
+            return err("todo: resolve imported type field in union variant")
           of tkDefined:
             let definedFieldType = fieldType.definedType
             case definedFieldType.kind:
@@ -200,7 +212,8 @@ proc resolveDefinedArgumentType(app: App, file: File, generic: Generic, argType:
 proc resolveArgumentType(app: App, file: File, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let rootType = ? file.findType(argType.root)
   case rootType.kind:
-  of tkImported: err("todo: resolve imported type")
+  of tkImported:
+    err("todo: resolve imported type")
   of tkDefined:
     let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, module, argType, rootType.definedType)
     ok(newResolvedArgumentType(resolvedDefinedType))
@@ -208,14 +221,16 @@ proc resolveArgumentType(app: App, file: File, module: Module, argType: Argument
 proc resolveArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let rootType = ? file.findType(argType.root)
   case rootType.kind:
-  of tkImported: err("todo: resolve imported type")
+  of tkImported:
+    err("todo: resolve imported type")
   of tkDefined:
     let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, generic, argType, rootType.definedType)
     ok(newResolvedArgumentType(resolvedDefinedType))
 
 proc resolveDataType(app: App, file: File, module: Module, arg: ArgumentType, resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
   case resolvedArgumentType.kind:
-  of ratkImported: err("todo: resolve imported type argument definition")
+  of ratkImported:
+    err("todo: resolve imported type argument definition")
   of ratkDefined:
     let resolvedDefinedType = resolvedArgumentType.definedType
     case resolvedDefinedType.kind:
@@ -230,7 +245,8 @@ proc resolveDataType(app: App, file: File, module: Module, arg: ArgumentType, re
 
 proc resolveDataType(app: App, file: File, generic: Generic, arg: ArgumentType, resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
   case resolvedArgumentType.kind:
-  of ratkImported: err("todo: resolve imported type argument definition")
+  of ratkImported:
+    err("todo: resolve imported type argument definition")
   of ratkDefined:
     let resolvedDefinedType = resolvedArgumentType.definedType
     case resolvedDefinedType.kind:
