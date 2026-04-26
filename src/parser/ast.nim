@@ -641,6 +641,7 @@ proc loc*(fncall: FunctionCall): Location =
   fncall.argType.loc
 
 proc argType*(fncall: FunctionCall): ArgumentType = fncall.argType
+proc name*(fncall: FunctionCall): Identifier = fncall.name
 proc args*(fncall: FunctionCall): seq[Expression] = fncall.argList.args
 
 proc asl(fncall: FunctionCall): string =
@@ -736,6 +737,7 @@ proc newAssignment*(target: Identifier, expression: Expression,
     loc: Location): Assignment =
   Assignment(target: target, expression: expression, loc: loc)
 
+proc loc*(assignment: Assignment): Location = assignment.target.loc
 proc target*(assignment: Assignment): Identifier = assignment.target
 proc expression*(assignment: Assignment): Expression = assignment.expression
 
@@ -1122,6 +1124,21 @@ proc asl(gen: Generic, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(indentWidth)
   for funcDef in gen.funcDefs:
     result.add(fmt"{indent}{asl(funcDef)}")
+
+proc findFunctionDefIds(generic: Generic, name: Identifier, arity: int): Result[seq[int], string] =
+  if name notin generic.funcDefArityIndex:
+    err(fmt"{name.loc} function `{name.asl}` does not exist in generic")
+  elif arity notin generic.funcDefArityIndex[name]:
+    err(fmt"{name.loc} function `{name.asl}` with arity `{arity}` does not exist in generic")
+  else:
+    ok(generic.funcDefArityIndex[name][arity])
+
+proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+  let funcIds = ? generic.findFunctionDefIds(name, arity)
+  var funcs: seq[FunctionDefinition]
+  for id in funcIds:
+    funcs.add(generic.funcDefs[id])
+  ok(funcs)
 
 type Requires* = ref object
   generics: seq[Identifier]

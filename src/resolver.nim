@@ -1,4 +1,4 @@
-import results, options, strformat
+import results, options, strformat, tables
 
 import parser
 
@@ -318,16 +318,94 @@ proc resolveExternFunction(app: App, file: File, module: Module, function: Exter
   let resolvedFunctionDef = ? resolveFunctionDefinition(app, file, module, function.def)
   ok(newResolvedExternFunction(function.ffi, resolvedFunctionDef))
 
-proc resolveStatement(app: App, file: File, module: Module, statement: Statement): Result[void, string] =
-  err(fmt"{file.path}:{statement.loc} todo: resolve statement")
+type FunctionScope = Table[Identifier, ResolvedArgumentType]
+
+type
+  ResolvedDefinedTypeRefKind = enum
+    rdtrkGeneric
+  ResolvedDefinedTypeRef = ref object
+    funcDefs: seq[FunctionDefinition]
+    case kind: ResolvedDefinedTypeRefKind
+    of rdtrkGeneric: generic: Generic
+
+proc newResolvedDefinedTypeRef(generic: Generic, funcDefs: seq[FunctionDefinition]): ResolvedDefinedTypeRef =
+  ResolvedDefinedTypeRef(kind: rdtrkGeneric, generic: generic, funcDefs: funcDefs)
+
+proc resolveDefinedTypeRef(app: App, file: File, module: Module, definedType: DefinedType, name: Identifier, arity: int): Result[ResolvedDefinedTypeRef, string] =
+  case definedType.kind:
+  of dtkModule:
+    err(fmt"{file.path}:{definedType.loc} todo: resolve module module ref")
+  of dtkGeneric:
+    let generic = definedType.generic
+    let funcDefs = ? generic.findFunctionDefs(name, arity)
+    ok(newResolvedDefinedTypeRef(generic, funcDefs))
+
+type
+  ResolvedFunctionRefKind = enum
+    rmrkDefined
+  ResolvedFunctionRef = ref object
+    case kind: ResolvedFunctionRefKind
+    of rmrkDefined: definedRef: ResolvedDefinedTypeRef
+
+proc newResolvedFunctionRef(definedRef: ResolvedDefinedTypeRef): ResolvedFunctionRef =
+  ResolvedFunctionRef(kind: rmrkDefined, definedRef: definedRef)
+
+proc resolveFunctionRef(app: App, file: File, module: Module, scope: FunctionScope, argType: ArgumentType, name: Identifier, arity: int): Result[ResolvedFunctionRef, string] =
+  let resolvedArgumentType = ? resolveArgumentType(app, file, module, argType)
+
+  let rootModule = ? file.findType(argType.root)
+  case rootModule.kind:
+  of tkImported: err(fmt"{file.path}:{argType.loc} todo: resolve imported type module ref")
+  of tkDefined:
+    let resolvedDefinedRef = ? resolveDefinedTypeRef(app, file, module, rootModule.definedType, name, arity)
+    ok(newResolvedFunctionRef(resolvedDefinedRef))
+
+proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[void, string]
+
+proc resolveFunctionCall(app: App, file: File, module: Module, scope: FunctionScope, fncall: FunctionCall): Result[void, string] =
+  let resolvedFunctionRef = ? resolveFunctionRef(app, file, module, scope, fncall.argType, fncall.name, fncall.args.len)
+  for arg in fncall.args:
+    ? resolveExpression(app, file, module, scope, arg)
+  ok()
+
+proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[void, string] =
+  case expression.kind:
+  of ekLiteral: err(fmt"{file.path}:{expression.loc} todo: resolve literal")
+  of ekVariable: err(fmt"{file.path}:{expression.loc} todo: resolve variable")
+  of ekGetter: err(fmt"{file.path}:{expression.loc} todo: resolve getter")
+  of ekFnCall:
+    ? resolveFunctionCall(app, file, module, scope, expression.fncall)
+    ok()
+  of ekInitializer: err(fmt"{file.path}:{expression.loc} todo: resolve initializer")
+  of ekMatch: err(fmt"{file.path}:{expression.loc} todo: resolve match block")
+
+proc resolveAssignment(app: App, file: File, module: Module, scope: FunctionScope, assignment: Assignment): Result[void, string] =
+  ? resolveExpression(app, file, module, scope, assignment.expression)
+
+  err(fmt"{file.path}:{assignment.loc} todo: resolve assignment")
+
+proc resolveStatement(app: App, file: File, module: Module, scope: FunctionScope, statement: Statement): Result[void, string] =
+  case statement.kind:
+  of skExpr:
+    ? resolveExpression(app, file, module, scope, statement.expression)
+    ok()
+  of skAssignment:
+    ? resolveAssignment(app, file, module, scope, statement.assignment)
+    ok()
+  of skMutation:  err(fmt"{file.path}:{statement.loc} todo: resolve mutation")
 
 proc resolveUserFunction(app: App, file: File, module: Module, function: UserFunction): Result[void, string] =
   if function.decorators.len > 0:
     return err(fmt"{file.path}:{function.loc} todo: resolve decorators in user function")
 
   let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, module, function.def)
+
+  var scope: FunctionScope
+  # for args in resolvedFunctionDefinition.args:
+  #   discard
+
   for statement in function.statements:
-    ? resolveStatement(app, file, module, statement)
+    ? resolveStatement(app, file, module, scope, statement)
 
   err(fmt"{file.path}:{function.loc} todo: resolve user function")
 

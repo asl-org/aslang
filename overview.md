@@ -178,9 +178,17 @@ Currently a stub — being rewritten. Planned scope:
   argument/return type root may only resolve to the current generic
   itself (self-reference) or a module. Other generics are rejected
   at resolve time, keeping each generic's type world bounded.
-- **Not the resolver's job**: function bodies (statements,
-  expressions), overload resolution, generic constraint
-  satisfaction. Those belong to the Analyzer phase.
+- **Body-level name resolution** — the resolver also walks user-
+  function bodies: each statement is dispatched, each expression is
+  resolved, and every function call is matched against candidate
+  function definitions by `(name, arity)` against the target type.
+  A `FunctionScope` (Table[Identifier, ResolvedArgumentType]) tracks
+  variables in scope. The resolver collects candidate overloads but
+  does not pick the unique one — that's the Analyzer.
+- **Not the resolver's job**: overload selection (picking the unique
+  candidate after matching arg types), generic constraint
+  satisfaction (does an impl actually implement the generic), and
+  type-correctness checks. Those belong to the Analyzer phase.
 - **No structural-size check** — all struct values are pointer-backed
   at runtime, so mutual struct containment does not create infinite
   types. Name cycles are the only cycles, and Pass A dissolves them.
@@ -270,18 +278,19 @@ generic-signature rule. No function-body work, no constraint
 satisfaction, no resolved type tree returned yet (produced later when
 an Analyzer consumer exists).
 
-**Build the Analyzer** — new phase after the Resolver. Responsibilities:
-- Resolve every reference inside function bodies (`Assignment.target`,
-  `Expression.variable`, `Getter.source/property`, `FunctionCall`,
-  pattern bindings, initializers).
-- Overload resolution for function calls: filter candidates by name +
-  arity, unify each candidate's parameter types with argument types,
-  pick the unique survivor (reject on ambiguity for v1).
+**Build the Analyzer** — new phase after the Resolver. The resolver
+already does body-level name resolution and collects candidate
+overloads by (name, arity); the Analyzer takes those candidates and:
+- Performs overload selection: unify each candidate's parameter
+  types with the call site's argument types and pick the unique
+  survivor (reject on ambiguity for v1).
 - Generic constraint satisfaction: after unification binds a type
   parameter (e.g., `Any := u8`), verify the bound type implements
   every function signature the generic requires. Cache results.
 - Literal type inference: pin down `5` to `u8` / `u32` / etc. from
   the expected parameter type at the call site.
+- Type-correctness checks across statements (assignment compatibility,
+  match exhaustiveness, etc.).
 
 After analysis:
 - **IR generation** — lower the analyzed AST into an intermediate
