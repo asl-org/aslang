@@ -182,8 +182,9 @@ Currently a stub — being rewritten. Planned scope:
   function bodies: each statement is dispatched, each expression is
   resolved, and every function call is matched against candidate
   function definitions by `(name, arity)` against the target type.
-  A `FunctionScope` (Table[Identifier, ResolvedArgumentType]) tracks
-  variables in scope. The resolver collects candidate overloads but
+  A `FunctionScope` (HashSet[Identifier]) tracks the names of
+  variables currently in scope; the type of each variable is the
+  Analyzer's concern. The resolver collects candidate overloads but
   does not pick the unique one — that's the Analyzer.
 - **Not the resolver's job**: overload selection (picking the unique
   candidate after matching arg types), generic constraint

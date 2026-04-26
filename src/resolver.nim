@@ -1,4 +1,4 @@
-import results, options, strformat, tables
+import results, options, strformat, sets
 
 import parser
 
@@ -318,7 +318,7 @@ proc resolveExternFunction(app: App, file: File, module: Module, function: Exter
   let resolvedFunctionDef = ? resolveFunctionDefinition(app, file, module, function.def)
   ok(newResolvedExternFunction(function.ffi, resolvedFunctionDef))
 
-type FunctionScope = Table[Identifier, ResolvedArgumentType]
+type FunctionScope = HashSet[Identifier]
 
 type
   ResolvedDefinedTypeRefKind = enum
@@ -334,7 +334,7 @@ proc newResolvedDefinedTypeRef(generic: Generic, funcDefs: seq[FunctionDefinitio
 proc resolveDefinedTypeRef(app: App, file: File, module: Module, definedType: DefinedType, name: Identifier, arity: int): Result[ResolvedDefinedTypeRef, string] =
   case definedType.kind:
   of dtkModule:
-    err(fmt"{file.path}:{definedType.loc} todo: resolve module module ref")
+    err(fmt"{file.path}:{definedType.loc} todo: resolve module ref")
   of dtkGeneric:
     let generic = definedType.generic
     let funcDefs = ? generic.findFunctionDefs(name, arity)
@@ -360,54 +360,119 @@ proc resolveFunctionRef(app: App, file: File, module: Module, scope: FunctionSco
     let resolvedDefinedRef = ? resolveDefinedTypeRef(app, file, module, rootModule.definedType, name, arity)
     ok(newResolvedFunctionRef(resolvedDefinedRef))
 
-proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[void, string]
+type
+  ResolvedFunctionCall = ref object
+    funcRef: ResolvedFunctionRef
+    args: seq[ResolvedExpression]
 
-proc resolveFunctionCall(app: App, file: File, module: Module, scope: FunctionScope, fncall: FunctionCall): Result[void, string] =
+  ResolvedAssignment = ref object
+    target: Identifier
+    expression: ResolvedExpression
+
+  ResolvedExpressionKind = enum
+    rekFunctionCall, rekVariable
+  ResolvedExpression = ref object
+    case kind: ResolvedExpressionKind
+    of rekFunctionCall: fncall: ResolvedFunctionCall
+    of rekVariable: variable: Identifier
+
+  ResolvedStatementKind = enum
+    rskAssignment, rskExpr
+  ResolvedStatement = ref object
+    case kind: ResolvedStatementKind
+    of rskAssignment: assignment: ResolvedAssignment
+    of rskExpr: expression: ResolvedExpression
+
+# ResolvedFunctionCall
+proc newResolvedFunctionCall(funcRef: ResolvedFunctionRef, args: seq[ResolvedExpression]): ResolvedFunctionCall =
+  ResolvedFunctionCall(funcRef: funcRef, args: args)
+
+# ResolvedAssignment
+proc newResolvedAssignment(target: Identifier, expression: ResolvedExpression): ResolvedAssignment =
+  ResolvedAssignment(target: target, expression: expression)
+
+# ResolvedExpression
+proc newResolvedExpression(fncall: ResolvedFunctionCall): ResolvedExpression =
+  ResolvedExpression(kind: rekFunctionCall, fncall: fncall)
+
+proc newResolvedExpression(variable: Identifier): ResolvedExpression =
+  ResolvedExpression(kind: rekVariable, variable: variable)
+
+# ResolvedStatement
+proc newResolvedStatement(assignment: ResolvedAssignment): ResolvedStatement =
+  ResolvedStatement(kind: rskAssignment, assignment: assignment)
+
+proc newResolvedStatement(expression: ResolvedExpression): ResolvedStatement =
+  ResolvedStatement(kind: rskExpr, expression: expression)
+
+proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
+
+proc resolveFunctionCall(app: App, file: File, module: Module, scope: FunctionScope, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let resolvedFunctionRef = ? resolveFunctionRef(app, file, module, scope, fncall.argType, fncall.name, fncall.args.len)
+  var resolvedArgs: seq[ResolvedExpression]
   for arg in fncall.args:
-    ? resolveExpression(app, file, module, scope, arg)
-  ok()
+    let resolvedArg = ? resolveExpression(app, file, module, scope, arg)
+    resolvedArgs.add(resolvedArg)
+  ok(newResolvedFunctionCall(resolvedFunctionRef, resolvedArgs))
 
-proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[void, string] =
+proc resolveVariable(app: App, file: File, module: Module, scope: FunctionScope, variable: Identifier): Result[Identifier, string] =
+  if variable notin scope:
+    err(fmt"{file.path}:{variable.loc} variable `{variable.asl}` is not present in scope")
+  else:
+    ok(variable)
+
+proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
-  of ekLiteral: err(fmt"{file.path}:{expression.loc} todo: resolve literal")
-  of ekVariable: err(fmt"{file.path}:{expression.loc} todo: resolve variable")
-  of ekGetter: err(fmt"{file.path}:{expression.loc} todo: resolve getter")
+  of ekLiteral:
+    err(fmt"{file.path}:{expression.loc} todo: resolve literal")
+  of ekGetter:
+    err(fmt"{file.path}:{expression.loc} todo: resolve getter")
+  of ekVariable:
+    let resolvedVariable = ? resolveVariable(app, file, module, scope, expression.variable)
+    ok(newResolvedExpression(resolvedVariable))
   of ekFnCall:
-    ? resolveFunctionCall(app, file, module, scope, expression.fncall)
-    ok()
+    let resolvedFunctionCall = ? resolveFunctionCall(app, file, module, scope, expression.fncall)
+    ok(newResolvedExpression(resolvedFunctionCall))
   of ekInitializer: err(fmt"{file.path}:{expression.loc} todo: resolve initializer")
   of ekMatch: err(fmt"{file.path}:{expression.loc} todo: resolve match block")
 
-proc resolveAssignment(app: App, file: File, module: Module, scope: FunctionScope, assignment: Assignment): Result[void, string] =
-  ? resolveExpression(app, file, module, scope, assignment.expression)
+proc resolveAssignment(app: App, file: File, module: Module, scope: FunctionScope, assignment: Assignment): Result[ResolvedAssignment, string] =
+  let resolvedExpression = ? resolveExpression(app, file, module, scope, assignment.expression)
+  ok(newResolvedAssignment(assignment.target, resolvedExpression))
 
-  err(fmt"{file.path}:{assignment.loc} todo: resolve assignment")
-
-proc resolveStatement(app: App, file: File, module: Module, scope: FunctionScope, statement: Statement): Result[void, string] =
+proc resolveStatement(app: App, file: File, module: Module, scope: FunctionScope, statement: Statement): Result[ResolvedStatement, string] =
   case statement.kind:
   of skExpr:
-    ? resolveExpression(app, file, module, scope, statement.expression)
-    ok()
+    let resolvedExpression = ? resolveExpression(app, file, module, scope, statement.expression)
+    ok(newResolvedStatement(resolvedExpression))
   of skAssignment:
-    ? resolveAssignment(app, file, module, scope, statement.assignment)
-    ok()
+    let resolvedAssignment = ? resolveAssignment(app, file, module, scope, statement.assignment)
+    ok(newResolvedStatement(resolvedAssignment))
   of skMutation:  err(fmt"{file.path}:{statement.loc} todo: resolve mutation")
 
-proc resolveUserFunction(app: App, file: File, module: Module, function: UserFunction): Result[void, string] =
+type ResolvedUserFunction = ref object
+  funcDef: ResolvedFunctionDefinition
+  statements: seq[ResolvedStatement]
+
+proc newResolvedUserFunction(funcDef: ResolvedFunctionDefinition, statements: seq[ResolvedStatement]): ResolvedUserFunction =
+  ResolvedUserFunction(funcDef: funcDef, statements: statements)
+
+proc resolveUserFunction(app: App, file: File, module: Module, function: UserFunction): Result[ResolvedUserFunction, string] =
   if function.decorators.len > 0:
     return err(fmt"{file.path}:{function.loc} todo: resolve decorators in user function")
 
   let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, module, function.def)
 
   var scope: FunctionScope
-  # for args in resolvedFunctionDefinition.args:
-  #   discard
+  for arg in resolvedFunctionDefinition.args:
+    scope.incl(arg.name)
 
+  var resolvedStatements: seq[ResolvedStatement]
   for statement in function.statements:
-    ? resolveStatement(app, file, module, scope, statement)
+    let resolvedStatement = ? resolveStatement(app, file, module, scope, statement)
+    resolvedStatements.add(resolvedStatement)
 
-  err(fmt"{file.path}:{function.loc} todo: resolve user function")
+  ok(newResolvedUserFunction(resolvedFunctionDefinition, resolvedStatements))
 
 type
   ResolvedFunctionKind = enum
@@ -415,16 +480,19 @@ type
   ResolvedFunction = ref object
     case kind: ResolvedFunctionKind
     of rfkExtern: extern: ResolvedExternFunction
-    of rfkUser: discard
+    of rfkUser: user: ResolvedUserFunction
 
 proc newResolvedFunction(extern: ResolvedExternFunction): ResolvedFunction =
   ResolvedFunction(kind: rfkExtern, extern: extern)
 
+proc newResolvedFunction(user: ResolvedUserFunction): ResolvedFunction =
+  ResolvedFunction(kind: rfkUser, user: user)
+
 proc resolveFunction(app: App, file: File, module: Module, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
-    ? resolveUserFunction(app, file, module, function.user)
-    err(fmt"{file.path}:{function.loc} todo: return the User ResolvedFunction")
+    let resolvedUserFunction = ? resolveUserFunction(app, file, module, function.user)
+    ok(newResolvedFunction(resolvedUserFunction))
   of fkExtern:
     let resolvedExternFunction = ? resolveExternFunction(app, file, module, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))
