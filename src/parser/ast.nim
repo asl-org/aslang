@@ -161,6 +161,12 @@ proc asl(s: Struct, indentWidth: uint32): seq[string] =
   for field in s.fields:
     result.add(fmt"{indent}{asl(field)}")
 
+proc findFieldId*(struct: Struct, name: Identifier): Result[int, string] =
+  if name notin struct.fieldIndex:
+    err(fmt"{name.loc} field `{name.asl}` is not present in the struct")
+  else:
+    ok(struct.fieldIndex[name])
+
 type VariantDefinition* = ref object
   name: Identifier
   fields: seq[ArgumentDefinition]
@@ -548,7 +554,6 @@ type
 
   KeywordArgumentList* = ref object
     args: seq[KeywordArgument]
-    argIndex: Table[Identifier, int]
     loc: Location
 
   StructInitializer* = ref object
@@ -652,6 +657,9 @@ proc newKeywordArgument*(name: Identifier, expression: Expression,
     loc: Location): KeywordArgument =
   KeywordArgument(name: name, expression: expression, loc: loc)
 
+proc name*(kwarg: KeywordArgument): Identifier = kwarg.name
+proc expression*(kwarg: KeywordArgument): Expression = kwarg.expression
+
 proc asl(kwarg: KeywordArgument): string =
   fmt"{asl(kwarg.name)}: {asl(kwarg.expression)}"
 
@@ -668,7 +676,7 @@ proc newKeywordArgumentList*(args: seq[KeywordArgument], loc: Location): Result[
       let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
       return err(newParserError(msg, arg.loc))
     argIndex[arg.name] = index
-  ok(KeywordArgumentList(args: args, argIndex: argIndex, loc: loc))
+  ok(KeywordArgumentList(args: args, loc: loc))
 
 proc asl(kwargList: KeywordArgumentList): string =
   result = "{ "
@@ -680,6 +688,10 @@ proc asl(kwargList: KeywordArgumentList): string =
 # StructInitializer
 proc newStructInitializer*(argType: ArgumentType, kwargList: KeywordArgumentList, loc: Location): StructInitializer =
   StructInitializer(argType: argType, kwargList: kwargList, loc: loc)
+
+proc argType*(struct: StructInitializer): ArgumentType = struct.argType
+proc kwargs*(struct: StructInitializer): seq[KeywordArgument] = struct.kwargList.args
+proc loc*(struct: StructInitializer): Location = struct.loc
 
 proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
@@ -720,7 +732,7 @@ proc union*(i: Initializer): UnionInitializer =
     fmt"Initializer.union accessed but kind is {i.kind}"
   i.union
 
-proc loc(initializer: Initializer): Location =
+proc loc*(initializer: Initializer): Location =
   case initializer.kind:
   of ikLiteral: initializer.literal.loc
   of ikStruct: initializer.struct.loc

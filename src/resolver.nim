@@ -367,13 +367,13 @@ proc resolveDefinedTypeRef(app: App, file: File, module: Module, definedType: De
 
 type
   ResolvedFunctionRefKind = enum
-    rmrkDefined
+    rfrkDefined
   ResolvedFunctionRef = ref object
     case kind: ResolvedFunctionRefKind
-    of rmrkDefined: definedRef: ResolvedDefinedTypeRef
+    of rfrkDefined: definedRef: ResolvedDefinedTypeRef
 
 proc newResolvedFunctionRef(definedRef: ResolvedDefinedTypeRef): ResolvedFunctionRef =
-  ResolvedFunctionRef(kind: rmrkDefined, definedRef: definedRef)
+  ResolvedFunctionRef(kind: rfrkDefined, definedRef: definedRef)
 
 proc resolveFunctionRef(app: App, file: File, module: Module, scope: FunctionScope, argType: ArgumentType, name: Identifier, arity: int): Result[ResolvedFunctionRef, string] =
   let resolvedArgumentType = ? resolveArgumentType(app, file, module, argType)
@@ -394,12 +394,27 @@ type
     target: Identifier
     expression: ResolvedExpression
 
+  ResolvedKeywordArgument = ref object
+    name: Identifier
+    expression: ResolvedExpression
+
+  ResolvedStructInitializer = ref object
+    argType: ResolvedArgumentType
+    kwargs: seq[ResolvedKeywordArgument]
+
+  ResolvedInitializerKind = enum
+    rikStruct
+  ResolvedInitializer = ref object
+    case kind: ResolvedInitializerKind
+    of rikStruct: struct: ResolvedStructInitializer
+
   ResolvedExpressionKind = enum
-    rekFunctionCall, rekVariable
+    rekFunctionCall, rekVariable, rekInitializer
   ResolvedExpression = ref object
     case kind: ResolvedExpressionKind
     of rekFunctionCall: fncall: ResolvedFunctionCall
     of rekVariable: variable: Identifier
+    of rekInitializer: initializer: ResolvedInitializer
 
   ResolvedStatementKind = enum
     rskAssignment, rskExpr
@@ -416,9 +431,24 @@ proc newResolvedFunctionCall(funcRef: ResolvedFunctionRef, args: seq[ResolvedExp
 proc newResolvedAssignment(target: Identifier, expression: ResolvedExpression): ResolvedAssignment =
   ResolvedAssignment(target: target, expression: expression)
 
+# ResolvedKeywordArgument
+proc newResolvedKeywordArgument(name: Identifier, expression: ResolvedExpression): ResolvedKeywordArgument =
+  ResolvedKeywordArgument(name: name, expression: expression)
+
+# ResolvedStructInitializer
+proc newResolvedStructInitializer(argType: ResolvedArgumentType, kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
+  ResolvedStructInitializer(argType: argType, kwargs: kwargs)
+
+# ResolvedInitializer
+proc newResolvedInitializer(struct: ResolvedStructInitializer): ResolvedInitializer =
+  ResolvedInitializer(kind: rikStruct, struct: struct)
+
 # ResolvedExpression
 proc newResolvedExpression(fncall: ResolvedFunctionCall): ResolvedExpression =
   ResolvedExpression(kind: rekFunctionCall, fncall: fncall)
+
+proc newResolvedExpression(initializer: ResolvedInitializer): ResolvedExpression =
+  ResolvedExpression(kind: rekInitializer, initializer: initializer)
 
 proc newResolvedExpression(variable: Identifier): ResolvedExpression =
   ResolvedExpression(kind: rekVariable, variable: variable)
@@ -451,6 +481,45 @@ proc resolveVariable(app: App, file: File, module: Module, scope: FunctionScope,
   else:
     ok(variable)
 
+proc resolveStructInitializer(app: App, file: File, module: Module, scope: FunctionScope, struct: StructInitializer): Result[ResolvedStructInitializer, string] =
+  let resolvedArgType = ? resolveArgumentType(app, file, module, struct.argType)
+  let structType = ? file.findType(struct.argType.root)
+  case structType.kind:
+  of tkImported: err(fmt"{file.path}:{struct.loc} todo: resolve imported struct initializer")
+  of tkDefined:
+    let definedType = structType.definedType
+    case definedType.kind:
+    of dtkGeneric: err(fmt"{file.path}:{struct.loc} type `{definedType.name.asl}` is a generic and not struct")
+    of dtkModule:
+      let structModule = definedType.module
+      if structModule.data.isNone:
+        err(fmt"{file.path}:{struct.loc} module `{structModule.name.asl}` is not a struct")
+      else:
+        let dataBlock = structModule.data.get
+        case dataBlock.kind:
+        of dbkLiteral: err(fmt"{file.path}:{dataBlock.loc} module `{structModule.name.asl}` is a literal")
+        of dbkUnion: err(fmt"{file.path}:{dataBlock.loc} module `{structModule.name.asl}` is a union")
+        of dbkStruct:
+          let structBlock = dataBlock.struct
+          if struct.kwargs.len != structBlock.fields.len:
+            err(fmt"{file.path}:{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
+          else:
+            var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
+            for kwarg in struct.kwargs:
+              let fieldId = ? structBlock.findFieldId(kwarg.name)
+              let resolvedExpression = ? resolveExpression(app, file, module, scope, kwarg.expression)
+              resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name, resolvedExpression)
+            ok(newResolvedStructInitializer(resolvedArgType, resolvedKeywordArgs))
+
+proc resolveInitializer(app: App, file: File, module: Module, scope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
+  case initializer.kind:
+  of ikLiteral:
+    err(fmt"{file.path}:{initializer.loc} todo: resolve literal initializer")
+  of ikStruct:
+    let resolvedStructInit = ? resolveStructInitializer(app, file, module, scope, initializer.struct)
+    ok(newResolvedInitializer(resolvedStructInit))
+  of ikUnion: err(fmt"{file.path}:{initializer.loc} todo: resolve union initializer")
+
 proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of ekLiteral:
@@ -463,8 +532,11 @@ proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScop
   of ekFnCall:
     let resolvedFunctionCall = ? resolveFunctionCall(app, file, module, scope, expression.fncall)
     ok(newResolvedExpression(resolvedFunctionCall))
-  of ekInitializer: err(fmt"{file.path}:{expression.loc} todo: resolve initializer")
-  of ekMatch: err(fmt"{file.path}:{expression.loc} todo: resolve match block")
+  of ekInitializer:
+    let resolvedInitializer = ? resolveInitializer(app, file, module, scope, expression.initializer)
+    ok(newResolvedExpression(resolvedInitializer))
+  of ekMatch:
+    err(fmt"{file.path}:{expression.loc} todo: resolve match block")
 
 proc resolveAssignment(app: App, file: File, module: Module, scope: FunctionScope, assignment: Assignment): Result[ResolvedAssignment, string] =
   let resolvedExpression = ? resolveExpression(app, file, module, scope, assignment.expression)
