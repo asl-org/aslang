@@ -1164,7 +1164,7 @@ type Module* = ref object
   requires: Option[Requires]
   data: Option[DataBlock]
   funcList: FunctionList
-  functionIndex: Table[string, seq[int]]
+  functionIndex: Table[Identifier, Table[int, seq[int]]]
   loc: Location
 
 proc public*(m: Module): bool = m.public
@@ -1181,9 +1181,14 @@ proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
     return err(newParserError(msg, loc))
-  var functionIndex: Table[string, seq[int]]
+  var functionIndex: Table[Identifier, Table[int, seq[int]]]
   for i, fn in funcList.functions:
-    functionIndex.mgetOrPut(fn.name.value, @[]).add(i)
+    if fn.name notin functionIndex:
+      functionIndex[fn.name] = initTable[int, seq[int]]()
+    if fn.arity notin functionIndex[fn.name]:
+      functionIndex[fn.name][fn.arity] = newSeq[int]()
+    functionIndex[fn.name][fn.arity].add(i)
+
   ok(Module(decorators: decorators, public: public, name: name,
       requires: requires, data: data, funcList: funcList,
       functionIndex: functionIndex, loc: loc))
@@ -1205,6 +1210,21 @@ proc asl(module: Module, indentWidth: uint32): seq[string] =
     if i > 0: result.add("")
     for line in asl(fn, indentWidth):
       result.add(fmt"{indent}{line}")
+
+proc findFunctionIds(module: Module, name: Identifier, arity: int): Result[seq[int], string] =
+  if name notin module.functionIndex:
+    err(fmt"{name.loc} module `{module.name.asl}` does not have function `{name.asl}`")
+  elif arity notin module.functionIndex[name]:
+    err(fmt"{name.loc} module `{module.name.asl}` does not have function `{name.asl}` with arity `{arity}`")
+  else:
+    ok(module.functionIndex[name][arity])
+
+proc findFunctions*(module: Module, name: Identifier, arity: int): Result[seq[Function], string] =
+  let funcDefIds = ? module.findFunctionIds(name, arity)
+  var funcDefs: seq[Function]
+  for id in funcDefIds:
+    funcDefs.add(module.functions[id])
+  ok(funcDefs)
 
 type
   DefinedTypeKind* = enum

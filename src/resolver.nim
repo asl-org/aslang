@@ -320,25 +320,50 @@ proc resolveExternFunction(app: App, file: File, module: Module, function: Exter
 
 type FunctionScope = HashSet[Identifier]
 
+type ResolvedGenericTypeRef = ref object
+  generic: Generic
+  funcDefs: seq[FunctionDefinition]
+
+proc newResolvedGenericTypeRef(generic: Generic, funcDefs: seq[FunctionDefinition]): ResolvedGenericTypeRef =
+  ResolvedGenericTypeRef(generic: generic, funcDefs: funcDefs)
+
+proc resolveGenericTypeRef(app: App, file: File, module: Module, generic: Generic, name: Identifier, arity: int): Result[ResolvedGenericTypeRef, string] =
+  let funcDefs = ? generic.findFunctionDefs(name, arity)
+  ok(newResolvedGenericTypeRef(generic, funcDefs))
+
+type ResolvedModuleTypeRef = ref object
+  module: Module
+  functions: seq[Function]
+
+proc newResolvedModuleTypeRef(module: Module, functions: seq[Function]): ResolvedModuleTypeRef =
+  ResolvedModuleTypeRef(module: module, functions: functions)
+
+proc resolveModuleTypeRef(app: App, file: File, module: Module, typeModule: Module, name: Identifier, arity: int): Result[ResolvedModuleTypeRef, string] =
+  let functions = ? typeModule.findFunctions(name, arity)
+  ok(newResolvedModuleTypeRef(typeModule, functions))
+
 type
   ResolvedDefinedTypeRefKind = enum
-    rdtrkGeneric
+    rdtrkGeneric, rdtrkModule
   ResolvedDefinedTypeRef = ref object
-    funcDefs: seq[FunctionDefinition]
     case kind: ResolvedDefinedTypeRefKind
-    of rdtrkGeneric: generic: Generic
+    of rdtrkGeneric: generic: ResolvedGenericTypeRef
+    of rdtrkModule: module: ResolvedModuleTypeRef
 
-proc newResolvedDefinedTypeRef(generic: Generic, funcDefs: seq[FunctionDefinition]): ResolvedDefinedTypeRef =
-  ResolvedDefinedTypeRef(kind: rdtrkGeneric, generic: generic, funcDefs: funcDefs)
+proc newResolvedDefinedTypeRef(generic: ResolvedGenericTypeRef): ResolvedDefinedTypeRef =
+  ResolvedDefinedTypeRef(kind: rdtrkGeneric, generic: generic)
+
+proc newResolvedDefinedTypeRef(module: ResolvedModuleTypeRef): ResolvedDefinedTypeRef =
+  ResolvedDefinedTypeRef(kind: rdtrkModule, module: module)
 
 proc resolveDefinedTypeRef(app: App, file: File, module: Module, definedType: DefinedType, name: Identifier, arity: int): Result[ResolvedDefinedTypeRef, string] =
   case definedType.kind:
   of dtkModule:
-    err(fmt"{file.path}:{definedType.loc} todo: resolve module ref")
+    let resolvedModuleTypeRef = ? resolveModuleTypeRef(app, file, module, definedType.module, name, arity)
+    ok(newResolvedDefinedTypeRef(resolvedModuleTypeRef))
   of dtkGeneric:
-    let generic = definedType.generic
-    let funcDefs = ? generic.findFunctionDefs(name, arity)
-    ok(newResolvedDefinedTypeRef(generic, funcDefs))
+    let resolvedGenericTypeRef = ? resolveGenericTypeRef(app, file, module, definedType.generic, name, arity)
+    ok(newResolvedDefinedTypeRef(resolvedGenericTypeRef))
 
 type
   ResolvedFunctionRefKind = enum
@@ -404,6 +429,11 @@ proc newResolvedStatement(assignment: ResolvedAssignment): ResolvedStatement =
 
 proc newResolvedStatement(expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(kind: rskExpr, expression: expression)
+
+proc variable(statement: ResolvedStatement): Option[Identifier] =
+  case statement.kind:
+  of rskAssignment: some(statement.assignment.target)
+  of rskExpr: none(Identifier)
 
 proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
 
@@ -471,6 +501,7 @@ proc resolveUserFunction(app: App, file: File, module: Module, function: UserFun
   for statement in function.statements:
     let resolvedStatement = ? resolveStatement(app, file, module, scope, statement)
     resolvedStatements.add(resolvedStatement)
+    if resolvedStatement.variable.isSome: scope.incl(resolvedStatement.variable.get)
 
   ok(newResolvedUserFunction(resolvedFunctionDefinition, resolvedStatements))
 
