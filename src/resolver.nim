@@ -404,20 +404,26 @@ proc resolveGetter(app: App, file: File, module: Module, scope: FunctionScope, g
 
 type
   ResolvedCasePatternKind = enum
-    rcpkInteger
+    rcpkInteger, rcpkVariable
   ResolvedCasePattern = ref object
     case kind: ResolvedCasePatternKind
     of rcpkInteger: integer: IntegerLiteral
+    of rcpkVariable: variable: Identifier
 
 proc newResolvedCasePattern(integer: IntegerLiteral): ResolvedCasePattern =
   ResolvedCasePattern(kind: rcpkInteger, integer: integer)
+
+proc newResolvedCasePattern(variable: Identifier): ResolvedCasePattern =
+  ResolvedCasePattern(kind: rcpkVariable, variable: variable)
 
 proc resolveCasePattern(app: App, file: File, module: Module, scope: FunctionScope, casePattern: CasePattern): Result[ResolvedCasePattern, string] =
   case casePattern.kind:
   of cpkIntegerLiteral:
     ok(newResolvedCasePattern(casePattern.intLit))
-  of cpkVariable: err(fmt"{file.path}:{casePattern.loc} todo: resolve variable case pattern")
-  of cpkVariant: err(fmt"{file.path}:{casePattern.loc} todo: resolve variant case pattern")
+  of cpkVariable:
+    ok(newResolvedCasePattern(casePattern.variable))
+  of cpkVariant:
+    err(fmt"{file.path}:{casePattern.loc} todo: resolve variant case pattern")
 
 type
   ResolvedFunctionCall = ref object
@@ -436,11 +442,17 @@ type
     argType: ResolvedArgumentType
     kwargs: seq[ResolvedKeywordArgument]
 
+  ResolvedUnionInitializer = ref object
+    argType: ResolvedArgumentType
+    variant: Identifier
+    kwargs: seq[ResolvedKeywordArgument]
+
   ResolvedInitializerKind = enum
-    rikStruct
+    rikStruct, rikUnion
   ResolvedInitializer = ref object
     case kind: ResolvedInitializerKind
     of rikStruct: struct: ResolvedStructInitializer
+    of rikUnion: union: ResolvedUnionInitializer
 
   ResolvedCaseBlock = ref object
     pattern: ResolvedCasePattern
@@ -450,22 +462,28 @@ type
     subject: ResolvedExpression
     cases: seq[ResolvedCaseBlock]
 
+  ResolvedMutation = ref object
+    getter: ResolvedGetter
+    expression: ResolvedExpression
+
   ResolvedExpressionKind = enum
-    rekFunctionCall, rekVariable, rekInitializer, rekGetter, rekMatchExpr
+    rekFunctionCall, rekVariable, rekLiteral, rekInitializer, rekGetter, rekMatchExpr
   ResolvedExpression = ref object
     case kind: ResolvedExpressionKind
     of rekFunctionCall: fncall: ResolvedFunctionCall
     of rekVariable: variable: Identifier
+    of rekLiteral: literal: Literal
     of rekInitializer: initializer: ResolvedInitializer
     of rekGetter: getter: ResolvedGetter
     of rekMatchExpr: match: ResolvedMatchExpression
 
   ResolvedStatementKind = enum
-    rskAssignment, rskExpr
+    rskAssignment, rskExpr, rskMutation
   ResolvedStatement = ref object
     case kind: ResolvedStatementKind
     of rskAssignment: assignment: ResolvedAssignment
     of rskExpr: expression: ResolvedExpression
+    of rskMutation: mutation: ResolvedMutation
 
 # ResolvedFunctionCall
 proc newResolvedFunctionCall(funcRef: ResolvedFunctionRef, args: seq[ResolvedExpression]): ResolvedFunctionCall =
@@ -483,9 +501,20 @@ proc newResolvedKeywordArgument(name: Identifier, expression: ResolvedExpression
 proc newResolvedStructInitializer(argType: ResolvedArgumentType, kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
   ResolvedStructInitializer(argType: argType, kwargs: kwargs)
 
+# ResolvedUnionInitializer
+proc newResolvedUnionInitializer(argType: ResolvedArgumentType, variant: Identifier, kwargs: seq[ResolvedKeywordArgument]): ResolvedUnionInitializer =
+  ResolvedUnionInitializer(argType: argType, variant: variant, kwargs: kwargs)
+
 # ResolvedInitializer
 proc newResolvedInitializer(struct: ResolvedStructInitializer): ResolvedInitializer =
   ResolvedInitializer(kind: rikStruct, struct: struct)
+
+proc newResolvedInitializer(union: ResolvedUnionInitializer): ResolvedInitializer =
+  ResolvedInitializer(kind: rikUnion, union: union)
+
+# ResolvedMutation
+proc newResolvedMutation(getter: ResolvedGetter, expression: ResolvedExpression): ResolvedMutation =
+  ResolvedMutation(getter: getter, expression: expression)
 
 # ResolvedExpression
 proc newResolvedExpression(fncall: ResolvedFunctionCall): ResolvedExpression =
@@ -496,6 +525,9 @@ proc newResolvedExpression(initializer: ResolvedInitializer): ResolvedExpression
 
 proc newResolvedExpression(variable: Identifier): ResolvedExpression =
   ResolvedExpression(kind: rekVariable, variable: variable)
+
+proc newResolvedExpression(literal: Literal): ResolvedExpression =
+  ResolvedExpression(kind: rekLiteral, literal: literal)
 
 proc newResolvedExpression(getter: ResolvedGetter): ResolvedExpression =
   ResolvedExpression(kind: rekGetter, getter: getter)
@@ -518,10 +550,14 @@ proc newResolvedStatement(assignment: ResolvedAssignment): ResolvedStatement =
 proc newResolvedStatement(expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(kind: rskExpr, expression: expression)
 
+proc newResolvedStatement(mutation: ResolvedMutation): ResolvedStatement =
+  ResolvedStatement(kind: rskMutation, mutation: mutation)
+
 proc variable(statement: ResolvedStatement): Option[Identifier] =
   case statement.kind:
   of rskAssignment: some(statement.assignment.target)
   of rskExpr: none(Identifier)
+  of rskMutation: none(Identifier)
 
 proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
 proc resolveStatement(app: App, file: File, module: Module, scope: FunctionScope, statement: Statement): Result[ResolvedStatement, string]
@@ -564,6 +600,37 @@ proc resolveStructInitializer(app: App, file: File, module: Module, scope: Funct
               resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name, resolvedExpression)
             ok(newResolvedStructInitializer(resolvedArgType, resolvedKeywordArgs))
 
+proc resolveUnionInitializer(app: App, file: File, module: Module, scope: FunctionScope, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
+  let resolvedArgType = ? resolveArgumentType(app, file, module, unionInit.argType)
+  let unionType = ? file.findType(unionInit.argType.root)
+  case unionType.kind:
+  of tkImported: err(fmt"{file.path}:{unionInit.loc} todo: resolve imported type union initializer")
+  of tkDefined:
+    let unionDefinedType = unionType.definedType
+    case unionDefinedType.kind:
+    of dtkGeneric: err(fmt"{file.path}:{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
+    of dtkModule:
+      let unionModule = unionDefinedType.module
+      if unionModule.data.isNone:
+        err(fmt"{file.path}:{unionInit.loc} module `{unionModule.name.asl}` is not a union")
+      else:
+        let dataBlock = unionModule.data.get
+        case dataBlock.kind:
+        of dbkLiteral: err(fmt"{file.path}:{dataBlock.loc} module `{unionModule.name.asl}` is a literal")
+        of dbkStruct: err(fmt"{file.path}:{dataBlock.loc} module `{unionModule.name.asl}` is a struct")
+        of dbkUnion:
+          let union = dataBlock.union
+          let variant = ? union.findVariant(unionInit.variant)
+          if unionInit.kwargs.len != variant.fields.len:
+            err(fmt"{file.path}:{unionInit.loc} union `{unionModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
+          else:
+            var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](variant.fields.len)
+            for kwarg in unionInit.kwargs:
+              let fieldId = ? variant.findFieldId(kwarg.name)
+              let resolvedExpression = ? resolveExpression(app, file, module, scope, kwarg.expression)
+              resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name, resolvedExpression)
+            ok(newResolvedUnionInitializer(resolvedArgType, variant.name, resolvedKeywordArgs))
+
 proc resolveInitializer(app: App, file: File, module: Module, scope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:
   of ikLiteral:
@@ -571,7 +638,9 @@ proc resolveInitializer(app: App, file: File, module: Module, scope: FunctionSco
   of ikStruct:
     let resolvedStructInit = ? resolveStructInitializer(app, file, module, scope, initializer.struct)
     ok(newResolvedInitializer(resolvedStructInit))
-  of ikUnion: err(fmt"{file.path}:{initializer.loc} todo: resolve union initializer")
+  of ikUnion:
+    let resolvedUnionInit = ? resolveUnionInitializer(app, file, module, scope, initializer.union)
+    ok(newResolvedInitializer(resolvedUnionInit))
 
 proc resolveCaseBlock(app: App, file: File, module: Module, scope: FunctionScope, caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
   let resolvedCasePattern = ? resolveCasePattern(app, file, module, scope, caseBlock.pattern)
@@ -594,7 +663,7 @@ proc resolveMatchExpression(app: App, file: File, module: Module, scope: Functio
 proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of ekLiteral:
-    err(fmt"{file.path}:{expression.loc} todo: resolve literal")
+    ok(newResolvedExpression(expression.literal))
   of ekGetter:
     let resolvedGetter = ? resolveGetter(app, file, module, scope, expression.getter)
     ok(newResolvedExpression(resolvedGetter))
@@ -615,6 +684,11 @@ proc resolveAssignment(app: App, file: File, module: Module, scope: FunctionScop
   let resolvedExpression = ? resolveExpression(app, file, module, scope, assignment.expression)
   ok(newResolvedAssignment(assignment.target, resolvedExpression))
 
+proc resolveMutation(app: App, file: File, module: Module, scope: FunctionScope, mutation: Mutation): Result[ResolvedMutation, string] =
+  let resolvedGetter = ? resolveGetter(app, file, module, scope, mutation.target)
+  let resolvedExpression = ? resolveExpression(app, file, module, scope, mutation.expression)
+  ok(newResolvedMutation(resolvedGetter, resolvedExpression))
+
 proc resolveStatement(app: App, file: File, module: Module, scope: FunctionScope, statement: Statement): Result[ResolvedStatement, string] =
   case statement.kind:
   of skExpr:
@@ -623,7 +697,9 @@ proc resolveStatement(app: App, file: File, module: Module, scope: FunctionScope
   of skAssignment:
     let resolvedAssignment = ? resolveAssignment(app, file, module, scope, statement.assignment)
     ok(newResolvedStatement(resolvedAssignment))
-  of skMutation:  err(fmt"{file.path}:{statement.loc} todo: resolve mutation")
+  of skMutation:
+    let resolvedMutation = ? resolveMutation(app, file, module, scope, statement.mutation)
+    ok(newResolvedStatement(resolvedMutation))
 
 type ResolvedUserFunction = ref object
   funcDef: ResolvedFunctionDefinition

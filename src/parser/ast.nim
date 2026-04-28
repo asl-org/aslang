@@ -173,10 +173,6 @@ type VariantDefinition* = ref object
   fieldIndex: Table[Identifier, int]
   loc: Location
 
-proc name*(v: VariantDefinition): Identifier = v.name
-proc fields*(v: VariantDefinition): seq[ArgumentDefinition] = v.fields
-proc loc*(v: VariantDefinition): Location = v.loc
-
 proc newVariantDefinition*(name: Identifier, fields: seq[ArgumentDefinition],
     loc: Location): Result[VariantDefinition, ParserError] =
   var fieldIndex: Table[Identifier, int]
@@ -188,6 +184,10 @@ proc newVariantDefinition*(name: Identifier, fields: seq[ArgumentDefinition],
     fieldIndex[field.name] = index
   ok(VariantDefinition(name: name, fields: fields, fieldIndex: fieldIndex, loc: loc))
 
+proc name*(v: VariantDefinition): Identifier = v.name
+proc fields*(v: VariantDefinition): seq[ArgumentDefinition] = v.fields
+proc loc*(v: VariantDefinition): Location = v.loc
+
 proc asl(varDef: VariantDefinition): string =
   result = asl(varDef.name)
   if varDef.fields.len > 0:
@@ -197,13 +197,16 @@ proc asl(varDef: VariantDefinition): string =
       result.add(asl(field))
     result.add(" }")
 
+proc findFieldId*(variant: VariantDefinition, name: Identifier): Result[int, string] =
+  if name notin variant.fieldIndex:
+    err(fmt"{name.loc} field `{name.asl}` does not exist in union variant `{variant.name.asl}`")
+  else:
+    ok(variant.fieldIndex[name])
+
 type Union* = ref object
   variants: seq[VariantDefinition]
   variantIndex: Table[Identifier, int]
   loc: Location
-
-proc variants*(u: Union): seq[VariantDefinition] = u.variants
-proc loc*(u: Union): Location = u.loc
 
 proc newUnion*(variants: seq[VariantDefinition], loc: Location): Result[Union, ParserError] =
   var variantIndex: Table[Identifier, int]
@@ -215,11 +218,24 @@ proc newUnion*(variants: seq[VariantDefinition], loc: Location): Result[Union, P
     variantIndex[variant.name] = index
   ok(Union(variants: variants, variantIndex: variantIndex, loc: loc))
 
+proc variants*(u: Union): seq[VariantDefinition] = u.variants
+proc loc*(u: Union): Location = u.loc
+
 proc asl(u: Union, indentWidth: uint32): seq[string] =
   result.add("union:")
   let indent = " ".repeat(indentWidth)
   for variant in u.variants:
     result.add(fmt"{indent}{asl(variant)}")
+
+proc findVariantId(union: Union, variant: Identifier): Result[int, string] =
+  if variant notin union.variantIndex:
+    err(fmt"{variant.loc} variant `{variant.asl}` does not exist in union")
+  else:
+    ok(union.variantIndex[variant])
+
+proc findVariant*(union: Union, variant: Identifier): Result[VariantDefinition, string] =
+  let variantId = ? union.findVariantId(variant)
+  ok(union.variants[variantId])
 
 type
   DataBlockKind* = enum
@@ -706,6 +722,11 @@ proc newUnionInitializer*(argType: ArgumentType, variantName: Identifier,
     kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
   UnionInitializer(argType: argType, variantName: variantName,
     kwargList: kwargList, loc: loc)
+
+proc loc*(unionInit: UnionInitializer): Location = unionInit.loc
+proc argType*(unionInit: UnionInitializer): ArgumentType = unionInit.argType
+proc variant*(unionInit: UnionInitializer): Identifier = unionInit.variantName
+proc kwargs*(unionInit: UnionInitializer): seq[KeywordArgument] = unionInit.kwargList.args
 
 proc asl(unionInit: UnionInitializer): string =
   fmt"{asl(unionInit.argType)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
