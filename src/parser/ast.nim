@@ -515,6 +515,11 @@ proc newCasePattern*(variant: VariantPattern): CasePattern =
   CasePattern(kind: cpkVariant, variant: variant)
 
 proc kind*(cp: CasePattern): CasePatternKind = cp.kind
+proc loc*(cp: CasePattern): Location =
+  case cp.kind:
+  of cpkIntegerLiteral: cp.intLit.loc
+  of cpkVariable: cp.variable.loc
+  of cpkVariant: cp.variant.loc
 
 proc intLit*(cp: CasePattern): IntegerLiteral =
   assert cp.kind == cpkIntegerLiteral,
@@ -773,6 +778,10 @@ proc newCaseBlock*(pattern: CasePattern, body: StatementList,
     loc: Location): CaseBlock =
   CaseBlock(pattern: pattern, body: body, loc: loc)
 
+proc pattern*(caseBlock: CaseBlock): CasePattern = caseBlock.pattern
+proc statements*(caseBlock: CaseBlock): seq[Statement] = caseBlock.body.statements
+proc loc*(caseBlock: CaseBlock): Location = caseBlock.loc
+
 proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
   result.add(fmt"case {asl(caseBlock.pattern)}:")
   let indent = " ".repeat(indentWidth)
@@ -783,7 +792,15 @@ proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
 # MatchExpression
 proc newMatchExpression*(subject: Expression, cases: seq[CaseBlock],
     loc: Location): MatchExpression =
+  # TODO: case pattern can be either integer or variable (with at max 1 variable pattern that too last)
+  # TODO: for integer case pattern all integer values must be unique
+  # TODO: case pattern can be either variant or variable (with at max 1 variable pattern that too last)
+  # TODO: for integer case pattern all variants must be unique
   MatchExpression(subject: subject, cases: cases, loc: loc)
+
+proc subject*(match: MatchExpression): Expression = match.subject
+proc cases*(match: MatchExpression): seq[CaseBlock] = match.cases
+proc loc*(match: MatchExpression): Location = match.loc
 
 proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string] =
   result.add(fmt"match {asl(matchExpr.subject)}:")

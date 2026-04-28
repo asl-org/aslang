@@ -385,6 +385,40 @@ proc resolveFunctionRef(app: App, file: File, module: Module, scope: FunctionSco
     let resolvedDefinedRef = ? resolveDefinedTypeRef(app, file, module, rootModule.definedType, name, arity)
     ok(newResolvedFunctionRef(resolvedDefinedRef))
 
+proc resolveVariable(app: App, file: File, module: Module, scope: FunctionScope, variable: Identifier): Result[Identifier, string] =
+  if variable notin scope:
+    err(fmt"{file.path}:{variable.loc} variable `{variable.asl}` is not present in scope")
+  else:
+    ok(variable)
+
+type ResolvedGetter = ref object
+  source: Identifier
+  property: Identifier
+
+proc newResolvedGetter(source, property: Identifier): ResolvedGetter =
+  ResolvedGetter(source: source, property: property)
+
+proc resolveGetter(app: App, file: File, module: Module, scope: FunctionScope, getter: Getter): Result[ResolvedGetter, string] =
+  let resovledVariable = ? resolveVariable(app, file, module, scope, getter.source)
+  ok(newResolvedGetter(getter.source, getter.property))
+
+type
+  ResolvedCasePatternKind = enum
+    rcpkInteger
+  ResolvedCasePattern = ref object
+    case kind: ResolvedCasePatternKind
+    of rcpkInteger: integer: IntegerLiteral
+
+proc newResolvedCasePattern(integer: IntegerLiteral): ResolvedCasePattern =
+  ResolvedCasePattern(kind: rcpkInteger, integer: integer)
+
+proc resolveCasePattern(app: App, file: File, module: Module, scope: FunctionScope, casePattern: CasePattern): Result[ResolvedCasePattern, string] =
+  case casePattern.kind:
+  of cpkIntegerLiteral:
+    ok(newResolvedCasePattern(casePattern.intLit))
+  of cpkVariable: err(fmt"{file.path}:{casePattern.loc} todo: resolve variable case pattern")
+  of cpkVariant: err(fmt"{file.path}:{casePattern.loc} todo: resolve variant case pattern")
+
 type
   ResolvedFunctionCall = ref object
     funcRef: ResolvedFunctionRef
@@ -408,13 +442,23 @@ type
     case kind: ResolvedInitializerKind
     of rikStruct: struct: ResolvedStructInitializer
 
+  ResolvedCaseBlock = ref object
+    pattern: ResolvedCasePattern
+    statements: seq[ResolvedStatement]
+
+  ResolvedMatchExpression = ref object
+    subject: ResolvedExpression
+    cases: seq[ResolvedCaseBlock]
+
   ResolvedExpressionKind = enum
-    rekFunctionCall, rekVariable, rekInitializer
+    rekFunctionCall, rekVariable, rekInitializer, rekGetter, rekMatchExpr
   ResolvedExpression = ref object
     case kind: ResolvedExpressionKind
     of rekFunctionCall: fncall: ResolvedFunctionCall
     of rekVariable: variable: Identifier
     of rekInitializer: initializer: ResolvedInitializer
+    of rekGetter: getter: ResolvedGetter
+    of rekMatchExpr: match: ResolvedMatchExpression
 
   ResolvedStatementKind = enum
     rskAssignment, rskExpr
@@ -453,6 +497,20 @@ proc newResolvedExpression(initializer: ResolvedInitializer): ResolvedExpression
 proc newResolvedExpression(variable: Identifier): ResolvedExpression =
   ResolvedExpression(kind: rekVariable, variable: variable)
 
+proc newResolvedExpression(getter: ResolvedGetter): ResolvedExpression =
+  ResolvedExpression(kind: rekGetter, getter: getter)
+
+proc newResolvedExpression(match: ResolvedMatchExpression): ResolvedExpression =
+  ResolvedExpression(kind: rekMatchExpr, match: match)
+
+# ResolvedCaseBlock
+proc newResolvedCaseBlock(pattern: ResolvedCasePattern, statements: seq[ResolvedStatement]): ResolvedCaseBlock =
+  ResolvedCaseBlock(pattern: pattern, statements: statements)
+
+# ResolvedMatchExpression
+proc newResolvedMatchExpression(subject: ResolvedExpression, cases: seq[ResolvedCaseBlock]): ResolvedMatchExpression =
+  ResolvedMatchExpression(subject: subject, cases: cases)
+
 # ResolvedStatement
 proc newResolvedStatement(assignment: ResolvedAssignment): ResolvedStatement =
   ResolvedStatement(kind: rskAssignment, assignment: assignment)
@@ -466,6 +524,7 @@ proc variable(statement: ResolvedStatement): Option[Identifier] =
   of rskExpr: none(Identifier)
 
 proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
+proc resolveStatement(app: App, file: File, module: Module, scope: FunctionScope, statement: Statement): Result[ResolvedStatement, string]
 
 proc resolveFunctionCall(app: App, file: File, module: Module, scope: FunctionScope, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let resolvedFunctionRef = ? resolveFunctionRef(app, file, module, scope, fncall.argType, fncall.name, fncall.args.len)
@@ -474,12 +533,6 @@ proc resolveFunctionCall(app: App, file: File, module: Module, scope: FunctionSc
     let resolvedArg = ? resolveExpression(app, file, module, scope, arg)
     resolvedArgs.add(resolvedArg)
   ok(newResolvedFunctionCall(resolvedFunctionRef, resolvedArgs))
-
-proc resolveVariable(app: App, file: File, module: Module, scope: FunctionScope, variable: Identifier): Result[Identifier, string] =
-  if variable notin scope:
-    err(fmt"{file.path}:{variable.loc} variable `{variable.asl}` is not present in scope")
-  else:
-    ok(variable)
 
 proc resolveStructInitializer(app: App, file: File, module: Module, scope: FunctionScope, struct: StructInitializer): Result[ResolvedStructInitializer, string] =
   let resolvedArgType = ? resolveArgumentType(app, file, module, struct.argType)
@@ -520,12 +573,31 @@ proc resolveInitializer(app: App, file: File, module: Module, scope: FunctionSco
     ok(newResolvedInitializer(resolvedStructInit))
   of ikUnion: err(fmt"{file.path}:{initializer.loc} todo: resolve union initializer")
 
+proc resolveCaseBlock(app: App, file: File, module: Module, scope: FunctionScope, caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
+  let resolvedCasePattern = ? resolveCasePattern(app, file, module, scope, caseBlock.pattern)
+  var resovledStatements: seq[ResolvedStatement]
+  var childScope = scope # create a child scope to enable shadowing
+  for statement in caseBlock.statements:
+    let resolvedStatement = ? resolveStatement(app, file, module, childScope, statement)
+    resovledStatements.add(resolvedStatement)
+    if resolvedStatement.variable.isSome: childScope.incl(resolvedStatement.variable.get)
+  ok(newResolvedCaseBlock(resolvedCasePattern, resovledStatements))
+
+proc resolveMatchExpression(app: App, file: File, module: Module, scope: FunctionScope, match: MatchExpression): Result[ResolvedMatchExpression, string] =
+  let resolvedSubject = ? resolveExpression(app, file, module, scope, match.subject)
+  var resolvedCaseBlocks: seq[ResolvedCaseBlock]
+  for caseBlock in match.cases:
+    let resolvedCaseBlock = ? resolveCaseBlock(app, file, module, scope, caseBlock)
+    resolvedCaseBlocks.add(resolvedCaseBlock)
+  ok(newResolvedMatchExpression(resolvedSubject, resolvedCaseBlocks))
+
 proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of ekLiteral:
     err(fmt"{file.path}:{expression.loc} todo: resolve literal")
   of ekGetter:
-    err(fmt"{file.path}:{expression.loc} todo: resolve getter")
+    let resolvedGetter = ? resolveGetter(app, file, module, scope, expression.getter)
+    ok(newResolvedExpression(resolvedGetter))
   of ekVariable:
     let resolvedVariable = ? resolveVariable(app, file, module, scope, expression.variable)
     ok(newResolvedExpression(resolvedVariable))
@@ -536,7 +608,8 @@ proc resolveExpression(app: App, file: File, module: Module, scope: FunctionScop
     let resolvedInitializer = ? resolveInitializer(app, file, module, scope, expression.initializer)
     ok(newResolvedExpression(resolvedInitializer))
   of ekMatch:
-    err(fmt"{file.path}:{expression.loc} todo: resolve match block")
+    let resolvedMatchExpr = ? resolveMatchExpression(app, file, module, scope, expression.match)
+    ok(newResolvedExpression(resolvedMatchExpr))
 
 proc resolveAssignment(app: App, file: File, module: Module, scope: FunctionScope, assignment: Assignment): Result[ResolvedAssignment, string] =
   let resolvedExpression = ? resolveExpression(app, file, module, scope, assignment.expression)
