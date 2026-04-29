@@ -23,7 +23,7 @@ proc resolveLiteralType(file: File, literal: LiteralType): Result[ResolvedLitera
   of "f64": ok(rltkF64)
   of "string": ok(rltkString)
   of "pointer": ok(rltkPointer)
-  else: err(fmt"{file.path}:{literal.loc} unsupported literal type encountered `{literal.content}`")
+  else: err(fmt"{literal.loc} unsupported literal type encountered `{literal.content}`")
 
 proc resolveImport(app: App, file: File, imp: Import): Result[void, string] =
   err("todo: resolve import")
@@ -67,7 +67,7 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
   if root.requires.isSome:
     let expectedImplCount = root.requires.get.generics.len
     if argType.impls.len != expectedImplCount:
-      return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` expects `{expectedImplCount}` impls but found `{argType.impls.len}`")
+      return err(fmt"{argType.loc} type `{root.name.asl}` expects `{expectedImplCount}` impls but found `{argType.impls.len}`")
 
     var resolvedImpls: seq[ResolvedArgumentType]
     for impl in argType.impls:
@@ -84,7 +84,7 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
       if argType.impls.len == 0:
         return ok(newResolvedModuleArgumentType(root))
       else:
-        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
+        return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of dbkStruct:
       var requires: seq[Generic]
       let struct = dataBlock.struct
@@ -100,7 +100,7 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
           of dtkGeneric: requires.add(definedFieldType.generic)
 
       if argType.impls.len != requires.len:
-        return err(fmt"{file.path}:{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
+        return err(fmt"{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
       for impl in argType.impls:
@@ -125,7 +125,7 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
             of dtkGeneric: requires.add(definedFieldType.generic)
 
       if argType.impls.len != requires.len:
-        return err(fmt"{file.path}:{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
+        return err(fmt"{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
       for impl in argType.impls:
@@ -137,7 +137,7 @@ proc resolveModuleArgumentType(app: App, file: File, module: Module, argType: Ar
   if argType.impls.len == 0:
     ok(newResolvedModuleArgumentType(root))
   else:
-    err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
+    err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
 proc resolveArgumentType(app: App, file: File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
@@ -151,12 +151,12 @@ proc resolveModuleArgumentType(app: App, file: File, generic: Generic, argType: 
     let dataBlock = root.data.get
     case dataBlock.kind:
     of dbkStruct:
-      return err(fmt"{file.path}:{dataBlock.loc} todo: resolve struct block in argument type")
+      return err(fmt"{dataBlock.loc} todo: resolve struct block in argument type")
     of dbkLiteral:
       if argType.impls.len == 0:
         return ok(newResolvedModuleArgumentType(root))
       else:
-        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
+        return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of dbkUnion:
       var requires: seq[Generic]
       let union = dataBlock.union
@@ -173,7 +173,7 @@ proc resolveModuleArgumentType(app: App, file: File, generic: Generic, argType: 
             of dtkGeneric: requires.add(definedFieldType.generic)
 
       if argType.impls.len != requires.len:
-        return err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
+        return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
       for impl in argType.impls:
@@ -185,7 +185,7 @@ proc resolveModuleArgumentType(app: App, file: File, generic: Generic, argType: 
   if argType.impls.len == 0:
     ok(newResolvedModuleArgumentType(root))
   else:
-    err(fmt"{file.path}:{argType.loc} type `{root.name.asl}` does not require impl types")
+    err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
 proc resolveDefinedArgumentType(app: App, file: File, module: Module, argType: ArgumentType, definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
   case definedType.kind:
@@ -193,7 +193,7 @@ proc resolveDefinedArgumentType(app: App, file: File, module: Module, argType: A
     if argType.impls.len == 0:
       ok(newResolvedDefinedArgumentType(definedType.generic))
     else:
-      err(fmt"{file.path}:{definedType.loc} generic `{definedType.name.asl}` is not allowed to have impls")
+      err(fmt"{definedType.loc} generic `{definedType.name.asl}` is not allowed to have impls")
   of dtkModule:
     let resolvedModuleType = ? resolveModuleArgumentType(app, file, module, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
@@ -204,7 +204,7 @@ proc resolveDefinedArgumentType(app: App, file: File, generic: Generic, argType:
     if definedType.generic == generic:
       ok(newResolvedDefinedArgumentType(definedType.generic))
     else:
-      err(fmt"{file.path}:{definedType.loc} type `{definedType.name.asl}` is a generic and can not be used within the generic block")
+      err(fmt"{definedType.loc} type `{definedType.name.asl}` is a generic and can not be used within the generic block")
   of dtkModule:
     let resolvedModuleType = ? resolveModuleArgumentType(app, file, generic, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
@@ -241,7 +241,7 @@ proc resolveDataType(app: App, file: File, module: Module, arg: ArgumentType, re
       if resolvedDefinedModuleType.root.data.isSome:
         ok()
       else:
-        err(fmt"{file.path}:{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
+        err(fmt"{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
 
 proc resolveDataType(app: App, file: File, generic: Generic, arg: ArgumentType, resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
   case resolvedArgumentType.kind:
@@ -257,7 +257,7 @@ proc resolveDataType(app: App, file: File, generic: Generic, arg: ArgumentType, 
       if resolvedDefinedModuleType.root.data.isSome:
         ok()
       else:
-        err(fmt"{file.path}:{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
+        err(fmt"{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
 
 type ResolvedArgumentDefinition = ref object
   argType: ResolvedArgumentType
@@ -380,14 +380,14 @@ proc resolveFunctionRef(app: App, file: File, module: Module, scope: FunctionSco
 
   let rootModule = ? file.findType(argType.root)
   case rootModule.kind:
-  of tkImported: err(fmt"{file.path}:{argType.loc} todo: resolve imported type module ref")
+  of tkImported: err(fmt"{argType.loc} todo: resolve imported type module ref")
   of tkDefined:
     let resolvedDefinedRef = ? resolveDefinedTypeRef(app, file, module, rootModule.definedType, name, arity)
     ok(newResolvedFunctionRef(resolvedDefinedRef))
 
 proc resolveVariable(app: App, file: File, module: Module, scope: FunctionScope, variable: Identifier): Result[Identifier, string] =
   if variable notin scope:
-    err(fmt"{file.path}:{variable.loc} variable `{variable.asl}` is not present in scope")
+    err(fmt"{variable.loc} variable `{variable.asl}` is not present in scope")
   else:
     ok(variable)
 
@@ -404,17 +404,21 @@ proc resolveGetter(app: App, file: File, module: Module, scope: FunctionScope, g
 
 type
   ResolvedCasePatternKind = enum
-    rcpkInteger, rcpkVariable
+    rcpkInteger, rcpkVariable, rcpkVariant
   ResolvedCasePattern = ref object
     case kind: ResolvedCasePatternKind
     of rcpkInteger: integer: IntegerLiteral
     of rcpkVariable: variable: Identifier
+    of rcpkVariant: variant: VariantPattern
 
 proc newResolvedCasePattern(integer: IntegerLiteral): ResolvedCasePattern =
   ResolvedCasePattern(kind: rcpkInteger, integer: integer)
 
 proc newResolvedCasePattern(variable: Identifier): ResolvedCasePattern =
   ResolvedCasePattern(kind: rcpkVariable, variable: variable)
+
+proc newResolvedCasePattern(variant: VariantPattern): ResolvedCasePattern =
+  ResolvedCasePattern(kind: rcpkVariant, variant: variant)
 
 proc resolveCasePattern(app: App, file: File, module: Module, scope: FunctionScope, casePattern: CasePattern): Result[ResolvedCasePattern, string] =
   case casePattern.kind:
@@ -423,7 +427,7 @@ proc resolveCasePattern(app: App, file: File, module: Module, scope: FunctionSco
   of cpkVariable:
     ok(newResolvedCasePattern(casePattern.variable))
   of cpkVariant:
-    err(fmt"{file.path}:{casePattern.loc} todo: resolve variant case pattern")
+    ok(newResolvedCasePattern(casePattern.variant))
 
 type
   ResolvedFunctionCall = ref object
@@ -574,24 +578,24 @@ proc resolveStructInitializer(app: App, file: File, module: Module, scope: Funct
   let resolvedArgType = ? resolveArgumentType(app, file, module, struct.argType)
   let structType = ? file.findType(struct.argType.root)
   case structType.kind:
-  of tkImported: err(fmt"{file.path}:{struct.loc} todo: resolve imported struct initializer")
+  of tkImported: err(fmt"{struct.loc} todo: resolve imported struct initializer")
   of tkDefined:
     let definedType = structType.definedType
     case definedType.kind:
-    of dtkGeneric: err(fmt"{file.path}:{struct.loc} type `{definedType.name.asl}` is a generic and not struct")
+    of dtkGeneric: err(fmt"{struct.loc} type `{definedType.name.asl}` is a generic and not struct")
     of dtkModule:
       let structModule = definedType.module
       if structModule.data.isNone:
-        err(fmt"{file.path}:{struct.loc} module `{structModule.name.asl}` is not a struct")
+        err(fmt"{struct.loc} module `{structModule.name.asl}` is not a struct")
       else:
         let dataBlock = structModule.data.get
         case dataBlock.kind:
-        of dbkLiteral: err(fmt"{file.path}:{dataBlock.loc} module `{structModule.name.asl}` is a literal")
-        of dbkUnion: err(fmt"{file.path}:{dataBlock.loc} module `{structModule.name.asl}` is a union")
+        of dbkLiteral: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a literal")
+        of dbkUnion: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a union")
         of dbkStruct:
           let structBlock = dataBlock.struct
           if struct.kwargs.len != structBlock.fields.len:
-            err(fmt"{file.path}:{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
+            err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
           else:
             var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
             for kwarg in struct.kwargs:
@@ -604,25 +608,25 @@ proc resolveUnionInitializer(app: App, file: File, module: Module, scope: Functi
   let resolvedArgType = ? resolveArgumentType(app, file, module, unionInit.argType)
   let unionType = ? file.findType(unionInit.argType.root)
   case unionType.kind:
-  of tkImported: err(fmt"{file.path}:{unionInit.loc} todo: resolve imported type union initializer")
+  of tkImported: err(fmt"{unionInit.loc} todo: resolve imported type union initializer")
   of tkDefined:
     let unionDefinedType = unionType.definedType
     case unionDefinedType.kind:
-    of dtkGeneric: err(fmt"{file.path}:{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
+    of dtkGeneric: err(fmt"{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
     of dtkModule:
       let unionModule = unionDefinedType.module
       if unionModule.data.isNone:
-        err(fmt"{file.path}:{unionInit.loc} module `{unionModule.name.asl}` is not a union")
+        err(fmt"{unionInit.loc} module `{unionModule.name.asl}` is not a union")
       else:
         let dataBlock = unionModule.data.get
         case dataBlock.kind:
-        of dbkLiteral: err(fmt"{file.path}:{dataBlock.loc} module `{unionModule.name.asl}` is a literal")
-        of dbkStruct: err(fmt"{file.path}:{dataBlock.loc} module `{unionModule.name.asl}` is a struct")
+        of dbkLiteral: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a literal")
+        of dbkStruct: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a struct")
         of dbkUnion:
           let union = dataBlock.union
           let variant = ? union.findVariant(unionInit.variant)
           if unionInit.kwargs.len != variant.fields.len:
-            err(fmt"{file.path}:{unionInit.loc} union `{unionModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
+            err(fmt"{unionInit.loc} union `{unionModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
           else:
             var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](variant.fields.len)
             for kwarg in unionInit.kwargs:
@@ -634,7 +638,7 @@ proc resolveUnionInitializer(app: App, file: File, module: Module, scope: Functi
 proc resolveInitializer(app: App, file: File, module: Module, scope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:
   of ikLiteral:
-    err(fmt"{file.path}:{initializer.loc} todo: resolve literal initializer")
+    err(fmt"{initializer.loc} todo: resolve literal initializer")
   of ikStruct:
     let resolvedStructInit = ? resolveStructInitializer(app, file, module, scope, initializer.struct)
     ok(newResolvedInitializer(resolvedStructInit))
@@ -646,6 +650,10 @@ proc resolveCaseBlock(app: App, file: File, module: Module, scope: FunctionScope
   let resolvedCasePattern = ? resolveCasePattern(app, file, module, scope, caseBlock.pattern)
   var resovledStatements: seq[ResolvedStatement]
   var childScope = scope # create a child scope to enable shadowing
+
+  for binding in caseBlock.pattern.bindings:
+    childScope.incl(binding)
+
   for statement in caseBlock.statements:
     let resolvedStatement = ? resolveStatement(app, file, module, childScope, statement)
     resovledStatements.add(resolvedStatement)
@@ -710,7 +718,7 @@ proc newResolvedUserFunction(funcDef: ResolvedFunctionDefinition, statements: se
 
 proc resolveUserFunction(app: App, file: File, module: Module, function: UserFunction): Result[ResolvedUserFunction, string] =
   if function.decorators.len > 0:
-    return err(fmt"{file.path}:{function.loc} todo: resolve decorators in user function")
+    return err(fmt"{function.loc} todo: resolve decorators in user function")
 
   let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, module, function.def)
 
@@ -842,7 +850,7 @@ proc resolveModule(app: App, file: File, module: Module): Result[ResolvedModule,
         let definedType = dataType.definedType
         case definedType.kind:
         of dtkModule:
-          return err(fmt"{file.path}:{generic.loc} type `{generic.asl}` is a module but expected generic")
+          return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
         of dtkGeneric:
           resolvedRequires.add(definedType.generic)
 
@@ -868,7 +876,7 @@ proc newResolvedGeneric(public: bool, name: Identifier, funcDefs: seq[ResolvedFu
 
 proc resolveGeneric(app: App, file: File, generic: Generic): Result[ResolvedGeneric, string] =
   if generic.decorators.len > 0:
-    return err(fmt"{file.path}:{generic.loc} todo: resolve generic decorators")
+    return err(fmt"{generic.loc} todo: resolve generic decorators")
 
   var resolvedFunctionDefs: seq[ResolvedFunctionDefinition]
   for funcDef in generic.funcDefs:
@@ -900,17 +908,35 @@ proc resolveDefinedType(app: App, file: File, definedType: DefinedType): Result[
     let resolvedModule = ? resolveModule(app, file, definedType.module)
     ok(newResolvedDefinedType(resolvedModule))
 
-proc resolveFile(app: App, file: File): Result[void, string] =
+type ResolvedFile = ref object
+  definedTypes: seq[ResolvedDefinedType]
+
+proc newResolvedFile(definedTypes: seq[ResolvedDefinedType]): ResolvedFile =
+  ResolvedFile(definedTypes: definedTypes)
+
+proc resolveFile(app: App, file: File): Result[ResolvedFile, string] =
   for imp in file.imports:
     ? resolveImport(app, file, imp)
 
+  var resolvedDefinedTypes: seq[ResolvedDefinedType]
   for definedType in file.definedTypes:
-    discard ? resolveDefinedType(app, file, definedType)
+    let resolvedDefinedType = ? resolveDefinedType(app, file, definedType)
+    resolvedDefinedTypes.add(resolvedDefinedType)
 
-  err("todo: resolve file")
+  ok(newResolvedFile(resolvedDefinedTypes))
 
-proc resolve*(app: App): Result[void, string] =
+type ResolvedApp = ref object
+  files: seq[ResolvedFile]
+
+proc newResolvedApp(files: seq[ResolvedFile]): ResolvedApp =
+  ResolvedApp(files: files)
+
+proc resolve*(app: App): Result[ResolvedApp, string] =
+  var resolvedFiles: seq[ResolvedFile]
   for file in app.files:
-    ? resolveFile(app, file)
-
-  err("todo: resolve app")
+    let maybeResolvedFile = resolveFile(app, file)
+    if maybeResolvedFile.isErr:
+      return err(fmt"{file.path}:{maybeResolvedFile.error}")
+    else:
+      resolvedFiles.add(maybeResolvedFile.get)
+  ok(newResolvedApp(resolvedFiles))

@@ -478,6 +478,7 @@ proc asl(field: VariantPatternField): string =
 type VariantPattern* = ref object
   variantName: Identifier
   fields: seq[VariantPatternField]
+  bindings: seq[Identifier]
   loc: Location
 
 proc newVariantPattern*(variantName: Identifier,
@@ -485,6 +486,7 @@ proc newVariantPattern*(variantName: Identifier,
     loc: Location): Result[VariantPattern, ParserError] =
   var nameIndex: Table[Identifier, int]
   var bindingIndex: Table[Identifier, int]
+  var bindings: seq[Identifier]
 
   for index, field in fields:
     if field.name in nameIndex:
@@ -499,10 +501,13 @@ proc newVariantPattern*(variantName: Identifier,
       let msg = fmt"duplicate binding encountered, see previous binding at {prev.loc}"
       return err(newParserError(msg, field.binding.loc))
     else:
+      bindings.add(field.binding)
       bindingIndex[field.binding] = index
 
-  ok(VariantPattern(variantName: variantName, fields: fields, loc: loc))
+  ok(VariantPattern(variantName: variantName, fields: fields, bindings: bindings, loc: loc))
 
+proc name*(vp: VariantPattern): Identifier = vp.variantName
+proc fields*(vp: VariantPattern): seq[VariantPatternField] = vp.fields
 proc loc*(vp: VariantPattern): Location = vp.loc
 
 proc asl(variant: VariantPattern): string =
@@ -536,6 +541,15 @@ proc loc*(cp: CasePattern): Location =
   of cpkIntegerLiteral: cp.intLit.loc
   of cpkVariable: cp.variable.loc
   of cpkVariant: cp.variant.loc
+
+proc bindings*(cp: CasePattern): seq[Identifier] =
+  var bindings: seq[Identifier]
+  case cp.kind:
+  of cpkIntegerLiteral: discard
+  of cpkVariable: bindings.add(cp.variable)
+  of cpkVariant: bindings.add(cp.variant.bindings)
+
+  return bindings
 
 proc intLit*(cp: CasePattern): IntegerLiteral =
   assert cp.kind == cpkIntegerLiteral,
@@ -1408,7 +1422,7 @@ proc asl*(file: File, indentWidth: uint32): string =
 
 proc findType*(file: File, name: Identifier): Result[Type, string] =
   if name in file.typeIndex: ok(file.types[file.typeIndex[name]])
-  else: err(fmt"{file.path}:{name.loc} type `{name.asl}` does not exist in the scope")
+  else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 # ============================================================
 # App

@@ -155,11 +155,15 @@ Every `Type` in a file (imported or defined) is wrapped in a common
 `Type` umbrella (`tkImported | tkDefined`) so a single `typeIndex`
 lookup serves the resolver.
 
-### Phase 4: Resolution (WIP rewrite)
+### Phase 4: Resolution (WIP)
 
 `src/resolver.nim`
 
-Currently a stub — being rewritten. Planned scope:
+Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
+which in turn holds `ResolvedDefinedType`s for each module/generic.
+Most of the AST resolves end-to-end (the standard library `base.asl`
+is fully resolvable as of 2026-04-29); imports, literal initializers,
+and a handful of edge cases remain stubbed. Scope:
 
 - **Two-pass walk per file** (files come topo-sorted leaves-first
   from the loader, so imports are always resolved before use).

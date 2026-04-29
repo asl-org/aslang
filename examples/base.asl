@@ -24,6 +24,12 @@ public module u8:
   @extern("u8_xor_u8")
   public func xor(a: u8, b: u8): u8
 
+  @extern("u8_shr_u8")
+  public func shr(a: u8, b: u8): u8
+
+  @extern("u8_shl_u8")
+  public func shl(a: u8, b: u8): u8
+
   @extern("u8_not_u8")
   public func not(a: u8): u8
 
@@ -72,6 +78,12 @@ public module u16:
 
   @extern("u16_xor_u16")
   public func xor(a: u16, b: u16): u16
+
+  @extern("u16_shr_u16")
+  public func shr(a: u16, b: u16): u16
+
+  @extern("u16_shl_u16")
+  public func shl(a: u16, b: u16): u16
 
   @extern("u16_not_u16")
   public func not(a: u16): u16
@@ -122,6 +134,12 @@ public module u32:
   @extern("u32_xor_u32")
   public func xor(a: u32, b: u32): u32
 
+  @extern("u32_shr_u32")
+  public func shr(a: u32, b: u32): u32
+
+  @extern("u32_shl_u32")
+  public func shl(a: u32, b: u32): u32
+
   @extern("u32_not_u32")
   public func not(a: u32): u32
 
@@ -170,6 +188,12 @@ public module u64:
 
   @extern("u64_xor_u64")
   public func xor(a: u64, b: u64): u64
+
+  @extern("u64_shr_u64")
+  public func shr(a: u64, b: u64): u64
+
+  @extern("u64_shl_u64")
+  public func shl(a: u64, b: u64): u64
 
   @extern("u64_not_u64")
   public func not(a: u64): u64
@@ -220,6 +244,12 @@ public module i8:
   @extern("i8_xor_i8")
   public func xor(a: i8, b: i8): i8
 
+  @extern("i8_shr_i8")
+  public func shr(a: i8, b: i8): i8
+
+  @extern("i8_shl_i8")
+  public func shl(a: i8, b: i8): i8
+
   @extern("i8_not_i8")
   public func not(a: i8): i8
 
@@ -268,6 +298,12 @@ public module i16:
 
   @extern("i16_xor_i16")
   public func xor(a: i16, b: i16): i16
+
+  @extern("i16_shr_i16")
+  public func shr(a: i16, b: i16): i16
+
+  @extern("i16_shl_i16")
+  public func shl(a: i16, b: i16): i16
 
   @extern("i16_not_i16")
   public func not(a: i16): i16
@@ -318,6 +354,12 @@ public module i32:
   @extern("i32_xor_i32")
   public func xor(a: i32, b: i32): i32
 
+  @extern("i32_shr_i32")
+  public func shr(a: i32, b: i32): i32
+
+  @extern("i32_shl_i32")
+  public func shl(a: i32, b: i32): i32
+
   @extern("i32_not_i32")
   public func not(a: i32): i32
 
@@ -366,6 +408,12 @@ public module i64:
 
   @extern("i64_xor_i64")
   public func xor(a: i64, b: i64): i64
+
+  @extern("i64_shr_i64")
+  public func shr(a: i64, b: i64): i64
+
+  @extern("i64_shl_i64")
+  public func shl(a: i64, b: i64): i64
 
   @extern("i64_not_i64")
   public func not(a: i64): i64
@@ -575,7 +623,7 @@ public module Bitset:
         sub_index = u32.remainder(index, 8)
         shifted = u8.shr(value, sub_index)
         bit_value = u8.and(shifted, 1)
-        Status.Ok { value: bit_value }
+        Status[u8].Ok { value: bit_value }
       case Err { error: error }:
         Status[u8].Err { error: error }
 
