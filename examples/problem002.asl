@@ -1,3 +1,5 @@
+import { u8, i64, System } from "base.asl"
+
 # Project Euler #2 style exercise — exercises match-as-expression
 # with integer-literal patterns (case 0, case 1) and wildcard
 # (case _), function recursion, and assignment-from-match
@@ -21,7 +23,7 @@ module Solver:
         g = i64.add(a, b)
         Solver.solve(b, g, c, f)
 
-  func start(sys: System): u8
+  func start(): u8
     exit_success = u8 0
 
     a = Solver.solve(1, 2, 4000000, 0)

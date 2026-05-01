@@ -160,10 +160,12 @@ lookup serves the resolver.
 `src/resolver.nim`
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
-which in turn holds `ResolvedDefinedType`s for each module/generic.
-Most of the AST resolves end-to-end (the standard library `base.asl`
-is fully resolvable as of 2026-04-29); imports, literal initializers,
-and a handful of edge cases remain stubbed. Scope:
+which in turn holds resolved imports plus a `ResolvedDefinedType` for
+each module/generic. As of 2026-04-30 the standard library `base.asl`
+plus several positive fixtures (`problem001`, `problem002`, ...) are
+fully green; imports + literal initializers are wired. Remaining
+stubs are concentrated in the imported-field-type arms of the
+inferred-requires walks. Scope:
 
 - **Two-pass walk per file** (files come topo-sorted leaves-first
   from the loader, so imports are always resolved before use).

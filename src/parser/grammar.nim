@@ -356,10 +356,10 @@ let structInitializerSpec = Spec[StructInitializer](
 let literalInitializerSpec = Spec[LiteralInitializer](
   name: "literal_initializer",
   parseFn: proc(parser: Parser): Result[LiteralInitializer, ParserError] =
-  let typeName = ? parser.run(identifierSpec)
+  let argType = ? parser.run(argumentTypeSpec)
   discard ? parser.run(atLeastOne(spaceSpec))
   let value = ? parser.run(literalSpec)
-  ok(newLiteralInitializer(typeName, value, typeName.loc))
+  ok(newLiteralInitializer(argType, value, argType.loc))
 )
 
 let initializerSpec = oneOf("initializer", [

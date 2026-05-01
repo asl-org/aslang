@@ -452,16 +452,19 @@ proc asl(getter: Getter): string =
   fmt"{asl(getter.source)}.{asl(getter.property)}"
 
 type LiteralInitializer* = ref object
-  typeName: Identifier
+  argType: ArgumentType
   value: Literal
   loc: Location
 
-proc newLiteralInitializer*(typeName: Identifier, value: Literal,
-    loc: Location): LiteralInitializer =
-  LiteralInitializer(typeName: typeName, value: value, loc: loc)
+proc newLiteralInitializer*(argType: ArgumentType, value: Literal, loc: Location): LiteralInitializer =
+  LiteralInitializer(argType: argType, value: value, loc: loc)
+
+proc loc*(literalInit: LiteralInitializer): Location = literalInit.loc
+proc argType*(literalInit: LiteralInitializer): ArgumentType = literalInit.argType
+proc value*(literalInit: LiteralInitializer): Literal = literalInit.value
 
 proc asl(prim: LiteralInitializer): string =
-  fmt"{asl(prim.typeName)} {asl(prim.value)}"
+  fmt"{asl(prim.argType)} {asl(prim.value)}"
 
 type VariantPatternField* = ref object
   name: Identifier
@@ -1305,6 +1308,10 @@ proc newDefinedType*(generic: Generic): DefinedType =
   DefinedType(kind: dtkGeneric, generic: generic)
 
 proc kind*(dt: DefinedType): DefinedTypeKind = dt.kind
+proc public*(dt: DefinedType): bool =
+  case dt.kind:
+  of dtkModule: dt.module.public
+  of dtkGeneric: dt.generic.public
 
 proc module*(dt: DefinedType): Module =
   assert dt.kind == dtkModule,
@@ -1423,6 +1430,15 @@ proc asl*(file: File, indentWidth: uint32): string =
 proc findType*(file: File, name: Identifier): Result[Type, string] =
   if name in file.typeIndex: ok(file.types[file.typeIndex[name]])
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
+
+proc findExportedType*(file: File, name: Identifier): Result[DefinedType, string] =
+  let aslType = ? file.findType(name)
+  case aslType.kind:
+  of tkImported: err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
+  of tkDefined:
+    let definedType = aslType.definedType
+    if definedType.public: ok(definedType)
+    else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
 
 # ============================================================
 # App

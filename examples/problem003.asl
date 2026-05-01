@@ -1,3 +1,5 @@
+import { u8, u64, Array } from "base.asl"
+
 # Project Euler #3 style exercise — heavy union-variant matching.
 # Exercises struct data block (Bitset holding Array[u8]), union
 # initializers via Status[u8].Ok / Status[Bitset].Err, variant

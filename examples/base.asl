@@ -568,6 +568,9 @@ public module System:
   @extern("System_allocate")
   public func allocate(size: u64): Pointer
 
+  @extern("System_print")
+  public func print(str: String): u64
+
 public module Array:
   # if requires is present then it will take precedence
   # meaning user will always have to use `Array[Any]`
