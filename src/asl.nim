@@ -1,4 +1,4 @@
-import os, results, strformat, sequtils, strutils
+import os, results, strformat
 
 import cli, parser, resolver
 
@@ -6,7 +6,7 @@ proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens)
   let resolvedApp = ? resolve(app)
-  ok(app.files.mapIt(it.path).join("\n"))
+  ok("[SUCCESS]")
 
 when isMainModule:
   let maybeCommand = parseCliArgs(commandLineParams())

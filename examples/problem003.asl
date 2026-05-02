@@ -1,81 +1,11 @@
-import { u8, u64, Array } from "base.asl"
+import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 
 # Project Euler #3 style exercise — heavy union-variant matching.
 # Exercises struct data block (Bitset holding Array[u8]), union
 # initializers via Status[u8].Ok / Status[Bitset].Err, variant
 # patterns with field bindings (case Ok { value: value }), nested
 # match expressions, and generic type parameters on method calls.
-module Bitset:
-  struct:
-    arr: Array[u8]
-
-  func init(size: u64): Bitset
-    arr_size = u64.div_ceil(size, 8)
-    arr = Array[u8].init(arr_size)
-    Bitset { arr: arr }
-
-  func get(bitset: Bitset, bit: u64): Status[u8]
-    arr = bitset.arr
-    arr_index = u64.quotient(bit, 8)
-    status = Array[u8].get(arr, arr_index)
-    match status:
-      case Ok { value: value }:
-        offset = u64.remainder(bit, 8)
-        temp = u8.rshift(value, offset)
-        res = u8.and(temp, 1)
-        Status[u8].Ok { value: res }
-      case _:
-        _
-
-  func set(bitset: Bitset, bit: u64): Status[Bitset]
-    arr = bitset.arr
-    arr_index = u64.quotient(bit, 8)
-    get_status = Array[u8].get(arr, arr_index)
-    match get_status:
-      case Ok { value: value }:
-        offset = u64.remainder(bit, 8)
-        mask = u8.lshift(1, offset)
-        new_value = u8.or(value, mask)
-        set_status = Array[u8].set(arr, arr_index, new_value)
-        match set_status:
-          case Ok { value: _ }:
-            Status[Bitset].Ok { value: bitset }
-          case Err { error: temp }:
-            Status[Bitset].Err { error: temp }
-      case Err { error: temp }:
-        Status[Bitset].Err { error: temp }
-
-  func clear(bitset: Bitset, bit: u64): Status[Bitset]
-    arr = bitset.arr
-    arr_index = u64.quotient(bit, 8)
-    get_status = Array[u8].get(arr, arr_index)
-    match get_status:
-      case Ok { value: value }:
-        offset = u64.remainder(bit, 8)
-        mask = u8.lshift(1, offset)
-        inv_mask = u8.not(mask)
-        new_value = u8.and(value, inv_mask)
-        set_status = Array[u8].set(arr, arr_index, new_value)
-        match set_status:
-          case Ok { value: _ }:
-            Status[Bitset].Ok { value: bitset }
-          case Err { error: temp }:
-            Status[Bitset].Err { error: temp }
-      case Err { error: temp1 }:
-        Status[Bitset].Err { error: temp1 }
-
-  func toggle(bitset: Bitset, bit: u64): Status[Bitset]
-    status = Bitset.get(bitset, bit)
-    match status:
-      case Ok { value: value }:
-        match value:
-          case 0:
-            Bitset.set(bitset, bit)
-          case _:
-            Bitset.clear(bitset, bit)
-      case Err { error: temp }:
-        Status[Bitset].Err { error: temp }
-
+public module Solver:
   func div_ceil(a: u64, b: u64): u64
     c = u64.add(a, b)
     d = u64.subtract(c, 1)
@@ -122,7 +52,7 @@ module Bitset:
       case _:
         ans
 
-  func start(sys: System): u8
+  func start(): u8
     bitset = Bitset.init(1000001)
 
     ans = Solver.solve(bitset, 2, 0)

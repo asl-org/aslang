@@ -1,8 +1,9 @@
+import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 # Project Euler #5 style exercise — gcd/lcm via Euclidean recursion.
 # Exercises integer comparison with signed literal patterns
 # (case -1), mutually-calling functions within a module, and
 # tail-recursive loops.
-module Example:
+public module Example:
   func gcd(a: u64, b: u64): u64
     op = u64.compare(b, 0)
     _ = match op:
@@ -27,7 +28,7 @@ module Example:
       case _:
         j
 
-  func start(sys: System): u8
+  func start(): u8
     exit_success = u8 0
     ans = Example.solve(2, 20, 1)
     System.print(ans)

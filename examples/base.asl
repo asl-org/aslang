@@ -218,6 +218,14 @@ public module u64:
   @extern("u64_compare_u64")
   public func compare(a: u64, b: u64): i8
 
+  # casting
+  @extern("u64_from_u8")
+  public func from(a: u8): u64
+
+  # user functions
+  public func div_ceil(a: u64, b: u64): Status[u64]
+    u64.quotient(u64.subtract(u64.add(a, b), 1), b)
+
 public module i8:
   literal: "i8"
 
@@ -547,6 +555,9 @@ public module String:
   # core
   @extern("string_init")
   public func init(value: String): String
+
+  @extern("string_get")
+  public func get(str: String, index: u32): Status[u8]
 
 public generic Any:
   func byte_size(items: u32): u64

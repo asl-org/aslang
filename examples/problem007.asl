@@ -1,72 +1,11 @@
+import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
+
 # Project Euler #7 style exercise — the first file with multiple
 # top-level modules in the same file (Bitset and Example), each
 # with its own struct/functions. Also exercises the 'pointer'
 # primitive type and negative signed-integer literal initializers
 # (i64 -1).
-module Bitset:
-  struct:
-    ptr: ptr
-    size: u64
-
-  func get(bitset: Bitset, bit: u64): i64
-    x = bitset.size
-    op = u64.compare(bit, x)
-    _ = match op:
-      case -1:
-        ptr = bitset.ptr
-        byte = u64.quotient(bit, 8)
-        offset = u64.remainder(bit, 8)
-        data = u8.read(ptr, byte)
-        bdata = u8.rshift(data, offset)
-        res = u8.and(bdata, 1)
-        i64.from(res)
-      case _:
-        i64 -1
-
-  func set(bitset: Bitset, bit: u64): i64
-    x = bitset.size
-    op = u64.compare(bit, x)
-    _ = match op:
-      case -1:
-        ptr = bitset.ptr
-        byte = u64.quotient(bit, 8)
-        offset = u64.remainder(bit, 8)
-
-        data = u8.read(ptr, byte)
-        mask = u8.lshift(1, offset)
-        res = u8.or(data, mask)
-        u8.write(res, ptr, byte)
-        i64.from(res)
-      case _:
-        i64 -1
-
-  func clear(bitset: Bitset, bit: u64): i64
-    x = bitset.size
-    op = u64.compare(bit, x)
-    _ = match op:
-      case -1:
-        ptr = bitset.ptr
-        byte = u64.quotient(bit, 8)
-        offset = u64.remainder(bit, 8)
-
-        data = u8.read(ptr, byte)
-        mask = u8.lshift(1, offset)
-        imask = u8.not(mask)
-        res = u8.and(data, imask)
-        u8.write(res, ptr, byte)
-        i64.from(res)
-      case _:
-        i64 -1
-
-  func toggle(bitset: Bitset, bit: u64): i64
-    data = Bitset.get(bitset, bit)
-    _ = match data:
-      case 0:
-        Bitset.set(bitset, bit)
-      case _:
-        Bitset.clear(bitset, bit)
-
-module Example:
+public module Example:
   func max(a: u64, b: u64): u64
     op = u64.compare(a, b)
     _ = match op:
@@ -116,12 +55,12 @@ module Example:
       case _:
         u64 0
 
-  func start(sys: System): u8
+  func start(): u8
     exit_success = u8 0
     max_primes = u64 1000001
 
     ptr = System.allocate(max_primes)
-    primes = Bitset { ptr: ptr, size: max_primes }
+    primes = Bitset { bits: max_primes }
 
     ans = Example.solve(primes, 2, 0)
     _ = System.print(ans)

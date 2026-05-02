@@ -1,8 +1,9 @@
+import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 # Project Euler #4 style exercise — palindrome loop. Exercises
 # match on signed integer literals (case -1, case 1), tail-recursive
 # loops via function recursion, and primitive literal initializers
-# with named types (U8 1, U8 0).
-module Example:
+# with named types (u8 1, u8 0).
+public module Example:
   func max(a: u64, b: u64): u64
     op = u64.compare(a, b)
     _a = match op:
@@ -15,9 +16,9 @@ module Example:
     op = u64.compare(a, b)
     _a = match op:
       case 0:
-        U8 1
+        u8 1
       case _:
-        U8 0
+        u8 0
 
   func is_palindrome_loop(a: u64, b: u64, c: u64): u8
     op = u64.compare(c, 0)
@@ -64,7 +65,7 @@ module Example:
       case _:
         k
 
-  func start(sys: System): u8
+  func start(): u8
     exit_success = u8 0
     ans = Example.loop_outer(100, 100, 0, 1000)
     System.print(ans)

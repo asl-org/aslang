@@ -117,7 +117,14 @@ proc resolveModuleArgumentType(app: App, file: File, fileScope: FileScope, modul
         let fieldType = ? file.findType(field.argType.root)
         case fieldType.kind:
         of tkImported:
-          return err("todo: resolve imported type field in union variant")
+          let importedType = fieldType.imported
+          if importedType.name notin fileScope:
+            return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+
+          let definedFieldType = fileScope[importedType.name]
+          case definedFieldType.kind:
+          of dtkModule: discard
+          of dtkGeneric: requires.add(definedFieldType.generic)
         of tkDefined:
           let definedFieldType = fieldType.definedType
           case definedFieldType.kind:
@@ -142,7 +149,14 @@ proc resolveModuleArgumentType(app: App, file: File, fileScope: FileScope, modul
           let fieldType = ? file.findType(field.argType.root)
           case fieldType.kind:
           of tkImported:
-            return err("todo: resolve imported type field in union variant")
+            let importedType = fieldType.imported
+            if importedType.name notin fileScope:
+              return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+
+            let definedFieldType = fileScope[importedType.name]
+            case definedFieldType.kind:
+            of dtkModule: discard
+            of dtkGeneric: requires.add(definedFieldType.generic)
           of tkDefined:
             let definedFieldType = fieldType.definedType
             case definedFieldType.kind:
@@ -190,7 +204,7 @@ proc resolveModuleArgumentType(app: App, file: File, generic: Generic, argType: 
           let fieldType = ? file.findType(field.argType.root)
           case fieldType.kind:
           of tkImported:
-            return err("todo: resolve imported type field in union variant")
+            return err(fmt"{argType.loc} 3 todo: resolve imported type field in union variant")
           of tkDefined:
             let definedFieldType = fieldType.definedType
             case definedFieldType.kind:
@@ -630,63 +644,76 @@ proc resolveFunctionCall(app: App, file: File, fileScope: FileScope, module: Mod
 proc resolveStructInitializer(app: App, file: File, fileScope: FileScope, module: Module, scope: FunctionScope, struct: StructInitializer): Result[ResolvedStructInitializer, string] =
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, struct.argType)
   let structType = ? file.findType(struct.argType.root)
-  case structType.kind:
-  of tkImported: err(fmt"{struct.loc} todo: resolve imported struct initializer")
-  of tkDefined:
-    let definedType = structType.definedType
-    case definedType.kind:
-    of dtkGeneric: err(fmt"{struct.loc} type `{definedType.name.asl}` is a generic and not struct")
-    of dtkModule:
-      let structModule = definedType.module
-      if structModule.data.isNone:
-        err(fmt"{struct.loc} module `{structModule.name.asl}` is not a struct")
-      else:
-        let dataBlock = structModule.data.get
-        case dataBlock.kind:
-        of dbkLiteral: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a literal")
-        of dbkUnion: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a union")
-        of dbkStruct:
-          let structBlock = dataBlock.struct
-          if struct.kwargs.len != structBlock.fields.len:
-            err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
-          else:
-            var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
-            for kwarg in struct.kwargs:
-              let fieldId = ? structBlock.findFieldId(kwarg.name)
-              let resolvedExpression = ? resolveExpression(app, file, fileScope, module, scope, kwarg.expression)
-              resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name, resolvedExpression)
-            ok(newResolvedStructInitializer(resolvedArgType, resolvedKeywordArgs))
+  let definedType =
+    case structType.kind:
+    of tkDefined:
+      structType.definedType
+    of tkImported:
+      let importedType = structType.imported
+      if importedType.name notin fileScope:
+        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+
+      fileScope[importedType.name]
+  case definedType.kind:
+  of dtkGeneric: err(fmt"{struct.loc} type `{definedType.name.asl}` is a generic and not struct")
+  of dtkModule:
+    let structModule = definedType.module
+    if structModule.data.isNone:
+      err(fmt"{struct.loc} module `{structModule.name.asl}` is not a struct")
+    else:
+      let dataBlock = structModule.data.get
+      case dataBlock.kind:
+      of dbkLiteral: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a literal")
+      of dbkUnion: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a union")
+      of dbkStruct:
+        let structBlock = dataBlock.struct
+        if struct.kwargs.len != structBlock.fields.len:
+          err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
+        else:
+          var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
+          for kwarg in struct.kwargs:
+            let fieldId = ? structBlock.findFieldId(kwarg.name)
+            let resolvedExpression = ? resolveExpression(app, file, fileScope, module, scope, kwarg.expression)
+            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name, resolvedExpression)
+          ok(newResolvedStructInitializer(resolvedArgType, resolvedKeywordArgs))
 
 proc resolveUnionInitializer(app: App, file: File, fileScope: FileScope, module: Module, scope: FunctionScope, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, unionInit.argType)
   let unionType = ? file.findType(unionInit.argType.root)
-  case unionType.kind:
-  of tkImported: err(fmt"{unionInit.loc} todo: resolve imported type union initializer")
-  of tkDefined:
-    let unionDefinedType = unionType.definedType
-    case unionDefinedType.kind:
-    of dtkGeneric: err(fmt"{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
-    of dtkModule:
-      let unionModule = unionDefinedType.module
-      if unionModule.data.isNone:
-        err(fmt"{unionInit.loc} module `{unionModule.name.asl}` is not a union")
-      else:
-        let dataBlock = unionModule.data.get
-        case dataBlock.kind:
-        of dbkLiteral: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a literal")
-        of dbkStruct: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a struct")
-        of dbkUnion:
-          let union = dataBlock.union
-          let variant = ? union.findVariant(unionInit.variant)
-          if unionInit.kwargs.len != variant.fields.len:
-            err(fmt"{unionInit.loc} union `{unionModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
-          else:
-            var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](variant.fields.len)
-            for kwarg in unionInit.kwargs:
-              let fieldId = ? variant.findFieldId(kwarg.name)
-              let resolvedExpression = ? resolveExpression(app, file, fileScope, module, scope, kwarg.expression)
-              resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name, resolvedExpression)
-            ok(newResolvedUnionInitializer(resolvedArgType, variant.name, resolvedKeywordArgs))
+  let unionDefinedType =
+    case unionType.kind:
+    of tkDefined:
+      unionType.definedType
+    of tkImported:
+      let importedType = unionType.imported
+      if importedType.name notin fileScope:
+        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+
+      fileScope[importedType.name]
+
+  case unionDefinedType.kind:
+  of dtkGeneric: err(fmt"{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
+  of dtkModule:
+    let unionModule = unionDefinedType.module
+    if unionModule.data.isNone:
+      err(fmt"{unionInit.loc} module `{unionModule.name.asl}` is not a union")
+    else:
+      let dataBlock = unionModule.data.get
+      case dataBlock.kind:
+      of dbkLiteral: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a literal")
+      of dbkStruct: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a struct")
+      of dbkUnion:
+        let union = dataBlock.union
+        let variant = ? union.findVariant(unionInit.variant)
+        if unionInit.kwargs.len != variant.fields.len:
+          err(fmt"{unionInit.loc} union `{unionModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
+        else:
+          var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](variant.fields.len)
+          for kwarg in unionInit.kwargs:
+            let fieldId = ? variant.findFieldId(kwarg.name)
+            let resolvedExpression = ? resolveExpression(app, file, fileScope, module, scope, kwarg.expression)
+            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name, resolvedExpression)
+          ok(newResolvedUnionInitializer(resolvedArgType, variant.name, resolvedKeywordArgs))
 
 proc resolveInitializer(app: App, file: File, fileScope: FileScope, module: Module, scope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:

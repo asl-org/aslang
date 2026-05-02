@@ -15,7 +15,7 @@ public module Solver:
     d = Solver.sum(c)
     i64.multiply(b, d)
 
-  public func test(): i64
+  public func start(): i64
     a = Solver.count(999, 3)
     b = Solver.count(999, 5)
 

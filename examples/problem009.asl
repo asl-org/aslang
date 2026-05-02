@@ -1,8 +1,9 @@
+import { u8, u32, u64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
 # Project Euler #9 style exercise — Pythagorean triplet search.
 # Exercises inline `# comment` on case arms and at statement scope,
 # function overloading (two solve functions with different arity),
 # and deeply nested match expressions.
-module Solver:
+public module Solver:
   func is_triplet(a: u32, b: u32, c: u32): u32
     a_square = u32.multiply(a, a)
     b_square = u32.multiply(b, b)
@@ -52,7 +53,7 @@ module Solver:
           case _:
             result
 
-  func start(sys: System): u8
+  func start(): u8
     ans = Solver.solve(1)
     System.print(ans)
     u8 0

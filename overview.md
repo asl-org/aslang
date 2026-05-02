@@ -161,11 +161,13 @@ lookup serves the resolver.
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
 which in turn holds resolved imports plus a `ResolvedDefinedType` for
-each module/generic. As of 2026-04-30 the standard library `base.asl`
-plus several positive fixtures (`problem001`, `problem002`, ...) are
-fully green; imports + literal initializers are wired. Remaining
-stubs are concentrated in the imported-field-type arms of the
-inferred-requires walks. Scope:
+each module/generic. As of 2026-05-02 27/35 fixtures resolve clean —
+`base.asl`, `problem001`–`problem010`, and `sample.asl` all green.
+Remaining failures are fixture-maintenance (`multi_import_same_path`
+plus six stale fixtures missing base.asl imports) and one non-public
+`Sample` module. Open resolver stubs cluster around decorators and
+the generic-context `resolveModuleArgumentType` for explicit
+`requires(...)` / `dbkStruct`. Scope:
 
 - **Two-pass walk per file** (files come topo-sorted leaves-first
   from the loader, so imports are always resolved before use).
