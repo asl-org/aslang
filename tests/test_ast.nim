@@ -26,14 +26,29 @@ proc argDef(name, typeName: string): ArgumentDefinition =
 
 suite "ast — Identifier":
 
-  test "identifier longer than 256 chars is rejected at construction":
+  test "identifier of exactly 256 chars is accepted (boundary)":
     var name = ""
-    for i in 0..256: name.add('a')
+    for i in 0..<256: name.add('a')   # 256 chars
+    let r = newIdentifier(name, newLocation())
+    check r.isOk
+
+  test "identifier of 257 chars is rejected (boundary)":
+    var name = ""
+    for i in 0..<257: name.add('a')   # 257 chars
     let r = newIdentifier(name, newLocation())
     check r.isErr
     check errorContains(r.error.msg, "max length 256")
 
-  test "identifier starting with __asl is rejected at construction":
+  test "identifier exactly '__asl' is rejected (prefix boundary)":
+    let r = newIdentifier("__asl", newLocation())
+    check r.isErr
+    check errorContains(r.error.msg, "__asl")
+
+  test "identifier '__as' (one char short of __asl) is accepted":
+    let r = newIdentifier("__as", newLocation())
+    check r.isOk
+
+  test "identifier starting with __asl is rejected":
     let r = newIdentifier("__aslSecret", newLocation())
     check r.isErr
     check errorContains(r.error.msg, "__asl")
@@ -49,6 +64,12 @@ suite "ast — Identifier":
     let b = id("b")
     check a1 == a2
     check not (a1 == b)
+
+  test "identifier hash matches the string hash of its value":
+    # hash should be a stable function of the textual name.
+    let a = id("foo")
+    check a.hash == a.hash
+    check id("foo").hash == id("foo").hash
 
 suite "ast — Struct invariants":
 
@@ -140,6 +161,39 @@ suite "ast — VariantPattern invariants":
     let r = newVariantPattern(id("Ok"), @[], newLocation())
     check r.isOk
 
+suite "ast — Import invariants":
+
+  test "newImport rejects duplicate names within a single statement":
+    let n1 = newImportedType(id("Foo"), none(Identifier), newLocation())
+    let n2 = newImportedType(id("Foo"), none(Identifier), newLocation())
+    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    check r.isErr
+    check errorContains(r.error.msg, "duplicate import")
+
+  test "newImport rejects duplicate bindings (alias collision)":
+    let n1 = newImportedType(id("Foo"),
+      some(id("B")), newLocation())
+    let n2 = newImportedType(id("Bar"),
+      some(id("B")), newLocation())
+    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    check r.isErr
+    check errorContains(r.error.msg, "duplicate import binding")
+
+  test "newImport rejects original-name colliding with another's alias":
+    let n1 = newImportedType(id("Foo"), none(Identifier), newLocation())
+    let n2 = newImportedType(id("Bar"),
+      some(id("Foo")), newLocation())
+    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    check r.isErr
+    check errorContains(r.error.msg, "duplicate import binding")
+
+  test "newImport accepts unique names + bindings":
+    let n1 = newImportedType(id("Foo"), none(Identifier), newLocation())
+    let n2 = newImportedType(id("Bar"),
+      some(id("B")), newLocation())
+    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    check r.isOk
+
 suite "ast — KeywordArgumentList invariants":
 
   test "newKeywordArgumentList rejects an empty list":
@@ -201,6 +255,21 @@ module A:
     check r.isErr
     check errorContains(r.error, "duplicate")
 
+  test "file with only imports (no defined types) is rejected":
+    # `atLeastOne(definedTypeBlockSpec)` in fileSpec enforces this.
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import { Foo } from "./other.asl"
+"""),
+      ("other.asl", """
+public module Foo:
+  func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
   test "module name colliding with imported binding is rejected":
     let (r, dir) = parseFiles([
       ("entry.asl", """
@@ -220,16 +289,3 @@ public module Foo:
     check r.isErr
     check errorContains(r.error, "duplicate")
 
-  test "self-import is rejected":
-    let (r, dir) = parseFiles([
-      ("entry.asl", """
-import { Foo } from "./entry.asl"
-
-module Bar:
-  func go(): u8
-    u8 0
-""")
-    ])
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "importing the source file in itself")

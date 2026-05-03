@@ -10,25 +10,6 @@ import unittest, results
 import parser
 import tutils
 
-suite "grammar — identifiers":
-
-  test "identifier longer than 256 chars is rejected":
-    var name = ""
-    for i in 0..256: name.add('a')   # 257 chars
-    let src = "module " & name & ":\n  func go(): u8\n    u8 0\n"
-    let r = parseStr(src)
-    check r.isErr
-    check errorContains(r.error, "max length 256")
-
-  test "identifier starting with __asl is rejected":
-    let r = parseStr("""
-module __aslModule:
-  func go(): u8
-    u8 0
-""")
-    check r.isErr
-    check errorContains(r.error, "__asl")
-
 suite "grammar — modules":
 
   test "minimal module with single function":
@@ -308,12 +289,6 @@ suite "grammar — file structure":
     let r = parseStr("\n# just a comment\n")
     check r.isErr
 
-  test "file with only imports is rejected":
-    let r = parseStr("""
-import { Foo } from "./other.asl"
-""")
-    check r.isErr
-
   test "blank lines and comments between top-level items are tolerated":
     let r = parseStr("""
 
@@ -329,5 +304,92 @@ module A:
 module B:
   func go(): u8
     u8 0
+""")
+    check r.isOk
+
+suite "grammar — decorators":
+
+  test "single decorator on a module is parsed":
+    let r = parseStr("""
+@deprecated
+module M:
+  func go(): u8
+    u8 0
+""")
+    check r.isOk
+
+  test "decorator on an extern function":
+    let r = parseStr("""
+public module u8:
+  literal: "u8"
+
+  @extern("u8_add")
+  public func add(a: u8, b: u8): u8
+""")
+    check r.isOk
+
+suite "grammar — match-as-expression":
+
+  test "match assigned to a variable":
+    let r = parseStr("""
+module M:
+  func go(x: u8): u8
+    y = match x:
+      case 0:
+        u8 1
+      case _:
+        u8 0
+    y
+""")
+    check r.isOk
+
+suite "grammar — mutation statement":
+
+  test "mutation assigns into a getter target":
+    let r = parseStr("""
+module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  func setA(p: Pair, v: u8): Pair
+    p.a = v
+    p
+""")
+    check r.isOk
+
+suite "grammar — nested generic types":
+
+  test "two-parameter generic type instantiation":
+    let r = parseStr("""
+module M:
+  struct:
+    m: Map[String, User]
+""")
+    check r.isOk
+
+  test "generic nested inside another generic":
+    let r = parseStr("""
+module M:
+  struct:
+    a: Array[Status[u8]]
+""")
+    check r.isOk
+
+suite "grammar — float literals":
+
+  test "float with exponent":
+    let r = parseStr("""
+module M:
+  func go(): f64
+    f64 1.5e3
+""")
+    check r.isOk
+
+  test "negative float":
+    let r = parseStr("""
+module M:
+  func go(): f64
+    f64 -0.5
 """)
     check r.isOk

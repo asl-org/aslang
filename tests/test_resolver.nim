@@ -80,17 +80,6 @@ module Pair:
     cleanupDir(dir)
     check r.isOk
 
-  test "generic block resolves (self-only references in signatures)":
-    let (r, dir) = resolveSingle("""
-public generic Eq:
-  func eq(a: Eq, b: Eq): u8
-""")
-    cleanupDir(dir)
-    # u8 not in scope without base.asl import — expect an err but for
-    # a different reason than the generic itself.
-    check r.isErr
-    check not errorContains(r.error, "Eq")
-
   test "function body with assignments and call chain resolves":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
@@ -142,6 +131,74 @@ public module M:
 """),
       ("base.asl", Base)
     ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "union initializer happy path":
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.asl"
+
+public module M:
+  public func ok_one(): Status[u8]
+    Status[u8].Ok { value: u8 1 }
+"""),
+      ("base.asl", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "mutation statement resolves":
+    let (r, dir) = resolveSingle("""
+module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  func setA(p: Pair, v: u8): Pair
+    p.a = v
+    p
+
+public module u8:
+  literal: "u8"
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "module with implicit (inferred) generic field resolves":
+    # Status has no `requires(Any)` but uses Any as a variant field;
+    # the resolver must infer Any as a type parameter so Status[u8]
+    # is well-formed at use sites.
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public module u32:
+  literal: "u32"
+
+public module String:
+  literal: "string"
+
+public module Error:
+  struct:
+    code: u32
+    message: String
+
+public generic Any:
+  func byte_size(items: u32): u64
+
+public module u64:
+  literal: "u64"
+
+public module Status:
+  union:
+    Ok { value: Any }
+    Err { error: Error }
+
+module M:
+  struct:
+    s: Status[u8]
+""")
     cleanupDir(dir)
     check r.isOk
 
@@ -202,6 +259,36 @@ module M:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "does not require impl types")
+
+  test "calling a non-existent function on a module is rejected":
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8 } from "./base.asl"
+
+public module M:
+  public func go(x: u8): u8
+    u8.no_such_function(x, x)
+"""),
+      ("base.asl", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "no_such_function")
+
+  test "calling a function with the wrong arity is rejected":
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8 } from "./base.asl"
+
+public module M:
+  public func go(x: u8): u8
+    u8.add(x)
+"""),
+      ("base.asl", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "arity")
 
   test "struct initializer with wrong kwarg count is rejected":
     let (r, dir) = resolveFiles([

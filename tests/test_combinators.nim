@@ -149,6 +149,29 @@ suite "combinators — contained":
     let r = p.run(s)
     check r.isOk
 
+suite "combinators — contained edges":
+
+  test "missing open delimiter fails":
+    let p = mkParser("9)")
+    let s = contained("paren_digit", "(", digitSpec(), ")")
+    let r = p.run(s)
+    check r.isErr
+
+suite "combinators — oneOf edges":
+
+  test "single-alternative oneOf is degenerate but valid":
+    let p = mkParser("9")
+    let s = oneOf("only_digit", [digitSpec()])
+    let r = p.run(s)
+    check r.isOk
+    check r.get.kind == tkDigit
+
+  test "single-alternative oneOf failure surfaces the inner error":
+    let p = mkParser("a")
+    let s = oneOf("only_digit", [digitSpec()])
+    let r = p.run(s)
+    check r.isErr
+
 suite "combinators — map":
 
   test "map transforms a parsed value":
@@ -157,3 +180,9 @@ suite "combinators — map":
     let r = p.run(s)
     check r.isOk
     check r.get == "9"
+
+  test "map propagates the inner spec's error":
+    let p = mkParser("a")
+    let s = digitSpec().map("digit_str", proc(t: Token): string = t.value)
+    let r = p.run(s)
+    check r.isErr

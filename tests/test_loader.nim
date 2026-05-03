@@ -150,6 +150,56 @@ module M:
     cleanupDir(dir)
     check r.isErr
 
+  test "deep import chain (a -> b -> c -> d) loads each in order":
+    let (r, dir) = parseFiles([
+      ("a.asl", """
+import { B } from "./b.asl"
+module A:
+  func go(): u8
+    u8 0
+"""),
+      ("b.asl", """
+import { C } from "./c.asl"
+public module B:
+  func go(): u8
+    u8 0
+"""),
+      ("c.asl", """
+import { D } from "./d.asl"
+public module C:
+  func go(): u8
+    u8 0
+"""),
+      ("d.asl", """
+public module D:
+  func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+    check r.get.files.len == 4
+    check r.get.files[0].path.endsWith("d.asl")
+    check r.get.files[^1].path.endsWith("a.asl")
+
+  test "import from a subdirectory is permitted":
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import { Sub } from "./sub/sub.asl"
+module Main:
+  func go(): u8
+    u8 0
+"""),
+      ("sub/sub.asl", """
+public module Sub:
+  func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+    check r.get.files.len == 2
+
   test "self-import is rejected by the parser":
     let (r, dir) = parseFiles([
       ("entry.asl", """
