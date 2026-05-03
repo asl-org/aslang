@@ -4,3 +4,4 @@ nimbledeps/
 *.o
 *.so
 *.dylib
+/tests/all
