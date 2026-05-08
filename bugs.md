@@ -81,7 +81,7 @@
 
 ### Resolver (WIP rewrite, 2026-04)
 
-- [ ] **Resolver rewrite** (`src/resolver.nim`) — In progress. Old resolver deleted (native types + body resolution dropped). New scope: name and shape resolution only — walks files in topo order, two passes per file (declare all defined+imported names into a `FileScope`, then resolve every `ArgumentType` inside data blocks and function signatures). Function bodies punted to a future Analyzer phase. Generic-signature rule (inside a generic block, arg/return type roots may only be self or a module) enforced during Pass B. No constraint-satisfaction checks on impl types — that's the Analyzer's job too.
+- [ ] **Resolver rewrite** (`src/resolver/`) — In progress. Currently 27/35 fixtures resolve clean (`base.asl`, `problem001`–`problem010`, `sample.asl`). Now lives as a directory module mirroring `parser/` (commit `49080c5`): `literals` / `imports` / `argtypes` / `funcdefs` / `funcrefs` / `body` / `decls` plus a `resolver.nim` façade. Body-level name resolution (statements, expressions, function-call refs by `(name, arity)`, case-pattern bindings into child scope) is wired alongside shape resolution. Open stubs: decorators, generic-context `resolveModuleArgumentType` for explicit `requires(...)` and `dbkStruct`. Constraint satisfaction / overload selection / type-correctness checks remain Analyzer work.
 
 ### Resolver (previous — deleted)
 

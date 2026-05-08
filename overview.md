@@ -157,7 +157,8 @@ lookup serves the resolver.
 
 ### Phase 4: Resolution (WIP)
 
-`src/resolver.nim`
+`src/resolver/{literals, imports, argtypes, funcdefs, funcrefs, body,
+decls, resolver}.nim`
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
 which in turn holds resolved imports plus a `ResolvedDefinedType` for
@@ -210,7 +211,6 @@ src/
   cli.nim                          CLI parsing via argparse
   utils.nim                        topological sort + cycle detection
   nim.cfg                          per-component module search paths
-  resolver.nim                     WIP name/type resolution
 
   tokenizer/
     tokenizer.nim                  token types + tokenize()
@@ -222,10 +222,46 @@ src/
     grammar.nim                    grammar specs + single-file parse
     loader.nim                     BFS multi-file resolution + parse*()
 
+  resolver/
+    resolver.nim                   re-exports every component file
+    literals.nim                   ResolvedLiteralType + resolveLiteralType
+    imports.nim                    ResolvedImportedType / ResolvedImport
+    argtypes.nim                   FileScope + argument-type cluster
+                                   (Argument / Defined / Module)
+                                   + resolveDataType post-resolution guard
+    funcdefs.nim                   ResolvedArgumentDefinition /
+                                   ResolvedFunctionDefinition /
+                                   ResolvedExternFunction
+    funcrefs.nim                   FunctionScope + function-ref cluster
+                                   for call-site lookup by (name, arity)
+    body.nim                       Getter / CasePattern / LiteralInit
+                                   + body-level cluster (Initializer ↔
+                                   FunctionCall ↔ Expression ↔ Match /
+                                   CaseBlock ↔ Statement ↔ Assignment /
+                                   Mutation / KeywordArgument)
+    decls.nim                      ResolvedUserFunction / ResolvedFunction,
+                                   struct / variant / union / data,
+                                   ResolvedModule / ResolvedGeneric /
+                                   ResolvedDefinedType / ResolvedFile /
+                                   ResolvedApp + the public resolve* entry
+
 examples/
   base.asl                         standard library definition (extern functions)
   *.asl                            positive test fixtures
   errors/*.asl                     negative test fixtures (each documented)
+
+tests/
+  config.nims                      adds src/{,tokenizer,parser,resolver}
+                                   to the search path
+  tutils.nim                       shared helpers (tokenize/parse/resolve
+                                   over in-memory strings + temp dirs)
+  all.nim                          aggregator that imports test_*.nim
+  test_tokenizer.nim               tokenizer unit tests
+  test_combinators.nim             Spec / combinator unit tests
+  test_ast.nim                     AST constructor invariants
+  test_grammar.nim                 grammar / single-file parse tests
+  test_loader.nim                  BFS / topo / parent-escape tests
+  test_resolver.nim                end-to-end resolver tests
 
 test.sh                            regression runner (exit-code based)
 bugs.md                            issue tracker (open + resolved)
@@ -270,22 +306,30 @@ string, so error messages always have exact source positions.
 
 ## Testing
 
-`./test.sh` — builds the project then runs every example:
+Two suites, both runnable from the repo root:
+
+`nimble test` — unit suite under `tests/`. Each component (tokenizer,
+combinators, AST constructors, grammar, loader, resolver) has its
+own `test_*.nim` file aggregated by `tests/all.nim`. 152 tests covering
+positive paths, negative paths, edge cases, and Trojan Source defenses
+in the tokenizer.
+
+`./test.sh` — integration suite that drives the binary against
+every `examples/*.asl` fixture and asserts exit codes:
 
 - **Positive** (`examples/*.asl`): must exit 0
 - **Negative** (`examples/errors/*.asl`): must exit non-zero
 
 Each fixture has a leading `#` comment documenting what feature or
-error condition it exercises. 35 tests total. Exit-code based —
-no output pattern matching.
+error condition it exercises. 35 fixtures total.
 
 ## What's Next
 
-**Finish the Resolver rewrite** (`src/resolver.nim`) — narrow scope:
+**Finish the Resolver rewrite** (`src/resolver/`) — narrow scope:
 two-pass walk per file, name and shape resolution only, enforce the
-generic-signature rule. No function-body work, no constraint
-satisfaction, no resolved type tree returned yet (produced later when
-an Analyzer consumer exists).
+generic-signature rule. No overload selection, no constraint
+satisfaction, no type-correctness checking — those move to a future
+Analyzer phase.
 
 **Build the Analyzer** — new phase after the Resolver. The resolver
 already does body-level name resolution and collects candidate
