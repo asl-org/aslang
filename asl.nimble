@@ -45,4 +45,4 @@ switch("experimental", "dotOperators")
 # ============================================================
 
 task test, "Run the unit test suite":
-  exec "nim c -r --hints:off --warning:UnusedImport:off --skipParentCfg --path:src --path:src/tokenizer --path:src/parser tests/all.nim"
+  exec "nim c -r --hints:off --warning:UnusedImport:off --skipParentCfg --path:src --path:src/tokenizer --path:src/parser --path:src/resolver tests/all.nim"

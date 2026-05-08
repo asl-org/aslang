@@ -1,5 +1,6 @@
 switch("path", "$projectDir/../src")
 switch("path", "$projectDir/../src/tokenizer")
 switch("path", "$projectDir/../src/parser")
+switch("path", "$projectDir/../src/resolver")
 switch("hints", "off")
 switch("warning", "UnusedImport:off")
