@@ -113,7 +113,8 @@ Source defense).
 
 ### Phase 2: Parsing
 
-`src/parser/{ast, combinators, grammar, loader}.nim`
+`src/parser/{combinators, helpers, identifiers, literals, imports,
+argtypes, funcdefs, body, decls, loader, parser}.nim`
 
 Recursive descent via composable `Spec[T]` combinators:
 
@@ -216,10 +217,38 @@ src/
     tokenizer.nim                  token types + tokenize()
 
   parser/
-    parser.nim                     re-exports ast + loader
-    ast.nim                        AST types + constructors + accessors + asl()
+    parser.nim                     re-exports every component file
     combinators.nim                Spec[T] + combinator procs
-    grammar.nim                    grammar specs + single-file parse
+    helpers.nim                    shared low-level specs (token kinds,
+                                   punctuation, comment, ignorableLine,
+                                   separators)
+    identifiers.nim                Identifier / Space / Decorator
+                                   + identifierSpec / keywordSpec /
+                                   indentationSpec / decoratorLineSpec
+                                   + blockSpec / decoratedBlockSpec helpers
+    literals.nim                   StringContent / StringLiteral /
+                                   IntegerLiteral (Signed / Unsigned) /
+                                   FloatLiteral / Literal / LiteralType
+                                   + their parser specs
+    imports.nim                    ImportedType / Import + their specs
+                                   + resolveImportPath
+    argtypes.nim                   ArgumentType / ArgumentDefinition /
+                                   ArgumentDefinitionList + their specs
+    funcdefs.nim                   FunctionDefinition + functionDefinition
+                                   line / list specs
+    body.nim                       VariantPatternField / VariantPattern /
+                                   CasePattern / Getter / LiteralInitializer
+                                   + body-level cluster (ArgumentList ↔
+                                   FunctionCall ↔ KeywordArgument ↔
+                                   Initializer ↔ Expression ↔ Match /
+                                   CaseBlock ↔ Statement ↔ StatementList /
+                                   Assignment / Mutation) + their specs
+    decls.nim                      Struct / VariantDefinition / Union /
+                                   DataBlock, UserFunction / ExternFunction /
+                                   Function / FunctionList, Generic /
+                                   Requires, Module, DefinedType / Type,
+                                   File / App + their specs + the public
+                                   single-file `parse*` entry
     loader.nim                     BFS multi-file resolution + parse*()
 
   resolver/
@@ -258,8 +287,10 @@ tests/
   all.nim                          aggregator that imports test_*.nim
   test_tokenizer.nim               tokenizer unit tests
   test_combinators.nim             Spec / combinator unit tests
-  test_ast.nim                     AST constructor invariants
-  test_grammar.nim                 grammar / single-file parse tests
+  test_ast.nim                     AST constructor invariants (covers
+                                   the per-concept files in src/parser/)
+  test_grammar.nim                 single-file parse tests across all
+                                   per-concept grammar specs
   test_loader.nim                  BFS / topo / parent-escape tests
   test_resolver.nim                end-to-end resolver tests
 

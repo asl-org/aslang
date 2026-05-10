@@ -5,3 +5,5 @@ nimbledeps/
 *.so
 *.dylib
 /tests/all
+nimble.develop
+nimble.paths

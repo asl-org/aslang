@@ -24,17 +24,17 @@
 
 ### Parser bugs
 
-- [ ] **Blank line after `struct:` / `union:` bypasses `atLeastOne` in blockSpec** (`src/parser/grammar.nim`) [medium] — `struct:` followed by a blank line then `func` compiles as a module with only a function (struct silently discarded). `blockSpec` with `atLeastOne(fieldLineSpec)` should reject zero fields, but the blank line causes a backtrack that drops the struct entirely. `newStruct` has a defense-in-depth guard (`fields.len == 0` check) but it's never reached because `blockSpec` backtracks before calling the combine function. Needs investigation into how `blockSpec` handles empty bodies after header success.
+- [ ] **Blank line after `struct:` / `union:` bypasses `atLeastOne` in blockSpec** (`src/parser/decls.nim` + `src/parser/identifiers.nim`) [medium] — `struct:` followed by a blank line then `func` compiles as a module with only a function (struct silently discarded). `blockSpec` with `atLeastOne(fieldLineSpec)` should reject zero fields, but the blank line causes a backtrack that drops the struct entirely. `newStruct` has a defense-in-depth guard (`fields.len == 0` check) but it's never reached because `blockSpec` backtracks before calling the combine function. Needs investigation into how `blockSpec` handles empty bodies after header success.
 
 ### Parser cleanup (round 2)
 
-- [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser/grammar.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
+- [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser/literals.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
 
-- [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser/ast.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
+- [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser/{body, decls}.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
 
-- [ ] **PSR-17: Unwrap `ArgumentDefinitionList` and `ArgumentList`** (`src/parser/ast.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDefinition` and `FunctionCall`.
+- [ ] **PSR-17: Unwrap `ArgumentDefinitionList` and `ArgumentList`** (`src/parser/{argtypes, body}.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDefinition` and `FunctionCall`.
 
-- [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser/grammar.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
+- [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser/helpers.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
 
 - [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser/combinators.nim`) [low] — `importBlockSpec`, `typeBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
 
@@ -42,7 +42,7 @@
 
 - [ ] **`except CatchableError:` is still broad** (`src/cli.nim:105`) [low] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed.
 - [ ] **`Token` is `ref object`** (`src/tokenizer/tokenizer.nim:72`) [low] — Each token is heap-allocated. For a tokenizer producing thousands of tokens, a plain `object` in `seq[Token]` avoids GC pressure since tokens are small (enum + string + two ints).
-- [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`src/parser/ast.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context.
+- [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`src/parser/decls.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context.
 - [x] **`readFileSafe` crashes on missing files** (`src/parser/loader.nim`) — Caught only `IOError`, but on macOS `getFileSize` throws `OSError` for a missing file — the parser propagated an unhandled exception. Fixed by calling `fileExists` up front and catching `CatchableError` for everything else. Surfaced while building the `examples/errors/missing_file.asl` fixture.
 
 ## Resolved
@@ -69,7 +69,9 @@
 
 ### Project structure
 
-- [x] **Component directory modules** — `src/tokenizer/` and `src/parser/` (5 files: ast, combinators, grammar, loader, parser entry). `src/nim.cfg` adds each component directory to the module search path. All cross-component imports use bare names. No `../` imports anywhere.
+- [x] **Component directory modules** — `src/tokenizer/` and `src/parser/`. `src/nim.cfg` adds each component directory to the module search path. All cross-component imports use bare names. No `../` imports anywhere.
+
+- [x] **Parser split into per-concept files (2026-05-10)** — `src/parser/` now mirrors the resolver layout: each AST type lives next to its constructor, accessors, and parser spec in a dedicated file (`identifiers`, `literals`, `imports`, `argtypes`, `funcdefs`, `body`, `decls`) plus shared `helpers.nim`, the unchanged `combinators.nim` / `loader.nim`, and a `parser.nim` façade re-exporting all of them. `ast.nim` and `grammar.nim` deleted. `resolveImportPath` deduplicated (loader calls the one in `imports.nim`). `tutils.nim` now uses `decls.parse(...)` for the single-file entry instead of the removed `grammar.parse`.
 
 ### Validator absorbed into parser
 
@@ -77,7 +79,7 @@
 
 ### ExternFunction + Function union
 
-- [x] **Function is now a tagged union** (`src/parser/ast.nim`, `src/parser/grammar.nim`) — `fkUser` (UserFunction: decorators + def + body) and `fkExtern` (ExternFunction: `@extern("symbol")` + def, no body). `externFunctionSpec` parses `@extern("symbol")` on one line, function definition at the same indentation on the next. `funcBlockSpec` tries extern first, falls back to user function. `Function.name`, `.def`, `.arity` dispatch on kind. Resolver dispatches via `resolveUserFunction` / `resolveExternFunction`.
+- [x] **Function is now a tagged union** (`src/parser/decls.nim`) — `fkUser` (UserFunction: decorators + def + body) and `fkExtern` (ExternFunction: `@extern("symbol")` + def, no body). `externFunctionSpec` parses `@extern("symbol")` on one line, function definition at the same indentation on the next. `funcBlockSpec` tries extern first, falls back to user function. `Function.name`, `.def`, `.arity` dispatch on kind. Resolver dispatches via `resolveUserFunction` / `resolveExternFunction`.
 
 ### Resolver (WIP rewrite, 2026-04)
 
@@ -89,7 +91,7 @@
 
 ### Location tracking
 
-- [x] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser/ast.nim`) — Every name-bearing field in the AST holds an `Identifier` (value + Location). `ImportedType.alias` is `Option[Identifier]`. Error messages report exact `line:col`. `Identifier.value` is the textual name (renamed from `.name` to avoid `.name.name` stutter).
+- [x] **PSR-40: Store names as `Identifier` instead of `string`** (`src/parser/identifiers.nim`) — Every name-bearing field in the AST holds an `Identifier` (value + Location). `ImportedType.alias` is `Option[Identifier]`. Error messages report exact `line:col`. `Identifier.value` is the textual name (renamed from `.name` to avoid `.name.name` stutter).
 
 ### Block indexing and validation
 
