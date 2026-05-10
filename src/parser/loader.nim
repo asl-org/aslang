@@ -1,9 +1,9 @@
-import os, unicode, tables, deques, sets, results, strformat, strutils
+import os, unicode, tables, deques, sets, results, strformat
 
-import tokenizer, ast, grammar, utils
+import tokenizer, imports, decls, utils
 
 # Disambiguate against system File (syncio.File)
-type File = ast.File
+type File = decls.File
 
 proc readFileSafe(filepath: string): Result[string, string] =
   const MaxFileByteSize = 1 * 1024 * 1024 # 1 MB
@@ -26,18 +26,6 @@ proc parseFile(filepath: string, indentWidth: uint32,
   let source = ? readFileSafe(filepath)
   let tokens = ? tokenize(source, filepath, dumpTokens)
   parse(filepath, indentWidth, tokens)
-
-proc resolveImportPath(source: string, importingFile: string): Result[string, string] =
-  ## Resolves an import path relative to the importing file.
-  ## Rejects paths that escape to parent directories.
-  ## Normalizes the resolved path so tricks like ./sub/../../escape
-  ## are caught — not just paths starting with "..".
-  let dir = normalizedPath(importingFile.parentDir)
-  let resolved = normalizedPath((dir / source).absolutePath)
-  let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
-  if not resolved.startsWith(dirPrefix):
-    return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
-  ok(resolved)
 
 proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
     App, string] =

@@ -4,7 +4,6 @@ import os, results, strutils
 
 import tokenizer
 import parser
-import grammar
 import resolver
 
 type FileSpec* = tuple[name: string, content: string]
@@ -17,14 +16,14 @@ proc tokenizeStr*(source: string, filepath: string = "test.asl"):
   tokenize(source, filepath, false)
 
 proc parseStr*(source: string, filepath: string = "",
-    indentWidth: uint32 = 2): Result[ast.File, string] =
+    indentWidth: uint32 = 2): Result[decls.File, string] =
   ## Tokenize + parse a single in-memory source. Skips the BFS loader.
   ## Default filepath has a directory component so import-path
   ## resolution (which rejects parent-directory escapes) does not
   ## reject a synthetic relative import.
   let path = if filepath.len == 0: getTempDir() / "asl_parseStr.asl" else: filepath
   let tokens = ? tokenizeStr(source, path)
-  grammar.parse(path, indentWidth, tokens)
+  decls.parse(path, indentWidth, tokens)
 
 proc writeFiles*(specs: openArray[FileSpec]): string =
   ## Write a set of files into a fresh temp dir. Returns the dir path.
