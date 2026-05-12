@@ -4,6 +4,7 @@
 
 import results, options, sets, strformat, tables
 
+import tokenizer
 import parser
 import literals
 import imports
@@ -58,6 +59,10 @@ proc newResolvedFunction*(extern: ResolvedExternFunction): ResolvedFunction =
 
 proc newResolvedFunction*(user: ResolvedUserFunction): ResolvedFunction =
   ResolvedFunction(kind: rfkUser, user: user)
+
+proc kind*(function: ResolvedFunction): ResolvedFunctionKind = function.kind
+proc extern*(function: ResolvedFunction): ResolvedExternFunction = function.extern
+proc user*(function: ResolvedFunction): ResolvedUserFunction = function.user
 
 proc resolveFunction(app: App, file: parser.File, fileScope: FileScope,
     module: Module, function: Function): Result[ResolvedFunction, string] =
@@ -141,6 +146,9 @@ proc newResolvedData*(struct: ResolvedStruct): ResolvedData =
 proc newResolvedData*(union: ResolvedUnion): ResolvedData =
   ResolvedData(kind: rdkUnion, union: union)
 
+proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
+proc literal*(data: ResolvedData): ResolvedLiteralType = data.literal
+
 proc resolveDataBlock(app: App, file: parser.File, fileScope: FileScope,
     module: Module, data: DataBlock): Result[ResolvedData, string] =
   case data.kind:
@@ -157,14 +165,18 @@ proc resolveDataBlock(app: App, file: parser.File, fileScope: FileScope,
 
 # ResolvedModule
 type ResolvedModule* = ref object
+  name: Identifier
   requires: seq[Generic]
   data: Option[ResolvedData]
   functions: seq[ResolvedFunction]
+  loc: Location
 
-proc newResolvedModule*(requires: seq[Generic],
-    data: Option[ResolvedData],
-    functions: seq[ResolvedFunction]): ResolvedModule =
-  ResolvedModule(requires: requires, data: data, functions: functions)
+proc newResolvedModule*(name: Identifier, requires: seq[Generic], data: Option[ResolvedData], functions: seq[ResolvedFunction], loc: Location): ResolvedModule =
+  ResolvedModule(name: name, requires: requires, data: data, functions: functions, loc: loc)
+
+proc requires*(module: ResolvedModule): seq[Generic] = module.requires
+proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
+proc functions*(module: ResolvedModule): seq[ResolvedFunction] = module.functions
 
 proc resolveModule(app: App, file: parser.File, fileScope: FileScope,
     module: Module): Result[ResolvedModule, string] =
@@ -198,16 +210,16 @@ proc resolveModule(app: App, file: parser.File, fileScope: FileScope,
       function)
     resolvedFunctions.add(resolvedFunction)
 
-  ok(newResolvedModule(resolvedRequires, resolvedData, resolvedFunctions))
+  ok(newResolvedModule(module.name, resolvedRequires, resolvedData, resolvedFunctions, module.loc))
 
 # ResolvedGeneric
 type ResolvedGeneric* = ref object
   public: bool
   name: Identifier
   funcDefs: seq[ResolvedFunctionDefinition]
+  loc: Location
 
-proc newResolvedGeneric*(public: bool, name: Identifier,
-    funcDefs: seq[ResolvedFunctionDefinition]): ResolvedGeneric =
+proc newResolvedGeneric*(public: bool, name: Identifier, funcDefs: seq[ResolvedFunctionDefinition], loc: Location): ResolvedGeneric =
   ResolvedGeneric(public: public, name: name, funcDefs: funcDefs)
 
 proc resolveGeneric(app: App, file: parser.File,
@@ -221,7 +233,7 @@ proc resolveGeneric(app: App, file: parser.File,
       generic, funcDef)
     resolvedFunctionDefs.add(resolvedFunctionDefinition)
 
-  ok(newResolvedGeneric(generic.public, generic.name, resolvedFunctionDefs))
+  ok(newResolvedGeneric(generic.public, generic.name, resolvedFunctionDefs, generic.loc))
 
 # ResolvedDefinedType
 type
@@ -238,6 +250,20 @@ proc newResolvedDefinedType*(module: ResolvedModule): ResolvedDefinedType =
 proc newResolvedDefinedType*(generic: ResolvedGeneric): ResolvedDefinedType =
   ResolvedDefinedType(kind: rdtkGeneric, generic: generic)
 
+proc kind*(definedType: ResolvedDefinedType): ResolvedDefinedTypeKind = definedType.kind
+proc module*(definedType: ResolvedDefinedType): ResolvedModule = definedType.module
+proc generic*(definedType: ResolvedDefinedType): ResolvedGeneric = definedType.generic
+
+proc name*(definedType: ResolvedDefinedType): Identifier =
+  case definedType.kind:
+  of rdtkModule: definedType.module.name
+  of rdtkGeneric: definedType.generic.name
+
+proc loc*(definedType: ResolvedDefinedType): Location =
+  case definedType.kind:
+  of rdtkModule: definedType.module.loc
+  of rdtkGeneric: definedType.generic.loc
+
 proc resolveDefinedType(app: App, file: parser.File, fileScope: FileScope,
     definedType: DefinedType): Result[ResolvedDefinedType, string] =
   case definedType.kind:
@@ -251,12 +277,28 @@ proc resolveDefinedType(app: App, file: parser.File, fileScope: FileScope,
 
 # ResolvedFile
 type ResolvedFile* = ref object
+  path: string
   imports: seq[ResolvedImport]
   definedTypes: seq[ResolvedDefinedType]
+  definedTypeIndex: Table[Identifier, ResolvedDefinedType]
 
-proc newResolvedFile*(imports: seq[ResolvedImport],
+proc newResolvedFile*(path: string, imports: seq[ResolvedImport],
     definedTypes: seq[ResolvedDefinedType]): ResolvedFile =
-  ResolvedFile(imports: imports, definedTypes: definedTypes)
+  var definedTypeIndex: Table[Identifier, ResolvedDefinedType]
+  for definedType in definedTypes:
+    definedTypeIndex[definedType.name] = definedType
+
+  ResolvedFile(path: path, imports: imports, definedTypes: definedTypes, definedTypeIndex: definedTypeIndex)
+
+proc path*(file: ResolvedFile): string = file.path
+proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
+proc definedTypes*(file: ResolvedFile): seq[ResolvedDefinedType] = file.definedTypes
+
+proc findModule*(file: ResolvedFile, name: Identifier): Result[ResolvedDefinedType, string] =
+  if name notin file.definedTypeIndex:
+    err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope")
+  else:
+    ok(file.definedTypeIndex[name])
 
 proc resolveFile(app: App, file: parser.File): Result[ResolvedFile, string] =
   var resolvedImports: seq[ResolvedImport]
@@ -273,7 +315,7 @@ proc resolveFile(app: App, file: parser.File): Result[ResolvedFile, string] =
       definedType)
     resolvedDefinedTypes.add(resolvedDefinedType)
 
-  ok(newResolvedFile(resolvedImports, resolvedDefinedTypes))
+  ok(newResolvedFile(file.path, resolvedImports, resolvedDefinedTypes))
 
 # ResolvedApp + entry
 type ResolvedApp* = ref object
@@ -281,6 +323,8 @@ type ResolvedApp* = ref object
 
 proc newResolvedApp*(files: seq[ResolvedFile]): ResolvedApp =
   ResolvedApp(files: files)
+
+proc files*(app: ResolvedApp): seq[ResolvedFile] = app.files
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   var resolvedFiles: seq[ResolvedFile]

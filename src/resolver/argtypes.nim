@@ -12,6 +12,7 @@
 
 import results, options, strformat, tables
 
+import tokenizer
 import parser
 
 # FileScope alias — keyed by binding (alias-or-name); shared by
@@ -25,6 +26,7 @@ type
   ResolvedModuleArgumentType* = ref object
     root: Module
     impls: seq[ResolvedArgumentType]
+    loc: Location
 
   ResolvedDefinedArgumentTypeKind* = enum
     rdatkModule, rdatkGeneric
@@ -42,34 +44,23 @@ type
     of ratkImported: discard
     of ratkDefined: definedType: ResolvedDefinedArgumentType
 
-proc newResolvedModuleArgumentType*(root: Module,
-    impls: seq[ResolvedArgumentType]): ResolvedModuleArgumentType =
-  ResolvedModuleArgumentType(root: root, impls: impls)
-
-proc newResolvedModuleArgumentType*(root: Module): ResolvedModuleArgumentType =
-  newResolvedModuleArgumentType(root, @[])
-
-proc newResolvedDefinedArgumentType*(
-    module: ResolvedModuleArgumentType): ResolvedDefinedArgumentType =
-  ResolvedDefinedArgumentType(kind: rdatkModule, module: module)
-
-proc newResolvedDefinedArgumentType*(
-    generic: Generic): ResolvedDefinedArgumentType =
-  ResolvedDefinedArgumentType(kind: rdatkGeneric, generic: generic)
-
-proc newResolvedArgumentType*(
-    definedType: ResolvedDefinedArgumentType): ResolvedArgumentType =
-  ResolvedArgumentType(kind: ratkDefined, definedType: definedType)
-
 # Forward declarations — both context overloads need to be declared
 # up front because resolveModuleArgumentType recurses through them
 # when resolving impls.
-proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, argType: ArgumentType): Result[
-    ResolvedArgumentType, string]
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
-proc resolveArgumentType*(app: App, file: parser.File, generic: Generic,
-    argType: ArgumentType): Result[ResolvedArgumentType, string]
+proc resolveArgumentType*(app: App, file: parser.File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
+
+# ResolvedModuleArgumentType
+proc newResolvedModuleArgumentType*(root: Module, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
+  ResolvedModuleArgumentType(loc: loc, root: root, impls: impls)
+
+proc newResolvedModuleArgumentType*(root: Module, loc: Location): ResolvedModuleArgumentType =
+  newResolvedModuleArgumentType(root, @[], loc)
+
+proc loc*(argType: ResolvedModuleArgumentType): Location = argType.loc
+proc module*(argType: ResolvedModuleArgumentType): Module = argType.root
+proc impls*(argType: ResolvedModuleArgumentType): seq[ResolvedArgumentType] = argType.impls
 
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope,
@@ -86,7 +77,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
       let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
       resolvedImpls.add(resolvedImpl)
 
-    return ok(newResolvedModuleArgumentType(root, resolvedImpls))
+    return ok(newResolvedModuleArgumentType(root, resolvedImpls, argType.loc))
 
   # NOTE: infer the impl list from struct/union block
   if root.data.isSome:
@@ -94,7 +85,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
     case dataBlock.kind:
     of dbkLiteral:
       if argType.impls.len == 0:
-        return ok(newResolvedModuleArgumentType(root))
+        return ok(newResolvedModuleArgumentType(root, argType.loc))
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of dbkStruct:
@@ -126,7 +117,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
         let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
         resolvedImpls.add(resolvedImpl)
 
-      return ok(newResolvedModuleArgumentType(root, resolvedImpls))
+      return ok(newResolvedModuleArgumentType(root, resolvedImpls, argType.loc))
 
     of dbkUnion:
       var requires: seq[Generic]
@@ -158,10 +149,10 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
         let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
         resolvedImpls.add(resolvedImpl)
 
-      return ok(newResolvedModuleArgumentType(root, resolvedImpls))
+      return ok(newResolvedModuleArgumentType(root, resolvedImpls, argType.loc))
 
   if argType.impls.len == 0:
-    ok(newResolvedModuleArgumentType(root))
+    ok(newResolvedModuleArgumentType(root, argType.loc))
   else:
     err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
@@ -180,7 +171,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, generic: Generic,
       return err(fmt"{dataBlock.loc} todo: resolve struct block in argument type")
     of dbkLiteral:
       if argType.impls.len == 0:
-        return ok(newResolvedModuleArgumentType(root))
+        return ok(newResolvedModuleArgumentType(root, argType.loc))
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of dbkUnion:
@@ -206,12 +197,25 @@ proc resolveModuleArgumentType(app: App, file: parser.File, generic: Generic,
         let resolvedImpl = ? resolveArgumentType(app, file, generic, impl)
         resolvedImpls.add(resolvedImpl)
 
-      return ok(newResolvedModuleArgumentType(root, resolvedImpls))
+      return ok(newResolvedModuleArgumentType(root, resolvedImpls, argType.loc))
 
   if argType.impls.len == 0:
-    ok(newResolvedModuleArgumentType(root))
+    ok(newResolvedModuleArgumentType(root, argType.loc))
   else:
     err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
+
+# ResolvedDefinedArgumentType
+proc newResolvedDefinedArgumentType*(
+    module: ResolvedModuleArgumentType): ResolvedDefinedArgumentType =
+  ResolvedDefinedArgumentType(kind: rdatkModule, module: module)
+
+proc newResolvedDefinedArgumentType*(
+    generic: Generic): ResolvedDefinedArgumentType =
+  ResolvedDefinedArgumentType(kind: rdatkGeneric, generic: generic)
+
+proc kind*(argType: ResolvedDefinedArgumentType): ResolvedDefinedArgumentTypeKind = argType.kind
+proc module*(argType: ResolvedDefinedArgumentType): ResolvedModuleArgumentType = argType.module
+proc generic*(argType: ResolvedDefinedArgumentType): Generic = argType.generic
 
 # resolveDefinedArgumentType — both context overloads.
 proc resolveDefinedArgumentType(app: App, file: parser.File,
@@ -242,11 +246,16 @@ proc resolveDefinedArgumentType(app: App, file: parser.File, generic: Generic,
       argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
 
+# ResolvedArgumentType
+proc newResolvedArgumentType*(definedType: ResolvedDefinedArgumentType): ResolvedArgumentType =
+  ResolvedArgumentType(kind: ratkDefined, definedType: definedType)
+
+proc kind*(argType: ResolvedArgumentType): ResolvedArgumentTypeKind = argType.kind
+proc definedType*(argType: ResolvedArgumentType): ResolvedDefinedArgumentType = argType.definedType
+
 # resolveArgumentType — both context overloads, defined now after
 # the module/defined helpers.
-proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, argType: ArgumentType): Result[
-    ResolvedArgumentType, string] =
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let rootType = ? file.findType(argType.root)
   case rootType.kind:
   of tkImported:

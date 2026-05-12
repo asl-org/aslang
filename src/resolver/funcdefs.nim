@@ -18,6 +18,7 @@ proc newResolvedArgumentDefinition*(argType: ResolvedArgumentType,
   ResolvedArgumentDefinition(name: name, argType: argType)
 
 proc name*(d: ResolvedArgumentDefinition): Identifier = d.name
+proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
 
 proc resolveArgumentDefinition*(app: App, file: parser.File,
     fileScope: FileScope, module: Module,
@@ -47,12 +48,11 @@ proc newResolvedFunctionDefinition*(public: bool, name: Identifier,
   ResolvedFunctionDefinition(public: public, name: name, args: args,
     returns: returns)
 
-proc args*(d: ResolvedFunctionDefinition): seq[ResolvedArgumentDefinition] =
-  d.args
+proc public*(funcDef: ResolvedFunctionDefinition): bool = funcDef.public
+proc args*(funcDef: ResolvedFunctionDefinition): seq[ResolvedArgumentDefinition] = funcDef.args
+proc returns*(funcDef: ResolvedFunctionDefinition): ResolvedArgumentType = funcDef.returns
 
-proc resolveFunctionDefinition*(app: App, file: parser.File,
-    fileScope: FileScope, module: Module,
-    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScope, module: Module, def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolvedArgs: seq[ResolvedArgumentDefinition]
   for arg in def.args:
     let resolvedArg = ? resolveArgumentDefinition(app, file, fileScope, module,
@@ -88,6 +88,9 @@ type ResolvedExternFunction* = ref object
 proc newResolvedExternFunction*(ffi: string,
     def: ResolvedFunctionDefinition): ResolvedExternFunction =
   ResolvedExternFunction(ffi: ffi, def: def)
+
+proc ffi*(function: ResolvedExternFunction): string = function.ffi
+proc def*(function: ResolvedExternFunction): ResolvedFunctionDefinition = function.def
 
 proc resolveExternFunction*(app: App, file: parser.File, fileScope: FileScope,
     module: Module,
