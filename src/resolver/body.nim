@@ -14,6 +14,7 @@ import results, options, sets, strformat, tables
 import parser
 import argtypes
 import funcrefs
+import patterns
 
 # ResolvedGetter — independent of the big cluster.
 type ResolvedGetter* = ref object
@@ -34,36 +35,6 @@ proc resolveGetter*(file: parser.File, scope: FunctionScope,
     getter: Getter): Result[ResolvedGetter, string] =
   discard ? resolveVariable(file, scope, getter.source)
   ok(newResolvedGetter(getter.source, getter.property))
-
-# ResolvedCasePattern — also independent of the cluster (its
-# fields are parser AST types).
-type
-  ResolvedCasePatternKind* = enum
-    rcpkInteger, rcpkVariable, rcpkVariant
-  ResolvedCasePattern* = ref object
-    case kind: ResolvedCasePatternKind
-    of rcpkInteger: integer: IntegerLiteral
-    of rcpkVariable: variable: Identifier
-    of rcpkVariant: variant: VariantPattern
-
-proc newResolvedCasePattern*(integer: IntegerLiteral): ResolvedCasePattern =
-  ResolvedCasePattern(kind: rcpkInteger, integer: integer)
-
-proc newResolvedCasePattern*(variable: Identifier): ResolvedCasePattern =
-  ResolvedCasePattern(kind: rcpkVariable, variable: variable)
-
-proc newResolvedCasePattern*(variant: VariantPattern): ResolvedCasePattern =
-  ResolvedCasePattern(kind: rcpkVariant, variant: variant)
-
-proc resolveCasePattern(casePattern: CasePattern): Result[
-    ResolvedCasePattern, string] =
-  case casePattern.kind:
-  of cpkIntegerLiteral:
-    ok(newResolvedCasePattern(casePattern.intLit))
-  of cpkVariable:
-    ok(newResolvedCasePattern(casePattern.variable))
-  of cpkVariant:
-    ok(newResolvedCasePattern(casePattern.variant))
 
 # ResolvedLiteralInitializer — needs ResolvedArgumentType but no
 # ResolvedExpression dependency (literal value is parser AST).

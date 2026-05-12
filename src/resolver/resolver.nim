@@ -2,7 +2,7 @@
 ## (asl.nim, tests) only need `import resolver` to get `resolve*`
 ## and any of the Resolved* types they care about.
 
-import literals, imports, argtypes, funcdefs, funcrefs, body,
+import literals, imports, argtypes, funcdefs, funcrefs, patterns, body,
        data, funcs, modules, decls
-export literals, imports, argtypes, funcdefs, funcrefs, body,
+export literals, imports, argtypes, funcdefs, funcrefs, patterns, body,
        data, funcs, modules, decls
