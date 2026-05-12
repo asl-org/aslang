@@ -113,8 +113,9 @@ Source defense).
 
 ### Phase 2: Parsing
 
-`src/parser/{combinators, helpers, identifiers, literals, imports,
-argtypes, funcdefs, body, decls, loader, parser}.nim`
+`src/parser/{combinators, helpers, identifiers, strings, numbers,
+literals, imports, argtypes, funcdefs, patterns, body, data, funcs,
+generics, modules, decls, loader, parser}.nim`
 
 Recursive descent via composable `Spec[T]` combinators:
 
@@ -226,29 +227,39 @@ src/
                                    + identifierSpec / keywordSpec /
                                    indentationSpec / decoratorLineSpec
                                    + blockSpec / decoratedBlockSpec helpers
-    literals.nim                   StringContent / StringLiteral /
-                                   IntegerLiteral (Signed / Unsigned) /
-                                   FloatLiteral / Literal / LiteralType
-                                   + their parser specs
+    strings.nim                    StringContent / StringLiteral +
+                                   escapedSpec helpers + stringLiteralSpec
+    numbers.nim                    UnsignedIntegerLiteral /
+                                   SignedIntegerLiteral / IntegerLiteral /
+                                   FloatLiteral + their specs
+    literals.nim                   Literal umbrella + LiteralType +
+                                   literalSpec / literalTypeSpec
     imports.nim                    ImportedType / Import + their specs
                                    + resolveImportPath
     argtypes.nim                   ArgumentType / ArgumentDefinition /
                                    ArgumentDefinitionList + their specs
     funcdefs.nim                   FunctionDefinition + functionDefinition
                                    line / list specs
-    body.nim                       VariantPatternField / VariantPattern /
-                                   CasePattern / Getter / LiteralInitializer
-                                   + body-level cluster (ArgumentList ↔
-                                   FunctionCall ↔ KeywordArgument ↔
-                                   Initializer ↔ Expression ↔ Match /
-                                   CaseBlock ↔ Statement ↔ StatementList /
-                                   Assignment / Mutation) + their specs
-    decls.nim                      Struct / VariantDefinition / Union /
-                                   DataBlock, UserFunction / ExternFunction /
-                                   Function / FunctionList, Generic /
-                                   Requires, Module, DefinedType / Type,
-                                   File / App + their specs + the public
-                                   single-file `parse*` entry
+    patterns.nim                   VariantPatternField / VariantPattern /
+                                   CasePattern + their specs
+    body.nim                       Getter / LiteralInitializer +
+                                   body-level mutually-recursive cluster
+                                   (ArgumentList ↔ FunctionCall ↔
+                                   KeywordArgument ↔ Initializer ↔
+                                   Expression ↔ Match / CaseBlock ↔
+                                   Statement ↔ StatementList / Assignment /
+                                   Mutation) + their specs
+    data.nim                       Struct / VariantDefinition / Union /
+                                   DataBlock + their specs
+    funcs.nim                      UserFunction / ExternFunction /
+                                   Function / FunctionList + their specs
+    generics.nim                   Generic / Requires + their specs
+    modules.nim                    Module + moduleHeader / moduleBody /
+                                   moduleSpec
+    decls.nim                      DefinedType / Type / File / App +
+                                   typeSpec / definedTypeBlockSpec /
+                                   fileSpec + the public single-file
+                                   `parse*` entry
     loader.nim                     BFS multi-file resolution + parse*()
 
   resolver/
@@ -263,16 +274,22 @@ src/
                                    ResolvedExternFunction
     funcrefs.nim                   FunctionScope + function-ref cluster
                                    for call-site lookup by (name, arity)
-    body.nim                       Getter / CasePattern / LiteralInit
-                                   + body-level cluster (Initializer ↔
-                                   FunctionCall ↔ Expression ↔ Match /
-                                   CaseBlock ↔ Statement ↔ Assignment /
-                                   Mutation / KeywordArgument)
-    decls.nim                      ResolvedUserFunction / ResolvedFunction,
-                                   struct / variant / union / data,
-                                   ResolvedModule / ResolvedGeneric /
-                                   ResolvedDefinedType / ResolvedFile /
-                                   ResolvedApp + the public resolve* entry
+    patterns.nim                   ResolvedCasePattern + resolveCasePattern
+    body.nim                       Getter / LiteralInitializer + body-level
+                                   cluster (Initializer ↔ FunctionCall ↔
+                                   Expression ↔ Match / CaseBlock ↔
+                                   Statement ↔ Assignment / Mutation /
+                                   KeywordArgument)
+    data.nim                       ResolvedStruct / ResolvedVariant /
+                                   ResolvedUnion / ResolvedData + their
+                                   resolveX procs
+    funcs.nim                      ResolvedUserFunction / ResolvedFunction
+                                   + resolveUserFunction / resolveFunction
+    modules.nim                    ResolvedModule / ResolvedGeneric +
+                                   resolveModule / resolveGeneric
+    decls.nim                      ResolvedDefinedType / ResolvedFile /
+                                   ResolvedApp + resolveDefinedType /
+                                   resolveFile + the public `resolve*` entry
 
 examples/
   base.asl                         standard library definition (extern functions)
