@@ -4,7 +4,7 @@ import tokenizer
 import combinators
 import helpers
 import identifiers
-import literals
+import strings
 
 # ============================================================
 # ImportedType
