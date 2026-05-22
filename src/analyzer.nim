@@ -18,12 +18,18 @@ proc analyzeData*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, 
   of rdkUnion: err(fmt"todo: analyze union block")
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[void, string] =
-  let resolvedDefinedType = ? file.findModule(argType.module.name)
+  let resolvedDefinedType: ResolvedDefinedType = ? file.findModule(argType.module.name)
   case resolvedDefinedType.kind:
   of rdtkGeneric: err(fmt"todo: analyze defined generic arg type")
   of rdtkModule:
     let typeModule = resolvedDefinedType.module
-    err(fmt"{argType.loc} todo: analyze defined module arg type")
+    if typeModule.requires.len == 0:
+      if argType.impls.len == 0:
+        ok()
+      else:
+        err(fmt"{argType.loc} module `{argType.module.name.asl}` does not require any impl types")
+    else:
+      err(fmt"{argType.loc} todo: analyze defined module arg type")
 
 proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, argType: ResolvedDefinedArgumentType): Result[void, string] =
   case argType.kind:
@@ -36,15 +42,13 @@ proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, module: Resolved
   of ratkDefined: analyzeDefinedArgumentType(app, file, module, argType.definedType)
 
 proc analyzeArgumentDefinition*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, argDef: ResolvedArgumentDefinition): Result[void, string] =
-  ? analyzeArgumentType(app, file, module, argDef.argType)
-  err(fmt"todo: analyze argument definition")
+  analyzeArgumentType(app, file, module, argDef.argType)
 
 proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, funcDef: ResolvedFunctionDefinition): Result[void, string] =
   for arg in funcDef.args:
     ? analyzeArgumentDefinition(app, file, module, arg)
 
-  ? analyzeArgumentType(app, file, module, funcDef.returns)
-  err(fmt"todo: analyze function definition")
+  analyzeArgumentType(app, file, module, funcDef.returns)
 
 proc analyzeExternFunction*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, function: ResolvedExternFunction): Result[void, string] =
   analyzeFunctionDefinition(app, file, module, function.def)

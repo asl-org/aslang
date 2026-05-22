@@ -52,6 +52,10 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
       module.data.get)
     resolvedData = some(resolvedDataBlock)
 
+  # NOTE: Infer requires list if not explicitly mentioned.
+  if module.requires.isNone and resolvedData.isSome:
+    resolvedRequires = resolvedData.get.requires
+
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:
     let resolvedFunction = ? resolveFunction(app, file, fileScope, module,

@@ -11,9 +11,19 @@ import funcdefs
 type ResolvedStruct* = ref object
   fields: seq[ResolvedArgumentDefinition]
 
-proc newResolvedStruct*(
-    fields: seq[ResolvedArgumentDefinition]): ResolvedStruct =
+proc newResolvedStruct*(fields: seq[ResolvedArgumentDefinition]): ResolvedStruct =
   ResolvedStruct(fields: fields)
+
+proc requires*(struct: ResolvedStruct): seq[Generic] =
+  var fields: seq[Generic]
+  for field in struct.fields:
+    case field.argType.kind:
+    of ratkImported: assert(false, "todo: support imported types for requier list")
+    of ratkDefined:
+      case field.argType.definedType.kind:
+      of rdatkModule: discard
+      of rdatkGeneric: fields.add(field.argType.definedType.generic)
+  return fields
 
 proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, struct: Struct): Result[ResolvedStruct, string] =
@@ -50,6 +60,18 @@ type ResolvedUnion* = ref object
 proc newResolvedUnion*(variants: seq[ResolvedVariant]): ResolvedUnion =
   ResolvedUnion(variants: variants)
 
+proc requires*(union: ResolvedUnion): seq[Generic] =
+  var fields: seq[Generic]
+  for variant in union.variants:
+    for field in variant.fields:
+      case field.argType.kind:
+      of ratkImported: assert(false, "todo: support imported types for requier list")
+      of ratkDefined:
+        case field.argType.definedType.kind:
+        of rdatkModule: discard
+        of rdatkGeneric: fields.add(field.argType.definedType.generic)
+  return fields
+
 proc resolveUnion*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, union: Union): Result[ResolvedUnion, string] =
   var resolvedVariants: seq[ResolvedVariant]
@@ -79,6 +101,11 @@ proc newResolvedData*(union: ResolvedUnion): ResolvedData =
 
 proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
 proc literal*(data: ResolvedData): ResolvedLiteralType = data.literal
+proc requires*(data: ResolvedData): seq[Generic] =
+  case data.kind:
+  of rdkLiteral: @[]
+  of rdkStruct: data.struct.requires
+  of rdkUnion: data.union.requires
 
 proc resolveDataBlock*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, data: DataBlock): Result[ResolvedData, string] =
