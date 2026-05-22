@@ -163,7 +163,7 @@ lookup serves the resolver.
 decls, resolver}.nim`
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
-which in turn holds resolved imports plus a `ResolvedDefinedType` for
+which in turn holds resolved imports plus a `ResolvedType` for
 each module/generic. As of 2026-05-02 27/35 fixtures resolve clean —
 `base.asl`, `problem001`–`problem010`, and `sample.asl` all green.
 Remaining failures are fixture-maintenance (`multi_import_same_path`
@@ -287,8 +287,8 @@ src/
                                    + resolveUserFunction / resolveFunction
     modules.nim                    ResolvedModule / ResolvedGeneric +
                                    resolveModule / resolveGeneric
-    decls.nim                      ResolvedDefinedType / ResolvedFile /
-                                   ResolvedApp + resolveDefinedType /
+    decls.nim                      ResolvedType / ResolvedFile /
+                                   ResolvedApp + resolveType /
                                    resolveFile + the public `resolve*` entry
 
 examples/

@@ -1,7 +1,8 @@
 ## Import resolution. ResolvedImportedType captures the (name,
-## binding, target DefinedType) triple for a single imported name;
-## ResolvedImport bundles the target file with the seq of resolved
-## imported names. Both are used by the file scope built in decls.nim.
+## binding, target parser DefinedType) triple for a single imported
+## name; ResolvedImport bundles the target file with the seq of
+## resolved imported names. Both are used by the file scope built in
+## decls.nim.
 
 import results
 
@@ -11,20 +12,20 @@ import parser
 type ResolvedImportedType* = ref object
   name: Identifier
   binding: Identifier
-  definedType: DefinedType
+  aslType: DefinedType
 
 proc newResolvedImportedType*(name, binding: Identifier,
-    definedType: DefinedType): ResolvedImportedType =
-  ResolvedImportedType(name: name, binding: binding, definedType: definedType)
+    aslType: DefinedType): ResolvedImportedType =
+  ResolvedImportedType(name: name, binding: binding, aslType: aslType)
 
 proc binding*(t: ResolvedImportedType): Identifier = t.binding
-proc definedType*(t: ResolvedImportedType): DefinedType = t.definedType
+proc aslType*(t: ResolvedImportedType): DefinedType = t.aslType
 
 proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
     ResolvedImportedType, string] =
-  let importedDefinedType = ? impFile.findExportedType(impType.name)
+  let importedAslType = ? impFile.findExportedType(impType.name)
   ok(newResolvedImportedType(impType.name, impType.binding,
-    importedDefinedType))
+    importedAslType))
 
 # ResolvedImport
 type ResolvedImport* = ref object

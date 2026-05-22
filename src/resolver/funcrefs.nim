@@ -44,34 +44,34 @@ proc resolveModuleTypeRef(typeModule: Module, name: Identifier,
   let functions = ? typeModule.findFunctions(name, arity)
   ok(newResolvedModuleTypeRef(typeModule, functions))
 
-# ResolvedDefinedTypeRef
+# ResolvedTypeRef
 type
-  ResolvedDefinedTypeRefKind* = enum
+  ResolvedTypeRefKind* = enum
     rdtrkGeneric, rdtrkModule
-  ResolvedDefinedTypeRef* = ref object
-    case kind: ResolvedDefinedTypeRefKind
+  ResolvedTypeRef* = ref object
+    case kind: ResolvedTypeRefKind
     of rdtrkGeneric: generic: ResolvedGenericTypeRef
     of rdtrkModule: module: ResolvedModuleTypeRef
 
-proc newResolvedDefinedTypeRef*(
-    generic: ResolvedGenericTypeRef): ResolvedDefinedTypeRef =
-  ResolvedDefinedTypeRef(kind: rdtrkGeneric, generic: generic)
+proc newResolvedTypeRef*(
+    generic: ResolvedGenericTypeRef): ResolvedTypeRef =
+  ResolvedTypeRef(kind: rdtrkGeneric, generic: generic)
 
-proc newResolvedDefinedTypeRef*(
-    module: ResolvedModuleTypeRef): ResolvedDefinedTypeRef =
-  ResolvedDefinedTypeRef(kind: rdtrkModule, module: module)
+proc newResolvedTypeRef*(
+    module: ResolvedModuleTypeRef): ResolvedTypeRef =
+  ResolvedTypeRef(kind: rdtrkModule, module: module)
 
-proc resolveDefinedTypeRef(definedType: DefinedType, name: Identifier,
-    arity: int): Result[ResolvedDefinedTypeRef, string] =
+proc resolveTypeRef(definedType: DefinedType, name: Identifier,
+    arity: int): Result[ResolvedTypeRef, string] =
   case definedType.kind:
   of dtkModule:
     let resolvedModuleTypeRef = ? resolveModuleTypeRef(definedType.module, name,
       arity)
-    ok(newResolvedDefinedTypeRef(resolvedModuleTypeRef))
+    ok(newResolvedTypeRef(resolvedModuleTypeRef))
   of dtkGeneric:
     let resolvedGenericTypeRef = ? resolveGenericTypeRef(definedType.generic,
       name, arity)
-    ok(newResolvedDefinedTypeRef(resolvedGenericTypeRef))
+    ok(newResolvedTypeRef(resolvedGenericTypeRef))
 
 # ResolvedFunctionRef — currently only the rfrkDefined arm; an
 # rfrkImported arm would mirror the imported path inside.
@@ -80,10 +80,10 @@ type
     rfrkDefined
   ResolvedFunctionRef* = ref object
     case kind: ResolvedFunctionRefKind
-    of rfrkDefined: definedRef: ResolvedDefinedTypeRef
+    of rfrkDefined: definedRef: ResolvedTypeRef
 
 proc newResolvedFunctionRef*(
-    definedRef: ResolvedDefinedTypeRef): ResolvedFunctionRef =
+    definedRef: ResolvedTypeRef): ResolvedFunctionRef =
   ResolvedFunctionRef(kind: rfrkDefined, definedRef: definedRef)
 
 proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
@@ -99,10 +99,10 @@ proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
       err(fmt"{impType.loc} type `{impType.binding.asl}` does not exist in file scope")
     else:
       let impDefinedType = fileScope[impType.binding]
-      let resolvedDefinedRef = ? resolveDefinedTypeRef(impDefinedType, name,
+      let resolvedDefinedRef = ? resolveTypeRef(impDefinedType, name,
         arity)
       ok(newResolvedFunctionRef(resolvedDefinedRef))
   of tkDefined:
-    let resolvedDefinedRef = ? resolveDefinedTypeRef(rootModule.definedType,
+    let resolvedDefinedRef = ? resolveTypeRef(rootModule.definedType,
       name, arity)
     ok(newResolvedFunctionRef(resolvedDefinedRef))

@@ -8,70 +8,70 @@ import imports
 import argtypes
 import modules
 
-# ResolvedDefinedType
+# ResolvedType
 type
-  ResolvedDefinedTypeKind* = enum
-    rdtkModule, rdtkGeneric
-  ResolvedDefinedType* = ref object
-    case kind: ResolvedDefinedTypeKind
-    of rdtkModule: module: ResolvedModule
-    of rdtkGeneric: generic: ResolvedGeneric
+  ResolvedTypeKind* = enum
+    rtkModule, rtkGeneric
+  ResolvedType* = ref object
+    case kind: ResolvedTypeKind
+    of rtkModule: module: ResolvedModule
+    of rtkGeneric: generic: ResolvedGeneric
 
-proc newResolvedDefinedType*(module: ResolvedModule): ResolvedDefinedType =
-  ResolvedDefinedType(kind: rdtkModule, module: module)
+proc newResolvedType*(module: ResolvedModule): ResolvedType =
+  ResolvedType(kind: rtkModule, module: module)
 
-proc newResolvedDefinedType*(generic: ResolvedGeneric): ResolvedDefinedType =
-  ResolvedDefinedType(kind: rdtkGeneric, generic: generic)
+proc newResolvedType*(generic: ResolvedGeneric): ResolvedType =
+  ResolvedType(kind: rtkGeneric, generic: generic)
 
-proc kind*(definedType: ResolvedDefinedType): ResolvedDefinedTypeKind = definedType.kind
-proc module*(definedType: ResolvedDefinedType): ResolvedModule = definedType.module
-proc generic*(definedType: ResolvedDefinedType): ResolvedGeneric = definedType.generic
+proc kind*(aslType: ResolvedType): ResolvedTypeKind = aslType.kind
+proc module*(aslType: ResolvedType): ResolvedModule = aslType.module
+proc generic*(aslType: ResolvedType): ResolvedGeneric = aslType.generic
 
-proc name*(definedType: ResolvedDefinedType): Identifier =
-  case definedType.kind:
-  of rdtkModule: definedType.module.name
-  of rdtkGeneric: definedType.generic.name
+proc name*(aslType: ResolvedType): Identifier =
+  case aslType.kind:
+  of rtkModule: aslType.module.name
+  of rtkGeneric: aslType.generic.name
 
-proc loc*(definedType: ResolvedDefinedType): Location =
-  case definedType.kind:
-  of rdtkModule: definedType.module.loc
-  of rdtkGeneric: definedType.generic.loc
+proc loc*(aslType: ResolvedType): Location =
+  case aslType.kind:
+  of rtkModule: aslType.module.loc
+  of rtkGeneric: aslType.generic.loc
 
-proc resolveDefinedType(app: App, file: parser.File, fileScope: FileScope,
-    definedType: DefinedType): Result[ResolvedDefinedType, string] =
-  case definedType.kind:
+proc resolveType(app: App, file: parser.File, fileScope: FileScope,
+    aslType: DefinedType): Result[ResolvedType, string] =
+  case aslType.kind:
   of dtkGeneric:
-    let resolvedGeneric = ? resolveGeneric(app, file, definedType.generic)
-    ok(newResolvedDefinedType(resolvedGeneric))
+    let resolvedGeneric = ? resolveGeneric(app, file, aslType.generic)
+    ok(newResolvedType(resolvedGeneric))
   of dtkModule:
     let resolvedModule = ? resolveModule(app, file, fileScope,
-      definedType.module)
-    ok(newResolvedDefinedType(resolvedModule))
+      aslType.module)
+    ok(newResolvedType(resolvedModule))
 
 # ResolvedFile
 type ResolvedFile* = ref object
   path: string
   imports: seq[ResolvedImport]
-  definedTypes: seq[ResolvedDefinedType]
-  definedTypeIndex: Table[Identifier, ResolvedDefinedType]
+  aslTypes: seq[ResolvedType]
+  aslTypeIndex: Table[Identifier, ResolvedType]
 
 proc newResolvedFile*(path: string, imports: seq[ResolvedImport],
-    definedTypes: seq[ResolvedDefinedType]): ResolvedFile =
-  var definedTypeIndex: Table[Identifier, ResolvedDefinedType]
-  for definedType in definedTypes:
-    definedTypeIndex[definedType.name] = definedType
+    aslTypes: seq[ResolvedType]): ResolvedFile =
+  var aslTypeIndex: Table[Identifier, ResolvedType]
+  for aslType in aslTypes:
+    aslTypeIndex[aslType.name] = aslType
 
-  ResolvedFile(path: path, imports: imports, definedTypes: definedTypes, definedTypeIndex: definedTypeIndex)
+  ResolvedFile(path: path, imports: imports, aslTypes: aslTypes, aslTypeIndex: aslTypeIndex)
 
 proc path*(file: ResolvedFile): string = file.path
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
-proc definedTypes*(file: ResolvedFile): seq[ResolvedDefinedType] = file.definedTypes
+proc aslTypes*(file: ResolvedFile): seq[ResolvedType] = file.aslTypes
 
-proc findModule*(file: ResolvedFile, name: Identifier): Result[ResolvedDefinedType, string] =
-  if name notin file.definedTypeIndex:
+proc findModule*(file: ResolvedFile, name: Identifier): Result[ResolvedType, string] =
+  if name notin file.aslTypeIndex:
     err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope")
   else:
-    ok(file.definedTypeIndex[name])
+    ok(file.aslTypeIndex[name])
 
 proc resolveFile(app: App, file: parser.File): Result[ResolvedFile, string] =
   var resolvedImports: seq[ResolvedImport]
@@ -80,15 +80,15 @@ proc resolveFile(app: App, file: parser.File): Result[ResolvedFile, string] =
     let resolvedImport = ? resolveImport(app, file, imp)
     resolvedImports.add(resolvedImport)
     for impType in resolvedImport.importedTypes:
-      fileScope[impType.binding] = impType.definedType
+      fileScope[impType.binding] = impType.aslType
 
-  var resolvedDefinedTypes: seq[ResolvedDefinedType]
-  for definedType in file.definedTypes:
-    let resolvedDefinedType = ? resolveDefinedType(app, file, fileScope,
-      definedType)
-    resolvedDefinedTypes.add(resolvedDefinedType)
+  var resolvedAslTypes: seq[ResolvedType]
+  for aslType in file.definedTypes:
+    let resolvedAslType = ? resolveType(app, file, fileScope,
+      aslType)
+    resolvedAslTypes.add(resolvedAslType)
 
-  ok(newResolvedFile(file.path, resolvedImports, resolvedDefinedTypes))
+  ok(newResolvedFile(file.path, resolvedImports, resolvedAslTypes))
 
 # ResolvedApp + entry
 type ResolvedApp* = ref object

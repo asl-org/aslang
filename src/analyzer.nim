@@ -1,4 +1,4 @@
-import results, strformat, options
+import results, strformat, options, sequtils
 
 import parser, resolver
 
@@ -18,18 +18,27 @@ proc analyzeData*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, 
   of rdkUnion: err(fmt"todo: analyze union block")
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[void, string] =
-  let resolvedDefinedType: ResolvedDefinedType = ? file.findModule(argType.module.name)
-  case resolvedDefinedType.kind:
-  of rdtkGeneric: err(fmt"todo: analyze defined generic arg type")
-  of rdtkModule:
-    let typeModule = resolvedDefinedType.module
+  let resolvedType = ? file.findModule(argType.module.name)
+  case resolvedType.kind:
+  of rtkGeneric: err(fmt"todo: analyze defined generic arg type")
+  of rtkModule:
+    let typeModule = resolvedType.module
     if typeModule.requires.len == 0:
-      if argType.impls.len == 0:
-        ok()
-      else:
-        err(fmt"{argType.loc} module `{argType.module.name.asl}` does not require any impl types")
+      if argType.impls.len == 0: ok()
+      else: err(fmt"{argType.loc} module `{argType.module.name.asl}` does not require any impl types")
     else:
-      err(fmt"{argType.loc} todo: analyze defined module arg type")
+      if typeModule.requires.len != argType.impls.len:
+        err(fmt"{argType.loc} module `{argType.module.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
+      else:
+        for (requiredImpl, targetImpl) in zip(typeModule.requires, argType.impls):
+          let resolvedImplType = ? file.findModule(requiredImpl.name)
+          case resolvedImplType.kind:
+          of rtkModule:
+            return err(fmt"{argType.loc} NOTE: should be unreachable")
+          of rtkGeneric:
+            let resolvedGeneric = resolvedImplType.generic
+
+        err(fmt"{argType.loc} todo: analyze defined module arg type")
 
 proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, argType: ResolvedDefinedArgumentType): Result[void, string] =
   case argType.kind:
@@ -70,17 +79,17 @@ proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule
 
   err(fmt"todo: analyze defined module")
 
-proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, definedType: ResolvedDefinedType): Result[void, string] =
+proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, definedType: ResolvedType): Result[void, string] =
   case definedType.kind:
-  of rdtkGeneric: err(fmt"todo: analyze defined generic type")
-  of rdtkModule: analyzeModule(app, file, definedType.module)
+  of rtkGeneric: err(fmt"todo: analyze defined generic type")
+  of rtkModule: analyzeModule(app, file, definedType.module)
 
 proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[void, string] =
   for imp in file.imports:
     ? analyzeImport(app, file, imp)
 
-  for definedType in file.definedTypes:
-    ? analyzeDefinedType(app, file, definedType)
+  for aslType in file.aslTypes:
+    ? analyzeDefinedType(app, file, aslType)
   err(fmt"todo: analyze file")
 
 proc analyze*(app: ResolvedApp): Result[void, string] =
