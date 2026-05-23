@@ -3,8 +3,9 @@
 ## Each layers on top of argtypes via resolveArgumentType +
 ## resolveDataType.
 
-import results
+import results, hashes
 
+import tokenizer
 import parser
 import argtypes
 
@@ -18,7 +19,14 @@ proc newResolvedArgumentDefinition*(argType: ResolvedArgumentType,
   ResolvedArgumentDefinition(name: name, argType: argType)
 
 proc name*(d: ResolvedArgumentDefinition): Identifier = d.name
+proc loc*(d: ResolvedArgumentDefinition): Location = d.argType.loc
 proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
+proc hash*(d: ResolvedArgumentDefinition): Hash = argType.hash
+proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
+
+proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDefinition =
+  let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)
+  newResolvedArgumentDefinition(concreteArgType, argDef.name)
 
 proc resolveArgumentDefinition*(app: App, file: parser.File,
     fileScope: FileScope, module: Module,
@@ -37,20 +45,34 @@ proc resolveArgumentDefinition*(app: App, file: parser.File, generic: Generic,
 
 # ResolvedFunctionDefinition
 type ResolvedFunctionDefinition* = ref object
-  public: bool
-  name: Identifier
+  parsed: FunctionDefinition
   args: seq[ResolvedArgumentDefinition]
   returns: ResolvedArgumentType
 
-proc newResolvedFunctionDefinition*(public: bool, name: Identifier,
-    args: seq[ResolvedArgumentDefinition],
-    returns: ResolvedArgumentType): ResolvedFunctionDefinition =
-  ResolvedFunctionDefinition(public: public, name: name, args: args,
-    returns: returns)
+proc newResolvedFunctionDefinition*(parsed: FunctionDefinition, args: seq[ResolvedArgumentDefinition], returns: ResolvedArgumentType): ResolvedFunctionDefinition =
+  ResolvedFunctionDefinition(parsed: parsed, args: args, returns: returns)
 
-proc public*(funcDef: ResolvedFunctionDefinition): bool = funcDef.public
+proc public*(funcDef: ResolvedFunctionDefinition): bool = funcDef.parsed.public
+proc name*(funcDef: ResolvedFunctionDefinition): Identifier = funcDef.parsed.name
+proc arity*(funcDef: ResolvedFunctionDefinition): int = funcDef.parsed.arity
 proc args*(funcDef: ResolvedFunctionDefinition): seq[ResolvedArgumentDefinition] = funcDef.args
 proc returns*(funcDef: ResolvedFunctionDefinition): ResolvedArgumentType = funcDef.returns
+proc loc*(funcDef: ResolvedFunctionDefinition): Location = funcDef.parsed.loc
+proc asl*(funcDef: ResolvedFunctionDefinition): string = funcDef.parsed.asl
+proc hash*(funcDef: ResolvedFunctionDefinition): Hash =
+  var acc = funcDef.name.hash
+  for arg in funcDef.args:
+    acc = acc !& arg.hash
+  return acc
+
+proc `==`*(a, b: ResolvedFunctionDefinition): bool = a.hash == b.hash
+
+proc concreteFunctionDefinition*(funcDef: ResolvedFunctionDefinition, moduleType: ResolvedArgumentType, generic: Generic): ResolvedFunctionDefinition =
+  var concreteArgs: seq[ResolvedArgumentDefinition]
+  for arg in funcDef.args:
+    concreteArgs.add(arg.concreteArgumentDefinition(moduleType, generic))
+  let concreteReturns = funcDef.returns.concreteArgumentType(moduleType, generic)
+  newResolvedFunctionDefinition(funcDef.parsed, concreteArgs, concreteReturns)
 
 proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScope, module: Module, def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolvedArgs: seq[ResolvedArgumentDefinition]
@@ -63,7 +85,7 @@ proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScop
     def.returns)
   ? resolveDataType(file, module, def.returns, resolvedReturnArgType)
 
-  ok(newResolvedFunctionDefinition(def.public, def.name, resolvedArgs,
+  ok(newResolvedFunctionDefinition(def, resolvedArgs,
     resolvedReturnArgType))
 
 proc resolveFunctionDefinition*(app: App, file: parser.File, generic: Generic,
@@ -77,7 +99,7 @@ proc resolveFunctionDefinition*(app: App, file: parser.File, generic: Generic,
     def.returns)
   ? resolveDataType(file, generic, def.returns, resolvedReturnArgType)
 
-  ok(newResolvedFunctionDefinition(def.public, def.name, resolvedArgs,
+  ok(newResolvedFunctionDefinition(def, resolvedArgs,
     resolvedReturnArgType))
 
 # ResolvedExternFunction
@@ -91,6 +113,7 @@ proc newResolvedExternFunction*(ffi: string,
 
 proc ffi*(function: ResolvedExternFunction): string = function.ffi
 proc def*(function: ResolvedExternFunction): ResolvedFunctionDefinition = function.def
+proc loc*(function: ResolvedExternFunction): Location = function.def.loc
 
 proc resolveExternFunction*(app: App, file: parser.File, fileScope: FileScope,
     module: Module,

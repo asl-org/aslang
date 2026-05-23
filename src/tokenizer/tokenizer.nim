@@ -1,4 +1,4 @@
-import results, strformat, unicode, strutils
+import results, strformat, unicode, strutils, hashes
 
 const BidiCodepoints: array[11, uint32] = [
   0x200E, # LRM
@@ -64,13 +64,14 @@ proc advance(loc: Location, line: bool = false): Location =
   return location
 
 proc `<`*(a, b: Location): bool =
-  if a.line == b.line:
-    a.col < b.col
-  else:
-    a.line < b.line
+  if a.line == b.line: a.col < b.col
+  else: a.line < b.line
+
+proc hash*(a, b: Location): Hash =
+  a.line.hash !& a.col.hash
 
 proc `==`*(a, b: Location): bool =
-  a.line == b.line and a.col == b.col
+  a.hash == b.hash
 
 proc `$`(loc: Location): string =
   fmt"{loc.line}:{loc.col}"

@@ -169,12 +169,27 @@ proc asl*(file: File, indentWidth: uint32): string =
         lines.add(line)
   lines.join("\n") & "\n"
 
-proc findType*(file: File, name: Identifier): Result[Type, string] =
-  if name in file.typeIndex: ok(file.types[file.typeIndex[name]])
+proc findTypeId*(file: File, name: Identifier): Result[int, string] =
+  if name in file.typeIndex: ok(file.typeIndex[name])
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
+proc findType*(file: File, name: Identifier): Result[Type, string] =
+  let id = ? file.findTypeId(name)
+  ok(file.types[id])
+
+proc findExportedTypeId*(file: File, name: Identifier): Result[int, string] =
+  let id = ? file.findTypeId(name)
+  let aslType = file.types[id]
+  case aslType.kind:
+  of tkImported: err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
+  of tkDefined:
+    let definedType = aslType.definedType
+    if definedType.public: ok(id)
+    else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
+
 proc findExportedType*(file: File, name: Identifier): Result[DefinedType, string] =
-  let aslType = ? file.findType(name)
+  let id = ? file.findTypeId(name)
+  let aslType = file.types[id]
   case aslType.kind:
   of tkImported: err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
   of tkDefined:

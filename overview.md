@@ -78,16 +78,22 @@ Resolver ──── (WIP rewrite) Name/shape resolution only. For each
   │                          Function bodies are NOT resolved here —
   │                          that belongs to the Analyzer.
   ▼
+Analyzer ──── (WIP) Walks the ResolvedApp, instantiating generic
+  │                 constraints by substituting concrete impl types
+  │                 into each required generic's funcDefs and
+  │                 verifying the target module implements them.
+  │                 Function bodies, overload selection, and
+  │                 type-correctness checks remain stubs.
+  ▼
 (future)
-  Analyzer  ── function-body resolution, overload resolution, generic
-               constraint satisfaction (unification + substitution).
   Codegen   ── target emission (C or LLVM IR).
 ```
 
 Orchestrated by `src/asl.nim`:
 ```nim
 let app = ? parse(filepath, indentWidth, dumpTokens)
-? resolve(app)
+let resolvedApp = ? resolve(app)
+? analyze(resolvedApp)
 ```
 
 There is no separate `Validator` phase. Every uniqueness / structural
@@ -212,6 +218,9 @@ src/
   asl.nim                          entry point
   cli.nim                          CLI parsing via argparse
   utils.nim                        topological sort + cycle detection
+  analyzer.nim                     (WIP) generic constraint
+                                   instantiation + per-node walker
+                                   over ResolvedApp
   nim.cfg                          per-component module search paths
 
   tokenizer/

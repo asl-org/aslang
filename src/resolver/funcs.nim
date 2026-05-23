@@ -2,6 +2,7 @@
 
 import options, sets, strformat, results
 
+import tokenizer
 import parser
 import argtypes
 import funcdefs
@@ -16,6 +17,12 @@ type ResolvedUserFunction* = ref object
 proc newResolvedUserFunction*(funcDef: ResolvedFunctionDefinition,
     statements: seq[ResolvedStatement]): ResolvedUserFunction =
   ResolvedUserFunction(funcDef: funcDef, statements: statements)
+
+proc def(function: ResolvedUserFunction): ResolvedFunctionDefinition =
+  function.funcDef
+
+proc loc(function: ResolvedUserFunction): Location =
+  function.funcDef.loc
 
 proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
     module: Module,
@@ -58,6 +65,14 @@ proc newResolvedFunction*(user: ResolvedUserFunction): ResolvedFunction =
 proc kind*(function: ResolvedFunction): ResolvedFunctionKind = function.kind
 proc extern*(function: ResolvedFunction): ResolvedExternFunction = function.extern
 proc user*(function: ResolvedFunction): ResolvedUserFunction = function.user
+proc def*(function: ResolvedFunction): ResolvedFunctionDefinition =
+  case function.kind:
+  of rfkExtern: function.extern.def
+  of rfkUser: function.user.def
+proc loc*(function: ResolvedFunction): Location =
+  case function.kind:
+  of rfkExtern: function.extern.loc
+  of rfkUser: function.user.loc
 
 proc resolveFunction*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, function: Function): Result[ResolvedFunction, string] =

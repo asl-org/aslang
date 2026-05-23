@@ -1,4 +1,4 @@
-import strformat, strutils, tables, results
+import strformat, strutils, tables, results, hashes
 
 import tokenizer
 import combinators
@@ -24,7 +24,8 @@ proc name*(g: Generic): Identifier = g.name
 proc funcDefs*(g: Generic): seq[FunctionDefinition] = g.funcDefs
 proc decorators*(g: Generic): seq[Decorator] = g.decorators
 proc loc*(g: Generic): Location = g.loc
-proc `==`*(a, b: Generic): bool = a.loc == b.loc
+proc hash*(g: Generic): Hash = g.loc.hash
+proc `==`*(a, b: Generic): bool = a.hash == b.hash
 
 proc newGeneric*(decorators: seq[Decorator], public: bool, name: Identifier,
     funcDefs: seq[FunctionDefinition], loc: Location): Result[Generic, ParserError] =

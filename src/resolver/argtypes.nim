@@ -10,7 +10,7 @@
 ## (or — inside a generic block — that an unsubstituted generic is
 ## acceptable as a field/argument type).
 
-import results, options, strformat, tables
+import results, options, strformat, tables, hashes
 
 import tokenizer
 import parser
@@ -47,6 +47,8 @@ type
 # Forward declarations — both context overloads need to be declared
 # up front because resolveModuleArgumentType recurses through them
 # when resolving impls.
+proc hash*(argType: ResolvedArgumentType): Hash
+
 proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
 proc resolveArgumentType*(app: App, file: parser.File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
@@ -60,7 +62,14 @@ proc newResolvedModuleArgumentType*(root: Module, loc: Location): ResolvedModule
 
 proc loc*(argType: ResolvedModuleArgumentType): Location = argType.loc
 proc module*(argType: ResolvedModuleArgumentType): Module = argType.root
+proc name*(argType: ResolvedModuleArgumentType): Identifier = argType.root.name
 proc impls*(argType: ResolvedModuleArgumentType): seq[ResolvedArgumentType] = argType.impls
+proc hash*(argType: ResolvedModuleArgumentType): Hash =
+  var acc = argType.module.hash
+  for impl in argType.impls:
+    acc = acc !& impl.hash
+  return acc
+proc `==`*(a, b: ResolvedModuleArgumentType): bool = a.hash == b.hash
 
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope,
@@ -216,6 +225,30 @@ proc newResolvedDefinedArgumentType*(
 proc kind*(argType: ResolvedDefinedArgumentType): ResolvedDefinedArgumentTypeKind = argType.kind
 proc module*(argType: ResolvedDefinedArgumentType): ResolvedModuleArgumentType = argType.module
 proc generic*(argType: ResolvedDefinedArgumentType): Generic = argType.generic
+proc name*(argType: ResolvedDefinedArgumentType): Identifier =
+  case argType.kind:
+  of rdatkGeneric: argType.generic.name
+  of rdatkModule: argType.module.name
+proc loc*(argType: ResolvedDefinedArgumentType): Location =
+  case argType.kind:
+  of rdatkGeneric: argType.generic.loc
+  of rdatkModule: argType.module.loc
+proc hash*(argType: ResolvedDefinedArgumentType): Hash =
+  case argType.kind:
+  of rdatkGeneric: argType.generic.hash
+  of rdatkModule: argType.module.hash
+proc `==`*(a, b: ResolvedDefinedArgumentType): bool = a.hash == b.hash
+
+proc concreteDefinedArgumentType(argType: ResolvedDefinedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedDefinedArgumentType =
+  case argType.kind:
+  of rdatkModule: return argType
+  of rdatkGeneric:
+    if argType.generic != generic:
+      return argType
+    else:
+      case concrete.kind:
+      of ratkImported: assert(false, "TODO: support concrete imported impl type")
+      of ratkDefined: return concrete.definedType
 
 # resolveDefinedArgumentType — both context overloads.
 proc resolveDefinedArgumentType(app: App, file: parser.File,
@@ -252,6 +285,27 @@ proc newResolvedArgumentType*(definedType: ResolvedDefinedArgumentType): Resolve
 
 proc kind*(argType: ResolvedArgumentType): ResolvedArgumentTypeKind = argType.kind
 proc definedType*(argType: ResolvedArgumentType): ResolvedDefinedArgumentType = argType.definedType
+proc name*(argType: ResolvedArgumentType): Identifier =
+  case argType.kind:
+  of ratkImported: assert(false, "todo: implement resolved imported type name")
+  of ratkDefined: return argType.definedType.name
+proc loc*(argType: ResolvedArgumentType): Location =
+  case argType.kind:
+  of ratkImported: assert(false, "todo: implement resolved imported type location")
+  of ratkDefined: return argType.definedType.loc
+proc hash*(argType: ResolvedArgumentType): Hash =
+  case argType.kind:
+  of ratkImported: assert(false, "todo: implement resolved imported type hash")
+  of ratkDefined: return argType.definedType.hash
+proc `==`*(a, b: ResolvedArgumentType): bool = a.hash == b.hash
+
+proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
+  case argType.kind:
+  of ratkImported:
+    assert(false, "todo: concretize imported argument type")
+  of ratkDefined:
+    let concreteDefinedArgType = argType.definedType.concreteDefinedArgumentType(concrete, generic)
+    return newResolvedArgumentType(concreteDefinedArgType)
 
 # resolveArgumentType — both context overloads, defined now after
 # the module/defined helpers.

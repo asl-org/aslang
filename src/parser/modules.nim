@@ -1,4 +1,4 @@
-import strformat, strutils, options, tables, results
+import strformat, strutils, options, tables, results, hashes
 
 import tokenizer
 import combinators
@@ -29,6 +29,8 @@ proc data*(m: Module): Option[DataBlock] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
 proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
+proc hash*(m: Module): Hash = m.loc.hash
+proc `==`*(a, b: Module): bool = a.hash == b.hash
 
 proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
     requires: Option[Requires], data: Option[DataBlock],
