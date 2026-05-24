@@ -11,6 +11,7 @@
 
 import results, options, sets, strformat, tables
 
+import tokenizer
 import parser
 import argtypes
 import funcrefs
@@ -23,6 +24,9 @@ type ResolvedGetter* = ref object
 
 proc newResolvedGetter*(source, property: Identifier): ResolvedGetter =
   ResolvedGetter(source: source, property: property)
+
+proc loc*(getter: ResolvedGetter): Location =
+  getter.source.loc
 
 proc resolveVariable*(file: parser.File, scope: FunctionScope,
     variable: Identifier): Result[Identifier, string] =
@@ -45,6 +49,8 @@ type ResolvedLiteralInitializer* = ref object
 proc newResolvedLiteralInitializer*(argType: ResolvedArgumentType,
     value: Literal): ResolvedLiteralInitializer =
   ResolvedLiteralInitializer(argType: argType, value: value)
+
+proc loc*(init: ResolvedLiteralInitializer): Location = init.argType.loc
 
 proc resolveLiteralInitializer(app: App, file: parser.File,
     fileScope: FileScope, module: Module,
@@ -97,6 +103,7 @@ type
   ResolvedMatchExpression* = ref object
     subject: ResolvedExpression
     cases: seq[ResolvedCaseBlock]
+    loc: Location
 
   ResolvedExpressionKind* = enum
     rekFunctionCall, rekVariable, rekLiteral, rekInitializer,
@@ -127,10 +134,14 @@ proc newResolvedStructInitializer*(argType: ResolvedArgumentType,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
   ResolvedStructInitializer(argType: argType, kwargs: kwargs)
 
+proc loc*(struct: ResolvedStructInitializer): Location = struct.argType.loc
+
 proc newResolvedUnionInitializer*(argType: ResolvedArgumentType,
     variant: Identifier,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedUnionInitializer =
   ResolvedUnionInitializer(argType: argType, variant: variant, kwargs: kwargs)
+
+proc loc*(init: ResolvedUnionInitializer): Location = init.argType.loc
 
 proc newResolvedInitializer*(
     struct: ResolvedStructInitializer): ResolvedInitializer =
@@ -144,25 +155,41 @@ proc newResolvedInitializer*(
     literal: ResolvedLiteralInitializer): ResolvedInitializer =
   ResolvedInitializer(kind: rikLiteral, literal: literal)
 
+proc loc*(init: ResolvedInitializer): Location =
+  case init.kind:
+  of rikLiteral: init.literal.loc
+  of rikStruct: init.struct.loc
+  of rikUnion: init.union.loc
+
 proc newResolvedFunctionCall*(funcRef: ResolvedFunctionRef,
     args: seq[ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(funcRef: funcRef, args: args)
+
+proc loc*(fncall: ResolvedFunctionCall): Location = fncall.funcRef.loc
+proc funcRef*(fncall: ResolvedFunctionCall): ResolvedFunctionRef = fncall.funcRef
+proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 
 proc newResolvedAssignment*(target: Identifier,
     expression: ResolvedExpression): ResolvedAssignment =
   ResolvedAssignment(target: target, expression: expression)
 
+proc loc*(assignment: ResolvedAssignment): Location =
+  assignment.target.loc
+
 proc newResolvedMutation*(getter: ResolvedGetter,
     expression: ResolvedExpression): ResolvedMutation =
   ResolvedMutation(getter: getter, expression: expression)
+
+proc loc*(mutation: ResolvedMutation): Location =
+  mutation.getter.loc
 
 proc newResolvedCaseBlock*(pattern: ResolvedCasePattern,
     statements: seq[ResolvedStatement]): ResolvedCaseBlock =
   ResolvedCaseBlock(pattern: pattern, statements: statements)
 
 proc newResolvedMatchExpression*(subject: ResolvedExpression,
-    cases: seq[ResolvedCaseBlock]): ResolvedMatchExpression =
-  ResolvedMatchExpression(subject: subject, cases: cases)
+    cases: seq[ResolvedCaseBlock], loc: Location): ResolvedMatchExpression =
+  ResolvedMatchExpression(subject: subject, cases: cases, loc: loc)
 
 proc newResolvedExpression*(fncall: ResolvedFunctionCall): ResolvedExpression =
   ResolvedExpression(kind: rekFunctionCall, fncall: fncall)
@@ -184,6 +211,18 @@ proc newResolvedExpression*(
     match: ResolvedMatchExpression): ResolvedExpression =
   ResolvedExpression(kind: rekMatchExpr, match: match)
 
+proc kind*(expression: ResolvedExpression): ResolvedExpressionKind = expression.kind
+proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall = expression.fncall
+
+proc loc*(expression: ResolvedExpression): Location =
+  case expression.kind:
+  of rekFunctionCall: expression.fncall.loc
+  of rekGetter: expression.getter.loc
+  of rekInitializer: expression.initializer.loc
+  of rekMatchExpr: expression.match.loc
+  of rekVariable: expression.variable.loc
+  of rekLiteral: expression.literal.loc
+
 proc newResolvedStatement*(assignment: ResolvedAssignment): ResolvedStatement =
   ResolvedStatement(kind: rskAssignment, assignment: assignment)
 
@@ -192,6 +231,15 @@ proc newResolvedStatement*(expression: ResolvedExpression): ResolvedStatement =
 
 proc newResolvedStatement*(mutation: ResolvedMutation): ResolvedStatement =
   ResolvedStatement(kind: rskMutation, mutation: mutation)
+
+proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
+proc expression*(statement: ResolvedStatement): ResolvedExpression = statement.expression
+
+proc loc*(statement: ResolvedStatement): Location =
+  case statement.kind:
+  of rskAssignment: statement.assignment.loc
+  of rskExpr: statement.expression.loc
+  of rskMutation: statement.mutation.loc
 
 # Accessor used by callers to thread bindings into scope.
 proc variable*(statement: ResolvedStatement): Option[Identifier] =
@@ -214,7 +262,7 @@ proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let resolvedFunctionRef = ? resolveFunctionRef(app, file, fileScope, module,
-    scope, fncall.argType, fncall.name, fncall.args.len)
+    scope, fncall.argType, fncall.name, fncall.args.len, fncall.loc)
   var resolvedArgs: seq[ResolvedExpression]
   for arg in fncall.args:
     let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope,
@@ -354,7 +402,7 @@ proc resolveMatchExpression(app: App, file: parser.File, fileScope: FileScope,
     let resolvedCaseBlock = ? resolveCaseBlock(app, file, fileScope, module,
       scope, caseBlock)
     resolvedCaseBlocks.add(resolvedCaseBlock)
-  ok(newResolvedMatchExpression(resolvedSubject, resolvedCaseBlocks))
+  ok(newResolvedMatchExpression(resolvedSubject, resolvedCaseBlocks, match.loc))
 
 proc resolveExpression*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,

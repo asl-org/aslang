@@ -18,11 +18,9 @@ proc newResolvedUserFunction*(funcDef: ResolvedFunctionDefinition,
     statements: seq[ResolvedStatement]): ResolvedUserFunction =
   ResolvedUserFunction(funcDef: funcDef, statements: statements)
 
-proc def(function: ResolvedUserFunction): ResolvedFunctionDefinition =
-  function.funcDef
-
-proc loc(function: ResolvedUserFunction): Location =
-  function.funcDef.loc
+proc def*(function: ResolvedUserFunction): ResolvedFunctionDefinition = function.funcDef
+proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
+proc loc*(function: ResolvedUserFunction): Location = function.funcDef.loc
 
 proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
     module: Module,

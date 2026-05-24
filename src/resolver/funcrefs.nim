@@ -9,6 +9,7 @@
 
 import results, sets, strformat, tables
 
+import tokenizer
 import parser
 import argtypes
 
@@ -20,29 +21,34 @@ type FunctionScope* = HashSet[Identifier]
 type ResolvedGenericTypeRef* = ref object
   generic: Generic
   funcDefs: seq[FunctionDefinition]
+  loc: Location
 
 proc newResolvedGenericTypeRef*(generic: Generic,
-    funcDefs: seq[FunctionDefinition]): ResolvedGenericTypeRef =
-  ResolvedGenericTypeRef(generic: generic, funcDefs: funcDefs)
+    funcDefs: seq[FunctionDefinition], loc: Location): ResolvedGenericTypeRef =
+  ResolvedGenericTypeRef(generic: generic, funcDefs: funcDefs, loc: loc)
+
+proc loc*(generic: ResolvedGenericTypeRef): Location = generic.loc
 
 proc resolveGenericTypeRef(generic: Generic, name: Identifier,
-    arity: int): Result[ResolvedGenericTypeRef, string] =
+    arity: int, loc: Location): Result[ResolvedGenericTypeRef, string] =
   let funcDefs = ? generic.findFunctionDefs(name, arity)
-  ok(newResolvedGenericTypeRef(generic, funcDefs))
+  ok(newResolvedGenericTypeRef(generic, funcDefs, loc))
 
 # ResolvedModuleTypeRef
 type ResolvedModuleTypeRef* = ref object
   module: Module
   functions: seq[Function]
+  loc: Location
 
-proc newResolvedModuleTypeRef*(module: Module,
-    functions: seq[Function]): ResolvedModuleTypeRef =
-  ResolvedModuleTypeRef(module: module, functions: functions)
+proc newResolvedModuleTypeRef*(module: Module, functions: seq[Function], loc: Location): ResolvedModuleTypeRef =
+  ResolvedModuleTypeRef(module: module, functions: functions, loc: loc)
+
+proc loc*(module: ResolvedModuleTypeRef): Location = module.loc
 
 proc resolveModuleTypeRef(typeModule: Module, name: Identifier,
-    arity: int): Result[ResolvedModuleTypeRef, string] =
+    arity: int, loc: Location): Result[ResolvedModuleTypeRef, string] =
   let functions = ? typeModule.findFunctions(name, arity)
-  ok(newResolvedModuleTypeRef(typeModule, functions))
+  ok(newResolvedModuleTypeRef(typeModule, functions, loc))
 
 # ResolvedTypeRef
 type
@@ -61,16 +67,21 @@ proc newResolvedTypeRef*(
     module: ResolvedModuleTypeRef): ResolvedTypeRef =
   ResolvedTypeRef(kind: rdtrkModule, module: module)
 
+proc loc*(typeRef: ResolvedTypeRef): Location =
+  case typeRef.kind:
+  of rdtrkModule: typeRef.module.loc
+  of rdtrkGeneric: typeRef.generic.loc
+
 proc resolveTypeRef(definedType: DefinedType, name: Identifier,
-    arity: int): Result[ResolvedTypeRef, string] =
+    arity: int, loc: Location): Result[ResolvedTypeRef, string] =
   case definedType.kind:
   of dtkModule:
     let resolvedModuleTypeRef = ? resolveModuleTypeRef(definedType.module, name,
-      arity)
+      arity, loc)
     ok(newResolvedTypeRef(resolvedModuleTypeRef))
   of dtkGeneric:
     let resolvedGenericTypeRef = ? resolveGenericTypeRef(definedType.generic,
-      name, arity)
+      name, arity, loc)
     ok(newResolvedTypeRef(resolvedGenericTypeRef))
 
 # ResolvedFunctionRef — currently only the rfrkDefined arm; an
@@ -86,9 +97,13 @@ proc newResolvedFunctionRef*(
     definedRef: ResolvedTypeRef): ResolvedFunctionRef =
   ResolvedFunctionRef(kind: rfrkDefined, definedRef: definedRef)
 
+proc loc*(funcRef: ResolvedFunctionRef): Location =
+  case funcRef.kind:
+  of rfrkDefined: funcRef.definedRef.loc
+
 proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope, argType: ArgumentType,
-    name: Identifier, arity: int): Result[ResolvedFunctionRef, string] =
+    name: Identifier, arity: int, loc: Location): Result[ResolvedFunctionRef, string] =
   discard ? resolveArgumentType(app, file, fileScope, module, argType)
 
   let rootModule = ? file.findType(argType.root)
@@ -100,9 +115,9 @@ proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
     else:
       let impDefinedType = fileScope[impType.binding]
       let resolvedDefinedRef = ? resolveTypeRef(impDefinedType, name,
-        arity)
+        arity, loc)
       ok(newResolvedFunctionRef(resolvedDefinedRef))
   of tkDefined:
     let resolvedDefinedRef = ? resolveTypeRef(rootModule.definedType,
-      name, arity)
+      name, arity, loc)
     ok(newResolvedFunctionRef(resolvedDefinedRef))

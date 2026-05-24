@@ -1,4 +1,4 @@
-import results, strformat, options, sequtils
+import results, strformat, options, sequtils, tables
 
 import parser, resolver
 
@@ -150,6 +150,42 @@ proc analyzeExternFunction*(app: ResolvedApp, file: ResolvedFile, module: Resolv
   let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, module, function.def)
   ok(newAnalyzedExternFunction(analyzedFuncDef, function.ffi))
 
+proc analyzeFunctionRef(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, funcRef: ResolvedFunctionRef): Result[void, string] =
+  err(fmt"{funcRef.loc} todo: analyze function ref")
+
+proc analyzeExpression(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, scope: Table[Identifier, AnalyzedArgumentDefinition], expression: ResolvedExpression): Result[void, string]
+
+proc analyzeFunctionCall(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, scope: Table[Identifier, AnalyzedArgumentDefinition], fncall: ResolvedFunctionCall): Result[void, string] =
+  ? analyzeFunctionRef(app, file, module, fncall.funcRef)
+  for arg in fncall.args:
+    ? analyzeExpression(app, file, module, scope, arg)
+  err(fmt"{fncall.loc} todo: analyze function call")
+
+proc analyzeExpression(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, scope: Table[Identifier, AnalyzedArgumentDefinition], expression: ResolvedExpression): Result[void, string] =
+  case expression.kind:
+  of rekGetter: err(fmt"{expression.loc} todo: analyze getter")
+  of rekInitializer: err(fmt"{expression.loc} todo: analyze initializer")
+  of rekVariable: err(fmt"{expression.loc} todo: analyze variable")
+  of rekLiteral: err(fmt"{expression.loc} todo: analyze literal")
+  of rekMatchExpr: err(fmt"{expression.loc} todo: analyze match block")
+  of rekFunctionCall: analyzeFunctionCall(app, file, module, scope, expression.fncall)
+
+proc analyzeStatement(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, scope: Table[Identifier, AnalyzedArgumentDefinition], statement: ResolvedStatement): Result[void, string] =
+  case statement.kind:
+  of rskAssignment: err(fmt"{statement.loc} todo: analyze assignment")
+  of rskMutation: err(fmt"{statement.loc} todo: analyze mutation")
+  of rskExpr: analyzeExpression(app, file, module, scope, statement.expression)
+
+proc analyzeUserFunction(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, function: ResolvedUserFunction): Result[void, string] =
+  let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, module, function.def)
+  var scope: Table[Identifier, AnalyzedArgumentDefinition]
+  for arg in analyzedFuncDef.args:
+    assert(arg.name notin scope, "UNREACHABLE: function definition can not have same param name in different positions")
+    scope[arg.name] = arg
+  for statement in function.statements:
+    ? analyzeStatement(app, file, module, scope, statement)
+  ok()
+
 type
   AnalyzedFunctionKind = enum
     afkExtern, afkUser
@@ -167,7 +203,8 @@ proc analyzeFunction*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModu
     let analyzedExternFn = ? analyzeExternFunction(app, file, module, function.extern)
     ok(newAnalyzedFunction(analyzedExternFn))
   of rfkUser:
-    err(fmt"{function.loc} todo: analyze user function")
+    ? analyzeUserFunction(app, file, module, function.user)
+    err(fmt"REMOVE THIS LATER")
 
 type AnalyzedModule = ref object
   functions: seq[AnalyzedFunction]
