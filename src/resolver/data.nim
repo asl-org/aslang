@@ -14,8 +14,10 @@ type ResolvedStruct* = ref object
 proc newResolvedStruct*(fields: seq[ResolvedArgumentDefinition]): ResolvedStruct =
   ResolvedStruct(fields: fields)
 
-proc requires*(struct: ResolvedStruct): seq[Generic] =
-  var fields: seq[Generic]
+proc fields*(struct: ResolvedStruct): seq[ResolvedArgumentDefinition] = struct.fields
+
+proc requires*(struct: ResolvedStruct): seq[ResolvedGenericArgumentType] =
+  var fields: seq[ResolvedGenericArgumentType]
   for field in struct.fields:
     case field.argType.kind:
     of ratkImported: assert(false, "todo: support imported types for requier list")
@@ -60,8 +62,8 @@ type ResolvedUnion* = ref object
 proc newResolvedUnion*(variants: seq[ResolvedVariant]): ResolvedUnion =
   ResolvedUnion(variants: variants)
 
-proc requires*(union: ResolvedUnion): seq[Generic] =
-  var fields: seq[Generic]
+proc requires*(union: ResolvedUnion): seq[ResolvedGenericArgumentType] =
+  var fields: seq[ResolvedGenericArgumentType]
   for variant in union.variants:
     for field in variant.fields:
       case field.argType.kind:
@@ -101,7 +103,9 @@ proc newResolvedData*(union: ResolvedUnion): ResolvedData =
 
 proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
 proc literal*(data: ResolvedData): ResolvedLiteralType = data.literal
-proc requires*(data: ResolvedData): seq[Generic] =
+proc struct*(data: ResolvedData): ResolvedStruct = data.struct
+proc union*(data: ResolvedData): ResolvedUnion = data.union
+proc requires*(data: ResolvedData): seq[ResolvedGenericArgumentType] =
   case data.kind:
   of rdkLiteral: @[]
   of rdkStruct: data.struct.requires

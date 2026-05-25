@@ -67,7 +67,7 @@ proc path*(file: ResolvedFile): string = file.path
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 proc aslTypes*(file: ResolvedFile): seq[ResolvedType] = file.aslTypes
 
-proc findType*(file: ResolvedFile, name: Identifier): Result[ResolvedType, string] =
+proc findType(file: ResolvedFile, name: Identifier): Result[ResolvedType, string] =
   if name notin file.aslTypeIndex:
     err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope")
   else:

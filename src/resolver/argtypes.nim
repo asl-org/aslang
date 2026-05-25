@@ -28,13 +28,17 @@ type
     impls: seq[ResolvedArgumentType]
     loc: Location
 
+  ResolvedGenericArgumentType* = ref object
+    generic: Generic
+    loc: Location
+
   ResolvedDefinedArgumentTypeKind* = enum
     rdatkModule, rdatkGeneric
 
   ResolvedDefinedArgumentType* = ref object
     case kind: ResolvedDefinedArgumentTypeKind
     of rdatkModule: module: ResolvedModuleArgumentType
-    of rdatkGeneric: generic: Generic
+    of rdatkGeneric: generic: ResolvedGenericArgumentType
 
   ResolvedArgumentTypeKind* = enum
     ratkImported, ratkDefined
@@ -43,6 +47,16 @@ type
     case kind: ResolvedArgumentTypeKind
     of ratkImported: discard
     of ratkDefined: definedType: ResolvedDefinedArgumentType
+
+proc newResolvedGenericArgumentType*(generic: Generic, loc: Location): ResolvedGenericArgumentType =
+  ResolvedGenericArgumentType(generic: generic, loc: loc)
+
+proc parsed*(argType: ResolvedGenericArgumentType): Generic = argType.generic
+proc name*(argType: ResolvedGenericArgumentType): Identifier = argType.generic.name
+proc loc*(argType: ResolvedGenericArgumentType): Location = argType.loc
+# TODO: hash conflicts may occur because `loc` only considers line and col in hash not file path.
+proc hash*(argType: ResolvedGenericArgumentType): Hash = argType.generic.hash
+proc `==`*(a, b: ResolvedGenericArgumentType): bool = a.hash == b.hash
 
 # Forward declarations — both context overloads need to be declared
 # up front because resolveModuleArgumentType recurses through them
@@ -219,12 +233,12 @@ proc newResolvedDefinedArgumentType*(
   ResolvedDefinedArgumentType(kind: rdatkModule, module: module)
 
 proc newResolvedDefinedArgumentType*(
-    generic: Generic): ResolvedDefinedArgumentType =
+    generic: ResolvedGenericArgumentType): ResolvedDefinedArgumentType =
   ResolvedDefinedArgumentType(kind: rdatkGeneric, generic: generic)
 
 proc kind*(argType: ResolvedDefinedArgumentType): ResolvedDefinedArgumentTypeKind = argType.kind
 proc module*(argType: ResolvedDefinedArgumentType): ResolvedModuleArgumentType = argType.module
-proc generic*(argType: ResolvedDefinedArgumentType): Generic = argType.generic
+proc generic*(argType: ResolvedDefinedArgumentType): ResolvedGenericArgumentType = argType.generic
 proc name*(argType: ResolvedDefinedArgumentType): Identifier =
   case argType.kind:
   of rdatkGeneric: argType.generic.name
@@ -243,7 +257,7 @@ proc concreteDefinedArgumentType(argType: ResolvedDefinedArgumentType, concrete:
   case argType.kind:
   of rdatkModule: return argType
   of rdatkGeneric:
-    if argType.generic != generic:
+    if argType.generic.parsed != generic:
       return argType
     else:
       case concrete.kind:
@@ -257,7 +271,7 @@ proc resolveDefinedArgumentType(app: App, file: parser.File,
   case definedType.kind:
   of dtkGeneric:
     if argType.impls.len == 0:
-      ok(newResolvedDefinedArgumentType(definedType.generic))
+      ok(newResolvedDefinedArgumentType(newResolvedGenericArgumentType(definedType.generic, argType.loc)))
     else:
       err(fmt"{definedType.loc} generic `{definedType.name.asl}` is not allowed to have impls")
   of dtkModule:
@@ -265,15 +279,19 @@ proc resolveDefinedArgumentType(app: App, file: parser.File,
       module, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
 
+proc resolveGenericArgumentType(app: App, file: parser.File, generic: Generic, argType: ArgumentType, genericArgType: Generic): Result[ResolvedGenericArgumentType, string] =
+  if genericArgType == generic:
+    ok(newResolvedGenericArgumentType(genericArgType, argType.loc))
+  else:
+    err(fmt"{argType.loc} type `{genericArgType.name.asl}` is a generic and can not be used within the generic block")
+
 proc resolveDefinedArgumentType(app: App, file: parser.File, generic: Generic,
     argType: ArgumentType,
     definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
   case definedType.kind:
   of dtkGeneric:
-    if definedType.generic == generic:
-      ok(newResolvedDefinedArgumentType(definedType.generic))
-    else:
-      err(fmt"{definedType.loc} type `{definedType.name.asl}` is a generic and can not be used within the generic block")
+    let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
+    ok(newResolvedDefinedArgumentType(resolvedGenericType))
   of dtkModule:
     let resolvedModuleType = ? resolveModuleArgumentType(app, file, generic,
       argType, definedType.module)

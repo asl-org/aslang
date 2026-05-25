@@ -12,13 +12,13 @@ import funcs
 # ResolvedModule
 type ResolvedModule* = ref object
   parsed: Module
-  requires: seq[Generic]
+  requires: seq[ResolvedGenericArgumentType]
   data: Option[ResolvedData]
   funcDefIndex: Table[ResolvedFunctionDefinition, int]
   functions: seq[ResolvedFunction]
   loc: Location
 
-proc newResolvedModule*(parsed: Module, requires: seq[Generic], data: Option[ResolvedData], functions: seq[ResolvedFunction], loc: Location): ResolvedModule =
+proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction], loc: Location): ResolvedModule =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
   for id, function in functions:
     assert(function.def notin funcDefIndex, "NOTE: should be unreachable")
@@ -26,13 +26,15 @@ proc newResolvedModule*(parsed: Module, requires: seq[Generic], data: Option[Res
   ResolvedModule(parsed: parsed, requires: requires, data: data, funcDefIndex: funcDefIndex, functions: functions, loc: loc)
 
 proc name*(module: ResolvedModule): Identifier = module.parsed.name
-proc requires*(module: ResolvedModule): seq[Generic] = module.requires
+proc requires*(module: ResolvedModule): seq[ResolvedGenericArgumentType] = module.requires
 proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
 proc functions*(module: ResolvedModule): seq[ResolvedFunction] = module.functions
 proc loc*(module: ResolvedModule): Location = module.loc
 proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
   var impls: seq[ResolvedArgumentType]
   for generic in module.requires:
+    # TODO: Fix this dummy location
+    let dummyLocation = newLocation()
     let definedType = newResolvedDefinedArgumentType(generic)
     let argType = newResolvedArgumentType(definedType)
     impls.add(argType)
@@ -49,7 +51,7 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
   if module.decorators.len > 0:
     return err("todo: resolve decorators")
 
-  var resolvedRequires: seq[Generic]
+  var resolvedRequires: seq[ResolvedGenericArgumentType]
   if module.requires.isSome:
     for generic in module.requires.get.generics:
       let dataType = ? file.findType(generic)
@@ -62,7 +64,7 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
         of dtkModule:
           return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
         of dtkGeneric:
-          resolvedRequires.add(definedType.generic)
+          resolvedRequires.add(newResolvedGenericArgumentType(definedType.generic, generic.loc))
 
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:

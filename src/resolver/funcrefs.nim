@@ -43,7 +43,9 @@ type ResolvedModuleTypeRef* = ref object
 proc newResolvedModuleTypeRef*(module: Module, functions: seq[Function], loc: Location): ResolvedModuleTypeRef =
   ResolvedModuleTypeRef(module: module, functions: functions, loc: loc)
 
-proc loc*(module: ResolvedModuleTypeRef): Location = module.loc
+proc loc*(moduleTypeRef: ResolvedModuleTypeRef): Location = moduleTypeRef.loc
+proc module*(moduleTypeRef: ResolvedModuleTypeRef): Module = moduleTypeRef.module
+proc functions*(moduleTypeRef: ResolvedModuleTypeRef): seq[Function] = moduleTypeRef.functions
 
 proc resolveModuleTypeRef(typeModule: Module, name: Identifier,
     arity: int, loc: Location): Result[ResolvedModuleTypeRef, string] =
@@ -51,6 +53,7 @@ proc resolveModuleTypeRef(typeModule: Module, name: Identifier,
   ok(newResolvedModuleTypeRef(typeModule, functions, loc))
 
 # ResolvedTypeRef
+# TODO: Rename `ResolvedTypeRef` to `ResolvedDefinedTypeRef`
 type
   ResolvedTypeRefKind* = enum
     rdtrkGeneric, rdtrkModule
@@ -67,6 +70,9 @@ proc newResolvedTypeRef*(
     module: ResolvedModuleTypeRef): ResolvedTypeRef =
   ResolvedTypeRef(kind: rdtrkModule, module: module)
 
+proc kind*(definedTypeRef: ResolvedTypeRef): ResolvedTypeRefKind = definedTypeRef.kind
+proc module*(definedTypeRef: ResolvedTypeRef): ResolvedModuleTypeRef = definedTypeRef.module
+proc generic*(definedTypeRef: ResolvedTypeRef): ResolvedGenericTypeRef = definedTypeRef.generic
 proc loc*(typeRef: ResolvedTypeRef): Location =
   case typeRef.kind:
   of rdtrkModule: typeRef.module.loc
@@ -90,13 +96,18 @@ type
   ResolvedFunctionRefKind* = enum
     rfrkDefined
   ResolvedFunctionRef* = ref object
+    argType: ResolvedArgumentType
     case kind: ResolvedFunctionRefKind
     of rfrkDefined: definedRef: ResolvedTypeRef
 
 proc newResolvedFunctionRef*(
+    argType: ResolvedArgumentType,
     definedRef: ResolvedTypeRef): ResolvedFunctionRef =
-  ResolvedFunctionRef(kind: rfrkDefined, definedRef: definedRef)
+  ResolvedFunctionRef(argType: argType, kind: rfrkDefined, definedRef: definedRef)
 
+proc kind*(funcRef: ResolvedFunctionRef): ResolvedFunctionRefKind = funcRef.kind
+proc argType*(funcRef: ResolvedFunctionRef): ResolvedArgumentType = funcRef.argType
+proc definedType*(funcRef: ResolvedFunctionRef): ResolvedTypeRef = funcRef.definedRef
 proc loc*(funcRef: ResolvedFunctionRef): Location =
   case funcRef.kind:
   of rfrkDefined: funcRef.definedRef.loc
@@ -104,7 +115,7 @@ proc loc*(funcRef: ResolvedFunctionRef): Location =
 proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope, argType: ArgumentType,
     name: Identifier, arity: int, loc: Location): Result[ResolvedFunctionRef, string] =
-  discard ? resolveArgumentType(app, file, fileScope, module, argType)
+  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, argType)
 
   let rootModule = ? file.findType(argType.root)
   case rootModule.kind:
@@ -116,8 +127,8 @@ proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
       let impDefinedType = fileScope[impType.binding]
       let resolvedDefinedRef = ? resolveTypeRef(impDefinedType, name,
         arity, loc)
-      ok(newResolvedFunctionRef(resolvedDefinedRef))
+      ok(newResolvedFunctionRef(resolvedArgType, resolvedDefinedRef))
   of tkDefined:
     let resolvedDefinedRef = ? resolveTypeRef(rootModule.definedType,
       name, arity, loc)
-    ok(newResolvedFunctionRef(resolvedDefinedRef))
+    ok(newResolvedFunctionRef(resolvedArgType, resolvedDefinedRef))
