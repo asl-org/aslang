@@ -419,12 +419,12 @@ proc newAnalyzedDefinedType(module: AnalyzedModule): AnalyzedDefinedType =
 proc newAnalyzedDefinedType(generic: AnalyzedGeneric): AnalyzedDefinedType =
   AnalyzedDefinedType(kind: adtkGeneric, generic: generic)
 
-proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, definedType: ResolvedType): Result[AnalyzedDefinedType, string] =
+proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, definedType: ResolvedDefinedType): Result[AnalyzedDefinedType, string] =
   case definedType.kind:
-  of rtkGeneric:
+  of rdtkGeneric:
     let analyzedGeneric = ? analyzeGeneric(app, file, definedType.generic)
     ok(newAnalyzedDefinedType(analyzedGeneric))
-  of rtkModule:
+  of rdtkModule:
     let analyzedModule = ? analyzeModule(app, file, definedType.module)
     ok(newAnalyzedDefinedType(analyzedModule))
 
