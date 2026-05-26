@@ -2,6 +2,7 @@
 
 import results
 
+import tokenizer
 import parser
 import literals
 import argtypes
@@ -38,12 +39,28 @@ proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope,
 
 # ResolvedVariant
 type ResolvedVariant* = ref object
-  name: Identifier
+  parsed: VariantDefinition
   fields: seq[ResolvedArgumentDefinition]
 
-proc newResolvedVariant*(name: Identifier,
+proc newResolvedVariant*(parsed: VariantDefinition,
     fields: seq[ResolvedArgumentDefinition]): ResolvedVariant =
-  ResolvedVariant(name: name, fields: fields)
+  ResolvedVariant(parsed: parsed, fields: fields)
+
+proc loc*(variant: ResolvedVariant): Location = variant.parsed.loc
+proc parsed*(variant: ResolvedVariant): VariantDefinition = variant.parsed
+proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDefinition] = variant.fields
+
+proc requires*(variant: ResolvedVariant): seq[ResolvedGenericArgumentType] =
+  var fields: seq[ResolvedGenericArgumentType]
+  for field in variant.fields:
+    case field.argType.kind:
+    of ratkImported:
+      assert(false, "todo: support imported types for requier list")
+    of ratkDefined:
+      case field.argType.definedType.kind:
+      of rdatkModule: discard
+      of rdatkGeneric: fields.add(field.argType.definedType.generic)
+  return fields
 
 proc resolveVariant(app: App, file: parser.File, fileScope: FileScope,
     module: Module,
@@ -53,25 +70,22 @@ proc resolveVariant(app: App, file: parser.File, fileScope: FileScope,
     let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module,
       field)
     resolvedFields.add(resolvedField)
-  ok(newResolvedVariant(variant.name, resolvedFields))
+  ok(newResolvedVariant(variant, resolvedFields))
 
 # ResolvedUnion
 type ResolvedUnion* = ref object
+  parsed: Union
   variants: seq[ResolvedVariant]
 
-proc newResolvedUnion*(variants: seq[ResolvedVariant]): ResolvedUnion =
-  ResolvedUnion(variants: variants)
+proc newResolvedUnion*(parsed: Union, variants: seq[ResolvedVariant]): ResolvedUnion =
+  ResolvedUnion(parsed: parsed, variants: variants)
 
+proc loc*(union: ResolvedUnion): Location = union.parsed.loc
+proc variants*(union: ResolvedUnion): seq[ResolvedVariant] = union.variants
 proc requires*(union: ResolvedUnion): seq[ResolvedGenericArgumentType] =
   var fields: seq[ResolvedGenericArgumentType]
   for variant in union.variants:
-    for field in variant.fields:
-      case field.argType.kind:
-      of ratkImported: assert(false, "todo: support imported types for requier list")
-      of ratkDefined:
-        case field.argType.definedType.kind:
-        of rdatkModule: discard
-        of rdatkGeneric: fields.add(field.argType.definedType.generic)
+    fields.add(variant.requires)
   return fields
 
 proc resolveUnion*(app: App, file: parser.File, fileScope: FileScope,
@@ -80,7 +94,7 @@ proc resolveUnion*(app: App, file: parser.File, fileScope: FileScope,
   for variant in union.variants:
     let resolvedVariant = ? resolveVariant(app, file, fileScope, module, variant)
     resolvedVariants.add(resolvedVariant)
-  ok(newResolvedUnion(resolvedVariants))
+  ok(newResolvedUnion(union, resolvedVariants))
 
 # ResolvedData
 type

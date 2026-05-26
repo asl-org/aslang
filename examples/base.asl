@@ -549,6 +549,9 @@ module Pointer:
   @extern("pointer_write")
   public func write(ptr: Pointer, offset: u64, item: Pointer): Pointer
 
+  @extern("pointer_valid")
+  public func valid(ptr: Pointer): u8
+
 public module String:
   literal: "string"
 
@@ -591,6 +594,18 @@ public module Array:
     size: u32
     ptr: Pointer
 
+  @extern("pointer_read")
+  public func read(ptr: Pointer, offset: u64): Array[Any]
+
+  @extern("pointer_byte_size")
+  public func byte_size(items: u32): u64
+
+  @extern("pointer_write")
+  public func write(ptr: Pointer, offset: u64, item: Array[Any]): Pointer
+
+  @extern("pointer_valid")
+  public func valid(item: Array[Any]): u8
+
   public func init(size: u32): Array[Any]
     bytes = Any.byte_size(size)
     ptr = System.allocate(bytes)
@@ -624,6 +639,18 @@ public module Array:
 public module Bitset:
   struct:
     bits: Array[u8]
+
+  @extern("pointer_read")
+  public func read(ptr: Pointer, offset: u64): Bitset
+
+  @extern("pointer_byte_size")
+  public func byte_size(items: u32): u64
+
+  @extern("pointer_write")
+  public func write(ptr: Pointer, offset: u64, item: Bitset): Pointer
+
+  @extern("pointer_valid")
+  public func valid(item: Bitset): u8
 
   public func init(size: u32): Bitset
     size = u32.quotient(u32.add(size, 7), 8)

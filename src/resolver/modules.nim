@@ -88,9 +88,14 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
 type ResolvedGeneric* = ref object
   parsed: Generic
   funcDefs: seq[ResolvedFunctionDefinition]
+  funcDefIndex: Table[ResolvedFunctionDefinition, int]
 
 proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDefinition]): ResolvedGeneric =
-  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs)
+  var funcDefIndex: Table[ResolvedFunctionDefinition, int]
+  for id, funcDef in funcDefs:
+    assert(funcDef notin funcDefIndex, "UNREACHABLE: generic resolution broke due to duplicated function definition")
+    funcDefIndex[funcDef] = id
+  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex)
 
 proc self*(generic: ResolvedGeneric): Generic = generic.parsed
 proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
@@ -102,6 +107,12 @@ proc concreteImpls*(generic: ResolvedGeneric, concrete: ResolvedArgumentType): s
   for def in generic.funcDefs:
     concreteFuncDefs.add(def.concreteFunctionDefinition(concrete, generic.parsed))
   return concreteFuncDefs
+
+proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDefinition): Option[ResolvedFunctionDefinition] =
+  if funcDef notin generic.funcDefIndex:
+    none(ResolvedFunctionDefinition)
+  else:
+    some(generic.funcDefs[generic.funcDefIndex[funcDef]])
 
 proc resolveGeneric*(app: App, file: parser.File,
     generic: Generic): Result[ResolvedGeneric, string] =

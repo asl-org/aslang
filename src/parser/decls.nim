@@ -1,4 +1,4 @@
-import strformat, strutils, tables, results
+import strformat, strutils, tables, results, hashes
 
 import tokenizer
 import combinators
@@ -151,6 +151,8 @@ proc path*(file: File): string = file.path
 proc imports*(file: File): seq[Import] = file.imports
 proc definedTypes*(file: File): seq[DefinedType] = file.definedTypes
 proc types*(file: File): seq[Type] = file.types
+proc hash*(file: File): Hash = file.path.hash
+proc `==`*(a, b: File): bool = a.hash == b.hash
 
 proc asl*(file: File, indentWidth: uint32): string =
   var lines: seq[string]

@@ -1,6 +1,6 @@
 ## DefinedType / File / App + the public resolve* entry point.
 
-import results, strformat, tables
+import results, strformat, tables, options
 
 import tokenizer
 import parser
@@ -50,28 +50,26 @@ proc resolveType(app: App, file: parser.File, fileScope: FileScope, id: int, asl
 # ResolvedFile
 type ResolvedFile* = ref object
   id: int
-  path: string
+  parsed: parser.File
   imports: seq[ResolvedImport]
-  aslTypes: seq[ResolvedType]
-  aslTypeIndex: Table[Identifier, ResolvedType]
+  definedTypes: seq[ResolvedType]
+  definedTypeIndex: Table[Identifier, int]
 
-proc newResolvedFile*(id: int, path: string, imports: seq[ResolvedImport],
-    aslTypes: seq[ResolvedType]): ResolvedFile =
-  var aslTypeIndex: Table[Identifier, ResolvedType]
-  for aslType in aslTypes:
-    aslTypeIndex[aslType.name] = aslType
+proc newResolvedFile*(id: int, parsed: parser.File, imports: seq[ResolvedImport], definedTypes: seq[ResolvedType]): ResolvedFile =
+  var definedTypeIndex: Table[Identifier, int]
+  for id, definedType in definedTypes:
+    definedTypeIndex[definedType.name] = id
+  ResolvedFile(id: id, parsed: parsed, imports: imports, definedTypes: definedTypes, definedTypeIndex: definedTypeIndex)
 
-  ResolvedFile(id: id, path: path, imports: imports, aslTypes: aslTypes, aslTypeIndex: aslTypeIndex)
-
-proc path*(file: ResolvedFile): string = file.path
+proc path*(file: ResolvedFile): string = file.parsed.path
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
-proc aslTypes*(file: ResolvedFile): seq[ResolvedType] = file.aslTypes
+proc definedTypes*(file: ResolvedFile): seq[ResolvedType] = file.definedTypes
 
 proc findType(file: ResolvedFile, name: Identifier): Result[ResolvedType, string] =
-  if name notin file.aslTypeIndex:
+  if name notin file.definedTypeIndex:
     err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope")
   else:
-    ok(file.aslTypeIndex[name])
+    ok(file.definedTypes[file.definedTypeIndex[name]])
 
 proc findModule*(file: ResolvedFile, name: Identifier): Result[ResolvedModule, string] =
   let resolvedType = ? file.findType(name)
@@ -92,23 +90,30 @@ proc resolveFile(app: App, id: int, file: parser.File): Result[ResolvedFile, str
     let resolvedImport = ? resolveImport(app, file, imp)
     resolvedImports.add(resolvedImport)
     for impType in resolvedImport.importedTypes:
-      fileScope[impType.binding] = impType.aslType
+      fileScope[impType.binding] = impType.definedType
 
   var resolvedAslTypes: seq[ResolvedType]
   for id, aslType in file.definedTypes:
     let resolvedAslType = ? resolveType(app, file, fileScope, id, aslType)
     resolvedAslTypes.add(resolvedAslType)
 
-  ok(newResolvedFile(id, file.path, resolvedImports, resolvedAslTypes))
+  ok(newResolvedFile(id, file, resolvedImports, resolvedAslTypes))
 
 # ResolvedApp + entry
 type ResolvedApp* = ref object
   files: seq[ResolvedFile]
+  fileIndex: Table[parser.File, int]
 
 proc newResolvedApp*(files: seq[ResolvedFile]): ResolvedApp =
-  ResolvedApp(files: files)
+  var fileIndex: Table[parser.File, int]
+  for id, file in files:
+    fileIndex[file.parsed] = id
+  ResolvedApp(files: files, fileIndex: fileIndex)
 
 proc files*(app: ResolvedApp): seq[ResolvedFile] = app.files
+proc findFile*(app: ResolvedApp, file: parser.File): Option[ResolvedFile] =
+  if file notin app.fileIndex: none(ResolvedFile)
+  else: some(app.files[app.fileIndex[file]])
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   var resolvedFiles: seq[ResolvedFile]

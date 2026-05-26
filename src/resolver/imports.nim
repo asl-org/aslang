@@ -6,6 +6,7 @@
 
 import results
 
+import tokenizer
 import parser
 
 # ResolvedImportedType
@@ -13,13 +14,13 @@ type ResolvedImportedType* = ref object
   module: int
   name: Identifier
   binding: Identifier
-  aslType: DefinedType
+  definedType: DefinedType
 
-proc newResolvedImportedType*(module: int, name, binding: Identifier, aslType: DefinedType): ResolvedImportedType =
-  ResolvedImportedType(module: module, name: name, binding: binding, aslType: aslType)
+proc newResolvedImportedType*(module: int, name, binding: Identifier, definedType: DefinedType): ResolvedImportedType =
+  ResolvedImportedType(module: module, name: name, binding: binding, definedType: definedType)
 
 proc binding*(t: ResolvedImportedType): Identifier = t.binding
-proc aslType*(t: ResolvedImportedType): DefinedType = t.aslType
+proc definedType*(t: ResolvedImportedType): DefinedType = t.definedType
 
 proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
     ResolvedImportedType, string] =
@@ -30,15 +31,16 @@ proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
 # ResolvedImport
 type ResolvedImport* = ref object
   file: int
-  source: parser.File
+  parsed: parser.File
   importedTypes: seq[ResolvedImportedType]
+  loc: Location
 
-proc newResolvedImport*(file: int, source: parser.File,
-    importedTypes: seq[ResolvedImportedType]): ResolvedImport =
-  ResolvedImport(file: file, source: source, importedTypes: importedTypes)
+proc newResolvedImport*(file: int, parsed: parser.File, importedTypes: seq[ResolvedImportedType], loc: Location): ResolvedImport =
+  ResolvedImport(file: file, parsed: parsed, importedTypes: importedTypes, loc: loc)
 
-proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] =
-  i.importedTypes
+proc parsed*(i: ResolvedImport): parser.File = i.parsed
+proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] = i.importedTypes
+proc loc*(i: ResolvedImport): Location = i.loc
 
 proc resolveImport*(app: App, file: parser.File,
     imp: Import): Result[ResolvedImport, string] =
@@ -48,4 +50,4 @@ proc resolveImport*(app: App, file: parser.File,
   for impType in imp.names:
     let resolvedImportedType = ? resolveImportedType(impFile, impType)
     resolvedImportedTypes.add(resolvedImportedType)
-  ok(newResolvedImport(impFileId, impFile, resolvedImportedTypes))
+  ok(newResolvedImport(impFileId, impFile, resolvedImportedTypes, imp.loc))

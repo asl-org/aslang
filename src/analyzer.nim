@@ -2,11 +2,11 @@ import results, strformat, options, sequtils
 
 import tokenizer, parser, resolver
 
-proc analyzeImport*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[void, string] =
-  err(fmt"todo: analyze import")
+type AnalyzedLiteralBlock = ref object
+  literal: ResolvedLiteralType
 
-proc analyzeLiteralBlock*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, literal: ResolvedLiteralType): Result[void, string] =
-  ok()
+proc newAnalyzedLiteralBlock(literal: ResolvedLiteralType): AnalyzedLiteralBlock =
+  AnalyzedLiteralBlock(literal: literal)
 
 type AnalyzedGenericArgumentType = ref object
   resolved: ResolvedGeneric
@@ -100,7 +100,11 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, module: Re
         of aatkDefined:
           case analyzedImpl.definedType.kind:
           of adatkGeneric:
-            return err(fmt"{targetImpl.loc} todo: analyze defined generic impl type")
+            let maybeConcreteFuncDef = analyzedImpl.definedType.generic.resolved.findFunctionDef(funcDef)
+            if maybeConcreteFuncDef.isNone:
+              return err(fmt"{targetImpl.loc} type `{targetImpl.name.asl}` does not implement function `{funcDef.name.asl}` to support `{resolvedGeneric.name.asl}`")
+            else:
+              analyzedImpls.add(analyzedImpl)
           of adatkModule:
             let maybeConcreteFuncDef = analyzedImpl.definedType.module.module.findFunctionDef(funcDef)
             if maybeConcreteFuncDef.isNone:
@@ -129,7 +133,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: R
         of aatkDefined:
           case analyzedImpl.definedType.kind:
           of adatkGeneric:
-            return err(fmt"{targetImpl.loc} todo: analyze defined generic impl type")
+            return err(fmt"{targetImpl.loc} todo: analyze defined generic impl type 2")
           of adatkModule:
             let maybeConcreteFuncDef = analyzedImpl.definedType.module.module.findFunctionDef(funcDef)
             if maybeConcreteFuncDef.isNone:
@@ -141,7 +145,8 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: R
 proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
   case argType.kind:
   of rdatkGeneric:
-    err(fmt"todo: analyze defined generic arg type")
+    let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, argType.generic)
+    ok(newAnalyzedDefinedArgumentType(analyzedArgType))
   of rdatkModule:
     let analyzedArgType = ? analyzeModuleArgumentType(app, file, module, argType.module)
     ok(newAnalyzedDefinedArgumentType(analyzedArgType))
@@ -224,13 +229,62 @@ proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule
     analyzedFields.add(analyzedField)
   ok(newAnalyzedStruct(analyzedFields))
 
-proc analyzeData*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, data: ResolvedData): Result[void, string] =
+type AnalyzedVariant = ref object
+  resolved: ResolvedVariant
+  fields: seq[AnalyzedArgumentDefinition]
+
+proc newAnalyzedVariant(resolved: ResolvedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedVariant =
+  AnalyzedVariant(resolved: resolved, fields: fields)
+
+proc analyzeVariant(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
+  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  for field in variant.fields:
+    let analyzedField = ? analyzeArgumentDefinition(app, file, module, field)
+    analyzedFields.add(analyzedField)
+  ok(newAnalyzedVariant(variant, analyzedFields))
+
+type AnalyzedUnion = ref object
+  resolved: ResolvedUnion
+  variants: seq[AnalyzedVariant]
+
+proc newAnalyzedUnion(resolved: ResolvedUnion, variants: seq[AnalyzedVariant]): AnalyzedUnion =
+  AnalyzedUnion(resolved: resolved, variants: variants)
+
+proc analyzeUnion*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, union: ResolvedUnion): Result[AnalyzedUnion, string] =
+  var analyzedVariants: seq[AnalyzedVariant]
+  for variant in union.variants:
+    let analyzedVariant = ? analyzeVariant(app, file, module, variant)
+    analyzedVariants.add(analyzedVariant)
+  ok(newAnalyzedUnion(union, analyzedVariants))
+
+type
+  AnalyzedDataKind = enum
+    adkLiteral, adkStruct, adkUnion
+  AnalyzedData = ref object
+    case kind: AnalyzedDataKind
+    of adkLiteral: literal: AnalyzedLiteralBlock
+    of adkStruct: struct: AnalyzedStruct
+    of adkUnion: union: AnalyzedUnion
+
+proc newAnalyzedData(literal: AnalyzedLiteralBlock): AnalyzedData =
+  AnalyzedData(kind: adkLiteral, literal: literal)
+
+proc newAnalyzedData(struct: AnalyzedStruct): AnalyzedData =
+  AnalyzedData(kind: adkStruct, struct: struct)
+
+proc newAnalyzedData(union: AnalyzedUnion): AnalyzedData =
+  AnalyzedData(kind: adkUnion, union: union)
+
+proc analyzeData*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
-  of rdkLiteral: analyzeLiteralBlock(app, file, module, data.literal)
+  of rdkLiteral:
+    ok(newAnalyzedData(newAnalyzedLiteralBlock(data.literal)))
   of rdkStruct:
-    discard ? analyzeStruct(app, file, module, data.struct)
-    ok()
-  of rdkUnion: err(fmt"todo: analyze union block")
+    let analyzedStruct = ? analyzeStruct(app, file, module, data.struct)
+    ok(newAnalyzedData(analyzedStruct))
+  of rdkUnion:
+    let analyzedUnion = ? analyzeUnion(app, file, module, data.union)
+    ok(newAnalyzedData(analyzedUnion))
 
 
 # type AnalyzedExternFunction = ref object
@@ -313,10 +367,11 @@ proc analyzeData*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, 
 
 type AnalyzedModule = ref object
   requires: seq[AnalyzedGenericArgumentType]
+  data: Option[AnalyzedData]
   funcDefs: seq[AnalyzedFunctionDefinition]
 
-proc newAnalyzedModule(requires: seq[AnalyzedGenericArgumentType], funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModule =
-  AnalyzedModule(requires: requires, funcDefs: funcDefs)
+proc newAnalyzedModule(requires: seq[AnalyzedGenericArgumentType], data: Option[AnalyzedData], funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModule =
+  AnalyzedModule(requires: requires, data: data, funcDefs: funcDefs)
 
 proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule): Result[AnalyzedModule, string] =
   var requires: seq[AnalyzedGenericArgumentType]
@@ -324,15 +379,17 @@ proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule
     let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, genericArgType)
     requires.add(analyzedArgType)
 
+  var maybeAnalyzedData: Option[AnalyzedData]
   if module.data.isSome:
-    ? analyzeData(app, file, module, module.data.get)
+    let analyzedData = ? analyzeData(app, file, module, module.data.get)
+    maybeAnalyzedData = some(analyzedData)
 
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
   for function in module.functions:
     let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, module, function.def)
     analyzedFuncDefs.add(analyzedFuncDef)
 
-  ok(newAnalyzedModule(requires, analyzedFuncDefs))
+  ok(newAnalyzedModule(requires, maybeAnalyzedData, analyzedFuncDefs))
 
 type AnalyzedGeneric = ref object
   resolved: ResolvedGeneric
@@ -371,15 +428,35 @@ proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, definedType: Reso
     let analyzedModule = ? analyzeModule(app, file, definedType.module)
     ok(newAnalyzedDefinedType(analyzedModule))
 
-proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[void, string] =
+proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: ResolvedImportedType): Result[void, string] =
+  err(fmt"{impType.binding.loc} todo: analyze imported types")
+
+proc analyzeImport*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[void, string] =
+  let maybeImportedFile = app.findFile(imp.parsed)
+  if maybeImportedFile.isNone:
+    err(fmt"{imp.loc} file `{imp.parsed.path}` does not exist")
+  else:
+    let analyzedImpFile = maybeImportedFile.get
+    for impType in imp.importedTypes:
+      ? analyzeImportedType(app, analyzedImpFile, impType)
+      # analyzedImpFile.findExportedType()
+    err(fmt"{imp.loc} todo: analyze imported types")
+
+type AnalyzedFile = ref object
+  definedTypes: seq[AnalyzedDefinedType]
+
+proc newAnalyzedFile(definedTypes: seq[AnalyzedDefinedType]): AnalyzedFile =
+  AnalyzedFile(definedTypes: definedTypes)
+
+proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, string] =
   for imp in file.imports:
     ? analyzeImport(app, file, imp)
 
   var analyzedDefinedTypes: seq[AnalyzedDefinedType]
-  for aslType in file.aslTypes:
+  for aslType in file.definedTypes:
     let analyzedDefinedType = ? analyzeDefinedType(app, file, aslType)
     analyzedDefinedTypes.add(analyzedDefinedType)
-  err(fmt"todo: analyze file")
+  ok(newAnalyzedFile(analyzedDefinedTypes))
 
 proc analyze*(app: ResolvedApp): Result[void, string] =
   for file in app.files:
