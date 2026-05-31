@@ -19,6 +19,7 @@ type ResolvedImportedType* = ref object
 proc newResolvedImportedType*(module: int, name, binding: Identifier, definedType: DefinedType): ResolvedImportedType =
   ResolvedImportedType(module: module, name: name, binding: binding, definedType: definedType)
 
+proc loc*(t: ResolvedImportedType): Location = t.binding.loc
 proc binding*(t: ResolvedImportedType): Identifier = t.binding
 proc definedType*(t: ResolvedImportedType): DefinedType = t.definedType
 

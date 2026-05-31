@@ -1,3 +1,5 @@
+import { u8, u32, u64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+
 # Data blocks — one file with two modules, one backed by a struct
 # data block (User { name, age }) and the other by a union data
 # block (Plan with Free / Pro variants each carrying named fields).
@@ -21,6 +23,6 @@ module Plan:
     free = Plan.Free { usage: u32 100 }
     match plan:
       case Free { usage: usage }:
-        Str.from(usage)
+        String.from(usage)
       case Pro { credits: credits, days: days }:
-        Str.concat(Str.from(credits), Str.from(days))
+        String.concat(String.from(credits), String.from(days))

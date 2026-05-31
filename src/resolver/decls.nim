@@ -65,9 +65,9 @@ proc path*(file: ResolvedFile): string = file.parsed.path
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 proc definedTypes*(file: ResolvedFile): seq[ResolvedDefinedType] = file.definedTypes
 
-proc findDefinedType(file: ResolvedFile, name: Identifier): Result[ResolvedDefinedType, string] =
+proc findDefinedType*(file: ResolvedFile, name: Identifier): Result[ResolvedDefinedType, string] =
   if name notin file.definedTypeIndex:
-    err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope")
+    err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope. 5")
   else:
     ok(file.definedTypes[file.definedTypeIndex[name]])
 

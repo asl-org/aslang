@@ -283,7 +283,7 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
     of tkImported:
       let importedType = structType.imported
       if importedType.name notin fileScope:
-        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 3")
 
       fileScope[importedType.name]
   case definedType.kind:
@@ -325,7 +325,7 @@ proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     of tkImported:
       let importedType = unionType.imported
       if importedType.name notin fileScope:
-        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 4")
 
       fileScope[importedType.name]
 

@@ -15,8 +15,7 @@ import { Solver   as Solution9 } from "./problem009.asl"
 import { Solver   as Solution10 } from "./problem010.asl"
 
 
-module Sample:
-
+public module Sample:
   func start(): u8
     Solution1.start()
     Solution2.start()

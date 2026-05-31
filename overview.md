@@ -93,7 +93,7 @@ Orchestrated by `src/asl.nim`:
 ```nim
 let app = ? parse(filepath, indentWidth, dumpTokens)
 let resolvedApp = ? resolve(app)
-? analyze(resolvedApp)
+discard ? analyze(resolvedApp)
 ```
 
 There is no separate `Validator` phase. Every uniqueness / structural

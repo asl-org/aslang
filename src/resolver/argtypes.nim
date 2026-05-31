@@ -120,7 +120,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
         of tkImported:
           let importedType = fieldType.imported
           if importedType.name notin fileScope:
-            return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+            return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 1")
 
           let definedFieldType = fileScope[importedType.name]
           case definedFieldType.kind:
@@ -152,7 +152,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
           of tkImported:
             let importedType = fieldType.imported
             if importedType.name notin fileScope:
-              return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope.")
+              return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 2")
 
             let definedFieldType = fileScope[importedType.name]
             case definedFieldType.kind:

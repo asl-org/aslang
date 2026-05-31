@@ -1,3 +1,4 @@
+import { u8, u64, i64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
 # Match expression forms — exercises standalone match statement,
 # integer-literal case patterns (case 0, case 1), variable binding
 # patterns (case other, case n), and match-as-assignment
@@ -16,6 +17,6 @@ module App:
   func label(x: i64): String
     y = match x:
       case 0:
-        Str.from("zero")
+        String.from("zero")
       case n:
-        Str.from(n)
+        String.from(n)

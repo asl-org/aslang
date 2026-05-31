@@ -562,6 +562,12 @@ public module String:
   @extern("string_get")
   public func get(str: String, index: u32): Status[u8]
 
+  @extern("string_from_u32")
+  public func from(value: u32): String
+
+  @extern("string_concat")
+  public func concat(first: String, second: String): String
+
 public generic Any:
   func byte_size(items: u32): u64
   func read(ptr: Pointer, offset: u64): Any
@@ -584,6 +590,9 @@ public module System:
 
   @extern("System_print")
   public func print(str: String): u64
+
+  @extern("System_println")
+  public func println(str: String): u64
 
 public module Array:
   # if requires is present then it will take precedence
