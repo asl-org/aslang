@@ -2,25 +2,28 @@
 
 import options, results
 
+import parser
 import resolver
 import argtypes
 import funcdefs
 import data
 
-# AnalyzedModule
-type AnalyzedModule* = ref object
+# AnalyzedModuleDefinition
+type AnalyzedModuleDefinition* = ref object
+  resolved: ResolvedModule
   requires: seq[AnalyzedGenericArgumentType]
   data: Option[AnalyzedData]
   funcDefs: seq[AnalyzedFunctionDefinition]
 
-proc newAnalyzedModule*(requires: seq[AnalyzedGenericArgumentType], data: Option[AnalyzedData], funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModule =
-  AnalyzedModule(requires: requires, data: data, funcDefs: funcDefs)
+proc newAnalyzedModuleDefinition*(resolved: ResolvedModule, requires: seq[AnalyzedGenericArgumentType], data: Option[AnalyzedData], funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModuleDefinition =
+  AnalyzedModuleDefinition(resolved: resolved, requires: requires, data: data, funcDefs: funcDefs)
 
-proc requires*(m: AnalyzedModule): seq[AnalyzedGenericArgumentType] = m.requires
-proc data*(m: AnalyzedModule): Option[AnalyzedData] = m.data
-proc funcDefs*(m: AnalyzedModule): seq[AnalyzedFunctionDefinition] = m.funcDefs
+proc requires*(m: AnalyzedModuleDefinition): seq[AnalyzedGenericArgumentType] = m.requires
+proc data*(m: AnalyzedModuleDefinition): Option[AnalyzedData] = m.data
+proc funcDefs*(m: AnalyzedModuleDefinition): seq[AnalyzedFunctionDefinition] = m.funcDefs
+proc name*(m: AnalyzedModuleDefinition): Identifier = m.resolved.name
 
-proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule): Result[AnalyzedModule, string] =
+proc analyzeModuleDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
   var requires: seq[AnalyzedGenericArgumentType]
   for genericArgType in module.requires:
     let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, genericArgType)
@@ -36,7 +39,7 @@ proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFil
     let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, fileScope, module, function.def)
     analyzedFuncDefs.add(analyzedFuncDef)
 
-  ok(newAnalyzedModule(requires, maybeAnalyzedData, analyzedFuncDefs))
+  ok(newAnalyzedModuleDefinition(module, requires, maybeAnalyzedData, analyzedFuncDefs))
 
 # AnalyzedGeneric
 type AnalyzedGeneric* = ref object
@@ -46,6 +49,7 @@ type AnalyzedGeneric* = ref object
 proc newAnalyzedGeneric*(resolved: ResolvedGeneric, funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedGeneric =
   AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs)
 
+proc name*(g: AnalyzedGeneric): Identifier = g.resolved.name
 proc resolved*(g: AnalyzedGeneric): ResolvedGeneric = g.resolved
 proc funcDefs*(g: AnalyzedGeneric): seq[AnalyzedFunctionDefinition] = g.funcDefs
 
