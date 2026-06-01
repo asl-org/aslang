@@ -218,9 +218,6 @@ src/
   asl.nim                          entry point
   cli.nim                          CLI parsing via argparse
   utils.nim                        topological sort + cycle detection
-  analyzer.nim                     (WIP) generic constraint
-                                   instantiation + per-node walker
-                                   over ResolvedApp
   nim.cfg                          per-component module search paths
 
   tokenizer/
@@ -299,6 +296,30 @@ src/
     decls.nim                      ResolvedDefinedType / ResolvedFile /
                                    ResolvedApp + resolveDefinedType /
                                    resolveFile + the public `resolve*` entry
+
+  analyzer/
+    analyzer.nim                   re-exports every component file
+    literals.nim                   AnalyzedLiteralBlock
+    imports.nim                    AnalyzedImportedType / AnalyzedImport
+                                   + analyzeImportedType, analyzeImport
+    argtypes.nim                   AnalyzedFileScope + argument-type
+                                   cluster (Argument / Defined / Module /
+                                   Generic) + dual-context (module ctx /
+                                   generic ctx) analyze* overloads
+    funcdefs.nim                   AnalyzedArgumentDefinition /
+                                   AnalyzedFunctionDefinition + dual-
+                                   context analyze* overloads
+    data.nim                       AnalyzedStruct / AnalyzedVariant /
+                                   AnalyzedUnion / AnalyzedData + their
+                                   analyzeX procs
+    funcs.nim                      (WIP placeholder) scaffolding for the
+                                   user-function / statement / expression /
+                                   function-ref walk
+    modules.nim                    AnalyzedModule / AnalyzedGeneric +
+                                   analyzeModule / analyzeGeneric
+    decls.nim                      AnalyzedDefinedType / AnalyzedFile /
+                                   AnalyzedApp + analyzeDefinedType /
+                                   analyzeFile + the public `analyze*` entry
 
 examples/
   base.asl                         standard library definition (extern functions)
