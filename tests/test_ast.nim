@@ -5,7 +5,7 @@
 ## because the parser's `atLeastOne` backtracks past them, so the
 ## tests here exercise the constructors directly.
 
-import unittest, options, results
+import unittest, options, results, strutils
 
 import tokenizer
 import parser
@@ -288,4 +288,249 @@ public module Foo:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "duplicate")
+
+suite "ast — Struct field lookups":
+
+  test "findFieldId returns the index of an existing field":
+    let s = newStruct(@[argDef("a", "u8"), argDef("b", "u16")],
+      newLocation()).get
+    let r = s.findFieldId(id("b"))
+    check r.isOk
+    check r.get == 1
+
+  test "findFieldId reports missing field":
+    let s = newStruct(@[argDef("a", "u8")], newLocation()).get
+    let r = s.findFieldId(id("missing"))
+    check r.isErr
+    check errorContains(r.error, "missing")
+    check errorContains(r.error, "not present")
+
+suite "ast — VariantDefinition field lookups":
+
+  test "findFieldId returns the index of an existing variant field":
+    let v = newVariantDefinition(id("Ok"),
+      @[argDef("value", "u8"), argDef("flag", "u8")], newLocation()).get
+    let r = v.findFieldId(id("flag"))
+    check r.isOk
+    check r.get == 1
+
+  test "findFieldId on a variant reports missing field":
+    let v = newVariantDefinition(id("Ok"),
+      @[argDef("value", "u8")], newLocation()).get
+    let r = v.findFieldId(id("missing"))
+    check r.isErr
+    check errorContains(r.error, "Ok")
+
+suite "ast — Union variant lookups":
+
+  test "findVariant returns the matching variant":
+    let v1 = newVariantDefinition(id("Ok"),
+      @[argDef("value", "u8")], newLocation()).get
+    let v2 = newVariantDefinition(id("Err"),
+      @[argDef("code", "u8")], newLocation()).get
+    let u = newUnion(@[v1, v2], newLocation()).get
+    let r = u.findVariant(id("Err"))
+    check r.isOk
+    check r.get.name.value == "Err"
+
+  test "findVariant reports a missing variant":
+    let v = newVariantDefinition(id("Ok"),
+      @[argDef("value", "u8")], newLocation()).get
+    let u = newUnion(@[v], newLocation()).get
+    let r = u.findVariant(id("NotThere"))
+    check r.isErr
+    check errorContains(r.error, "NotThere")
+
+suite "ast — File type lookups":
+
+  test "findType resolves a locally-defined type":
+    let f = parseStr("""
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findType(id("M"))
+    check r.isOk
+    check r.get.kind == tkDefined
+
+  test "findType reports a missing name":
+    let f = parseStr("""
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findType(id("NoSuchType"))
+    check r.isErr
+    check errorContains(r.error, "NoSuchType")
+    check errorContains(r.error, "does not exist")
+
+  test "findTypeId returns the same id consistently":
+    let f = parseStr("""
+module A:
+  func go(): u8
+    u8 0
+
+module B:
+  func go(): u8
+    u8 0
+""").get
+    let idA1 = f.findTypeId(id("A"))
+    let idA2 = f.findTypeId(id("A"))
+    let idB = f.findTypeId(id("B"))
+    check idA1.isOk
+    check idA2.isOk
+    check idB.isOk
+    check idA1.get == idA2.get
+    check idA1.get != idB.get
+
+  test "findExportedType accepts a public module":
+    let f = parseStr("""
+public module Foo:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findExportedType(id("Foo"))
+    check r.isOk
+
+  test "findExportedType rejects a non-public module":
+    let f = parseStr("""
+module Foo:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findExportedType(id("Foo"))
+    check r.isErr
+    check errorContains(r.error, "non-public")
+
+  test "findExportedType reports a missing name":
+    let f = parseStr("""
+public module Foo:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findExportedType(id("NotThere"))
+    check r.isErr
+
+suite "ast — Module function lookups":
+
+  test "findFunctions returns matching overloads by (name, arity)":
+    let f = parseStr("""
+module M:
+  func go(): u8
+    u8 0
+
+  func go(x: u8): u8
+    x
+""").get
+    let m = f.findType(id("M")).get.definedType.module
+    let zero = m.findFunctions(id("go"), 0)
+    let one = m.findFunctions(id("go"), 1)
+    check zero.isOk
+    check zero.get.len == 1
+    check one.isOk
+    check one.get.len == 1
+
+  test "findFunctions reports a missing function name":
+    let f = parseStr("""
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let m = f.findType(id("M")).get.definedType.module
+    let r = m.findFunctions(id("missing"), 0)
+    check r.isErr
+    check errorContains(r.error, "missing")
+
+  test "findFunctions reports a wrong arity":
+    let f = parseStr("""
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let m = f.findType(id("M")).get.definedType.module
+    let r = m.findFunctions(id("go"), 2)
+    check r.isErr
+    check errorContains(r.error, "arity")
+
+suite "ast — Generic function-def lookups":
+
+  test "findFunctionDefs returns matching definitions":
+    let f = parseStr("""
+generic Eq:
+  func eq(a: Eq, b: Eq): u8
+""").get
+    let g = f.findType(id("Eq")).get.definedType.generic
+    let r = g.findFunctionDefs(id("eq"), 2)
+    check r.isOk
+    check r.get.len == 1
+
+  test "findFunctionDefs reports a missing function":
+    let f = parseStr("""
+generic Eq:
+  func eq(a: Eq, b: Eq): u8
+""").get
+    let g = f.findType(id("Eq")).get.definedType.generic
+    let r = g.findFunctionDefs(id("missing"), 2)
+    check r.isErr
+
+suite "ast — App file lookups":
+
+  test "findFile returns the matching file":
+    let (parsed, dir) = parseFiles([
+      ("entry.asl", """
+import { Helper } from "./helper.asl"
+
+module Main:
+  func go(): u8
+    u8 0
+"""),
+      ("helper.asl", """
+public module Helper:
+  func go(): u8
+    u8 0
+""")
+    ])
+    let app = parsed.get
+    # Find the helper file by walking app.files for the matching path.
+    var helperPath = ""
+    for f in app.files:
+      if f.path.endsWith("helper.asl"):
+        helperPath = f.path
+        break
+    cleanupDir(dir)
+    check helperPath.len > 0
+    let r = app.findFile(helperPath)
+    check r.isOk
+    check r.get.path == helperPath
+
+  test "findFile reports a non-existent path":
+    let (parsed, dir) = parseFiles([
+      ("entry.asl", """
+module M:
+  func go(): u8
+    u8 0
+""")
+    ])
+    let app = parsed.get
+    cleanupDir(dir)
+    let r = app.findFile("/no/such/path.asl")
+    check r.isErr
+    check errorContains(r.error, "/no/such/path.asl")
+
+  test "findFileId is consistent with findFile":
+    let (parsed, dir) = parseFiles([
+      ("entry.asl", """
+module M:
+  func go(): u8
+    u8 0
+""")
+    ])
+    let app = parsed.get
+    let path = app.files[0].path
+    cleanupDir(dir)
+    let id1 = app.findFileId(path)
+    let id2 = app.findFileId(path)
+    check id1.isOk
+    check id2.isOk
+    check id1.get == id2.get
 
