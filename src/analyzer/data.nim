@@ -1,0 +1,95 @@
+## Analyzed data blocks: struct / variant / union / data umbrella.
+
+import results
+
+import resolver
+import literals
+import argtypes
+import funcdefs
+
+# AnalyzedStruct
+type AnalyzedStruct* = ref object
+  fields: seq[AnalyzedArgumentDefinition]
+
+proc newAnalyzedStruct*(fields: seq[AnalyzedArgumentDefinition]): AnalyzedStruct =
+  AnalyzedStruct(fields: fields)
+
+proc fields*(s: AnalyzedStruct): seq[AnalyzedArgumentDefinition] = s.fields
+
+proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, struct: ResolvedStruct): Result[AnalyzedStruct, string] =
+  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  for field in struct.fields:
+    let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
+    analyzedFields.add(analyzedField)
+  ok(newAnalyzedStruct(analyzedFields))
+
+# AnalyzedVariant
+type AnalyzedVariant* = ref object
+  resolved: ResolvedVariant
+  fields: seq[AnalyzedArgumentDefinition]
+
+proc newAnalyzedVariant*(resolved: ResolvedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedVariant =
+  AnalyzedVariant(resolved: resolved, fields: fields)
+
+proc resolved*(v: AnalyzedVariant): ResolvedVariant = v.resolved
+proc fields*(v: AnalyzedVariant): seq[AnalyzedArgumentDefinition] = v.fields
+
+proc analyzeVariant(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
+  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  for field in variant.fields:
+    let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
+    analyzedFields.add(analyzedField)
+  ok(newAnalyzedVariant(variant, analyzedFields))
+
+# AnalyzedUnion
+type AnalyzedUnion* = ref object
+  resolved: ResolvedUnion
+  variants: seq[AnalyzedVariant]
+
+proc newAnalyzedUnion*(resolved: ResolvedUnion, variants: seq[AnalyzedVariant]): AnalyzedUnion =
+  AnalyzedUnion(resolved: resolved, variants: variants)
+
+proc resolved*(u: AnalyzedUnion): ResolvedUnion = u.resolved
+proc variants*(u: AnalyzedUnion): seq[AnalyzedVariant] = u.variants
+
+proc analyzeUnion*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, union: ResolvedUnion): Result[AnalyzedUnion, string] =
+  var analyzedVariants: seq[AnalyzedVariant]
+  for variant in union.variants:
+    let analyzedVariant = ? analyzeVariant(app, file, fileScope, module, variant)
+    analyzedVariants.add(analyzedVariant)
+  ok(newAnalyzedUnion(union, analyzedVariants))
+
+# AnalyzedData
+type
+  AnalyzedDataKind* = enum
+    adkLiteral, adkStruct, adkUnion
+  AnalyzedData* = ref object
+    case kind: AnalyzedDataKind
+    of adkLiteral: literal: AnalyzedLiteralBlock
+    of adkStruct: struct: AnalyzedStruct
+    of adkUnion: union: AnalyzedUnion
+
+proc newAnalyzedData*(literal: AnalyzedLiteralBlock): AnalyzedData =
+  AnalyzedData(kind: adkLiteral, literal: literal)
+
+proc newAnalyzedData*(struct: AnalyzedStruct): AnalyzedData =
+  AnalyzedData(kind: adkStruct, struct: struct)
+
+proc newAnalyzedData*(union: AnalyzedUnion): AnalyzedData =
+  AnalyzedData(kind: adkUnion, union: union)
+
+proc kind*(d: AnalyzedData): AnalyzedDataKind = d.kind
+proc literal*(d: AnalyzedData): AnalyzedLiteralBlock = d.literal
+proc struct*(d: AnalyzedData): AnalyzedStruct = d.struct
+proc union*(d: AnalyzedData): AnalyzedUnion = d.union
+
+proc analyzeData*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
+  case data.kind:
+  of rdkLiteral:
+    ok(newAnalyzedData(newAnalyzedLiteralBlock(data.literal)))
+  of rdkStruct:
+    let analyzedStruct = ? analyzeStruct(app, file, fileScope, module, data.struct)
+    ok(newAnalyzedData(analyzedStruct))
+  of rdkUnion:
+    let analyzedUnion = ? analyzeUnion(app, file, fileScope, module, data.union)
+    ok(newAnalyzedData(analyzedUnion))
