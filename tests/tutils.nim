@@ -5,6 +5,7 @@ import os, results, strutils
 import tokenizer
 import parser
 import resolver
+import analyzer
 
 type FileSpec* = tuple[name: string, content: string]
 
@@ -76,6 +77,27 @@ proc resolveSingle*(source: string,
     indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =
   ## Convenience for a single-file program (no imports).
   resolveFiles([("entry.asl", source)], indentWidth)
+
+proc analyzeFiles*(specs: openArray[FileSpec],
+    indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =
+  ## Parse + resolve + analyze. Returns the Result[void, string] form
+  ## (caller just wants to know whether the program is well-formed end
+  ## to end).
+  let (maybeApp, dir) = parseFiles(specs, indentWidth)
+  if maybeApp.isErr:
+    return (voidErr(maybeApp.error), dir)
+  let resolved = resolve(maybeApp.get)
+  if resolved.isErr:
+    return (voidErr(resolved.error), dir)
+  let analyzed = analyze(resolved.get)
+  if analyzed.isErr:
+    return (voidErr(analyzed.error), dir)
+  (voidOk(), dir)
+
+proc analyzeSingle*(source: string,
+    indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =
+  ## Convenience for a single-file program (no imports).
+  analyzeFiles([("entry.asl", source)], indentWidth)
 
 proc errorContains*(err: string, needle: string): bool =
   ## Case-sensitive substring check, useful for asserting on error

@@ -8,3 +8,4 @@ import test_ast
 import test_grammar
 import test_loader
 import test_resolver
+import test_analyzer
