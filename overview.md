@@ -317,9 +317,13 @@ src/
                                    AnalyzedFunctionScope + body-walker
                                    procs (analyzeFunctionRef /
                                    analyzeFunctionCall /
-                                   analyzeExpression / analyzeStatement /
-                                   analyzeFunction / analyzeModule) —
-                                   most leaves still return todo
+                                   analyzeArgumentList /
+                                   analyzeVariable / analyzeExpression /
+                                   analyzeStatement / analyzeFunction /
+                                   analyzeModule) — argument-list
+                                   type-check + match / getter /
+                                   initializer / assignment / mutation
+                                   arms still return todo
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric +

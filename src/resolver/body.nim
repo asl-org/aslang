@@ -214,6 +214,7 @@ proc newResolvedExpression*(
 proc kind*(expression: ResolvedExpression): ResolvedExpressionKind = expression.kind
 proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall = expression.fncall
 proc variable*(expression: ResolvedExpression): Identifier = expression.variable
+proc literal*(expression: ResolvedExpression): Literal = expression.literal
 
 proc loc*(expression: ResolvedExpression): Location =
   case expression.kind:
