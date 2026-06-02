@@ -2,6 +2,7 @@
 
 import strformat, results, tables
 
+import funcs
 import parser
 import resolver
 import imports
@@ -40,9 +41,6 @@ proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyz
     let analyzedModule = ? analyzeModuleDefinition(app, file, fileScope, definedType.module)
     ok(newAnalyzedDefinedType(analyzedModule))
 
-proc analyzeExpression(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: Table[Identifier, AnalyzedModuleDefinition]): Result[void, string] =
-  err("{module.loc} analyze expression")
-
 # AnalyzedFile
 type AnalyzedFile* = ref object
   imports: seq[AnalyzedImport]
@@ -64,20 +62,20 @@ proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, st
       fileScope[impType.binding] = impType.definedType
 
   var analyzedDefinedTypes: seq[AnalyzedDefinedType]
-  var analyzedFileScope: Table[Identifier, AnalyzedModuleDefinition]
+  var analyzedModuleScope: AnalyzedModuleScope
   for aslType in file.definedTypes:
     let analyzedDefinedType = ? analyzeDefinedType(app, file, fileScope, aslType)
     analyzedDefinedTypes.add(analyzedDefinedType)
 
     case analyzedDefinedType.kind:
     of adtkGeneric: discard
-    of adtkModule: analyzedFileScope[analyzedDefinedType.name] = analyzedDefinedType.module
+    of adtkModule: analyzedModuleScope[analyzedDefinedType.name] = analyzedDefinedType.module
 
   for aslType in file.definedTypes:
     case aslType.kind:
     of rdtkGeneric: discard # generics are already resolved since it is only a definition type
     of rdtkModule:
-      ? analyzeExpression(app, file, fileScope, aslType.module, analyzedFileScope)
+      ? analyzeModule(app, file, fileScope, aslType.module, analyzedModuleScope)
   ok(newAnalyzedFile(analyzedImports, analyzedDefinedTypes))
 
 # AnalyzedApp + entry

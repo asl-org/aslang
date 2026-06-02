@@ -17,100 +17,42 @@ import argtypes
 # a function body. body.nim and decls.nim each import this.
 type FunctionScope* = HashSet[Identifier]
 
-# ResolvedGenericTypeRef
-type ResolvedGenericTypeRef* = ref object
-  generic: Generic
-  funcDefs: seq[FunctionDefinition]
-  loc: Location
-
-proc newResolvedGenericTypeRef*(generic: Generic,
-    funcDefs: seq[FunctionDefinition], loc: Location): ResolvedGenericTypeRef =
-  ResolvedGenericTypeRef(generic: generic, funcDefs: funcDefs, loc: loc)
-
-proc loc*(generic: ResolvedGenericTypeRef): Location = generic.loc
-
 proc resolveGenericTypeRef(generic: Generic, name: Identifier,
-    arity: int, loc: Location): Result[ResolvedGenericTypeRef, string] =
+    arity: int, loc: Location): Result[void, string] =
   let funcDefs = ? generic.findFunctionDefs(name, arity)
-  ok(newResolvedGenericTypeRef(generic, funcDefs, loc))
+  if funcDefs.len == 0:
+    err(fmt"{loc} generic `{generic.name.asl}` does not have any function named `{name.asl}` with arity `{arity}`")
+  else:
+    ok()
 
-# ResolvedModuleTypeRef
-type ResolvedModuleTypeRef* = ref object
-  module: Module
-  functions: seq[Function]
-  loc: Location
+proc resolveModuleTypeRef(module: Module, name: Identifier,
+    arity: int, loc: Location): Result[void, string] =
+  let funcs = ? module.findFunctions(name, arity)
+  if funcs.len == 0:
+    err(fmt"{loc} module `{module.name.asl}` does not have any function named `{name.asl}` with arity `{arity}`")
+  else:
+    ok()
 
-proc newResolvedModuleTypeRef*(module: Module, functions: seq[Function], loc: Location): ResolvedModuleTypeRef =
-  ResolvedModuleTypeRef(module: module, functions: functions, loc: loc)
-
-proc loc*(moduleTypeRef: ResolvedModuleTypeRef): Location = moduleTypeRef.loc
-proc module*(moduleTypeRef: ResolvedModuleTypeRef): Module = moduleTypeRef.module
-proc functions*(moduleTypeRef: ResolvedModuleTypeRef): seq[Function] = moduleTypeRef.functions
-
-proc resolveModuleTypeRef(typeModule: Module, name: Identifier,
-    arity: int, loc: Location): Result[ResolvedModuleTypeRef, string] =
-  let functions = ? typeModule.findFunctions(name, arity)
-  ok(newResolvedModuleTypeRef(typeModule, functions, loc))
-
-# ResolvedTypeRef
-# TODO: Rename `ResolvedTypeRef` to `ResolvedDefinedTypeRef`
-type
-  ResolvedTypeRefKind* = enum
-    rdtrkGeneric, rdtrkModule
-  ResolvedTypeRef* = ref object
-    case kind: ResolvedTypeRefKind
-    of rdtrkGeneric: generic: ResolvedGenericTypeRef
-    of rdtrkModule: module: ResolvedModuleTypeRef
-
-proc newResolvedTypeRef*(
-    generic: ResolvedGenericTypeRef): ResolvedTypeRef =
-  ResolvedTypeRef(kind: rdtrkGeneric, generic: generic)
-
-proc newResolvedTypeRef*(
-    module: ResolvedModuleTypeRef): ResolvedTypeRef =
-  ResolvedTypeRef(kind: rdtrkModule, module: module)
-
-proc kind*(definedTypeRef: ResolvedTypeRef): ResolvedTypeRefKind = definedTypeRef.kind
-proc module*(definedTypeRef: ResolvedTypeRef): ResolvedModuleTypeRef = definedTypeRef.module
-proc generic*(definedTypeRef: ResolvedTypeRef): ResolvedGenericTypeRef = definedTypeRef.generic
-proc loc*(typeRef: ResolvedTypeRef): Location =
-  case typeRef.kind:
-  of rdtrkModule: typeRef.module.loc
-  of rdtrkGeneric: typeRef.generic.loc
-
-proc resolveTypeRef(definedType: DefinedType, name: Identifier,
-    arity: int, loc: Location): Result[ResolvedTypeRef, string] =
+proc resolveDefinedTypeRef(definedType: DefinedType, name: Identifier,
+    arity: int, loc: Location): Result[void, string] =
   case definedType.kind:
-  of dtkModule:
-    let resolvedModuleTypeRef = ? resolveModuleTypeRef(definedType.module, name,
-      arity, loc)
-    ok(newResolvedTypeRef(resolvedModuleTypeRef))
-  of dtkGeneric:
-    let resolvedGenericTypeRef = ? resolveGenericTypeRef(definedType.generic,
-      name, arity, loc)
-    ok(newResolvedTypeRef(resolvedGenericTypeRef))
+  of dtkModule: resolveModuleTypeRef(definedType.module, name, arity, loc)
+  of dtkGeneric: resolveGenericTypeRef(definedType.generic, name, arity, loc)
 
-# ResolvedFunctionRef — currently only the rfrkDefined arm; an
-# rfrkImported arm would mirror the imported path inside.
 type
-  ResolvedFunctionRefKind* = enum
-    rfrkDefined
   ResolvedFunctionRef* = ref object
+    name: Identifier
+    arity: int
     argType: ResolvedArgumentType
-    case kind: ResolvedFunctionRefKind
-    of rfrkDefined: definedRef: ResolvedTypeRef
+    loc: Location
 
-proc newResolvedFunctionRef*(
-    argType: ResolvedArgumentType,
-    definedRef: ResolvedTypeRef): ResolvedFunctionRef =
-  ResolvedFunctionRef(argType: argType, kind: rfrkDefined, definedRef: definedRef)
+proc newResolvedFunctionRef*(argType: ResolvedArgumentType, name: Identifier, arity: int, loc: Location): ResolvedFunctionRef =
+  ResolvedFunctionRef(argType: argType, name: name, arity: arity, loc: loc)
 
-proc kind*(funcRef: ResolvedFunctionRef): ResolvedFunctionRefKind = funcRef.kind
 proc argType*(funcRef: ResolvedFunctionRef): ResolvedArgumentType = funcRef.argType
-proc definedType*(funcRef: ResolvedFunctionRef): ResolvedTypeRef = funcRef.definedRef
-proc loc*(funcRef: ResolvedFunctionRef): Location =
-  case funcRef.kind:
-  of rfrkDefined: funcRef.definedRef.loc
+proc name*(funcRef: ResolvedFunctionRef): Identifier = funcRef.name
+proc arity*(funcRef: ResolvedFunctionRef): int = funcRef.arity
+proc loc*(funcRef: ResolvedFunctionRef): Location = funcRef.loc
 
 proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope, argType: ArgumentType,
@@ -125,10 +67,8 @@ proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
       err(fmt"{impType.loc} type `{impType.binding.asl}` does not exist in file scope")
     else:
       let impDefinedType = fileScope[impType.binding]
-      let resolvedDefinedRef = ? resolveTypeRef(impDefinedType, name,
-        arity, loc)
-      ok(newResolvedFunctionRef(resolvedArgType, resolvedDefinedRef))
+      ? resolveDefinedTypeRef(impDefinedType, name, arity, loc)
+      ok(newResolvedFunctionRef(resolvedArgType, name, arity, loc))
   of tkDefined:
-    let resolvedDefinedRef = ? resolveTypeRef(rootModule.definedType,
-      name, arity, loc)
-    ok(newResolvedFunctionRef(resolvedArgType, resolvedDefinedRef))
+    ? resolveDefinedTypeRef(rootModule.definedType, name, arity, loc)
+    ok(newResolvedFunctionRef(resolvedArgType, name, arity, loc))

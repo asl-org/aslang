@@ -278,7 +278,8 @@ src/
     funcdefs.nim                   ResolvedArgumentDefinition /
                                    ResolvedFunctionDefinition /
                                    ResolvedExternFunction
-    funcrefs.nim                   FunctionScope + function-ref cluster
+    funcrefs.nim                   FunctionScope + ResolvedFunctionRef
+                                   (flat: name / arity / argType / loc)
                                    for call-site lookup by (name, arity)
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
     body.nim                       Getter / LiteralInitializer + body-level

@@ -28,8 +28,7 @@ proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
   if function.decorators.len > 0:
     return err(fmt"{function.loc} todo: resolve decorators in user function")
 
-  let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file,
-    fileScope, module, function.def)
+  let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, fileScope, module, function.def)
 
   var scope: FunctionScope
   for arg in resolvedFunctionDefinition.args:
