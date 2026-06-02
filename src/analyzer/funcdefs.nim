@@ -3,6 +3,7 @@
 
 import results
 
+import tokenizer
 import parser
 import resolver
 import argtypes
@@ -28,14 +29,18 @@ proc analyzeArgumentDefinition*(app: ResolvedApp, file: ResolvedFile, generic: R
 
 # AnalyzedFunctionDefinition
 type AnalyzedFunctionDefinition* = ref object
-  name: Identifier
+  resolved: ResolvedFunctionDefinition
   args: seq[AnalyzedArgumentDefinition]
   returns: AnalyzedArgumentType
 
-proc newAnalyzedFunctionDefinition*(name: Identifier, args: seq[AnalyzedArgumentDefinition], returns: AnalyzedArgumentType): AnalyzedFunctionDefinition =
-  AnalyzedFunctionDefinition(name: name, args: args, returns: returns)
+proc newAnalyzedFunctionDefinition*(resolved: ResolvedFunctionDefinition, args: seq[AnalyzedArgumentDefinition], returns: AnalyzedArgumentType): AnalyzedFunctionDefinition =
+  AnalyzedFunctionDefinition(resolved: resolved, args: args, returns: returns)
 
-proc name*(f: AnalyzedFunctionDefinition): Identifier = f.name
+proc public*(f: AnalyzedFunctionDefinition): bool = f.resolved.public
+proc name*(f: AnalyzedFunctionDefinition): Identifier = f.resolved.name
+proc loc*(f: AnalyzedFunctionDefinition): Location = f.resolved.loc
+proc resolved*(f: AnalyzedFunctionDefinition): ResolvedFunctionDefinition = f.resolved
+proc arity*(f: AnalyzedFunctionDefinition): int = f.args.len
 proc args*(f: AnalyzedFunctionDefinition): seq[AnalyzedArgumentDefinition] = f.args
 proc returns*(f: AnalyzedFunctionDefinition): AnalyzedArgumentType = f.returns
 
@@ -46,7 +51,7 @@ proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope:
     analyzedArgDefs.add(analyzedArgDef)
 
   let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, funcDef.returns)
-  ok(newAnalyzedFunctionDefinition(funcDef.name, analyzedArgDefs, analyzedReturns))
+  ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
 proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, funcDef: ResolvedFunctionDefinition): Result[AnalyzedFunctionDefinition, string] =
   var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
@@ -55,4 +60,4 @@ proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, generic: R
     analyzedArgDefs.add(analyzedArgDef)
 
   let analyzedReturns = ? analyzeArgumentType(app, file, generic, funcDef.returns)
-  ok(newAnalyzedFunctionDefinition(funcDef.name, analyzedArgDefs, analyzedReturns))
+  ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))

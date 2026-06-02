@@ -313,11 +313,18 @@ src/
     data.nim                       AnalyzedStruct / AnalyzedVariant /
                                    AnalyzedUnion / AnalyzedData + their
                                    analyzeX procs
-    funcs.nim                      (WIP placeholder) scaffolding for the
-                                   user-function / statement / expression /
-                                   function-ref walk
-    modules.nim                    AnalyzedModule / AnalyzedGeneric +
-                                   analyzeModule / analyzeGeneric
+    funcs.nim                      (WIP) AnalyzedModuleScope /
+                                   AnalyzedFunctionScope + body-walker
+                                   procs (analyzeFunctionRef /
+                                   analyzeFunctionCall /
+                                   analyzeExpression / analyzeStatement /
+                                   analyzeFunction / analyzeModule) —
+                                   most leaves still return todo
+    modules.nim                    AnalyzedModuleDefinition (+ funcDef
+                                   indices and findFunctionDef[s]
+                                   lookups) / AnalyzedGeneric +
+                                   analyzeModuleDefinition /
+                                   analyzeGeneric
     decls.nim                      AnalyzedDefinedType / AnalyzedFile /
                                    AnalyzedApp + analyzeDefinedType /
                                    analyzeFile + the public `analyze*` entry

@@ -1,6 +1,6 @@
 ## Resolution of module and generic top-level blocks.
 
-import results, options, strformat, tables, options
+import results, options, strformat, tables, options, hashes
 
 import tokenizer
 import parser
@@ -39,6 +39,9 @@ proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
     let argType = newResolvedArgumentType(definedType)
     impls.add(argType)
   newResolvedModuleArgumentType(module.parsed, impls, newLocation())
+
+proc hash*(a: ResolvedModule): Hash = a.parsed.hash
+proc `==`*(a, b: ResolvedModule): bool = a.hash == b.hash
 
 proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDefinition): Option[ResolvedFunctionDefinition] =
   if funcDef notin module.funcDefIndex:

@@ -1,6 +1,6 @@
 ## Module + generic block analysis.
 
-import options, results
+import options, results, tables, sequtils, strformat
 
 import parser
 import resolver
@@ -14,14 +14,42 @@ type AnalyzedModuleDefinition* = ref object
   requires: seq[AnalyzedGenericArgumentType]
   data: Option[AnalyzedData]
   funcDefs: seq[AnalyzedFunctionDefinition]
+  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
+  funcDefIndex: Table[ResolvedFunctionDefinition, int]
 
 proc newAnalyzedModuleDefinition*(resolved: ResolvedModule, requires: seq[AnalyzedGenericArgumentType], data: Option[AnalyzedData], funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModuleDefinition =
-  AnalyzedModuleDefinition(resolved: resolved, requires: requires, data: data, funcDefs: funcDefs)
+  var funcDefIndex: Table[ResolvedFunctionDefinition, int]
+  var funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
+  for id, funcDef in funcDefs:
+    funcDefIndex[funcDef.resolved] = id
+    if funcDef.name notin funcNameArityIndex:
+      funcNameArityIndex[funcDef.name] = initTable[int, seq[int]]()
+    if funcDef.arity notin funcNameArityIndex[funcDef.name]:
+      funcNameArityIndex[funcDef.name][funcDef.arity] = newSeq[int]()
+    funcNameArityIndex[funcDef.name][funcDef.arity].add(id)
+  AnalyzedModuleDefinition(resolved: resolved, requires: requires, data: data, funcDefs: funcDefs, funcNameArityIndex: funcNameArityIndex, funcDefIndex: funcDefIndex)
 
+proc resolved*(m: AnalyzedModuleDefinition): ResolvedModule = m.resolved
 proc requires*(m: AnalyzedModuleDefinition): seq[AnalyzedGenericArgumentType] = m.requires
 proc data*(m: AnalyzedModuleDefinition): Option[AnalyzedData] = m.data
 proc funcDefs*(m: AnalyzedModuleDefinition): seq[AnalyzedFunctionDefinition] = m.funcDefs
 proc name*(m: AnalyzedModuleDefinition): Identifier = m.resolved.name
+
+proc findFunctionDefs*(module: AnalyzedModuleDefinition, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
+  # TODO: Ensure public access modifier is considered while looking up the function
+  if name notin module.funcNameArityIndex:
+    err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}`")
+  elif arity notin module.funcNameArityIndex[name]:
+    err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}` with arity `{arity}`")
+  else:
+    let funcDefs = module.funcNameArityIndex[name][arity].mapIt(module.funcDefs[it])
+    ok(if public: funcDefs.filterIt(it.public) else: funcDefs)
+
+proc findFunctionDef*(module: AnalyzedModuleDefinition, funcDef: ResolvedFunctionDefinition): Result[AnalyzedFunctionDefinition, string] =
+  if funcDef notin module.funcDefIndex:
+    err(fmt"{funcDef.loc} module `{module.name.asl}` does not have a function with name `{funcDef.name.asl}`")
+  else:
+    ok(module.funcDefs[module.funcDefIndex[funcDef]])
 
 proc analyzeModuleDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
   var requires: seq[AnalyzedGenericArgumentType]

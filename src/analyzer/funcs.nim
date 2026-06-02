@@ -89,40 +89,99 @@ import results, tables, strformat
 import parser
 import resolver
 import argtypes
+import funcdefs
 import modules
 
 type AnalyzedModuleScope* = Table[Identifier, AnalyzedModuleDefinition]
 type AnalyzedFunctionScope = Table[Identifier, AnalyzedArgumentType]
 
-proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[void, string]
+type AnalyzedVariable = ref object
+  name: Identifier
+  argType: AnalyzedArgumentType
 
-proc analyzeFunctionRef*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, fnref: ResolvedFunctionRef): Result[void, string] =
-  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, fnref.argType)
-  err(fmt"{fnref.loc} todo: analyze function ref")
+proc newAnalyzedVariable(name: Identifier, argType: AnalyzedArgumentType): AnalyzedVariable =
+  AnalyzedVariable(name: name, argType: argType)
+
+type
+  AnalyzedExpressionKind = enum
+    aekVariable
+  AnalyzedExpression = ref object
+    case kind: AnalyzedExpressionKind
+    of aekVariable: variable: AnalyzedVariable
+
+proc newAnalyzedExpression(variable: AnalyzedVariable): AnalyzedExpression =
+  AnalyzedExpression(kind: aekVariable, variable: variable)
+
+proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string]
+
+type AnalyzedFunctionRef = ref object
+  argType: AnalyzedArgumentType
+  funcDefs: seq[AnalyzedFunctionDefinition]
+
+proc newAnalyzedFunctionRef(argType: AnalyzedArgumentType, funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedFunctionRef =
+  AnalyzedFunctionRef(argType: argType, funcDefs: funcDefs)
+
+proc analyzeFunctionRef*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, fnref: ResolvedFunctionRef): Result[AnalyzedFunctionRef, string] =
+  let argType = ? analyzeArgumentType(app, file, fileScope, module, fnref.argType)
+  case argType.kind:
+  of aatkImported: err(fmt"{fnref.loc} todo: analyze imported type function ref")
+  of aatkDefined:
+    let definedType = argType.definedType
+    case definedType.kind:
+    of adatkGeneric: err(fmt"{fnref.loc} todo: analyze generic type function ref")
+    of adatkModule:
+      let moduleType = definedType.module
+      if moduleType.module.name notin defScope:
+        err(fmt"{fnref.loc} [UNREACHABLE] module `{moduleType.module.name.asl}` does not exist in scope")
+      else:
+        let moduleDef = defScope[moduleType.module.name]
+        # NOTE: if the function call is to other module then only it should have public accessor
+        let funcDefs = ? moduleDef.findFunctionDefs(fnref.name, fnref.arity, module != moduleDef.resolved)
+        ok(newAnalyzedFunctionRef(argType, funcDefs))
+
+# proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, args: seq[AnalyzedArgumentType], funcDef: AnalyzedFunctionDefinition): Result[void, string] =
+#   err(fmt"{funcDef.loc} todo: analyze function call argument list")
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[void, string] =
-  ? analyzeFunctionRef(app, file, fileScope, module, defScope, fncall.funcRef)
+  let funcRef = ? analyzeFunctionRef(app, file, fileScope, module, defScope, fncall.funcRef)
   for arg in fncall.args:
-    ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, arg)
+    discard ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, arg)
+
+  # for funcDef in funcRef.funcDefs:
+  #   ? analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, fncall.args, funcDef)
+
   err(fmt"{fncall.loc} todo: analyze function call")
 
-proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[void, string] =
+proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string] =
   case expression.kind:
-  of rekFunctionCall: analyzeFunctionCall(app, file, fileScope, module, defScope, funcScope, expression.fncall)
+  of rekFunctionCall:
+    ? analyzeFunctionCall(app, file, fileScope, module, defScope, funcScope, expression.fncall)
+    err(fmt"{expression.loc} todo: analyze function call")
   of rekInitializer: err(fmt"{expression.loc} todo: analyze initializer")
   of rekMatchExpr: err(fmt"{expression.loc} todo: analyze match expression")
   of rekGetter: err(fmt"{expression.loc} todo: analyze getter")
   of rekLiteral: err(fmt"{expression.loc} todo: analyze literal")
-  of rekVariable: err(fmt"{expression.loc} todo: analyze variable")
+  of rekVariable:
+    if expression.variable notin funcScope:
+      err(fmt"{expression.loc} variable `{expression.variable.asl}` does not exist in scope")
+    else:
+      let variable = newAnalyzedVariable(expression.variable, funcScope[expression.variable])
+      ok(newAnalyzedExpression(variable))
 
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[void, string] =
   case statement.kind:
-  of rskExpr: analyzeExpression(app, file, fileScope, module, defScope, funcScope, statement.expression)
+  of rskExpr:
+    discard ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, statement.expression)
+    err(fmt"{statement.loc} todo: analyze expression")
   of rskAssignment: err(fmt"{statement.loc} todo: analyze assignment")
   of rskMutation: err(fmt"{statement.loc} todo: analyze mutation")
 
 proc analyzeFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, function: ResolvedUserFunction): Result[void, string] =
   var funcScope: AnalyzedFunctionScope
+  let analyzedFuncDef = ? defScope[module.name].findFunctionDef(function.def)
+  for argDef in analyzedFuncDef.args:
+    funcScope[argDef.name] = argDef.argType
+
   for statement in function.statements:
     ? analyzeStatement(app, file, fileScope, module, defScope, funcScope, statement)
   err(fmt"{function.loc} todo: analyze function")
