@@ -111,7 +111,7 @@ Single-character classifier. Intentionally simple — no keywords, no
 multi-character tokens. All that complexity lives in the parser.
 Produces `seq[Token]` where each token carries `kind` (punctuation,
 space, newline, alphabet, digit, utf8), `value` (the character), and
-`Location` (line:col).
+`Location` (filepath:line:col).
 
 Security: validates UTF-8 encoding and rejects bidirectional control
 codepoints, zero-width characters, and invisible Unicode (Trojan
@@ -316,14 +316,16 @@ src/
     funcs.nim                      (WIP) AnalyzedModuleScope /
                                    AnalyzedFunctionScope + body-walker
                                    procs (analyzeFunctionRef /
-                                   analyzeFunctionCall /
                                    analyzeArgumentList /
+                                   analyzeValueTypeAgainstDefinitionType
+                                   (overload set) / analyzeFunctionCall /
+                                   analyzeMatchExpression /
                                    analyzeVariable / analyzeExpression /
                                    analyzeStatement / analyzeFunction /
-                                   analyzeModule) — argument-list
-                                   type-check + match / getter /
+                                   analyzeModule) — match / getter /
                                    initializer / assignment / mutation
-                                   arms still return todo
+                                   arms still return todo; argument-list
+                                   handles only typed (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric +

@@ -224,7 +224,15 @@ public module u64:
 
   # user functions
   public func div_ceil(a: u64, b: u64): Status[u64]
-    u64.quotient(u64.subtract(u64.add(a, b), 1), b)
+    match u64.add(a, b):
+      case Ok { value: val1 }:
+        match u64.subtract(val1, 1):
+          case Ok { value: val2 }:
+            u64.quotient(val2, b)
+          case Err { error: err2 }:
+            Status[u64].Err { error: err2 }
+      case Err { error: err1 }:
+        Status[u64].Err { error: err1 }
 
 public module i8:
   literal: "i8"

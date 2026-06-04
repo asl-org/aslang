@@ -191,6 +191,8 @@ proc newResolvedMatchExpression*(subject: ResolvedExpression,
     cases: seq[ResolvedCaseBlock], loc: Location): ResolvedMatchExpression =
   ResolvedMatchExpression(subject: subject, cases: cases, loc: loc)
 
+proc loc*(match: ResolvedMatchExpression): Location = match.loc
+
 proc newResolvedExpression*(fncall: ResolvedFunctionCall): ResolvedExpression =
   ResolvedExpression(kind: rekFunctionCall, fncall: fncall)
 
@@ -215,6 +217,7 @@ proc kind*(expression: ResolvedExpression): ResolvedExpressionKind = expression.
 proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall = expression.fncall
 proc variable*(expression: ResolvedExpression): Identifier = expression.variable
 proc literal*(expression: ResolvedExpression): Literal = expression.literal
+proc match*(expression: ResolvedExpression): ResolvedMatchExpression = expression.match
 
 proc loc*(expression: ResolvedExpression): Location =
   case expression.kind:
@@ -267,8 +270,7 @@ proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     scope, fncall.argType, fncall.name, fncall.args.len, fncall.loc)
   var resolvedArgs: seq[ResolvedExpression]
   for arg in fncall.args:
-    let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope,
-      arg)
+    let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope, arg)
     resolvedArgs.add(resolvedArg)
   ok(newResolvedFunctionCall(resolvedFunctionRef, resolvedArgs))
 

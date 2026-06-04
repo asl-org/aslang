@@ -46,13 +46,16 @@ proc isCompilerSafe(r: Rune): Result[void, string] =
     ok()
 
 type Location* = object
+  filepath: string
   line: int
   col: int
 
-proc newLocation(line, col: int): Location =
-  Location(line: line, col: col)
+proc newLocation(filepath: string, line, col: int): Location =
+  Location(filepath: filepath, line: line, col: col)
 
-proc newLocation*(): Location = newLocation(1, 1)
+proc newLocation*(filepath: string): Location = newLocation(filepath, 1, 1)
+
+proc newLocation*(): Location = newLocation("", 1, 1)
 
 proc advance(loc: Location, line: bool = false): Location =
   var location = loc
@@ -67,8 +70,8 @@ proc `<`*(a, b: Location): bool =
   if a.line == b.line: a.col < b.col
   else: a.line < b.line
 
-proc hash*(a, b: Location): Hash =
-  a.line.hash !& a.col.hash
+proc hash*(a: Location): Hash =
+  a.filepath.hash !& a.line.hash !& a.col.hash
 
 proc `==`*(a, b: Location): bool =
   a.hash == b.hash
@@ -103,7 +106,7 @@ proc tokenize*(source: string, filepath: string,
     dumpTokens: bool = false): Result[seq[Token], string] =
   const Punctuations = "`~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?"
 
-  var loc = newLocation()
+  var loc = newLocation(filepath)
   var tokens: seq[Token]
   for r in runes(source):
     let maybeValid = isCompilerSafe(r)

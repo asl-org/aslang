@@ -51,6 +51,7 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, module: R
 # AnalyzedModuleArgumentType. One `type:` block.
 type
   AnalyzedModuleArgumentType* = ref object
+    resolved: ResolvedModuleArgumentType
     module: ResolvedModule
     impls: seq[AnalyzedArgumentType]
 
@@ -77,13 +78,16 @@ proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
 # Constructors + accessors + self for the cluster.
-proc newAnalyzedModuleArgumentType*(module: ResolvedModule, impls: seq[AnalyzedArgumentType]): AnalyzedModuleArgumentType =
-  AnalyzedModuleArgumentType(module: module, impls: impls)
+proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule, impls: seq[AnalyzedArgumentType]): AnalyzedModuleArgumentType =
+  AnalyzedModuleArgumentType(resolved: resolved, module: module, impls: impls)
 
-proc newAnalyzedModuleArgumentType*(module: ResolvedModule): AnalyzedModuleArgumentType =
-  newAnalyzedModuleArgumentType(module, @[])
+proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule): AnalyzedModuleArgumentType =
+  newAnalyzedModuleArgumentType(resolved, module, @[])
 
+proc loc*(m: AnalyzedModuleArgumentType): Location = m.resolved.loc
 proc module*(m: AnalyzedModuleArgumentType): ResolvedModule = m.module
+proc impls*(m: AnalyzedModuleArgumentType): seq[AnalyzedArgumentType] = m.impls
+proc name*(m: AnalyzedModuleArgumentType): Identifier = m.module.name
 
 proc self(argType: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = argType.module.self
 
@@ -96,6 +100,10 @@ proc newAnalyzedDefinedArgumentType*(generic: AnalyzedGenericArgumentType): Anal
 proc kind*(d: AnalyzedDefinedArgumentType): AnalyzedDefinedArgumentTypeKind = d.kind
 proc module*(d: AnalyzedDefinedArgumentType): AnalyzedModuleArgumentType = d.module
 proc generic*(d: AnalyzedDefinedArgumentType): AnalyzedGenericArgumentType = d.generic
+proc loc*(m: AnalyzedDefinedArgumentType): Location =
+  case m.kind:
+  of adatkModule: m.module.loc
+  of adatkGeneric: m.generic.loc
 
 proc self(argType: AnalyzedDefinedArgumentType): ResolvedDefinedArgumentType =
   case argType.kind:
@@ -110,6 +118,11 @@ proc newAnalyzedArgumentType*(definedType: AnalyzedDefinedArgumentType): Analyze
 
 proc kind*(a: AnalyzedArgumentType): AnalyzedArgumentTypeKind = a.kind
 proc definedType*(a: AnalyzedArgumentType): AnalyzedDefinedArgumentType = a.definedType
+
+proc loc*(argType: AnalyzedArgumentType): Location =
+  case argType.kind:
+  of aatkImported: assert(false, "TODO: support analyzed argument type location")
+  of aatkDefined: return argType.definedType.loc
 
 proc self(argType: AnalyzedArgumentType): ResolvedArgumentType =
   case argType.kind:
@@ -175,7 +188,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
               return err(fmt"{targetImpl.loc} type `{targetImpl.name.asl}` does not implement function `{funcDef.name.asl}` to support `{resolvedGeneric.name.asl}`")
             else:
               analyzedImpls.add(analyzedImpl)
-    ok(newAnalyzedModuleArgumentType(typeModule, analyzedImpls))
+    ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   let typeModule = ? file.findModule(argType.module.name)
@@ -204,7 +217,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: R
               return err(fmt"{targetImpl.loc} type `{targetImpl.name.asl}` does not implement function `{funcDef.name.asl}` to support `{resolvedGeneric.name.asl}`")
             else:
               analyzedImpls.add(analyzedImpl)
-    ok(newAnalyzedModuleArgumentType(typeModule, analyzedImpls))
+    ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
 proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
   case argType.kind:
