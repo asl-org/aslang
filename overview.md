@@ -319,16 +319,20 @@ src/
                                    analyzeArgumentList /
                                    analyzeValueTypeAgainstDefinitionType
                                    (overload set) / analyzeFunctionCall /
-                                   analyzeSubjectExpression /
-                                   analyzeCaseBlock / analyzeCases /
+                                   validateSubjectExpr /
+                                   analyzeVariantCasePattern /
+                                   analyzeCasePattern / analyzeCaseBlock /
+                                   analyzeCases (with
+                                   AnalyzedVariantPatternScope
+                                   exhaustiveness check) /
                                    analyzeMatchExpression /
                                    analyzeVariable / analyzeExpression /
                                    analyzeStatement / analyzeFunction /
-                                   analyzeModule) — union case-block,
-                                   getter, initializer, assignment,
-                                   mutation arms still return todo;
-                                   argument-list handles only typed
-                                   (non-literal) args
+                                   analyzeModule) — integer / variable
+                                   case-pattern arms, initializer,
+                                   getter, assignment, mutation arms
+                                   still return todo; argument-list
+                                   handles only typed (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric +

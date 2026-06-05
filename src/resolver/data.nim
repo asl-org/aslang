@@ -47,6 +47,7 @@ proc newResolvedVariant*(parsed: VariantDefinition,
   ResolvedVariant(parsed: parsed, fields: fields)
 
 proc loc*(variant: ResolvedVariant): Location = variant.parsed.loc
+proc name*(variant: ResolvedVariant): Identifier = variant.parsed.name
 proc parsed*(variant: ResolvedVariant): VariantDefinition = variant.parsed
 proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDefinition] = variant.fields
 

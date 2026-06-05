@@ -1,4 +1,4 @@
-import results, tables, strformat, sequtils, options, strutils
+import results, tables, strformat, sequtils, options, strutils, sets
 
 import tokenizer
 import parser
@@ -9,7 +9,88 @@ import funcdefs
 import modules
 
 type AnalyzedModuleScope* = Table[Identifier, AnalyzedModuleDefinition]
+
 type AnalyzedFunctionScope = Table[Identifier, AnalyzedArgumentType]
+proc clone(scope: AnalyzedFunctionScope): AnalyzedFunctionScope =
+  var updated: AnalyzedFunctionScope
+  for key, value in scope: updated[key] = value
+  return updated
+
+type AnalyzedVariantPatternScope = ref object
+  variablePatternFound: bool
+  totalCases: int
+  variants: HashSet[Identifier]
+
+proc newAnalyzedVariantPatternScope(totalCases: int): AnalyzedVariantPatternScope =
+  AnalyzedVariantPatternScope(variablePatternFound: false, totalCases: totalCases, variants: initHashSet[Identifier]())
+
+proc update(scope: AnalyzedVariantPatternScope, id: int, pattern: ResolvedCasePattern): Result[AnalyzedVariantPatternScope, string] =
+  case pattern.kind:
+  of rcpkInteger:
+    err(fmt"{pattern.loc} expected a union variant but found integer literal")
+  of rcpkVariable:
+    if id != scope.totalCases - 1:
+      err(fmt"{pattern.loc} variable pattern binding is supported only in the last case block")
+    else:
+      scope.variablePatternFound = true
+      ok(scope)
+  of rcpkVariant:
+    if pattern.variant.name in scope.variants:
+      err(fmt"{pattern.variant.loc} found duplicate variant `{pattern.variant.name.asl}`")
+    else:
+      scope.variants.incl(pattern.variant.name)
+      ok(scope)
+
+# NOTE: If there is no variable pattern in union matching then all branches must be covered
+proc hasUncoveredCases(scope: AnalyzedVariantPatternScope, totalVariants: int): Result[void, string] =
+  if scope.variablePatternFound or scope.variants.len == totalVariants: ok()
+  # TODO: improve error message by showing the uncovered variants
+  else: err(fmt"case blocks do not cover all the variants")
+
+type AnalyzedVariantPattern = ref object
+  resolved: VariantPattern
+  variant: AnalyzedVariant
+  fields: seq[AnalyzedArgumentDefinition]
+
+proc newAnalyzedVariantPattern(resolved: VariantPattern, variant: AnalyzedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedVariantPattern =
+  AnalyzedVariantPattern(resolved: resolved, variant: variant, fields: fields)
+
+proc bindings(pattern: AnalyzedVariantPattern): seq[AnalyzedArgumentDefinition] =
+  var bindings: seq[AnalyzedArgumentDefinition]
+  for (field, argDef) in zip(pattern.resolved.fields, pattern.fields):
+    let bindingDef = newAnalyzedArgumentDefinition(argDef.argType, field.binding)
+    bindings.add(bindingDef)
+  return bindings
+
+proc analyzeVariantCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, variantPattern: VariantPattern, union: AnalyzedUnion): Result[AnalyzedVariantPattern, string] =
+  let variant = ? union.findVariant(variantPattern.name)
+  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  for field in variantPattern.fields:
+    let analyzedField = ? variant.findField(field.name)
+    analyzedFields.add(analyzedField)
+  ok(newAnalyzedVariantPattern(variantPattern, variant, analyzedFields))
+
+type
+  AnalyzedCasePatternKind = enum
+    acpkVariant
+  AnalyzedCasePattern = ref object
+    case kind: AnalyzedCasePatternKind
+    of acpkVariant: variant: AnalyzedVariantPattern
+
+proc newAnalyzedCasePattern(variant: AnalyzedVariantPattern): AnalyzedCasePattern =
+  AnalyzedCasePattern(kind: acpkVariant, variant: variant)
+
+proc bindings(pattern: AnalyzedCasePattern): seq[AnalyzedArgumentDefinition] =
+  case pattern.kind:
+  of acpkVariant: pattern.variant.bindings
+
+proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, union: AnalyzedUnion): Result[AnalyzedCasePattern, string] =
+  case pattern.kind:
+  of rcpkInteger: err(fmt"{pattern.loc} todo: analyze integer case pattern")
+  of rcpkVariable: err(fmt"{pattern.loc} todo: analyze variable case pattern")
+  of rcpkVariant:
+    let analyzedPattern = ? analyzeVariantCasePattern(app, file, fileScope, module, defScope, funcScope, pattern.variant, union)
+    ok(newAnalyzedCasePattern(analyzedPattern))
 
 type AnalyzedFunctionRef = ref object
   argType: AnalyzedArgumentType
@@ -56,6 +137,16 @@ type
     args: seq[AnalyzedExpression]
     returns: AnalyzedArgumentType
 
+  AnalyzedCaseBlock = ref object
+    resolved: ResolvedCaseBlock
+    pattern: AnalyzedCasePattern
+    statements: seq[AnalyzedStatement]
+
+  AnalyzedMatchExpression = ref object
+    resolved: ResolvedMatchExpression
+    subject: AnalyzedExpression
+    cases: seq[AnalyzedCaseBlock]
+
   AnalyzedExpressionKind = enum
     aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr
   AnalyzedExpression = ref object
@@ -63,7 +154,7 @@ type
     of aekVariable: variable: AnalyzedVariable
     of aekFunctionCall: fncall: AnalyzedFunctionCall
     of aekLiteral: literal: Literal
-    of aekMatchExpr: discard
+    of aekMatchExpr: match: AnalyzedMatchExpression
 
   AnalyzedStatementKind = enum
     askExpr
@@ -77,6 +168,12 @@ proc newAnalyzedFunctionCall(resolved: ResolvedFunctionCall, fnref: AnalyzedFunc
 
 proc loc(fncall: AnalyzedFunctionCall): Location = fncall.resolved.loc
 
+proc newAnalyzedCaseBlock(resolved: ResolvedCaseBlock, pattern: AnalyzedCasePattern, statements: seq[AnalyzedStatement]): AnalyzedCaseBlock =
+  AnalyzedCaseBlock(resolved: resolved, pattern: pattern, statements: statements)
+
+proc newAnalyzedMatchExpression(resolved: ResolvedMatchExpression, subject: AnalyzedExpression, cases: seq[AnalyzedCaseBlock]): AnalyzedMatchExpression =
+  AnalyzedMatchExpression(resolved: resolved, subject: subject, cases: cases)
+
 proc newAnalyzedExpression(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
 
@@ -86,8 +183,8 @@ proc newAnalyzedExpression(fncall: AnalyzedFunctionCall): AnalyzedExpression =
 proc newAnalyzedExpression(literal: Literal): AnalyzedExpression =
   AnalyzedExpression(kind: aekLiteral, literal: literal)
 
-proc newAnalyzedExpression(): AnalyzedExpression =
-  AnalyzedExpression(kind: aekMatchExpr)
+proc newAnalyzedExpression(match: AnalyzedMatchExpression): AnalyzedExpression =
+  AnalyzedExpression(kind: aekMatchExpr, match: match)
 
 proc loc(expression: AnalyzedExpression): Location =
   case expression.kind:
@@ -107,6 +204,8 @@ proc newAnalyzedStatement(expression: AnalyzedExpression): AnalyzedStatement =
   AnalyzedStatement(kind: askExpr, expression: expression)
 
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string]
+
+proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string]
 
 proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType): Result[void, string]
 
@@ -180,7 +279,7 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
     # TODO: find a way to compute concrete return type for now just passing along the funcDef.returns
     ok(newAnalyzedFunctionCall(fncall, funcRef, analyzedArgs, matchingFuncDef.get.returns))
 
-proc analyzeSubjectExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, subject: AnalyzedExpression): Result[AnalyzedData, string] =
+proc validateSubjectExpr*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, subject: AnalyzedExpression): Result[AnalyzedData, string] =
   if subject.argType.isNone:
     err(fmt"{subject.loc} todo: analyze case blocks for literal expression")
   else:
@@ -204,18 +303,33 @@ proc analyzeSubjectExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: 
           else:
             ok(subjectModule.data.get)
 
+proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[AnalyzedCaseBlock, string] =
+  let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern, union)
+  var caseScope = funcScope.clone()
+  for binding in analyzedCasePattern.bindings:
+    caseScope[binding.name] = binding.argType
+  var analyzedStatements: seq[AnalyzedStatement]
+  for statement in caseBlock.statements:
+    let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, caseScope, statement)
+    analyzedStatements.add(analyzedStatement)
+  ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
-proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[void, string] =
-  err(fmt"{caseBlock.loc} todo: analyze case blocks for union module")
+proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], union: AnalyzedUnion): Result[seq[AnalyzedCaseBlock], string] =
+  var patternScope = newAnalyzedVariantPatternScope(cases.len)
+  for id, caseBlock in cases:
+    patternScope = ? patternScope.update(id, caseBlock.pattern)
 
-proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], union: AnalyzedUnion): Result[void, string] =
+  ? hasUncoveredCases(patternScope, union.variants.len)
+
+  var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
   for caseBlock in cases:
-    ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, union)
-  ok()
+    let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, union)
+    analyzedCaseBlocks.add(analyzedCaseBlock)
+  ok(analyzedCaseBlocks)
 
-proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[void, string] =
+proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
   let analyzedSubjectExpr = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, match.subject)
-  let analyzedSubjectDataType = ? analyzeSubjectExpression(app, file, fileScope, module, defScope, funcScope, analyzedSubjectExpr)
+  let analyzedSubjectDataType = ? validateSubjectExpr(app, file, fileScope, module, defScope, funcScope, analyzedSubjectExpr)
   case analyzedSubjectDataType.kind:
   of adkStruct:
     let moduleName = analyzedSubjectExpr.argType.get.name
@@ -226,11 +340,8 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
     if match.cases.len == 0:
       err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
     else:
-      ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.union)
-      ok()
-
-  # for caseBlock in match.cases:
-  #   ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, analyzedSubjectExpr.argType)
+      let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.union)
+      ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases))
 
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string] =
   case expression.kind:
@@ -244,8 +355,8 @@ proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyze
     let analyzedFunctionCall = ? analyzeFunctionCall(app, file, fileScope, module, defScope, funcScope, expression.fncall)
     ok(newAnalyzedExpression(analyzedFunctionCall))
   of rekMatchExpr:
-    ? analyzeMatchExpression(app, file, fileScope, module, defScope, funcScope, expression.match)
-    ok(newAnalyzedExpression())
+    let analyzedMatchExpr = ? analyzeMatchExpression(app, file, fileScope, module, defScope, funcScope, expression.match)
+    ok(newAnalyzedExpression(analyzedMatchExpr))
 
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   case statement.kind:

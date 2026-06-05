@@ -46,9 +46,7 @@ type VariantPattern* = ref object
   bindings: seq[Identifier]
   loc: Location
 
-proc newVariantPattern*(variant: Identifier,
-    fields: seq[VariantPatternField],
-    loc: Location): Result[VariantPattern, ParserError] =
+proc newVariantPattern*(variant: Identifier, fields: seq[VariantPatternField]): Result[VariantPattern, ParserError] =
   var nameIndex: Table[Identifier, int]
   var bindingIndex: Table[Identifier, int]
   var bindings: seq[Identifier]
@@ -69,12 +67,12 @@ proc newVariantPattern*(variant: Identifier,
       bindings.add(field.binding)
       bindingIndex[field.binding] = index
 
-  ok(VariantPattern(variant: variant, fields: fields, bindings: bindings, loc: loc))
+  ok(VariantPattern(variant: variant, fields: fields, bindings: bindings))
 
 proc name*(vp: VariantPattern): Identifier = vp.variant
 proc fields*(vp: VariantPattern): seq[VariantPatternField] = vp.fields
 proc bindings*(vp: VariantPattern): seq[Identifier] = vp.bindings
-proc loc*(vp: VariantPattern): Location = vp.loc
+proc loc*(vp: VariantPattern): Location = vp.name.loc
 
 proc asl(vp: VariantPattern): string =
   result = fmt"{asl(vp.variant)} " & "{"
@@ -91,7 +89,7 @@ let variantPatternSpec* = Spec[VariantPattern](
   discard parser.run(any(spaceSpec))
   let fields = ? parser.run(contained("variant_fields", "{",
     separatedBy(variantPatternFieldSpec, commaWithSpacesSpec), "}"))
-  newVariantPattern(name, fields, name.loc)
+  newVariantPattern(name, fields)
 )
 
 # ============================================================

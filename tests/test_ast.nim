@@ -145,7 +145,7 @@ suite "ast — VariantPattern invariants":
     # Two pattern fields with the same `name`, different bindings.
     let f1 = newVariantPatternField(id("value"), id("a"), newLocation())
     let f2 = newVariantPatternField(id("value"), id("b"), newLocation())
-    let r = newVariantPattern(id("Ok"), @[f1, f2], newLocation())
+    let r = newVariantPattern(id("Ok"), @[f1, f2])
     check r.isErr
     check errorContains(r.error.msg, "duplicate field")
 
@@ -153,12 +153,12 @@ suite "ast — VariantPattern invariants":
     # Different field names, same binding identifier.
     let f1 = newVariantPatternField(id("value"), id("x"), newLocation())
     let f2 = newVariantPatternField(id("error"), id("x"), newLocation())
-    let r = newVariantPattern(id("Ok"), @[f1, f2], newLocation())
+    let r = newVariantPattern(id("Ok"), @[f1, f2])
     check r.isErr
     check errorContains(r.error.msg, "duplicate binding")
 
   test "newVariantPattern accepts an empty fields list":
-    let r = newVariantPattern(id("Ok"), @[], newLocation())
+    let r = newVariantPattern(id("Ok"), @[])
     check r.isOk
 
 suite "ast — Import invariants":
