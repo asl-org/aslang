@@ -97,6 +97,7 @@ type
     expression: ResolvedExpression
 
   ResolvedCaseBlock* = ref object
+    parsed: CaseBlock
     pattern: ResolvedCasePattern
     statements: seq[ResolvedStatement]
 
@@ -183,15 +184,21 @@ proc newResolvedMutation*(getter: ResolvedGetter,
 proc loc*(mutation: ResolvedMutation): Location =
   mutation.getter.loc
 
-proc newResolvedCaseBlock*(pattern: ResolvedCasePattern,
+proc newResolvedCaseBlock*(parsed: CaseBlock, pattern: ResolvedCasePattern,
     statements: seq[ResolvedStatement]): ResolvedCaseBlock =
-  ResolvedCaseBlock(pattern: pattern, statements: statements)
+  ResolvedCaseBlock(parsed: parsed, pattern: pattern, statements: statements)
+
+proc loc*(caseBlock: ResolvedCaseBlock): Location = caseBlock.parsed.loc
+proc pattern*(caseBlock: ResolvedCaseBlock): ResolvedCasePattern = caseBlock.pattern
+proc statements*(caseBlock: ResolvedCaseBlock): seq[ResolvedStatement] = caseBlock.statements
 
 proc newResolvedMatchExpression*(subject: ResolvedExpression,
     cases: seq[ResolvedCaseBlock], loc: Location): ResolvedMatchExpression =
   ResolvedMatchExpression(subject: subject, cases: cases, loc: loc)
 
 proc loc*(match: ResolvedMatchExpression): Location = match.loc
+proc subject*(match: ResolvedMatchExpression): ResolvedExpression = match.subject
+proc cases*(match: ResolvedMatchExpression): seq[ResolvedCaseBlock] = match.cases
 
 proc newResolvedExpression*(fncall: ResolvedFunctionCall): ResolvedExpression =
   ResolvedExpression(kind: rekFunctionCall, fncall: fncall)
@@ -394,7 +401,7 @@ proc resolveCaseBlock(app: App, file: parser.File, fileScope: FileScope,
     resolvedStatements.add(resolvedStatement)
     if resolvedStatement.variable.isSome:
       childScope.incl(resolvedStatement.variable.get)
-  ok(newResolvedCaseBlock(resolvedCasePattern, resolvedStatements))
+  ok(newResolvedCaseBlock(caseBlock, resolvedCasePattern, resolvedStatements))
 
 proc resolveMatchExpression(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,

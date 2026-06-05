@@ -41,12 +41,12 @@ let variantPatternFieldSpec* = Spec[VariantPatternField](
 # ============================================================
 
 type VariantPattern* = ref object
-  variantName: Identifier
+  variant: Identifier
   fields: seq[VariantPatternField]
   bindings: seq[Identifier]
   loc: Location
 
-proc newVariantPattern*(variantName: Identifier,
+proc newVariantPattern*(variant: Identifier,
     fields: seq[VariantPatternField],
     loc: Location): Result[VariantPattern, ParserError] =
   var nameIndex: Table[Identifier, int]
@@ -69,16 +69,16 @@ proc newVariantPattern*(variantName: Identifier,
       bindings.add(field.binding)
       bindingIndex[field.binding] = index
 
-  ok(VariantPattern(variantName: variantName, fields: fields, bindings: bindings, loc: loc))
+  ok(VariantPattern(variant: variant, fields: fields, bindings: bindings, loc: loc))
 
-proc name*(vp: VariantPattern): Identifier = vp.variantName
+proc name*(vp: VariantPattern): Identifier = vp.variant
 proc fields*(vp: VariantPattern): seq[VariantPatternField] = vp.fields
 proc bindings*(vp: VariantPattern): seq[Identifier] = vp.bindings
 proc loc*(vp: VariantPattern): Location = vp.loc
 
-proc asl(variant: VariantPattern): string =
-  result = fmt"{asl(variant.variantName)} " & "{"
-  for i, field in variant.fields:
+proc asl(vp: VariantPattern): string =
+  result = fmt"{asl(vp.variant)} " & "{"
+  for i, field in vp.fields:
     if i > 0: result.add(", ")
     result.add(asl(field))
   result.add(" }")

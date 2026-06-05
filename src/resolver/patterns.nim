@@ -5,6 +5,7 @@
 
 import results
 
+import tokenizer
 import parser
 
 type
@@ -24,6 +25,16 @@ proc newResolvedCasePattern*(variable: Identifier): ResolvedCasePattern =
 
 proc newResolvedCasePattern*(variant: VariantPattern): ResolvedCasePattern =
   ResolvedCasePattern(kind: rcpkVariant, variant: variant)
+
+proc kind*(pattern: ResolvedCasePattern): ResolvedCasePatternKind = pattern.kind
+proc integer*(pattern: ResolvedCasePattern): IntegerLiteral = pattern.integer
+proc variable*(pattern: ResolvedCasePattern): Identifier = pattern.variable
+proc variant*(pattern: ResolvedCasePattern): VariantPattern = pattern.variant
+proc loc*(pattern: ResolvedCasePattern): Location =
+  case pattern.kind:
+  of rcpkInteger: pattern.integer.loc
+  of rcpkVariable: pattern.variable.loc
+  of rcpkVariant: pattern.variant.loc
 
 proc resolveCasePattern*(casePattern: CasePattern): Result[
     ResolvedCasePattern, string] =

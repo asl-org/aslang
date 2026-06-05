@@ -29,6 +29,7 @@ proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): 
 
 proc resolved*(g: AnalyzedGenericArgumentType): ResolvedGeneric = g.resolved
 proc loc*(g: AnalyzedGenericArgumentType): Location = g.loc
+proc name*(g: AnalyzedGenericArgumentType): Identifier = g.resolved.name
 
 proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   let genericArg = ? file.findGeneric(genericArgType.parsed.name)
@@ -105,6 +106,11 @@ proc loc*(m: AnalyzedDefinedArgumentType): Location =
   of adatkModule: m.module.loc
   of adatkGeneric: m.generic.loc
 
+proc name*(m: AnalyzedDefinedArgumentType): Identifier =
+  case m.kind:
+  of adatkModule: m.module.name
+  of adatkGeneric: m.generic.name
+
 proc self(argType: AnalyzedDefinedArgumentType): ResolvedDefinedArgumentType =
   case argType.kind:
   of adatkModule: newResolvedDefinedArgumentType(argType.module.self)
@@ -118,6 +124,11 @@ proc newAnalyzedArgumentType*(definedType: AnalyzedDefinedArgumentType): Analyze
 
 proc kind*(a: AnalyzedArgumentType): AnalyzedArgumentTypeKind = a.kind
 proc definedType*(a: AnalyzedArgumentType): AnalyzedDefinedArgumentType = a.definedType
+
+proc name*(argType: AnalyzedArgumentType): Identifier =
+  case argType.kind:
+  of aatkImported: assert(false, "TODO: support analyzed argument type name")
+  of aatkDefined: return argType.definedType.name
 
 proc loc*(argType: AnalyzedArgumentType): Location =
   case argType.kind:

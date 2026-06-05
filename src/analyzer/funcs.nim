@@ -4,6 +4,7 @@ import tokenizer
 import parser
 import resolver
 import argtypes
+import data
 import funcdefs
 import modules
 
@@ -179,8 +180,57 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
     # TODO: find a way to compute concrete return type for now just passing along the funcDef.returns
     ok(newAnalyzedFunctionCall(fncall, funcRef, analyzedArgs, matchingFuncDef.get.returns))
 
+proc analyzeSubjectExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, subject: AnalyzedExpression): Result[AnalyzedData, string] =
+  if subject.argType.isNone:
+    err(fmt"{subject.loc} todo: analyze case blocks for literal expression")
+  else:
+    let subjectType = subject.argType.get
+    case subjectType.kind:
+    of aatkImported:
+      err(fmt"{subject.loc} todo: analyze case blocks for imported subject type")
+    of aatkDefined:
+      let subjectDefinedType = subjectType.definedType
+      case subjectDefinedType.kind:
+      of adatkGeneric:
+        err(fmt"{subject.loc} todo: analyze case blocks for generic subject type")
+      of adatkModule:
+        let subjectModuleType = subjectDefinedType.module
+        if subjectModuleType.name notin defScope:
+          err(fmt"{subject.loc} UNREACHABLE: module `{subjectModuleType.name.asl}` is not defined")
+        else:
+          let subjectModule = defScope[subjectModuleType.name]
+          if subjectModule.data.isNone:
+            err(fmt"{subject.loc} UNREACHABLE: subject expression does not return a data type")
+          else:
+            ok(subjectModule.data.get)
+
+
+proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[void, string] =
+  err(fmt"{caseBlock.loc} todo: analyze case blocks for union module")
+
+proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], union: AnalyzedUnion): Result[void, string] =
+  for caseBlock in cases:
+    ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, union)
+  ok()
+
 proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[void, string] =
-  err(fmt"{match.loc} todo: analyze match expression")
+  let analyzedSubjectExpr = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, match.subject)
+  let analyzedSubjectDataType = ? analyzeSubjectExpression(app, file, fileScope, module, defScope, funcScope, analyzedSubjectExpr)
+  case analyzedSubjectDataType.kind:
+  of adkStruct:
+    let moduleName = analyzedSubjectExpr.argType.get.name
+    err(fmt"{match.loc} match block only supports literal and union types but subject expression returns `{moduleName.asl}` a struct type")
+  of adkLiteral:
+    err(fmt"{match.loc} todo: analyze case blocks for literal module")
+  of adkUnion:
+    if match.cases.len == 0:
+      err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
+    else:
+      ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.union)
+      ok()
+
+  # for caseBlock in match.cases:
+  #   ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, analyzedSubjectExpr.argType)
 
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string] =
   case expression.kind:
