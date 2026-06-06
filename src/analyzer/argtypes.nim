@@ -8,7 +8,7 @@
 ## of analyzeGenericArgumentType / analyzeModuleArgumentType /
 ## analyzeDefinedArgumentType / analyzeArgumentType live here too.
 
-import results, strformat, options, sequtils, tables
+import results, strformat, options, sequtils, tables, hashes
 
 import tokenizer
 import parser
@@ -30,6 +30,8 @@ proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): 
 proc resolved*(g: AnalyzedGenericArgumentType): ResolvedGeneric = g.resolved
 proc loc*(g: AnalyzedGenericArgumentType): Location = g.loc
 proc name*(g: AnalyzedGenericArgumentType): Identifier = g.resolved.name
+proc hash*(g: AnalyzedGenericArgumentType): Hash = g.resolved.hash
+proc `==`*(a, b: AnalyzedGenericArgumentType): bool = a.hash == b.hash
 
 proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   let genericArg = ? file.findGeneric(genericArgType.parsed.name)
@@ -75,6 +77,7 @@ type
 # Forward declarations for the dual-context overloads — both arities
 # of analyzeArgumentType need to be visible inside
 # analyzeModuleArgumentType.
+proc hash*(m: AnalyzedArgumentType): Hash
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
@@ -89,8 +92,13 @@ proc loc*(m: AnalyzedModuleArgumentType): Location = m.resolved.loc
 proc module*(m: AnalyzedModuleArgumentType): ResolvedModule = m.module
 proc impls*(m: AnalyzedModuleArgumentType): seq[AnalyzedArgumentType] = m.impls
 proc name*(m: AnalyzedModuleArgumentType): Identifier = m.module.name
-
 proc self(argType: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = argType.module.self
+proc hash*(m: AnalyzedModuleArgumentType): Hash =
+  var acc = m.module.hash
+  for impl in m.impls:
+    acc = acc !& impl.hash
+  return acc
+proc `==`*(a, b: AnalyzedModuleArgumentType): bool = a.hash == b.hash
 
 proc newAnalyzedDefinedArgumentType*(module: AnalyzedModuleArgumentType): AnalyzedDefinedArgumentType =
   AnalyzedDefinedArgumentType(kind: adatkModule, module: module)
@@ -119,6 +127,12 @@ proc self(argType: AnalyzedDefinedArgumentType): ResolvedDefinedArgumentType =
     let dummyLocation = newLocation()
     newResolvedDefinedArgumentType(newResolvedGenericArgumentType(argType.generic.resolved.self, dummyLocation))
 
+proc hash*(m: AnalyzedDefinedArgumentType): Hash =
+  case m.kind:
+  of adatkModule: m.module.hash
+  of adatkGeneric: m.generic.hash
+proc `==`*(a, b: AnalyzedDefinedArgumentType): bool = a.hash == b.hash
+
 proc newAnalyzedArgumentType*(definedType: AnalyzedDefinedArgumentType): AnalyzedArgumentType =
   AnalyzedArgumentType(kind: aatkDefined, definedType: definedType)
 
@@ -139,6 +153,12 @@ proc self(argType: AnalyzedArgumentType): ResolvedArgumentType =
   case argType.kind:
   of aatkImported: assert(false, "TODO: support analyzed argument type self construction")
   of aatkDefined: return newResolvedArgumentType(argType.definedType.self)
+
+proc hash*(m: AnalyzedArgumentType): Hash =
+  case m.kind:
+  of aatkImported: assert(false, "TODO: support analyzed argument type hash")
+  of aatkDefined: return m.definedType.hash
+proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   var typeModule: ResolvedModule

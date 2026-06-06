@@ -131,6 +131,9 @@ proc newResolvedKeywordArgument*(name: Identifier,
     expression: ResolvedExpression): ResolvedKeywordArgument =
   ResolvedKeywordArgument(name: name, expression: expression)
 
+proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.name
+proc expression*(kwarg: ResolvedKeywordArgument): ResolvedExpression = kwarg.expression
+
 proc newResolvedStructInitializer*(argType: ResolvedArgumentType,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
   ResolvedStructInitializer(argType: argType, kwargs: kwargs)

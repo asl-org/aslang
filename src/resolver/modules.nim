@@ -105,6 +105,9 @@ proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
 proc name*(generic: ResolvedGeneric): Identifier = generic.parsed.name
 proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDefinition] = generic.funcDefs
 proc loc*(generic: ResolvedGeneric): Location = generic.parsed.loc
+proc hash*(a: ResolvedGeneric): Hash = a.parsed.hash
+proc `==`*(a, b: ResolvedGeneric): bool = a.hash == b.hash
+
 proc concreteImpls*(generic: ResolvedGeneric, concrete: ResolvedArgumentType): seq[ResolvedFunctionDefinition] =
   var concreteFuncDefs: seq[ResolvedFunctionDefinition]
   for def in generic.funcDefs:

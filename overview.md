@@ -320,30 +320,36 @@ src/
                                    / analyzeArgumentList /
                                    analyzeValueTypeAgainstDefinitionType
                                    (overload set) / analyzeFunctionCall /
-                                   validateSubjectExpr /
                                    analyzeVariantCasePattern /
                                    analyzeCasePattern / analyzeCaseBlock /
                                    analyzeCases (with
                                    AnalyzedVariantPatternScope
-                                   exhaustiveness check) /
-                                   analyzeMatchExpression /
+                                   exhaustiveness + uniform-return
+                                   checks) / analyzeMatchExpression /
+                                   analyzeKeywordArgument /
                                    analyzeUnionInitializer /
                                    analyzeInitializer / analyzeVariable /
                                    analyzeExpression / analyzeStatement /
-                                   analyzeFunction / analyzeModule) —
-                                   integer / variable case-pattern arms,
-                                   union initializer body, literal /
-                                   struct initializer, getter,
-                                   assignment, mutation arms still
-                                   return todo; argument-list handles
-                                   only typed (non-literal) args
+                                   analyzeUserFunction (returns
+                                   AnalyzedUserFunction, enforces
+                                   last-statement return-type match) /
+                                   analyzeModule (returns AnalyzedModule
+                                   with AnalyzedFunction[Extern|User]
+                                   wrappers)) — integer / variable
+                                   case-pattern arms, literal / struct
+                                   initializer, getter, assignment,
+                                   mutation arms still return todo;
+                                   argument-list handles only typed
+                                   (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric +
                                    analyzeModuleDefinition /
                                    analyzeGeneric
-    decls.nim                      AnalyzedDefinedType / AnalyzedFile /
-                                   AnalyzedApp + analyzeDefinedType /
+    decls.nim                      AnalyzedDefinedType / AnalyzedFile
+                                   (with imports + definedTypes +
+                                   modules) / AnalyzedApp +
+                                   analyzeDefinedType /
                                    analyzeFile + the public `analyze*` entry
 
 examples/

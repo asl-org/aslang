@@ -45,8 +45,9 @@ proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyz
 type AnalyzedFile* = ref object
   imports: seq[AnalyzedImport]
   definedTypes: seq[AnalyzedDefinedType]
+  modules: seq[AnalyzedModule]
 
-proc newAnalyzedFile*(imports: seq[AnalyzedImport], definedTypes: seq[AnalyzedDefinedType]): AnalyzedFile =
+proc newAnalyzedFile*(imports: seq[AnalyzedImport], definedTypes: seq[AnalyzedDefinedType], modules: seq[AnalyzedModule]): AnalyzedFile =
   AnalyzedFile(imports: imports, definedTypes: definedTypes)
 
 proc imports*(f: AnalyzedFile): seq[AnalyzedImport] = f.imports
@@ -71,12 +72,14 @@ proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, st
     of adtkGeneric: discard
     of adtkModule: analyzedModuleScope[analyzedDefinedType.name] = analyzedDefinedType.module
 
+  var analyzedModules: seq[AnalyzedModule]
   for aslType in file.definedTypes:
     case aslType.kind:
     of rdtkGeneric: discard # generics are already resolved since it is only a definition type
     of rdtkModule:
-      ? analyzeModule(app, file, fileScope, aslType.module, analyzedModuleScope)
-  ok(newAnalyzedFile(analyzedImports, analyzedDefinedTypes))
+      let analyzedModule = ? analyzeModule(app, file, fileScope, aslType.module, analyzedModuleScope)
+      analyzedModules.add(analyzedModule)
+  ok(newAnalyzedFile(analyzedImports, analyzedDefinedTypes, analyzedModules))
 
 # AnalyzedApp + entry
 type AnalyzedApp* = ref object
