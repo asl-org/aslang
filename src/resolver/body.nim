@@ -143,6 +143,9 @@ proc newResolvedUnionInitializer*(argType: ResolvedArgumentType,
   ResolvedUnionInitializer(argType: argType, variant: variant, kwargs: kwargs)
 
 proc loc*(init: ResolvedUnionInitializer): Location = init.argType.loc
+proc argType*(init: ResolvedUnionInitializer): ResolvedArgumentType = init.argType
+proc variant*(init: ResolvedUnionInitializer): Identifier = init.variant
+proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
 
 proc newResolvedInitializer*(
     struct: ResolvedStructInitializer): ResolvedInitializer =
@@ -155,6 +158,9 @@ proc newResolvedInitializer*(
 proc newResolvedInitializer*(
     literal: ResolvedLiteralInitializer): ResolvedInitializer =
   ResolvedInitializer(kind: rikLiteral, literal: literal)
+
+proc kind*(init: ResolvedInitializer): ResolvedInitializerKind = init.kind
+proc union*(init: ResolvedInitializer): ResolvedUnionInitializer = init.union
 
 proc loc*(init: ResolvedInitializer): Location =
   case init.kind:
@@ -225,6 +231,7 @@ proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall = expression.
 proc variable*(expression: ResolvedExpression): Identifier = expression.variable
 proc literal*(expression: ResolvedExpression): Literal = expression.literal
 proc match*(expression: ResolvedExpression): ResolvedMatchExpression = expression.match
+proc init*(expression: ResolvedExpression): ResolvedInitializer = expression.initializer
 
 proc loc*(expression: ResolvedExpression): Location =
   case expression.kind:

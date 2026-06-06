@@ -313,10 +313,11 @@ src/
     data.nim                       AnalyzedStruct / AnalyzedVariant /
                                    AnalyzedUnion / AnalyzedData + their
                                    analyzeX procs
-    funcs.nim                      (WIP) AnalyzedModuleScope /
-                                   AnalyzedFunctionScope + body-walker
-                                   procs (analyzeFunctionRef /
-                                   analyzeArgumentList /
+    funcs.nim                      (WIP) AnalyzedModuleScope (+
+                                   findModuleDef / extractDataBlock
+                                   helpers) / AnalyzedFunctionScope +
+                                   body-walker procs (analyzeFunctionRef
+                                   / analyzeArgumentList /
                                    analyzeValueTypeAgainstDefinitionType
                                    (overload set) / analyzeFunctionCall /
                                    validateSubjectExpr /
@@ -326,13 +327,16 @@ src/
                                    AnalyzedVariantPatternScope
                                    exhaustiveness check) /
                                    analyzeMatchExpression /
-                                   analyzeVariable / analyzeExpression /
-                                   analyzeStatement / analyzeFunction /
-                                   analyzeModule) — integer / variable
-                                   case-pattern arms, initializer,
-                                   getter, assignment, mutation arms
-                                   still return todo; argument-list
-                                   handles only typed (non-literal) args
+                                   analyzeUnionInitializer /
+                                   analyzeInitializer / analyzeVariable /
+                                   analyzeExpression / analyzeStatement /
+                                   analyzeFunction / analyzeModule) —
+                                   integer / variable case-pattern arms,
+                                   union initializer body, literal /
+                                   struct initializer, getter,
+                                   assignment, mutation arms still
+                                   return todo; argument-list handles
+                                   only typed (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric +

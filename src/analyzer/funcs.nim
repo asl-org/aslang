@@ -9,6 +9,31 @@ import funcdefs
 import modules
 
 type AnalyzedModuleScope* = Table[Identifier, AnalyzedModuleDefinition]
+proc findModuleDef(defScope: AnalyzedModuleScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedModuleDefinition, string] =
+  case argType.kind:
+  of aatkImported:
+    err(fmt"{loc} todo: analyze case blocks for imported subject type")
+  of aatkDefined:
+    let definedArgType = argType.definedType
+    case definedArgType.kind:
+    of adatkGeneric:
+      err(fmt"{loc} todo: analyze case blocks for generic subject type")
+    of adatkModule:
+      let moduleArgType = definedArgType.module
+      if moduleArgType.name notin defScope:
+        err(fmt"{loc} UNREACHABLE: module `{moduleArgType.name.asl}` is not defined")
+      else:
+        ok(defScope[moduleArgType.name])
+
+proc extractDataBlock(defScope: AnalyzedModuleScope, module: AnalyzedModuleDefinition, loc: Location): Result[AnalyzedData, string] =
+  if module.data.isNone:
+    err(fmt"{loc} UNREACHABLE: subject expression does not return a data type")
+  else:
+    ok(module.data.get)
+
+proc extractDataBlock(defScope: AnalyzedModuleScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedData, string] =
+  let argModule = ? defScope.findModuleDef(argType, loc)
+  defScope.extractDataBlock(argModule, loc)
 
 type AnalyzedFunctionScope = Table[Identifier, AnalyzedArgumentType]
 proc clone(scope: AnalyzedFunctionScope): AnalyzedFunctionScope =
@@ -148,13 +173,14 @@ type
     cases: seq[AnalyzedCaseBlock]
 
   AnalyzedExpressionKind = enum
-    aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr
+    aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr, aekInitializer
   AnalyzedExpression = ref object
     case kind: AnalyzedExpressionKind
     of aekVariable: variable: AnalyzedVariable
     of aekFunctionCall: fncall: AnalyzedFunctionCall
     of aekLiteral: literal: Literal
     of aekMatchExpr: match: AnalyzedMatchExpression
+    of aekInitializer: discard
 
   AnalyzedStatementKind = enum
     askExpr
@@ -186,12 +212,16 @@ proc newAnalyzedExpression(literal: Literal): AnalyzedExpression =
 proc newAnalyzedExpression(match: AnalyzedMatchExpression): AnalyzedExpression =
   AnalyzedExpression(kind: aekMatchExpr, match: match)
 
+proc newAnalyzedExpression(): AnalyzedExpression =
+  AnalyzedExpression(kind: aekInitializer)
+
 proc loc(expression: AnalyzedExpression): Location =
   case expression.kind:
   of aekFunctionCall: return expression.fncall.loc
   of aekVariable: return expression.variable.loc
   of aekLiteral: return expression.literal.loc
   of aekMatchExpr: assert(false, fmt"todo: implement location for match expression")
+  of aekInitializer: assert(false, fmt"todo: implement location for initializer expression")
 
 proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType] =
   case expression.kind:
@@ -199,6 +229,7 @@ proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType] =
   of aekVariable: return some(expression.variable.argType)
   of aekLiteral: return none(AnalyzedArgumentType)
   of aekMatchExpr: assert(false, fmt"todo: implement return type for match expression")
+  of aekInitializer: assert(false, fmt"todo: implement return type for initializer expression")
 
 proc newAnalyzedStatement(expression: AnalyzedExpression): AnalyzedStatement =
   AnalyzedStatement(kind: askExpr, expression: expression)
@@ -283,25 +314,7 @@ proc validateSubjectExpr*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
   if subject.argType.isNone:
     err(fmt"{subject.loc} todo: analyze case blocks for literal expression")
   else:
-    let subjectType = subject.argType.get
-    case subjectType.kind:
-    of aatkImported:
-      err(fmt"{subject.loc} todo: analyze case blocks for imported subject type")
-    of aatkDefined:
-      let subjectDefinedType = subjectType.definedType
-      case subjectDefinedType.kind:
-      of adatkGeneric:
-        err(fmt"{subject.loc} todo: analyze case blocks for generic subject type")
-      of adatkModule:
-        let subjectModuleType = subjectDefinedType.module
-        if subjectModuleType.name notin defScope:
-          err(fmt"{subject.loc} UNREACHABLE: module `{subjectModuleType.name.asl}` is not defined")
-        else:
-          let subjectModule = defScope[subjectModuleType.name]
-          if subjectModule.data.isNone:
-            err(fmt"{subject.loc} UNREACHABLE: subject expression does not return a data type")
-          else:
-            ok(subjectModule.data.get)
+    defScope.extractDataBlock(subject.argType.get, subject.loc)
 
 proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[AnalyzedCaseBlock, string] =
   let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern, union)
@@ -343,9 +356,34 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
       let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.union)
       ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases))
 
+proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[void, string] =
+  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
+  let argModule = ? defScope.findModuleDef(analyzedArgType, init.loc)
+  let dataBlock = ? defScope.extractDataBlock(argModule, init.loc)
+  case dataBlock.kind:
+  of adkLiteral:
+    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a union block but found literal")
+  of adkStruct:
+    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a union block but found struct")
+  of adkUnion:
+    let analyzedVariant = ? dataBlock.union.findVariant(init.variant)
+    err(fmt"{init.loc} todo: analyze module union initializer")
+
+proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[void, string] =
+  case init.kind:
+  of rikLiteral:
+    err(fmt"{init.loc} todo: analyze literal initializer")
+  of rikStruct:
+    err(fmt"{init.loc} todo: analyze struct initializer")
+  of rikUnion:
+    ? analyzeUnionInitializer(app, file, fileScope, module, defScope, funcScope, init.union)
+    ok()
+
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string] =
   case expression.kind:
-  of rekInitializer: err(fmt"{expression.loc} todo: analyze initializer")
+  of rekInitializer:
+    ? analyzeInitializer(app, file, fileScope, module, defScope, funcScope, expression.init)
+    ok(newAnalyzedExpression())
   of rekGetter: err(fmt"{expression.loc} todo: analyze getter")
   of rekLiteral: ok(newAnalyzedExpression(expression.literal))
   of rekVariable:
