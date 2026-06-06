@@ -258,8 +258,19 @@ proc loc(expression: AnalyzedExpression): Location =
   of aekFunctionCall: return expression.fncall.loc
   of aekVariable: return expression.variable.loc
   of aekLiteral: return expression.literal.loc
-  of aekMatchExpr: assert(false, fmt"todo: implement location for match expression")
-  of aekInitializer: assert(false, fmt"todo: implement location for initializer expression")
+  of aekMatchExpr:
+    # BUG: both arms below hard-crash whenever the analyzer needs the loc
+    # of a match-or-initializer expression — which happens the first time
+    # analyzedSubjectExpr.loc fires on a nested match or an initializer
+    # subject in analyzeMatchExpression (line ~393). Both have a `resolved`
+    # field with a real loc — wire them through:
+    #   of aekMatchExpr:   return expression.match.resolved.loc
+    #   of aekInitializer: return expression.init.union.resolved.loc  (once
+    #                      literal/struct initializer arms exist, dispatch
+    #                      on init.kind first).
+    assert(false, "BUG: AnalyzedExpression.loc is unwired for aekMatchExpr — delegate to expression.match.resolved.loc")
+  of aekInitializer:
+    assert(false, "BUG: AnalyzedExpression.loc is unwired for aekInitializer — delegate to expression.init's underlying resolved loc")
 
 proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType] =
   case expression.kind:
@@ -324,6 +335,13 @@ proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile,
     ok()
 
 proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: AnalyzedFunctionDefinition): Result[void, string] =
+  # BUG: `zip` below silently truncates to the shorter sequence — if
+  # funcDef.args.len != argValues.len the type-check walks only the common
+  # prefix and reports success. Today the resolver's arity check prevents
+  # this from being reachable, but the defensive assert traps the mismatch
+  # if overload selection is ever wired wrong upstream.
+  assert(funcDef.args.len == argValues.len,
+    fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {funcDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
   for (argDef, argValue) in zip(funcDef.args, argValues):
     if argValue.argType.isNone:
       return err(fmt"{argValue.loc} todo: analyze function call literal argument")
@@ -338,6 +356,14 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
     let analyzedArg = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, arg)
     analyzedArgs.add(analyzedArg)
 
+  # BUG: overload selection below is broken — `maybeAnalyzedArgs` is computed
+  # and discarded; `matchingFuncDef` is set unconditionally to the last
+  # candidate every iteration. Fix: only set matchingFuncDef when
+  # analyzeArgumentList(...).isOk (and probably break on first match, or
+  # error on ambiguous match). For now this assert traps the multi-overload
+  # path so the silent-wrong-candidate behaviour can't hide.
+  assert(funcRef.funcDefs.len <= 1,
+    fmt"{fncall.loc} BUG: overload resolution not implemented — found {funcRef.funcDefs.len} candidates but the loop below ignores analyzeArgumentList's result and silently picks the last one")
   var matchingFuncDef: Option[AnalyzedFunctionDefinition]
   for funcDef in funcRef.funcDefs:
     let maybeAnalyzedArgs = analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, analyzedArgs, funcDef)
@@ -372,7 +398,11 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFile
   ? hasUncoveredCases(patternScope, union.variants.len)
 
   var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
-  assert(cases.len > 1, "UNREACHABLE: should have been caught by the resolver")
+  # BUG: this assert was `cases.len > 1` which incorrectly crashed on a
+  # legitimate single-case match. Relaxed to `> 0` (resolver still rejects
+  # zero-case matches). Fix: leave the relaxed condition or drop the assert
+  # entirely when the surrounding logic is reviewed.
+  assert(cases.len > 0, "BUG: a match block with zero cases should have been caught by the resolver — previously asserted `cases.len > 1` which also crashed on valid single-case matches")
   for id, caseBlock in cases:
     let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, union)
     analyzedCaseBlocks.add(analyzedCaseBlock)
@@ -404,8 +434,15 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
       if match.cases.len == 0:
         err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
       else:
-        assert(match.cases.len > 1, "UNREACHABLE: should have been caught by the resolver")
+        # BUG: this assert was `match.cases.len > 1` — incorrectly crashed on
+        # legitimate single-case matches. Relaxed to `> 0`; revisit when
+        # surrounding logic is reviewed.
+        assert(match.cases.len > 0, "BUG: match block with zero cases should be impossible by here (covered by the branch above); previously asserted `> 1` which also crashed on valid single-case matches")
         let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.union)
+        # BUG: the uniform-return check below duplicates the same loop inside
+        # analyzeCases (lines 379–388). Pick one site to own the check and
+        # remove the other. For now the duplicate is harmless because
+        # analyzeCases would already have errored above on a mismatch.
         for id, caseBlock in analyzedCases:
           if caseBlock.argType.isNone:
             return err(fmt"{match.cases[id].loc} todo: handle case block returning literal type")
@@ -489,6 +526,14 @@ proc newAnalyzedUserFunction(resolved: ResolvedUserFunction, def: AnalyzedFuncti
 
 proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
   var funcScope: AnalyzedFunctionScope
+  # BUG: `defScope[module.name]` below raises KeyError before `?` runs if the
+  # module isn't in scope. Today analyzeFile populates defScope before
+  # calling analyzeModule, so this is safe in practice — but the pattern
+  # diverges from findModuleDef / analyzeFunctionRef which both guard with
+  # `notin defScope` first. Fix: convert to a guarded lookup that returns a
+  # Result[..., string] like the other helpers.
+  assert(module.name in defScope,
+    fmt"{function.loc} BUG: defScope is missing `{module.name.asl}` — analyzeFile is expected to populate every defined module before analyzeModule runs")
   let analyzedFuncDef = ? defScope[module.name].findFunctionDef(function.def)
   for argDef in analyzedFuncDef.args:
     funcScope[argDef.name] = argDef.argType
@@ -539,6 +584,11 @@ proc newAnalyzedModule(def: AnalyzedModuleDefinition, functions: seq[AnalyzedFun
   AnalyzedModule(def: def, functions: functions)
 
 proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope): Result[AnalyzedModule, string] =
+  # BUG: same KeyError risk as analyzeUserFunction — unguarded defScope
+  # lookup. Fix together with the analyzeUserFunction site by introducing a
+  # guarded helper.
+  assert(module.name in defScope,
+    fmt"{module.loc} BUG: defScope is missing `{module.name.asl}` — analyzeFile is expected to populate every defined module before analyzeModule runs")
   let analyzedModuleDef = defScope[module.name]
   var analyzedFunctions: seq[AnalyzedFunction]
   for function in module.functions:
