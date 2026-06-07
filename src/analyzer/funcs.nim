@@ -135,7 +135,15 @@ proc analyzeFunctionRef*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyz
   of aatkDefined:
     let definedType = argType.definedType
     case definedType.kind:
-    of adatkGeneric: err(fmt"{fnref.loc} todo: analyze generic type function ref")
+    of adatkGeneric:
+      let genericType = definedType.generic
+      if genericType.name notin defScope:
+        err(fmt"{fnref.loc} [UNREACHABLE] module `{genericType.name.asl}` does not exist in scope")
+      else:
+        let genericDef = defScope[genericType.name].generic
+        # NOTE: if the function call is to other module then only it should have public accessor
+        let funcDefs = ? genericDef.findFunctionDefs(fnref.name, fnref.arity)
+        ok(newAnalyzedFunctionRef(argType, funcDefs))
     of adatkModule:
       let moduleType = definedType.module
       if moduleType.module.name notin defScope:

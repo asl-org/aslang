@@ -73,13 +73,31 @@ proc analyzeModuleDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: A
 type AnalyzedGeneric* = ref object
   resolved: ResolvedGeneric
   funcDefs: seq[AnalyzedFunctionDefinition]
+  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
 proc newAnalyzedGeneric*(resolved: ResolvedGeneric, funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedGeneric =
-  AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs)
+  var funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
+  for id, funcDef in funcDefs:
+    if funcDef.name notin funcNameArityIndex:
+      funcNameArityIndex[funcDef.name] = initTable[int, seq[int]]()
+    if funcDef.arity notin funcNameArityIndex[funcDef.name]:
+      funcNameArityIndex[funcDef.name][funcDef.arity] = newSeq[int]()
+    funcNameArityIndex[funcDef.name][funcDef.arity].add(id)
+  AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs, funcNameArityIndex: funcNameArityIndex)
 
 proc name*(g: AnalyzedGeneric): Identifier = g.resolved.name
 proc resolved*(g: AnalyzedGeneric): ResolvedGeneric = g.resolved
 proc funcDefs*(g: AnalyzedGeneric): seq[AnalyzedFunctionDefinition] = g.funcDefs
+
+# NOTE: generic does not require the function defs to be marked public explicitly
+proc findFunctionDefs*(generic: AnalyzedGeneric, name: Identifier, arity: int): Result[seq[AnalyzedFunctionDefinition], string] =
+  if name notin generic.funcNameArityIndex:
+    err(fmt"{name.loc} generic `{generic.name.asl}` does not have a function named `{name.asl}`")
+  elif arity notin generic.funcNameArityIndex[name]:
+    err(fmt"{name.loc} generic `{generic.name.asl}` does not have a function named `{name.asl}` with arity `{arity}`")
+  else:
+    let funcDefs = generic.funcNameArityIndex[name][arity].mapIt(generic.funcDefs[it])
+    ok(funcDefs)
 
 proc analyzeGeneric*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]

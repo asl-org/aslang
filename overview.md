@@ -346,11 +346,13 @@ src/
                                    handles only typed (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
-                                   lookups) / AnalyzedGeneric /
-                                   AnalyzedDefinedType (umbrella over
-                                   module + generic; module/generic
-                                   accessors assert kind first) +
-                                   analyzeModuleDefinition /
+                                   lookups) / AnalyzedGeneric (also has
+                                   funcDef indices + findFunctionDefs;
+                                   generic funcDefs need no public
+                                   filter) / AnalyzedDefinedType
+                                   (umbrella over module + generic;
+                                   module/generic accessors assert kind
+                                   first) + analyzeModuleDefinition /
                                    analyzeGeneric / analyzeDefinedType
     decls.nim                      AnalyzedFile (with imports +
                                    definedTypes + modules) /
