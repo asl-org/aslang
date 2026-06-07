@@ -329,7 +329,9 @@ src/
                                    analyzeKeywordArgument /
                                    analyzeUnionInitializer /
                                    analyzeInitializer / analyzeVariable /
-                                   analyzeExpression / analyzeStatement /
+                                   analyzeExpression / analyzeAssignment
+                                   (extends funcScope with the new
+                                   binding) / analyzeStatement /
                                    analyzeUserFunction (returns
                                    AnalyzedUserFunction, enforces
                                    last-statement return-type match) /
@@ -337,10 +339,9 @@ src/
                                    with AnalyzedFunction[Extern|User]
                                    wrappers)) — integer / variable
                                    case-pattern arms, literal / struct
-                                   initializer, getter, assignment,
-                                   mutation arms still return todo;
-                                   argument-list handles only typed
-                                   (non-literal) args
+                                   initializer, getter, mutation arms
+                                   still return todo; argument-list
+                                   handles only typed (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric +

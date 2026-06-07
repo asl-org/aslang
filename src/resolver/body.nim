@@ -183,8 +183,9 @@ proc newResolvedAssignment*(target: Identifier,
     expression: ResolvedExpression): ResolvedAssignment =
   ResolvedAssignment(target: target, expression: expression)
 
-proc loc*(assignment: ResolvedAssignment): Location =
-  assignment.target.loc
+proc loc*(assignment: ResolvedAssignment): Location = assignment.target.loc
+proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
+proc target*(assignment: ResolvedAssignment): Identifier = assignment.target
 
 proc newResolvedMutation*(getter: ResolvedGetter,
     expression: ResolvedExpression): ResolvedMutation =
@@ -256,6 +257,7 @@ proc newResolvedStatement*(mutation: ResolvedMutation): ResolvedStatement =
 
 proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
 proc expression*(statement: ResolvedStatement): ResolvedExpression = statement.expression
+proc assignment*(statement: ResolvedStatement): ResolvedAssignment = statement.assignment
 
 proc loc*(statement: ResolvedStatement): Location =
   case statement.kind:

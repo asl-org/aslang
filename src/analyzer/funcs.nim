@@ -191,6 +191,10 @@ type
     cases: seq[AnalyzedCaseBlock]
     returns: AnalyzedArgumentType
 
+  AnalyzedAssignment = ref object
+    resolved: ResolvedAssignment
+    expression: AnalyzedExpression
+
   AnalyzedExpressionKind = enum
     aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr, aekInitializer
   AnalyzedExpression = ref object
@@ -202,11 +206,13 @@ type
     of aekInitializer: init: AnalyzedInitializer
 
   AnalyzedStatementKind = enum
-    askExpr
+    askExpr, askAssignment
   AnalyzedStatement = ref object
     case kind: AnalyzedStatementKind
     of askExpr: expression: AnalyzedExpression
+    of askAssignment: assignment: AnalyzedAssignment
 
+proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType]
 proc argType(statement: AnalyzedStatement): Option[AnalyzedArgumentType]
 
 # TODO: accepts returns field once function call resolution is complete
@@ -237,6 +243,13 @@ proc argType(caseBlock: AnalyzedCaseBlock): Option[AnalyzedArgumentType] =
 
 proc newAnalyzedMatchExpression(resolved: ResolvedMatchExpression, subject: AnalyzedExpression, cases: seq[AnalyzedCaseBlock], returns: AnalyzedArgumentType): AnalyzedMatchExpression =
   AnalyzedMatchExpression(resolved: resolved, subject: subject, cases: cases, returns: returns)
+
+proc newAnalyzedAssignment(resolved: ResolvedAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
+  AnalyzedAssignment(resolved: resolved, expression: expression)
+
+proc loc(assignment: AnalyzedAssignment): Location = assignment.resolved.loc
+proc target(assignment: AnalyzedAssignment): Identifier = assignment.resolved.target
+proc argType(assignment: AnalyzedAssignment): Option[AnalyzedArgumentType] = assignment.expression.argType
 
 proc newAnalyzedExpression(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
@@ -283,9 +296,28 @@ proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType] =
 proc newAnalyzedStatement(expression: AnalyzedExpression): AnalyzedStatement =
   AnalyzedStatement(kind: askExpr, expression: expression)
 
+proc newAnalyzedStatement(assignment: AnalyzedAssignment): AnalyzedStatement =
+  AnalyzedStatement(kind: askAssignment, assignment: assignment)
+
+proc loc(statement: AnalyzedStatement): Location =
+  case statement.kind:
+  of askExpr: statement.expression.loc
+  of askAssignment: statement.assignment.loc
+
 proc argType(statement: AnalyzedStatement): Option[AnalyzedArgumentType] =
   case statement.kind:
   of askExpr: statement.expression.argType
+  of askAssignment: statement.assignment.argType
+
+proc arg(statement: AnalyzedStatement): Option[AnalyzedArgumentDefinition] =
+  let maybeArgType = statement.argType
+  if maybeArgType.isNone:
+    assert(maybeArgType.isSome, fmt"{statement.loc} todo: support argType for statement")
+  else:
+    case statement.kind:
+    of askExpr: return none(AnalyzedArgumentDefinition)
+    of askAssignment: return some(newAnalyzedArgumentDefinition(maybeArgType.get, statement.assignment.target))
+
 
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string]
 
@@ -508,12 +540,18 @@ proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyze
     let analyzedMatchExpr = ? analyzeMatchExpression(app, file, fileScope, module, defScope, funcScope, expression.match)
     ok(newAnalyzedExpression(analyzedMatchExpr))
 
+proc analyzeAssignment*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, assignment: ResolvedAssignment): Result[AnalyzedAssignment, string] =
+  let analyzedExpr = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, assignment.expression)
+  ok(newAnalyzedAssignment(assignment, analyzedExpr))
+
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedModuleScope, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
   of rskExpr:
     let analyzedExpr = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, statement.expression)
     ok(newAnalyzedStatement(analyzedExpr))
-  of rskAssignment: err(fmt"{statement.loc} todo: analyze assignment")
+  of rskAssignment:
+    let analyzedAssignment = ? analyzeAssignment(app, file, fileScope, module, defScope, funcScope, statement.assignment)
+    ok(newAnalyzedStatement(analyzedAssignment))
   of rskMutation: err(fmt"{statement.loc} todo: analyze mutation")
 
 type AnalyzedUserFunction = ref object
@@ -542,6 +580,9 @@ proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
   for statement in function.statements:
     let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, funcScope, statement)
     analyzedStatements.add(analyzedStatement)
+    if analyzedStatement.arg.isSome:
+      let newArg = analyzedStatement.arg.get
+      funcScope[newArg.name] = newArg.argType
 
   #TODO: ensure that last statement always returns a type that matches with the function defintion's return type
   if function.statements.len == 0:
