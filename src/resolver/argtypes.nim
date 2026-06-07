@@ -237,8 +237,14 @@ proc newResolvedDefinedArgumentType*(
   ResolvedDefinedArgumentType(kind: rdatkGeneric, generic: generic)
 
 proc kind*(argType: ResolvedDefinedArgumentType): ResolvedDefinedArgumentTypeKind = argType.kind
-proc module*(argType: ResolvedDefinedArgumentType): ResolvedModuleArgumentType = argType.module
-proc generic*(argType: ResolvedDefinedArgumentType): ResolvedGenericArgumentType = argType.generic
+proc module*(argType: ResolvedDefinedArgumentType): ResolvedModuleArgumentType =
+  assert argType.kind == rdatkModule,
+    fmt"ResolvedDefinedArgumentType.module accessed but kind is {argType.kind}"
+  argType.module
+proc generic*(argType: ResolvedDefinedArgumentType): ResolvedGenericArgumentType =
+  assert argType.kind == rdatkGeneric,
+    fmt"ResolvedDefinedArgumentType.generic accessed but kind is {argType.kind}"
+  argType.generic
 proc name*(argType: ResolvedDefinedArgumentType): Identifier =
   case argType.kind:
   of rdatkGeneric: argType.generic.name
@@ -302,7 +308,10 @@ proc newResolvedArgumentType*(definedType: ResolvedDefinedArgumentType): Resolve
   ResolvedArgumentType(kind: ratkDefined, definedType: definedType)
 
 proc kind*(argType: ResolvedArgumentType): ResolvedArgumentTypeKind = argType.kind
-proc definedType*(argType: ResolvedArgumentType): ResolvedDefinedArgumentType = argType.definedType
+proc definedType*(argType: ResolvedArgumentType): ResolvedDefinedArgumentType =
+  assert argType.kind == ratkDefined,
+    fmt"ResolvedArgumentType.definedType accessed but kind is {argType.kind}"
+  argType.definedType
 proc name*(argType: ResolvedArgumentType): Identifier =
   case argType.kind:
   of ratkImported: assert(false, "todo: implement resolved imported type name")

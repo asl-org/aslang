@@ -1,6 +1,6 @@
 ## Data-block resolution: struct / variant / union / data umbrella.
 
-import results
+import results, strformat
 
 import tokenizer
 import parser
@@ -117,9 +117,18 @@ proc newResolvedData*(union: ResolvedUnion): ResolvedData =
   ResolvedData(kind: rdkUnion, union: union)
 
 proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
-proc literal*(data: ResolvedData): ResolvedLiteralType = data.literal
-proc struct*(data: ResolvedData): ResolvedStruct = data.struct
-proc union*(data: ResolvedData): ResolvedUnion = data.union
+proc literal*(data: ResolvedData): ResolvedLiteralType =
+  assert data.kind == rdkLiteral,
+    fmt"ResolvedData.literal accessed but kind is {data.kind}"
+  data.literal
+proc struct*(data: ResolvedData): ResolvedStruct =
+  assert data.kind == rdkStruct,
+    fmt"ResolvedData.struct accessed but kind is {data.kind}"
+  data.struct
+proc union*(data: ResolvedData): ResolvedUnion =
+  assert data.kind == rdkUnion,
+    fmt"ResolvedData.union accessed but kind is {data.kind}"
+  data.union
 proc requires*(data: ResolvedData): seq[ResolvedGenericArgumentType] =
   case data.kind:
   of rdkLiteral: @[]

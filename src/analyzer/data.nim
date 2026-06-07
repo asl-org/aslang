@@ -98,9 +98,18 @@ proc newAnalyzedData*(union: AnalyzedUnion): AnalyzedData =
   AnalyzedData(kind: adkUnion, union: union)
 
 proc kind*(d: AnalyzedData): AnalyzedDataKind = d.kind
-proc literal*(d: AnalyzedData): AnalyzedLiteralBlock = d.literal
-proc struct*(d: AnalyzedData): AnalyzedStruct = d.struct
-proc union*(d: AnalyzedData): AnalyzedUnion = d.union
+proc literal*(d: AnalyzedData): AnalyzedLiteralBlock =
+  assert d.kind == adkLiteral,
+    fmt"AnalyzedData.literal accessed but kind is {d.kind}"
+  d.literal
+proc struct*(d: AnalyzedData): AnalyzedStruct =
+  assert d.kind == adkStruct,
+    fmt"AnalyzedData.struct accessed but kind is {d.kind}"
+  d.struct
+proc union*(d: AnalyzedData): AnalyzedUnion =
+  assert d.kind == adkUnion,
+    fmt"AnalyzedData.union accessed but kind is {d.kind}"
+  d.union
 
 proc analyzeData*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:

@@ -163,7 +163,10 @@ proc newResolvedInitializer*(
   ResolvedInitializer(kind: rikLiteral, literal: literal)
 
 proc kind*(init: ResolvedInitializer): ResolvedInitializerKind = init.kind
-proc union*(init: ResolvedInitializer): ResolvedUnionInitializer = init.union
+proc union*(init: ResolvedInitializer): ResolvedUnionInitializer =
+  assert init.kind == rikUnion,
+    fmt"ResolvedInitializer.union accessed but kind is {init.kind}"
+  init.union
 
 proc loc*(init: ResolvedInitializer): Location =
   case init.kind:
@@ -231,11 +234,26 @@ proc newResolvedExpression*(
   ResolvedExpression(kind: rekMatchExpr, match: match)
 
 proc kind*(expression: ResolvedExpression): ResolvedExpressionKind = expression.kind
-proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall = expression.fncall
-proc variable*(expression: ResolvedExpression): Identifier = expression.variable
-proc literal*(expression: ResolvedExpression): Literal = expression.literal
-proc match*(expression: ResolvedExpression): ResolvedMatchExpression = expression.match
-proc init*(expression: ResolvedExpression): ResolvedInitializer = expression.initializer
+proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall =
+  assert expression.kind == rekFunctionCall,
+    fmt"ResolvedExpression.fncall accessed but kind is {expression.kind}"
+  expression.fncall
+proc variable*(expression: ResolvedExpression): Identifier =
+  assert expression.kind == rekVariable,
+    fmt"ResolvedExpression.variable accessed but kind is {expression.kind}"
+  expression.variable
+proc literal*(expression: ResolvedExpression): Literal =
+  assert expression.kind == rekLiteral,
+    fmt"ResolvedExpression.literal accessed but kind is {expression.kind}"
+  expression.literal
+proc match*(expression: ResolvedExpression): ResolvedMatchExpression =
+  assert expression.kind == rekMatchExpr,
+    fmt"ResolvedExpression.match accessed but kind is {expression.kind}"
+  expression.match
+proc init*(expression: ResolvedExpression): ResolvedInitializer =
+  assert expression.kind == rekInitializer,
+    fmt"ResolvedExpression.init accessed but kind is {expression.kind}"
+  expression.initializer
 
 proc loc*(expression: ResolvedExpression): Location =
   case expression.kind:
@@ -256,8 +274,14 @@ proc newResolvedStatement*(mutation: ResolvedMutation): ResolvedStatement =
   ResolvedStatement(kind: rskMutation, mutation: mutation)
 
 proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
-proc expression*(statement: ResolvedStatement): ResolvedExpression = statement.expression
-proc assignment*(statement: ResolvedStatement): ResolvedAssignment = statement.assignment
+proc expression*(statement: ResolvedStatement): ResolvedExpression =
+  assert statement.kind == rskExpr,
+    fmt"ResolvedStatement.expression accessed but kind is {statement.kind}"
+  statement.expression
+proc assignment*(statement: ResolvedStatement): ResolvedAssignment =
+  assert statement.kind == rskAssignment,
+    fmt"ResolvedStatement.assignment accessed but kind is {statement.kind}"
+  statement.assignment
 
 proc loc*(statement: ResolvedStatement): Location =
   case statement.kind:

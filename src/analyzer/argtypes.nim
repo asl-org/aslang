@@ -107,8 +107,14 @@ proc newAnalyzedDefinedArgumentType*(generic: AnalyzedGenericArgumentType): Anal
   AnalyzedDefinedArgumentType(kind: adatkGeneric, generic: generic)
 
 proc kind*(d: AnalyzedDefinedArgumentType): AnalyzedDefinedArgumentTypeKind = d.kind
-proc module*(d: AnalyzedDefinedArgumentType): AnalyzedModuleArgumentType = d.module
-proc generic*(d: AnalyzedDefinedArgumentType): AnalyzedGenericArgumentType = d.generic
+proc module*(d: AnalyzedDefinedArgumentType): AnalyzedModuleArgumentType =
+  assert d.kind == adatkModule,
+    fmt"AnalyzedDefinedArgumentType.module accessed but kind is {d.kind}"
+  d.module
+proc generic*(d: AnalyzedDefinedArgumentType): AnalyzedGenericArgumentType =
+  assert d.kind == adatkGeneric,
+    fmt"AnalyzedDefinedArgumentType.generic accessed but kind is {d.kind}"
+  d.generic
 proc loc*(m: AnalyzedDefinedArgumentType): Location =
   case m.kind:
   of adatkModule: m.module.loc
@@ -137,7 +143,10 @@ proc newAnalyzedArgumentType*(definedType: AnalyzedDefinedArgumentType): Analyze
   AnalyzedArgumentType(kind: aatkDefined, definedType: definedType)
 
 proc kind*(a: AnalyzedArgumentType): AnalyzedArgumentTypeKind = a.kind
-proc definedType*(a: AnalyzedArgumentType): AnalyzedDefinedArgumentType = a.definedType
+proc definedType*(a: AnalyzedArgumentType): AnalyzedDefinedArgumentType =
+  assert a.kind == aatkDefined,
+    fmt"AnalyzedArgumentType.definedType accessed but kind is {a.kind}"
+  a.definedType
 
 proc name*(argType: AnalyzedArgumentType): Identifier =
   case argType.kind:

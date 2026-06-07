@@ -3,7 +3,7 @@
 ## Independent of the body cluster — pattern fields are parser AST
 ## types (IntegerLiteral / Identifier / VariantPattern).
 
-import results
+import results, strformat
 
 import tokenizer
 import parser
@@ -27,9 +27,18 @@ proc newResolvedCasePattern*(variant: VariantPattern): ResolvedCasePattern =
   ResolvedCasePattern(kind: rcpkVariant, variant: variant)
 
 proc kind*(pattern: ResolvedCasePattern): ResolvedCasePatternKind = pattern.kind
-proc integer*(pattern: ResolvedCasePattern): IntegerLiteral = pattern.integer
-proc variable*(pattern: ResolvedCasePattern): Identifier = pattern.variable
-proc variant*(pattern: ResolvedCasePattern): VariantPattern = pattern.variant
+proc integer*(pattern: ResolvedCasePattern): IntegerLiteral =
+  assert pattern.kind == rcpkInteger,
+    fmt"ResolvedCasePattern.integer accessed but kind is {pattern.kind}"
+  pattern.integer
+proc variable*(pattern: ResolvedCasePattern): Identifier =
+  assert pattern.kind == rcpkVariable,
+    fmt"ResolvedCasePattern.variable accessed but kind is {pattern.kind}"
+  pattern.variable
+proc variant*(pattern: ResolvedCasePattern): VariantPattern =
+  assert pattern.kind == rcpkVariant,
+    fmt"ResolvedCasePattern.variant accessed but kind is {pattern.kind}"
+  pattern.variant
 proc loc*(pattern: ResolvedCasePattern): Location =
   case pattern.kind:
   of rcpkInteger: pattern.integer.loc

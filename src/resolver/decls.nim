@@ -25,8 +25,14 @@ proc newResolvedDefinedType*(id: int, generic: ResolvedGeneric): ResolvedDefined
   ResolvedDefinedType(id: id, kind: rdtkGeneric, generic: generic)
 
 proc kind*(definedType: ResolvedDefinedType): ResolvedDefinedTypeKind = definedType.kind
-proc module*(definedType: ResolvedDefinedType): ResolvedModule = definedType.module
-proc generic*(definedType: ResolvedDefinedType): ResolvedGeneric = definedType.generic
+proc module*(definedType: ResolvedDefinedType): ResolvedModule =
+  assert definedType.kind == rdtkModule,
+    fmt"ResolvedDefinedType.module accessed but kind is {definedType.kind}"
+  definedType.module
+proc generic*(definedType: ResolvedDefinedType): ResolvedGeneric =
+  assert definedType.kind == rdtkGeneric,
+    fmt"ResolvedDefinedType.generic accessed but kind is {definedType.kind}"
+  definedType.generic
 
 proc name*(definedType: ResolvedDefinedType): Identifier =
   case definedType.kind:

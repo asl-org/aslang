@@ -60,8 +60,14 @@ proc newResolvedFunction*(user: ResolvedUserFunction): ResolvedFunction =
   ResolvedFunction(kind: rfkUser, user: user)
 
 proc kind*(function: ResolvedFunction): ResolvedFunctionKind = function.kind
-proc extern*(function: ResolvedFunction): ResolvedExternFunction = function.extern
-proc user*(function: ResolvedFunction): ResolvedUserFunction = function.user
+proc extern*(function: ResolvedFunction): ResolvedExternFunction =
+  assert function.kind == rfkExtern,
+    fmt"ResolvedFunction.extern accessed but kind is {function.kind}"
+  function.extern
+proc user*(function: ResolvedFunction): ResolvedUserFunction =
+  assert function.kind == rfkUser,
+    fmt"ResolvedFunction.user accessed but kind is {function.kind}"
+  function.user
 proc def*(function: ResolvedFunction): ResolvedFunctionDefinition =
   case function.kind:
   of rfkExtern: function.extern.def
