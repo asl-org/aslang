@@ -25,8 +25,9 @@ type ResolvedGetter* = ref object
 proc newResolvedGetter*(source, property: Identifier): ResolvedGetter =
   ResolvedGetter(source: source, property: property)
 
-proc loc*(getter: ResolvedGetter): Location =
-  getter.source.loc
+proc loc*(getter: ResolvedGetter): Location = getter.source.loc
+proc source*(getter: ResolvedGetter): Identifier = getter.source
+proc property*(getter: ResolvedGetter): Identifier = getter.property
 
 proc resolveVariable*(file: parser.File, scope: FunctionScope,
     variable: Identifier): Result[Identifier, string] =
@@ -260,6 +261,10 @@ proc init*(expression: ResolvedExpression): ResolvedInitializer =
   assert expression.kind == rekInitializer,
     fmt"ResolvedExpression.init accessed but kind is {expression.kind}"
   expression.initializer
+proc getter*(expression: ResolvedExpression): ResolvedGetter =
+  assert expression.kind == rekGetter,
+    fmt"ResolvedExpression.getter accessed but kind is {expression.kind}"
+  expression.getter
 
 proc loc*(expression: ResolvedExpression): Location =
   case expression.kind:

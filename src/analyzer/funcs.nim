@@ -167,6 +167,31 @@ proc analyzeVariable(scope: AnalyzedFunctionScope, variable: Identifier): Result
   if variable in scope: ok(newAnalyzedVariable(variable, scope[variable]))
   else: err(fmt"{variable.loc} variable `{variable.asl}` does not exist in scope")
 
+type AnalyzedGetter = ref object
+  resolved: ResolvedGetter
+  argType: AnalyzedArgumentType
+  property: AnalyzedArgumentDefinition
+
+proc newAnalyzedGetter(resolved: ResolvedGetter, argType: AnalyzedArgumentType, property: AnalyzedArgumentDefinition): AnalyzedGetter =
+  AnalyzedGetter(resolved: resolved, argType: argType, property: property)
+
+proc analyzeGetter*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
+  if getter.source notin funcScope:
+    err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
+  else:
+    let analyzedArgType = funcScope[getter.source]
+    let argModule = ? defScope.findModuleDef(analyzedArgType, getter.loc)
+    let dataBlock = ? defScope.extractDataBlock(argModule, getter.loc)
+    case dataBlock.kind:
+    of adkLiteral:
+      err(fmt"{getter.loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
+    of adkUnion:
+      err(fmt"{getter.loc} expected module `{argModule.name.asl}` to have a struct block but found union")
+    of adkStruct:
+      let analyzedProperty = ? dataBlock.struct.findField(getter.property)
+      # TODO: coerce the property type from the generic to concrete
+      ok(newAnalyzedGetter(getter, analyzedArgType, analyzedProperty))
+
 type
   AnalyzedFunctionCall = ref object
     resolved: ResolvedFunctionCall
@@ -214,7 +239,7 @@ type
     expression: AnalyzedExpression
 
   AnalyzedExpressionKind = enum
-    aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr, aekInitializer
+    aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr, aekInitializer, aekGetter
   AnalyzedExpression = ref object
     case kind: AnalyzedExpressionKind
     of aekVariable: variable: AnalyzedVariable
@@ -222,6 +247,7 @@ type
     of aekLiteral: literal: Literal
     of aekMatchExpr: match: AnalyzedMatchExpression
     of aekInitializer: init: AnalyzedInitializer
+    of aekGetter: getter: AnalyzedGetter
 
   AnalyzedStatementKind = enum
     askExpr, askAssignment
@@ -291,11 +317,16 @@ proc newAnalyzedExpression(match: AnalyzedMatchExpression): AnalyzedExpression =
 proc newAnalyzedExpression(init: AnalyzedInitializer): AnalyzedExpression =
   AnalyzedExpression(kind: aekInitializer, init: init)
 
+proc newAnalyzedExpression(getter: AnalyzedGetter): AnalyzedExpression =
+  AnalyzedExpression(kind: aekGetter, getter: getter)
+
 proc loc(expression: AnalyzedExpression): Location =
   case expression.kind:
   of aekFunctionCall: return expression.fncall.loc
   of aekVariable: return expression.variable.loc
   of aekLiteral: return expression.literal.loc
+  of aekGetter:
+    assert(false, "BUG: AnalyzedExpression.loc is unwired for aekGetter — delegate to expression.getter.resolved.loc")
   of aekMatchExpr:
     # BUG: both arms below hard-crash whenever the analyzer needs the loc
     # of a match-or-initializer expression — which happens the first time
@@ -317,6 +348,7 @@ proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType] =
   of aekVariable: return some(expression.variable.argType)
   of aekMatchExpr: return some(expression.match.returns)
   of aekInitializer: return some(expression.init.argType)
+  of aekGetter: return some(expression.getter.argType)
 
 proc newAnalyzedStatement(expression: AnalyzedExpression): AnalyzedStatement =
   AnalyzedStatement(kind: askExpr, expression: expression)
@@ -567,14 +599,16 @@ proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyz
 
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string] =
   case expression.kind:
-  of rekInitializer:
-    let analyzedInit = ? analyzeInitializer(app, file, fileScope, module, defScope, funcScope, expression.init)
-    ok(newAnalyzedExpression(analyzedInit))
-  of rekGetter: err(fmt"{expression.loc} todo: analyze getter")
   of rekLiteral: ok(newAnalyzedExpression(expression.literal))
   of rekVariable:
     let analyzedVariable = ? analyzeVariable(funcScope, expression.variable)
     ok(newAnalyzedExpression(analyzedVariable))
+  of rekGetter:
+    let analyzedGetter = ? analyzeGetter(app, file, fileScope, module, defScope, funcScope, expression.getter)
+    ok(newAnalyzedExpression(analyzedGetter))
+  of rekInitializer:
+    let analyzedInit = ? analyzeInitializer(app, file, fileScope, module, defScope, funcScope, expression.init)
+    ok(newAnalyzedExpression(analyzedInit))
   of rekFunctionCall:
     let analyzedFunctionCall = ? analyzeFunctionCall(app, file, fileScope, module, defScope, funcScope, expression.fncall)
     ok(newAnalyzedExpression(analyzedFunctionCall))
