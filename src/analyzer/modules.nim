@@ -87,3 +87,43 @@ proc analyzeGeneric*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGene
     let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, generic, funcDef)
     analyzedFuncDefs.add(analyzedFuncDef)
   ok(newAnalyzedGeneric(generic, analyzedFuncDefs))
+
+# AnalyzedDefinedType — umbrella over module and generic definitions.
+# Lives in modules.nim (not decls.nim) so funcs.nim can use it for
+# AnalyzedDefinedTypeScope without creating a circular import with decls.
+type
+  AnalyzedDefinedTypeKind* = enum
+    adtkModule, adtkGeneric
+  AnalyzedDefinedType* = ref object
+    case kind: AnalyzedDefinedTypeKind
+    of adtkModule: module: AnalyzedModuleDefinition
+    of adtkGeneric: generic: AnalyzedGeneric
+
+proc newAnalyzedDefinedType*(module: AnalyzedModuleDefinition): AnalyzedDefinedType =
+  AnalyzedDefinedType(kind: adtkModule, module: module)
+
+proc newAnalyzedDefinedType*(generic: AnalyzedGeneric): AnalyzedDefinedType =
+  AnalyzedDefinedType(kind: adtkGeneric, generic: generic)
+
+proc kind*(d: AnalyzedDefinedType): AnalyzedDefinedTypeKind = d.kind
+proc module*(d: AnalyzedDefinedType): AnalyzedModuleDefinition =
+  assert d.kind == adtkModule,
+    fmt"AnalyzedDefinedType.module accessed but kind is {d.kind}"
+  d.module
+proc generic*(d: AnalyzedDefinedType): AnalyzedGeneric =
+  assert d.kind == adtkGeneric,
+    fmt"AnalyzedDefinedType.generic accessed but kind is {d.kind}"
+  d.generic
+proc name*(d: AnalyzedDefinedType): Identifier =
+  case d.kind:
+  of adtkModule: d.module.name
+  of adtkGeneric: d.generic.name
+
+proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, definedType: ResolvedDefinedType): Result[AnalyzedDefinedType, string] =
+  case definedType.kind:
+  of rdtkGeneric:
+    let analyzedGeneric = ? analyzeGeneric(app, file, definedType.generic)
+    ok(newAnalyzedDefinedType(analyzedGeneric))
+  of rdtkModule:
+    let analyzedModule = ? analyzeModuleDefinition(app, file, fileScope, definedType.module)
+    ok(newAnalyzedDefinedType(analyzedModule))

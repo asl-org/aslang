@@ -313,9 +313,11 @@ src/
     data.nim                       AnalyzedStruct / AnalyzedVariant /
                                    AnalyzedUnion / AnalyzedData + their
                                    analyzeX procs
-    funcs.nim                      (WIP) AnalyzedModuleScope (+
+    funcs.nim                      (WIP) AnalyzedDefinedTypeScope
+                                   (Identifier -> AnalyzedDefinedType,
+                                   indexes both modules and generics) +
                                    findModuleDef / extractDataBlock
-                                   helpers) / AnalyzedFunctionScope +
+                                   helpers / AnalyzedFunctionScope +
                                    body-walker procs (analyzeFunctionRef
                                    / analyzeArgumentList /
                                    analyzeValueTypeAgainstDefinitionType
@@ -344,14 +346,16 @@ src/
                                    handles only typed (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
-                                   lookups) / AnalyzedGeneric +
+                                   lookups) / AnalyzedGeneric /
+                                   AnalyzedDefinedType (umbrella over
+                                   module + generic; module/generic
+                                   accessors assert kind first) +
                                    analyzeModuleDefinition /
-                                   analyzeGeneric
-    decls.nim                      AnalyzedDefinedType / AnalyzedFile
-                                   (with imports + definedTypes +
-                                   modules) / AnalyzedApp +
-                                   analyzeDefinedType /
-                                   analyzeFile + the public `analyze*` entry
+                                   analyzeGeneric / analyzeDefinedType
+    decls.nim                      AnalyzedFile (with imports +
+                                   definedTypes + modules) /
+                                   AnalyzedApp + analyzeFile + the
+                                   public `analyze*` entry
 
 examples/
   base.asl                         standard library definition (extern functions)
