@@ -310,7 +310,8 @@ src/
     funcdefs.nim                   AnalyzedArgumentDefinition /
                                    AnalyzedFunctionDefinition + dual-
                                    context analyze* overloads
-    data.nim                       AnalyzedStruct / AnalyzedVariant /
+    data.nim                       AnalyzedStruct (with fieldIndex +
+                                   findField) / AnalyzedVariant /
                                    AnalyzedUnion / AnalyzedData + their
                                    analyzeX procs
     funcs.nim                      (WIP) AnalyzedDefinedTypeScope
@@ -328,8 +329,11 @@ src/
                                    AnalyzedVariantPatternScope
                                    exhaustiveness + uniform-return
                                    checks) / analyzeMatchExpression /
-                                   analyzeKeywordArgument /
+                                   analyzeKeywordArgument (takes a
+                                   pre-resolved field so struct + union
+                                   initializers share it) /
                                    analyzeUnionInitializer /
+                                   analyzeStructInitializer /
                                    analyzeInitializer / analyzeVariable /
                                    analyzeExpression / analyzeAssignment
                                    (extends funcScope with the new
@@ -340,10 +344,10 @@ src/
                                    analyzeModule (returns AnalyzedModule
                                    with AnalyzedFunction[Extern|User]
                                    wrappers)) — integer / variable
-                                   case-pattern arms, literal / struct
-                                   initializer, getter, mutation arms
-                                   still return todo; argument-list
-                                   handles only typed (non-literal) args
+                                   case-pattern arms, literal initializer,
+                                   getter, mutation arms still return
+                                   todo; argument-list handles only
+                                   typed (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric (also has
@@ -425,10 +429,10 @@ string, so error messages always have exact source positions.
 Two suites, both runnable from the repo root:
 
 `nimble test` — unit suite under `tests/`. Each component (tokenizer,
-combinators, AST constructors, grammar, loader, resolver) has its
-own `test_*.nim` file aggregated by `tests/all.nim`. 152 tests covering
-positive paths, negative paths, edge cases, and Trojan Source defenses
-in the tokenizer.
+combinators, AST constructors, grammar, loader, resolver, analyzer)
+has its own `test_*.nim` file aggregated by `tests/all.nim`. 187 tests
+covering positive paths, negative paths, edge cases, and Trojan Source
+defenses in the tokenizer.
 
 `./test.sh` — integration suite that drives the binary against
 every `examples/*.asl` fixture and asserts exit codes:

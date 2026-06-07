@@ -180,6 +180,11 @@ type
     field: AnalyzedArgumentDefinition
     expression: AnalyzedExpression
 
+  AnalyzedStructInitializer = ref object
+    resolved: ResolvedStructInitializer
+    argType: AnalyzedArgumentType
+    kwargs: seq[AnalyzedKeywordArgument]
+
   AnalyzedUnionInitializer = ref object
     resolved: ResolvedUnionInitializer
     argType: AnalyzedArgumentType
@@ -187,10 +192,11 @@ type
     kwargs: seq[AnalyzedKeywordArgument]
 
   AnalyzedInitializerKind = enum
-    aikUnion
+    aikUnion, aikStruct
   AnalyzedInitializer = ref object
     case kind: AnalyzedInitializerKind
     of aikUnion: union: AnalyzedUnionInitializer
+    of aikStruct: struct: AnalyzedStructInitializer
 
   AnalyzedCaseBlock = ref object
     resolved: ResolvedCaseBlock
@@ -236,15 +242,22 @@ proc loc(fncall: AnalyzedFunctionCall): Location = fncall.resolved.loc
 proc newAnalyzedKeywordArgument(resolved: ResolvedKeywordArgument, field: AnalyzedArgumentDefinition, expression: AnalyzedExpression): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(resolved: resolved, field: field, expression: expression)
 
+proc newAnalyzedStructInitializer(resolved: ResolvedStructInitializer, argType: AnalyzedArgumentType, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
+  AnalyzedStructInitializer(resolved: resolved, argType: argType, kwargs: kwargs)
+
 proc newAnalyzedUnionInitializer(resolved: ResolvedUnionInitializer, argType: AnalyzedArgumentType, variant: AnalyzedVariant, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedUnionInitializer =
   AnalyzedUnionInitializer(resolved: resolved, argType: argType, variant: variant, kwargs: kwargs)
 
 proc newAnalyzedInitializer(union: AnalyzedUnionInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikUnion, union: union)
 
+proc newAnalyzedInitializer(struct: AnalyzedStructInitializer): AnalyzedInitializer =
+  AnalyzedInitializer(kind: aikStruct, struct: struct)
+
 proc argType(init: AnalyzedInitializer): AnalyzedArgumentType =
   case init.kind:
   of aikUnion: init.union.argType
+  of aikStruct: init.struct.argType
 
 proc newAnalyzedCaseBlock(resolved: ResolvedCaseBlock, pattern: AnalyzedCasePattern, statements: seq[AnalyzedStatement]): AnalyzedCaseBlock =
   AnalyzedCaseBlock(resolved: resolved, pattern: pattern, statements: statements)
@@ -329,7 +342,6 @@ proc arg(statement: AnalyzedStatement): Option[AnalyzedArgumentDefinition] =
     case statement.kind:
     of askExpr: return none(AnalyzedArgumentDefinition)
     of askAssignment: return some(newAnalyzedArgumentDefinition(maybeArgType.get, statement.assignment.target))
-
 
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string]
 
@@ -499,8 +511,7 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
                 return err(fmt"{match.cases[id].loc} todo: return an error message telling that the case block return types are not same")
         ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
-proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, variant: AnalyzedVariant, kwarg: ResolvedKeywordArgument): Result[AnalyzedKeywordArgument, string] =
-  let analyzedField: AnalyzedArgumentDefinition = ? variant.findField(kwarg.name)
+proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =
   let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, kwarg.expression)
   if analyzedExpression.argType.isNone:
     err(fmt"{kwarg.expression.loc} todo: analyze union initializer literal argument")
@@ -519,18 +530,37 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: A
     err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a union block but found struct")
   of adkUnion:
     let analyzedVariant = ? dataBlock.union.findVariant(init.variant)
-    var analyzedFields: seq[AnalyzedKeywordArgument]
+    var analyzedKwargs: seq[AnalyzedKeywordArgument]
     for kwarg in init.kwargs:
-      let analyzedField = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, analyzedVariant, kwarg)
-      analyzedFields.add(analyzedField)
-    ok(newAnalyzedUnionInitializer(init, analyzedArgType, analyzedVariant, analyzedFields))
+      let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
+      let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
+      analyzedKwargs.add(analyzedKwarg)
+    ok(newAnalyzedUnionInitializer(init, analyzedArgType, analyzedVariant, analyzedKwargs))
+
+proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
+  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
+  let argModule = ? defScope.findModuleDef(analyzedArgType, init.loc)
+  let dataBlock = ? defScope.extractDataBlock(argModule, init.loc)
+  case dataBlock.kind:
+  of adkLiteral:
+    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
+  of adkUnion:
+    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a struct block but found union")
+  of adkStruct:
+    var analyzedKwargs: seq[AnalyzedKeywordArgument]
+    for kwarg in init.kwargs:
+      let analyzedField = ? dataBlock.struct.findField(kwarg.name)
+      let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
+      analyzedKwargs.add(analyzedKwarg)
+    ok(newAnalyzedStructInitializer(init, analyzedArgType, analyzedKwargs))
 
 proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of rikLiteral:
     err(fmt"{init.loc} todo: analyze literal initializer")
   of rikStruct:
-    err(fmt"{init.loc} todo: analyze struct initializer")
+    let analyzedStructInit = ? analyzeStructInitializer(app, file, fileScope, module, defScope, funcScope, init.struct)
+    ok(newAnalyzedInitializer(analyzedStructInit))
   of rikUnion:
     let analyzedUnionInit = ? analyzeUnionInitializer(app, file, fileScope, module, defScope, funcScope, init.union)
     ok(newAnalyzedInitializer(analyzedUnionInit))

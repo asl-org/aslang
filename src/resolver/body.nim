@@ -139,6 +139,8 @@ proc newResolvedStructInitializer*(argType: ResolvedArgumentType,
   ResolvedStructInitializer(argType: argType, kwargs: kwargs)
 
 proc loc*(struct: ResolvedStructInitializer): Location = struct.argType.loc
+proc argType*(struct: ResolvedStructInitializer): ResolvedArgumentType = struct.argType
+proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 
 proc newResolvedUnionInitializer*(argType: ResolvedArgumentType,
     variant: Identifier,
@@ -167,6 +169,10 @@ proc union*(init: ResolvedInitializer): ResolvedUnionInitializer =
   assert init.kind == rikUnion,
     fmt"ResolvedInitializer.union accessed but kind is {init.kind}"
   init.union
+proc struct*(init: ResolvedInitializer): ResolvedStructInitializer =
+  assert init.kind == rikStruct,
+    fmt"ResolvedInitializer.struct accessed but kind is {init.kind}"
+  init.struct
 
 proc loc*(init: ResolvedInitializer): Location =
   case init.kind:

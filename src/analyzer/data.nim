@@ -11,11 +11,19 @@ import funcdefs
 # AnalyzedStruct
 type AnalyzedStruct* = ref object
   fields: seq[AnalyzedArgumentDefinition]
+  fieldIndex: Table[Identifier, int]
 
 proc newAnalyzedStruct*(fields: seq[AnalyzedArgumentDefinition]): AnalyzedStruct =
-  AnalyzedStruct(fields: fields)
+  var fieldIndex: Table[Identifier, int]
+  for id, field in fields:
+    assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name must have been caught by resolver")
+    fieldIndex[field.name] = id
+  AnalyzedStruct(fields: fields, fieldIndex: fieldIndex)
 
 proc fields*(s: AnalyzedStruct): seq[AnalyzedArgumentDefinition] = s.fields
+proc findField*(s: AnalyzedStruct, name: Identifier): Result[AnalyzedArgumentDefinition, string] =
+  if name in s.fieldIndex: ok(s.fields[s.fieldIndex[name]])
+  else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
 proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, struct: ResolvedStruct): Result[AnalyzedStruct, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
