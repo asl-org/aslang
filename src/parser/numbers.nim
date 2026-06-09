@@ -42,7 +42,7 @@ proc newSignedIntegerLiteral*(sign: string, value: UnsignedIntegerLiteral,
 
 proc loc*(sil: SignedIntegerLiteral): Location = sil.loc
 
-proc asl(signed: SignedIntegerLiteral): string =
+proc asl*(signed: SignedIntegerLiteral): string =
   fmt"{signed.sign}{asl(signed.value)}"
 
 # (+ | -) digit+

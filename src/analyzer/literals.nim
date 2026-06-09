@@ -4,9 +4,9 @@
 import resolver
 
 type AnalyzedLiteralBlock* = ref object
-  literal: ResolvedLiteralType
+  resolved: ResolvedLiteralType
 
-proc newAnalyzedLiteralBlock*(literal: ResolvedLiteralType): AnalyzedLiteralBlock =
-  AnalyzedLiteralBlock(literal: literal)
+proc newAnalyzedLiteralBlock*(resolved: ResolvedLiteralType): AnalyzedLiteralBlock =
+  AnalyzedLiteralBlock(resolved: resolved)
 
-proc literal*(b: AnalyzedLiteralBlock): ResolvedLiteralType = b.literal
+proc resolved*(b: AnalyzedLiteralBlock): ResolvedLiteralType = b.resolved

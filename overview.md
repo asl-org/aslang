@@ -324,11 +324,24 @@ src/
                                    analyzeValueTypeAgainstDefinitionType
                                    (overload set) / analyzeFunctionCall /
                                    analyzeVariantCasePattern /
-                                   analyzeCasePattern / analyzeCaseBlock /
-                                   analyzeCases (with
-                                   AnalyzedVariantPatternScope
-                                   exhaustiveness + uniform-return
-                                   checks) / analyzeMatchExpression /
+                                   analyzeCasePattern (overloaded for
+                                   union vs literal context) /
+                                   analyzeCaseBlock (overloaded the
+                                   same way; both extend caseScope
+                                   with statement-level bindings) /
+                                   analyzeCases (overloaded; union ctx
+                                   uses AnalyzedVariantPatternScope,
+                                   literal ctx uses
+                                   AnalyzedLiteralPatternScope —
+                                   tagged union over the eight integer
+                                   kinds, exhaustiveness currently
+                                   requires a variable case binding
+                                   since whole-domain coverage is not
+                                   yet computed; both run a uniform-
+                                   return check across case blocks) /
+                                   analyzeMatchExpression (handles
+                                   both union and literal subject
+                                   data blocks) /
                                    analyzeKeywordArgument (takes a
                                    pre-resolved field so struct + union
                                    initializers share it) /
@@ -347,12 +360,20 @@ src/
                                    last-statement return-type match) /
                                    analyzeModule (returns AnalyzedModule
                                    with AnalyzedFunction[Extern|User]
-                                   wrappers)) — integer / variable
-                                   case-pattern arms, literal initializer,
-                                   mutation arms still return todo; case
-                                   blocks for literal-module subjects
-                                   not yet implemented; argument-list
-                                   handles only typed (non-literal) args
+                                   wrappers); a generic parseInteger
+                                   helper (parseutils + scanf with
+                                   compile-time signed/unsigned
+                                   dispatch + bounds check against
+                                   T.high/low) backs literal-pattern
+                                   duplicate detection — variable
+                                   case-pattern arm, literal
+                                   initializer, mutation arms still
+                                   return todo; literal-pattern
+                                   duplicate detection is implemented
+                                   for u8 / i8 only — the other six
+                                   integer kinds still return todo;
+                                   argument-list handles only typed
+                                   (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric (also has

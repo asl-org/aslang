@@ -1,12 +1,42 @@
-import results, tables, strformat, sequtils, options, strutils, sets
+import results, tables, strformat, sequtils, options, strutils, sets, strscans, parseutils, strutils
 
 import tokenizer
 import parser
 import resolver
 import argtypes
+import literals
 import data
 import funcdefs
 import modules
+
+proc genericIntScanner[T: SomeInteger](input: string, res: var T, start: int): int =
+  # 1. Compile-time branching based on whether T is signed or unsigned
+  when T is SomeUnsignedInt:
+    var temp: BiggestUInt
+    let charsParsed = parseBiggestUInt(input, temp, start)
+
+    # Check bounds against the exact target unsigned limits
+    if charsParsed > 0 and temp <= high(T).BiggestUInt:
+      res = T(temp)
+      return charsParsed
+  else:
+    var temp: BiggestInt
+    let charsParsed = parseBiggestInt(input, temp, start)
+
+    # Check bounds against the exact target signed limits
+    if charsParsed > 0 and temp >= low(T).BiggestInt and temp <= high(T).BiggestInt:
+      res = T(temp)
+      return charsParsed
+
+  return 0 # Mismatch or out of bounds
+
+# Clean generic wrapper function
+proc parseInteger[T: SomeInteger](s: string): Option[T] =
+  var res: T
+  if scanf(s, "${genericIntScanner}", res):
+    return some(res)
+  else:
+    return none(T)
 
 type AnalyzedDefinedTypeScope* = Table[Identifier, AnalyzedDefinedType]
 proc findModuleDef(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedModuleDefinition, string] =
@@ -72,9 +102,91 @@ proc update(scope: AnalyzedVariantPatternScope, id: int, pattern: ResolvedCasePa
 
 # NOTE: If there is no variable pattern in union matching then all branches must be covered
 proc hasUncoveredCases(scope: AnalyzedVariantPatternScope, totalVariants: int): Result[void, string] =
-  if scope.variablePatternFound or scope.variants.len == totalVariants: ok()
   # TODO: improve error message by showing the uncovered variants
-  else: err(fmt"case blocks do not cover all the variants")
+  if scope.variablePatternFound:
+    if scope.variants.len < totalVariants: ok()
+    else: err(fmt"variable binding is invalid since all the variants are already covered by the case blocks")
+  else:
+    if scope.variants.len == totalVariants: ok()
+    else: err(fmt"case blocks do not cover all the variants")
+
+type
+  AnalyzedLiteralPatternScopeKind = enum
+    alpskU8, alpskU16, alpskU32, alpskU64,
+    alpskI8, alpskI16, alpskI32, alpskI64
+  AnalyzedLiteralPatternScope = ref object
+    totalCases: int
+    variablePatternFound: bool
+    case kind: AnalyzedLiteralPatternScopeKind
+    of alpskU8: u8Values:  HashSet[uint8]
+    of alpskU16: u16Values: HashSet[uint16]
+    of alpskU32: u32Values: HashSet[uint32]
+    of alpskU64: u64Values: HashSet[uint64]
+    of alpskI8: i8Values:  HashSet[int8]
+    of alpskI16: i16Values: HashSet[int16]
+    of alpskI32: i32Values: HashSet[int32]
+    of alpskI64: i64Values: HashSet[int64]
+
+proc newAnalyzedLiteralPatternScope(literal: ResolvedLiteralType, totalCases: int): Result[AnalyzedLiteralPatternScope, string] =
+  case literal:
+  of rltkU8: ok(AnalyzedLiteralPatternScope(kind: alpskU8,  totalCases: totalCases, variablePatternFound: false, u8Values:  initHashSet[uint8]()))
+  of rltkU16: ok(AnalyzedLiteralPatternScope(kind: alpskU16, totalCases: totalCases, variablePatternFound: false, u16Values: initHashSet[uint16]()))
+  of rltkU32: ok(AnalyzedLiteralPatternScope(kind: alpskU32, totalCases: totalCases, variablePatternFound: false, u32Values: initHashSet[uint32]()))
+  of rltkU64: ok(AnalyzedLiteralPatternScope(kind: alpskU64, totalCases: totalCases, variablePatternFound: false, u64Values: initHashSet[uint64]()))
+  of rltkI8: ok(AnalyzedLiteralPatternScope(kind: alpskI8,  totalCases: totalCases, variablePatternFound: false, i8Values:  initHashSet[int8]()))
+  of rltkI16: ok(AnalyzedLiteralPatternScope(kind: alpskI16, totalCases: totalCases, variablePatternFound: false, i16Values: initHashSet[int16]()))
+  of rltkI32: ok(AnalyzedLiteralPatternScope(kind: alpskI32, totalCases: totalCases, variablePatternFound: false, i32Values: initHashSet[int32]()))
+  of rltkI64: ok(AnalyzedLiteralPatternScope(kind: alpskI64, totalCases: totalCases, variablePatternFound: false, i64Values: initHashSet[int64]()))
+  of rltkF32: err("match block does not support f32 values in case patterns")
+  of rltkF64: err("match block does not support f64 values in case patterns")
+  of rltkString: err("match block does not support string values in case patterns")
+  of rltkPointer: err("match block does not support pointer values in case patterns")
+
+proc checkDuplicate(scope: AnalyzedLiteralPatternScope, integer: IntegerLiteral): Result[AnalyzedLiteralPatternScope, string] =
+  case scope.kind:
+  of alpskU8:
+    case integer.kind:
+    of ilkSigned:
+      err(fmt"{integer.loc} expected value to be a valid 8-bit unsigned integer")
+    of ilkUnsigned:
+      let maybeU8 = parseInteger[uint8](integer.asl)
+      if maybeU8.isNone: err(fmt"{integer.loc} expected value to be a valid 8-bit unsigned integer")
+      else:
+        let u8Value = maybeU8.get
+        if u8Value in scope.u8Values: err(fmt"{integer.loc} duplicated integer pattern encountered")
+        else: scope.u8Values.incl(u8Value); ok(scope)
+  of alpskU16: err(fmt"{integer.loc} todo: analyze U16 literal case pattern")
+  of alpskU32: err(fmt"{integer.loc} todo: analyze U32 literal case pattern")
+  of alpskU64: err(fmt"{integer.loc} todo: analyze U64 literal case pattern")
+  of alpskI16: err(fmt"{integer.loc} todo: analyze I16 literal case pattern")
+  of alpskI32: err(fmt"{integer.loc} todo: analyze I32 literal case pattern")
+  of alpskI64: err(fmt"{integer.loc} todo: analyze I64 literal case pattern")
+  of alpskI8:
+    let maybeI8 = parseInteger[int8](integer.asl)
+    if maybeI8.isNone: err(fmt"{integer.loc} expected value to be a valid 8-bit signed integer")
+    else:
+      let i8Value = maybeI8.get
+      if i8Value in scope.i8Values: err(fmt"{integer.loc} duplicated integer pattern encountered")
+      else: scope.i8Values.incl(i8Value); ok(scope)
+
+proc update(scope: AnalyzedLiteralPatternScope, id: int, pattern: ResolvedCasePattern): Result[AnalyzedLiteralPatternScope, string] =
+  case pattern.kind:
+  of rcpkVariant:
+    err(fmt"{pattern.loc} expected a literal pattern but found variant pattern")
+  of rcpkVariable:
+    if id != scope.totalCases - 1:
+      err(fmt"{pattern.loc} variable pattern binding is supported only in the last case block")
+    else:
+      scope.variablePatternFound = true
+      ok(scope)
+  of rcpkInteger:
+    scope.checkDuplicate(pattern.integer)
+
+# NOTE: If there is no variable pattern in union matching then all branches must be covered
+proc hasUncoveredCases(scope: AnalyzedLiteralPatternScope): Result[void, string] =
+  # TODO: improve error message by showing the uncovered variants
+  if scope.variablePatternFound: ok()
+  else: err(fmt"variable case pattern binding is required for integer literal pattern")
 
 type AnalyzedVariantPattern = ref object
   resolved: VariantPattern
@@ -101,25 +213,39 @@ proc analyzeVariantCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope:
 
 type
   AnalyzedCasePatternKind = enum
-    acpkVariant
+    acpkVariant, acpkInteger
   AnalyzedCasePattern = ref object
     case kind: AnalyzedCasePatternKind
     of acpkVariant: variant: AnalyzedVariantPattern
+    of acpkInteger: integer: IntegerLiteral
 
 proc newAnalyzedCasePattern(variant: AnalyzedVariantPattern): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkVariant, variant: variant)
 
+proc newAnalyzedCasePattern(integer: IntegerLiteral): AnalyzedCasePattern =
+  AnalyzedCasePattern(kind: acpkInteger, integer: integer)
+
 proc bindings(pattern: AnalyzedCasePattern): seq[AnalyzedArgumentDefinition] =
   case pattern.kind:
   of acpkVariant: pattern.variant.bindings
+  of acpkInteger: newSeq[AnalyzedArgumentDefinition]()
 
 proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, union: AnalyzedUnion): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
-  of rcpkInteger: err(fmt"{pattern.loc} todo: analyze integer case pattern")
+  of rcpkInteger: err(fmt"{pattern.loc} UNREACHABLE: integer literals are not allowed in union case pattern")
   of rcpkVariable: err(fmt"{pattern.loc} todo: analyze variable case pattern")
   of rcpkVariant:
     let analyzedPattern = ? analyzeVariantCasePattern(app, file, fileScope, module, defScope, funcScope, pattern.variant, union)
     ok(newAnalyzedCasePattern(analyzedPattern))
+
+proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern): Result[AnalyzedCasePattern, string] =
+  case pattern.kind:
+  of rcpkVariant:
+    err(fmt"{pattern.loc} UNREACHABLE: union variants are not allowed in literal case pattern")
+  of rcpkInteger:
+    ok(newAnalyzedCasePattern(pattern.integer))
+  of rcpkVariable:
+    err(fmt"{pattern.loc} todo: analyze variable case pattern")
 
 type AnalyzedFunctionRef = ref object
   argType: AnalyzedArgumentType
@@ -476,6 +602,23 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyzed
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
+    if analyzedStatement.arg.isSome:
+      let newArg = analyzedStatement.arg.get
+      caseScope[newArg.name] = newArg.argType
+  ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
+
+proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock): Result[AnalyzedCaseBlock, string] =
+  let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern)
+  var caseScope = funcScope.clone()
+  for binding in analyzedCasePattern.bindings:
+    caseScope[binding.name] = binding.argType
+  var analyzedStatements: seq[AnalyzedStatement]
+  for statement in caseBlock.statements:
+    let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, caseScope, statement)
+    analyzedStatements.add(analyzedStatement)
+    if analyzedStatement.arg.isSome:
+      let newArg = analyzedStatement.arg.get
+      caseScope[newArg.name] = newArg.argType
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
 proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], union: AnalyzedUnion): Result[seq[AnalyzedCaseBlock], string] =
@@ -506,6 +649,34 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFile
           return err(fmt"{caseBlock.loc} todo: return an error message telling that the case block return types are not same")
   ok(analyzedCaseBlocks)
 
+proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], literal: AnalyzedLiteralBlock): Result[seq[AnalyzedCaseBlock], string] =
+  var patternScope = ? newAnalyzedLiteralPatternScope(literal.resolved, cases.len)
+  for id, caseBlock in cases:
+    patternScope = ? patternScope.update(id, caseBlock.pattern)
+
+  ? hasUncoveredCases(patternScope)
+
+  var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
+  # BUG: this assert was `cases.len > 1` which incorrectly crashed on a
+  # legitimate single-case match. Relaxed to `> 0` (resolver still rejects
+  # zero-case matches). Fix: leave the relaxed condition or drop the assert
+  # entirely when the surrounding logic is reviewed.
+  assert(cases.len > 0, "BUG: a match block with zero cases should have been caught by the resolver — previously asserted `cases.len > 1` which also crashed on valid single-case matches")
+  for id, caseBlock in cases:
+    let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock)
+    analyzedCaseBlocks.add(analyzedCaseBlock)
+    if analyzedCaseBlock.argType.isNone:
+      return err(fmt"{caseBlock.loc} todo: handle case block returning literal type")
+    else:
+      if id == 0:
+        # NOTE: first case block does not have any return type to compare to so let it be
+        discard
+      else:
+        let currentCaseArgType = analyzedCaseBlock.argType.get
+        if currentCaseArgType != analyzedCaseBlocks[0].argType.get:
+          return err(fmt"{caseBlock.loc} todo: return an error message telling that the case block return types are not same")
+  ok(analyzedCaseBlocks)
+
 proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
   let analyzedSubjectExpr = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, match.subject)
   if analyzedSubjectExpr.argType.isNone:
@@ -517,7 +688,29 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
       let moduleName = analyzedSubjectExpr.argType.get.name
       err(fmt"{match.loc} match block only supports literal and union types but subject expression returns `{moduleName.asl}` a struct type")
     of adkLiteral:
-      err(fmt"{match.loc} todo: analyze case blocks for literal module")
+      if match.cases.len == 0:
+        err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
+      else:
+        # BUG: this assert was `match.cases.len > 1` — incorrectly crashed on
+        # legitimate single-case matches. Relaxed to `> 0`; revisit when
+        # surrounding logic is reviewed.
+        assert(match.cases.len > 0, "BUG: match block with zero cases should be impossible by here (covered by the branch above); previously asserted `> 1` which also crashed on valid single-case matches")
+        let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.literal)
+        # BUG: the uniform-return check below duplicates the same loop inside
+        # analyzeCases (lines 379–388). Pick one site to own the check and
+        # remove the other. For now the duplicate is harmless because
+        # analyzeCases would already have errored above on a mismatch.
+        for id, caseBlock in analyzedCases:
+          if caseBlock.argType.isNone:
+            return err(fmt"{match.cases[id].loc} todo: handle case block returning literal type")
+          else:
+            if id == 0:
+              # NOTE: first case block does not have any return type to compare to so let it be
+              discard
+            else:
+              if caseBlock.argType.get != analyzedCases[0].argType.get:
+                return err(fmt"{match.cases[id].loc} todo: return an error message telling that the case block return types are not same")
+        ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
     of adkUnion:
       if match.cases.len == 0:
         err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
