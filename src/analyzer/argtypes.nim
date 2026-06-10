@@ -158,7 +158,7 @@ proc loc*(argType: AnalyzedArgumentType): Location =
   of aatkImported: assert(false, "TODO: support analyzed argument type location")
   of aatkDefined: return argType.definedType.loc
 
-proc self(argType: AnalyzedArgumentType): ResolvedArgumentType =
+proc self*(argType: AnalyzedArgumentType): ResolvedArgumentType =
   case argType.kind:
   of aatkImported: assert(false, "TODO: support analyzed argument type self construction")
   of aatkDefined: return newResolvedArgumentType(argType.definedType.self)

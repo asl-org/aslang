@@ -301,6 +301,8 @@ type AnalyzedGetter = ref object
 proc newAnalyzedGetter(resolved: ResolvedGetter, argType: AnalyzedArgumentType, property: AnalyzedArgumentDefinition): AnalyzedGetter =
   AnalyzedGetter(resolved: resolved, argType: argType, property: property)
 
+proc loc(getter: AnalyzedGetter): Location = getter.resolved.loc
+
 proc analyzeGetter*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
   if getter.source notin funcScope:
     err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
@@ -451,8 +453,7 @@ proc loc(expression: AnalyzedExpression): Location =
   of aekFunctionCall: return expression.fncall.loc
   of aekVariable: return expression.variable.loc
   of aekLiteral: return expression.literal.loc
-  of aekGetter:
-    assert(false, "BUG: AnalyzedExpression.loc is unwired for aekGetter — delegate to expression.getter.resolved.loc")
+  of aekGetter: return expression.getter.loc
   of aekMatchExpr:
     # BUG: both arms below hard-crash whenever the analyzer needs the loc
     # of a match-or-initializer expression — which happens the first time
@@ -531,13 +532,32 @@ proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile,
     ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType, valType.definedType)
     ok()
 
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType): Result[void, string] =
+  let funcDefs = defType.resolved.concreteImpls(valType.self)
+  for funcDef in funcDefs:
+    case valType.kind:
+    of aatkImported:
+      return err(fmt"{valType.loc} todo: analyze imported impl type")
+    of aatkDefined:
+      case valType.definedType.kind:
+      of adatkGeneric:
+        let maybeConcreteFuncDef = valType.definedType.generic.resolved.findFunctionDef(funcDef)
+        if maybeConcreteFuncDef.isNone:
+          return err(fmt"{valType.loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
+      of adatkModule:
+        let maybeConcreteFuncDef = valType.definedType.module.module.findFunctionDef(funcDef)
+        if maybeConcreteFuncDef.isNone:
+          return err(fmt"{valType.loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
+  ok()
+
 proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedDefinedArgumentType, valType: AnalyzedArgumentType): Result[void, string] =
   case defType.kind:
   of adatkModule:
     ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.module, valType)
     ok()
   of adatkGeneric:
-    err(fmt"{valType.loc} todo: analyze value type against generic argument type")
+    ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.generic, valType)
+    ok()
 
 # TODO: Return a map of generic -> argType from the recursive analysis
 proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType): Result[void, string] =
