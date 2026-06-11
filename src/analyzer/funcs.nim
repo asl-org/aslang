@@ -213,11 +213,12 @@ proc analyzeVariantCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope:
 
 type
   AnalyzedCasePatternKind = enum
-    acpkVariant, acpkInteger
+    acpkVariant, acpkInteger, acpkVariable
   AnalyzedCasePattern = ref object
     case kind: AnalyzedCasePatternKind
     of acpkVariant: variant: AnalyzedVariantPattern
     of acpkInteger: integer: IntegerLiteral
+    of acpkVariable: variable: AnalyzedArgumentDefinition
 
 proc newAnalyzedCasePattern(variant: AnalyzedVariantPattern): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkVariant, variant: variant)
@@ -225,9 +226,13 @@ proc newAnalyzedCasePattern(variant: AnalyzedVariantPattern): AnalyzedCasePatter
 proc newAnalyzedCasePattern(integer: IntegerLiteral): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkInteger, integer: integer)
 
+proc newAnalyzedCasePattern(variable: AnalyzedArgumentDefinition): AnalyzedCasePattern =
+  AnalyzedCasePattern(kind: acpkVariable, variable: variable)
+
 proc bindings(pattern: AnalyzedCasePattern): seq[AnalyzedArgumentDefinition] =
   case pattern.kind:
   of acpkVariant: pattern.variant.bindings
+  of acpkVariable: @[pattern.variable]
   of acpkInteger: newSeq[AnalyzedArgumentDefinition]()
 
 proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, union: AnalyzedUnion): Result[AnalyzedCasePattern, string] =
@@ -238,14 +243,15 @@ proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyz
     let analyzedPattern = ? analyzeVariantCasePattern(app, file, fileScope, module, defScope, funcScope, pattern.variant, union)
     ok(newAnalyzedCasePattern(analyzedPattern))
 
-proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkVariant:
     err(fmt"{pattern.loc} UNREACHABLE: union variants are not allowed in literal case pattern")
   of rcpkInteger:
     ok(newAnalyzedCasePattern(pattern.integer))
   of rcpkVariable:
-    err(fmt"{pattern.loc} todo: analyze variable case pattern")
+    let analyzedArgDef = newAnalyzedArgumentDefinition(subjectType, pattern.variable)
+    ok(newAnalyzedCasePattern(analyzedArgDef))
 
 type AnalyzedFunctionRef = ref object
   argType: AnalyzedArgumentType
@@ -627,8 +633,8 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyzed
       caseScope[newArg.name] = newArg.argType
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
-proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock): Result[AnalyzedCaseBlock, string] =
-  let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern)
+proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType): Result[AnalyzedCaseBlock, string] =
+  let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern, subjectType)
   var caseScope = funcScope.clone()
   for binding in analyzedCasePattern.bindings:
     caseScope[binding.name] = binding.argType
@@ -669,7 +675,7 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFile
           return err(fmt"{caseBlock.loc} todo: return an error message telling that the case block return types are not same")
   ok(analyzedCaseBlocks)
 
-proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], literal: AnalyzedLiteralBlock): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, literal: AnalyzedLiteralBlock): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = ? newAnalyzedLiteralPatternScope(literal.resolved, cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
@@ -683,7 +689,7 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFile
   # entirely when the surrounding logic is reviewed.
   assert(cases.len > 0, "BUG: a match block with zero cases should have been caught by the resolver — previously asserted `cases.len > 1` which also crashed on valid single-case matches")
   for id, caseBlock in cases:
-    let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock)
+    let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, subjectType)
     analyzedCaseBlocks.add(analyzedCaseBlock)
     if analyzedCaseBlock.argType.isNone:
       return err(fmt"{caseBlock.loc} todo: handle case block returning literal type")
@@ -715,7 +721,7 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
         # legitimate single-case matches. Relaxed to `> 0`; revisit when
         # surrounding logic is reviewed.
         assert(match.cases.len > 0, "BUG: match block with zero cases should be impossible by here (covered by the branch above); previously asserted `> 1` which also crashed on valid single-case matches")
-        let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.literal)
+        let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, analyzedSubjectDataType.literal)
         # BUG: the uniform-return check below duplicates the same loop inside
         # analyzeCases (lines 379–388). Pick one site to own the check and
         # remove the other. For now the duplicate is harmless because
@@ -759,7 +765,41 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =
   let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, kwarg.expression)
   if analyzedExpression.argType.isNone:
-    err(fmt"{kwarg.expression.loc} todo: analyze union initializer literal argument")
+    let fieldModule = ? defScope.findModuleDef(analyzedField.argType, kwarg.expression.loc)
+    let fieldModuleData = ? defScope.extractDataBlock(fieldModule, kwarg.expression.loc)
+    case fieldModuleData.kind:
+    of adkStruct:
+      err(fmt"{kwarg.expression.loc} field `{kwarg.name.asl}` expected a struct value but found literal")
+    of adkUnion:
+      err(fmt"{kwarg.expression.loc} field `{kwarg.name.asl}` expected a union value but found literal")
+    of adkLiteral:
+      let literalField = fieldModuleData.literal
+      case literalField.resolved:
+      of rltkU8: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U8 literal argument")
+      of rltkU16: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U16 literal argument")
+      of rltkU32: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U32 literal argument")
+      of rltkU64: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U64 literal argument")
+      of rltkI8: err(fmt"{kwarg.expression.loc} todo: analyze union initializer I8 literal argument")
+      of rltkI16: err(fmt"{kwarg.expression.loc} todo: analyze union initializer I16 literal argument")
+      of rltkI64: err(fmt"{kwarg.expression.loc} todo: analyze union initializer I64 literal argument")
+      of rltkF32: err(fmt"{kwarg.expression.loc} todo: analyze union initializer F32 literal argument")
+      of rltkF64: err(fmt"{kwarg.expression.loc} todo: analyze union initializer F64 literal argument")
+      of rltkPointer: err(fmt"{kwarg.expression.loc} todo: analyze union initializer Pointer literal argument")
+      of rltkString:
+        case analyzedExpression.literal.kind:
+        of lkFloat: err(fmt"{kwarg.expression.loc} expected a valid string literal but found float")
+        of lkInteger: err(fmt"{kwarg.expression.loc} expected a valid string literal but found integer")
+        of lkString: ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
+      of rltkI32:
+        case analyzedExpression.literal.kind:
+        of lkFloat: err(fmt"{kwarg.expression.loc} expected a valid 32-bit signed integer but found float")
+        of lkString: err(fmt"{kwarg.expression.loc} expected a valid 32-bit signed integer but found string")
+        of lkInteger:
+          let maybeParsedInt = parseInteger[int32](analyzedExpression.literal.asl)
+          if maybeParsedInt.isNone:
+            err(fmt"{kwarg.expression.loc} expected a valid 32-bit signed integer but found `{analyzedExpression.literal.asl}`")
+          else:
+            ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
   else:
     ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, analyzedField.argType, analyzedExpression.argType.get)
     ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))

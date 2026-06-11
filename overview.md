@@ -373,10 +373,18 @@ src/
                                    compile-time signed/unsigned
                                    dispatch + bounds check against
                                    T.high/low) backs literal-pattern
-                                   duplicate detection — variable
-                                   case-pattern arm, literal
-                                   initializer, mutation arms still
-                                   return todo; literal-pattern
+                                   duplicate detection and partial
+                                   literal-typed kwarg inference in
+                                   analyzeKeywordArgument (i32 and
+                                   string kwarg arms wired; other
+                                   integer / float / pointer kinds
+                                   still return todo) — variable
+                                   case-pattern arm wired for literal-
+                                   subject matches (binds the variable
+                                   to the subject's argType); union-
+                                   context variable case-pattern,
+                                   literal initializer, mutation arms
+                                   still return todo; literal-pattern
                                    duplicate detection is implemented
                                    for u8 / i8 only — the other six
                                    integer kinds still return todo;
