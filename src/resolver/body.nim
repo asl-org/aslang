@@ -201,8 +201,9 @@ proc newResolvedMutation*(getter: ResolvedGetter,
     expression: ResolvedExpression): ResolvedMutation =
   ResolvedMutation(getter: getter, expression: expression)
 
-proc loc*(mutation: ResolvedMutation): Location =
-  mutation.getter.loc
+proc loc*(mutation: ResolvedMutation): Location = mutation.getter.loc
+proc getter*(mutation: ResolvedMutation): ResolvedGetter = mutation.getter
+proc expression*(mutation: ResolvedMutation): ResolvedExpression = mutation.expression
 
 proc newResolvedCaseBlock*(parsed: CaseBlock, pattern: ResolvedCasePattern,
     statements: seq[ResolvedStatement]): ResolvedCaseBlock =
@@ -293,6 +294,10 @@ proc assignment*(statement: ResolvedStatement): ResolvedAssignment =
   assert statement.kind == rskAssignment,
     fmt"ResolvedStatement.assignment accessed but kind is {statement.kind}"
   statement.assignment
+proc mutation*(statement: ResolvedStatement): ResolvedMutation =
+  assert statement.kind == rskMutation,
+    fmt"ResolvedStatement.mutation accessed but kind is {statement.kind}"
+  statement.mutation
 
 proc loc*(statement: ResolvedStatement): Location =
   case statement.kind:

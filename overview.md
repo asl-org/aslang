@@ -362,6 +362,7 @@ src/
                                    field) / analyzeExpression /
                                    analyzeAssignment (extends funcScope
                                    with the new binding) /
+                                   analyzeMutation /
                                    analyzeStatement /
                                    analyzeUserFunction (returns
                                    AnalyzedUserFunction, enforces
@@ -381,10 +382,14 @@ src/
                                    still return todo) — variable
                                    case-pattern arm wired for literal-
                                    subject matches (binds the variable
-                                   to the subject's argType); union-
-                                   context variable case-pattern,
-                                   literal initializer, mutation arms
-                                   still return todo; literal-pattern
+                                   to the subject's argType); mutation
+                                   statement wired (analyzes the LHS
+                                   getter + RHS expression — type
+                                   equality between getter field and
+                                   expression value not yet checked);
+                                   union-context variable case-pattern
+                                   and literal initializer arms still
+                                   return todo; literal-pattern
                                    duplicate detection is implemented
                                    for u8 / i8 only — the other six
                                    integer kinds still return todo;

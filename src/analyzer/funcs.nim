@@ -372,6 +372,11 @@ type
     resolved: ResolvedAssignment
     expression: AnalyzedExpression
 
+  AnalyzedMutation = ref object
+    resolved: ResolvedMutation
+    getter: AnalyzedGetter
+    expression: AnalyzedExpression
+
   AnalyzedExpressionKind = enum
     aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr, aekInitializer, aekGetter
   AnalyzedExpression = ref object
@@ -384,11 +389,12 @@ type
     of aekGetter: getter: AnalyzedGetter
 
   AnalyzedStatementKind = enum
-    askExpr, askAssignment
+    askExpr, askAssignment, askMutation
   AnalyzedStatement = ref object
     case kind: AnalyzedStatementKind
     of askExpr: expression: AnalyzedExpression
     of askAssignment: assignment: AnalyzedAssignment
+    of askMutation: mutation: AnalyzedMutation
 
 proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType]
 proc argType(statement: AnalyzedStatement): Option[AnalyzedArgumentType]
@@ -435,6 +441,12 @@ proc newAnalyzedAssignment(resolved: ResolvedAssignment, expression: AnalyzedExp
 proc loc(assignment: AnalyzedAssignment): Location = assignment.resolved.loc
 proc target(assignment: AnalyzedAssignment): Identifier = assignment.resolved.target
 proc argType(assignment: AnalyzedAssignment): Option[AnalyzedArgumentType] = assignment.expression.argType
+
+proc newAnalyzedMutation(resolved: ResolvedMutation, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedMutation =
+  AnalyzedMutation(resolved: resolved, getter: getter, expression: expression)
+
+proc loc(mutation: AnalyzedMutation): Location = mutation.resolved.loc
+proc argType(mutation: AnalyzedMutation): Option[AnalyzedArgumentType] = mutation.expression.argType
 
 proc newAnalyzedExpression(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
@@ -489,15 +501,20 @@ proc newAnalyzedStatement(expression: AnalyzedExpression): AnalyzedStatement =
 proc newAnalyzedStatement(assignment: AnalyzedAssignment): AnalyzedStatement =
   AnalyzedStatement(kind: askAssignment, assignment: assignment)
 
+proc newAnalyzedStatement(mutation: AnalyzedMutation): AnalyzedStatement =
+  AnalyzedStatement(kind: askMutation, mutation: mutation)
+
 proc loc(statement: AnalyzedStatement): Location =
   case statement.kind:
   of askExpr: statement.expression.loc
   of askAssignment: statement.assignment.loc
+  of askMutation: statement.mutation.loc
 
 proc argType(statement: AnalyzedStatement): Option[AnalyzedArgumentType] =
   case statement.kind:
   of askExpr: statement.expression.argType
   of askAssignment: statement.assignment.argType
+  of askMutation: statement.mutation.argType
 
 proc arg(statement: AnalyzedStatement): Option[AnalyzedArgumentDefinition] =
   let maybeArgType = statement.argType
@@ -506,6 +523,7 @@ proc arg(statement: AnalyzedStatement): Option[AnalyzedArgumentDefinition] =
   else:
     case statement.kind:
     of askExpr: return none(AnalyzedArgumentDefinition)
+    of askMutation: return none(AnalyzedArgumentDefinition)
     of askAssignment: return some(newAnalyzedArgumentDefinition(maybeArgType.get, statement.assignment.target))
 
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string]
@@ -873,6 +891,12 @@ proc analyzeAssignment*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyze
   let analyzedExpr = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, assignment.expression)
   ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
+proc analyzeMutation*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, mutation: ResolvedMutation): Result[AnalyzedMutation, string] =
+  let analyzedGetter = ? analyzeGetter(app, file, fileScope, module, defScope, funcScope, mutation.getter)
+  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, mutation.expression)
+  # TODO: Ensure that the getter field type and the expression type are same
+  ok(newAnalyzedMutation(mutation, analyzedGetter, analyzedExpression))
+
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
   of rskExpr:
@@ -881,7 +905,9 @@ proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyzed
   of rskAssignment:
     let analyzedAssignment = ? analyzeAssignment(app, file, fileScope, module, defScope, funcScope, statement.assignment)
     ok(newAnalyzedStatement(analyzedAssignment))
-  of rskMutation: err(fmt"{statement.loc} todo: analyze mutation")
+  of rskMutation:
+    let analyzedMutation = ? analyzeMutation(app, file, fileScope, module, defScope, funcScope, statement.mutation)
+    ok(newAnalyzedStatement(analyzedMutation))
 
 type AnalyzedUserFunction = ref object
   resolved: ResolvedUserFunction
