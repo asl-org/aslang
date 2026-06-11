@@ -221,7 +221,15 @@ src/
   nim.cfg                          per-component module search paths
 
   tokenizer/
-    tokenizer.nim                  token types + tokenize()
+    tokenizer.nim                  token types + tokenize() (index-based
+                                   rune loop for lookahead)
+    location.nim                   Location type + accessors (newLocation,
+                                   advance, $, hash, ==, <); re-exported
+                                   through tokenizer.nim
+    constants.nim                  BidiCodepoints / ZeroWidthCodepoints /
+                                   InvisibleCodepoints arrays +
+                                   AsciiMaxValue / Punctuations / Space /
+                                   Newline constants
 
   parser/
     parser.nim                     re-exports every component file

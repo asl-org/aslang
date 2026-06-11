@@ -27,8 +27,7 @@ proc parseFile(filepath: string, indentWidth: uint32,
   let tokens = ? tokenize(source, filepath, dumpTokens)
   parse(filepath, indentWidth, tokens)
 
-proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[
-    App, string] =
+proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[App, string] =
   ## BFS through imports, tokenize + parse each file.
   ## Returns App with files in topological order: leaves first, root last.
   var parsed: Table[string, File]
