@@ -11,23 +11,24 @@ import parser
 
 # ResolvedImportedType
 type ResolvedImportedType* = ref object
+  parsed: ImportedType
   module: int
-  name: Identifier
-  binding: Identifier
   definedType: DefinedType
 
-proc newResolvedImportedType*(module: int, name, binding: Identifier, definedType: DefinedType): ResolvedImportedType =
-  ResolvedImportedType(module: module, name: name, binding: binding, definedType: definedType)
+proc newResolvedImportedType*(parsed: ImportedType, module: int, definedType: DefinedType): ResolvedImportedType =
+  ResolvedImportedType(parsed: parsed, module: module, definedType: definedType)
 
-proc loc*(t: ResolvedImportedType): Location = t.binding.loc
-proc binding*(t: ResolvedImportedType): Identifier = t.binding
+proc parsed*(t: ResolvedImportedType): ImportedType = t.parsed
+proc name*(t: ResolvedImportedType): Identifier = t.parsed.name
+proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding
+proc loc*(t: ResolvedImportedType): Location = t.parsed.binding.loc
 proc definedType*(t: ResolvedImportedType): DefinedType = t.definedType
 
 proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
     ResolvedImportedType, string] =
   let importedAslTypeId = ? impFile.findExportedTypeId(impType.name)
   let importedAslType = ? impFile.findExportedType(impType.name)
-  ok(newResolvedImportedType(importedAslTypeId, impType.name, impType.binding, importedAslType))
+  ok(newResolvedImportedType(impType, importedAslTypeId, importedAslType))
 
 # ResolvedImport
 type ResolvedImport* = ref object
