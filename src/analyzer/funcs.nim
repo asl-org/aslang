@@ -425,6 +425,11 @@ proc argType(init: AnalyzedInitializer): AnalyzedArgumentType =
   of aikUnion: init.union.argType
   of aikStruct: init.struct.argType
 
+proc loc(init: AnalyzedInitializer): Location =
+  case init.kind:
+  of aikUnion: init.union.resolved.loc
+  of aikStruct: init.struct.resolved.loc
+
 proc newAnalyzedCaseBlock(resolved: ResolvedCaseBlock, pattern: AnalyzedCasePattern, statements: seq[AnalyzedStatement]): AnalyzedCaseBlock =
   AnalyzedCaseBlock(resolved: resolved, pattern: pattern, statements: statements)
 
@@ -434,6 +439,8 @@ proc argType(caseBlock: AnalyzedCaseBlock): Option[AnalyzedArgumentType] =
 
 proc newAnalyzedMatchExpression(resolved: ResolvedMatchExpression, subject: AnalyzedExpression, cases: seq[AnalyzedCaseBlock], returns: AnalyzedArgumentType): AnalyzedMatchExpression =
   AnalyzedMatchExpression(resolved: resolved, subject: subject, cases: cases, returns: returns)
+
+proc loc(m: AnalyzedMatchExpression): Location = m.resolved.loc
 
 proc newAnalyzedAssignment(resolved: ResolvedAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
   AnalyzedAssignment(resolved: resolved, expression: expression)
@@ -472,19 +479,8 @@ proc loc(expression: AnalyzedExpression): Location =
   of aekVariable: return expression.variable.loc
   of aekLiteral: return expression.literal.loc
   of aekGetter: return expression.getter.loc
-  of aekMatchExpr:
-    # BUG: both arms below hard-crash whenever the analyzer needs the loc
-    # of a match-or-initializer expression — which happens the first time
-    # analyzedSubjectExpr.loc fires on a nested match or an initializer
-    # subject in analyzeMatchExpression (line ~393). Both have a `resolved`
-    # field with a real loc — wire them through:
-    #   of aekMatchExpr:   return expression.match.resolved.loc
-    #   of aekInitializer: return expression.init.union.resolved.loc  (once
-    #                      literal/struct initializer arms exist, dispatch
-    #                      on init.kind first).
-    assert(false, "BUG: AnalyzedExpression.loc is unwired for aekMatchExpr — delegate to expression.match.resolved.loc")
-  of aekInitializer:
-    assert(false, "BUG: AnalyzedExpression.loc is unwired for aekInitializer — delegate to expression.init's underlying resolved loc")
+  of aekMatchExpr: return expression.match.loc
+  of aekInitializer: return expression.init.loc
 
 proc argType(expression: AnalyzedExpression): Option[AnalyzedArgumentType] =
   case expression.kind:
@@ -735,49 +731,13 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: An
       if match.cases.len == 0:
         err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
       else:
-        # BUG: this assert was `match.cases.len > 1` — incorrectly crashed on
-        # legitimate single-case matches. Relaxed to `> 0`; revisit when
-        # surrounding logic is reviewed.
-        assert(match.cases.len > 0, "BUG: match block with zero cases should be impossible by here (covered by the branch above); previously asserted `> 1` which also crashed on valid single-case matches")
         let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, analyzedSubjectDataType.literal)
-        # BUG: the uniform-return check below duplicates the same loop inside
-        # analyzeCases (lines 379–388). Pick one site to own the check and
-        # remove the other. For now the duplicate is harmless because
-        # analyzeCases would already have errored above on a mismatch.
-        for id, caseBlock in analyzedCases:
-          if caseBlock.argType.isNone:
-            return err(fmt"{match.cases[id].loc} todo: handle case block returning literal type")
-          else:
-            if id == 0:
-              # NOTE: first case block does not have any return type to compare to so let it be
-              discard
-            else:
-              if caseBlock.argType.get != analyzedCases[0].argType.get:
-                return err(fmt"{match.cases[id].loc} todo: return an error message telling that the case block return types are not same")
         ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
     of adkUnion:
       if match.cases.len == 0:
         err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
       else:
-        # BUG: this assert was `match.cases.len > 1` — incorrectly crashed on
-        # legitimate single-case matches. Relaxed to `> 0`; revisit when
-        # surrounding logic is reviewed.
-        assert(match.cases.len > 0, "BUG: match block with zero cases should be impossible by here (covered by the branch above); previously asserted `> 1` which also crashed on valid single-case matches")
         let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.union)
-        # BUG: the uniform-return check below duplicates the same loop inside
-        # analyzeCases (lines 379–388). Pick one site to own the check and
-        # remove the other. For now the duplicate is harmless because
-        # analyzeCases would already have errored above on a mismatch.
-        for id, caseBlock in analyzedCases:
-          if caseBlock.argType.isNone:
-            return err(fmt"{match.cases[id].loc} todo: handle case block returning literal type")
-          else:
-            if id == 0:
-              # NOTE: first case block does not have any return type to compare to so let it be
-              discard
-            else:
-              if caseBlock.argType.get != analyzedCases[0].argType.get:
-                return err(fmt"{match.cases[id].loc} todo: return an error message telling that the case block return types are not same")
         ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =
