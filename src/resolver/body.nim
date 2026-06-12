@@ -44,14 +44,17 @@ proc resolveGetter*(file: parser.File, scope: FunctionScope,
 # ResolvedLiteralInitializer — needs ResolvedArgumentType but no
 # ResolvedExpression dependency (literal value is parser AST).
 type ResolvedLiteralInitializer* = ref object
+  parsed: LiteralInitializer
   argType: ResolvedArgumentType
-  value: Literal
 
-proc newResolvedLiteralInitializer*(argType: ResolvedArgumentType,
-    value: Literal): ResolvedLiteralInitializer =
-  ResolvedLiteralInitializer(argType: argType, value: value)
+proc newResolvedLiteralInitializer*(parsed: LiteralInitializer,
+    argType: ResolvedArgumentType): ResolvedLiteralInitializer =
+  ResolvedLiteralInitializer(parsed: parsed, argType: argType)
 
-proc loc*(init: ResolvedLiteralInitializer): Location = init.argType.loc
+proc parsed*(init: ResolvedLiteralInitializer): LiteralInitializer = init.parsed
+proc value*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
+proc argType*(init: ResolvedLiteralInitializer): ResolvedArgumentType = init.argType
+proc loc*(init: ResolvedLiteralInitializer): Location = init.parsed.loc
 
 proc resolveLiteralInitializer(app: App, file: parser.File,
     fileScope: FileScope, module: Module,
@@ -59,7 +62,7 @@ proc resolveLiteralInitializer(app: App, file: parser.File,
         ResolvedLiteralInitializer, string] =
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module,
     literalInit.argType)
-  ok(newResolvedLiteralInitializer(resolvedArgType, literalInit.value))
+  ok(newResolvedLiteralInitializer(literalInit, resolvedArgType))
 
 # Mutually-recursive body-level cluster — every type that cycles
 # back to ResolvedExpression / ResolvedStatement must live here.
