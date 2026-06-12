@@ -16,20 +16,20 @@ type ResolvedModule* = ref object
   data: Option[ResolvedData]
   funcDefIndex: Table[ResolvedFunctionDefinition, int]
   functions: seq[ResolvedFunction]
-  loc: Location
 
-proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction], loc: Location): ResolvedModule =
+proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
   for id, function in functions:
     assert(function.def notin funcDefIndex, "NOTE: should be unreachable")
     funcDefIndex[function.def] = id
-  ResolvedModule(parsed: parsed, requires: requires, data: data, funcDefIndex: funcDefIndex, functions: functions, loc: loc)
+  ResolvedModule(parsed: parsed, requires: requires, data: data, funcDefIndex: funcDefIndex, functions: functions)
 
+proc parsed*(module: ResolvedModule): Module = module.parsed
 proc name*(module: ResolvedModule): Identifier = module.parsed.name
 proc requires*(module: ResolvedModule): seq[ResolvedGenericArgumentType] = module.requires
 proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
 proc functions*(module: ResolvedModule): seq[ResolvedFunction] = module.functions
-proc loc*(module: ResolvedModule): Location = module.loc
+proc loc*(module: ResolvedModule): Location = module.parsed.loc
 proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
   var impls: seq[ResolvedArgumentType]
   for generic in module.requires:
@@ -85,7 +85,7 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
       function)
     resolvedFunctions.add(resolvedFunction)
 
-  ok(newResolvedModule(module, resolvedRequires, resolvedData, resolvedFunctions, module.loc))
+  ok(newResolvedModule(module, resolvedRequires, resolvedData, resolvedFunctions))
 
 # ResolvedGeneric
 type ResolvedGeneric* = ref object
