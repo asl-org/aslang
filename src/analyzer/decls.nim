@@ -13,15 +13,19 @@ import funcrefs
 
 # AnalyzedFile
 type AnalyzedFile* = ref object
+  resolved: ResolvedFile
   imports: seq[AnalyzedImport]
   definedTypes: seq[AnalyzedDefinedType]
   modules: seq[AnalyzedModule]
 
-proc newAnalyzedFile*(imports: seq[AnalyzedImport], definedTypes: seq[AnalyzedDefinedType], modules: seq[AnalyzedModule]): AnalyzedFile =
-  AnalyzedFile(imports: imports, definedTypes: definedTypes)
+proc newAnalyzedFile*(resolved: ResolvedFile, imports: seq[AnalyzedImport], definedTypes: seq[AnalyzedDefinedType], modules: seq[AnalyzedModule]): AnalyzedFile =
+  AnalyzedFile(resolved: resolved, imports: imports, definedTypes: definedTypes, modules: modules)
 
+proc resolved*(f: AnalyzedFile): ResolvedFile = f.resolved
+proc path*(f: AnalyzedFile): string = f.resolved.path
 proc imports*(f: AnalyzedFile): seq[AnalyzedImport] = f.imports
 proc definedTypes*(f: AnalyzedFile): seq[AnalyzedDefinedType] = f.definedTypes
+proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules
 
 proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, string] =
   var fileScope: AnalyzedFileScope
@@ -46,7 +50,7 @@ proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, st
     of rdtkModule:
       let analyzedModule = ? analyzeModule(app, file, fileScope, aslType.module, analyzedDefinedTypeScope)
       analyzedModules.add(analyzedModule)
-  ok(newAnalyzedFile(analyzedImports, analyzedDefinedTypes, analyzedModules))
+  ok(newAnalyzedFile(file, analyzedImports, analyzedDefinedTypes, analyzedModules))
 
 # AnalyzedApp + entry
 type AnalyzedApp* = ref object
