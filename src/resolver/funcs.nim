@@ -11,16 +11,18 @@ import body
 
 # ResolvedUserFunction
 type ResolvedUserFunction* = ref object
+  parsed: UserFunction
   funcDef: ResolvedFunctionDefinition
   statements: seq[ResolvedStatement]
 
-proc newResolvedUserFunction*(funcDef: ResolvedFunctionDefinition,
+proc newResolvedUserFunction*(parsed: UserFunction, funcDef: ResolvedFunctionDefinition,
     statements: seq[ResolvedStatement]): ResolvedUserFunction =
-  ResolvedUserFunction(funcDef: funcDef, statements: statements)
+  ResolvedUserFunction(parsed: parsed, funcDef: funcDef, statements: statements)
 
+proc parsed*(function: ResolvedUserFunction): UserFunction = function.parsed
 proc def*(function: ResolvedUserFunction): ResolvedFunctionDefinition = function.funcDef
 proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
-proc loc*(function: ResolvedUserFunction): Location = function.funcDef.loc
+proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 
 proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
     module: Module,
@@ -42,7 +44,7 @@ proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
     if resolvedStatement.variable.isSome:
       scope.incl(resolvedStatement.variable.get)
 
-  ok(newResolvedUserFunction(resolvedFunctionDefinition, resolvedStatements))
+  ok(newResolvedUserFunction(function, resolvedFunctionDefinition, resolvedStatements))
 
 # ResolvedFunction
 type

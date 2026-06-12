@@ -436,7 +436,7 @@ proc resolveOverload(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFi
     if matches.len == 0:
       message.add(fmt"{fncall.loc} failed to find matching function:")
       for funcDef in funcRef.funcDefs:
-        message.add(fmt"\t\t{funcDef.loc}")
+        message.add("\t" & fmt"{funcDef.loc}")
     else:
       message.add(fmt"{fncall.loc} ambiguous function call — multiple candidates match:")
       for funcDef in matches:
