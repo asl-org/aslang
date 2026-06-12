@@ -39,6 +39,16 @@ proc parseInteger[T: SomeInteger](s: string): Option[T] =
     return none(T)
 
 type AnalyzedDefinedTypeScope* = Table[Identifier, AnalyzedDefinedType]
+proc findModuleDef(defScope: AnalyzedDefinedTypeScope, name: Identifier, loc: Location): Result[AnalyzedModuleDefinition, string] =
+  if name notin defScope:
+    err(fmt"{loc} UNREACHABLE: module `{name.asl}` is not defined")
+  else:
+    let entry = defScope[name]
+    case entry.kind:
+    of adtkModule: ok(entry.module)
+    of adtkGeneric:
+      err(fmt"{loc} UNREACHABLE: scope entry `{name.asl}` is a generic but caller expected module")
+
 proc findModuleDef(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedModuleDefinition, string] =
   case argType.kind:
   of aatkImported:
@@ -603,6 +613,26 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
       ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, argDef.argType, argValue.argType.get)
   ok()
 
+proc resolveOverload(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcRef: AnalyzedFunctionRef, analyzedArgs: seq[AnalyzedExpression]): Result[AnalyzedFunctionDefinition, string] =
+  var matches: seq[AnalyzedFunctionDefinition]
+  for funcDef in funcRef.funcDefs:
+    if analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, analyzedArgs, funcDef).isOk:
+      matches.add(funcDef)
+
+  if matches.len == 1:
+    ok(matches[0])
+  else:
+    var message: seq[string]
+    if matches.len == 0:
+      message.add(fmt"{fncall.loc} failed to find matching function:")
+      for funcDef in funcRef.funcDefs:
+        message.add(fmt"\t\t{funcDef.loc}")
+    else:
+      message.add(fmt"{fncall.loc} ambiguous function call — multiple candidates match:")
+      for funcDef in matches:
+        message.add(fmt"\t\t{funcDef.loc}")
+    err(message.join("\n"))
+
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
   let funcRef = ? analyzeFunctionRef(app, file, fileScope, module, defScope, fncall.funcRef)
   var analyzedArgs: seq[AnalyzedExpression]
@@ -610,28 +640,9 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
     let analyzedArg = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, arg)
     analyzedArgs.add(analyzedArg)
 
-  # BUG: overload selection below is broken — `maybeAnalyzedArgs` is computed
-  # and discarded; `matchingFuncDef` is set unconditionally to the last
-  # candidate every iteration. Fix: only set matchingFuncDef when
-  # analyzeArgumentList(...).isOk (and probably break on first match, or
-  # error on ambiguous match). For now this assert traps the multi-overload
-  # path so the silent-wrong-candidate behaviour can't hide.
-  assert(funcRef.funcDefs.len <= 1,
-    fmt"{fncall.loc} BUG: overload resolution not implemented — found {funcRef.funcDefs.len} candidates but the loop below ignores analyzeArgumentList's result and silently picks the last one")
-  var matchingFuncDef: Option[AnalyzedFunctionDefinition]
-  for funcDef in funcRef.funcDefs:
-    let maybeAnalyzedArgs = analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, analyzedArgs, funcDef)
-    matchingFuncDef = some(funcDef)
-
-  if matchingFuncDef.isNone:
-    var message: seq[string]
-    message.add(fmt"{fncall.loc} failed to find matching function:")
-    for funcDef in funcRef.funcDefs:
-      message.add(fmt"\t\t{funcDef.loc}")
-    err(message.join("\n"))
-  else:
-    # TODO: find a way to compute concrete return type for now just passing along the funcDef.returns
-    ok(newAnalyzedFunctionCall(fncall, funcRef, analyzedArgs, matchingFuncDef.get.returns))
+  let matchingFuncDef = ? resolveOverload(app, file, fileScope, module, defScope, funcScope, fncall, funcRef, analyzedArgs)
+  # TODO: find a way to compute concrete return type for now just passing along the funcDef.returns
+  ok(newAnalyzedFunctionCall(fncall, funcRef, analyzedArgs, matchingFuncDef.returns))
 
 proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[AnalyzedCaseBlock, string] =
   let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern, union)
@@ -879,15 +890,8 @@ proc newAnalyzedUserFunction(resolved: ResolvedUserFunction, def: AnalyzedFuncti
 
 proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
   var funcScope: AnalyzedFunctionScope
-  # BUG: `defScope[module.name]` below raises KeyError before `?` runs if the
-  # module isn't in scope. Today analyzeFile populates defScope before
-  # calling analyzeModule, so this is safe in practice — but the pattern
-  # diverges from findModuleDef / analyzeFunctionRef which both guard with
-  # `notin defScope` first. Fix: convert to a guarded lookup that returns a
-  # Result[..., string] like the other helpers.
-  assert(module.name in defScope,
-    fmt"{function.loc} BUG: defScope is missing `{module.name.asl}` — analyzeFile is expected to populate every defined module before analyzeModule runs")
-  let analyzedFuncDef = ? defScope[module.name].module.findFunctionDef(function.def)
+  let analyzedModuleDef = ? defScope.findModuleDef(module.name, function.loc)
+  let analyzedFuncDef = ? analyzedModuleDef.findFunctionDef(function.def)
   for argDef in analyzedFuncDef.args:
     funcScope[argDef.name] = argDef.argType
 
@@ -940,12 +944,7 @@ proc newAnalyzedModule(def: AnalyzedModuleDefinition, functions: seq[AnalyzedFun
   AnalyzedModule(def: def, functions: functions)
 
 proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope): Result[AnalyzedModule, string] =
-  # BUG: same KeyError risk as analyzeUserFunction — unguarded defScope
-  # lookup. Fix together with the analyzeUserFunction site by introducing a
-  # guarded helper.
-  assert(module.name in defScope,
-    fmt"{module.loc} BUG: defScope is missing `{module.name.asl}` — analyzeFile is expected to populate every defined module before analyzeModule runs")
-  let analyzedModuleDef = defScope[module.name].module
+  let analyzedModuleDef = ? defScope.findModuleDef(module.name, module.loc)
   var analyzedFunctions: seq[AnalyzedFunction]
   for function in module.functions:
     case function.kind:
