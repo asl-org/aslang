@@ -68,7 +68,7 @@ proc resolveLiteralInitializer(app: App, file: parser.File,
 # back to ResolvedExpression / ResolvedStatement must live here.
 type
   ResolvedKeywordArgument* = ref object
-    name: Identifier
+    parsed: KeywordArgument
     expression: ResolvedExpression
 
   ResolvedStructInitializer* = ref object
@@ -131,11 +131,13 @@ type
     of rskMutation: mutation: ResolvedMutation
 
 # Constructors for every type in the cluster.
-proc newResolvedKeywordArgument*(name: Identifier,
+proc newResolvedKeywordArgument*(parsed: KeywordArgument,
     expression: ResolvedExpression): ResolvedKeywordArgument =
-  ResolvedKeywordArgument(name: name, expression: expression)
+  ResolvedKeywordArgument(parsed: parsed, expression: expression)
 
-proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.name
+proc parsed*(kwarg: ResolvedKeywordArgument): KeywordArgument = kwarg.parsed
+proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.parsed.name
+proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
 proc expression*(kwarg: ResolvedKeywordArgument): ResolvedExpression = kwarg.expression
 
 proc newResolvedStructInitializer*(argType: ResolvedArgumentType,
@@ -374,7 +376,7 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
             let fieldId = ? structBlock.findFieldId(kwarg.name)
             let resolvedExpression = ? resolveExpression(app, file, fileScope,
               module, scope, kwarg.expression)
-            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name,
+            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
               resolvedExpression)
           ok(newResolvedStructInitializer(resolvedArgType, resolvedKeywordArgs))
 
@@ -418,7 +420,7 @@ proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
             let fieldId = ? variant.findFieldId(kwarg.name)
             let resolvedExpression = ? resolveExpression(app, file, fileScope,
               module, scope, kwarg.expression)
-            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg.name,
+            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
               resolvedExpression)
           ok(newResolvedUnionInitializer(resolvedArgType, variant.name,
             resolvedKeywordArgs))
