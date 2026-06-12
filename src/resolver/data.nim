@@ -10,11 +10,14 @@ import funcdefs
 
 # ResolvedStruct
 type ResolvedStruct* = ref object
+  parsed: Struct
   fields: seq[ResolvedArgumentDefinition]
 
-proc newResolvedStruct*(fields: seq[ResolvedArgumentDefinition]): ResolvedStruct =
-  ResolvedStruct(fields: fields)
+proc newResolvedStruct*(parsed: Struct, fields: seq[ResolvedArgumentDefinition]): ResolvedStruct =
+  ResolvedStruct(parsed: parsed, fields: fields)
 
+proc parsed*(struct: ResolvedStruct): Struct = struct.parsed
+proc loc*(struct: ResolvedStruct): Location = struct.parsed.loc
 proc fields*(struct: ResolvedStruct): seq[ResolvedArgumentDefinition] = struct.fields
 
 proc requires*(struct: ResolvedStruct): seq[ResolvedGenericArgumentType] =
@@ -35,7 +38,7 @@ proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope,
     let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module,
       field)
     resolvedFields.add(resolvedField)
-  ok(newResolvedStruct(resolvedFields))
+  ok(newResolvedStruct(struct, resolvedFields))
 
 # ResolvedVariant
 type ResolvedVariant* = ref object
