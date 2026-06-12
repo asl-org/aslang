@@ -192,6 +192,7 @@ proc newResolvedFunctionCall*(funcRef: ResolvedFunctionRef,
     args: seq[ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(funcRef: funcRef, args: args)
 
+proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.funcRef.parsed
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.funcRef.loc
 proc funcRef*(fncall: ResolvedFunctionCall): ResolvedFunctionRef = fncall.funcRef
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
