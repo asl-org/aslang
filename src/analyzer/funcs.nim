@@ -452,6 +452,8 @@ proc loc(init: AnalyzedInitializer): Location =
 proc newAnalyzedCaseBlock(resolved: ResolvedCaseBlock, pattern: AnalyzedCasePattern, statements: seq[AnalyzedStatement]): AnalyzedCaseBlock =
   AnalyzedCaseBlock(resolved: resolved, pattern: pattern, statements: statements)
 
+proc loc(caseBlock: AnalyzedCaseBlock): Location = caseBlock.resolved.loc
+
 proc argType(caseBlock: AnalyzedCaseBlock): Option[AnalyzedArgumentType] =
   assert(caseBlock.statements.len > 0, "UNREACHABLE: should have been caught by resolver")
   caseBlock.statements[^1].argType
@@ -681,6 +683,17 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyzed
       caseScope[newArg.name] = newArg.argType
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
+proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string] =
+  let expected = cases[0].argType
+  if expected.isNone:
+    return err(fmt"{cases[0].loc} todo: handle case block returning literal type")
+  for c in cases:
+    if c.argType.isNone:
+      return err(fmt"{c.loc} todo: handle case block returning literal type")
+    if c.argType.get != expected.get:
+      return err(fmt"{c.loc} todo: return an error message telling that the case block return types are not same")
+  ok()
+
 proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], union: AnalyzedUnion): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = newAnalyzedVariantPatternScope(cases.len)
   for id, caseBlock in cases:
@@ -688,25 +701,13 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFile
 
   ? hasUncoveredCases(patternScope, union.variants.len)
 
+  assert(cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
+
   var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
-  # BUG: this assert was `cases.len > 1` which incorrectly crashed on a
-  # legitimate single-case match. Relaxed to `> 0` (resolver still rejects
-  # zero-case matches). Fix: leave the relaxed condition or drop the assert
-  # entirely when the surrounding logic is reviewed.
-  assert(cases.len > 0, "BUG: a match block with zero cases should have been caught by the resolver — previously asserted `cases.len > 1` which also crashed on valid single-case matches")
-  for id, caseBlock in cases:
+  for caseBlock in cases:
     let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, union)
     analyzedCaseBlocks.add(analyzedCaseBlock)
-    if analyzedCaseBlock.argType.isNone:
-      return err(fmt"{caseBlock.loc} todo: handle case block returning literal type")
-    else:
-      if id == 0:
-        # NOTE: first case block does not have any return type to compare to so let it be
-        discard
-      else:
-        let currentCaseArgType = analyzedCaseBlock.argType.get
-        if currentCaseArgType != analyzedCaseBlocks[0].argType.get:
-          return err(fmt"{caseBlock.loc} todo: return an error message telling that the case block return types are not same")
+  ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
 proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, literal: AnalyzedLiteralBlock): Result[seq[AnalyzedCaseBlock], string] =
@@ -716,25 +717,13 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFile
 
   ? hasUncoveredCases(patternScope)
 
+  assert(cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
+
   var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
-  # BUG: this assert was `cases.len > 1` which incorrectly crashed on a
-  # legitimate single-case match. Relaxed to `> 0` (resolver still rejects
-  # zero-case matches). Fix: leave the relaxed condition or drop the assert
-  # entirely when the surrounding logic is reviewed.
-  assert(cases.len > 0, "BUG: a match block with zero cases should have been caught by the resolver — previously asserted `cases.len > 1` which also crashed on valid single-case matches")
-  for id, caseBlock in cases:
+  for caseBlock in cases:
     let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, subjectType)
     analyzedCaseBlocks.add(analyzedCaseBlock)
-    if analyzedCaseBlock.argType.isNone:
-      return err(fmt"{caseBlock.loc} todo: handle case block returning literal type")
-    else:
-      if id == 0:
-        # NOTE: first case block does not have any return type to compare to so let it be
-        discard
-      else:
-        let currentCaseArgType = analyzedCaseBlock.argType.get
-        if currentCaseArgType != analyzedCaseBlocks[0].argType.get:
-          return err(fmt"{caseBlock.loc} todo: return an error message telling that the case block return types are not same")
+  ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
 proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
