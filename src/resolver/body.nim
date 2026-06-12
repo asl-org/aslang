@@ -72,12 +72,13 @@ type
     expression: ResolvedExpression
 
   ResolvedStructInitializer* = ref object
+    parsed: StructInitializer
     argType: ResolvedArgumentType
     kwargs: seq[ResolvedKeywordArgument]
 
   ResolvedUnionInitializer* = ref object
+    parsed: UnionInitializer
     argType: ResolvedArgumentType
-    variant: Identifier
     kwargs: seq[ResolvedKeywordArgument]
 
   ResolvedInitializerKind* = enum
@@ -140,22 +141,23 @@ proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.parsed.name
 proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
 proc expression*(kwarg: ResolvedKeywordArgument): ResolvedExpression = kwarg.expression
 
-proc newResolvedStructInitializer*(argType: ResolvedArgumentType,
+proc newResolvedStructInitializer*(parsed: StructInitializer, argType: ResolvedArgumentType,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
-  ResolvedStructInitializer(argType: argType, kwargs: kwargs)
+  ResolvedStructInitializer(parsed: parsed, argType: argType, kwargs: kwargs)
 
-proc loc*(struct: ResolvedStructInitializer): Location = struct.argType.loc
+proc parsed*(struct: ResolvedStructInitializer): StructInitializer = struct.parsed
+proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 proc argType*(struct: ResolvedStructInitializer): ResolvedArgumentType = struct.argType
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 
-proc newResolvedUnionInitializer*(argType: ResolvedArgumentType,
-    variant: Identifier,
+proc newResolvedUnionInitializer*(parsed: UnionInitializer, argType: ResolvedArgumentType,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedUnionInitializer =
-  ResolvedUnionInitializer(argType: argType, variant: variant, kwargs: kwargs)
+  ResolvedUnionInitializer(parsed: parsed, argType: argType, kwargs: kwargs)
 
-proc loc*(init: ResolvedUnionInitializer): Location = init.argType.loc
+proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
+proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
 proc argType*(init: ResolvedUnionInitializer): ResolvedArgumentType = init.argType
-proc variant*(init: ResolvedUnionInitializer): Identifier = init.variant
+proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
 proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
 
 proc newResolvedInitializer*(
@@ -378,7 +380,7 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
               module, scope, kwarg.expression)
             resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
               resolvedExpression)
-          ok(newResolvedStructInitializer(resolvedArgType, resolvedKeywordArgs))
+          ok(newResolvedStructInitializer(struct, resolvedArgType, resolvedKeywordArgs))
 
 proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
@@ -422,7 +424,7 @@ proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
               module, scope, kwarg.expression)
             resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
               resolvedExpression)
-          ok(newResolvedUnionInitializer(resolvedArgType, variant.name,
+          ok(newResolvedUnionInitializer(unionInit, resolvedArgType,
             resolvedKeywordArgs))
 
 proc resolveInitializer(app: App, file: parser.File, fileScope: FileScope,
