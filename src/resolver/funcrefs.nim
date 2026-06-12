@@ -41,25 +41,24 @@ proc resolveDefinedTypeRef(definedType: DefinedType, name: Identifier,
 
 type
   ResolvedFunctionRef* = ref object
-    name: Identifier
-    arity: int
+    parsed: FunctionCall
     argType: ResolvedArgumentType
-    loc: Location
 
-proc newResolvedFunctionRef*(argType: ResolvedArgumentType, name: Identifier, arity: int, loc: Location): ResolvedFunctionRef =
-  ResolvedFunctionRef(argType: argType, name: name, arity: arity, loc: loc)
+proc newResolvedFunctionRef*(parsed: FunctionCall, argType: ResolvedArgumentType): ResolvedFunctionRef =
+  ResolvedFunctionRef(parsed: parsed, argType: argType)
 
+proc parsed*(funcRef: ResolvedFunctionRef): FunctionCall = funcRef.parsed
 proc argType*(funcRef: ResolvedFunctionRef): ResolvedArgumentType = funcRef.argType
-proc name*(funcRef: ResolvedFunctionRef): Identifier = funcRef.name
-proc arity*(funcRef: ResolvedFunctionRef): int = funcRef.arity
-proc loc*(funcRef: ResolvedFunctionRef): Location = funcRef.loc
+proc name*(funcRef: ResolvedFunctionRef): Identifier = funcRef.parsed.name
+proc arity*(funcRef: ResolvedFunctionRef): int = funcRef.parsed.args.len
+proc loc*(funcRef: ResolvedFunctionRef): Location = funcRef.parsed.loc
 
 proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, scope: FunctionScope, argType: ArgumentType,
-    name: Identifier, arity: int, loc: Location): Result[ResolvedFunctionRef, string] =
-  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, argType)
+    module: Module, scope: FunctionScope,
+    fncall: FunctionCall): Result[ResolvedFunctionRef, string] =
+  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, fncall.argType)
 
-  let rootModule = ? file.findType(argType.root)
+  let rootModule = ? file.findType(fncall.argType.root)
   case rootModule.kind:
   of tkImported:
     let impType = rootModule.imported
@@ -67,8 +66,8 @@ proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
       err(fmt"{impType.loc} type `{impType.binding.asl}` does not exist in file scope")
     else:
       let impDefinedType = fileScope[impType.binding]
-      ? resolveDefinedTypeRef(impDefinedType, name, arity, loc)
-      ok(newResolvedFunctionRef(resolvedArgType, name, arity, loc))
+      ? resolveDefinedTypeRef(impDefinedType, fncall.name, fncall.args.len, fncall.loc)
+      ok(newResolvedFunctionRef(fncall, resolvedArgType))
   of tkDefined:
-    ? resolveDefinedTypeRef(rootModule.definedType, name, arity, loc)
-    ok(newResolvedFunctionRef(resolvedArgType, name, arity, loc))
+    ? resolveDefinedTypeRef(rootModule.definedType, fncall.name, fncall.args.len, fncall.loc)
+    ok(newResolvedFunctionRef(fncall, resolvedArgType))

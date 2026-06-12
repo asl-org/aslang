@@ -326,7 +326,7 @@ proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let resolvedFunctionRef = ? resolveFunctionRef(app, file, fileScope, module,
-    scope, fncall.argType, fncall.name, fncall.args.len, fncall.loc)
+    scope, fncall)
   var resolvedArgs: seq[ResolvedExpression]
   for arg in fncall.args:
     let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope, arg)
