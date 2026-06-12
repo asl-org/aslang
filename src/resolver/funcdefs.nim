@@ -11,14 +11,15 @@ import argtypes
 
 # ResolvedArgumentDefinition
 type ResolvedArgumentDefinition* = ref object
+  parsed: ArgumentDefinition
   argType: ResolvedArgumentType
-  name: Identifier
 
-proc newResolvedArgumentDefinition*(argType: ResolvedArgumentType,
-    name: Identifier): ResolvedArgumentDefinition =
-  ResolvedArgumentDefinition(name: name, argType: argType)
+proc newResolvedArgumentDefinition*(parsed: ArgumentDefinition,
+    argType: ResolvedArgumentType): ResolvedArgumentDefinition =
+  ResolvedArgumentDefinition(parsed: parsed, argType: argType)
 
-proc name*(d: ResolvedArgumentDefinition): Identifier = d.name
+proc parsed*(d: ResolvedArgumentDefinition): ArgumentDefinition = d.parsed
+proc name*(d: ResolvedArgumentDefinition): Identifier = d.parsed.name
 proc loc*(d: ResolvedArgumentDefinition): Location = d.argType.loc
 proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
 proc hash*(d: ResolvedArgumentDefinition): Hash = argType.hash
@@ -26,7 +27,7 @@ proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
 
 proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDefinition =
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)
-  newResolvedArgumentDefinition(concreteArgType, argDef.name)
+  newResolvedArgumentDefinition(argDef.parsed, concreteArgType)
 
 proc resolveArgumentDefinition*(app: App, file: parser.File,
     fileScope: FileScope, module: Module,
@@ -34,14 +35,14 @@ proc resolveArgumentDefinition*(app: App, file: parser.File,
   let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, module,
     arg.argType)
   ? resolveDataType(file, module, arg.argType, resolvedArgumentType)
-  ok(newResolvedArgumentDefinition(resolvedArgumentType, arg.name))
+  ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
 
 proc resolveArgumentDefinition*(app: App, file: parser.File, generic: Generic,
     arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
   let resolvedArgumentType = ? resolveArgumentType(app, file, generic,
     arg.argType)
   ? resolveDataType(file, generic, arg.argType, resolvedArgumentType)
-  ok(newResolvedArgumentDefinition(resolvedArgumentType, arg.name))
+  ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
 
 # ResolvedFunctionDefinition
 type ResolvedFunctionDefinition* = ref object
