@@ -3,6 +3,8 @@
 
 import results, strformat, tables, options
 
+import tokenizer
+import parser
 import resolver
 import argtypes
 import funcdefs
@@ -91,6 +93,9 @@ proc newAnalyzedModule*(def: AnalyzedModuleDefinition, functions: seq[AnalyzedFu
   AnalyzedModule(def: def, functions: functions)
 
 proc def*(m: AnalyzedModule): AnalyzedModuleDefinition = m.def
+proc resolved*(m: AnalyzedModule): ResolvedModule = m.def.resolved
+proc loc*(m: AnalyzedModule): Location = m.def.resolved.loc
+proc name*(m: AnalyzedModule): Identifier = m.def.name
 proc functions*(m: AnalyzedModule): seq[AnalyzedFunction] = m.functions
 
 proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope): Result[AnalyzedModule, string] =
