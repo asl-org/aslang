@@ -105,14 +105,15 @@ proc resolveFunctionDefinition*(app: App, file: parser.File, generic: Generic,
 
 # ResolvedExternFunction
 type ResolvedExternFunction* = ref object
-  ffi: string
+  parsed: ExternFunction
   def: ResolvedFunctionDefinition
 
-proc newResolvedExternFunction*(ffi: string,
+proc newResolvedExternFunction*(parsed: ExternFunction,
     def: ResolvedFunctionDefinition): ResolvedExternFunction =
-  ResolvedExternFunction(ffi: ffi, def: def)
+  ResolvedExternFunction(parsed: parsed, def: def)
 
-proc ffi*(function: ResolvedExternFunction): string = function.ffi
+proc parsed*(function: ResolvedExternFunction): ExternFunction = function.parsed
+proc ffi*(function: ResolvedExternFunction): string = function.parsed.ffi
 proc def*(function: ResolvedExternFunction): ResolvedFunctionDefinition = function.def
 proc loc*(function: ResolvedExternFunction): Location = function.def.loc
 
@@ -121,4 +122,4 @@ proc resolveExternFunction*(app: App, file: parser.File, fileScope: FileScope,
     function: ExternFunction): Result[ResolvedExternFunction, string] =
   let resolvedFunctionDef = ? resolveFunctionDefinition(app, file, fileScope,
     module, function.def)
-  ok(newResolvedExternFunction(function.ffi, resolvedFunctionDef))
+  ok(newResolvedExternFunction(function, resolvedFunctionDef))
