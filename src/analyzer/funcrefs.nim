@@ -87,12 +87,17 @@ proc clone*(scope: AnalyzedFunctionScope): AnalyzedFunctionScope =
   return updated
 
 type AnalyzedFunctionRef* = ref object
+  resolved: ResolvedFunctionRef
   argType: AnalyzedArgumentType
   funcDefs: seq[AnalyzedFunctionDefinition]
 
-proc newAnalyzedFunctionRef*(argType: AnalyzedArgumentType, funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedFunctionRef =
-  AnalyzedFunctionRef(argType: argType, funcDefs: funcDefs)
+proc newAnalyzedFunctionRef*(resolved: ResolvedFunctionRef, argType: AnalyzedArgumentType, funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedFunctionRef =
+  AnalyzedFunctionRef(resolved: resolved, argType: argType, funcDefs: funcDefs)
 
+proc resolved*(fnref: AnalyzedFunctionRef): ResolvedFunctionRef = fnref.resolved
+proc loc*(fnref: AnalyzedFunctionRef): Location = fnref.resolved.loc
+proc name*(fnref: AnalyzedFunctionRef): Identifier = fnref.resolved.name
+proc arity*(fnref: AnalyzedFunctionRef): int = fnref.resolved.arity
 proc argType*(fnref: AnalyzedFunctionRef): AnalyzedArgumentType = fnref.argType
 proc funcDefs*(fnref: AnalyzedFunctionRef): seq[AnalyzedFunctionDefinition] = fnref.funcDefs
 
@@ -111,7 +116,7 @@ proc analyzeFunctionRef*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyz
         let genericDef = defScope[genericType.name].generic
         # NOTE: if the function call is to other module then only it should have public accessor
         let funcDefs = ? genericDef.findFunctionDefs(fnref.name, fnref.arity)
-        ok(newAnalyzedFunctionRef(argType, funcDefs))
+        ok(newAnalyzedFunctionRef(fnref, argType, funcDefs))
     of adatkModule:
       let moduleType = definedType.module
       if moduleType.module.name notin defScope:
@@ -120,4 +125,4 @@ proc analyzeFunctionRef*(app: ResolvedApp, file: ResolvedFile, fileScope: Analyz
         let moduleDef = defScope[moduleType.module.name].module
         # NOTE: if the function call is to other module then only it should have public accessor
         let funcDefs = ? moduleDef.findFunctionDefs(fnref.name, fnref.arity, module != moduleDef.resolved)
-        ok(newAnalyzedFunctionRef(argType, funcDefs))
+        ok(newAnalyzedFunctionRef(fnref, argType, funcDefs))
