@@ -79,6 +79,22 @@ proc extractDataBlock(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgum
   let argModule = ? defScope.findModuleDef(argType, loc)
   defScope.extractDataBlock(argModule, loc)
 
+proc extractStructFor(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedStruct, string] =
+  let argModule = ? defScope.findModuleDef(argType, loc)
+  let dataBlock = ? defScope.extractDataBlock(argModule, loc)
+  case dataBlock.kind:
+  of adkStruct: ok(dataBlock.struct)
+  of adkUnion: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found union")
+  of adkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
+
+proc extractUnionFor(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedUnion, string] =
+  let argModule = ? defScope.findModuleDef(argType, loc)
+  let dataBlock = ? defScope.extractDataBlock(argModule, loc)
+  case dataBlock.kind:
+  of adkUnion: ok(dataBlock.union)
+  of adkStruct: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found struct")
+  of adkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found literal")
+
 type AnalyzedFunctionScope = Table[Identifier, AnalyzedArgumentType]
 proc clone(scope: AnalyzedFunctionScope): AnalyzedFunctionScope =
   var updated: AnalyzedFunctionScope
@@ -324,17 +340,10 @@ proc analyzeGetter*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFil
     err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
   else:
     let analyzedArgType = funcScope[getter.source]
-    let argModule = ? defScope.findModuleDef(analyzedArgType, getter.loc)
-    let dataBlock = ? defScope.extractDataBlock(argModule, getter.loc)
-    case dataBlock.kind:
-    of adkLiteral:
-      err(fmt"{getter.loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
-    of adkUnion:
-      err(fmt"{getter.loc} expected module `{argModule.name.asl}` to have a struct block but found union")
-    of adkStruct:
-      let analyzedProperty = ? dataBlock.struct.findField(getter.property)
-      # TODO: coerce the property type from the generic to concrete
-      ok(newAnalyzedGetter(getter, analyzedArgType, analyzedProperty))
+    let struct = ? defScope.extractStructFor(analyzedArgType, getter.loc)
+    let analyzedProperty = ? struct.findField(getter.property)
+    # TODO: coerce the property type from the generic to concrete
+    ok(newAnalyzedGetter(getter, analyzedArgType, analyzedProperty))
 
 type
   AnalyzedFunctionCall = ref object
@@ -795,38 +804,24 @@ proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: An
 
 proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
   let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
-  let argModule = ? defScope.findModuleDef(analyzedArgType, init.loc)
-  let dataBlock = ? defScope.extractDataBlock(argModule, init.loc)
-  case dataBlock.kind:
-  of adkLiteral:
-    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a union block but found literal")
-  of adkStruct:
-    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a union block but found struct")
-  of adkUnion:
-    let analyzedVariant = ? dataBlock.union.findVariant(init.variant)
-    var analyzedKwargs: seq[AnalyzedKeywordArgument]
-    for kwarg in init.kwargs:
-      let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
-      let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
-      analyzedKwargs.add(analyzedKwarg)
-    ok(newAnalyzedUnionInitializer(init, analyzedArgType, analyzedVariant, analyzedKwargs))
+  let union = ? defScope.extractUnionFor(analyzedArgType, init.loc)
+  let analyzedVariant = ? union.findVariant(init.variant)
+  var analyzedKwargs: seq[AnalyzedKeywordArgument]
+  for kwarg in init.kwargs:
+    let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
+    let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
+    analyzedKwargs.add(analyzedKwarg)
+  ok(newAnalyzedUnionInitializer(init, analyzedArgType, analyzedVariant, analyzedKwargs))
 
 proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
   let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
-  let argModule = ? defScope.findModuleDef(analyzedArgType, init.loc)
-  let dataBlock = ? defScope.extractDataBlock(argModule, init.loc)
-  case dataBlock.kind:
-  of adkLiteral:
-    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
-  of adkUnion:
-    err(fmt"{init.loc} expected module `{argModule.name.asl}` to have a struct block but found union")
-  of adkStruct:
-    var analyzedKwargs: seq[AnalyzedKeywordArgument]
-    for kwarg in init.kwargs:
-      let analyzedField = ? dataBlock.struct.findField(kwarg.name)
-      let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
-      analyzedKwargs.add(analyzedKwarg)
-    ok(newAnalyzedStructInitializer(init, analyzedArgType, analyzedKwargs))
+  let struct = ? defScope.extractStructFor(analyzedArgType, init.loc)
+  var analyzedKwargs: seq[AnalyzedKeywordArgument]
+  for kwarg in init.kwargs:
+    let analyzedField = ? struct.findField(kwarg.name)
+    let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
+    analyzedKwargs.add(analyzedKwarg)
+  ok(newAnalyzedStructInitializer(init, analyzedArgType, analyzedKwargs))
 
 proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
