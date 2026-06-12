@@ -19,15 +19,15 @@ import patterns
 
 # ResolvedGetter — independent of the big cluster.
 type ResolvedGetter* = ref object
-  source: Identifier
-  property: Identifier
+  parsed: Getter
 
-proc newResolvedGetter*(source, property: Identifier): ResolvedGetter =
-  ResolvedGetter(source: source, property: property)
+proc newResolvedGetter*(parsed: Getter): ResolvedGetter =
+  ResolvedGetter(parsed: parsed)
 
-proc loc*(getter: ResolvedGetter): Location = getter.source.loc
-proc source*(getter: ResolvedGetter): Identifier = getter.source
-proc property*(getter: ResolvedGetter): Identifier = getter.property
+proc parsed*(getter: ResolvedGetter): Getter = getter.parsed
+proc source*(getter: ResolvedGetter): Identifier = getter.parsed.source
+proc property*(getter: ResolvedGetter): Identifier = getter.parsed.property
+proc loc*(getter: ResolvedGetter): Location = getter.parsed.loc
 
 proc resolveVariable*(file: parser.File, scope: FunctionScope,
     variable: Identifier): Result[Identifier, string] =
@@ -39,7 +39,7 @@ proc resolveVariable*(file: parser.File, scope: FunctionScope,
 proc resolveGetter*(file: parser.File, scope: FunctionScope,
     getter: Getter): Result[ResolvedGetter, string] =
   discard ? resolveVariable(file, scope, getter.source)
-  ok(newResolvedGetter(getter.source, getter.property))
+  ok(newResolvedGetter(getter))
 
 # ResolvedLiteralInitializer — needs ResolvedArgumentType but no
 # ResolvedExpression dependency (literal value is parser AST).
