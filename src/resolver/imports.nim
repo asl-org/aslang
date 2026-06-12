@@ -32,17 +32,18 @@ proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
 
 # ResolvedImport
 type ResolvedImport* = ref object
+  parsed: Import
   file: int
-  parsed: parser.File
+  impFile: parser.File
   importedTypes: seq[ResolvedImportedType]
-  loc: Location
 
-proc newResolvedImport*(file: int, parsed: parser.File, importedTypes: seq[ResolvedImportedType], loc: Location): ResolvedImport =
-  ResolvedImport(file: file, parsed: parsed, importedTypes: importedTypes, loc: loc)
+proc newResolvedImport*(parsed: Import, file: int, impFile: parser.File, importedTypes: seq[ResolvedImportedType]): ResolvedImport =
+  ResolvedImport(parsed: parsed, file: file, impFile: impFile, importedTypes: importedTypes)
 
-proc parsed*(i: ResolvedImport): parser.File = i.parsed
+proc parsed*(i: ResolvedImport): Import = i.parsed
+proc impFile*(i: ResolvedImport): parser.File = i.impFile
 proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] = i.importedTypes
-proc loc*(i: ResolvedImport): Location = i.loc
+proc loc*(i: ResolvedImport): Location = i.parsed.loc
 
 proc resolveImport*(app: App, file: parser.File,
     imp: Import): Result[ResolvedImport, string] =
@@ -52,4 +53,4 @@ proc resolveImport*(app: App, file: parser.File,
   for impType in imp.names:
     let resolvedImportedType = ? resolveImportedType(impFile, impType)
     resolvedImportedTypes.add(resolvedImportedType)
-  ok(newResolvedImport(impFileId, impFile, resolvedImportedTypes, imp.loc))
+  ok(newResolvedImport(imp, impFileId, impFile, resolvedImportedTypes))

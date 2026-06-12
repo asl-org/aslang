@@ -34,9 +34,9 @@ proc newAnalyzeImport*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImpo
 proc importedTypes*(imp: AnalyzedImport): seq[AnalyzedImportedType] = imp.importedTypes
 
 proc analyzeImport*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImport, string] =
-  let maybeImportedFile = app.findFile(imp.parsed)
+  let maybeImportedFile = app.findFile(imp.impFile)
   if maybeImportedFile.isNone:
-    err(fmt"{imp.loc} UNREACHABLE: file `{imp.parsed.path}` does not exist")
+    err(fmt"{imp.loc} UNREACHABLE: file `{imp.impFile.path}` does not exist")
   else:
     let analyzedImpFile = maybeImportedFile.get
     var importedTypes: seq[AnalyzedImportedType]
