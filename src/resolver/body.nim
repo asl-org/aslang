@@ -94,10 +94,11 @@ type
     args: seq[ResolvedExpression]
 
   ResolvedAssignment* = ref object
-    target: Identifier
+    parsed: Assignment
     expression: ResolvedExpression
 
   ResolvedMutation* = ref object
+    parsed: Mutation
     getter: ResolvedGetter
     expression: ResolvedExpression
 
@@ -197,19 +198,21 @@ proc loc*(fncall: ResolvedFunctionCall): Location = fncall.funcRef.loc
 proc funcRef*(fncall: ResolvedFunctionCall): ResolvedFunctionRef = fncall.funcRef
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 
-proc newResolvedAssignment*(target: Identifier,
+proc newResolvedAssignment*(parsed: Assignment,
     expression: ResolvedExpression): ResolvedAssignment =
-  ResolvedAssignment(target: target, expression: expression)
+  ResolvedAssignment(parsed: parsed, expression: expression)
 
-proc loc*(assignment: ResolvedAssignment): Location = assignment.target.loc
+proc parsed*(assignment: ResolvedAssignment): Assignment = assignment.parsed
+proc loc*(assignment: ResolvedAssignment): Location = assignment.parsed.loc
+proc target*(assignment: ResolvedAssignment): Identifier = assignment.parsed.target
 proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
-proc target*(assignment: ResolvedAssignment): Identifier = assignment.target
 
-proc newResolvedMutation*(getter: ResolvedGetter,
+proc newResolvedMutation*(parsed: Mutation, getter: ResolvedGetter,
     expression: ResolvedExpression): ResolvedMutation =
-  ResolvedMutation(getter: getter, expression: expression)
+  ResolvedMutation(parsed: parsed, getter: getter, expression: expression)
 
-proc loc*(mutation: ResolvedMutation): Location = mutation.getter.loc
+proc parsed*(mutation: ResolvedMutation): Mutation = mutation.parsed
+proc loc*(mutation: ResolvedMutation): Location = mutation.parsed.loc
 proc getter*(mutation: ResolvedMutation): ResolvedGetter = mutation.getter
 proc expression*(mutation: ResolvedMutation): ResolvedExpression = mutation.expression
 
@@ -505,7 +508,7 @@ proc resolveAssignment(app: App, file: parser.File, fileScope: FileScope,
     assignment: Assignment): Result[ResolvedAssignment, string] =
   let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
     scope, assignment.expression)
-  ok(newResolvedAssignment(assignment.target, resolvedExpression))
+  ok(newResolvedAssignment(assignment, resolvedExpression))
 
 proc resolveMutation(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
@@ -513,7 +516,7 @@ proc resolveMutation(app: App, file: parser.File, fileScope: FileScope,
   let resolvedGetter = ? resolveGetter(file, scope, mutation.target)
   let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
     scope, mutation.expression)
-  ok(newResolvedMutation(resolvedGetter, resolvedExpression))
+  ok(newResolvedMutation(mutation, resolvedGetter, resolvedExpression))
 
 proc resolveStatement*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
