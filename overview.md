@@ -322,79 +322,6 @@ src/
                                    findField) / AnalyzedVariant /
                                    AnalyzedUnion / AnalyzedData + their
                                    analyzeX procs
-    funcs.nim                      (WIP) AnalyzedDefinedTypeScope
-                                   (Identifier -> AnalyzedDefinedType,
-                                   indexes both modules and generics) +
-                                   findModuleDef / extractDataBlock
-                                   helpers / AnalyzedFunctionScope +
-                                   body-walker procs (analyzeFunctionRef
-                                   / analyzeArgumentList /
-                                   analyzeValueTypeAgainstDefinitionType
-                                   (overload set) / analyzeFunctionCall /
-                                   analyzeVariantCasePattern /
-                                   analyzeCasePattern (overloaded for
-                                   union vs literal context) /
-                                   analyzeCaseBlock (overloaded the
-                                   same way; both extend caseScope
-                                   with statement-level bindings) /
-                                   analyzeCases (overloaded; union ctx
-                                   uses AnalyzedVariantPatternScope,
-                                   literal ctx uses
-                                   AnalyzedLiteralPatternScope —
-                                   tagged union over the eight integer
-                                   kinds, exhaustiveness currently
-                                   requires a variable case binding
-                                   since whole-domain coverage is not
-                                   yet computed; both run a uniform-
-                                   return check across case blocks) /
-                                   analyzeMatchExpression (handles
-                                   both union and literal subject
-                                   data blocks) /
-                                   analyzeKeywordArgument (takes a
-                                   pre-resolved field so struct + union
-                                   initializers share it) /
-                                   analyzeUnionInitializer /
-                                   analyzeStructInitializer /
-                                   analyzeInitializer / analyzeVariable /
-                                   analyzeGetter (resolves the source
-                                   variable, expects a struct-shaped
-                                   module, looks up the property
-                                   field) / analyzeExpression /
-                                   analyzeAssignment (extends funcScope
-                                   with the new binding) /
-                                   analyzeMutation /
-                                   analyzeStatement /
-                                   analyzeUserFunction (returns
-                                   AnalyzedUserFunction, enforces
-                                   last-statement return-type match) /
-                                   analyzeModule (returns AnalyzedModule
-                                   with AnalyzedFunction[Extern|User]
-                                   wrappers); a generic parseInteger
-                                   helper (parseutils + scanf with
-                                   compile-time signed/unsigned
-                                   dispatch + bounds check against
-                                   T.high/low) backs literal-pattern
-                                   duplicate detection and partial
-                                   literal-typed kwarg inference in
-                                   analyzeKeywordArgument (i32 and
-                                   string kwarg arms wired; other
-                                   integer / float / pointer kinds
-                                   still return todo) — variable
-                                   case-pattern arm wired for literal-
-                                   subject matches (binds the variable
-                                   to the subject's argType); mutation
-                                   statement wired (analyzes the LHS
-                                   getter + RHS expression — type
-                                   equality between getter field and
-                                   expression value not yet checked);
-                                   union-context variable case-pattern
-                                   and literal initializer arms still
-                                   return todo; literal-pattern
-                                   duplicate detection is implemented
-                                   for u8 / i8 only — the other six
-                                   integer kinds still return todo;
-                                   argument-list handles only typed
-                                   (non-literal) args
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric (also has
@@ -405,6 +332,93 @@ src/
                                    module/generic accessors assert kind
                                    first) + analyzeModuleDefinition /
                                    analyzeGeneric / analyzeDefinedType
+    funcrefs.nim                   AnalyzedDefinedTypeScope
+                                   (Identifier -> AnalyzedDefinedType,
+                                   indexes both modules and generics)
+                                   with findModuleDef (by argType or
+                                   by name) / extractDataBlock /
+                                   extractStructFor / extractUnionFor
+                                   lookup helpers / AnalyzedFunctionScope
+                                   + clone / AnalyzedFunctionRef +
+                                   analyzeFunctionRef
+    patterns.nim                   generic parseInteger[T: SomeInteger]
+                                   helper (parseutils + scanf with
+                                   compile-time signed/unsigned
+                                   dispatch + bounds check against
+                                   T.high/low) / AnalyzedVariantPatternScope
+                                   + update + hasUncoveredCases /
+                                   AnalyzedLiteralPatternScope —
+                                   tagged union over the eight integer
+                                   kinds, exhaustiveness currently
+                                   requires a variable case binding
+                                   since whole-domain coverage is not
+                                   yet computed (literal-pattern
+                                   duplicate detection is implemented
+                                   for u8 / i8 only — the other six
+                                   integer kinds still return todo) /
+                                   AnalyzedVariantPattern +
+                                   analyzeVariantCasePattern /
+                                   AnalyzedCasePattern (acpkVariant /
+                                   acpkInteger / acpkVariable) +
+                                   analyzeCasePattern (overloaded for
+                                   union vs literal context)
+    body.nim                       (WIP) AnalyzedVariable + analyzeVariable
+                                   / AnalyzedGetter (struct-shaped
+                                   module property lookup) +
+                                   analyzeGetter / body-level
+                                   mutually-recursive type cluster
+                                   (AnalyzedFunctionCall /
+                                   AnalyzedKeywordArgument /
+                                   AnalyzedUnionInitializer /
+                                   AnalyzedStructInitializer /
+                                   AnalyzedInitializer /
+                                   AnalyzedCaseBlock /
+                                   AnalyzedMatchExpression /
+                                   AnalyzedAssignment /
+                                   AnalyzedMutation /
+                                   AnalyzedExpression /
+                                   AnalyzedStatement) + analyze procs
+                                   (analyzeValueTypeAgainstDefinitionType
+                                   (overload set) / analyzeArgumentList
+                                   / resolveOverload + analyzeFunctionCall
+                                   / analyzeCaseBlock (overloaded; union
+                                   ctx + literal ctx; both extend
+                                   caseScope with statement-level
+                                   bindings) / verifyUniformReturnType
+                                   helper / analyzeCases (overloaded;
+                                   shared uniform-return check) /
+                                   analyzeMatchExpression /
+                                   analyzeKeywordArgument (pre-resolved
+                                   field so struct + union initializers
+                                   share it; partial literal-typed
+                                   kwarg inference — i32 and string
+                                   arms wired, other integer / float /
+                                   pointer kinds return todo) /
+                                   analyzeUnionInitializer /
+                                   analyzeStructInitializer /
+                                   analyzeInitializer /
+                                   analyzeExpression /
+                                   analyzeAssignment (extends
+                                   funcScope with the new binding) /
+                                   analyzeMutation / analyzeStatement)
+                                   — variable case-pattern arm wired
+                                   for literal-subject matches (binds
+                                   the variable to the subject's
+                                   argType); mutation statement wired
+                                   (LHS getter + RHS expression —
+                                   type equality not yet checked);
+                                   union-context variable case-pattern
+                                   and literal initializer arms still
+                                   return todo; argument-list handles
+                                   only typed (non-literal) args
+    funcs.nim                      AnalyzedUserFunction + AnalyzedExternFunction
+                                   / AnalyzedFunction tagged union /
+                                   AnalyzedModule + analyzeUserFunction
+                                   (enforces last-statement return-type
+                                   match) + analyzeModule (returns
+                                   AnalyzedModule with
+                                   AnalyzedFunction[Extern|User]
+                                   wrappers)
     decls.nim                      AnalyzedFile (with imports +
                                    definedTypes + modules) /
                                    AnalyzedApp + analyzeFile + the

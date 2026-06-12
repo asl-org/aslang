@@ -9,6 +9,7 @@ import resolver
 import imports
 import argtypes
 import modules
+import funcrefs
 
 # AnalyzedFile
 type AnalyzedFile* = ref object
