@@ -108,9 +108,9 @@ type
     statements: seq[ResolvedStatement]
 
   ResolvedMatchExpression* = ref object
+    parsed: MatchExpression
     subject: ResolvedExpression
     cases: seq[ResolvedCaseBlock]
-    loc: Location
 
   ResolvedExpressionKind* = enum
     rekFunctionCall, rekVariable, rekLiteral, rekInitializer,
@@ -224,11 +224,12 @@ proc loc*(caseBlock: ResolvedCaseBlock): Location = caseBlock.parsed.loc
 proc pattern*(caseBlock: ResolvedCaseBlock): ResolvedCasePattern = caseBlock.pattern
 proc statements*(caseBlock: ResolvedCaseBlock): seq[ResolvedStatement] = caseBlock.statements
 
-proc newResolvedMatchExpression*(subject: ResolvedExpression,
-    cases: seq[ResolvedCaseBlock], loc: Location): ResolvedMatchExpression =
-  ResolvedMatchExpression(subject: subject, cases: cases, loc: loc)
+proc newResolvedMatchExpression*(parsed: MatchExpression, subject: ResolvedExpression,
+    cases: seq[ResolvedCaseBlock]): ResolvedMatchExpression =
+  ResolvedMatchExpression(parsed: parsed, subject: subject, cases: cases)
 
-proc loc*(match: ResolvedMatchExpression): Location = match.loc
+proc parsed*(match: ResolvedMatchExpression): MatchExpression = match.parsed
+proc loc*(match: ResolvedMatchExpression): Location = match.parsed.loc
 proc subject*(match: ResolvedMatchExpression): ResolvedExpression = match.subject
 proc cases*(match: ResolvedMatchExpression): seq[ResolvedCaseBlock] = match.cases
 
@@ -476,7 +477,7 @@ proc resolveMatchExpression(app: App, file: parser.File, fileScope: FileScope,
     let resolvedCaseBlock = ? resolveCaseBlock(app, file, fileScope, module,
       scope, caseBlock)
     resolvedCaseBlocks.add(resolvedCaseBlock)
-  ok(newResolvedMatchExpression(resolvedSubject, resolvedCaseBlocks, match.loc))
+  ok(newResolvedMatchExpression(match, resolvedSubject, resolvedCaseBlocks))
 
 proc resolveExpression*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
