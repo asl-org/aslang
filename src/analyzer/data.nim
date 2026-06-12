@@ -2,6 +2,7 @@
 
 import results, tables, strformat
 
+import tokenizer
 import parser
 import resolver
 import literals
@@ -10,16 +11,19 @@ import funcdefs
 
 # AnalyzedStruct
 type AnalyzedStruct* = ref object
+  resolved: ResolvedStruct
   fields: seq[AnalyzedArgumentDefinition]
   fieldIndex: Table[Identifier, int]
 
-proc newAnalyzedStruct*(fields: seq[AnalyzedArgumentDefinition]): AnalyzedStruct =
+proc newAnalyzedStruct*(resolved: ResolvedStruct, fields: seq[AnalyzedArgumentDefinition]): AnalyzedStruct =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
     assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name must have been caught by resolver")
     fieldIndex[field.name] = id
-  AnalyzedStruct(fields: fields, fieldIndex: fieldIndex)
+  AnalyzedStruct(resolved: resolved, fields: fields, fieldIndex: fieldIndex)
 
+proc resolved*(s: AnalyzedStruct): ResolvedStruct = s.resolved
+proc loc*(s: AnalyzedStruct): Location = s.resolved.loc
 proc fields*(s: AnalyzedStruct): seq[AnalyzedArgumentDefinition] = s.fields
 proc findField*(s: AnalyzedStruct, name: Identifier): Result[AnalyzedArgumentDefinition, string] =
   if name in s.fieldIndex: ok(s.fields[s.fieldIndex[name]])
@@ -30,7 +34,7 @@ proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFil
   for field in struct.fields:
     let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
     analyzedFields.add(analyzedField)
-  ok(newAnalyzedStruct(analyzedFields))
+  ok(newAnalyzedStruct(struct, analyzedFields))
 
 # AnalyzedVariant
 type AnalyzedVariant* = ref object
