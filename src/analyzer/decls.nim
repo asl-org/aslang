@@ -1,7 +1,7 @@
 ## File / App + the public analyze* entry point. AnalyzedDefinedType
 ## and analyzeDefinedType live in modules.nim alongside their arms.
 
-import strformat, results, tables
+import results, tables
 
 import funcs
 import parser
@@ -66,9 +66,6 @@ proc files*(a: AnalyzedApp): seq[AnalyzedFile] = a.files
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
   var analyzedFiles: seq[AnalyzedFile]
   for file in app.files:
-    let maybeAnalyzedFile = analyzeFile(app, file)
-    if maybeAnalyzedFile.isErr:
-      return err(fmt"{file.path}:{maybeAnalyzedFile.error}")
-    else:
-      analyzedFiles.add(maybeAnalyzedFile.get)
+    let analyzedFile = ? analyzeFile(app, file)
+    analyzedFiles.add(analyzedFile)
   ok(newAnalyzedApp(app, analyzedFiles))

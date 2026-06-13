@@ -19,7 +19,7 @@ proc advance*(loc: Location, line: bool = false): Location =
     location.col += 1
   return location
 
-proc `$`*(loc: Location): string = fmt"{loc.line}:{loc.col}"
+proc `$`*(loc: Location): string = fmt"{loc.filepath}:{loc.line}:{loc.col}"
 proc hash*(a: Location): Hash = a.filepath.hash !& a.line.hash !& a.col.hash
 proc `==`*(a, b: Location): bool = a.hash == b.hash
 proc `<`*(a, b: Location): bool =

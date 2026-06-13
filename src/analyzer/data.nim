@@ -15,6 +15,7 @@ type AnalyzedStruct* = ref object
   fields: seq[AnalyzedArgumentDefinition]
   fieldIndex: Table[Identifier, int]
 
+# TODO: Ensure that there are no duplicated generic fields
 proc newAnalyzedStruct*(resolved: ResolvedStruct, fields: seq[AnalyzedArgumentDefinition]): AnalyzedStruct =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
@@ -42,6 +43,7 @@ type AnalyzedVariant* = ref object
   fields: seq[AnalyzedArgumentDefinition]
   fieldIndex: Table[Identifier, int]
 
+# TODO: Ensure that there are no duplicated generic fields
 proc newAnalyzedVariant*(resolved: ResolvedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedVariant =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:

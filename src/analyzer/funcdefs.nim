@@ -23,8 +23,8 @@ proc analyzeArgumentDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope:
   let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, argDef.argType)
   ok(newAnalyzedArgumentDefinition(analyzedArgType, argDef.name))
 
-proc analyzeArgumentDefinition*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argDef: ResolvedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
-  let analyzedArgType = ? analyzeArgumentType(app, file, generic, argDef.argType)
+proc analyzeArgumentDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, generic: ResolvedGeneric, argDef: ResolvedArgumentDefinition): Result[AnalyzedArgumentDefinition, string] =
+  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, generic, argDef.argType)
   ok(newAnalyzedArgumentDefinition(analyzedArgType, argDef.name))
 
 # AnalyzedFunctionDefinition
@@ -33,6 +33,7 @@ type AnalyzedFunctionDefinition* = ref object
   args: seq[AnalyzedArgumentDefinition]
   returns: AnalyzedArgumentType
 
+# TODO: Ensure that there are no duplicated generic fields
 proc newAnalyzedFunctionDefinition*(resolved: ResolvedFunctionDefinition, args: seq[AnalyzedArgumentDefinition], returns: AnalyzedArgumentType): AnalyzedFunctionDefinition =
   AnalyzedFunctionDefinition(resolved: resolved, args: args, returns: returns)
 
@@ -53,11 +54,11 @@ proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope:
   let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
-proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, funcDef: ResolvedFunctionDefinition): Result[AnalyzedFunctionDefinition, string] =
+proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, generic: ResolvedGeneric, funcDef: ResolvedFunctionDefinition): Result[AnalyzedFunctionDefinition, string] =
   var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
   for arg in funcDef.args:
-    let analyzedArgDef = ? analyzeArgumentDefinition(app, file, generic, arg)
+    let analyzedArgDef = ? analyzeArgumentDefinition(app, file, fileScope, generic, arg)
     analyzedArgDefs.add(analyzedArgDef)
 
-  let analyzedReturns = ? analyzeArgumentType(app, file, generic, funcDef.returns)
+  let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, generic, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))

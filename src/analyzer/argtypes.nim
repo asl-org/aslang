@@ -79,7 +79,7 @@ type
 # analyzeModuleArgumentType.
 proc hash*(m: AnalyzedArgumentType): Hash
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
-proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
+proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
 # Constructors + accessors + self for the cluster.
 proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule, impls: seq[AnalyzedArgumentType]): AnalyzedModuleArgumentType =
@@ -169,21 +169,34 @@ proc hash*(m: AnalyzedArgumentType): Hash =
   of aatkDefined: return m.definedType.hash
 proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 
-proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  var typeModule: ResolvedModule
+proc findArgTypeModule(file: ResolvedFile, fileScope: AnalyzedFileScope, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
   let maybeTypeModule = file.findModule(argType.module.name)
   if maybeTypeModule.isErr:
     if argType.module.name notin fileScope:
-      return err(fmt"{argType.loc} module `{argType.module.name.asl}` is neither defined nor imported")
+      err(fmt"{argType.loc} module `{argType.module.name.asl}` is neither defined nor imported")
     else:
       let importedDefinedType = fileScope[argType.module.name]
       case importedDefinedType.kind:
-      of rdtkModule:
-        typeModule = importedDefinedType.module
-      of rdtkGeneric:
-        return err(fmt"[UNREACHABLE] {argType.loc} expected `{argType.module.name.asl}` to be a module but found generic.")
+      of rdtkGeneric: err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.module.name.asl}` to be a module but found generic.")
+      of rdtkModule: ok(importedDefinedType.module)
   else:
-    typeModule = maybeTypeModule.value
+    ok(maybeTypeModule.value)
+
+proc findArgTypeGeneric(file: ResolvedFile, fileScope: AnalyzedFileScope, argType: ResolvedGenericArgumentType): Result[ResolvedGeneric, string] =
+  let maybeResolvedGeneric = file.findGeneric(argType.name)
+  if maybeResolvedGeneric.isErr:
+    if argType.name notin fileScope:
+      err(fmt"{argType.loc} generic `{argType.name.asl}` is neither defined nor imported")
+    else:
+      let definedImportedGeneric = fileScope[argType.name]
+      case definedImportedGeneric.kind:
+      of rdtkModule: err(fmt"[UNREACHABLE] {argType.loc} expected `{argType.name.asl}` to be a generic but found module.")
+      of rdtkGeneric: ok(definedImportedGeneric.generic)
+  else:
+    ok(maybeResolvedGeneric.value)
+
+proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
+  var typeModule = ? file.findArgTypeModule(fileScope, argType)
 
   if typeModule.requires.len != argType.impls.len:
     if typeModule.requires.len == 0:
@@ -193,21 +206,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
   else:
     var analyzedImpls: seq[AnalyzedArgumentType]
     for (requiredImpl, targetImpl) in zip(typeModule.requires, argType.impls):
-      var resolvedGeneric: ResolvedGeneric
-      let maybeResolvedGeneric = file.findGeneric(requiredImpl.name)
-      if maybeResolvedGeneric.isErr:
-        if requiredImpl.name notin fileScope:
-          return err(fmt"{argType.loc} analyze imported generic")
-        else:
-          let definedImportedGeneric = fileScope[requiredImpl.name]
-          case definedImportedGeneric.kind:
-          of rdtkModule:
-            return err(fmt"[UNREACHABLE] {targetImpl.loc} expected `{requiredImpl.name.asl}` to be a generic but found module.")
-          of rdtkGeneric:
-            resolvedGeneric = definedImportedGeneric.generic
-      else:
-        resolvedGeneric = maybeResolvedGeneric.value
-
+      let resolvedGeneric = ? file.findArgTypeGeneric(fileScope, requiredImpl)
       let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, module, targetImpl)
       let funcDefs = resolvedGeneric.concreteImpls(analyzedImpl.self)
       for funcDef in funcDefs:
@@ -230,8 +229,9 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
               analyzedImpls.add(analyzedImpl)
     ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
-proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  let typeModule = ? file.findModule(argType.module.name)
+proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
+  let typeModule = ? file.findArgTypeModule(fileScope, argType)
+
   if typeModule.requires.len != argType.impls.len:
     if typeModule.requires.len == 0:
       err(fmt"{argType.loc} module `{argType.module.name.asl}` does not require any impl types")
@@ -240,8 +240,8 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: R
   else:
     var analyzedImpls: seq[AnalyzedArgumentType]
     for (requiredImpl, targetImpl) in zip(typeModule.requires, argType.impls):
-      let resolvedGeneric = ? file.findGeneric(requiredImpl.name)
-      let analyzedImpl = ? analyzeArgumentType(app, file, generic, targetImpl)
+      let resolvedGeneric = ? file.findArgTypeGeneric(fileScope, requiredImpl)
+      let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, generic, targetImpl)
       let funcDefs = resolvedGeneric.concreteImpls(analyzedImpl.self)
       for funcDef in funcDefs:
         case analyzedImpl.kind:
@@ -268,13 +268,13 @@ proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope
     let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, module, argType.module)
     ok(newAnalyzedDefinedArgumentType(analyzedArgType))
 
-proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
+proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, generic: ResolvedGeneric, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
   case argType.kind:
   of rdatkGeneric:
     let analyzedArgType = ? analyzeGenericArgumentType(app, file, generic, argType.generic)
     ok(newAnalyzedDefinedArgumentType(analyzedArgType))
   of rdatkModule:
-    let analyzedArgType = ? analyzeModuleArgumentType(app, file, generic, argType.module)
+    let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, generic, argType.module)
     ok(newAnalyzedDefinedArgumentType(analyzedArgType))
 
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
@@ -284,10 +284,10 @@ proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
     let analyzedArgType = ? analyzeDefinedArgumentType(app, file, fileScope, module, argType.definedType)
     ok(newAnalyzedArgumentType(analyzedArgType))
 
-proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
+proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
   of ratkImported:
     err(fmt"todo: analyze imported argument type")
   of ratkDefined:
-    let analyzedArgType = ? analyzeDefinedArgumentType(app, file, generic, argType.definedType)
+    let analyzedArgType = ? analyzeDefinedArgumentType(app, file, fileScope, generic, argType.definedType)
     ok(newAnalyzedArgumentType(analyzedArgType))

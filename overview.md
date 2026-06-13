@@ -314,7 +314,13 @@ src/
     argtypes.nim                   AnalyzedFileScope + argument-type
                                    cluster (Argument / Defined / Module /
                                    Generic) + dual-context (module ctx /
-                                   generic ctx) analyze* overloads
+                                   generic ctx) analyze* overloads —
+                                   both now take fileScope so the
+                                   generic-context path can resolve
+                                   imported types via the same
+                                   findArgTypeModule / findArgTypeGeneric
+                                   helpers (which try file-local lookup
+                                   first, then fall back to fileScope)
     funcdefs.nim                   AnalyzedArgumentDefinition /
                                    AnalyzedFunctionDefinition + dual-
                                    context analyze* overloads
@@ -380,7 +386,10 @@ src/
                                    AnalyzedStatement) + analyze procs
                                    (analyzeValueTypeAgainstDefinitionType
                                    (overload set) / analyzeArgumentList
-                                   / resolveOverload + analyzeFunctionCall
+                                   (overloaded; the per-funcDef arity
+                                   check + the overload-resolution
+                                   helper share the name) +
+                                   analyzeFunctionCall
                                    / analyzeCaseBlock (overloaded; union
                                    ctx + literal ctx; both extend
                                    caseScope with statement-level

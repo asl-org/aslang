@@ -423,7 +423,7 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
       ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, argDef.argType, argValue.argType.get)
   ok()
 
-proc resolveOverload(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcRef: AnalyzedFunctionRef, analyzedArgs: seq[AnalyzedExpression]): Result[AnalyzedFunctionDefinition, string] =
+proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcRef: AnalyzedFunctionRef, analyzedArgs: seq[AnalyzedExpression]): Result[AnalyzedFunctionDefinition, string] =
   var matches: seq[AnalyzedFunctionDefinition]
   for funcDef in funcRef.funcDefs:
     if analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, analyzedArgs, funcDef).isOk:
@@ -440,7 +440,7 @@ proc resolveOverload(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFi
     else:
       message.add(fmt"{fncall.loc} ambiguous function call — multiple candidates match:")
       for funcDef in matches:
-        message.add(fmt"\t\t{funcDef.loc}")
+        message.add("\t" & fmt"{funcDef.loc}")
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
@@ -450,7 +450,7 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Analy
     let analyzedArg = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, arg)
     analyzedArgs.add(analyzedArg)
 
-  let matchingFuncDef = ? resolveOverload(app, file, fileScope, module, defScope, funcScope, fncall, funcRef, analyzedArgs)
+  let matchingFuncDef = ? analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, fncall, funcRef, analyzedArgs)
   # TODO: find a way to compute concrete return type for now just passing along the funcDef.returns
   ok(newAnalyzedFunctionCall(fncall, funcRef, analyzedArgs, matchingFuncDef.returns))
 
