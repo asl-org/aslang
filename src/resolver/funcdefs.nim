@@ -37,9 +37,9 @@ proc resolveArgumentDefinition*(app: App, file: parser.File,
   ? resolveDataType(file, module, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
 
-proc resolveArgumentDefinition*(app: App, file: parser.File, generic: Generic,
+proc resolveArgumentDefinition*(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  let resolvedArgumentType = ? resolveArgumentType(app, file, generic,
+  let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, generic,
     arg.argType)
   ? resolveDataType(file, generic, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
@@ -89,14 +89,14 @@ proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScop
   ok(newResolvedFunctionDefinition(def, resolvedArgs,
     resolvedReturnArgType))
 
-proc resolveFunctionDefinition*(app: App, file: parser.File, generic: Generic,
+proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolvedArgs: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolvedArg = ? resolveArgumentDefinition(app, file, generic, arg)
+    let resolvedArg = ? resolveArgumentDefinition(app, file, fileScope, generic, arg)
     resolvedArgs.add(resolvedArg)
 
-  let resolvedReturnArgType = ? resolveArgumentType(app, file, generic,
+  let resolvedReturnArgType = ? resolveArgumentType(app, file, fileScope, generic,
     def.returns)
   ? resolveDataType(file, generic, def.returns, resolvedReturnArgType)
 

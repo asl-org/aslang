@@ -120,15 +120,13 @@ proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDefinit
   else:
     some(generic.funcDefs[generic.funcDefIndex[funcDef]])
 
-proc resolveGeneric*(app: App, file: parser.File,
-    generic: Generic): Result[ResolvedGeneric, string] =
+proc resolveGeneric*(app: App, file: parser.File, fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
   if generic.decorators.len > 0:
     return err(fmt"{generic.loc} todo: resolve generic decorators")
 
   var resolvedFunctionDefs: seq[ResolvedFunctionDefinition]
   for funcDef in generic.funcDefs:
-    let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file,
-      generic, funcDef)
+    let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, fileScope, generic, funcDef)
     resolvedFunctionDefs.add(resolvedFunctionDefinition)
 
   ok(newResolvedGeneric(generic, resolvedFunctionDefs))

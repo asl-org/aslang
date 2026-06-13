@@ -47,7 +47,7 @@ proc loc*(definedType: ResolvedDefinedType): Location =
 proc resolveDefinedType(app: App, file: parser.File, fileScope: FileScope, id: int, definedType: DefinedType): Result[ResolvedDefinedType, string] =
   case definedType.kind:
   of dtkGeneric:
-    let resolvedGeneric = ? resolveGeneric(app, file, definedType.generic)
+    let resolvedGeneric = ? resolveGeneric(app, file, fileScope, definedType.generic)
     ok(newResolvedDefinedType(id, resolvedGeneric))
   of dtkModule:
     let resolvedModule = ? resolveModule(app, file, fileScope, definedType.module)

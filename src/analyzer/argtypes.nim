@@ -195,6 +195,25 @@ proc findArgTypeGeneric(file: ResolvedFile, fileScope: ResolvedFileScope, argTyp
   else:
     ok(maybeResolvedGeneric.value)
 
+proc analyzeModuleArgumentTypeImpls(baseType: ResolvedGeneric, implType: AnalyzedArgumentType, funcDef: ResolvedFunctionDefinition): Result[void, string] =
+  case implType.kind:
+  of aatkImported:
+    err(fmt"{implType.loc} todo: analyze imported impl type")
+  of aatkDefined:
+    case implType.definedType.kind:
+    of adatkGeneric:
+      let maybeConcreteFuncDef = implType.definedType.generic.resolved.findFunctionDef(funcDef)
+      if maybeConcreteFuncDef.isNone:
+        err(fmt"{implType.loc} generic `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
+      else:
+        ok()
+    of adatkModule:
+      let maybeConcreteFuncDef = implType.definedType.module.module.findFunctionDef(funcDef)
+      if maybeConcreteFuncDef.isNone:
+        err(fmt"{implType.loc} module `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
+      else:
+        ok()
+
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   var typeModule = ? file.findArgTypeModule(fileScope, argType)
 
@@ -205,28 +224,12 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
       err(fmt"{argType.loc} module `{argType.module.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
   else:
     var analyzedImpls: seq[AnalyzedArgumentType]
-    for (requiredImpl, targetImpl) in zip(typeModule.requires, argType.impls):
-      let resolvedGeneric = ? file.findArgTypeGeneric(fileScope, requiredImpl)
-      let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, module, targetImpl)
-      let funcDefs = resolvedGeneric.concreteImpls(analyzedImpl.self)
-      for funcDef in funcDefs:
-        case analyzedImpl.kind:
-        of aatkImported:
-          return err(fmt"{targetImpl.loc} todo: analyze imported impl type")
-        of aatkDefined:
-          case analyzedImpl.definedType.kind:
-          of adatkGeneric:
-            let maybeConcreteFuncDef = analyzedImpl.definedType.generic.resolved.findFunctionDef(funcDef)
-            if maybeConcreteFuncDef.isNone:
-              return err(fmt"{targetImpl.loc} type `{targetImpl.name.asl}` does not implement function `{funcDef.name.asl}` to support `{resolvedGeneric.name.asl}`")
-            else:
-              analyzedImpls.add(analyzedImpl)
-          of adatkModule:
-            let maybeConcreteFuncDef = analyzedImpl.definedType.module.module.findFunctionDef(funcDef)
-            if maybeConcreteFuncDef.isNone:
-              return err(fmt"{targetImpl.loc} type `{targetImpl.name.asl}` does not implement function `{funcDef.name.asl}` to support `{resolvedGeneric.name.asl}`")
-            else:
-              analyzedImpls.add(analyzedImpl)
+    for (baseType, implType) in zip(typeModule.requires, argType.impls):
+      let resolvedBaseGeneric = ? file.findArgTypeGeneric(fileScope, baseType)
+      let analyzedImplArgType = ? analyzeArgumentType(app, file, fileScope, module, implType)
+      for funcDef in resolvedBaseGeneric.concreteImpls(analyzedImplArgType.self):
+        ? analyzeModuleArgumentTypeImpls(resolvedBaseGeneric, analyzedImplArgType, funcDef)
+        analyzedImpls.add(analyzedImplArgType)
     ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
@@ -239,24 +242,12 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
       err(fmt"{argType.loc} module `{argType.module.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
   else:
     var analyzedImpls: seq[AnalyzedArgumentType]
-    for (requiredImpl, targetImpl) in zip(typeModule.requires, argType.impls):
-      let resolvedGeneric = ? file.findArgTypeGeneric(fileScope, requiredImpl)
-      let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, generic, targetImpl)
-      let funcDefs = resolvedGeneric.concreteImpls(analyzedImpl.self)
-      for funcDef in funcDefs:
-        case analyzedImpl.kind:
-        of aatkImported:
-          return err(fmt"{targetImpl.loc} todo: analyze imported impl type")
-        of aatkDefined:
-          case analyzedImpl.definedType.kind:
-          of adatkGeneric:
-            return err(fmt"{targetImpl.loc} todo: analyze defined generic impl type 2")
-          of adatkModule:
-            let maybeConcreteFuncDef = analyzedImpl.definedType.module.module.findFunctionDef(funcDef)
-            if maybeConcreteFuncDef.isNone:
-              return err(fmt"{targetImpl.loc} type `{targetImpl.name.asl}` does not implement function `{funcDef.name.asl}` to support `{resolvedGeneric.name.asl}`")
-            else:
-              analyzedImpls.add(analyzedImpl)
+    for (baseType, implType) in zip(typeModule.requires, argType.impls):
+      let resolvedBaseGeneric = ? file.findArgTypeGeneric(fileScope, baseType)
+      let analyzedImplArgType = ? analyzeArgumentType(app, file, fileScope, generic, implType)
+      for funcDef in resolvedBaseGeneric.concreteImpls(analyzedImplArgType.self):
+        ? analyzeModuleArgumentTypeImpls(resolvedBaseGeneric, analyzedImplArgType, funcDef)
+        analyzedImpls.add(analyzedImplArgType)
     ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
 proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =

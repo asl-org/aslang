@@ -65,7 +65,7 @@ proc hash*(argType: ResolvedArgumentType): Hash
 
 proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
-proc resolveArgumentType*(app: App, file: parser.File, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
 # ResolvedModuleArgumentType
 proc newResolvedModuleArgumentType*(root: Module, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
@@ -84,6 +84,37 @@ proc hash*(argType: ResolvedModuleArgumentType): Hash =
     acc = acc !& impl.hash
   return acc
 proc `==`*(a, b: ResolvedModuleArgumentType): bool = a.hash == b.hash
+
+proc findDefinedType(file: parser.File, fileScope: FileScope, module: Identifier): Result[DefinedType, string] =
+  let fieldType = ? file.findType(module)
+  case fieldType.kind:
+  of tkImported:
+    let importedType = fieldType.imported
+    if importedType.name notin fileScope:
+      err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 1")
+    else:
+      ok(fileScope[importedType.name])
+  of tkDefined:
+    ok(fieldType.definedType)
+
+proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields: seq[ArgumentDefinition]): Result[seq[Generic], string] =
+  var requiredImpls: seq[Generic]
+  for field in fields:
+    let definedFieldType = ? file.findDefinedType(fileScope, field.argType.root)
+    case definedFieldType.kind:
+    of dtkModule: discard
+    of dtkGeneric: requiredImpls.add(definedFieldType.generic)
+  ok(requiredImpls)
+
+proc findRequiredImplsForStruct(file: parser.File, fileScope: FileScope, struct: Struct): Result[seq[Generic], string] =
+  findRequiredImplsForFields(file, fileScope, struct.fields)
+
+proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: Union): Result[seq[Generic], string] =
+  var requiredUnionImpls: seq[Generic]
+  for variant in union.variants:
+    let requiredVariantImpls = ? findRequiredImplsForFields(file, fileScope, variant.fields)
+    requiredUnionImpls.add(requiredVariantImpls)
+  ok(requiredUnionImpls)
 
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope,
@@ -112,26 +143,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of dbkStruct:
-      var requires: seq[Generic]
-      let struct = dataBlock.struct
-      for field in struct.fields:
-        let fieldType = ? file.findType(field.argType.root)
-        case fieldType.kind:
-        of tkImported:
-          let importedType = fieldType.imported
-          if importedType.name notin fileScope:
-            return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 1")
-
-          let definedFieldType = fileScope[importedType.name]
-          case definedFieldType.kind:
-          of dtkModule: discard
-          of dtkGeneric: requires.add(definedFieldType.generic)
-        of tkDefined:
-          let definedFieldType = fieldType.definedType
-          case definedFieldType.kind:
-          of dtkModule: discard
-          of dtkGeneric: requires.add(definedFieldType.generic)
-
+      let requires = ? file.findRequiredImplsForStruct(fileScope, dataBlock.struct)
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
@@ -143,27 +155,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
       return ok(newResolvedModuleArgumentType(root, resolvedImpls, argType.loc))
 
     of dbkUnion:
-      var requires: seq[Generic]
-      let union = dataBlock.union
-      for variant in union.variants:
-        for field in variant.fields:
-          let fieldType = ? file.findType(field.argType.root)
-          case fieldType.kind:
-          of tkImported:
-            let importedType = fieldType.imported
-            if importedType.name notin fileScope:
-              return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 2")
-
-            let definedFieldType = fileScope[importedType.name]
-            case definedFieldType.kind:
-            of dtkModule: discard
-            of dtkGeneric: requires.add(definedFieldType.generic)
-          of tkDefined:
-            let definedFieldType = fieldType.definedType
-            case definedFieldType.kind:
-            of dtkModule: discard
-            of dtkGeneric: requires.add(definedFieldType.generic)
-
+      let requires = ? file.findRequiredImplsForUnion(fileScope, dataBlock.union)
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
@@ -181,7 +173,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
 
 # resolveModuleArgumentType — generic context. Mirrors module-context
 # but with the self-only rule and a still-stubbed dbkStruct path.
-proc resolveModuleArgumentType(app: App, file: parser.File, generic: Generic,
+proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType,
     root: Module): Result[ResolvedModuleArgumentType, string] =
   if root.requires.isSome:
@@ -202,22 +194,17 @@ proc resolveModuleArgumentType(app: App, file: parser.File, generic: Generic,
       let union = dataBlock.union
       for variant in union.variants:
         for field in variant.fields:
-          let fieldType = ? file.findType(field.argType.root)
-          case fieldType.kind:
-          of tkImported:
-            return err(fmt"{argType.loc} todo: resolve imported type field in union variant")
-          of tkDefined:
-            let definedFieldType = fieldType.definedType
-            case definedFieldType.kind:
-            of dtkModule: discard
-            of dtkGeneric: requires.add(definedFieldType.generic)
+          let definedFieldType = ? file.findDefinedType(fileScope, field.argType.root)
+          case definedFieldType.kind:
+          of dtkModule: discard
+          of dtkGeneric: requires.add(definedFieldType.generic)
 
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
       for impl in argType.impls:
-        let resolvedImpl = ? resolveArgumentType(app, file, generic, impl)
+        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, generic, impl)
         resolvedImpls.add(resolvedImpl)
 
       return ok(newResolvedModuleArgumentType(root, resolvedImpls, argType.loc))
@@ -291,7 +278,7 @@ proc resolveGenericArgumentType(app: App, file: parser.File, generic: Generic, a
   else:
     err(fmt"{argType.loc} type `{genericArgType.name.asl}` is a generic and can not be used within the generic block")
 
-proc resolveDefinedArgumentType(app: App, file: parser.File, generic: Generic,
+proc resolveDefinedArgumentType(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType,
     definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
   case definedType.kind:
@@ -299,7 +286,7 @@ proc resolveDefinedArgumentType(app: App, file: parser.File, generic: Generic,
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
     ok(newResolvedDefinedArgumentType(resolvedGenericType))
   of dtkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, file, generic,
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic,
       argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
 
@@ -353,14 +340,14 @@ proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, mod
       module, argType, rootType.definedType)
     ok(newResolvedArgumentType(resolvedDefinedType))
 
-proc resolveArgumentType*(app: App, file: parser.File, generic: Generic,
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let rootType = ? file.findType(argType.root)
   case rootType.kind:
   of tkImported:
     err("todo: resolve imported type")
   of tkDefined:
-    let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, generic,
+    let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, fileScope, generic,
       argType, rootType.definedType)
     ok(newResolvedArgumentType(resolvedDefinedType))
 
