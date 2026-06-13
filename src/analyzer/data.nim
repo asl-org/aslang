@@ -30,7 +30,7 @@ proc findField*(s: AnalyzedStruct, name: Identifier): Result[AnalyzedArgumentDef
   if name in s.fieldIndex: ok(s.fields[s.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
-proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, struct: ResolvedStruct): Result[AnalyzedStruct, string] =
+proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStruct): Result[AnalyzedStruct, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
@@ -58,7 +58,7 @@ proc findField*(v: AnalyzedVariant, name: Identifier): Result[AnalyzedArgumentDe
   if name in v.fieldIndex: ok(v.fields[v.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
-proc analyzeVariant(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
+proc analyzeVariant(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variant.fields:
     let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
@@ -85,7 +85,7 @@ proc findVariant*(union: AnalyzedUnion, variant: Identifier): Result[AnalyzedVar
   if variant in union.variantIndex: ok(union.variants[union.variantIndex[variant]])
   else: err(fmt"{variant.loc} union does not contain variant `{variant.asl}`")
 
-proc analyzeUnion*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, union: ResolvedUnion): Result[AnalyzedUnion, string] =
+proc analyzeUnion*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnion): Result[AnalyzedUnion, string] =
   var analyzedVariants: seq[AnalyzedVariant]
   for variant in union.variants:
     let analyzedVariant = ? analyzeVariant(app, file, fileScope, module, variant)
@@ -125,7 +125,7 @@ proc union*(d: AnalyzedData): AnalyzedUnion =
     fmt"AnalyzedData.union accessed but kind is {d.kind}"
   d.union
 
-proc analyzeData*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
+proc analyzeData*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
   of rdkLiteral:
     ok(newAnalyzedData(newAnalyzedLiteralBlock(data.literal)))

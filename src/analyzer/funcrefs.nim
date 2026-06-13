@@ -101,7 +101,7 @@ proc arity*(fnref: AnalyzedFunctionRef): int = fnref.resolved.arity
 proc argType*(fnref: AnalyzedFunctionRef): AnalyzedArgumentType = fnref.argType
 proc funcDefs*(fnref: AnalyzedFunctionRef): seq[AnalyzedFunctionDefinition] = fnref.funcDefs
 
-proc analyzeFunctionRef*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, fnref: ResolvedFunctionRef): Result[AnalyzedFunctionRef, string] =
+proc analyzeFunctionRef*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, fnref: ResolvedFunctionRef): Result[AnalyzedFunctionRef, string] =
   let argType = ? analyzeArgumentType(app, file, fileScope, module, fnref.argType)
   case argType.kind:
   of aatkImported: err(fmt"{fnref.loc} todo: analyze imported type function ref")

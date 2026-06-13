@@ -51,7 +51,7 @@ proc findFunctionDef*(module: AnalyzedModuleDefinition, funcDef: ResolvedFunctio
   else:
     ok(module.funcDefs[module.funcDefIndex[funcDef]])
 
-proc analyzeModuleDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
+proc analyzeModuleDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
   var requires: seq[AnalyzedGenericArgumentType]
   for genericArgType in module.requires:
     let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, genericArgType)
@@ -99,7 +99,7 @@ proc findFunctionDefs*(generic: AnalyzedGeneric, name: Identifier, arity: int): 
     let funcDefs = generic.funcNameArityIndex[name][arity].mapIt(generic.funcDefs[it])
     ok(funcDefs)
 
-proc analyzeGeneric*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
+proc analyzeGeneric*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
   for funcDef in generic.funcDefs:
     let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, fileScope, generic, funcDef)
@@ -137,7 +137,7 @@ proc name*(d: AnalyzedDefinedType): Identifier =
   of adtkModule: d.module.name
   of adtkGeneric: d.generic.name
 
-proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, definedType: ResolvedDefinedType): Result[AnalyzedDefinedType, string] =
+proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, definedType: ResolvedDefinedType): Result[AnalyzedDefinedType, string] =
   case definedType.kind:
   of rdtkGeneric:
     let analyzedGeneric = ? analyzeGeneric(app, file, fileScope, definedType.generic)

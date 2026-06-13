@@ -28,7 +28,7 @@ proc definedTypes*(f: AnalyzedFile): seq[AnalyzedDefinedType] = f.definedTypes
 proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules
 
 proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, string] =
-  var fileScope: AnalyzedFileScope
+  var fileScope: ResolvedFileScope
   var analyzedImports: seq[AnalyzedImport]
   for imp in file.imports:
     let analyzedImport = ? analyzeImport(app, file, imp)

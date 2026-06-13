@@ -24,7 +24,7 @@ proc resolved*(function: AnalyzedUserFunction): ResolvedUserFunction = function.
 proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDefinition = function.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements
 
-proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
+proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
   var funcScope: AnalyzedFunctionScope
   let analyzedModuleDef = ? defScope.findModuleDef(module.name, function.loc)
   let analyzedFuncDef = ? analyzedModuleDef.findFunctionDef(function.def)
@@ -98,7 +98,7 @@ proc loc*(m: AnalyzedModule): Location = m.def.resolved.loc
 proc name*(m: AnalyzedModule): Identifier = m.def.name
 proc functions*(m: AnalyzedModule): seq[AnalyzedFunction] = m.functions
 
-proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: AnalyzedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope): Result[AnalyzedModule, string] =
+proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope): Result[AnalyzedModule, string] =
   let analyzedModuleDef = ? defScope.findModuleDef(module.name, module.loc)
   var analyzedFunctions: seq[AnalyzedFunction]
   for function in module.functions:

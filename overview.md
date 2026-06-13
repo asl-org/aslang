@@ -311,7 +311,7 @@ src/
     literals.nim                   AnalyzedLiteralBlock
     imports.nim                    AnalyzedImportedType / AnalyzedImport
                                    + analyzeImportedType, analyzeImport
-    argtypes.nim                   AnalyzedFileScope + argument-type
+    argtypes.nim                   ResolvedFileScope + argument-type
                                    cluster (Argument / Defined / Module /
                                    Generic) + dual-context (module ctx /
                                    generic ctx) analyze* overloads —
