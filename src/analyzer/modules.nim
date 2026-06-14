@@ -17,17 +17,19 @@ type AnalyzedModuleDefinition* = ref object
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[ResolvedFunctionDefinition, int]
 
+proc buildFuncNameArityIndex(funcDefs: seq[AnalyzedFunctionDefinition]): Table[Identifier, Table[int, seq[int]]] =
+  for id, funcDef in funcDefs:
+    if funcDef.name notin result:
+      result[funcDef.name] = initTable[int, seq[int]]()
+    if funcDef.arity notin result[funcDef.name]:
+      result[funcDef.name][funcDef.arity] = newSeq[int]()
+    result[funcDef.name][funcDef.arity].add(id)
+
 proc newAnalyzedModuleDefinition*(resolved: ResolvedModule, requires: seq[AnalyzedGenericArgumentType], data: Option[AnalyzedData], funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModuleDefinition =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
-  var funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   for id, funcDef in funcDefs:
     funcDefIndex[funcDef.resolved] = id
-    if funcDef.name notin funcNameArityIndex:
-      funcNameArityIndex[funcDef.name] = initTable[int, seq[int]]()
-    if funcDef.arity notin funcNameArityIndex[funcDef.name]:
-      funcNameArityIndex[funcDef.name][funcDef.arity] = newSeq[int]()
-    funcNameArityIndex[funcDef.name][funcDef.arity].add(id)
-  AnalyzedModuleDefinition(resolved: resolved, requires: requires, data: data, funcDefs: funcDefs, funcNameArityIndex: funcNameArityIndex, funcDefIndex: funcDefIndex)
+  AnalyzedModuleDefinition(resolved: resolved, requires: requires, data: data, funcDefs: funcDefs, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), funcDefIndex: funcDefIndex)
 
 proc resolved*(m: AnalyzedModuleDefinition): ResolvedModule = m.resolved
 proc requires*(m: AnalyzedModuleDefinition): seq[AnalyzedGenericArgumentType] = m.requires
@@ -76,14 +78,7 @@ type AnalyzedGeneric* = ref object
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
 proc newAnalyzedGeneric*(resolved: ResolvedGeneric, funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedGeneric =
-  var funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
-  for id, funcDef in funcDefs:
-    if funcDef.name notin funcNameArityIndex:
-      funcNameArityIndex[funcDef.name] = initTable[int, seq[int]]()
-    if funcDef.arity notin funcNameArityIndex[funcDef.name]:
-      funcNameArityIndex[funcDef.name][funcDef.arity] = newSeq[int]()
-    funcNameArityIndex[funcDef.name][funcDef.arity].add(id)
-  AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs, funcNameArityIndex: funcNameArityIndex)
+  AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs, funcNameArityIndex: buildFuncNameArityIndex(funcDefs))
 
 proc name*(g: AnalyzedGeneric): Identifier = g.resolved.name
 proc resolved*(g: AnalyzedGeneric): ResolvedGeneric = g.resolved
