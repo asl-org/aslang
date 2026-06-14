@@ -3,7 +3,7 @@
 ## Each layers on top of argtypes via resolveArgumentType +
 ## resolveDataType.
 
-import results, hashes
+import results, options, hashes
 
 import tokenizer
 import parser
@@ -24,6 +24,19 @@ proc loc*(d: ResolvedArgumentDefinition): Location = d.argType.loc
 proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
 proc hash*(d: ResolvedArgumentDefinition): Hash = argType.hash
 proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
+
+proc genericRequirement*(d: ResolvedArgumentDefinition): Option[ResolvedGenericArgumentType] =
+  case d.argType.kind:
+  of ratkImported: assert(false, "todo: support imported types for requier list")
+  of ratkDefined:
+    case d.argType.definedType.kind:
+    of rdatkModule: discard
+    of rdatkGeneric: result = some(d.argType.definedType.generic)
+
+proc collectGenericRequirements*(fields: seq[ResolvedArgumentDefinition]): seq[ResolvedGenericArgumentType] =
+  for field in fields:
+    let req = field.genericRequirement
+    if req.isSome: result.add(req.get)
 
 proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDefinition =
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)

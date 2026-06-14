@@ -21,15 +21,7 @@ proc loc*(struct: ResolvedStruct): Location = struct.parsed.loc
 proc fields*(struct: ResolvedStruct): seq[ResolvedArgumentDefinition] = struct.fields
 
 proc requires*(struct: ResolvedStruct): seq[ResolvedGenericArgumentType] =
-  var fields: seq[ResolvedGenericArgumentType]
-  for field in struct.fields:
-    case field.argType.kind:
-    of ratkImported: assert(false, "todo: support imported types for requier list")
-    of ratkDefined:
-      case field.argType.definedType.kind:
-      of rdatkModule: discard
-      of rdatkGeneric: fields.add(field.argType.definedType.generic)
-  return fields
+  collectGenericRequirements(struct.fields)
 
 proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, struct: Struct): Result[ResolvedStruct, string] =
@@ -55,16 +47,7 @@ proc parsed*(variant: ResolvedVariant): VariantDefinition = variant.parsed
 proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDefinition] = variant.fields
 
 proc requires*(variant: ResolvedVariant): seq[ResolvedGenericArgumentType] =
-  var fields: seq[ResolvedGenericArgumentType]
-  for field in variant.fields:
-    case field.argType.kind:
-    of ratkImported:
-      assert(false, "todo: support imported types for requier list")
-    of ratkDefined:
-      case field.argType.definedType.kind:
-      of rdatkModule: discard
-      of rdatkGeneric: fields.add(field.argType.definedType.generic)
-  return fields
+  collectGenericRequirements(variant.fields)
 
 proc resolveVariant(app: App, file: parser.File, fileScope: FileScope,
     module: Module,
