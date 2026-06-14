@@ -1,10 +1,10 @@
 import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 
 # Project Euler #3 style exercise — heavy union-variant matching.
-# Exercises struct data block (Bitset holding Array[u8]), union
-# initializers via Status[u8].Ok / Status[Bitset].Err, variant
+# Exercises struct data block (Bitset holding Array[Any]), union
+# initializers via Status.Ok / Status.Err (impls inferred), variant
 # patterns with field bindings (case Ok { value: value }), nested
-# match expressions, and generic type parameters on method calls.
+# match expressions, and module-method calls.
 public module Solver:
   func div_ceil(a: u64, b: u64): u64
     c = u64.add(a, b)
