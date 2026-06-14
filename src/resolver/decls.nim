@@ -124,9 +124,6 @@ proc findFile*(app: ResolvedApp, file: parser.File): Option[ResolvedFile] =
 proc resolve*(app: App): Result[ResolvedApp, string] =
   var resolvedFiles: seq[ResolvedFile]
   for id, file in app.files:
-    let maybeResolvedFile = resolveFile(app, id, file)
-    if maybeResolvedFile.isErr:
-      return err(fmt"{file.path}:{maybeResolvedFile.error}")
-    else:
-      resolvedFiles.add(maybeResolvedFile.get)
+    let resolvedFile = ? resolveFile(app, id, file)
+    resolvedFiles.add(resolvedFile)
   ok(newResolvedApp(resolvedFiles))

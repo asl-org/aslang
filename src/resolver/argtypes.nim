@@ -85,15 +85,15 @@ proc hash*(argType: ResolvedModuleArgumentType): Hash =
   return acc
 proc `==`*(a, b: ResolvedModuleArgumentType): bool = a.hash == b.hash
 
-proc findDefinedType(file: parser.File, fileScope: FileScope, module: Identifier): Result[DefinedType, string] =
+proc findDefinedType*(file: parser.File, fileScope: FileScope, module: Identifier): Result[DefinedType, string] =
   let fieldType = ? file.findType(module)
   case fieldType.kind:
   of tkImported:
     let importedType = fieldType.imported
-    if importedType.name notin fileScope:
-      err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 1")
+    if importedType.binding notin fileScope:
+      err(fmt"{importedType.loc} type `{importedType.binding.asl}` does not exist in the file scope.")
     else:
-      ok(fileScope[importedType.name])
+      ok(fileScope[importedType.binding])
   of tkDefined:
     ok(fieldType.definedType)
 
@@ -324,32 +324,14 @@ proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgu
 # resolveArgumentType — both context overloads, defined now after
 # the module/defined helpers.
 proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let rootType = ? file.findType(argType.root)
-  case rootType.kind:
-  of tkImported:
-    let impType = rootType.imported
-    if impType.binding notin fileScope:
-      err(fmt"{impType.loc} type `{impType.binding.asl}` does not exist in file scope")
-    else:
-      let impDefinedType = fileScope[impType.binding]
-      let resolvedDefinedType = ? resolveDefinedArgumentType(app, file,
-        fileScope, module, argType, impDefinedType)
-      ok(newResolvedArgumentType(resolvedDefinedType))
-  of tkDefined:
-    let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, fileScope,
-      module, argType, rootType.definedType)
-    ok(newResolvedArgumentType(resolvedDefinedType))
+  let definedType = ? file.findDefinedType(fileScope, argType.root)
+  let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, fileScope, module, argType, definedType)
+  ok(newResolvedArgumentType(resolvedDefinedType))
 
-proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
-    argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let rootType = ? file.findType(argType.root)
-  case rootType.kind:
-  of tkImported:
-    err("todo: resolve imported type")
-  of tkDefined:
-    let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, fileScope, generic,
-      argType, rootType.definedType)
-    ok(newResolvedArgumentType(resolvedDefinedType))
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string] =
+  let definedType = ? file.findDefinedType(fileScope, argType.root)
+  let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, fileScope, generic, argType, definedType)
+  ok(newResolvedArgumentType(resolvedDefinedType))
 
 # resolveDataType — post-resolution guard. Confirms the resolved
 # argument's underlying module has a data block (or that we're

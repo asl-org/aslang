@@ -9,7 +9,7 @@
 ## Constructors and resolveX procs follow the type block in
 ## per-concept order (matching resolver.nim's original layout).
 
-import results, options, sets, strformat, tables
+import results, options, sets, strformat
 
 import tokenizer
 import parser
@@ -351,16 +351,7 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module,
     struct.argType)
   let structType = ? file.findType(struct.argType.root)
-  let definedType =
-    case structType.kind:
-    of tkDefined:
-      structType.definedType
-    of tkImported:
-      let importedType = structType.imported
-      if importedType.name notin fileScope:
-        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 3")
-
-      fileScope[importedType.name]
+  let definedType = ? file.findDefinedType(fileScope, struct.argType.root)
   case definedType.kind:
   of dtkGeneric: err(fmt"{struct.loc} type `{definedType.name.asl}` is a generic and not struct")
   of dtkModule:
@@ -393,17 +384,7 @@ proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module,
     unionInit.argType)
   let unionType = ? file.findType(unionInit.argType.root)
-  let unionDefinedType =
-    case unionType.kind:
-    of tkDefined:
-      unionType.definedType
-    of tkImported:
-      let importedType = unionType.imported
-      if importedType.name notin fileScope:
-        return err(fmt"{importedType.loc} type `{importedType.name.asl}` does not exist in the file scope. 4")
-
-      fileScope[importedType.name]
-
+  let unionDefinedType = ? file.findDefinedType(fileScope, unionInit.argType.root)
   case unionDefinedType.kind:
   of dtkGeneric: err(fmt"{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
   of dtkModule:

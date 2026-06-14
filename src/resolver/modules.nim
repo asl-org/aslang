@@ -57,17 +57,12 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
   var resolvedRequires: seq[ResolvedGenericArgumentType]
   if module.requires.isSome:
     for generic in module.requires.get.generics:
-      let dataType = ? file.findType(generic)
-      case dataType.kind:
-      of tkImported:
-        return err("todo: resolve imported type in requires block")
-      of tkDefined:
-        let definedType = dataType.definedType
-        case definedType.kind:
-        of dtkModule:
-          return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
-        of dtkGeneric:
-          resolvedRequires.add(newResolvedGenericArgumentType(definedType.generic, generic.loc))
+      let definedType = ? file.findDefinedType(fileScope, generic)
+      case definedType.kind:
+      of dtkModule:
+        return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
+      of dtkGeneric:
+        resolvedRequires.add(newResolvedGenericArgumentType(definedType.generic, generic.loc))
 
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:

@@ -7,7 +7,7 @@
 ## variable name set — since resolveFunctionRef is the first proc
 ## that needs it as a parameter.
 
-import results, sets, strformat, tables
+import results, sets, strformat
 
 import tokenizer
 import parser
@@ -58,16 +58,6 @@ proc resolveFunctionRef*(app: App, file: parser.File, fileScope: FileScope,
     fncall: FunctionCall): Result[ResolvedFunctionRef, string] =
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, fncall.argType)
 
-  let rootModule = ? file.findType(fncall.argType.root)
-  case rootModule.kind:
-  of tkImported:
-    let impType = rootModule.imported
-    if impType.binding notin fileScope:
-      err(fmt"{impType.loc} type `{impType.binding.asl}` does not exist in file scope")
-    else:
-      let impDefinedType = fileScope[impType.binding]
-      ? resolveDefinedTypeRef(impDefinedType, fncall.name, fncall.args.len, fncall.loc)
-      ok(newResolvedFunctionRef(fncall, resolvedArgType))
-  of tkDefined:
-    ? resolveDefinedTypeRef(rootModule.definedType, fncall.name, fncall.args.len, fncall.loc)
-    ok(newResolvedFunctionRef(fncall, resolvedArgType))
+  let definedType = ? file.findDefinedType(fileScope, fncall.argType.root)
+  ? resolveDefinedTypeRef(definedType, fncall.name, fncall.args.len, fncall.loc)
+  ok(newResolvedFunctionRef(fncall, resolvedArgType))
