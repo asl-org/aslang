@@ -38,7 +38,7 @@ e.g. todo/unwired arms).
 | Enum | File | Total | Per-variant |
 |------|------|------:|-------------|
 | `DataBlockKind` | parser/data.nim | **34** | `dbkLiteral` 11 · `dbkStruct` 12 · `dbkUnion` 11 |
-| `DefinedTypeKind` | parser/decls.nim | **32** | `dtkModule` 16 · `dtkGeneric` 16 |
+| `DefinedTypeKind` | parser/decls.nim | **28** | `dtkModule` 14 · `dtkGeneric` 14 |
 | `AnalyzedDefinedArgumentTypeKind` | analyzer/argtypes.nim | **24** | `adatkModule` 12 · `adatkGeneric` 12 |
 | `ResolvedDefinedArgumentTypeKind` | resolver/argtypes.nim | **24** | `rdatkModule` 12 · `rdatkGeneric` 12 |
 | `ResolvedArgumentTypeKind` | resolver/argtypes.nim | **24** | `ratkImported` 11 · `ratkDefined` 13 |
@@ -81,8 +81,8 @@ e.g. todo/unwired arms).
 | `FunctionKind` | parser/funcs.nim | `fkExtern` | 9 |
 | `IntegerLiteralKind` | parser/numbers.nim | `ilkSigned` | 6 |
 | `IntegerLiteralKind` | parser/numbers.nim | `ilkUnsigned` | 6 |
-| `DefinedTypeKind` | parser/decls.nim | `dtkModule` | 16 |
-| `DefinedTypeKind` | parser/decls.nim | `dtkGeneric` | 16 |
+| `DefinedTypeKind` | parser/decls.nim | `dtkModule` | 14 |
+| `DefinedTypeKind` | parser/decls.nim | `dtkGeneric` | 14 |
 | `TypeKind` | parser/decls.nim | `tkImported` | 7 |
 | `TypeKind` | parser/decls.nim | `tkDefined` | 7 |
 | `DataBlockKind` | parser/data.nim | `dbkLiteral` | 11 |

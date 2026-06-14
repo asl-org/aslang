@@ -85,8 +85,8 @@ proc hash*(argType: ResolvedModuleArgumentType): Hash =
   return acc
 proc `==`*(a, b: ResolvedModuleArgumentType): bool = a.hash == b.hash
 
-proc findDefinedType*(file: parser.File, fileScope: FileScope, module: Identifier): Result[DefinedType, string] =
-  let fieldType = ? file.findType(module)
+proc findDefinedType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[DefinedType, string] =
+  let fieldType = ? file.findType(name)
   case fieldType.kind:
   of tkImported:
     let importedType = fieldType.imported
@@ -96,6 +96,12 @@ proc findDefinedType*(file: parser.File, fileScope: FileScope, module: Identifie
       ok(fileScope[importedType.binding])
   of tkDefined:
     ok(fieldType.definedType)
+
+proc findModule*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Module, string] =
+  let initDefinedType = ? file.findDefinedType(fileScope, name)
+  case initDefinedType.kind:
+  of dtkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
+  of dtkModule: ok(initDefinedType.module)
 
 proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields: seq[ArgumentDefinition]): Result[seq[Generic], string] =
   var requiredImpls: seq[Generic]
@@ -190,15 +196,7 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of dbkUnion:
-      var requires: seq[Generic]
-      let union = dataBlock.union
-      for variant in union.variants:
-        for field in variant.fields:
-          let definedFieldType = ? file.findDefinedType(fileScope, field.argType.root)
-          case definedFieldType.kind:
-          of dtkModule: discard
-          of dtkGeneric: requires.add(definedFieldType.generic)
-
+      var requires = ? findRequiredImplsForUnion(file, fileScope, dataBlock.union)
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
@@ -257,26 +255,29 @@ proc concreteDefinedArgumentType(argType: ResolvedDefinedArgumentType, concrete:
       of ratkImported: assert(false, "TODO: support concrete imported impl type")
       of ratkDefined: return concrete.definedType
 
+proc resolveGenericArgumentType(app: App, file: parser.File, generic: Generic, argType: ArgumentType, genericArgType: Generic): Result[ResolvedGenericArgumentType, string] =
+  if genericArgType == generic:
+    ok(newResolvedGenericArgumentType(genericArgType, argType.loc))
+  else:
+    err(fmt"{argType.loc} type `{genericArgType.name.asl}` is a generic and can not be used within the generic block")
+
+proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, argType: ArgumentType, genericArgType: Generic): Result[ResolvedGenericArgumentType, string] =
+  if argType.impls.len == 0:
+    ok(newResolvedGenericArgumentType(genericArgType, genericArgType.loc))
+  else:
+    err(fmt"{genericArgType.loc} generic `{genericArgType.name.asl}` is not allowed to have impls")
+
 # resolveDefinedArgumentType — both context overloads.
 proc resolveDefinedArgumentType(app: App, file: parser.File,
     fileScope: FileScope, module: Module, argType: ArgumentType,
     definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
   case definedType.kind:
   of dtkGeneric:
-    if argType.impls.len == 0:
-      ok(newResolvedDefinedArgumentType(newResolvedGenericArgumentType(definedType.generic, argType.loc)))
-    else:
-      err(fmt"{definedType.loc} generic `{definedType.name.asl}` is not allowed to have impls")
+    let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, definedType.generic)
+    ok(newResolvedDefinedArgumentType(resolvedGenericType))
   of dtkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope,
-      module, argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, module, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
-
-proc resolveGenericArgumentType(app: App, file: parser.File, generic: Generic, argType: ArgumentType, genericArgType: Generic): Result[ResolvedGenericArgumentType, string] =
-  if genericArgType == generic:
-    ok(newResolvedGenericArgumentType(genericArgType, argType.loc))
-  else:
-    err(fmt"{argType.loc} type `{genericArgType.name.asl}` is a generic and can not be used within the generic block")
 
 proc resolveDefinedArgumentType(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType,
@@ -286,8 +287,7 @@ proc resolveDefinedArgumentType(app: App, file: parser.File, fileScope: FileScop
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
     ok(newResolvedDefinedArgumentType(resolvedGenericType))
   of dtkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic,
-      argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic, argType, definedType.module)
     ok(newResolvedDefinedArgumentType(resolvedModuleType))
 
 # ResolvedArgumentType

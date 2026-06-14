@@ -66,6 +66,42 @@ let literalInitializerSpec* = Spec[LiteralInitializer](
   ok(newLiteralInitializer(argType, value, argType.loc))
 )
 
+
+
+# ----------------- StructRef -----------------
+type
+  StructRefKind* = enum
+    srkDefault, srkImpl
+  StructRef* = ref object
+    case kind: StructRefKind
+    of srkDefault: module: Identifier
+    of srkImpl: argType: ArgumentType
+
+proc newStructRef*(module: Identifier): StructRef =
+  StructRef(kind: srkDefault, module: module)
+
+proc newStructRef*(argType: ArgumentType): StructRef =
+  StructRef(kind: srkImpl, argType: argType)
+
+proc kind*(s: StructRef): StructRefKind = s.kind
+proc module*(s: StructRef): Identifier =
+  case s.kind:
+  of srkDefault: s.module
+  of srkImpl: s.argType.root
+proc argType*(s: StructRef): ArgumentType =
+  assert s.kind == srkImpl,
+    fmt"StructRef.argType accessed but kind is {s.kind}"
+  s.argType
+proc loc*(s: StructRef): Location =
+  case s.kind:
+  of srkDefault: s.module.loc
+  of srkImpl: s.argType.loc
+proc asl*(s: StructRef): string =
+  case s.kind:
+  of srkDefault: asl(s.module)
+  of srkImpl: asl(s.argType)
+
+
 # ============================================================
 # Body cluster (mutually recursive)
 # ============================================================
@@ -88,13 +124,6 @@ type
   KeywordArgumentList* = ref object
     args: seq[KeywordArgument]
     loc: Location
-
-  StructRefKind* = enum
-    srkDefault, srkImpl
-  StructRef* = ref object
-    case kind: StructRefKind
-    of srkDefault: module: Identifier
-    of srkImpl: argType: ArgumentType
 
   StructInitializer* = ref object
     structRef: StructRef
@@ -220,31 +249,6 @@ proc asl(kwargList: KeywordArgumentList): string =
     if i > 0: result.add(", ")
     result.add(asl(arg))
   result.add(" }")
-
-# ----------------- StructRef -----------------
-proc newStructRef*(module: Identifier): StructRef =
-  StructRef(kind: srkDefault, module: module)
-
-proc newStructRef*(argType: ArgumentType): StructRef =
-  StructRef(kind: srkImpl, argType: argType)
-
-proc kind*(s: StructRef): StructRefKind = s.kind
-proc module*(s: StructRef): Identifier =
-  assert s.kind == srkDefault,
-    fmt"StructRef.module accessed but kind is {s.kind}"
-  s.module
-proc argType*(s: StructRef): ArgumentType =
-  assert s.kind == srkImpl,
-    fmt"StructRef.argType accessed but kind is {s.kind}"
-  s.argType
-proc loc*(s: StructRef): Location =
-  case s.kind:
-  of srkDefault: s.module.loc
-  of srkImpl: s.argType.loc
-proc asl*(s: StructRef): string =
-  case s.kind:
-  of srkDefault: asl(s.module)
-  of srkImpl: asl(s.argType)
 
 # ----------------- StructInitializer -----------------
 proc newStructInitializer*(structRef: StructRef, kwargList: KeywordArgumentList, loc: Location): StructInitializer =

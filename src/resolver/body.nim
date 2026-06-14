@@ -364,102 +364,67 @@ proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let definedType = ? file.findDefinedType(fileScope, fncall.root)
-  case definedType.kind:
-  of dtkModule:
-    let funcs = ? definedType.module.findFunctions(fncall.name, fncall.args.len)
-    if funcs.len == 0:
-      return err(fmt"{fncall.loc} module `{definedType.module.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
-  of dtkGeneric:
-    let funcDefs = ? definedType.generic.findFunctionDefs(fncall.name, fncall.args.len)
-    if funcDefs.len == 0:
-      return err(fmt"{fncall.loc} generic `{definedType.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
-  var resolvedArgs: seq[ResolvedExpression]
-  for arg in fncall.args:
-    let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope, arg)
-    resolvedArgs.add(resolvedArg)
-  ok(newResolvedFunctionCall(fncall, resolvedArgs))
+  let funcDefs = ? definedType.findFunctionDefs(fncall.name, fncall.args.len)
+  if funcDefs.len == 0:
+    err(fmt"{fncall.loc} generic `{definedType.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
+  else:
+    var resolvedArgs: seq[ResolvedExpression]
+    for arg in fncall.args:
+      let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope, arg)
+      resolvedArgs.add(resolvedArg)
+    ok(newResolvedFunctionCall(fncall, resolvedArgs))
 
-proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module: Module, structRef: StructRef): Result[(ResolvedStructRef, Module), string] =
+proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module: Module, structRef: StructRef, structModule: Module): Result[ResolvedStructRef, string] =
   ## Resolves a StructRef and validates the kind ↔ requires match.
   ## Returns the resolved struct-ref alongside the receiver Module (the
   ## resolver enriches further during data-block lookup).
-  let rootName =
-    case structRef.kind:
-    of srkDefault: structRef.module
-    of srkImpl: structRef.argType.root
-  let definedType = ? file.findDefinedType(fileScope, rootName)
-  case definedType.kind:
-  of dtkGeneric:
-    return err(fmt"{structRef.loc} type `{definedType.name.asl}` is a generic and not struct")
-  of dtkModule:
-    let receiver = definedType.module
-    let hasRequires = receiver.requires.isSome
-    case structRef.kind:
-    of srkDefault:
-      if hasRequires:
-        return err(fmt"{structRef.loc} module `{receiver.name.asl}` declares requires; initializer must specify impl types as `{receiver.name.asl}[...]`")
-      ok((newResolvedStructRef(structRef), receiver))
-    of srkImpl:
-      if not hasRequires:
-        return err(fmt"{structRef.loc} module `{receiver.name.asl}` has no requires block; initializer must not specify impl types")
-      let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, structRef.argType)
-      ok((newResolvedStructRef(structRef, resolvedArgType), receiver))
-
-proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, scope: FunctionScope,
-    struct: StructInitializer): Result[ResolvedStructInitializer, string] =
-  let (resolvedStructRef, structModule) = ? resolveStructRef(app, file, fileScope, module, struct.structRef)
-  if structModule.data.isNone:
-    return err(fmt"{struct.loc} module `{structModule.name.asl}` is not a struct")
-  let dataBlock = structModule.data.get
-  case dataBlock.kind:
-  of dbkLiteral: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a literal")
-  of dbkUnion: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a union")
-  of dbkStruct:
-    let structBlock = dataBlock.struct
-    if struct.kwargs.len != structBlock.fields.len:
-      err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
+  case structRef.kind:
+  of srkDefault:
+    if structModule.requires.isSome:
+      err(fmt"{structRef.loc} module `{structModule.name.asl}` declares requires; initializer must specify impl types as `{structModule.name.asl}[...]`")
     else:
-      var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](
-        structBlock.fields.len)
-      for kwarg in struct.kwargs:
-        let fieldId = ? structBlock.findFieldId(kwarg.name)
-        let resolvedExpression = ? resolveExpression(app, file, fileScope,
-          module, scope, kwarg.expression)
-        resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
-          resolvedExpression)
-      ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
+      ok(newResolvedStructRef(structRef))
+  of srkImpl:
+    if not structModule.requires.isSome:
+      err(fmt"{structRef.loc} module `{structModule.name.asl}` has no requires block; initializer must not specify impl types")
+    else:
+      let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, structRef.argType)
+      ok(newResolvedStructRef(structRef, resolvedArgType))
+
+proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope, module: Module, scope: FunctionScope, struct: StructInitializer): Result[ResolvedStructInitializer, string] =
+  let structModule = ? file.findModule(fileScope, struct.structRef.module)
+  let resolvedStructRef = ? resolveStructRef(app, file, fileScope, module, struct.structRef, structModule)
+  var structBlock = ? structModule.struct(struct.loc)
+  if struct.kwargs.len != structBlock.fields.len:
+    err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
+  else:
+    var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
+    for kwarg in struct.kwargs:
+      let fieldId = ? structBlock.findFieldId(kwarg.name)
+      let resolvedExpression = ? resolveExpression(app, file, fileScope,
+        module, scope, kwarg.expression)
+      resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
+        resolvedExpression)
+    ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
 
 proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
-  let unionDefinedType = ? file.findDefinedType(fileScope, unionInit.module)
-  case unionDefinedType.kind:
-  of dtkGeneric: err(fmt"{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
-  of dtkModule:
-    let unionModule = unionDefinedType.module
-    if unionModule.data.isNone:
-      err(fmt"{unionInit.loc} module `{unionModule.name.asl}` is not a union")
-    else:
-      let dataBlock = unionModule.data.get
-      case dataBlock.kind:
-      of dbkLiteral: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a literal")
-      of dbkStruct: err(fmt"{dataBlock.loc} module `{unionModule.name.asl}` is a struct")
-      of dbkUnion:
-        let union = dataBlock.union
-        let variant = ? union.findVariant(unionInit.variant)
-        if unionInit.kwargs.len != variant.fields.len:
-          err(fmt"{unionInit.loc} union `{unionModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
-        else:
-          var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](
-            variant.fields.len)
-          for kwarg in unionInit.kwargs:
-            let fieldId = ? variant.findFieldId(kwarg.name)
-            let resolvedExpression = ? resolveExpression(app, file, fileScope,
-              module, scope, kwarg.expression)
-            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
-              resolvedExpression)
-          ok(newResolvedUnionInitializer(unionInit, resolvedKeywordArgs))
+  let initModule = ? file.findModule(fileScope, unionInit.module)
+  let union = ? initModule.union(unionInit.loc)
+  let variant = ? union.findVariant(unionInit.variant)
+  if unionInit.kwargs.len != variant.fields.len:
+    err(fmt"{unionInit.loc} union `{initModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
+  else:
+    var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](
+      variant.fields.len)
+    for kwarg in unionInit.kwargs:
+      let fieldId = ? variant.findFieldId(kwarg.name)
+      let resolvedExpression = ? resolveExpression(app, file, fileScope,
+        module, scope, kwarg.expression)
+      resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
+        resolvedExpression)
+    ok(newResolvedUnionInitializer(unionInit, resolvedKeywordArgs))
 
 proc resolveInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,

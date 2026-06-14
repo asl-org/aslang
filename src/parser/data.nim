@@ -225,6 +225,18 @@ proc asl*(db: DataBlock, indentWidth: uint32): seq[string] =
   of dbkStruct: asl(db.struct, indentWidth)
   of dbkUnion: asl(db.union, indentWidth)
 
+proc struct*(db: DataBlock, module: Identifier): Result[Struct, string] =
+  case db.kind:
+  of dbkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
+  of dbkUnion: err(fmt"{db.loc} module `{module.asl}` is a union")
+  of dbkStruct: ok(db.struct)
+
+proc union*(db: DataBlock, module: Identifier): Result[Union, string] =
+  case db.kind:
+  of dbkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
+  of dbkStruct: err(fmt"{db.loc} module `{module.asl}` is a struct")
+  of dbkUnion: ok(db.union)
+
 let dataBlockSpec* = oneOf("data_block", [
   literalTypeSpec.map("literal_data",
     proc(v: LiteralType): DataBlock = newDataBlock(v)),

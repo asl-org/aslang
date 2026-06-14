@@ -4,6 +4,7 @@ import tokenizer
 import combinators
 import helpers
 import identifiers
+import funcDefs
 import imports
 import generics
 import modules
@@ -51,6 +52,16 @@ proc loc*(definedType: DefinedType): Location =
   case definedType.kind:
   of dtkModule: definedType.module.loc
   of dtkGeneric: definedType.generic.loc
+
+proc asl(definedType: DefinedType, indentWidth: uint32): seq[string] =
+  case definedType.kind:
+  of dtkModule: definedType.module.asl(indentWidth)
+  of dtkGeneric: definedType.generic.asl(indentWidth)
+
+proc findFunctionDefs*(definedType: DefinedType, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+  case definedType.kind:
+  of dtkModule: definedType.module.findFunctionDefs(name, arity)
+  of dtkGeneric: definedType.generic.findFunctionDefs(name, arity)
 
 let typeSpec = oneOf("type_block", [
   moduleSpec.map("module_item",
@@ -162,13 +173,7 @@ proc asl*(file: File, indentWidth: uint32): string =
     lines.add("")
   for i, dt in file.definedTypes:
     if i > 0: lines.add("")
-    case dt.kind:
-    of dtkModule:
-      for line in asl(dt.module, indentWidth):
-        lines.add(line)
-    of dtkGeneric:
-      for line in asl(dt.generic, indentWidth):
-        lines.add(line)
+    lines.add(dt.asl(indentWidth))
   lines.join("\n") & "\n"
 
 proc findTypeId*(file: File, name: Identifier): Result[int, string] =

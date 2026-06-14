@@ -5,6 +5,7 @@ import combinators
 import helpers
 import identifiers
 import data
+import funcDefs
 import funcs
 import generics
 
@@ -31,6 +32,14 @@ proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
 proc hash*(m: Module): Hash = m.loc.hash
 proc `==`*(a, b: Module): bool = a.hash == b.hash
+
+proc struct*(m: Module, loc: Location): Result[Struct, string] =
+  if m.data.isSome: m.data.get.struct(m.name)
+  else: err(fmt"{loc} module `{m.name.asl}` is not a struct")
+
+proc union*(m: Module, loc: Location): Result[Union, string] =
+  if m.data.isSome: m.data.get.union(m.name)
+  else: err(fmt"{loc} module `{m.name.asl}` is not a union")
 
 proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
     requires: Option[Requires], data: Option[DataBlock],
@@ -68,7 +77,7 @@ proc asl*(module: Module, indentWidth: uint32): seq[string] =
     for line in asl(fn, indentWidth):
       result.add(fmt"{indent}{line}")
 
-proc findFunctionIds(module: Module, name: Identifier, arity: int): Result[seq[int], string] =
+proc findFunctionDefIds(module: Module, name: Identifier, arity: int): Result[seq[int], string] =
   if name notin module.functionIndex:
     err(fmt"{name.loc} module `{module.name.asl}` does not have function `{name.asl}`")
   elif arity notin module.functionIndex[name]:
@@ -76,11 +85,11 @@ proc findFunctionIds(module: Module, name: Identifier, arity: int): Result[seq[i
   else:
     ok(module.functionIndex[name][arity])
 
-proc findFunctions*(module: Module, name: Identifier, arity: int): Result[seq[Function], string] =
-  let funcDefIds = ? module.findFunctionIds(name, arity)
-  var funcDefs: seq[Function]
+proc findFunctionDefs*(module: Module, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+  let funcDefIds = ? module.findFunctionDefIds(name, arity)
+  var funcDefs: seq[FunctionDefinition]
   for id in funcDefIds:
-    funcDefs.add(module.functions[id])
+    funcDefs.add(module.functions[id].def)
   ok(funcDefs)
 
 type ModuleHeader = tuple[public: bool, name: Identifier, loc: Location]

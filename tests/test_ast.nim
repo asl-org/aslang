@@ -413,7 +413,7 @@ public module Foo:
 
 suite "ast — Module function lookups":
 
-  test "findFunctions returns matching overloads by (name, arity)":
+  test "findFunctionDefs returns matching overloads by (name, arity)":
     let f = parseStr("""
 module M:
   func go(): u8
@@ -423,32 +423,32 @@ module M:
     x
 """).get
     let m = f.findType(id("M")).get.definedType.module
-    let zero = m.findFunctions(id("go"), 0)
-    let one = m.findFunctions(id("go"), 1)
+    let zero = m.findFunctionDefs(id("go"), 0)
+    let one = m.findFunctionDefs(id("go"), 1)
     check zero.isOk
     check zero.get.len == 1
     check one.isOk
     check one.get.len == 1
 
-  test "findFunctions reports a missing function name":
+  test "findFunctionDefs reports a missing function name":
     let f = parseStr("""
 module M:
   func go(): u8
     u8 0
 """).get
     let m = f.findType(id("M")).get.definedType.module
-    let r = m.findFunctions(id("missing"), 0)
+    let r = m.findFunctionDefs(id("missing"), 0)
     check r.isErr
     check errorContains(r.error, "missing")
 
-  test "findFunctions reports a wrong arity":
+  test "findFunctionDefs reports a wrong arity":
     let f = parseStr("""
 module M:
   func go(): u8
     u8 0
 """).get
     let m = f.findType(id("M")).get.definedType.module
-    let r = m.findFunctions(id("go"), 2)
+    let r = m.findFunctionDefs(id("go"), 2)
     check r.isErr
     check errorContains(r.error, "arity")
 
