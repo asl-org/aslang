@@ -97,7 +97,7 @@ public module Array:
     payload: Any
 
   func get(arr: Array[Any], idx: u32): Status[Any]
-    Status[Any].Ok { value: arr.payload }
+    Status.Ok { value: arr.payload }
 """)
     check r.isOk
 
@@ -255,7 +255,7 @@ public module Status:
 
 module M:
   func go(): Status[u8]
-    Status[u8].Ok { value: u8 1 }
+    Status.Ok { value: u8 1 }
 """)
     check r.isOk
 

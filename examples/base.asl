@@ -230,9 +230,9 @@ public module u64:
           case Ok { value: val2 }:
             u64.quotient(val2, b)
           case Err { error: err2 }:
-            Status[u64].Err { error: err2 }
+            Status.Err { error: err2 }
       case Err { error: err1 }:
-        Status[u64].Err { error: err1 }
+        Status.Err { error: err1 }
 
 public module i8:
   literal: "i8"
@@ -635,23 +635,23 @@ public module Array:
         item = Any.read(arr.ptr, offset)
         match Any.valid(item):
           case 0:
-            Status[Any].Ok { value: item }
+            Status.Ok { value: item }
           case _:
             error = Error { code: 2, message: "illegal memory access" }
-            Status[Any].Err { error: error }
+            Status.Err { error: error }
       case _:
         error = Error { code: 1, message: "index out of bounds" }
-        Status[Any].Err { error: error }
+        Status.Err { error: error }
 
   public func set(arr: Array[Any], index: u32, item: Any): Status[Array[Any]]
     match u32.compare(index, arr.size):
       case -1:
         offset = Any.byte_size(index)
         arr.ptr = Any.write(arr.ptr, offset, item)
-        Status[Any].Ok { value: arr }
+        Status.Ok { value: arr }
       case _:
         error = Error { code: 1, message: "index out of bounds" }
-        Status[Any].Err { error: error }
+        Status.Err { error: error }
 
 public module Bitset:
   struct:
@@ -681,9 +681,9 @@ public module Bitset:
         sub_index = u32.remainder(index, 8)
         shifted = u8.shr(value, sub_index)
         bit_value = u8.and(shifted, 1)
-        Status[u8].Ok { value: bit_value }
+        Status.Ok { value: bit_value }
       case Err { error: error }:
-        Status[u8].Err { error: error }
+        Status.Err { error: error }
 
   public func set(bitset: Bitset, index: u32): Status[Bitset]
     index = u32.quotient(index, 8)
@@ -695,8 +695,8 @@ public module Bitset:
         match Array.set(bitset.bits, index, bit_value):
           case Ok { value: updated_bits }:
             bitset.bits = updated_bits
-            Status[Bitset].Ok { value: bitset }
+            Status.Ok { value: bitset }
           case Err { error: error }:
-            Status[Bitset].Err { error: error }
+            Status.Err { error: error }
       case Err { error: error }:
-        Status[Bitset].Err { error: error }
+        Status.Err { error: error }

@@ -71,14 +71,21 @@ type
     parsed: KeywordArgument
     expression: ResolvedExpression
 
+  ResolvedStructRefKind* = enum
+    rsrkDefault, rsrkImpl
+  ResolvedStructRef* = ref object
+    parsed: StructRef
+    case kind: ResolvedStructRefKind
+    of rsrkDefault: discard
+    of rsrkImpl: argType: ResolvedArgumentType
+
   ResolvedStructInitializer* = ref object
     parsed: StructInitializer
-    argType: ResolvedArgumentType
+    structRef: ResolvedStructRef
     kwargs: seq[ResolvedKeywordArgument]
 
   ResolvedUnionInitializer* = ref object
     parsed: UnionInitializer
-    argType: ResolvedArgumentType
     kwargs: seq[ResolvedKeywordArgument]
 
   ResolvedInitializerKind* = enum
@@ -142,22 +149,42 @@ proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.parsed.name
 proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
 proc expression*(kwarg: ResolvedKeywordArgument): ResolvedExpression = kwarg.expression
 
-proc newResolvedStructInitializer*(parsed: StructInitializer, argType: ResolvedArgumentType,
+proc newResolvedStructRef*(parsed: StructRef): ResolvedStructRef =
+  ## Default kind — carries no resolved payload beyond the parser node.
+  ResolvedStructRef(parsed: parsed, kind: rsrkDefault)
+
+proc newResolvedStructRef*(parsed: StructRef, argType: ResolvedArgumentType): ResolvedStructRef =
+  ## Impl kind — wraps the resolved argument type (root + impls).
+  ResolvedStructRef(parsed: parsed, kind: rsrkImpl, argType: argType)
+
+proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
+proc kind*(s: ResolvedStructRef): ResolvedStructRefKind = s.kind
+proc module*(s: ResolvedStructRef): Identifier =
+  case s.kind:
+  of rsrkDefault: s.parsed.module
+  of rsrkImpl: s.parsed.argType.root
+proc argType*(s: ResolvedStructRef): ResolvedArgumentType =
+  assert s.kind == rsrkImpl,
+    fmt"ResolvedStructRef.argType accessed but kind is {s.kind}"
+  s.argType
+proc loc*(s: ResolvedStructRef): Location = s.parsed.loc
+
+proc newResolvedStructInitializer*(parsed: StructInitializer, structRef: ResolvedStructRef,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
-  ResolvedStructInitializer(parsed: parsed, argType: argType, kwargs: kwargs)
+  ResolvedStructInitializer(parsed: parsed, structRef: structRef, kwargs: kwargs)
 
 proc parsed*(struct: ResolvedStructInitializer): StructInitializer = struct.parsed
 proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
-proc argType*(struct: ResolvedStructInitializer): ResolvedArgumentType = struct.argType
+proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.structRef
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 
-proc newResolvedUnionInitializer*(parsed: UnionInitializer, argType: ResolvedArgumentType,
+proc newResolvedUnionInitializer*(parsed: UnionInitializer,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedUnionInitializer =
-  ResolvedUnionInitializer(parsed: parsed, argType: argType, kwargs: kwargs)
+  ResolvedUnionInitializer(parsed: parsed, kwargs: kwargs)
 
 proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
 proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
-proc argType*(init: ResolvedUnionInitializer): ResolvedArgumentType = init.argType
+proc module*(init: ResolvedUnionInitializer): Identifier = init.parsed.module
 proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
 proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
 
@@ -352,46 +379,61 @@ proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     resolvedArgs.add(resolvedArg)
   ok(newResolvedFunctionCall(fncall, resolvedArgs))
 
+proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module: Module, structRef: StructRef): Result[(ResolvedStructRef, Module), string] =
+  ## Resolves a StructRef and validates the kind ↔ requires match.
+  ## Returns the resolved struct-ref alongside the receiver Module (the
+  ## resolver enriches further during data-block lookup).
+  let rootName =
+    case structRef.kind:
+    of srkDefault: structRef.module
+    of srkImpl: structRef.argType.root
+  let definedType = ? file.findDefinedType(fileScope, rootName)
+  case definedType.kind:
+  of dtkGeneric:
+    return err(fmt"{structRef.loc} type `{definedType.name.asl}` is a generic and not struct")
+  of dtkModule:
+    let receiver = definedType.module
+    let hasRequires = receiver.requires.isSome
+    case structRef.kind:
+    of srkDefault:
+      if hasRequires:
+        return err(fmt"{structRef.loc} module `{receiver.name.asl}` declares requires; initializer must specify impl types as `{receiver.name.asl}[...]`")
+      ok((newResolvedStructRef(structRef), receiver))
+    of srkImpl:
+      if not hasRequires:
+        return err(fmt"{structRef.loc} module `{receiver.name.asl}` has no requires block; initializer must not specify impl types")
+      let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, structRef.argType)
+      ok((newResolvedStructRef(structRef, resolvedArgType), receiver))
+
 proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     struct: StructInitializer): Result[ResolvedStructInitializer, string] =
-  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module,
-    struct.argType)
-  let structType = ? file.findType(struct.argType.root)
-  let definedType = ? file.findDefinedType(fileScope, struct.argType.root)
-  case definedType.kind:
-  of dtkGeneric: err(fmt"{struct.loc} type `{definedType.name.asl}` is a generic and not struct")
-  of dtkModule:
-    let structModule = definedType.module
-    if structModule.data.isNone:
-      err(fmt"{struct.loc} module `{structModule.name.asl}` is not a struct")
+  let (resolvedStructRef, structModule) = ? resolveStructRef(app, file, fileScope, module, struct.structRef)
+  if structModule.data.isNone:
+    return err(fmt"{struct.loc} module `{structModule.name.asl}` is not a struct")
+  let dataBlock = structModule.data.get
+  case dataBlock.kind:
+  of dbkLiteral: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a literal")
+  of dbkUnion: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a union")
+  of dbkStruct:
+    let structBlock = dataBlock.struct
+    if struct.kwargs.len != structBlock.fields.len:
+      err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
     else:
-      let dataBlock = structModule.data.get
-      case dataBlock.kind:
-      of dbkLiteral: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a literal")
-      of dbkUnion: err(fmt"{dataBlock.loc} module `{structModule.name.asl}` is a union")
-      of dbkStruct:
-        let structBlock = dataBlock.struct
-        if struct.kwargs.len != structBlock.fields.len:
-          err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
-        else:
-          var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](
-            structBlock.fields.len)
-          for kwarg in struct.kwargs:
-            let fieldId = ? structBlock.findFieldId(kwarg.name)
-            let resolvedExpression = ? resolveExpression(app, file, fileScope,
-              module, scope, kwarg.expression)
-            resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
-              resolvedExpression)
-          ok(newResolvedStructInitializer(struct, resolvedArgType, resolvedKeywordArgs))
+      var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](
+        structBlock.fields.len)
+      for kwarg in struct.kwargs:
+        let fieldId = ? structBlock.findFieldId(kwarg.name)
+        let resolvedExpression = ? resolveExpression(app, file, fileScope,
+          module, scope, kwarg.expression)
+        resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
+          resolvedExpression)
+      ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
 
 proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
-  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module,
-    unionInit.argType)
-  let unionType = ? file.findType(unionInit.argType.root)
-  let unionDefinedType = ? file.findDefinedType(fileScope, unionInit.argType.root)
+  let unionDefinedType = ? file.findDefinedType(fileScope, unionInit.module)
   case unionDefinedType.kind:
   of dtkGeneric: err(fmt"{unionInit.loc} type `{unionDefinedType.name.asl}` is a generic and not union")
   of dtkModule:
@@ -417,8 +459,7 @@ proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
               module, scope, kwarg.expression)
             resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
               resolvedExpression)
-          ok(newResolvedUnionInitializer(unionInit, resolvedArgType,
-            resolvedKeywordArgs))
+          ok(newResolvedUnionInitializer(unionInit, resolvedKeywordArgs))
 
 proc resolveInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,

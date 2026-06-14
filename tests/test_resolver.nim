@@ -141,7 +141,7 @@ import { u8, Status, Any, Error } from "./base.asl"
 
 public module M:
   public func ok_one(): Status[u8]
-    Status[u8].Ok { value: u8 1 }
+    Status.Ok { value: u8 1 }
 """),
       ("base.asl", Base)
     ])

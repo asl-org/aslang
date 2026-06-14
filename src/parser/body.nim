@@ -89,13 +89,20 @@ type
     args: seq[KeywordArgument]
     loc: Location
 
+  StructRefKind* = enum
+    srkDefault, srkImpl
+  StructRef* = ref object
+    case kind: StructRefKind
+    of srkDefault: module: Identifier
+    of srkImpl: argType: ArgumentType
+
   StructInitializer* = ref object
-    argType: ArgumentType
+    structRef: StructRef
     kwargList: KeywordArgumentList
     loc: Location
 
   UnionInitializer* = ref object
-    argType: ArgumentType
+    module: Identifier
     variantName: Identifier
     kwargList: KeywordArgumentList
     loc: Location
@@ -214,30 +221,55 @@ proc asl(kwargList: KeywordArgumentList): string =
     result.add(asl(arg))
   result.add(" }")
 
-# ----------------- StructInitializer -----------------
-proc newStructInitializer*(argType: ArgumentType, kwargList: KeywordArgumentList, loc: Location): StructInitializer =
-  StructInitializer(argType: argType, kwargList: kwargList, loc: loc)
+# ----------------- StructRef -----------------
+proc newStructRef*(module: Identifier): StructRef =
+  StructRef(kind: srkDefault, module: module)
 
-proc argType*(struct: StructInitializer): ArgumentType = struct.argType
+proc newStructRef*(argType: ArgumentType): StructRef =
+  StructRef(kind: srkImpl, argType: argType)
+
+proc kind*(s: StructRef): StructRefKind = s.kind
+proc module*(s: StructRef): Identifier =
+  assert s.kind == srkDefault,
+    fmt"StructRef.module accessed but kind is {s.kind}"
+  s.module
+proc argType*(s: StructRef): ArgumentType =
+  assert s.kind == srkImpl,
+    fmt"StructRef.argType accessed but kind is {s.kind}"
+  s.argType
+proc loc*(s: StructRef): Location =
+  case s.kind:
+  of srkDefault: s.module.loc
+  of srkImpl: s.argType.loc
+proc asl*(s: StructRef): string =
+  case s.kind:
+  of srkDefault: asl(s.module)
+  of srkImpl: asl(s.argType)
+
+# ----------------- StructInitializer -----------------
+proc newStructInitializer*(structRef: StructRef, kwargList: KeywordArgumentList, loc: Location): StructInitializer =
+  StructInitializer(structRef: structRef, kwargList: kwargList, loc: loc)
+
+proc structRef*(struct: StructInitializer): StructRef = struct.structRef
 proc kwargs*(struct: StructInitializer): seq[KeywordArgument] = struct.kwargList.args
 proc loc*(struct: StructInitializer): Location = struct.loc
 
 proc asl(nonPrim: StructInitializer): string =
-  fmt"{asl(nonPrim.argType)} {asl(nonPrim.kwargList)}"
+  fmt"{asl(nonPrim.structRef)} {asl(nonPrim.kwargList)}"
 
 # ----------------- UnionInitializer -----------------
-proc newUnionInitializer*(argType: ArgumentType, variantName: Identifier,
+proc newUnionInitializer*(module: Identifier, variantName: Identifier,
     kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
-  UnionInitializer(argType: argType, variantName: variantName,
+  UnionInitializer(module: module, variantName: variantName,
     kwargList: kwargList, loc: loc)
 
 proc loc*(unionInit: UnionInitializer): Location = unionInit.loc
-proc argType*(unionInit: UnionInitializer): ArgumentType = unionInit.argType
+proc module*(unionInit: UnionInitializer): Identifier = unionInit.module
 proc variant*(unionInit: UnionInitializer): Identifier = unionInit.variantName
 proc kwargs*(unionInit: UnionInitializer): seq[KeywordArgument] = unionInit.kwargList.args
 
 proc asl(unionInit: UnionInitializer): string =
-  fmt"{asl(unionInit.argType)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
+  fmt"{asl(unionInit.module)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
 
 # ----------------- Initializer -----------------
 proc newInitializer*(literal: LiteralInitializer): Initializer =
@@ -528,22 +560,26 @@ let kwargListSpec* = Spec[KeywordArgumentList](
 let unionInitializerSpec* = Spec[UnionInitializer](
   name: "union_initializer",
   parseFn: proc(parser: Parser): Result[UnionInitializer, ParserError] =
-  let argType = ? parser.run(argumentTypeSpec)
+  let module = ? parser.run(identifierSpec)
   discard ? parser.run(punctuationSpec("."))
   let variantName = ? parser.run(identifierSpec)
   discard parser.run(any(spaceSpec))
   let kwargList = ? parser.run(kwargListSpec)
-  ok(newUnionInitializer(argType, variantName, kwargList, argType.loc))
+  ok(newUnionInitializer(module, variantName, kwargList, module.loc))
 )
 
-# Type { fields }
+# Either `Type { fields }` (default kind) or `Type[Impls] { fields }` (impl
+# kind for phantom-typed structs whose module declares a requires block).
 let structInitializerSpec* = Spec[StructInitializer](
   name: "struct_initializer",
   parseFn: proc(parser: Parser): Result[StructInitializer, ParserError] =
   let argType = ? parser.run(argumentTypeSpec)
   discard parser.run(any(spaceSpec))
   let kwargList = ? parser.run(kwargListSpec)
-  ok(newStructInitializer(argType, kwargList, argType.loc))
+  let structRef =
+    if argType.impls.len == 0: newStructRef(argType.root)
+    else: newStructRef(argType)
+  ok(newStructInitializer(structRef, kwargList, argType.loc))
 )
 
 let initializerSpec* = oneOf("initializer", [

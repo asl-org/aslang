@@ -78,13 +78,24 @@ type
     field: AnalyzedArgumentDefinition
     expression: AnalyzedExpression
 
+  AnalyzedStructRefKind* = enum
+    asrkDefault, asrkImpl
+  AnalyzedStructRef* = ref object
+    resolved: ResolvedStructRef
+    case kind: AnalyzedStructRefKind
+    of asrkDefault: discard
+    of asrkImpl: argType: AnalyzedArgumentType
+
   AnalyzedStructInitializer* = ref object
     resolved: ResolvedStructInitializer
+    structRef: AnalyzedStructRef
     argType: AnalyzedArgumentType
     kwargs: seq[AnalyzedKeywordArgument]
 
   AnalyzedUnionInitializer* = ref object
     resolved: ResolvedUnionInitializer
+    # TODO: impls are still empty here — parametric inference from kwargs
+    # lands in the follow-up thread.
     argType: AnalyzedArgumentType
     variant: AnalyzedVariant
     kwargs: seq[AnalyzedKeywordArgument]
@@ -154,10 +165,26 @@ proc resolved*(kwarg: AnalyzedKeywordArgument): ResolvedKeywordArgument = kwarg.
 proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDefinition = kwarg.field
 proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
 
-proc newAnalyzedStructInitializer*(resolved: ResolvedStructInitializer, argType: AnalyzedArgumentType, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
-  AnalyzedStructInitializer(resolved: resolved, argType: argType, kwargs: kwargs)
+proc newAnalyzedStructRef*(resolved: ResolvedStructRef): AnalyzedStructRef =
+  AnalyzedStructRef(resolved: resolved, kind: asrkDefault)
+
+proc newAnalyzedStructRef*(resolved: ResolvedStructRef, argType: AnalyzedArgumentType): AnalyzedStructRef =
+  AnalyzedStructRef(resolved: resolved, kind: asrkImpl, argType: argType)
+
+proc resolved*(s: AnalyzedStructRef): ResolvedStructRef = s.resolved
+proc kind*(s: AnalyzedStructRef): AnalyzedStructRefKind = s.kind
+proc module*(s: AnalyzedStructRef): Identifier = s.resolved.module
+proc argType*(s: AnalyzedStructRef): AnalyzedArgumentType =
+  assert s.kind == asrkImpl,
+    fmt"AnalyzedStructRef.argType accessed but kind is {s.kind}"
+  s.argType
+proc loc*(s: AnalyzedStructRef): Location = s.resolved.loc
+
+proc newAnalyzedStructInitializer*(resolved: ResolvedStructInitializer, structRef: AnalyzedStructRef, argType: AnalyzedArgumentType, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
+  AnalyzedStructInitializer(resolved: resolved, structRef: structRef, argType: argType, kwargs: kwargs)
 
 proc resolved*(struct: AnalyzedStructInitializer): ResolvedStructInitializer = struct.resolved
+proc structRef*(struct: AnalyzedStructInitializer): AnalyzedStructRef = struct.structRef
 proc argType*(struct: AnalyzedStructInitializer): AnalyzedArgumentType = struct.argType
 proc kwargs*(struct: AnalyzedStructInitializer): seq[AnalyzedKeywordArgument] = struct.kwargs
 
@@ -165,6 +192,7 @@ proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, argType: A
   AnalyzedUnionInitializer(resolved: resolved, argType: argType, variant: variant, kwargs: kwargs)
 
 proc resolved*(init: AnalyzedUnionInitializer): ResolvedUnionInitializer = init.resolved
+proc module*(init: AnalyzedUnionInitializer): Identifier = init.resolved.module
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedArgumentType = init.argType
 proc variant*(init: AnalyzedUnionInitializer): AnalyzedVariant = init.variant
 proc kwargs*(init: AnalyzedUnionInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
@@ -597,26 +625,59 @@ proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
     ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, analyzedField.argType, analyzedExpression.argType.get)
     ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
+proc receiverArgType(receiver: AnalyzedModuleDefinition): AnalyzedArgumentType =
+  ## Builds an AnalyzedArgumentType pointing at the receiver module with
+  ## no impls. Used for default-kind struct initializers and union
+  ## initializers (where impls live in the analyzer's deferred-inference
+  ## thread, not at the call site).
+  let resolvedSelfArg = receiver.resolved.self
+  let analyzedModuleArg = newAnalyzedModuleArgumentType(resolvedSelfArg, receiver.resolved)
+  newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(analyzedModuleArg))
+
 proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
-  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
-  let union = ? defScope.extractUnionFor(analyzedArgType, init.loc)
-  let analyzedVariant = ? union.findVariant(init.variant)
-  var analyzedKwargs: seq[AnalyzedKeywordArgument]
-  for kwarg in init.kwargs:
-    let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
-    let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
-    analyzedKwargs.add(analyzedKwarg)
-  ok(newAnalyzedUnionInitializer(init, analyzedArgType, analyzedVariant, analyzedKwargs))
+  let receiver = ? defScope.findModuleDef(init.module, init.loc)
+  if receiver.data.isNone:
+    return err(fmt"{init.loc} module `{receiver.name.asl}` is not a union")
+  let dataBlock = receiver.data.get
+  case dataBlock.kind:
+  of adkLiteral: err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
+  of adkStruct: err(fmt"{init.loc} module `{receiver.name.asl}` is a struct")
+  of adkUnion:
+    let analyzedVariant = ? dataBlock.union.findVariant(init.variant)
+    var analyzedKwargs: seq[AnalyzedKeywordArgument]
+    for kwarg in init.kwargs:
+      let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
+      let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
+      analyzedKwargs.add(analyzedKwarg)
+    ok(newAnalyzedUnionInitializer(init, receiverArgType(receiver), analyzedVariant, analyzedKwargs))
+
+proc analyzeStructRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
+  case structRef.kind:
+  of rsrkDefault: ok(newAnalyzedStructRef(structRef))
+  of rsrkImpl:
+    let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, structRef.argType)
+    ok(newAnalyzedStructRef(structRef, analyzedArgType))
 
 proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
-  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
-  let struct = ? defScope.extractStructFor(analyzedArgType, init.loc)
-  var analyzedKwargs: seq[AnalyzedKeywordArgument]
-  for kwarg in init.kwargs:
-    let analyzedField = ? struct.findField(kwarg.name)
-    let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
-    analyzedKwargs.add(analyzedKwarg)
-  ok(newAnalyzedStructInitializer(init, analyzedArgType, analyzedKwargs))
+  let analyzedStructRef = ? analyzeStructRef(app, file, fileScope, module, init.structRef)
+  let receiver = ? defScope.findModuleDef(init.structRef.module, init.loc)
+  if receiver.data.isNone:
+    return err(fmt"{init.loc} module `{receiver.name.asl}` is not a struct")
+  let dataBlock = receiver.data.get
+  case dataBlock.kind:
+  of adkLiteral: err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
+  of adkUnion: err(fmt"{init.loc} module `{receiver.name.asl}` is a union")
+  of adkStruct:
+    var analyzedKwargs: seq[AnalyzedKeywordArgument]
+    for kwarg in init.kwargs:
+      let analyzedField = ? dataBlock.struct.findField(kwarg.name)
+      let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
+      analyzedKwargs.add(analyzedKwarg)
+    let argType =
+      case analyzedStructRef.kind:
+      of asrkImpl: analyzedStructRef.argType
+      of asrkDefault: receiverArgType(receiver)
+    ok(newAnalyzedStructInitializer(init, analyzedStructRef, argType, analyzedKwargs))
 
 proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
