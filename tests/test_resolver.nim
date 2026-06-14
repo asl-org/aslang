@@ -444,17 +444,6 @@ public generic K:
 
 """
 
-  test "requires is rejected on user-defined modules (only Array / Map allowed)":
-    let (r, dir) = resolveSingle(RequiresPrelude & """
-public module MyModule:
-  requires(K)
-  struct:
-    x: u8
-""")
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "reserved for `Array` and `Map`")
-
   test "duplicate generic in requires(...) is rejected":
     let (r, dir) = resolveSingle(RequiresPrelude & """
 public module Array:

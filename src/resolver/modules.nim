@@ -50,16 +50,19 @@ proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDefinitio
     some(module.functions[module.funcDefIndex[funcDef]].def)
 
 proc validateRequiresConstraints(module: Module): Result[void, string] =
-  ## Enforces the three requires-block constraints:
-  ##   1. `requires` is std-lib-internal — only `Array` and `Map` may declare it.
-  ##   2. Generic names inside `requires(...)` must be unique.
-  ##   3. `requires` pairs with a `struct` data block — not literal, not union,
-  ##      not absent. The no-generic-fields constraint is enforced post-resolution.
+  ## Enforces the two structural requires-block constraints:
+  ##   1. Generic names inside `requires(...)` must be unique.
+  ##   2. `requires` pairs with a `struct` data block — not literal, not union,
+  ##      not absent. The no-generic-fields constraint is enforced
+  ##      post-resolution.
+  ##
+  ## `requires` is an internal feature — undocumented and not promoted to
+  ## end users — but no name whitelist is enforced here: any module that
+  ## declares `requires` and satisfies these structural rules is accepted,
+  ## so future internal types (List, dynamic containers, etc.) can adopt
+  ## the same phantom-type machinery without editing this proc.
   if module.requires.isNone: return ok()
   let requires = module.requires.get
-  let name = module.name.value
-  if name != "Array" and name != "Map":
-    return err(fmt"{requires.loc} requires block is reserved for `Array` and `Map`; module `{module.name.asl}` cannot declare requires")
   var seen: HashSet[Identifier]
   for generic in requires.generics:
     if generic in seen:
