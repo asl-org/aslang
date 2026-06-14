@@ -1,6 +1,6 @@
 ## Resolution of module and generic top-level blocks.
 
-import results, options, strformat, tables, options, hashes
+import results, options, strformat, tables, options, hashes, sets
 
 import tokenizer
 import parser
@@ -49,10 +49,35 @@ proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDefinitio
   else:
     some(module.functions[module.funcDefIndex[funcDef]].def)
 
+proc validateRequiresConstraints(module: Module): Result[void, string] =
+  ## Enforces the three requires-block constraints:
+  ##   1. `requires` is std-lib-internal — only `Array` and `Map` may declare it.
+  ##   2. Generic names inside `requires(...)` must be unique.
+  ##   3. `requires` pairs with a `struct` data block — not literal, not union,
+  ##      not absent. The no-generic-fields constraint is enforced post-resolution.
+  if module.requires.isNone: return ok()
+  let requires = module.requires.get
+  let name = module.name.value
+  if name != "Array" and name != "Map":
+    return err(fmt"{requires.loc} requires block is reserved for `Array` and `Map`; module `{module.name.asl}` cannot declare requires")
+  var seen: HashSet[Identifier]
+  for generic in requires.generics:
+    if generic in seen:
+      return err(fmt"{generic.loc} duplicate generic `{generic.asl}` in requires block")
+    seen.incl(generic)
+  if module.data.isNone:
+    return err(fmt"{requires.loc} module `{module.name.asl}` declares requires but has no data block; requires must pair with a struct")
+  case module.data.get.kind:
+  of dbkStruct: ok()
+  of dbkLiteral, dbkUnion:
+    err(fmt"{module.data.get.loc} module `{module.name.asl}` declares requires but data block is not a struct")
+
 proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
     module: Module): Result[ResolvedModule, string] =
   if module.decorators.len > 0:
     return err("todo: resolve decorators")
+
+  ? validateRequiresConstraints(module)
 
   var resolvedRequires: seq[ResolvedGenericArgumentType]
   if module.requires.isSome:
@@ -73,6 +98,15 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
   # NOTE: Infer requires list if not explicitly mentioned.
   if module.requires.isNone and resolvedData.isSome:
     resolvedRequires = resolvedData.get.requires
+
+  # Constraint 3b (post-resolution): when requires is declared, the struct
+  # block cannot have any generic fields — phantom types live in the
+  # signature, not the data.
+  if module.requires.isSome and resolvedData.isSome:
+    let structRequires = resolvedData.get.struct.requires
+    if structRequires.len > 0:
+      let firstGeneric = structRequires[0]
+      return err(fmt"{firstGeneric.loc} module `{module.name.asl}` declares requires but struct field is typed as a generic — phantom struct cannot have generic fields")
 
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:

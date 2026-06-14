@@ -431,3 +431,72 @@ module M:
         hasLineCol = true
         break
     check hasLineCol
+
+suite "resolver — requires-block constraints":
+  # Minimal prelude — a literal module + a one-func generic that can be
+  # referenced from a `requires(...)` block.
+  const RequiresPrelude = """
+public module u8:
+  literal: "u8"
+
+public generic K:
+  func foo(): u8
+
+"""
+
+  test "requires is rejected on user-defined modules (only Array / Map allowed)":
+    let (r, dir) = resolveSingle(RequiresPrelude & """
+public module MyModule:
+  requires(K)
+  struct:
+    x: u8
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "reserved for `Array` and `Map`")
+
+  test "duplicate generic in requires(...) is rejected":
+    let (r, dir) = resolveSingle(RequiresPrelude & """
+public module Array:
+  requires(K, K)
+  struct:
+    x: u8
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate generic")
+
+  test "requires without a data block is rejected":
+    let (r, dir) = resolveSingle(RequiresPrelude & """
+public module Array:
+  requires(K)
+
+  public func init(): u8
+    u8 0
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "has no data block")
+
+  test "requires with a union data block is rejected":
+    let (r, dir) = resolveSingle(RequiresPrelude & """
+public module Array:
+  requires(K)
+  union:
+    A
+    B
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "data block is not a struct")
+
+  test "phantom struct cannot have generic field (post-resolution)":
+    let (r, dir) = resolveSingle(RequiresPrelude & """
+public module Array:
+  requires(K)
+  struct:
+    x: K
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "phantom struct cannot have generic fields")
