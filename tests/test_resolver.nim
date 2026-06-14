@@ -209,7 +209,7 @@ import { u8, u32, Array, Any } from "./base.asl"
 
 public module M:
   public func mk(): Array[Any]
-    Array[Any].init(u32 10)
+    Array.init(u32 10)
 """),
       ("base.asl", Base)
     ])

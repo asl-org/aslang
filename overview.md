@@ -286,9 +286,12 @@ src/
     funcdefs.nim                   ResolvedArgumentDefinition /
                                    ResolvedFunctionDefinition /
                                    ResolvedExternFunction
-    funcrefs.nim                   FunctionScope + ResolvedFunctionRef
-                                   (flat: name / arity / argType / loc)
-                                   for call-site lookup by (name, arity)
+    funcrefs.nim                   FunctionScope (variable name set
+                                   used by the body walker). Function-
+                                   call name resolution is inlined into
+                                   resolveFunctionCall in body.nim
+                                   since FunctionCall now carries just
+                                   an Identifier root (no impls).
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
     body.nim                       Getter / LiteralInitializer + body-level
                                    cluster (Initializer ↔ FunctionCall ↔
@@ -341,12 +344,15 @@ src/
     funcrefs.nim                   AnalyzedDefinedTypeScope
                                    (Identifier -> AnalyzedDefinedType,
                                    indexes both modules and generics)
-                                   with findModuleDef (by argType or
-                                   by name) / extractDataBlock /
+                                   with findDefinedType (by name) /
+                                   findModuleDef (by argType or by
+                                   name) / extractDataBlock /
                                    extractStructFor / extractUnionFor
                                    lookup helpers / AnalyzedFunctionScope
-                                   + clone / AnalyzedFunctionRef +
-                                   analyzeFunctionRef
+                                   + clone. Function-call funcDef
+                                   lookup is inlined into
+                                   analyzeFunctionCall in body.nim
+                                   (AnalyzedFunctionRef removed).
     patterns.nim                   generic parseInteger[T: SomeInteger]
                                    helper (parseutils + scanf with
                                    compile-time signed/unsigned

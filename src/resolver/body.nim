@@ -90,7 +90,7 @@ type
     of rikLiteral: literal: ResolvedLiteralInitializer
 
   ResolvedFunctionCall* = ref object
-    funcRef: ResolvedFunctionRef
+    parsed: FunctionCall
     args: seq[ResolvedExpression]
 
   ResolvedAssignment* = ref object
@@ -189,13 +189,12 @@ proc loc*(init: ResolvedInitializer): Location =
   of rikStruct: init.struct.loc
   of rikUnion: init.union.loc
 
-proc newResolvedFunctionCall*(funcRef: ResolvedFunctionRef,
+proc newResolvedFunctionCall*(parsed: FunctionCall,
     args: seq[ResolvedExpression]): ResolvedFunctionCall =
-  ResolvedFunctionCall(funcRef: funcRef, args: args)
+  ResolvedFunctionCall(parsed: parsed, args: args)
 
-proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.funcRef.parsed
-proc loc*(fncall: ResolvedFunctionCall): Location = fncall.funcRef.loc
-proc funcRef*(fncall: ResolvedFunctionCall): ResolvedFunctionRef = fncall.funcRef
+proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
+proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 
 proc newResolvedAssignment*(parsed: Assignment,
@@ -337,13 +336,21 @@ proc resolveStatement*(app: App, file: parser.File, fileScope: FileScope,
 proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let resolvedFunctionRef = ? resolveFunctionRef(app, file, fileScope, module,
-    scope, fncall)
+  let definedType = ? file.findDefinedType(fileScope, fncall.root)
+  case definedType.kind:
+  of dtkModule:
+    let funcs = ? definedType.module.findFunctions(fncall.name, fncall.args.len)
+    if funcs.len == 0:
+      return err(fmt"{fncall.loc} module `{definedType.module.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
+  of dtkGeneric:
+    let funcDefs = ? definedType.generic.findFunctionDefs(fncall.name, fncall.args.len)
+    if funcDefs.len == 0:
+      return err(fmt"{fncall.loc} generic `{definedType.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
   var resolvedArgs: seq[ResolvedExpression]
   for arg in fncall.args:
     let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope, arg)
     resolvedArgs.add(resolvedArg)
-  ok(newResolvedFunctionCall(resolvedFunctionRef, resolvedArgs))
+  ok(newResolvedFunctionCall(fncall, resolvedArgs))
 
 proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,

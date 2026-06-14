@@ -19,6 +19,7 @@ import argtypes
 import literals
 import data
 import funcdefs
+import modules
 import funcrefs
 import patterns
 
@@ -67,7 +68,7 @@ proc analyzeGetter*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFil
 type
   AnalyzedFunctionCall* = ref object
     resolved: ResolvedFunctionCall
-    fnref: AnalyzedFunctionRef
+    def: AnalyzedFunctionDefinition
     args: seq[AnalyzedExpression]
     returns: AnalyzedArgumentType
 
@@ -137,13 +138,12 @@ type
 proc argType*(expression: AnalyzedExpression): Option[AnalyzedArgumentType]
 proc argType*(statement: AnalyzedStatement): Option[AnalyzedArgumentType]
 
-# TODO: accepts returns field once function call resolution is complete
-proc newAnalyzedFunctionCall*(resolved: ResolvedFunctionCall, fnref: AnalyzedFunctionRef, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
-  AnalyzedFunctionCall(resolved: resolved, fnref: fnref, args: args, returns: returns)
+proc newAnalyzedFunctionCall*(resolved: ResolvedFunctionCall, def: AnalyzedFunctionDefinition, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
+  AnalyzedFunctionCall(resolved: resolved, def: def, args: args, returns: returns)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.resolved.loc
 proc resolved*(fncall: AnalyzedFunctionCall): ResolvedFunctionCall = fncall.resolved
-proc fnref*(fncall: AnalyzedFunctionCall): AnalyzedFunctionRef = fncall.fnref
+proc def*(fncall: AnalyzedFunctionCall): AnalyzedFunctionDefinition = fncall.def
 proc args*(fncall: AnalyzedFunctionCall): seq[AnalyzedExpression] = fncall.args
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType = fncall.returns
 
@@ -423,9 +423,9 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
       ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, argDef.argType, argValue.argType.get)
   ok()
 
-proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcRef: AnalyzedFunctionRef, analyzedArgs: seq[AnalyzedExpression]): Result[AnalyzedFunctionDefinition, string] =
+proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[AnalyzedFunctionDefinition], analyzedArgs: seq[AnalyzedExpression]): Result[AnalyzedFunctionDefinition, string] =
   var matches: seq[AnalyzedFunctionDefinition]
-  for funcDef in funcRef.funcDefs:
+  for funcDef in funcDefs:
     if analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, analyzedArgs, funcDef).isOk:
       matches.add(funcDef)
 
@@ -435,7 +435,7 @@ proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     var message: seq[string]
     if matches.len == 0:
       message.add(fmt"{fncall.loc} failed to find matching function:")
-      for funcDef in funcRef.funcDefs:
+      for funcDef in funcDefs:
         message.add("\t" & fmt"{funcDef.loc}")
     else:
       message.add(fmt"{fncall.loc} ambiguous function call — multiple candidates match:")
@@ -444,15 +444,22 @@ proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let funcRef = ? analyzeFunctionRef(app, file, fileScope, module, defScope, fncall.funcRef)
+  let definedType = ? defScope.findDefinedType(fncall.parsed.root, fncall.loc)
+  let funcDefs =
+    case definedType.kind:
+    of adtkModule:
+      ? definedType.module.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, module != definedType.module.resolved)
+    of adtkGeneric:
+      ? definedType.generic.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len)
+
   var analyzedArgs: seq[AnalyzedExpression]
   for arg in fncall.args:
     let analyzedArg = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, arg)
     analyzedArgs.add(analyzedArg)
 
-  let matchingFuncDef = ? analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, fncall, funcRef, analyzedArgs)
+  let matchingFuncDef = ? analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, fncall, funcDefs, analyzedArgs)
   # TODO: find a way to compute concrete return type for now just passing along the funcDef.returns
-  ok(newAnalyzedFunctionCall(fncall, funcRef, analyzedArgs, matchingFuncDef.returns))
+  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, matchingFuncDef.returns))
 
 proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[AnalyzedCaseBlock, string] =
   let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern, union)

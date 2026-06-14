@@ -76,7 +76,7 @@ type
     loc: Location
 
   FunctionCall* = ref object
-    argType: ArgumentType
+    root: Identifier
     name: Identifier
     argList: ArgumentList
 
@@ -167,19 +167,18 @@ proc asl(argList: ArgumentList): string =
   result.add(")")
 
 # ----------------- FunctionCall -----------------
-proc newFunctionCall*(argType: ArgumentType, name: Identifier,
+proc newFunctionCall*(root: Identifier, name: Identifier,
     argList: ArgumentList): FunctionCall =
-  FunctionCall(argType: argType, name: name, argList: argList)
+  FunctionCall(root: root, name: name, argList: argList)
 
-proc loc*(fncall: FunctionCall): Location =
-  fncall.argType.loc
+proc loc*(fncall: FunctionCall): Location = fncall.root.loc
 
-proc argType*(fncall: FunctionCall): ArgumentType = fncall.argType
+proc root*(fncall: FunctionCall): Identifier = fncall.root
 proc name*(fncall: FunctionCall): Identifier = fncall.name
 proc args*(fncall: FunctionCall): seq[Expression] = fncall.argList.args
 
 proc asl(fncall: FunctionCall): string =
-  fmt"{asl(fncall.argType)}.{asl(fncall.name)}{asl(fncall.argList)}"
+  fmt"{asl(fncall.root)}.{asl(fncall.name)}{asl(fncall.argList)}"
 
 # ----------------- KeywordArgument -----------------
 proc newKeywordArgument*(name: Identifier, expression: Expression,
@@ -499,12 +498,12 @@ let argumentListSpec* = Spec[ArgumentList](
 let functionCallSpec* = Spec[FunctionCall](
   name: "function_call",
   parseFn: proc(parser: Parser): Result[FunctionCall, ParserError] =
-  let argType = ? parser.run(argumentTypeSpec)
+  let root = ? parser.run(identifierSpec)
   discard ? parser.run(punctuationSpec("."))
   let funcNameIdent = ? parser.run(identifierSpec)
   discard parser.run(any(spaceSpec))
   let argList = ? parser.run(argumentListSpec)
-  ok(newFunctionCall(argType, funcNameIdent, argList))
+  ok(newFunctionCall(root, funcNameIdent, argList))
 )
 
 let kwargSpec* = Spec[KeywordArgument](

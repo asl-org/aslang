@@ -42,7 +42,7 @@ Canonical conformant examples to mirror:
 | `ResolvedExternFunction` | none | `ffi: string` | `parsed: ExternFunction.ffi` | **MISSING** |
 | `ResolvedModuleArgumentType` | none (only `root: Module`, parser type) | `loc` | `parsed: ArgumentType.loc` | **MISSING** |
 | `ResolvedGenericArgumentType` | none (only `generic: Generic`, parser type) | `loc` | `parsed: ArgumentType.loc` | **MISSING** |
-| `ResolvedFunctionRef` | none | `name`, `arity`, `loc` | `parsed: FunctionCall.name / .args.len / .loc` | **MISSING** (3 fields) |
+| ~~`ResolvedFunctionRef`~~ | (type deleted) | — | — | **obsolete** — type was removed when FunctionCall dropped its argType; funcref name resolution is now inlined in `resolveFunctionCall` |
 | `ResolvedStruct` | none | (no scalar dups; parser `Struct` lost so loc unreachable) | `parsed: Struct` | **MISSING** |
 | `ResolvedGetter` | none | `source`, `property` | `parsed: Getter.source / .property` | **MISSING** |
 | `ResolvedLiteralInitializer` | none | `value: Literal` | `parsed: LiteralInitializer.value` | **MISSING** |
@@ -69,7 +69,7 @@ Canonical conformant examples to mirror:
 | `AnalyzedGenericArgumentType` | `resolved: ResolvedGeneric` | `loc: Location` | use-site loc, distinct from declaration; consider routing through a `parsed: ArgumentType` field if added to resolver | **INTENT** (follow-up of resolver fix) |
 | `AnalyzedModuleArgumentType` | `resolved: ResolvedModuleArgumentType` | `module: ResolvedModule` | derivable via app lookup but stored for speed | **INTENT** (analyzer cache) |
 | `AnalyzedStruct` | none | (no scalar dups; pairs with resolver gap) | `resolved: ResolvedStruct` | **MISSING** |
-| `AnalyzedFunctionRef` | none | `argType`, `funcDefs`, no loc | `resolved: ResolvedFunctionRef` | **MISSING** |
+| ~~`AnalyzedFunctionRef`~~ | (type deleted) | — | — | **obsolete** — type was removed alongside ResolvedFunctionRef; funcDef lookup is inlined in `analyzeFunctionCall` |
 | `AnalyzedVariable` | none | `name`, `argType` | no resolver-side counterpart (`ResolvedVariable` doesn't exist) | **INTENT** |
 | `AnalyzedModule` | none (transitively via `def: AnalyzedModuleDefinition`) | — | `resolved: ResolvedModule` | **MISSING** (mild — already reachable transitively) |
 | `AnalyzedFile` | none | imports / definedTypes / modules raw | `resolved: ResolvedFile` | **MISSING** |

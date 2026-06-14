@@ -671,12 +671,12 @@ public module Bitset:
 
   public func init(size: u32): Bitset
     size = u32.quotient(u32.add(size, 7), 8)
-    bits = Array[u8].init(size)
+    bits = Array.init(size)
     Bitset { bits: bits }
 
   public func get(bitset: Bitset, index: u32): Status[u8]
     index = u32.quotient(index, 8)
-    match Array[u8].get(bitset.bits, index):
+    match Array.get(bitset.bits, index):
       case Ok { value: value }:
         sub_index = u32.remainder(index, 8)
         shifted = u8.shr(value, sub_index)
@@ -687,12 +687,12 @@ public module Bitset:
 
   public func set(bitset: Bitset, index: u32): Status[Bitset]
     index = u32.quotient(index, 8)
-    match Array[u8].get(bitset.bits, index):
+    match Array.get(bitset.bits, index):
       case Ok { value: value }:
         sub_index = u32.remainder(index, 8)
         shifted = u8.shl(1, sub_index)
         bit_value = u8.or(shifted, value)
-        match Array[u8].set(bitset.bits, index, bit_value):
+        match Array.set(bitset.bits, index, bit_value):
           case Ok { value: updated_bits }:
             bitset.bits = updated_bits
             Status[Bitset].Ok { value: bitset }
