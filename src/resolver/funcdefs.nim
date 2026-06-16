@@ -3,7 +3,7 @@
 ## Each layers on top of argtypes via resolveArgumentType +
 ## resolveDataType.
 
-import results, options, hashes
+import results, options, hashes, strformat, strutils
 
 import tokenizer
 import parser
@@ -24,6 +24,8 @@ proc loc*(d: ResolvedArgumentDefinition): Location = d.argType.loc
 proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
 proc hash*(d: ResolvedArgumentDefinition): Hash = argType.hash
 proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
+proc asl*(argDef: ResolvedArgumentDefinition): string =
+  fmt"{argDef.name.asl}: {argDef.argType.asl}"
 
 proc genericRequirement*(d: ResolvedArgumentDefinition): Option[ResolvedGenericArgumentType] =
   case d.argType.kind:
@@ -72,7 +74,12 @@ proc arity*(funcDef: ResolvedFunctionDefinition): int = funcDef.parsed.arity
 proc args*(funcDef: ResolvedFunctionDefinition): seq[ResolvedArgumentDefinition] = funcDef.args
 proc returns*(funcDef: ResolvedFunctionDefinition): ResolvedArgumentType = funcDef.returns
 proc loc*(funcDef: ResolvedFunctionDefinition): Location = funcDef.parsed.loc
-proc asl*(funcDef: ResolvedFunctionDefinition): string = funcDef.parsed.asl
+proc asl*(funcDef: ResolvedFunctionDefinition): string =
+  var args: seq[string]
+  for arg in funcDef.args:
+    args.add(arg.asl)
+  let argsJoined = args.join(", ")
+  fmt"func {funcDef.name.asl}({argsJoined}): {funcDef.returns.asl}"
 proc hash*(funcDef: ResolvedFunctionDefinition): Hash =
   var acc = funcDef.name.hash
   for arg in funcDef.args:

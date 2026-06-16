@@ -10,7 +10,7 @@
 ## (or — inside a generic block — that an unsubstituted generic is
 ## acceptable as a field/argument type).
 
-import results, options, strformat, tables, hashes
+import results, options, strformat, tables, hashes, strutils
 
 import tokenizer
 import parser
@@ -57,11 +57,13 @@ proc loc*(argType: ResolvedGenericArgumentType): Location = argType.loc
 # TODO: hash conflicts may occur because `loc` only considers line and col in hash not file path.
 proc hash*(argType: ResolvedGenericArgumentType): Hash = argType.generic.hash
 proc `==`*(a, b: ResolvedGenericArgumentType): bool = a.hash == b.hash
+proc asl*(argType: ResolvedGenericArgumentType): string = argType.generic.name.asl
 
 # Forward declarations — both context overloads need to be declared
 # up front because resolveModuleArgumentType recurses through them
 # when resolving impls.
 proc hash*(argType: ResolvedArgumentType): Hash
+proc asl*(argType: ResolvedArgumentType): string
 
 proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
@@ -84,6 +86,15 @@ proc hash*(argType: ResolvedModuleArgumentType): Hash =
     acc = acc !& impl.hash
   return acc
 proc `==`*(a, b: ResolvedModuleArgumentType): bool = a.hash == b.hash
+proc asl*(argType: ResolvedModuleArgumentType): string =
+  if argType.impls.len == 0:
+    fmt"{argType.module.name.asl}"
+  else:
+    var impls: seq[string]
+    for impl in argType.impls:
+      impls.add(impl.asl)
+    let implsJoined = impls.join(", ")
+    fmt"{argType.module.name.asl}[{implsJoined}]"
 
 proc findDefinedType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[DefinedType, string] =
   let fieldType = ? file.findType(name)
@@ -243,6 +254,10 @@ proc hash*(argType: ResolvedDefinedArgumentType): Hash =
   of rdatkGeneric: argType.generic.hash
   of rdatkModule: argType.module.hash
 proc `==`*(a, b: ResolvedDefinedArgumentType): bool = a.hash == b.hash
+proc asl*(argType: ResolvedDefinedArgumentType): string =
+  case argType.kind:
+  of rdatkGeneric: argType.generic.asl
+  of rdatkModule: argType.module.asl
 
 proc concreteDefinedArgumentType(argType: ResolvedDefinedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedDefinedArgumentType =
   case argType.kind:
@@ -312,6 +327,10 @@ proc hash*(argType: ResolvedArgumentType): Hash =
   of ratkImported: assert(false, "todo: implement resolved imported type hash")
   of ratkDefined: return argType.definedType.hash
 proc `==`*(a, b: ResolvedArgumentType): bool = a.hash == b.hash
+proc asl*(argType: ResolvedArgumentType): string =
+  case argType.kind:
+  of ratkImported: assert(false, "todo: implement resolved imported type asl")
+  of ratkDefined: return argType.definedType.asl
 
 proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
   case argType.kind:

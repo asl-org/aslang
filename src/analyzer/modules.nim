@@ -132,6 +132,11 @@ proc name*(d: AnalyzedDefinedType): Identifier =
   of adtkModule: d.module.name
   of adtkGeneric: d.generic.name
 
+proc findFunctionDefs*(definedType: AnalyzedDefinedType, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
+  case definedType.kind:
+  of adtkModule: definedType.module.findFunctionDefs(name, arity, public)
+  of adtkGeneric: definedType.generic.findFunctionDefs(name, arity)
+
 proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, definedType: ResolvedDefinedType): Result[AnalyzedDefinedType, string] =
   case definedType.kind:
   of rdtkGeneric:

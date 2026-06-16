@@ -8,7 +8,7 @@
 ## of analyzeGenericArgumentType / analyzeModuleArgumentType /
 ## analyzeDefinedArgumentType / analyzeArgumentType live here too.
 
-import results, strformat, options, sequtils, tables, hashes
+import results, strformat, options, sequtils, strutils, tables, hashes
 
 import tokenizer
 import parser
@@ -32,6 +32,8 @@ proc loc*(g: AnalyzedGenericArgumentType): Location = g.loc
 proc name*(g: AnalyzedGenericArgumentType): Identifier = g.resolved.name
 proc hash*(g: AnalyzedGenericArgumentType): Hash = g.resolved.hash
 proc `==`*(a, b: AnalyzedGenericArgumentType): bool = a.hash == b.hash
+proc asl*(argType: AnalyzedGenericArgumentType): string =
+  argType.resolved.name.asl
 
 proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   let genericArg = ? file.findGeneric(genericArgType.parsed.name)
@@ -53,6 +55,8 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, module: R
 # AnalyzedDefinedArgumentType, which case-dispatches back into
 # AnalyzedModuleArgumentType. One `type:` block.
 type
+  GenericImplMap* = Table[ResolvedGeneric, AnalyzedArgumentType]
+
   AnalyzedModuleArgumentType* = ref object
     resolved: ResolvedModuleArgumentType
     module: ResolvedModule
@@ -78,6 +82,7 @@ type
 # of analyzeArgumentType need to be visible inside
 # analyzeModuleArgumentType.
 proc hash*(m: AnalyzedArgumentType): Hash
+proc asl*(argType: AnalyzedArgumentType): string
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
@@ -99,6 +104,15 @@ proc hash*(m: AnalyzedModuleArgumentType): Hash =
     acc = acc !& impl.hash
   return acc
 proc `==`*(a, b: AnalyzedModuleArgumentType): bool = a.hash == b.hash
+proc asl*(argType: AnalyzedModuleArgumentType): string =
+  if argType.impls.len == 0:
+    fmt"{argType.module.name.asl}"
+  else:
+    var impls: seq[string]
+    for impl in argType.impls:
+      impls.add(impl.asl)
+    let implChildren = impls.join(", ")
+    fmt"{argType.module.name.asl}[{implChildren}]"
 
 proc newAnalyzedDefinedArgumentType*(module: AnalyzedModuleArgumentType): AnalyzedDefinedArgumentType =
   AnalyzedDefinedArgumentType(kind: adatkModule, module: module)
@@ -138,6 +152,10 @@ proc hash*(m: AnalyzedDefinedArgumentType): Hash =
   of adatkModule: m.module.hash
   of adatkGeneric: m.generic.hash
 proc `==`*(a, b: AnalyzedDefinedArgumentType): bool = a.hash == b.hash
+proc asl*(argType: AnalyzedDefinedArgumentType): string =
+  case argType.kind:
+  of adatkGeneric: argType.generic.asl
+  of adatkModule: argType.module.asl
 
 proc newAnalyzedArgumentType*(definedType: AnalyzedDefinedArgumentType): AnalyzedArgumentType =
   AnalyzedArgumentType(kind: aatkDefined, definedType: definedType)
@@ -162,6 +180,11 @@ proc self*(argType: AnalyzedArgumentType): ResolvedArgumentType =
   case argType.kind:
   of aatkImported: assert(false, "TODO: support analyzed argument type self construction")
   of aatkDefined: return newResolvedArgumentType(argType.definedType.self)
+
+proc asl*(argType: AnalyzedArgumentType): string =
+  case argType.kind:
+  of aatkImported: assert(false, "TODO: support analyzed argument type asl")
+  of aatkDefined: return argType.definedType.asl
 
 proc hash*(m: AnalyzedArgumentType): Hash =
   case m.kind:
@@ -229,7 +252,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
       let analyzedImplArgType = ? analyzeArgumentType(app, file, fileScope, module, implType)
       for funcDef in resolvedBaseGeneric.concreteImpls(analyzedImplArgType.self):
         ? analyzeModuleArgumentTypeImpls(resolvedBaseGeneric, analyzedImplArgType, funcDef)
-        analyzedImpls.add(analyzedImplArgType)
+      analyzedImpls.add(analyzedImplArgType)
     ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
@@ -253,10 +276,14 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
 proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
   case argType.kind:
   of rdatkGeneric:
+    # echo fmt"BEFORE ANALYZED GENERIC: {argType.generic.asl}"
     let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, argType.generic)
+    # echo fmt"AFTER ANALYZED GENERIC: {analyzedArgType.asl}"
     ok(newAnalyzedDefinedArgumentType(analyzedArgType))
   of rdatkModule:
+    # echo fmt"BEFORE ANALYZED MODULE: {argType.module.asl}"
     let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, module, argType.module)
+    # echo fmt"BEFORE ANALYZED MODULE: {analyzedArgType.asl}"
     ok(newAnalyzedDefinedArgumentType(analyzedArgType))
 
 proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
@@ -273,6 +300,7 @@ proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
   of ratkImported: err(fmt"todo: analyze imported argument type")
   of ratkDefined:
     let analyzedArgType = ? analyzeDefinedArgumentType(app, file, fileScope, module, argType.definedType)
+    # echo fmt"ANALYZED DEFINED: {analyzedArgType.asl}"
     ok(newAnalyzedArgumentType(analyzedArgType))
 
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
@@ -282,3 +310,13 @@ proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
   of ratkDefined:
     let analyzedArgType = ? analyzeDefinedArgumentType(app, file, fileScope, generic, argType.definedType)
     ok(newAnalyzedArgumentType(analyzedArgType))
+
+# ------------------------------ GenericImplMap -----------------------------
+proc merge*(global: var GenericImplMap, local: GenericImplMap): Result[GenericImplMap, string] =
+  for generic, impl in local:
+    if generic in global and global[generic] != impl:
+      # TODO: improve error message
+      return err(fmt"{impl.loc} expected generic `{generic.name.asl}` to be of same type as {global[generic].loc}")
+    else:
+      global[generic] = impl
+  ok(global)
