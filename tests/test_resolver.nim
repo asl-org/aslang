@@ -222,6 +222,26 @@ public module Pair:
     cleanupDir(dir)
     check r.isOk
 
+  test "union variants can have multiple fields of the same generic type":
+    # Both within a single variant (`Both { first: K, second: K }`) and
+    # across variants (`Both` and `Single` both using K) should resolve
+    # — same logic as the struct case, since uniqueness is only enforced
+    # inside an explicit `requires(...)` block.
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public generic K:
+  func foo(): u8
+
+public module Pair:
+  union:
+    Both { first: K, second: K }
+    Single { only: K }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
   test "Array[u8] argument-type resolves through explicit requires":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
