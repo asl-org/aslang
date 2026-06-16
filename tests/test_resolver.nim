@@ -202,6 +202,26 @@ module M:
     cleanupDir(dir)
     check r.isOk
 
+  test "struct fields can share the same generic type":
+    # Two fields typed as the same generic `K` should both resolve;
+    # the inferred-requires path doesn't require distinct generics per
+    # field. (Uniqueness is only enforced inside an explicit
+    # `requires(...)` block — see "requires-block constraints" suite.)
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public generic K:
+  func foo(): u8
+
+public module Pair:
+  struct:
+    first: K
+    second: K
+""")
+    cleanupDir(dir)
+    check r.isOk
+
   test "Array[u8] argument-type resolves through explicit requires":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
