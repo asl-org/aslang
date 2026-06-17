@@ -410,6 +410,12 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
 proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
+  # TODO(union-inference): once parser ships UnionRef, dispatch on
+  # urkDefault / urkImpl just like resolveStructRef. Default arm stays
+  # as the current path. Impl arm resolves the ArgumentType, validates
+  # impl-list arity against `ResolvedUnion.requires.len`, and stashes
+  # the resolved impls on ResolvedUnionInitializer so the analyzer can
+  # use them directly (skipping inference) on the explicit path.
   let initModule = ? file.findModule(fileScope, unionInit.module)
   let union = ? initModule.union(unionInit.loc)
   let variant = ? union.findVariant(unionInit.variant)

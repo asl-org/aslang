@@ -457,8 +457,8 @@ proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     if maybeGenericImplMap.isOk:
       matches.add((funcDef, maybeGenericImplMap.get))
     # TODO: Improve errors messages by collecting failures for matching each function definition
-    # else:
-    #   echo maybeGenericImplMap.error
+    else:
+      echo maybeGenericImplMap.error
   if matches.len == 1:
     ok(matches[0])
   else:
@@ -482,9 +482,10 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
     let analyzedArg = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, arg)
     analyzedArgs.add(analyzedArg)
 
-  let (matchingFuncDef, genericImplMap) = ? analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, fncall, funcDefs, analyzedArgs)
-  # TODO: find a way to compute concrete return type for now just passing along the funcDef.returns
-  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, matchingFuncDef.returns))
+  let (matchingFuncDef, genericImpls) = ? analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, fncall, funcDefs, analyzedArgs)
+  # NOTE: compute concrete return type from the inferred implementation types
+  let concreteReturns = matchingFuncDef.returns.concrete(genericImpls)
+  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, concreteReturns))
 
 proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[AnalyzedCaseBlock, string] =
   let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, module, defScope, funcScope, caseBlock.pattern, union)
@@ -581,9 +582,18 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
       if match.cases.len == 0:
         err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
       else:
-        # TODO: Concretize union
-        let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, analyzedSubjectDataType.union)
-        ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
+        case analyzedSubjectExpr.argType.get.kind:
+        of aatkImported:
+          err(fmt"{match.loc} todo: handle analyzed imported type in match expression analysis for concrete union module")
+        of aatkDefined:
+          case analyzedSubjectExpr.argType.get.definedType.kind:
+          of adatkGeneric:
+            err(fmt"{match.loc} UNREACHABLE: match block does not support generic types in subject expression")
+          of adatkModule:
+            let impls = analyzedSubjectExpr.argType.get.definedType.module.impls
+            let concreteUnion = analyzedSubjectDataType.union.concrete(impls)
+            let analyzedCases = ? analyzeCases(app, file, fileScope, module, defScope, funcScope, match.cases, concreteUnion)
+            ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =
   let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, kwarg.expression)
@@ -638,6 +648,20 @@ proc receiverArgType(receiver: AnalyzedModuleDefinition): AnalyzedArgumentType =
   newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(analyzedModuleArg))
 
 proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
+  # TODO(union-inference): dispatch on UnionRef kind.
+  #   urkImpl: substitute the explicit impls into the variant's field
+  #     types via concrete(), then type-check each kwarg value. No
+  #     inference. Mirror of analyzeStructRef's rsrkImpl arm.
+  #   urkDefault: leave-as-is inference. Walk variant fields, bind
+  #     each touched generic to the kwarg value's type via the
+  #     existing GenericImplMap path. Generics in the union's deduped
+  #     param list that the variant doesn't touch stay as generics in
+  #     the resulting type's impl positions — the value's type is
+  #     polymorphic in them. Unification at the use site fills them.
+  # When a downstream site (pattern-match dispatch, monomorphization
+  # conflict) can't resolve a free generic, emit a multi-location
+  # error: point at *both* this initializer (the introduction site)
+  # and the failing use site, and suggest the explicit-impl form.
   let receiver = ? defScope.findModuleDef(init.module, init.loc)
   if receiver.data.isNone:
     return err(fmt"{init.loc} module `{receiver.name.asl}` is not a union")

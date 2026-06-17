@@ -35,11 +35,6 @@ proc genericRequirement*(d: ResolvedArgumentDefinition): Option[ResolvedGenericA
     of rdatkModule: discard
     of rdatkGeneric: result = some(d.argType.definedType.generic)
 
-proc collectGenericRequirements*(fields: seq[ResolvedArgumentDefinition]): seq[ResolvedGenericArgumentType] =
-  for field in fields:
-    let req = field.genericRequirement
-    if req.isSome: result.add(req.get)
-
 proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDefinition =
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)
   newResolvedArgumentDefinition(argDef.parsed, concreteArgType)

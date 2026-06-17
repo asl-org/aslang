@@ -1,6 +1,6 @@
 ## Data-block resolution: struct / variant / union / data umbrella.
 
-import results, strformat, sets, options
+import results, strformat, tables
 
 import tokenizer
 import parser
@@ -8,55 +8,61 @@ import literals
 import argtypes
 import funcdefs
 
-proc validateUniqueGenericFields(fields: seq[ResolvedArgumentDefinition],
-    scopeLabel: string): Result[void, string] =
+proc validateUniqueGenericFields(genericTypeIndex: var Table[ResolvedGenericArgumentType, int], field: ResolvedArgumentDefinition, scope: string): Result[Table[ResolvedGenericArgumentType, int], string] =
   ## Enforces: within one constructor scope (a struct body or one
   ## variant body), each generic name appears in at most one field
   ## type. If the user needs two fields of independent types, they
   ## must declare a second generic — the analyzer's GenericImplMap
   ## binds one generic to one concrete type per construction.
-  var seen: HashSet[Generic]
-  for field in fields:
-    let req = field.genericRequirement
-    if req.isNone: continue
-    let generic = req.get.parsed
-    if generic in seen:
-      return err(fmt"{req.get.loc} duplicate generic `{req.get.asl}` in {scopeLabel} fields — each generic can be used in at most one field; declare a second generic if you need an independent type")
-    seen.incl(generic)
-  ok()
+  case field.argType.kind:
+  of ratkImported:
+    assert(false, "todo: handle generic uniqueness constraint for imported type in `{scope}` block")
+  of ratkDefined:
+    case field.argType.definedType.kind:
+    of rdatkModule:
+      return ok(genericTypeIndex)
+    of rdatkGeneric:
+      let genericType = field.argType.definedType.generic
+      if genericType in genericTypeIndex:
+        return err(fmt"{field.loc} duplicate generic `{genericType.asl}` in `{scope}` fields — each generic can be used in at most one field; declare a second generic if you need an independent type")
+      else:
+        genericTypeIndex[genericType] = genericTypeIndex.len
+        return ok(genericTypeIndex)
 
 # ResolvedStruct
 type ResolvedStruct* = ref object
   parsed: Struct
   fields: seq[ResolvedArgumentDefinition]
+  genericTypeIndex: Table[ResolvedGenericArgumentType, int]
 
-proc newResolvedStruct*(parsed: Struct, fields: seq[ResolvedArgumentDefinition]): ResolvedStruct =
-  ResolvedStruct(parsed: parsed, fields: fields)
+proc newResolvedStruct*(parsed: Struct, fields: seq[ResolvedArgumentDefinition], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedStruct =
+  ResolvedStruct(parsed: parsed, fields: fields, genericTypeIndex: genericTypeIndex)
 
 proc parsed*(struct: ResolvedStruct): Struct = struct.parsed
 proc loc*(struct: ResolvedStruct): Location = struct.parsed.loc
 proc fields*(struct: ResolvedStruct): seq[ResolvedArgumentDefinition] = struct.fields
 
 proc requires*(struct: ResolvedStruct): seq[ResolvedGenericArgumentType] =
-  collectGenericRequirements(struct.fields)
+  var requires = newSeq[ResolvedGenericArgumentType](struct.genericTypeIndex.len)
+  for genericType, index in struct.genericTypeIndex:
+    requires[index] = genericType
+  return requires
 
-proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, struct: Struct): Result[ResolvedStruct, string] =
+proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope, module: Module, struct: Struct): Result[ResolvedStruct, string] =
   var resolvedFields: seq[ResolvedArgumentDefinition]
+  var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for field in struct.fields:
-    let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module,
-      field)
+    let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module, field)
+    genericTypeIndex = ? genericTypeIndex.validateUniqueGenericFields(resolvedField, "struct")
     resolvedFields.add(resolvedField)
-  ? validateUniqueGenericFields(resolvedFields, "struct")
-  ok(newResolvedStruct(struct, resolvedFields))
+  ok(newResolvedStruct(struct, resolvedFields, genericTypeIndex))
 
 # ResolvedVariant
 type ResolvedVariant* = ref object
   parsed: VariantDefinition
   fields: seq[ResolvedArgumentDefinition]
 
-proc newResolvedVariant*(parsed: VariantDefinition,
-    fields: seq[ResolvedArgumentDefinition]): ResolvedVariant =
+proc newResolvedVariant*(parsed: VariantDefinition, fields: seq[ResolvedArgumentDefinition]): ResolvedVariant =
   ResolvedVariant(parsed: parsed, fields: fields)
 
 proc loc*(variant: ResolvedVariant): Location = variant.parsed.loc
@@ -64,27 +70,23 @@ proc name*(variant: ResolvedVariant): Identifier = variant.parsed.name
 proc parsed*(variant: ResolvedVariant): VariantDefinition = variant.parsed
 proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDefinition] = variant.fields
 
-proc requires*(variant: ResolvedVariant): seq[ResolvedGenericArgumentType] =
-  collectGenericRequirements(variant.fields)
-
-proc resolveVariant(app: App, file: parser.File, fileScope: FileScope,
-    module: Module,
-    variant: VariantDefinition): Result[ResolvedVariant, string] =
+# NOTE: Understand that `genericTypeIndex` variable is mutable but is not returned
+proc resolveVariant(app: App, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDefinition, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
   var resolvedFields: seq[ResolvedArgumentDefinition]
   for field in variant.fields:
-    let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module,
-      field)
+    let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module, field)
+    genericTypeIndex = ? genericTypeIndex.validateUniqueGenericFields(resolvedField, fmt"variant `{variant.name.asl}`")
     resolvedFields.add(resolvedField)
-  ? validateUniqueGenericFields(resolvedFields, fmt"variant `{variant.name.asl}`")
   ok(newResolvedVariant(variant, resolvedFields))
 
 # ResolvedUnion
 type ResolvedUnion* = ref object
   parsed: Union
   variants: seq[ResolvedVariant]
+  genericTypeIndex: Table[ResolvedGenericArgumentType, int]
 
-proc newResolvedUnion*(parsed: Union, variants: seq[ResolvedVariant]): ResolvedUnion =
-  ResolvedUnion(parsed: parsed, variants: variants)
+proc newResolvedUnion*(parsed: Union, variants: seq[ResolvedVariant], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedUnion =
+  ResolvedUnion(parsed: parsed, variants: variants, genericTypeIndex: genericTypeIndex)
 
 proc loc*(union: ResolvedUnion): Location = union.parsed.loc
 proc variants*(union: ResolvedUnion): seq[ResolvedVariant] = union.variants
@@ -93,20 +95,19 @@ proc requires*(union: ResolvedUnion): seq[ResolvedGenericArgumentType] =
   ## shared type parameter (Rust style), so dedup by underlying Generic
   ## identity. Within-variant duplicates are already impossible
   ## (caught by validateUniqueGenericFields in resolveVariant).
-  var seen: HashSet[Generic]
-  for variant in union.variants:
-    for req in variant.requires:
-      if req.parsed notin seen:
-        seen.incl(req.parsed)
-        result.add(req)
+  var requires = newSeq[ResolvedGenericArgumentType](union.genericTypeIndex.len)
+  for genericType, index in union.genericTypeIndex:
+    requires[index] = genericType
+  return requires
 
 proc resolveUnion*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, union: Union): Result[ResolvedUnion, string] =
   var resolvedVariants: seq[ResolvedVariant]
+  var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for variant in union.variants:
-    let resolvedVariant = ? resolveVariant(app, file, fileScope, module, variant)
+    let resolvedVariant = ? resolveVariant(app, file, fileScope, module, variant, genericTypeIndex)
     resolvedVariants.add(resolvedVariant)
-  ok(newResolvedUnion(union, resolvedVariants))
+  ok(newResolvedUnion(union, resolvedVariants, genericTypeIndex))
 
 # ResolvedData
 type

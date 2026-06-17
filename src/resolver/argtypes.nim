@@ -115,6 +115,15 @@ proc findModule*(file: parser.File, fileScope: FileScope, name: Identifier): Res
   of dtkModule: ok(initDefinedType.module)
 
 proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields: seq[ArgumentDefinition]): Result[seq[Generic], string] =
+  # TODO(union-inference): walk impls recursively. Today this only
+  # looks at the field's top-level root, so a field typed
+  # `Box[u8, Sample]` returns nothing — even though the containing
+  # struct/variant should inherit `Sample` as one of its requires.
+  # Under leave-as-is, polymorphic types nesting in field positions
+  # is common (any field whose value came from a partial-coverage
+  # union initializer carries a free generic). Walk each impl's
+  # ArgumentType recursively and collect every generic referenced
+  # anywhere in the tree, deduped by first-seen order.
   var requiredImpls: seq[Generic]
   for field in fields:
     let definedFieldType = ? file.findDefinedType(fileScope, field.argType.root)

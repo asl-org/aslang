@@ -225,10 +225,11 @@ public module Pair:
     cleanupDir(dir)
     check r.isOk
 
-  test "union with one generic shared across variants resolves":
-    # Rust-style: same name in different variants is the union's
-    # single shared type parameter. Status[u8] binds K everywhere it
-    # appears in the union body.
+  test "union rejects the same generic reused across variants":
+    # Within one union body each generic name may appear in at most
+    # one field type. Reusing `K` across variants is rejected — the
+    # resolver doesn't distinguish "same variant" from "different
+    # variant" once the position has been claimed.
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
@@ -242,7 +243,8 @@ public module Status:
     Err { error: K }
 """)
     cleanupDir(dir)
-    check r.isOk
+    check r.isErr
+    check errorContains(r.error, "duplicate generic")
 
   test "union with distinct generics across variants resolves":
     let (r, dir) = resolveSingle("""
@@ -589,11 +591,11 @@ public module Pair:
     check errorContains(r.error, "duplicate generic")
     check errorContains(r.error, "Both")
 
-  # Union's deduped param list is the first-seen order across variants.
-  # Variant1 contributes Any first; Variant2 reuses Any (deduped) then
-  # contributes Sample. So `Box`'s param list is [Any, Sample] and use
-  # sites must supply exactly two impls in that order.
-  const DedupPrelude = """
+  # Union's param list is the position-ordered list of distinct
+  # generics across variants. First contributes Any at position 0,
+  # Second contributes Sample at position 1. Use sites must supply
+  # exactly two impls in that order.
+  const UnionParamsPrelude = """
 public module u8:
   literal: "u8"
 
@@ -612,12 +614,12 @@ public generic Sample:
 public module Box:
   union:
     First { a: Any }
-    Second { a: Any, b: Sample }
+    Second { b: Sample }
 
 """
 
-  test "union shared generic across variants dedups to first-seen order":
-    let (r, dir) = resolveSingle(DedupPrelude & """
+  test "union with distinct generics per variant exposes them in declaration order":
+    let (r, dir) = resolveSingle(UnionParamsPrelude & """
 public module Use:
   struct:
     b: Box[Any, Sample]
@@ -626,7 +628,7 @@ public module Use:
     check r.isOk
 
   test "union arg type with too few impls is rejected":
-    let (r, dir) = resolveSingle(DedupPrelude & """
+    let (r, dir) = resolveSingle(UnionParamsPrelude & """
 public module Use:
   struct:
     b: Box[Any]

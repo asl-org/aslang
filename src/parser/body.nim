@@ -130,6 +130,12 @@ type
     kwargList: KeywordArgumentList
     loc: Location
 
+  # TODO(union-inference): replace `module: Identifier` with
+  # `unionRef: UnionRef`, mirroring StructRef. UnionRef is a tagged
+  # union with `urkDefault { module: Identifier }` (bare form — drives
+  # leave-as-is inference at the analyzer) and `urkImpl { argType:
+  # ArgumentType }` (explicit-impls form — escape hatch when inference
+  # fails). Same shape and rationale as StructRef.srkDefault / srkImpl.
   UnionInitializer* = ref object
     module: Identifier
     variantName: Identifier
@@ -560,7 +566,13 @@ let kwargListSpec* = Spec[KeywordArgumentList](
   newKeywordArgumentList(args, loc)
 )
 
-# Type.Variant { fields }
+# Type.Variant { fields } (default) or Type[Impls].Variant { fields }
+# (explicit-impls — escape hatch when leave-as-is inference can't
+# produce a usable type).
+# TODO(union-inference): parse via argumentTypeSpec (gives root +
+# optional impls), then `.` + variantName + kwargList. Build a
+# UnionRef like structInitializerSpec already does: urkDefault when
+# `argType.impls.len == 0`, urkImpl otherwise.
 let unionInitializerSpec* = Spec[UnionInitializer](
   name: "union_initializer",
   parseFn: proc(parser: Parser): Result[UnionInitializer, ParserError] =

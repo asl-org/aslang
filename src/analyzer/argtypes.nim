@@ -192,6 +192,60 @@ proc hash*(m: AnalyzedArgumentType): Hash =
   of aatkDefined: return m.definedType.hash
 proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 
+# TODO(union-inference): `==` is only correct when both sides are
+# ground. Under leave-as-is, a value's type can carry free generics in
+# impl positions (e.g. Box[u8, Sample]). Assignability against an
+# expected type (Box[u8, MyImpl]) is unification, not equality. Audit
+# every callsite of AnalyzedArgumentType `==` used for assignability
+# (value-type vs expected-type matches in arg checks, return checks,
+# kwarg checks) and route through analyzeValueTypeAgainstDefinitionType
+# / GenericImplMap merge instead. Pure type-identity uses
+# (deduplication, table keying) stay as-is.
+
+proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): AnalyzedArgumentType =
+  # TODO(union-inference): handle substitution chains. A single use
+  # site can produce an implMap with both `Sample → K` and `K → u8`
+  # (e.g. `func f(a: Box[u8, K], b: K)` called as
+  # `f(boxFirst, u8 5)`). Today getOrDefault returns the immediate
+  # map value, so `Sample` rewrites to `K`, not `u8`. Prefer eager
+  # chain-collapsing in `merge` (cheaper, single pass) — see the TODO
+  # there — over recursive lookup here.
+  case argType.kind:
+  of aatkImported: assert(false, "TODO: support analyzed argument type concretization")
+  of aatkDefined:
+    case argType.definedType.kind:
+    of adatkModule:
+      let moduleArgType = argType.definedType.module
+      var concreteImpls: seq[AnalyzedArgumentType]
+      for impl in moduleArgType.impls:
+        let concreteImpl = impl.concrete(implMap)
+        concreteImpls.add(concreteImpl)
+      let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
+      return newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(concreteModuleArgType))
+    of adatkGeneric:
+      let genericArgType = argType.definedType.generic
+      return implMap.getOrDefault(genericArgType.resolved, argType)
+
+proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedArgumentType =
+  # TODO(union-inference): handle substitution chains. A single use
+  # site can produce an implMap with both `Sample → K` and `K → u8`
+  # (e.g. `func f(a: Box[u8, K], b: K)` called as
+  # `f(boxFirst, u8 5)`). Today getOrDefault returns the immediate
+  # map value, so `Sample` rewrites to `K`, not `u8`. Prefer eager
+  # chain-collapsing in `merge` (cheaper, single pass) — see the TODO
+  # there — over recursive lookup here.
+  case argType.kind:
+  of aatkImported: assert(false, "TODO: support analyzed argument type concretization")
+  of aatkDefined:
+    case argType.definedType.kind:
+    of adatkModule:
+      return argType
+    of adatkGeneric:
+      if argType.definedType.generic in genericTypeIndex:
+        return impls[genericTypeIndex[argType.definedType.generic]]
+      else:
+        return argType
+
 proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
   let maybeTypeModule = file.findModule(argType.module.name)
   if maybeTypeModule.isErr:
@@ -313,6 +367,16 @@ proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
 
 # ------------------------------ GenericImplMap -----------------------------
 proc merge*(global: var GenericImplMap, local: GenericImplMap): Result[GenericImplMap, string] =
+  # TODO(union-inference): eagerly collapse substitution chains.
+  # When inserting `K → u8`, also rewrite any existing values in the
+  # map that mention K as a free generic (e.g. an earlier
+  # `Sample → K` becomes `Sample → u8`). This keeps `concrete()` a
+  # single-pass lookup and prevents free generics from getting stuck
+  # half-resolved when one use site binds another generic that they
+  # depend on. Also: the `!=` conflict check on the next line needs
+  # to become a unification check once free generics can appear on
+  # either side (a bound u8 vs a free K should not "conflict" — K
+  # should unify to u8).
   for generic, impl in local:
     if generic in global and global[generic] != impl:
       # TODO: improve error message

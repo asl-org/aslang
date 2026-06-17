@@ -82,8 +82,14 @@ Analyzer ──── (WIP) Walks the ResolvedApp, instantiating generic
   │                 constraints by substituting concrete impl types
   │                 into each required generic's funcDefs and
   │                 verifying the target module implements them.
-  │                 Function bodies, overload selection, and
-  │                 type-correctness checks remain stubs.
+  │                 Overload selection at function-call sites is
+  │                 wired (each candidate funcDef is unified against
+  │                 the call's argument types via GenericImplMap +
+  │                 merge; uniqueness picks the survivor). Function-
+  │                 call return types and match-subject unions are
+  │                 concretized via the inferred impls. Union-
+  │                 initializer parametric inference and full body-
+  │                 level type-correctness checks remain WIP.
   ▼
 (future)
   Codegen   ── target emission (C or LLVM IR).
@@ -191,6 +197,17 @@ the generic-context `resolveModuleArgumentType` for explicit
     recursively. When a module has no explicit `requires` but its
     struct/union fields reference a generic, that generic is treated
     as an inferred type parameter at use sites.
+- **Within-constructor generic uniqueness** — within one struct
+  body or one variant body, each generic name may appear in at most
+  one field type. Across variants of one union, repeated names are
+  the union's single shared type parameter (Rust style:
+  `Ok { v: K } / Err { e: K }` → `Status` takes `[K]`, deduped in
+  first-seen order). Enforced by `validateUniqueGenericFields` in
+  `src/resolver/data.nim`, which also builds the
+  `genericTypeIndex: Table[ResolvedGenericArgumentType, int]` stored
+  on `ResolvedStruct` / `ResolvedUnion` and used to derive the
+  position-preserving `requires*` accessor (the analyzer mirrors the
+  same index on `AnalyzedStruct` / `AnalyzedUnion` for substitution).
 - **Generic signature rule** — inside a generic block, a fn
   argument/return type root may only resolve to the current generic
   itself (self-reference) or a module. Other generics are rejected
@@ -299,8 +316,15 @@ src/
                                    Statement ↔ Assignment / Mutation /
                                    KeywordArgument)
     data.nim                       ResolvedStruct / ResolvedVariant /
-                                   ResolvedUnion / ResolvedData + their
-                                   resolveX procs
+                                   ResolvedUnion / ResolvedData +
+                                   validateUniqueGenericFields helper
+                                   (within-constructor uniqueness check
+                                   + per-scope genericTypeIndex
+                                   accumulator) + position-preserving
+                                   requires* derivation on Struct/Union
+                                   + their resolveX procs (resolveVariant
+                                   threads the union's mutable
+                                   genericTypeIndex across variants)
     funcs.nim                      ResolvedUserFunction / ResolvedFunction
                                    + resolveUserFunction / resolveFunction
     modules.nim                    ResolvedModule / ResolvedGeneric +
@@ -323,14 +347,31 @@ src/
                                    imported types via the same
                                    findArgTypeModule / findArgTypeGeneric
                                    helpers (which try file-local lookup
-                                   first, then fall back to fileScope)
+                                   first, then fall back to fileScope) +
+                                   GenericImplMap (Table[ResolvedGeneric,
+                                   AnalyzedArgumentType]) with merge
+                                   (conflict-on-different-binding) +
+                                   concrete* overloads (implMap-keyed and
+                                   positional impls + genericTypeIndex)
     funcdefs.nim                   AnalyzedArgumentDefinition /
                                    AnalyzedFunctionDefinition + dual-
-                                   context analyze* overloads
+                                   context analyze* overloads +
+                                   concrete* (implMap-driven and
+                                   index+impls-driven) so funcDef return
+                                   types substitute through to inferred
+                                   impls at the call site
     data.nim                       AnalyzedStruct (with fieldIndex +
-                                   findField) / AnalyzedVariant /
-                                   AnalyzedUnion / AnalyzedData + their
-                                   analyzeX procs
+                                   findField + genericTypeIndex) /
+                                   AnalyzedVariant / AnalyzedUnion
+                                   (with genericTypeIndex) /
+                                   AnalyzedData + concrete* on each
+                                   (positional impls drive field-type
+                                   substitution via the stored index) +
+                                   validateUniqueGenericFields
+                                   (per-scope accumulator mirror of
+                                   resolver/data.nim) + their analyzeX
+                                   procs (analyzeVariant threads the
+                                   union's mutable genericTypeIndex)
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric (also has
@@ -409,7 +450,9 @@ src/
                                    kwarg inference — i32 and string
                                    arms wired, other integer / float /
                                    pointer kinds return todo) /
-                                   analyzeUnionInitializer /
+                                   analyzeUnionInitializer (parametric
+                                   inference still pending — see the
+                                   union-inference TODO cluster) /
                                    analyzeStructInitializer /
                                    analyzeInitializer /
                                    analyzeExpression /
@@ -425,7 +468,15 @@ src/
                                    union-context variable case-pattern
                                    and literal initializer arms still
                                    return todo; argument-list handles
-                                   only typed (non-literal) args
+                                   only typed (non-literal) args.
+                                   analyzeFunctionCall concretizes
+                                   the matched funcDef's return type
+                                   via the inferred GenericImplMap;
+                                   analyzeMatchExpression extracts the
+                                   subject's impls and runs the union
+                                   through concrete() so case-arm
+                                   bindings see the substituted field
+                                   types
     funcs.nim                      AnalyzedUserFunction + AnalyzedExternFunction
                                    / AnalyzedFunction tagged union /
                                    AnalyzedModule + analyzeUserFunction
@@ -531,11 +582,21 @@ Analyzer phase.
 already does body-level name resolution and collects candidate
 overloads by (name, arity); the Analyzer takes those candidates and:
 - Performs overload selection: unify each candidate's parameter
-  types with the call site's argument types and pick the unique
-  survivor (reject on ambiguity for v1).
+  types with the call site's argument types via `GenericImplMap` +
+  `merge`, pick the unique survivor (reject on ambiguity for v1).
+  **Wired.**
 - Generic constraint satisfaction: after unification binds a type
   parameter (e.g., `Any := u8`), verify the bound type implements
   every function signature the generic requires. Cache results.
+  **Wired.**
+- Concretize the matched funcDef's return type and the match
+  subject's union via the inferred impls. **Wired.**
+- Union-initializer parametric inference: pending — covered by the
+  `union-inference` TODO cluster in parser / resolver / analyzer.
+  The plan is leave-as-is (variant-covered generics get inferred,
+  uncovered stay free in the value's type), with explicit
+  `Box[Impl, …].Variant {…}` as the escape hatch mirroring
+  phantom-struct `Array[Impl] {…}`.
 - Literal type inference: pin down `5` to `u8` / `u32` / etc. from
   the expected parameter type at the call site.
 - Type-correctness checks across statements (assignment compatibility,
