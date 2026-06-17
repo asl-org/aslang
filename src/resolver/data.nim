@@ -1,12 +1,29 @@
 ## Data-block resolution: struct / variant / union / data umbrella.
 
-import results, strformat
+import results, strformat, sets, options
 
 import tokenizer
 import parser
 import literals
 import argtypes
 import funcdefs
+
+proc validateUniqueGenericFields(fields: seq[ResolvedArgumentDefinition],
+    scopeLabel: string): Result[void, string] =
+  ## Enforces: within one constructor scope (a struct body or one
+  ## variant body), each generic name appears in at most one field
+  ## type. If the user needs two fields of independent types, they
+  ## must declare a second generic — the analyzer's GenericImplMap
+  ## binds one generic to one concrete type per construction.
+  var seen: HashSet[Generic]
+  for field in fields:
+    let req = field.genericRequirement
+    if req.isNone: continue
+    let generic = req.get.parsed
+    if generic in seen:
+      return err(fmt"{req.get.loc} duplicate generic `{req.get.asl}` in {scopeLabel} fields — each generic can be used in at most one field; declare a second generic if you need an independent type")
+    seen.incl(generic)
+  ok()
 
 # ResolvedStruct
 type ResolvedStruct* = ref object
@@ -30,6 +47,7 @@ proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope,
     let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module,
       field)
     resolvedFields.add(resolvedField)
+  ? validateUniqueGenericFields(resolvedFields, "struct")
   ok(newResolvedStruct(struct, resolvedFields))
 
 # ResolvedVariant
@@ -57,6 +75,7 @@ proc resolveVariant(app: App, file: parser.File, fileScope: FileScope,
     let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module,
       field)
     resolvedFields.add(resolvedField)
+  ? validateUniqueGenericFields(resolvedFields, fmt"variant `{variant.name.asl}`")
   ok(newResolvedVariant(variant, resolvedFields))
 
 # ResolvedUnion
@@ -70,10 +89,16 @@ proc newResolvedUnion*(parsed: Union, variants: seq[ResolvedVariant]): ResolvedU
 proc loc*(union: ResolvedUnion): Location = union.parsed.loc
 proc variants*(union: ResolvedUnion): seq[ResolvedVariant] = union.variants
 proc requires*(union: ResolvedUnion): seq[ResolvedGenericArgumentType] =
-  var fields: seq[ResolvedGenericArgumentType]
+  ## One union scope: a generic name shared across variants is one
+  ## shared type parameter (Rust style), so dedup by underlying Generic
+  ## identity. Within-variant duplicates are already impossible
+  ## (caught by validateUniqueGenericFields in resolveVariant).
+  var seen: HashSet[Generic]
   for variant in union.variants:
-    fields.add(variant.requires)
-  return fields
+    for req in variant.requires:
+      if req.parsed notin seen:
+        seen.incl(req.parsed)
+        result.add(req)
 
 proc resolveUnion*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, union: Union): Result[ResolvedUnion, string] =

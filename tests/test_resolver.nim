@@ -202,31 +202,33 @@ module M:
     cleanupDir(dir)
     check r.isOk
 
-  test "struct fields can share the same generic type":
-    # Two fields typed as the same generic `K` should both resolve;
-    # the inferred-requires path doesn't require distinct generics per
-    # field. (Uniqueness is only enforced inside an explicit
-    # `requires(...)` block — see "requires-block constraints" suite.)
+  test "struct with two distinct generics in fields resolves":
+    # Each generic appears at most once in the struct's field types;
+    # this is the supported way to express "two fields of independent
+    # types." For shared-type semantics, use one generic in both
+    # fields (which the analyzer then binds to one concrete type).
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
 
 public generic K:
   func foo(): u8
+
+public generic V:
+  func bar(): u8
 
 public module Pair:
   struct:
     first: K
-    second: K
+    second: V
 """)
     cleanupDir(dir)
     check r.isOk
 
-  test "union variants can have multiple fields of the same generic type":
-    # Both within a single variant (`Both { first: K, second: K }`) and
-    # across variants (`Both` and `Single` both using K) should resolve
-    # — same logic as the struct case, since uniqueness is only enforced
-    # inside an explicit `requires(...)` block.
+  test "union with one generic shared across variants resolves":
+    # Rust-style: same name in different variants is the union's
+    # single shared type parameter. Status[u8] binds K everywhere it
+    # appears in the union body.
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
@@ -234,10 +236,29 @@ public module u8:
 public generic K:
   func foo(): u8
 
-public module Pair:
+public module Status:
   union:
-    Both { first: K, second: K }
-    Single { only: K }
+    Ok { value: K }
+    Err { error: K }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "union with distinct generics across variants resolves":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public generic K:
+  func foo(): u8
+
+public generic V:
+  func bar(): u8
+
+public module Either:
+  union:
+    Left { x: K }
+    Right { y: V }
 """)
     cleanupDir(dir)
     check r.isOk
@@ -529,3 +550,88 @@ public module Array:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "phantom struct cannot have generic fields")
+
+suite "resolver — field-uniqueness":
+  # Within a single constructor scope (a struct body, or one variant
+  # body), each generic name may appear in at most one field type.
+  # Cross-variant reuse of the same generic name is allowed and reads
+  # as the union's single shared type parameter (Rust style).
+
+  const Prelude = """
+public module u8:
+  literal: "u8"
+
+public generic K:
+  func foo(): u8
+
+"""
+
+  test "duplicate generic in struct fields is rejected":
+    let (r, dir) = resolveSingle(Prelude & """
+public module Pair:
+  struct:
+    first: K
+    second: K
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate generic")
+    check errorContains(r.error, "struct")
+
+  test "duplicate generic within a single variant is rejected":
+    let (r, dir) = resolveSingle(Prelude & """
+public module Pair:
+  union:
+    Both { first: K, second: K }
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate generic")
+    check errorContains(r.error, "Both")
+
+  # Union's deduped param list is the first-seen order across variants.
+  # Variant1 contributes Any first; Variant2 reuses Any (deduped) then
+  # contributes Sample. So `Box`'s param list is [Any, Sample] and use
+  # sites must supply exactly two impls in that order.
+  const DedupPrelude = """
+public module u8:
+  literal: "u8"
+
+public module u32:
+  literal: "u32"
+
+public module u64:
+  literal: "u64"
+
+public generic Any:
+  func byte_size(items: u32): u64
+
+public generic Sample:
+  func foo(): u8
+
+public module Box:
+  union:
+    First { a: Any }
+    Second { a: Any, b: Sample }
+
+"""
+
+  test "union shared generic across variants dedups to first-seen order":
+    let (r, dir) = resolveSingle(DedupPrelude & """
+public module Use:
+  struct:
+    b: Box[Any, Sample]
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "union arg type with too few impls is rejected":
+    let (r, dir) = resolveSingle(DedupPrelude & """
+public module Use:
+  struct:
+    b: Box[Any]
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "expects")
+    check errorContains(r.error, "2")

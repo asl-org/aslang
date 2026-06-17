@@ -10,7 +10,7 @@
 ## (or — inside a generic block — that an unsubstituted generic is
 ## acceptable as a field/argument type).
 
-import results, options, strformat, tables, hashes, strutils
+import results, options, strformat, tables, hashes, strutils, sets
 
 import tokenizer
 import parser
@@ -127,10 +127,16 @@ proc findRequiredImplsForStruct(file: parser.File, fileScope: FileScope, struct:
   findRequiredImplsForFields(file, fileScope, struct.fields)
 
 proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: Union): Result[seq[Generic], string] =
+  # Rust-style: a generic name shared across variants is one shared
+  # type parameter, deduped by first-seen order across variants.
+  var seen: HashSet[Generic]
   var requiredUnionImpls: seq[Generic]
   for variant in union.variants:
     let requiredVariantImpls = ? findRequiredImplsForFields(file, fileScope, variant.fields)
-    requiredUnionImpls.add(requiredVariantImpls)
+    for generic in requiredVariantImpls:
+      if generic notin seen:
+        seen.incl(generic)
+        requiredUnionImpls.add(generic)
   ok(requiredUnionImpls)
 
 # resolveModuleArgumentType — module context.
@@ -316,26 +322,25 @@ proc definedType*(argType: ResolvedArgumentType): ResolvedDefinedArgumentType =
   argType.definedType
 proc name*(argType: ResolvedArgumentType): Identifier =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement resolved imported type name")
+  of ratkImported: assert(false, "todo: implement `name` for resolved imported argument type")
   of ratkDefined: return argType.definedType.name
 proc loc*(argType: ResolvedArgumentType): Location =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement resolved imported type location")
+  of ratkImported: assert(false, "todo: implement `location` for resolved imported argument type")
   of ratkDefined: return argType.definedType.loc
 proc hash*(argType: ResolvedArgumentType): Hash =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement resolved imported type hash")
+  of ratkImported: assert(false, "todo: implement `hash` for resolved imported argument type")
   of ratkDefined: return argType.definedType.hash
 proc `==`*(a, b: ResolvedArgumentType): bool = a.hash == b.hash
 proc asl*(argType: ResolvedArgumentType): string =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement resolved imported type asl")
+  of ratkImported: assert(false, "todo: implement `asl` for resolved imported argument type")
   of ratkDefined: return argType.definedType.asl
 
 proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
   case argType.kind:
-  of ratkImported:
-    assert(false, "todo: concretize imported argument type")
+  of ratkImported: assert(false, "todo: implement `concreteArgumentType` for resolved imported argument type")
   of ratkDefined:
     let concreteDefinedArgType = argType.definedType.concreteDefinedArgumentType(concrete, generic)
     return newResolvedArgumentType(concreteDefinedArgType)
