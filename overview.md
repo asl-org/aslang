@@ -197,17 +197,23 @@ the generic-context `resolveModuleArgumentType` for explicit
     recursively. When a module has no explicit `requires` but its
     struct/union fields reference a generic, that generic is treated
     as an inferred type parameter at use sites.
-- **Within-constructor generic uniqueness** — within one struct
-  body or one variant body, each generic name may appear in at most
-  one field type. Across variants of one union, repeated names are
-  the union's single shared type parameter (Rust style:
-  `Ok { v: K } / Err { e: K }` → `Status` takes `[K]`, deduped in
-  first-seen order). Enforced by `validateUniqueGenericFields` in
+- **Generic field uniqueness** — within one struct body, each
+  generic name may appear in at most one field type. Within one
+  union body, the same rule extends across *all* variants —
+  `Ok { v: K }, Err { e: K }` is rejected; each variant must
+  contribute distinct generics. If two field positions need the
+  same concrete type, the user declares one generic and uses it
+  once; if they need independent types, they declare a second
+  generic. Enforced by `validateUniqueGenericFields` in
   `src/resolver/data.nim`, which also builds the
   `genericTypeIndex: Table[ResolvedGenericArgumentType, int]` stored
   on `ResolvedStruct` / `ResolvedUnion` and used to derive the
   position-preserving `requires*` accessor (the analyzer mirrors the
   same index on `AnalyzedStruct` / `AnalyzedUnion` for substitution).
+  Cross-variant *sharing* (Rust-style "Ok and Err both use K") was
+  considered but not adopted — the single-position-per-name rule is
+  simpler to enforce and removes one source of analyzer-stage
+  ambiguity.
 - **Generic signature rule** — inside a generic block, a fn
   argument/return type root may only resolve to the current generic
   itself (self-reference) or a module. Other generics are rejected
@@ -318,13 +324,16 @@ src/
     data.nim                       ResolvedStruct / ResolvedVariant /
                                    ResolvedUnion / ResolvedData +
                                    validateUniqueGenericFields helper
-                                   (within-constructor uniqueness check
-                                   + per-scope genericTypeIndex
-                                   accumulator) + position-preserving
-                                   requires* derivation on Struct/Union
-                                   + their resolveX procs (resolveVariant
-                                   threads the union's mutable
-                                   genericTypeIndex across variants)
+                                   (one-position-per-generic check,
+                                   scoped to the struct body or the
+                                   whole union body — cross-variant
+                                   reuse is rejected) + position-
+                                   preserving requires* derivation on
+                                   Struct/Union + their resolveX procs
+                                   (resolveVariant threads the union's
+                                   mutable genericTypeIndex across
+                                   variants so positions accumulate
+                                   in declaration order)
     funcs.nim                      ResolvedUserFunction / ResolvedFunction
                                    + resolveUserFunction / resolveFunction
     modules.nim                    ResolvedModule / ResolvedGeneric +
