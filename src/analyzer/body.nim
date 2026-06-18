@@ -86,6 +86,14 @@ type
     of asrkDefault: discard
     of asrkImpl: argType: AnalyzedArgumentType
 
+  AnalyzedUnionRefKind* = enum
+    aurkDefault, aurkImpl
+  AnalyzedUnionRef* = ref object
+    resolved: ResolvedUnionRef
+    case kind: AnalyzedUnionRefKind
+    of aurkDefault: discard
+    of aurkImpl: argType: AnalyzedArgumentType
+
   AnalyzedStructInitializer* = ref object
     resolved: ResolvedStructInitializer
     structRef: AnalyzedStructRef
@@ -94,8 +102,7 @@ type
 
   AnalyzedUnionInitializer* = ref object
     resolved: ResolvedUnionInitializer
-    # TODO: impls are still empty here — parametric inference from kwargs
-    # lands in the follow-up thread.
+    unionRef: AnalyzedUnionRef
     argType: AnalyzedArgumentType
     variant: AnalyzedVariant
     kwargs: seq[AnalyzedKeywordArgument]
@@ -180,6 +187,21 @@ proc argType*(s: AnalyzedStructRef): AnalyzedArgumentType =
   s.argType
 proc loc*(s: AnalyzedStructRef): Location = s.resolved.loc
 
+proc newAnalyzedUnionRef*(resolved: ResolvedUnionRef): AnalyzedUnionRef =
+  AnalyzedUnionRef(resolved: resolved, kind: aurkDefault)
+
+proc newAnalyzedUnionRef*(resolved: ResolvedUnionRef, argType: AnalyzedArgumentType): AnalyzedUnionRef =
+  AnalyzedUnionRef(resolved: resolved, kind: aurkImpl, argType: argType)
+
+proc resolved*(u: AnalyzedUnionRef): ResolvedUnionRef = u.resolved
+proc kind*(u: AnalyzedUnionRef): AnalyzedUnionRefKind = u.kind
+proc module*(u: AnalyzedUnionRef): Identifier = u.resolved.module
+proc argType*(u: AnalyzedUnionRef): AnalyzedArgumentType =
+  assert u.kind == aurkImpl,
+    fmt"AnalyzedUnionRef.argType accessed but kind is {u.kind}"
+  u.argType
+proc loc*(u: AnalyzedUnionRef): Location = u.resolved.loc
+
 proc newAnalyzedStructInitializer*(resolved: ResolvedStructInitializer, structRef: AnalyzedStructRef, argType: AnalyzedArgumentType, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
   AnalyzedStructInitializer(resolved: resolved, structRef: structRef, argType: argType, kwargs: kwargs)
 
@@ -188,10 +210,11 @@ proc structRef*(struct: AnalyzedStructInitializer): AnalyzedStructRef = struct.s
 proc argType*(struct: AnalyzedStructInitializer): AnalyzedArgumentType = struct.argType
 proc kwargs*(struct: AnalyzedStructInitializer): seq[AnalyzedKeywordArgument] = struct.kwargs
 
-proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, argType: AnalyzedArgumentType, variant: AnalyzedVariant, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedUnionInitializer =
-  AnalyzedUnionInitializer(resolved: resolved, argType: argType, variant: variant, kwargs: kwargs)
+proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: AnalyzedUnionRef, argType: AnalyzedArgumentType, variant: AnalyzedVariant, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedUnionInitializer =
+  AnalyzedUnionInitializer(resolved: resolved, unionRef: unionRef, argType: argType, variant: variant, kwargs: kwargs)
 
 proc resolved*(init: AnalyzedUnionInitializer): ResolvedUnionInitializer = init.resolved
+proc unionRef*(init: AnalyzedUnionInitializer): AnalyzedUnionRef = init.unionRef
 proc module*(init: AnalyzedUnionInitializer): Identifier = init.resolved.module
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedArgumentType = init.argType
 proc variant*(init: AnalyzedUnionInitializer): AnalyzedVariant = init.variant
@@ -689,40 +712,88 @@ proc receiverArgType(receiver: AnalyzedModuleDefinition): AnalyzedArgumentType =
   let analyzedModuleArg = newAnalyzedModuleArgumentType(resolvedSelfArg, receiver.resolved)
   newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(analyzedModuleArg))
 
+proc analyzeUnionRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
+  case unionRef.kind:
+  of rurkDefault: ok(newAnalyzedUnionRef(unionRef))
+  of rurkImpl:
+    let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, unionRef.argType)
+    ok(newAnalyzedUnionRef(unionRef, analyzedArgType))
+
 proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
-  # TODO(union-inference): dispatch on UnionRef kind.
-  #   urkImpl: substitute the explicit impls into the variant's field
-  #     types via concrete(), then type-check each kwarg value. No
-  #     inference. Mirror of analyzeStructRef's rsrkImpl arm.
-  #   urkDefault: leave-as-is inference. Walk variant fields, bind
-  #     each touched generic to the kwarg value's type via the
-  #     existing GenericImplMap path. Generics in the union's deduped
-  #     param list that the variant doesn't touch stay as generics in
-  #     the resulting type's impl positions — the value's type is
-  #     polymorphic in them. Unification at the use site fills them.
-  # When a downstream site (pattern-match dispatch, monomorphization
-  # conflict) can't resolve a free generic, emit a multi-location
-  # error: point at *both* this initializer (the introduction site)
-  # and the failing use site, and suggest the explicit-impl form.
+  ## Dispatches on UnionRef kind. urkImpl substitutes the user-supplied
+  ## impls into the variant's field types via concrete() and type-checks
+  ## each kwarg against the substituted type — no inference. urkDefault
+  ## walks the kwargs, accumulates a GenericImplMap from value-vs-field
+  ## type matches, and builds the result type with bound concretes at
+  ## positions the variant touched + free generics at uncovered positions
+  ## (leave-as-is — unification at downstream use sites fills the rest).
+  let analyzedUnionRef = ? analyzeUnionRef(app, file, fileScope, module, init.unionRef)
   let receiver = ? defScope.findModuleDef(init.module, init.loc)
   if receiver.data.isNone:
     return err(fmt"{init.loc} module `{receiver.name.asl}` is not a union")
   let dataBlock = receiver.data.get
   case dataBlock.kind:
-  of adkLiteral: err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
-  of adkStruct: err(fmt"{init.loc} module `{receiver.name.asl}` is a struct")
-  of adkUnion:
-    let analyzedVariant = ? dataBlock.union.findVariant(init.variant)
-    var analyzedKwargs: seq[AnalyzedKeywordArgument]
-    for kwarg in init.kwargs:
-      let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
-      let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
-      analyzedKwargs.add(analyzedKwarg)
-    # TODO: In case the fully qualified impls are not provided in struct initializer we need to infer the generic types ourselves
-    # For now it is assumed that union module's will never need a fully qualified impl type but in future they gonna need this so
-    # we have to consider that as well.
-    let receiverArgType = receiverArgType(receiver)
-    ok(newAnalyzedUnionInitializer(init, receiverArgType, analyzedVariant, analyzedKwargs))
+  of adkLiteral: return err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
+  of adkStruct: return err(fmt"{init.loc} module `{receiver.name.asl}` is a struct")
+  of adkUnion: discard
+  let analyzedUnion = dataBlock.union
+  let analyzedVariant = ? analyzedUnion.findVariant(init.variant)
+
+  # Seed implMap from explicit impls (urkImpl path) so substitution
+  # works without inference. urkDefault leaves the map empty and
+  # accumulates from each kwarg below.
+  var implMap: GenericImplMap
+  case analyzedUnionRef.kind:
+  of aurkImpl:
+    case analyzedUnionRef.argType.kind:
+    of aatkImported:
+      return err(fmt"{analyzedUnionRef.loc} todo: explicit-impl union initializer with imported receiver type")
+    of aatkDefined:
+      case analyzedUnionRef.argType.definedType.kind:
+      of adatkGeneric:
+        return err(fmt"{analyzedUnionRef.loc} union receiver `{analyzedUnionRef.module.asl}` cannot be a generic")
+      of adatkModule:
+        let explicitImpls = analyzedUnionRef.argType.definedType.module.impls
+        for genericArgType, position in analyzedUnion.genericTypeIndex:
+          implMap[genericArgType.resolved] = explicitImpls[position]
+  of aurkDefault: discard
+
+  # Walk kwargs. Substitute the variant's field type via implMap before
+  # type-checking — equivalent to direct match on urkDefault (implMap
+  # is empty there), full concretization on urkImpl. Accumulate bindings
+  # into implMap only on the urkDefault path.
+  var analyzedKwargs: seq[AnalyzedKeywordArgument]
+  for kwarg in init.kwargs:
+    let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
+    let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, defScope, funcScope, kwarg.expression)
+    if analyzedExpression.argType.isNone:
+      return err(fmt"{kwarg.expression.loc} todo: literal-typed kwarg in union initializer")
+    let fieldType = analyzedField.argType.concrete(implMap)
+    let local = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, fieldType, analyzedExpression.argType.get)
+    case analyzedUnionRef.kind:
+    of aurkImpl: discard
+    of aurkDefault: implMap = ? implMap.merge(local)
+    analyzedKwargs.add(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
+
+  # Build the result type. urkImpl already carries the fully-bound
+  # argType from the user. urkDefault fills impls positionally from
+  # the accumulated implMap, leaving uncovered positions as free
+  # generics (the leave-as-is shape).
+  let argType =
+    case analyzedUnionRef.kind:
+    of aurkImpl: analyzedUnionRef.argType
+    of aurkDefault:
+      var impls = newSeq[AnalyzedArgumentType](analyzedUnion.genericTypeIndex.len)
+      for genericArgType, position in analyzedUnion.genericTypeIndex:
+        if genericArgType.resolved in implMap:
+          impls[position] = implMap[genericArgType.resolved]
+        else:
+          impls[position] = newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(genericArgType))
+      let resolvedSelfArg = receiver.resolved.self
+      let analyzedModuleArg = newAnalyzedModuleArgumentType(resolvedSelfArg, receiver.resolved, impls)
+      newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(analyzedModuleArg))
+
+  ok(newAnalyzedUnionInitializer(init, analyzedUnionRef, argType, analyzedVariant, analyzedKwargs))
 
 proc analyzeStructRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
   case structRef.kind:

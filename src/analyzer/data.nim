@@ -113,6 +113,7 @@ proc newAnalyzedUnion*(resolved: ResolvedUnion, variants: seq[AnalyzedVariant], 
 
 proc resolved*(u: AnalyzedUnion): ResolvedUnion = u.resolved
 proc variants*(u: AnalyzedUnion): seq[AnalyzedVariant] = u.variants
+proc genericTypeIndex*(u: AnalyzedUnion): Table[AnalyzedGenericArgumentType, int] = u.genericTypeIndex
 proc concrete*(union: AnalyzedUnion, impls: seq[AnalyzedArgumentType]): AnalyzedUnion =
   var concreteVariants: seq[AnalyzedVariant]
   for variant in union.variants:

@@ -101,6 +101,42 @@ proc asl*(s: StructRef): string =
   of srkDefault: asl(s.module)
   of srkImpl: asl(s.argType)
 
+# ----------------- UnionRef -----------------
+# Mirror of StructRef: bare form drives leave-as-is inference at the
+# analyzer; impl form is the explicit-impls escape hatch used when
+# partial coverage leaves a generic free and the user wants to pin it.
+type
+  UnionRefKind* = enum
+    urkDefault, urkImpl
+  UnionRef* = ref object
+    case kind: UnionRefKind
+    of urkDefault: module: Identifier
+    of urkImpl: argType: ArgumentType
+
+proc newUnionRef*(module: Identifier): UnionRef =
+  UnionRef(kind: urkDefault, module: module)
+
+proc newUnionRef*(argType: ArgumentType): UnionRef =
+  UnionRef(kind: urkImpl, argType: argType)
+
+proc kind*(u: UnionRef): UnionRefKind = u.kind
+proc module*(u: UnionRef): Identifier =
+  case u.kind:
+  of urkDefault: u.module
+  of urkImpl: u.argType.root
+proc argType*(u: UnionRef): ArgumentType =
+  assert u.kind == urkImpl,
+    fmt"UnionRef.argType accessed but kind is {u.kind}"
+  u.argType
+proc loc*(u: UnionRef): Location =
+  case u.kind:
+  of urkDefault: u.module.loc
+  of urkImpl: u.argType.loc
+proc asl*(u: UnionRef): string =
+  case u.kind:
+  of urkDefault: asl(u.module)
+  of urkImpl: asl(u.argType)
+
 
 # ============================================================
 # Body cluster (mutually recursive)
@@ -130,14 +166,8 @@ type
     kwargList: KeywordArgumentList
     loc: Location
 
-  # TODO(union-inference): replace `module: Identifier` with
-  # `unionRef: UnionRef`, mirroring StructRef. UnionRef is a tagged
-  # union with `urkDefault { module: Identifier }` (bare form — drives
-  # leave-as-is inference at the analyzer) and `urkImpl { argType:
-  # ArgumentType }` (explicit-impls form — escape hatch when inference
-  # fails). Same shape and rationale as StructRef.srkDefault / srkImpl.
   UnionInitializer* = ref object
-    module: Identifier
+    unionRef: UnionRef
     variantName: Identifier
     kwargList: KeywordArgumentList
     loc: Location
@@ -268,18 +298,18 @@ proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.structRef)} {asl(nonPrim.kwargList)}"
 
 # ----------------- UnionInitializer -----------------
-proc newUnionInitializer*(module: Identifier, variantName: Identifier,
+proc newUnionInitializer*(unionRef: UnionRef, variantName: Identifier,
     kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
-  UnionInitializer(module: module, variantName: variantName,
+  UnionInitializer(unionRef: unionRef, variantName: variantName,
     kwargList: kwargList, loc: loc)
 
 proc loc*(unionInit: UnionInitializer): Location = unionInit.loc
-proc module*(unionInit: UnionInitializer): Identifier = unionInit.module
+proc unionRef*(unionInit: UnionInitializer): UnionRef = unionInit.unionRef
 proc variant*(unionInit: UnionInitializer): Identifier = unionInit.variantName
 proc kwargs*(unionInit: UnionInitializer): seq[KeywordArgument] = unionInit.kwargList.args
 
 proc asl(unionInit: UnionInitializer): string =
-  fmt"{asl(unionInit.module)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
+  fmt"{asl(unionInit.unionRef)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
 
 # ----------------- Initializer -----------------
 proc newInitializer*(literal: LiteralInitializer): Initializer =
@@ -566,22 +596,21 @@ let kwargListSpec* = Spec[KeywordArgumentList](
   newKeywordArgumentList(args, loc)
 )
 
-# Type.Variant { fields } (default) or Type[Impls].Variant { fields }
-# (explicit-impls — escape hatch when leave-as-is inference can't
-# produce a usable type).
-# TODO(union-inference): parse via argumentTypeSpec (gives root +
-# optional impls), then `.` + variantName + kwargList. Build a
-# UnionRef like structInitializerSpec already does: urkDefault when
-# `argType.impls.len == 0`, urkImpl otherwise.
+# Type.Variant { fields } (default — drives leave-as-is inference) or
+# Type[Impls].Variant { fields } (explicit-impls — escape hatch when
+# leave-as-is can't produce a fully-bound type).
 let unionInitializerSpec* = Spec[UnionInitializer](
   name: "union_initializer",
   parseFn: proc(parser: Parser): Result[UnionInitializer, ParserError] =
-  let module = ? parser.run(identifierSpec)
+  let argType = ? parser.run(argumentTypeSpec)
   discard ? parser.run(punctuationSpec("."))
   let variantName = ? parser.run(identifierSpec)
   discard parser.run(any(spaceSpec))
   let kwargList = ? parser.run(kwargListSpec)
-  ok(newUnionInitializer(module, variantName, kwargList, module.loc))
+  let unionRef =
+    if argType.impls.len == 0: newUnionRef(argType.root)
+    else: newUnionRef(argType)
+  ok(newUnionInitializer(unionRef, variantName, kwargList, argType.loc))
 )
 
 # Either `Type { fields }` (default kind) or `Type[Impls] { fields }` (impl

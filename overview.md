@@ -279,12 +279,20 @@ src/
     patterns.nim                   VariantPatternField / VariantPattern /
                                    CasePattern + their specs
     body.nim                       Getter / LiteralInitializer +
-                                   body-level mutually-recursive cluster
-                                   (ArgumentList ↔ FunctionCall ↔
-                                   KeywordArgument ↔ Initializer ↔
-                                   Expression ↔ Match / CaseBlock ↔
-                                   Statement ↔ StatementList / Assignment /
+                                   StructRef + UnionRef (each a tagged
+                                   union over default {module} and
+                                   impl {argType}, driving initializer
+                                   inference vs explicit-impls at the
+                                   analyzer) + body-level mutually-
+                                   recursive cluster (ArgumentList ↔
+                                   FunctionCall ↔ KeywordArgument ↔
+                                   Initializer ↔ Expression ↔ Match /
+                                   CaseBlock ↔ Statement ↔
+                                   StatementList / Assignment /
                                    Mutation) + their specs
+                                   (unionInitializerSpec parses via
+                                   argumentTypeSpec for symmetry with
+                                   structInitializerSpec)
     data.nim                       Struct / VariantDefinition / Union /
                                    DataBlock + their specs
     funcs.nim                      UserFunction / ExternFunction /
@@ -315,11 +323,22 @@ src/
                                    since FunctionCall now carries just
                                    an Identifier root (no impls).
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
-    body.nim                       Getter / LiteralInitializer + body-level
+    body.nim                       Getter / LiteralInitializer +
+                                   ResolvedStructRef / ResolvedUnionRef
+                                   (each tagged over default / impl;
+                                   impl arm resolves the inner
+                                   ArgumentType, default carries just
+                                   the module identifier) + body-level
                                    cluster (Initializer ↔ FunctionCall ↔
                                    Expression ↔ Match / CaseBlock ↔
                                    Statement ↔ Assignment / Mutation /
-                                   KeywordArgument)
+                                   KeywordArgument). resolveUnionRef +
+                                   resolveStructRef each dispatch on
+                                   the parser-side kind; impl arm runs
+                                   resolveArgumentType which reuses
+                                   the existing impl-list arity check
+                                   from findRequiredImplsForUnion /
+                                   findRequiredImplsForStruct.
     data.nim                       ResolvedStruct / ResolvedVariant /
                                    ResolvedUnion / ResolvedData +
                                    accumulateGenericPosition helper
@@ -432,7 +451,16 @@ src/
                                    mutually-recursive type cluster
                                    (AnalyzedFunctionCall /
                                    AnalyzedKeywordArgument /
-                                   AnalyzedUnionInitializer /
+                                   AnalyzedStructRef + AnalyzedUnionRef
+                                   (each tagged default / impl; impl
+                                   arm carries the analyzed
+                                   ArgumentType used to seed
+                                   substitution) /
+                                   AnalyzedUnionInitializer (carries
+                                   unionRef + the analyzer-built
+                                   argType, which is fully bound on
+                                   the impl arm and may carry free
+                                   generics on the default arm) /
                                    AnalyzedStructInitializer /
                                    AnalyzedInitializer /
                                    AnalyzedCaseBlock /
@@ -460,9 +488,18 @@ src/
                                    kwarg inference — i32 and string
                                    arms wired, other integer / float /
                                    pointer kinds return todo) /
-                                   analyzeUnionInitializer (parametric
-                                   inference still pending — see the
-                                   union-inference TODO cluster) /
+                                   analyzeUnionInitializer (dispatches
+                                   on AnalyzedUnionRef kind: aurkImpl
+                                   substitutes the user-supplied impls
+                                   into the variant's field types via
+                                   concrete() and type-checks each
+                                   kwarg; aurkDefault accumulates a
+                                   GenericImplMap from kwarg value
+                                   types against variant fields and
+                                   builds the result argType with
+                                   bound concretes at covered
+                                   positions + free generics at
+                                   uncovered ones — leave-as-is) /
                                    analyzeStructInitializer /
                                    analyzeInitializer /
                                    analyzeExpression /
@@ -611,12 +648,20 @@ overloads by (name, arity); the Analyzer takes those candidates and:
   **Wired.**
 - Concretize the matched funcDef's return type and the match
   subject's union via the inferred impls. **Wired.**
-- Union-initializer parametric inference: pending — covered by the
-  `union-inference` TODO cluster in parser / resolver / analyzer.
-  The plan is leave-as-is (variant-covered generics get inferred,
-  uncovered stay free in the value's type), with explicit
-  `Box[Impl, …].Variant {…}` as the escape hatch mirroring
-  phantom-struct `Array[Impl] {…}`.
+- Union-initializer parametric inference: **Wired.** Parser carries
+  a `UnionRef` (default vs impl), mirroring `StructRef`. Resolver
+  resolves the impl arm's `ArgumentType` (and the existing arity
+  check on union impls catches mismatches). Analyzer dispatches:
+  the impl arm substitutes the user-supplied impls into variant
+  fields via `concrete()` before type-check; the default arm walks
+  kwargs accumulating a `GenericImplMap` and fills the result
+  argType with bound concretes at covered positions and free
+  generics at uncovered ones (leave-as-is). Free generics in the
+  result type will be resolved by unification at downstream use
+  sites — that unification step is what surfaces the
+  equality-vs-unification TODO in `analyzer/argtypes.nim:194`,
+  visible right now as a case-arm uniformity check failure on
+  `base.asl` and several `problem*.asl` fixtures.
 - Literal type inference: pin down `5` to `u8` / `u32` / etc. from
   the expected parameter type at the call site. **Partial** — the
   literal arg branch in `analyzeArgumentList` validates the literal

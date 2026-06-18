@@ -79,6 +79,14 @@ type
     of rsrkDefault: discard
     of rsrkImpl: argType: ResolvedArgumentType
 
+  ResolvedUnionRefKind* = enum
+    rurkDefault, rurkImpl
+  ResolvedUnionRef* = ref object
+    parsed: UnionRef
+    case kind: ResolvedUnionRefKind
+    of rurkDefault: discard
+    of rurkImpl: argType: ResolvedArgumentType
+
   ResolvedStructInitializer* = ref object
     parsed: StructInitializer
     structRef: ResolvedStructRef
@@ -86,6 +94,7 @@ type
 
   ResolvedUnionInitializer* = ref object
     parsed: UnionInitializer
+    unionRef: ResolvedUnionRef
     kwargs: seq[ResolvedKeywordArgument]
 
   ResolvedInitializerKind* = enum
@@ -178,13 +187,34 @@ proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.structRef
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 
-proc newResolvedUnionInitializer*(parsed: UnionInitializer,
+proc newResolvedUnionRef*(parsed: UnionRef): ResolvedUnionRef =
+  ## Default kind — carries no resolved payload beyond the parser node.
+  ResolvedUnionRef(parsed: parsed, kind: rurkDefault)
+
+proc newResolvedUnionRef*(parsed: UnionRef, argType: ResolvedArgumentType): ResolvedUnionRef =
+  ## Impl kind — wraps the resolved argument type (root + impls).
+  ResolvedUnionRef(parsed: parsed, kind: rurkImpl, argType: argType)
+
+proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
+proc kind*(u: ResolvedUnionRef): ResolvedUnionRefKind = u.kind
+proc module*(u: ResolvedUnionRef): Identifier =
+  case u.kind:
+  of rurkDefault: u.parsed.module
+  of rurkImpl: u.parsed.argType.root
+proc argType*(u: ResolvedUnionRef): ResolvedArgumentType =
+  assert u.kind == rurkImpl,
+    fmt"ResolvedUnionRef.argType accessed but kind is {u.kind}"
+  u.argType
+proc loc*(u: ResolvedUnionRef): Location = u.parsed.loc
+
+proc newResolvedUnionInitializer*(parsed: UnionInitializer, unionRef: ResolvedUnionRef,
     kwargs: seq[ResolvedKeywordArgument]): ResolvedUnionInitializer =
-  ResolvedUnionInitializer(parsed: parsed, kwargs: kwargs)
+  ResolvedUnionInitializer(parsed: parsed, unionRef: unionRef, kwargs: kwargs)
 
 proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
 proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
-proc module*(init: ResolvedUnionInitializer): Identifier = init.parsed.module
+proc unionRef*(init: ResolvedUnionInitializer): ResolvedUnionRef = init.unionRef
+proc module*(init: ResolvedUnionInitializer): Identifier = init.unionRef.module
 proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
 proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
 
@@ -407,30 +437,36 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
         resolvedExpression)
     ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
 
+proc resolveUnionRef(app: App, file: parser.File, fileScope: FileScope, module: Module, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
+  ## Default arm carries no impls — analyzer infers via leave-as-is.
+  ## Impl arm resolves the explicit argType; arity against the union's
+  ## deduped requires list is checked downstream in resolveUnionInitializer
+  ## once the resolved union (and its position-indexed requires) is in hand.
+  case unionRef.kind:
+  of urkDefault:
+    ok(newResolvedUnionRef(unionRef))
+  of urkImpl:
+    let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, unionRef.argType)
+    ok(newResolvedUnionRef(unionRef, resolvedArgType))
+
 proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
-  # TODO(union-inference): once parser ships UnionRef, dispatch on
-  # urkDefault / urkImpl just like resolveStructRef. Default arm stays
-  # as the current path. Impl arm resolves the ArgumentType, validates
-  # impl-list arity against `ResolvedUnion.requires.len`, and stashes
-  # the resolved impls on ResolvedUnionInitializer so the analyzer can
-  # use them directly (skipping inference) on the explicit path.
-  let initModule = ? file.findModule(fileScope, unionInit.module)
+  let resolvedUnionRef = ? resolveUnionRef(app, file, fileScope, module, unionInit.unionRef)
+  let initModule = ? file.findModule(fileScope, resolvedUnionRef.module)
   let union = ? initModule.union(unionInit.loc)
   let variant = ? union.findVariant(unionInit.variant)
   if unionInit.kwargs.len != variant.fields.len:
-    err(fmt"{unionInit.loc} union `{initModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
-  else:
-    var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](
-      variant.fields.len)
-    for kwarg in unionInit.kwargs:
-      let fieldId = ? variant.findFieldId(kwarg.name)
-      let resolvedExpression = ? resolveExpression(app, file, fileScope,
-        module, scope, kwarg.expression)
-      resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
-        resolvedExpression)
-    ok(newResolvedUnionInitializer(unionInit, resolvedKeywordArgs))
+    return err(fmt"{unionInit.loc} union `{initModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
+  var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](
+    variant.fields.len)
+  for kwarg in unionInit.kwargs:
+    let fieldId = ? variant.findFieldId(kwarg.name)
+    let resolvedExpression = ? resolveExpression(app, file, fileScope,
+      module, scope, kwarg.expression)
+    resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
+      resolvedExpression)
+  ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
 
 proc resolveInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
