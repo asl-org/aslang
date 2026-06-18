@@ -478,7 +478,17 @@ src/
                                    union-context variable case-pattern
                                    and literal initializer arms still
                                    return todo; argument-list handles
-                                   only typed (non-literal) args.
+                                   typed (non-literal) args fully and
+                                   has partial literal-arg validation
+                                   wired against rltkU64 / rltkI32 /
+                                   rltkString (parses the literal text
+                                   for each via parseInteger[T] /
+                                   passes string through); other
+                                   literal-typed positions (U8/U16/
+                                   U32/I8/I16/I64/F32/F64/Pointer)
+                                   return todo, and struct/union-typed
+                                   positions return a "needs
+                                   initializer" diagnostic.
                                    analyzeFunctionCall concretizes
                                    the matched funcDef's return type
                                    via the inferred GenericImplMap;
@@ -608,7 +618,12 @@ overloads by (name, arity); the Analyzer takes those candidates and:
   `Box[Impl, …].Variant {…}` as the escape hatch mirroring
   phantom-struct `Array[Impl] {…}`.
 - Literal type inference: pin down `5` to `u8` / `u32` / etc. from
-  the expected parameter type at the call site.
+  the expected parameter type at the call site. **Partial** — the
+  literal arg branch in `analyzeArgumentList` validates the literal
+  text against rltkU64 / rltkI32 / rltkString today; the remaining
+  literal kinds (U8/U16/U32/I8/I16/I64/F32/F64/Pointer) still return
+  a todo, and the impl map isn't yet updated from the literal
+  position.
 - Type-correctness checks across statements (assignment compatibility,
   match exhaustiveness, etc.).
 

@@ -444,7 +444,48 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
   var genericImplMap: GenericImplMap
   for (argDef, argValue) in zip(funcDef.args, argValues):
     if argValue.argType.isNone:
-      return err(fmt"{argValue.loc} todo: analyze function call literal argument")
+      let argDefModule = ? defScope.findModuleDef(argDef.argType, argValue.loc)
+      let argDefData = ? defScope.extractDataBlock(argDefModule, argValue.loc)
+      case argDefData.kind:
+      of adkStruct: return err(fmt"{argValue.loc} funtion call expects a struct initializer `{argDefModule.name.asl}`")
+      of adkUnion: return err(fmt"{argValue.loc} funtion call expects a union initializer `{argDefModule.name.asl}`")
+      of adkLiteral:
+        let literalField = argDefData.literal
+        case literalField.resolved:
+        of rltkU8: return err(fmt"{argValue.loc} todo: analyze union initializer U8 literal argument")
+        of rltkU16: return err(fmt"{argValue.loc} todo: analyze union initializer U16 literal argument")
+        of rltkU32: return err(fmt"{argValue.loc} todo: analyze union initializer U32 literal argument")
+        of rltkI8: return err(fmt"{argValue.loc} todo: analyze union initializer I8 literal argument")
+        of rltkI16: return err(fmt"{argValue.loc} todo: analyze union initializer I16 literal argument")
+        of rltkI64: return err(fmt"{argValue.loc} todo: analyze union initializer I64 literal argument")
+        of rltkF32: return err(fmt"{argValue.loc} todo: analyze union initializer F32 literal argument")
+        of rltkF64: return err(fmt"{argValue.loc} todo: analyze union initializer F64 literal argument")
+        of rltkPointer: return err(fmt"{argValue.loc} todo: analyze union initializer Pointer literal argument")
+        of rltkU64:
+          case argValue.literal.kind:
+          of lkFloat: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found float")
+          of lkString: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found string")
+          of lkInteger:
+            let maybeParsedInt = parseInteger[uint64](argValue.literal.asl)
+            if maybeParsedInt.isNone:
+              return err(fmt"{argValue.loc} expected a valid 64-bit unsigned integer but found `{argValue.literal.asl}`")
+            else:
+              return ok(genericImplMap)
+        of rltkI32:
+          case argValue.literal.kind:
+          of lkFloat: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found float")
+          of lkString: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found string")
+          of lkInteger:
+            let maybeParsedInt = parseInteger[int32](argValue.literal.asl)
+            if maybeParsedInt.isNone:
+              return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found `{argValue.literal.asl}`")
+            else:
+              return ok(genericImplMap)
+        of rltkString:
+          case argValue.literal.kind:
+          of lkFloat: return err(fmt"{argValue.loc} expected a valid string literal but found float")
+          of lkInteger: return err(fmt"{argValue.loc} expected a valid string literal but found integer")
+          of lkString: return ok(genericImplMap)
     else:
       let argGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, argDef.argType, argValue.argType.get)
       genericImplMap = ? genericImplMap.merge(argGenericImplMap)
@@ -496,6 +537,7 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolved
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
+    echo module.loc, " ", analyzedStatement.argType.get.asl
     if analyzedStatement.arg.isSome:
       let newArg = analyzedStatement.arg.get
       # echo fmt"SET {newArg.name.asl} {newArg.argType.asl}"
@@ -512,6 +554,7 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolved
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
+    echo module.loc, " ", analyzedStatement.argType.get.asl
     if analyzedStatement.arg.isSome:
       let newArg = analyzedStatement.arg.get
       # echo fmt"SET {newArg.name.asl} {newArg.argType.asl}"
@@ -675,7 +718,11 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
       let analyzedField: AnalyzedArgumentDefinition = ? analyzedVariant.findField(kwarg.name)
       let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, defScope, funcScope, kwarg, analyzedField)
       analyzedKwargs.add(analyzedKwarg)
-    ok(newAnalyzedUnionInitializer(init, receiverArgType(receiver), analyzedVariant, analyzedKwargs))
+    # TODO: In case the fully qualified impls are not provided in struct initializer we need to infer the generic types ourselves
+    # For now it is assumed that union module's will never need a fully qualified impl type but in future they gonna need this so
+    # we have to consider that as well.
+    let receiverArgType = receiverArgType(receiver)
+    ok(newAnalyzedUnionInitializer(init, receiverArgType, analyzedVariant, analyzedKwargs))
 
 proc analyzeStructRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
   case structRef.kind:
@@ -702,7 +749,9 @@ proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: 
     let argType =
       case analyzedStructRef.kind:
       of asrkImpl: analyzedStructRef.argType
-      of asrkDefault: receiverArgType(receiver)
+      of asrkDefault:
+        # TODO: In case the fully qualified impls are not provided in struct initializer we need to infer the generic types ourselves
+        receiverArgType(receiver)
     ok(newAnalyzedStructInitializer(init, analyzedStructRef, argType, analyzedKwargs))
 
 proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
