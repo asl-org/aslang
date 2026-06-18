@@ -9,26 +9,20 @@ import literals
 import argtypes
 import funcdefs
 
-proc validateUniqueGenericFields(genericTypeIndex: var Table[AnalyzedGenericArgumentType, int], field: AnalyzedArgumentDefinition, scope: string): Result[Table[AnalyzedGenericArgumentType, int], string] =
-  ## Enforces: within one constructor scope (a struct body or one
-  ## variant body), each generic name appears in at most one field
-  ## type. If the user needs two fields of independent types, they
-  ## must declare a second generic — the analyzer's GenericImplMap
-  ## binds one generic to one concrete type per construction.
+proc accumulateGenericPosition(genericTypeIndex: var Table[AnalyzedGenericArgumentType, int], field: AnalyzedArgumentDefinition) =
+  ## Mirror of the resolver-side accumulator. Same name across
+  ## multiple fields keeps its first position — conflicts surface at
+  ## the init site via GenericImplMap.merge(), not here.
   case field.argType.kind:
   of aatkImported:
-    assert(false, "todo: handle generic uniqueness constraint for imported type in `{scope}` block")
+    assert(false, "todo: walk imported field type to collect nested generics")
   of aatkDefined:
     case field.argType.definedType.kind:
-    of adatkModule:
-      return ok(genericTypeIndex)
+    of adatkModule: discard
     of adatkGeneric:
       let genericType = field.argType.definedType.generic
-      if genericType in genericTypeIndex:
-        return err(fmt"{field.loc} duplicate generic `{genericType.asl}` in `{scope}` fields — each generic can be used in at most one field; declare a second generic if you need an independent type")
-      else:
+      if genericType notin genericTypeIndex:
         genericTypeIndex[genericType] = genericTypeIndex.len
-        return ok(genericTypeIndex)
 
 # AnalyzedStruct
 type AnalyzedStruct* = ref object
@@ -37,7 +31,6 @@ type AnalyzedStruct* = ref object
   fieldIndex: Table[Identifier, int]
   genericTypeIndex: Table[AnalyzedGenericArgumentType, int]
 
-# TODO: Ensure that there are no duplicated generic fields
 proc newAnalyzedStruct*(resolved: ResolvedStruct, fields: seq[AnalyzedArgumentDefinition], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedStruct =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
@@ -64,7 +57,7 @@ proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFil
   var genericTypeIndex: Table[AnalyzedGenericArgumentType, int]
   for field in struct.fields:
     let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
-    genericTypeIndex = ? genericTypeIndex.validateUniqueGenericFields(analyzedField, "struct")
+    genericTypeIndex.accumulateGenericPosition(analyzedField)
     analyzedFields.add(analyzedField)
   ok(newAnalyzedStruct(struct, analyzedFields, genericTypeIndex))
 
@@ -74,7 +67,6 @@ type AnalyzedVariant* = ref object
   fields: seq[AnalyzedArgumentDefinition]
   fieldIndex: Table[Identifier, int]
 
-# TODO: Ensure that there are no duplicated generic fields
 proc newAnalyzedVariant*(resolved: ResolvedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedVariant =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
@@ -101,7 +93,7 @@ proc analyzeVariant(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFil
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variant.fields:
     let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
-    genericTypeIndex = ? genericTypeIndex.validateUniqueGenericFields(analyzedField, fmt"variant `{variant.name.asl}`")
+    genericTypeIndex.accumulateGenericPosition(analyzedField)
     analyzedFields.add(analyzedField)
   ok(newAnalyzedVariant(variant, analyzedFields))
 

@@ -452,25 +452,24 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
 
 proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[AnalyzedFunctionDefinition], analyzedArgs: seq[AnalyzedExpression]): Result[(AnalyzedFunctionDefinition, GenericImplMap), string] =
   var matches: seq[(AnalyzedFunctionDefinition, GenericImplMap)]
-  for funcDef in funcDefs:
+  var errors: seq[string]
+  for index, funcDef in funcDefs:
     let maybeGenericImplMap = analyzeArgumentList(app, file, fileScope, module, defScope, funcScope, analyzedArgs, funcDef)
     if maybeGenericImplMap.isOk:
       matches.add((funcDef, maybeGenericImplMap.get))
-    # TODO: Improve errors messages by collecting failures for matching each function definition
     else:
-      echo maybeGenericImplMap.error
+      errors.add(fmt"[{index + 1}] - " & maybeGenericImplMap.error)
+      errors.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
+
   if matches.len == 1:
     ok(matches[0])
   else:
     var message: seq[string]
     if matches.len == 0:
       message.add(fmt"{fncall.loc} failed to find matching function:")
-      for funcDef in funcDefs:
-        message.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
     else:
       message.add(fmt"{fncall.loc} ambiguous function call — multiple candidates match:")
-      for (funcDef, _) in matches:
-        message.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
+    message.add(errors)
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =

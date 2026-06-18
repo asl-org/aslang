@@ -202,11 +202,27 @@ module M:
     cleanupDir(dir)
     check r.isOk
 
+  test "struct fields can share the same generic type":
+    # Two fields typed as the same generic `K` resolve fine — K
+    # claims one position in the struct's param list, and any
+    # conflict between value types at init surfaces via the
+    # analyzer's GenericImplMap merge, not here.
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public generic K:
+  func foo(): u8
+
+public module Pair:
+  struct:
+    first: K
+    second: K
+""")
+    cleanupDir(dir)
+    check r.isOk
+
   test "struct with two distinct generics in fields resolves":
-    # Each generic appears at most once in the struct's field types;
-    # this is the supported way to express "two fields of independent
-    # types." For shared-type semantics, use one generic in both
-    # fields (which the analyzer then binds to one concrete type).
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
@@ -225,11 +241,11 @@ public module Pair:
     cleanupDir(dir)
     check r.isOk
 
-  test "union rejects the same generic reused across variants":
-    # Within one union body each generic name may appear in at most
-    # one field type. Reusing `K` across variants is rejected — the
-    # resolver doesn't distinguish "same variant" from "different
-    # variant" once the position has been claimed.
+  test "union with the same generic across variants resolves":
+    # Repeating `K` across variants is fine — K claims one position
+    # in the union's param list (first-seen wins), and any conflict
+    # between value types at a single construction surfaces at init
+    # via the analyzer's GenericImplMap merge, not here.
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
@@ -243,8 +259,7 @@ public module Status:
     Err { error: K }
 """)
     cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "duplicate generic")
+    check r.isOk
 
   test "union with distinct generics across variants resolves":
     let (r, dir) = resolveSingle("""
@@ -553,48 +568,12 @@ public module Array:
     check r.isErr
     check errorContains(r.error, "phantom struct cannot have generic fields")
 
-suite "resolver — field-uniqueness":
-  # Within a single constructor scope (a struct body, or one variant
-  # body), each generic name may appear in at most one field type.
-  # Cross-variant reuse of the same generic name is allowed and reads
-  # as the union's single shared type parameter (Rust style).
+suite "resolver — union param list":
+  # A union's param list is the position-ordered set of distinct
+  # generics seen across all variants in declaration order. Repeated
+  # names keep their first position; new names take the next slot.
+  # Use sites must supply exactly one impl per position.
 
-  const Prelude = """
-public module u8:
-  literal: "u8"
-
-public generic K:
-  func foo(): u8
-
-"""
-
-  test "duplicate generic in struct fields is rejected":
-    let (r, dir) = resolveSingle(Prelude & """
-public module Pair:
-  struct:
-    first: K
-    second: K
-""")
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "duplicate generic")
-    check errorContains(r.error, "struct")
-
-  test "duplicate generic within a single variant is rejected":
-    let (r, dir) = resolveSingle(Prelude & """
-public module Pair:
-  union:
-    Both { first: K, second: K }
-""")
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "duplicate generic")
-    check errorContains(r.error, "Both")
-
-  # Union's param list is the position-ordered list of distinct
-  # generics across variants. First contributes Any at position 0,
-  # Second contributes Sample at position 1. Use sites must supply
-  # exactly two impls in that order.
   const UnionParamsPrelude = """
 public module u8:
   literal: "u8"
@@ -614,11 +593,14 @@ public generic Sample:
 public module Box:
   union:
     First { a: Any }
-    Second { b: Sample }
+    Second { a: Any, b: Sample }
 
 """
 
-  test "union with distinct generics per variant exposes them in declaration order":
+  test "union dedups shared generic and orders by first occurrence":
+    # First contributes Any at position 0; Second reuses Any (same
+    # position) then contributes Sample at position 1. Box[Any, Sample]
+    # is the well-formed use-site shape.
     let (r, dir) = resolveSingle(UnionParamsPrelude & """
 public module Use:
   struct:

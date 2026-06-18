@@ -379,8 +379,7 @@ proc merge*(global: var GenericImplMap, local: GenericImplMap): Result[GenericIm
   # should unify to u8).
   for generic, impl in local:
     if generic in global and global[generic] != impl:
-      # TODO: improve error message
-      return err(fmt"{impl.loc} expected generic `{generic.name.asl}` to be of same type as {global[generic].loc}")
+      return err(fmt"{impl.loc} generic `{generic.name.asl}` already bound to `{global[generic].asl}` (at {global[generic].loc}) but here resolves to `{impl.asl}` — one generic binds to one concrete type per construction; declare a second generic if you need independent types")
     else:
       global[generic] = impl
   ok(global)

@@ -197,23 +197,22 @@ the generic-context `resolveModuleArgumentType` for explicit
     recursively. When a module has no explicit `requires` but its
     struct/union fields reference a generic, that generic is treated
     as an inferred type parameter at use sites.
-- **Generic field uniqueness** — within one struct body, each
-  generic name may appear in at most one field type. Within one
-  union body, the same rule extends across *all* variants —
-  `Ok { v: K }, Err { e: K }` is rejected; each variant must
-  contribute distinct generics. If two field positions need the
-  same concrete type, the user declares one generic and uses it
-  once; if they need independent types, they declare a second
-  generic. Enforced by `validateUniqueGenericFields` in
-  `src/resolver/data.nim`, which also builds the
-  `genericTypeIndex: Table[ResolvedGenericArgumentType, int]` stored
-  on `ResolvedStruct` / `ResolvedUnion` and used to derive the
-  position-preserving `requires*` accessor (the analyzer mirrors the
-  same index on `AnalyzedStruct` / `AnalyzedUnion` for substitution).
-  Cross-variant *sharing* (Rust-style "Ok and Err both use K") was
-  considered but not adopted — the single-position-per-name rule is
-  simpler to enforce and removes one source of analyzer-stage
-  ambiguity.
+- **Generic param-list accumulation** — `accumulateGenericPosition`
+  in `src/resolver/data.nim` walks each field and assigns the next
+  position to any generic seen for the first time; repeated
+  occurrences keep the position they already have. The result lives
+  as `genericTypeIndex: Table[ResolvedGenericArgumentType, int]` on
+  `ResolvedStruct` / `ResolvedUnion` and drives the
+  position-preserving `requires*` accessor; the analyzer mirrors the
+  same index on `AnalyzedStruct` / `AnalyzedUnion` for substitution.
+  No uniqueness rule is enforced at resolution time — the same
+  generic name appearing in multiple fields (within a struct, within
+  a variant, or across variants of one union) is fine, since the
+  analyzer's `GenericImplMap` binds one generic to one concrete type
+  per construction and surfaces any mismatch as a `merge()` error at
+  the init site. Generic-uniqueness inside an explicit `requires(...)`
+  block is the one place that *is* checked — see
+  `validateRequiresConstraints` in `src/resolver/modules.nim`.
 - **Generic signature rule** — inside a generic block, a fn
   argument/return type root may only resolve to the current generic
   itself (self-reference) or a module. Other generics are rejected
@@ -323,17 +322,19 @@ src/
                                    KeywordArgument)
     data.nim                       ResolvedStruct / ResolvedVariant /
                                    ResolvedUnion / ResolvedData +
-                                   validateUniqueGenericFields helper
-                                   (one-position-per-generic check,
-                                   scoped to the struct body or the
-                                   whole union body — cross-variant
-                                   reuse is rejected) + position-
-                                   preserving requires* derivation on
-                                   Struct/Union + their resolveX procs
-                                   (resolveVariant threads the union's
-                                   mutable genericTypeIndex across
-                                   variants so positions accumulate
-                                   in declaration order)
+                                   accumulateGenericPosition helper
+                                   (assigns the next position to each
+                                   new generic; repeats keep their
+                                   first position — no uniqueness
+                                   rejection, the analyzer's merge()
+                                   catches actual conflicts at init)
+                                   + position-preserving requires*
+                                   derivation on Struct/Union + their
+                                   resolveX procs (resolveVariant
+                                   threads the union's mutable
+                                   genericTypeIndex across variants
+                                   so positions accumulate in
+                                   declaration order)
     funcs.nim                      ResolvedUserFunction / ResolvedFunction
                                    + resolveUserFunction / resolveFunction
     modules.nim                    ResolvedModule / ResolvedGeneric +
@@ -376,11 +377,11 @@ src/
                                    AnalyzedData + concrete* on each
                                    (positional impls drive field-type
                                    substitution via the stored index) +
-                                   validateUniqueGenericFields
-                                   (per-scope accumulator mirror of
-                                   resolver/data.nim) + their analyzeX
-                                   procs (analyzeVariant threads the
-                                   union's mutable genericTypeIndex)
+                                   accumulateGenericPosition (mirror of
+                                   the resolver-side accumulator) +
+                                   their analyzeX procs (analyzeVariant
+                                   threads the union's mutable
+                                   genericTypeIndex)
     modules.nim                    AnalyzedModuleDefinition (+ funcDef
                                    indices and findFunctionDef[s]
                                    lookups) / AnalyzedGeneric (also has

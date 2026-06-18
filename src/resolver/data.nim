@@ -8,26 +8,24 @@ import literals
 import argtypes
 import funcdefs
 
-proc validateUniqueGenericFields(genericTypeIndex: var Table[ResolvedGenericArgumentType, int], field: ResolvedArgumentDefinition, scope: string): Result[Table[ResolvedGenericArgumentType, int], string] =
-  ## Enforces: within one constructor scope (a struct body or one
-  ## variant body), each generic name appears in at most one field
-  ## type. If the user needs two fields of independent types, they
-  ## must declare a second generic — the analyzer's GenericImplMap
-  ## binds one generic to one concrete type per construction.
+proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgumentType, int], field: ResolvedArgumentDefinition) =
+  ## Assigns the next position to each new generic encountered in
+  ## field types. Same name across multiple fields keeps its first
+  ## position — the analyzer's GenericImplMap binds one generic to
+  ## one concrete type per construction, so duplicate occurrences
+  ## are semantically benign (any conflict surfaces at the init site
+  ## via merge()). Generic-uniqueness inside an explicit requires()
+  ## block is still enforced by validateRequiresConstraints.
   case field.argType.kind:
   of ratkImported:
-    assert(false, "todo: handle generic uniqueness constraint for imported type in `{scope}` block")
+    assert(false, "todo: walk imported field type to collect nested generics")
   of ratkDefined:
     case field.argType.definedType.kind:
-    of rdatkModule:
-      return ok(genericTypeIndex)
+    of rdatkModule: discard
     of rdatkGeneric:
       let genericType = field.argType.definedType.generic
-      if genericType in genericTypeIndex:
-        return err(fmt"{field.loc} duplicate generic `{genericType.asl}` in `{scope}` fields — each generic can be used in at most one field; declare a second generic if you need an independent type")
-      else:
+      if genericType notin genericTypeIndex:
         genericTypeIndex[genericType] = genericTypeIndex.len
-        return ok(genericTypeIndex)
 
 # ResolvedStruct
 type ResolvedStruct* = ref object
@@ -53,7 +51,7 @@ proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope, module: M
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for field in struct.fields:
     let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module, field)
-    genericTypeIndex = ? genericTypeIndex.validateUniqueGenericFields(resolvedField, "struct")
+    genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedStruct(struct, resolvedFields, genericTypeIndex))
 
@@ -70,12 +68,14 @@ proc name*(variant: ResolvedVariant): Identifier = variant.parsed.name
 proc parsed*(variant: ResolvedVariant): VariantDefinition = variant.parsed
 proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDefinition] = variant.fields
 
-# NOTE: Understand that `genericTypeIndex` variable is mutable but is not returned
+# NOTE: `genericTypeIndex` is the union's shared position table — mutated
+# in place as each variant's fields contribute new generics (in
+# declaration order); not returned because the union accumulates it.
 proc resolveVariant(app: App, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDefinition, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
   var resolvedFields: seq[ResolvedArgumentDefinition]
   for field in variant.fields:
     let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module, field)
-    genericTypeIndex = ? genericTypeIndex.validateUniqueGenericFields(resolvedField, fmt"variant `{variant.name.asl}`")
+    genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedVariant(variant, resolvedFields))
 
