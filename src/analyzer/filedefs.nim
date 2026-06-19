@@ -51,21 +51,3 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
       let analyzedModule = ? analyzeModule(app, file, fileScope, aslType.module, analyzedDefinedTypeScope)
       analyzedModules.add(analyzedModule)
   ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, analyzedModules))
-
-# AnalyzedApp + entry
-type AnalyzedApp* = ref object
-  resolved: ResolvedApp
-  files: seq[AnalyzedFileDefinition]
-
-proc newAnalyzedApp*(resolved: ResolvedApp, files: seq[AnalyzedFileDefinition]): AnalyzedApp =
-  AnalyzedApp(resolved: resolved, files: files)
-
-proc resolved*(a: AnalyzedApp): ResolvedApp = a.resolved
-proc files*(a: AnalyzedApp): seq[AnalyzedFileDefinition] = a.files
-
-proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  var analyzedFileDefinitions: seq[AnalyzedFileDefinition]
-  for file in app.files:
-    let analyzedFileDefinition = ? analyzeFileDefinition(app, file)
-    analyzedFileDefinitions.add(analyzedFileDefinition)
-  ok(newAnalyzedApp(app, analyzedFileDefinitions))
