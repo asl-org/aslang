@@ -358,9 +358,11 @@ src/
                                    + resolveUserFunction / resolveFunction
     modules.nim                    ResolvedModule / ResolvedGeneric +
                                    resolveModule / resolveGeneric
-    decls.nim                      ResolvedDefinedType / ResolvedFile /
-                                   ResolvedApp + resolveDefinedType /
-                                   resolveFile + the public `resolve*` entry
+    definedTypes.nim               ResolvedDefinedType +
+                                   resolveDefinedType
+    files.nim                      ResolvedFile + resolveFile
+    apps.nim                       ResolvedApp + the public `resolve*`
+                                   entry
 
   analyzer/
     analyzer.nim                   re-exports every component file

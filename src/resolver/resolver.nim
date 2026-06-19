@@ -3,6 +3,6 @@
 ## and any of the Resolved* types they care about.
 
 import literals, imports, argtypes, funcdefs, funcrefs, patterns, body,
-       data, funcs, modules, decls
+       data, funcs, modules, definedTypes, files, apps
 export literals, imports, argtypes, funcdefs, funcrefs, patterns, body,
-       data, funcs, modules, decls
+       data, funcs, modules, definedTypes, files, apps
