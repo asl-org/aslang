@@ -446,7 +446,14 @@ src/
                                    union vs literal context)
     body.nim                       (WIP) AnalyzedVariable + analyzeVariable
                                    / AnalyzedGetter (struct-shaped
-                                   module property lookup) +
+                                   module property lookup; carries
+                                   `source` — the source variable's
+                                   AnalyzedArgumentType — and
+                                   `property` — the resolved field
+                                   def. `argType*()` derives from
+                                   `property.argType`, so a getter
+                                   expression types as the property
+                                   field, not as the source object) +
                                    analyzeGetter / body-level
                                    mutually-recursive type cluster
                                    (AnalyzedFunctionCall /
@@ -517,18 +524,25 @@ src/
                                    return todo; argument-list handles
                                    typed (non-literal) args fully and
                                    has partial literal-arg validation
-                                   wired against rltkU64 / rltkI32 /
-                                   rltkString (parses the literal text
-                                   for each via parseInteger[T] /
-                                   passes string through); other
-                                   literal-typed positions (U8/U16/
-                                   U32/I8/I16/I64/F32/F64/Pointer)
-                                   return todo, and struct/union-typed
-                                   positions return a "needs
-                                   initializer" diagnostic.
+                                   wired against rltkU32 / rltkU64 /
+                                   rltkI32 / rltkString (parses the
+                                   literal text for each via
+                                   parseInteger[T] / passes string
+                                   through); other literal-typed
+                                   positions (U8/U16/I8/I16/I64/F32/
+                                   F64/Pointer) return todo, and
+                                   struct/union-typed positions return
+                                   a "needs initializer" diagnostic.
                                    analyzeFunctionCall concretizes
                                    the matched funcDef's return type
                                    via the inferred GenericImplMap;
+                                   the public-only filter on
+                                   findFunctionDefs is now dispatched
+                                   on receiver kind — modules apply
+                                   the "external call needs public"
+                                   rule, generics allow any funcDef
+                                   (their funcDefs aren't required to
+                                   be explicitly marked public).
                                    analyzeMatchExpression extracts the
                                    subject's impls and runs the union
                                    through concrete() so case-arm
@@ -661,13 +675,18 @@ overloads by (name, arity); the Analyzer takes those candidates and:
   sites — that unification step is what surfaces the
   equality-vs-unification TODO in `analyzer/argtypes.nim:194`,
   visible right now as a case-arm uniformity check failure on
-  `base.asl` and several `problem*.asl` fixtures.
+  `base.asl` and several `problem*.asl` fixtures. The integration
+  marker on those fixtures has since moved past the case-uniformity
+  check into `base.asl:579:8 expected a module u8 type but found
+  generic type Any` — another flavor of the same unification gap,
+  this time when a generic-typed value flows into a context expecting
+  a concrete module type.
 - Literal type inference: pin down `5` to `u8` / `u32` / etc. from
   the expected parameter type at the call site. **Partial** — the
   literal arg branch in `analyzeArgumentList` validates the literal
-  text against rltkU64 / rltkI32 / rltkString today; the remaining
-  literal kinds (U8/U16/U32/I8/I16/I64/F32/F64/Pointer) still return
-  a todo, and the impl map isn't yet updated from the literal
+  text against rltkU32 / rltkU64 / rltkI32 / rltkString today; the
+  remaining literal kinds (U8/U16/I8/I16/I64/F32/F64/Pointer) still
+  return a todo, and the impl map isn't yet updated from the literal
   position.
 - Type-correctness checks across statements (assignment compatibility,
   match exhaustiveness, etc.).

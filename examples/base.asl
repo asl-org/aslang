@@ -154,7 +154,7 @@ public module u32:
   public func multiply(a: u32, b: u32): Status[u32]
 
   @extern("u32_quotient_u32")
-  public func quotient(a: u32, b: u32): Status[u32]
+  public func quotient(a: u32, b: u32): u32
 
   @extern("u32_remainder_u32")
   public func remainder(a: u32, b: u32): Status[u32]
@@ -230,9 +230,9 @@ public module u64:
           case Ok { value: val2 }:
             u64.quotient(val2, b)
           case Err { error: err2 }:
-            Status.Err { error: err2 }
+            Status[u64].Err { error: err2 }
       case Err { error: err1 }:
-        Status.Err { error: err1 }
+        Status[u64].Err { error: err1 }
 
 public module i8:
   literal: "i8"
@@ -651,7 +651,7 @@ public module Array:
         Status.Ok { value: arr }
       case _:
         error = Error { code: 1, message: "index out of bounds" }
-        Status.Err { error: error }
+        Status[Array[Any]].Err { error: error }
 
 public module Bitset:
   struct:
@@ -669,10 +669,14 @@ public module Bitset:
   @extern("pointer_valid")
   public func valid(item: Bitset): u8
 
-  public func init(size: u32): Bitset
-    size = u32.quotient(u32.add(size, 7), 8)
-    bits = Array.init(size)
-    Bitset { bits: bits }
+  public func init(size: u32): Status[Bitset]
+    match u32.add(size, 7):
+      case Ok { value: val1 }:
+        size = u32.quotient(val1, 8)
+        bits = Array.init(size)
+        Status.Ok { value: Bitset { bits: bits } }
+      case Err { error: err1 }:
+        Status[Bitset].Err { error: err1 }
 
   public func get(bitset: Bitset, index: u32): Status[u8]
     index = u32.quotient(index, 8)

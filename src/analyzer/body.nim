@@ -42,26 +42,27 @@ proc analyzeVariable*(scope: AnalyzedFunctionScope, variable: Identifier): Resul
 # AnalyzedGetter — independent of the big cluster.
 type AnalyzedGetter* = ref object
   resolved: ResolvedGetter
-  argType: AnalyzedArgumentType
+  source: AnalyzedArgumentType
   property: AnalyzedArgumentDefinition
 
-proc newAnalyzedGetter*(resolved: ResolvedGetter, argType: AnalyzedArgumentType, property: AnalyzedArgumentDefinition): AnalyzedGetter =
-  AnalyzedGetter(resolved: resolved, argType: argType, property: property)
+proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, property: AnalyzedArgumentDefinition): AnalyzedGetter =
+  AnalyzedGetter(resolved: resolved, source: source, property: property)
 
 proc loc*(getter: AnalyzedGetter): Location = getter.resolved.loc
 proc resolved*(getter: AnalyzedGetter): ResolvedGetter = getter.resolved
-proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.argType
+proc source*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.source
+proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.property.argType
 proc property*(getter: AnalyzedGetter): AnalyzedArgumentDefinition = getter.property
 
 proc analyzeGetter*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
   if getter.source notin funcScope:
     err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
   else:
-    let analyzedArgType = funcScope[getter.source]
-    let struct = ? defScope.extractStructFor(analyzedArgType, getter.loc)
+    let analyzedSourceArgType = funcScope[getter.source]
+    let struct = ? defScope.extractStructFor(analyzedSourceArgType, getter.loc)
     let analyzedProperty = ? struct.findField(getter.property)
     # TODO: coerce the property type from the generic to concrete
-    ok(newAnalyzedGetter(getter, analyzedArgType, analyzedProperty))
+    ok(newAnalyzedGetter(getter, analyzedSourceArgType, analyzedProperty))
 
 # Mutually-recursive body-level cluster — every type that cycles
 # back to AnalyzedExpression / AnalyzedStatement must live here.
@@ -477,17 +478,26 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
         case literalField.resolved:
         of rltkU8: return err(fmt"{argValue.loc} todo: analyze union initializer U8 literal argument")
         of rltkU16: return err(fmt"{argValue.loc} todo: analyze union initializer U16 literal argument")
-        of rltkU32: return err(fmt"{argValue.loc} todo: analyze union initializer U32 literal argument")
         of rltkI8: return err(fmt"{argValue.loc} todo: analyze union initializer I8 literal argument")
         of rltkI16: return err(fmt"{argValue.loc} todo: analyze union initializer I16 literal argument")
         of rltkI64: return err(fmt"{argValue.loc} todo: analyze union initializer I64 literal argument")
         of rltkF32: return err(fmt"{argValue.loc} todo: analyze union initializer F32 literal argument")
         of rltkF64: return err(fmt"{argValue.loc} todo: analyze union initializer F64 literal argument")
         of rltkPointer: return err(fmt"{argValue.loc} todo: analyze union initializer Pointer literal argument")
+        of rltkU32:
+          case argValue.literal.kind:
+          of lkFloat: return err(fmt"{argValue.loc} expected a valid 32-bit unsigned integer but found float")
+          of lkString: return err(fmt"{argValue.loc} expected a valid 32-bit unsigned integer but found string")
+          of lkInteger:
+            let maybeParsedInt = parseInteger[uint32](argValue.literal.asl)
+            if maybeParsedInt.isNone:
+              return err(fmt"{argValue.loc} expected a valid 32-bit unsigned integer but found `{argValue.literal.asl}`")
+            else:
+              return ok(genericImplMap)
         of rltkU64:
           case argValue.literal.kind:
-          of lkFloat: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found float")
-          of lkString: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found string")
+          of lkFloat: return err(fmt"{argValue.loc} expected a valid 64-bit unsigned integer but found float")
+          of lkString: return err(fmt"{argValue.loc} expected a valid 64-bit unsigned integer but found string")
           of lkInteger:
             let maybeParsedInt = parseInteger[uint64](argValue.literal.asl)
             if maybeParsedInt.isNone:
@@ -538,7 +548,11 @@ proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
   let definedType = ? defScope.findDefinedType(fncall.parsed.root, fncall.loc)
-  let funcDefs = ? definedType.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, module != definedType.module.resolved)
+  let public =
+    case definedType.kind:
+    of adtkModule: (module != definedType.module.resolved)
+    of adtkGeneric: true # generic func defs are not required to be explicitly marked public
+  let funcDefs = ? definedType.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
 
   var analyzedArgs: seq[AnalyzedExpression]
   for arg in fncall.args:
