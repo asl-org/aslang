@@ -565,9 +565,8 @@ src/
                                    wrappers)
     decls.nim                      AnalyzedFileDefinition (with
                                    imports + definedTypes + modules) /
-                                   AnalyzedAppDefinition +
-                                   analyzeFileDefinition + the public
-                                   `analyze*` entry
+                                   AnalyzedApp + analyzeFileDefinition
+                                   + the public `analyze*` entry
 
 examples/
   base.asl                         standard library definition (extern functions)
