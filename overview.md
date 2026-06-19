@@ -563,10 +563,10 @@ src/
                                    AnalyzedModule with
                                    AnalyzedFunction[Extern|User]
                                    wrappers)
-    decls.nim                      AnalyzedFile (with imports +
-                                   definedTypes + modules) /
-                                   AnalyzedApp + analyzeFile + the
-                                   public `analyze*` entry
+    decls.nim                      AnalyzedFileDefinition (with
+                                   imports + definedTypes + modules) /
+                                   AnalyzedApp + analyzeFileDefinition
+                                   + the public `analyze*` entry
 
 examples/
   base.asl                         standard library definition (extern functions)

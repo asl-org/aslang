@@ -11,23 +11,23 @@ import argtypes
 import modules
 import funcrefs
 
-# AnalyzedFile
-type AnalyzedFile* = ref object
+# AnalyzedFileDefinition
+type AnalyzedFileDefinition* = ref object
   resolved: ResolvedFile
   imports: seq[AnalyzedImport]
   definedTypes: seq[AnalyzedDefinedType]
   modules: seq[AnalyzedModule]
 
-proc newAnalyzedFile*(resolved: ResolvedFile, imports: seq[AnalyzedImport], definedTypes: seq[AnalyzedDefinedType], modules: seq[AnalyzedModule]): AnalyzedFile =
-  AnalyzedFile(resolved: resolved, imports: imports, definedTypes: definedTypes, modules: modules)
+proc newAnalyzedFileDefinition*(resolved: ResolvedFile, imports: seq[AnalyzedImport], definedTypes: seq[AnalyzedDefinedType], modules: seq[AnalyzedModule]): AnalyzedFileDefinition =
+  AnalyzedFileDefinition(resolved: resolved, imports: imports, definedTypes: definedTypes, modules: modules)
 
-proc resolved*(f: AnalyzedFile): ResolvedFile = f.resolved
-proc path*(f: AnalyzedFile): string = f.resolved.path
-proc imports*(f: AnalyzedFile): seq[AnalyzedImport] = f.imports
-proc definedTypes*(f: AnalyzedFile): seq[AnalyzedDefinedType] = f.definedTypes
-proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules
+proc resolved*(f: AnalyzedFileDefinition): ResolvedFile = f.resolved
+proc path*(f: AnalyzedFileDefinition): string = f.resolved.path
+proc imports*(f: AnalyzedFileDefinition): seq[AnalyzedImport] = f.imports
+proc definedTypes*(f: AnalyzedFileDefinition): seq[AnalyzedDefinedType] = f.definedTypes
+proc modules*(f: AnalyzedFileDefinition): seq[AnalyzedModule] = f.modules
 
-proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, string] =
+proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
   var fileScope: ResolvedFileScope
   var analyzedImports: seq[AnalyzedImport]
   for imp in file.imports:
@@ -50,22 +50,22 @@ proc analyzeFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, st
     of rdtkModule:
       let analyzedModule = ? analyzeModule(app, file, fileScope, aslType.module, analyzedDefinedTypeScope)
       analyzedModules.add(analyzedModule)
-  ok(newAnalyzedFile(file, analyzedImports, analyzedDefinedTypes, analyzedModules))
+  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, analyzedModules))
 
 # AnalyzedApp + entry
 type AnalyzedApp* = ref object
   resolved: ResolvedApp
-  files: seq[AnalyzedFile]
+  files: seq[AnalyzedFileDefinition]
 
-proc newAnalyzedApp*(resolved: ResolvedApp, files: seq[AnalyzedFile]): AnalyzedApp =
+proc newAnalyzedApp*(resolved: ResolvedApp, files: seq[AnalyzedFileDefinition]): AnalyzedApp =
   AnalyzedApp(resolved: resolved, files: files)
 
 proc resolved*(a: AnalyzedApp): ResolvedApp = a.resolved
-proc files*(a: AnalyzedApp): seq[AnalyzedFile] = a.files
+proc files*(a: AnalyzedApp): seq[AnalyzedFileDefinition] = a.files
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  var analyzedFiles: seq[AnalyzedFile]
+  var analyzedFileDefinitions: seq[AnalyzedFileDefinition]
   for file in app.files:
-    let analyzedFile = ? analyzeFile(app, file)
-    analyzedFiles.add(analyzedFile)
-  ok(newAnalyzedApp(app, analyzedFiles))
+    let analyzedFileDefinition = ? analyzeFileDefinition(app, file)
+    analyzedFileDefinitions.add(analyzedFileDefinition)
+  ok(newAnalyzedApp(app, analyzedFileDefinitions))

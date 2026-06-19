@@ -70,7 +70,6 @@ Canonical conformant examples to mirror:
 | `AnalyzedStruct` | none | (no scalar dups; pairs with resolver gap) | `resolved: ResolvedStruct` | **MISSING** |
 | `AnalyzedVariable` | none | `name`, `argType` | no resolver-side counterpart (`ResolvedVariable` doesn't exist) | **INTENT** |
 | `AnalyzedModule` | none (transitively via `def: AnalyzedModuleDefinition`) | — | `resolved: ResolvedModule` | **MISSING** (mild — already reachable transitively) |
-| `AnalyzedFile` | none | imports / definedTypes / modules raw | `resolved: ResolvedFile` | **MISSING** |
 | `AnalyzedVariantPattern` | `resolved: VariantPattern` (**parser type, not resolver**) | naming inconsistency — field called `resolved` but holds parser type | no `ResolvedVariantPattern` exists; resolver also stores parser type raw | **INTENT** (naming smell) |
 
 **Conformant**: `AnalyzedImportedType`, `AnalyzedImport`,
@@ -80,12 +79,12 @@ Canonical conformant examples to mirror:
 `AnalyzedUnionInitializer`, `AnalyzedCaseBlock`,
 `AnalyzedMatchExpression`, `AnalyzedAssignment`, `AnalyzedMutation`,
 `AnalyzedModuleDefinition`, `AnalyzedGeneric`, `AnalyzedUserFunction`,
-`AnalyzedExternFunction`, `AnalyzedApp`.
+`AnalyzedExternFunction`, `AnalyzedFileDefinition`, `AnalyzedApp`.
 
 ## Counts
 
 - Resolver: **17 MISSING + 1 DUP** + 1 INTENT.
-- Analyzer: **5 MISSING + 3 INTENT**.
+- Analyzer: **4 MISSING + 3 INTENT**.
 
 ## Execution plan
 
