@@ -79,7 +79,7 @@ Canonical conformant examples to mirror:
 `AnalyzedUnionInitializer`, `AnalyzedCaseBlock`,
 `AnalyzedMatchExpression`, `AnalyzedAssignment`, `AnalyzedMutation`,
 `AnalyzedModuleDefinition`, `AnalyzedGeneric`, `AnalyzedUserFunction`,
-`AnalyzedExternFunction`, `AnalyzedFileDefinition`, `AnalyzedApp`.
+`AnalyzedExternFunction`, `AnalyzedFileDefinition`, `AnalyzedAppDefinition`.
 
 ## Counts
 
