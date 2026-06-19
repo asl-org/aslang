@@ -524,15 +524,22 @@ src/
                                    return todo; argument-list handles
                                    typed (non-literal) args fully and
                                    has partial literal-arg validation
-                                   wired against rltkU32 / rltkU64 /
-                                   rltkI32 / rltkString (parses the
-                                   literal text for each via
-                                   parseInteger[T] / passes string
+                                   wired against rltkU8 / rltkU32 /
+                                   rltkU64 / rltkI32 / rltkString
+                                   (parses the literal text for each
+                                   via parseInteger[T] / passes string
                                    through); other literal-typed
-                                   positions (U8/U16/I8/I16/I64/F32/
-                                   F64/Pointer) return todo, and
-                                   struct/union-typed positions return
-                                   a "needs initializer" diagnostic.
+                                   positions (U16/I8/I16/I64/F32/F64/
+                                   Pointer) return todo, and struct/
+                                   union-typed positions return a
+                                   "needs initializer" diagnostic.
+                                   analyzeValueTypeAgainstDefinitionType
+                                   takes an explicit `loc: Location`
+                                   so type-mismatch errors point at
+                                   the use site (the offending kwarg
+                                   or call arg) rather than at
+                                   wherever the value's argType
+                                   carries its own loc.
                                    analyzeFunctionCall concretizes
                                    the matched funcDef's return type
                                    via the inferred GenericImplMap;
@@ -674,20 +681,20 @@ overloads by (name, arity); the Analyzer takes those candidates and:
   result type will be resolved by unification at downstream use
   sites — that unification step is what surfaces the
   equality-vs-unification TODO in `analyzer/argtypes.nim:194`,
-  visible right now as a case-arm uniformity check failure on
-  `base.asl` and several `problem*.asl` fixtures. The integration
-  marker on those fixtures has since moved past the case-uniformity
-  check into `base.asl:579:8 expected a module u8 type but found
-  generic type Any` — another flavor of the same unification gap,
-  this time when a generic-typed value flows into a context expecting
-  a concrete module type.
+  visible at the time as a case-arm uniformity check failure on
+  `base.asl` and several `problem*.asl` fixtures. `base.asl` got
+  simplified to sidestep the issue (Pointer/System layer removed,
+  the Any-returning `Array.init` function call replaced by a direct
+  `Array[u32] { size: size }` struct initializer in `Bitset.init`),
+  so the integration suite now passes 17/35 — but the unification
+  gap is still a real TODO that future fixtures will surface.
 - Literal type inference: pin down `5` to `u8` / `u32` / etc. from
   the expected parameter type at the call site. **Partial** — the
   literal arg branch in `analyzeArgumentList` validates the literal
-  text against rltkU32 / rltkU64 / rltkI32 / rltkString today; the
-  remaining literal kinds (U8/U16/I8/I16/I64/F32/F64/Pointer) still
-  return a todo, and the impl map isn't yet updated from the literal
-  position.
+  text against rltkU8 / rltkU32 / rltkU64 / rltkI32 / rltkString
+  today; the remaining literal kinds (U16/I8/I16/I64/F32/F64/
+  Pointer) still return a todo, and the impl map isn't yet updated
+  from the literal position.
 - Type-correctness checks across statements (assignment compatibility,
   match exhaustiveness, etc.).
 

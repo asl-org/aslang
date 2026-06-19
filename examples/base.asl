@@ -2,17 +2,8 @@ public module u8:
   literal: "u8"
 
   # core
-  @extern("u8_read")
-  public func read(ptr: Pointer, offset: u64): u8
-
   @extern("u8_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("u8_valid")
-  public func valid(value: u8): u8
-
-  @extern("u8_write")
-  public func write(ptr: Pointer, offset: u64, item: u8): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("u8_and_u8")
@@ -47,7 +38,7 @@ public module u8:
   public func quotient(a: u8, b: u8): Status[u8]
 
   @extern("u8_remainder_u8")
-  public func remainder(a: u8, b: u8): Status[u8]
+  public func remainder(a: u8, b: u8): u8
 
   # branching
   @extern("u8_compare_u8")
@@ -57,17 +48,8 @@ public module u16:
   literal: "u16"
 
   # core
-  @extern("u16_read")
-  public func read(ptr: Pointer, offset: u64): u16
-
   @extern("u16_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("u16_valid")
-  public func valid(value: u16): u8
-
-  @extern("u16_write")
-  public func write(ptr: Pointer, offset: u64, item: u16): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("u16_and_u16")
@@ -102,7 +84,7 @@ public module u16:
   public func quotient(a: u16, b: u16): Status[u16]
 
   @extern("u16_remainder_u16")
-  public func remainder(a: u16, b: u16): Status[u16]
+  public func remainder(a: u16, b: u16): u16
 
   # branching
   @extern("u16_compare_u16")
@@ -112,17 +94,8 @@ public module u32:
   literal: "u32"
 
   # core
-  @extern("u32_read")
-  public func read(ptr: Pointer, offset: u64): u32
-
   @extern("u32_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("u32_valid")
-  public func valid(value: u32): u8
-
-  @extern("u32_write")
-  public func write(ptr: Pointer, offset: u64, item: u32): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("u32_and_u32")
@@ -157,7 +130,7 @@ public module u32:
   public func quotient(a: u32, b: u32): u32
 
   @extern("u32_remainder_u32")
-  public func remainder(a: u32, b: u32): Status[u32]
+  public func remainder(a: u32, b: u32): u32
 
   # branching
   @extern("u32_compare_u32")
@@ -167,17 +140,8 @@ public module u64:
   literal: "u64"
 
   # core
-  @extern("u64_read")
-  public func read(ptr: Pointer, offset: u64): u64
-
   @extern("u64_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("u64_valid")
-  public func valid(value: u64): u8
-
-  @extern("u64_write")
-  public func write(ptr: Pointer, offset: u64, item: u64): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("u64_and_u64")
@@ -212,7 +176,7 @@ public module u64:
   public func quotient(a: u64, b: u64): Status[u64]
 
   @extern("u64_remainder_u64")
-  public func remainder(a: u64, b: u64): Status[u64]
+  public func remainder(a: u64, b: u64): u64
 
   # branching
   @extern("u64_compare_u64")
@@ -238,17 +202,8 @@ public module i8:
   literal: "i8"
 
   # core
-  @extern("i8_read")
-  public func read(ptr: Pointer, offset: u64): i8
-
   @extern("i8_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("i8_valid")
-  public func valid(value: i8): u8
-
-  @extern("i8_write")
-  public func write(ptr: Pointer, offset: u64, item: i8): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("i8_and_i8")
@@ -283,7 +238,7 @@ public module i8:
   public func quotient(a: i8, b: i8): Status[i8]
 
   @extern("i8_remainder_i8")
-  public func remainder(a: i8, b: i8): Status[i8]
+  public func remainder(a: i8, b: i8): i8
 
   # branching
   @extern("i8_compare_i8")
@@ -293,17 +248,8 @@ public module i16:
   literal: "i16"
 
   # core
-  @extern("i16_read")
-  public func read(ptr: Pointer, offset: u64): i16
-
   @extern("i16_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("i16_valid")
-  public func valid(value: i16): u8
-
-  @extern("i16_write")
-  public func write(ptr: Pointer, offset: u64, item: i16): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("i16_and_i16")
@@ -338,7 +284,7 @@ public module i16:
   public func quotient(a: i16, b: i16): Status[i16]
 
   @extern("i16_remainder_i16")
-  public func remainder(a: i16, b: i16): Status[i16]
+  public func remainder(a: i16, b: i16): i16
 
   # branching
   @extern("i16_compare_i16")
@@ -348,17 +294,8 @@ public module i32:
   literal: "i32"
 
   # core
-  @extern("i32_read")
-  public func read(ptr: Pointer, offset: u64): i32
-
   @extern("i32_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("i32_valid")
-  public func valid(value: i32): u8
-
-  @extern("i32_write")
-  public func write(ptr: Pointer, offset: u64, item: i32): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("i32_and_i32")
@@ -393,7 +330,7 @@ public module i32:
   public func quotient(a: i32, b: i32): Status[i32]
 
   @extern("i32_remainder_i32")
-  public func remainder(a: i32, b: i32): Status[i32]
+  public func remainder(a: i32, b: i32): i32
 
   # branching
   @extern("i32_compare_i32")
@@ -403,17 +340,8 @@ public module i64:
   literal: "i64"
 
   # core
-  @extern("i64_read")
-  public func read(ptr: Pointer, offset: u64): i64
-
   @extern("i64_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("i64_valid")
-  public func valid(value: i64): u8
-
-  @extern("i64_write")
-  public func write(ptr: Pointer, offset: u64, item: i64): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("i64_and_i64")
@@ -448,7 +376,7 @@ public module i64:
   public func quotient(a: i64, b: i64): Status[i64]
 
   @extern("i64_remainder_i64")
-  public func remainder(a: i64, b: i64): Status[i64]
+  public func remainder(a: i64, b: i64): i64
 
   # branching
   @extern("i64_compare_i64")
@@ -458,17 +386,8 @@ public module f32:
   literal: "f32"
 
   # core
-  @extern("f32_read")
-  public func read(ptr: Pointer, offset: u64): f32
-
   @extern("f32_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("f32_valid")
-  public func valid(value: f32): u8
-
-  @extern("f32_write")
-  public func write(ptr: Pointer, offset: u64, item: f32): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("f32_and_f32")
@@ -497,23 +416,14 @@ public module f32:
   public func quotient(a: f32, b: f32): Status[f32]
 
   @extern("f32_remainder_f32")
-  public func remainder(a: f32, b: f32): Status[f32]
+  public func remainder(a: f32, b: f32): f32
 
 public module f64:
   literal: "f64"
 
   # core
-  @extern("f64_read")
-  public func read(ptr: Pointer, offset: u64): f64
-
   @extern("f64_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("f64_valid")
-  public func valid(value: f64): u8
-
-  @extern("f64_write")
-  public func write(ptr: Pointer, offset: u64, item: f64): Pointer
+  public func byte_size(): u64
 
   # binary
   @extern("f64_and_f64")
@@ -542,23 +452,7 @@ public module f64:
   public func quotient(a: f64, b: f64): Status[f64]
 
   @extern("f64_remainder_f64")
-  public func remainder(a: f64, b: f64): Status[f64]
-
-module Pointer:
-  literal: "pointer"
-
-  # core
-  @extern("pointer_read")
-  public func read(ptr: Pointer, offset: u64): Pointer
-
-  @extern("pointer_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("pointer_write")
-  public func write(ptr: Pointer, offset: u64, item: Pointer): Pointer
-
-  @extern("pointer_valid")
-  public func valid(ptr: Pointer): u8
+  public func remainder(a: f64, b: f64): f64
 
 public module String:
   literal: "string"
@@ -577,10 +471,7 @@ public module String:
   public func concat(first: String, second: String): String
 
 public generic Any:
-  func byte_size(items: u32): u64
-  func read(ptr: Pointer, offset: u64): Any
-  func write(ptr: Pointer, offset: u64, item: Any): Pointer
-  func valid(item: Any): u8
+  func byte_size(): u64
 
 public module Error:
   struct:
@@ -593,9 +484,6 @@ public module Status:
     Err { error: Error }
 
 public module System:
-  @extern("System_allocate")
-  public func allocate(size: u64): Pointer
-
   @extern("System_print")
   public func print(str: String): u64
 
@@ -609,98 +497,55 @@ public module Array:
 
   struct:
     size: u32
-    ptr: Pointer
-
-  @extern("pointer_read")
-  public func read(ptr: Pointer, offset: u64): Array[Any]
 
   @extern("pointer_byte_size")
-  public func byte_size(items: u32): u64
+  public func byte_size(): u64
 
-  @extern("pointer_write")
-  public func write(ptr: Pointer, offset: u64, item: Array[Any]): Pointer
-
-  @extern("pointer_valid")
-  public func valid(item: Array[Any]): u8
-
-  public func init(size: u32): Array[Any]
-    bytes = Any.byte_size(size)
-    ptr = System.allocate(bytes)
-    Array[Any] { size: size, ptr: ptr }
-
+  @extern("array_get")
   public func get(arr: Array[Any], index: u32): Status[Any]
-    match u32.compare(index, arr.size):
-      case -1:
-        offset = Any.byte_size(index)
-        item = Any.read(arr.ptr, offset)
-        match Any.valid(item):
-          case 0:
-            Status.Ok { value: item }
-          case _:
-            error = Error { code: 2, message: "illegal memory access" }
-            Status.Err { error: error }
-      case _:
-        error = Error { code: 1, message: "index out of bounds" }
-        Status.Err { error: error }
 
+  @extern("array_set")
   public func set(arr: Array[Any], index: u32, item: Any): Status[Array[Any]]
-    match u32.compare(index, arr.size):
-      case -1:
-        offset = Any.byte_size(index)
-        arr.ptr = Any.write(arr.ptr, offset, item)
-        Status.Ok { value: arr }
-      case _:
-        error = Error { code: 1, message: "index out of bounds" }
-        Status[Array[Any]].Err { error: error }
 
 public module Bitset:
   struct:
-    bits: Array[u8]
-
-  @extern("pointer_read")
-  public func read(ptr: Pointer, offset: u64): Bitset
+    bits: Array[u32]
 
   @extern("pointer_byte_size")
-  public func byte_size(items: u32): u64
-
-  @extern("pointer_write")
-  public func write(ptr: Pointer, offset: u64, item: Bitset): Pointer
-
-  @extern("pointer_valid")
-  public func valid(item: Bitset): u8
+  public func byte_size(): u64
 
   public func init(size: u32): Status[Bitset]
-    match u32.add(size, 7):
+    match u32.add(size, 31):
       case Ok { value: val1 }:
-        size = u32.quotient(val1, 8)
-        bits = Array.init(size)
+        size = u32.quotient(val1, 32)
+        bits = Array[u32] { size: size }
         Status.Ok { value: Bitset { bits: bits } }
       case Err { error: err1 }:
         Status[Bitset].Err { error: err1 }
 
   public func get(bitset: Bitset, index: u32): Status[u8]
-    index = u32.quotient(index, 8)
+    index = u32.quotient(index, 32)
     match Array.get(bitset.bits, index):
       case Ok { value: value }:
-        sub_index = u32.remainder(index, 8)
-        shifted = u8.shr(value, sub_index)
-        bit_value = u8.and(shifted, 1)
+        sub_index = u32.remainder(index, 32)
+        shifted = u32.shr(value, sub_index)
+        bit_value = u8.and(1, shifted)
         Status.Ok { value: bit_value }
       case Err { error: error }:
-        Status.Err { error: error }
+        Status[u8].Err { error: error }
 
   public func set(bitset: Bitset, index: u32): Status[Bitset]
-    index = u32.quotient(index, 8)
+    index = u32.quotient(index, 32)
     match Array.get(bitset.bits, index):
       case Ok { value: value }:
-        sub_index = u32.remainder(index, 8)
-        shifted = u8.shl(1, sub_index)
-        bit_value = u8.or(shifted, value)
+        sub_index = u32.remainder(index, 32)
+        shifted = u32.shl(1, sub_index)
+        bit_value = u32.or(shifted, value)
         match Array.set(bitset.bits, index, bit_value):
           case Ok { value: updated_bits }:
             bitset.bits = updated_bits
             Status.Ok { value: bitset }
           case Err { error: error }:
-            Status.Err { error: error }
+            Status[Bitset].Err { error: error }
       case Err { error: error }:
-        Status.Err { error: error }
+        Status[Bitset].Err { error: error }

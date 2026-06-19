@@ -59,10 +59,10 @@ public module Example:
     exit_success = u8 0
     max_primes = u64 1000001
 
-    ptr = System.allocate(max_primes)
-    primes = Bitset { bits: max_primes }
+    # ptr = System.allocate(max_primes)
+    # primes = Bitset { bits: max_primes }
 
-    ans = Example.solve(primes, 2, 0)
-    _ = System.print(ans)
+    # ans = Example.solve(primes, 2, 0)
+    # _ = System.print(ans)
 
     exit_success

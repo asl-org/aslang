@@ -398,64 +398,64 @@ proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolve
 
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string]
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType): Result[GenericImplMap, string]
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
   if defType.module != valType.module:
-    err(fmt"{valType.loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
+    err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
   else:
     var genericImplMap: GenericImplMap
     for (defImpl, valImpl) in zip(defType.impls, valType.impls):
-      let valGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defImpl, valImpl)
+      let valGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defImpl, valImpl, loc)
       genericImplMap = ? genericImplMap.merge(valGenericImplMap)
     ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedDefinedArgumentType): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedDefinedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case valType.kind:
   of adatkGeneric:
-    err(fmt"{valType.loc} expected a module {defType.asl} type but found generic type {valType.asl}")
+    err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
   of adatkModule:
-    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType, valType.module)
+    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType, valType.module, loc)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case valType.kind:
   of aatkImported:
-    err(fmt"{valType.loc} todo: analyze imported value type against module argument type")
+    err(fmt"{loc} todo: analyze imported value type against module argument type")
   of aatkDefined:
-    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType, valType.definedType)
+    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType, valType.definedType, loc)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   let funcDefs = defType.resolved.concreteImpls(valType.self)
   for funcDef in funcDefs:
     case valType.kind:
     of aatkImported:
-      return err(fmt"{valType.loc} todo: analyze imported impl type")
+      return err(fmt"{loc} todo: analyze imported impl type")
     of aatkDefined:
       case valType.definedType.kind:
       of adatkGeneric:
         let maybeConcreteFuncDef = valType.definedType.generic.resolved.findFunctionDef(funcDef)
         if maybeConcreteFuncDef.isNone:
-          return err(fmt"{valType.loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
+          return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
       of adatkModule:
         let maybeConcreteFuncDef = valType.definedType.module.module.findFunctionDef(funcDef)
         if maybeConcreteFuncDef.isNone:
-          return err(fmt"{valType.loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
+          return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
   var genericImplMap: GenericImplMap
   genericImplMap[defType.resolved] = valType
   ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedDefinedArgumentType, valType: AnalyzedArgumentType): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedDefinedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case defType.kind:
-  of adatkModule: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.module, valType)
-  of adatkGeneric: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.generic, valType)
+  of adatkModule: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.module, valType, loc)
+  of adatkGeneric: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.generic, valType, loc)
 
 # TODO: Return a map of generic -> argType from the recursive analysis
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case defType.kind:
   of aatkImported:
-    err(fmt"{valType.loc} todo: analyze value type against imported argument type")
+    err(fmt"{loc} todo: analyze value type against imported argument type")
   of aatkDefined:
-    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.definedType, valType)
+    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, defType.definedType, valType, loc)
 
 proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: AnalyzedFunctionDefinition): Result[GenericImplMap, string] =
   # BUG: `zip` below silently truncates to the shorter sequence — if
@@ -476,7 +476,6 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
       of adkLiteral:
         let literalField = argDefData.literal
         case literalField.resolved:
-        of rltkU8: return err(fmt"{argValue.loc} todo: analyze union initializer U8 literal argument")
         of rltkU16: return err(fmt"{argValue.loc} todo: analyze union initializer U16 literal argument")
         of rltkI8: return err(fmt"{argValue.loc} todo: analyze union initializer I8 literal argument")
         of rltkI16: return err(fmt"{argValue.loc} todo: analyze union initializer I16 literal argument")
@@ -484,6 +483,16 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
         of rltkF32: return err(fmt"{argValue.loc} todo: analyze union initializer F32 literal argument")
         of rltkF64: return err(fmt"{argValue.loc} todo: analyze union initializer F64 literal argument")
         of rltkPointer: return err(fmt"{argValue.loc} todo: analyze union initializer Pointer literal argument")
+        of rltkU8:
+          case argValue.literal.kind:
+          of lkFloat: return err(fmt"{argValue.loc} expected a valid 8-bit unsigned integer but found float")
+          of lkString: return err(fmt"{argValue.loc} expected a valid 8-bit unsigned integer but found string")
+          of lkInteger:
+            let maybeParsedInt = parseInteger[uint8](argValue.literal.asl)
+            if maybeParsedInt.isNone:
+              return err(fmt"{argValue.loc} expected a valid 8-bit unsigned integer but found `{argValue.literal.asl}`")
+            else:
+              return ok(genericImplMap)
         of rltkU32:
           case argValue.literal.kind:
           of lkFloat: return err(fmt"{argValue.loc} expected a valid 32-bit unsigned integer but found float")
@@ -520,7 +529,7 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
           of lkInteger: return err(fmt"{argValue.loc} expected a valid string literal but found integer")
           of lkString: return ok(genericImplMap)
     else:
-      let argGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, argDef.argType, argValue.argType.get)
+      let argGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, argDef.argType, argValue.argType.get, argValue.loc)
       genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
@@ -574,7 +583,7 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolved
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
-    echo module.loc, " ", analyzedStatement.argType.get.asl
+    # echo module.loc, " ", analyzedStatement.argType.get.asl
     if analyzedStatement.arg.isSome:
       let newArg = analyzedStatement.arg.get
       # echo fmt"SET {newArg.name.asl} {newArg.argType.asl}"
@@ -591,7 +600,7 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolved
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, defScope, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
-    echo module.loc, " ", analyzedStatement.argType.get.asl
+    # echo module.loc, " ", analyzedStatement.argType.get.asl
     if analyzedStatement.arg.isSome:
       let newArg = analyzedStatement.arg.get
       # echo fmt"SET {newArg.name.asl} {newArg.argType.asl}"
@@ -622,6 +631,7 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFile
   for caseBlock in cases:
     let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, module, defScope, funcScope, caseBlock, union)
     analyzedCaseBlocks.add(analyzedCaseBlock)
+    # echo analyzedCaseBlock.argType.get.asl
   ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
@@ -714,7 +724,7 @@ proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
             ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
   else:
     # TODO: Utilize genericImplMap
-    let genericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, analyzedField.argType, analyzedExpression.argType.get)
+    let genericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, analyzedField.argType, analyzedExpression.argType.get, analyzedExpression.loc)
     ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
 proc receiverArgType(receiver: AnalyzedModuleDefinition): AnalyzedArgumentType =
@@ -783,7 +793,7 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
     if analyzedExpression.argType.isNone:
       return err(fmt"{kwarg.expression.loc} todo: literal-typed kwarg in union initializer")
     let fieldType = analyzedField.argType.concrete(implMap)
-    let local = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, fieldType, analyzedExpression.argType.get)
+    let local = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, module, defScope, fieldType, analyzedExpression.argType.get, analyzedExpression.loc)
     case analyzedUnionRef.kind:
     of aurkImpl: discard
     of aurkDefault: implMap = ? implMap.merge(local)
