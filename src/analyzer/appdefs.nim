@@ -1,22 +1,34 @@
 ## File / App + the public analyze* entry point. AnalyzedDefinedType
 ## and analyzeDefinedType live in modules.nim alongside their arms.
 
-import results
+import results, tables, strformat
+
 import resolver
 import funcs
+import imports
 import modules
 import filedefs
 
 # AnalyzedAppDefinition + entry
 type AnalyzedAppDefinition* = ref object
   resolved: ResolvedApp
-  files: seq[AnalyzedFileDefinition]
+  fileDefs: seq[AnalyzedFileDefinition]
+  fileDefIndex: Table[string, int]
 
-proc newAnalyzedAppDefinition*(resolved: ResolvedApp, files: seq[AnalyzedFileDefinition]): AnalyzedAppDefinition =
-  AnalyzedAppDefinition(resolved: resolved, files: files)
+proc newAnalyzedAppDefinition*(resolved: ResolvedApp, fileDefs: seq[AnalyzedFileDefinition]): AnalyzedAppDefinition =
+  var fileDefIndex: Table[string, int]
+  for index, fileDef in fileDefs:
+    fileDefIndex[fileDef.path] = index
+  AnalyzedAppDefinition(resolved: resolved, fileDefs: fileDefs, fileDefIndex: fileDefIndex)
 
 proc resolved*(a: AnalyzedAppDefinition): ResolvedApp = a.resolved
-proc fileDefs*(a: AnalyzedAppDefinition): seq[AnalyzedFileDefinition] = a.files
+proc fileDefs*(a: AnalyzedAppDefinition): seq[AnalyzedFileDefinition] = a.fileDefs
+
+proc findFileDef(appDef: AnalyzedAppDefinition, path: string): Result[AnalyzedFileDefinition, string] =
+  if path notin appDef.fileDefIndex:
+    err(fmt"file `{path}` not found")
+  else:
+    ok(appDef.fileDefs[appDef.fileDefIndex[path]])
 
 proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedAppDefinition, string] =
   var analyzedFileDefinitions: seq[AnalyzedFileDefinition]
@@ -29,7 +41,9 @@ proc analyzeFile(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition)
   var defScope = fileDef.definedTypeIndex
   # TODO: Insert imported types in the definition scope
   for imp in fileDef.imports:
-    discard
+    let impFileDef = ? appDef.findFileDef(imp.path)
+    for impType in imp.importedTypes:
+      defScope[impType.binding] = ? impFileDef.findDefinedType(impType.definedType.name)
 
   var analyzedModules: seq[AnalyzedModule]
   for definedType in fileDef.definedTypes:

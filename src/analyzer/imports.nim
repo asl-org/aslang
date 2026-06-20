@@ -32,6 +32,7 @@ proc newAnalyzedImportDefinition*(resolved: ResolvedImport, importedTypes: seq[A
   AnalyzedImportDefinition(resolved: resolved, importedTypes: importedTypes)
 
 proc importedTypes*(imp: AnalyzedImportDefinition): seq[AnalyzedImportedType] = imp.importedTypes
+proc path*(imp: AnalyzedImportDefinition): string = imp.resolved.impFile.path
 
 proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
   let maybeImportedFile = app.findFile(imp.impFile)

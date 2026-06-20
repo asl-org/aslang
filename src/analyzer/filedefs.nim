@@ -1,15 +1,16 @@
 ## File / App + the public analyze* entry point. AnalyzedDefinedType
 ## and analyzeDefinedType live in modules.nim alongside their arms.
 
-import results, tables
+import results, tables, strformat
 
-import funcs
 import parser
 import resolver
+
 import imports
 import argtypes
-import modules
 import funcrefs
+import funcs
+import modules
 
 # AnalyzedFileDefinition
 type AnalyzedFileDefinition* = ref object
@@ -31,6 +32,12 @@ proc imports*(f: AnalyzedFileDefinition): seq[AnalyzedImportDefinition] = f.impo
 proc definedTypes*(f: AnalyzedFileDefinition): seq[AnalyzedDefinedType] = f.definedTypes
 proc scope*(f: AnalyzedFileDefinition): ResolvedFileScope = f.scope
 proc definedTypeIndex*(f: AnalyzedFileDefinition): AnalyzedDefinedTypeScope = f.definedTypeIndex
+
+proc findDefinedType*(fileDef: AnalyzedFileDefinition, name: Identifier): Result[AnalyzedDefinedType, string] =
+  if name notin fileDef.definedTypeIndex:
+    err(fmt"{name.loc} file `{fileDef.path}` does not defined a type named `{name.asl}`")
+  else:
+    ok(fileDef.definedTypeIndex[name])
 
 proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
   var fileScope: ResolvedFileScope
