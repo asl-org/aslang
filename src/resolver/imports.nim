@@ -12,11 +12,10 @@ import parser
 # ResolvedImportedType
 type ResolvedImportedType* = ref object
   parsed: ImportedType
-  module: int
   definedType: DefinedType
 
-proc newResolvedImportedType*(parsed: ImportedType, module: int, definedType: DefinedType): ResolvedImportedType =
-  ResolvedImportedType(parsed: parsed, module: module, definedType: definedType)
+proc newResolvedImportedType*(parsed: ImportedType, definedType: DefinedType): ResolvedImportedType =
+  ResolvedImportedType(parsed: parsed, definedType: definedType)
 
 proc parsed*(t: ResolvedImportedType): ImportedType = t.parsed
 proc name*(t: ResolvedImportedType): Identifier = t.parsed.name
@@ -26,9 +25,8 @@ proc definedType*(t: ResolvedImportedType): DefinedType = t.definedType
 
 proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
     ResolvedImportedType, string] =
-  let importedAslTypeId = ? impFile.findExportedTypeId(impType.name)
   let importedAslType = ? impFile.findExportedType(impType.name)
-  ok(newResolvedImportedType(impType, importedAslTypeId, importedAslType))
+  ok(newResolvedImportedType(impType, importedAslType))
 
 # ResolvedImport
 type ResolvedImport* = ref object

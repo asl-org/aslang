@@ -479,7 +479,6 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
         of rltkU16: return err(fmt"{argValue.loc} todo: analyze union initializer U16 literal argument")
         of rltkI8: return err(fmt"{argValue.loc} todo: analyze union initializer I8 literal argument")
         of rltkI16: return err(fmt"{argValue.loc} todo: analyze union initializer I16 literal argument")
-        of rltkI64: return err(fmt"{argValue.loc} todo: analyze union initializer I64 literal argument")
         of rltkF32: return err(fmt"{argValue.loc} todo: analyze union initializer F32 literal argument")
         of rltkF64: return err(fmt"{argValue.loc} todo: analyze union initializer F64 literal argument")
         of rltkPointer: return err(fmt"{argValue.loc} todo: analyze union initializer Pointer literal argument")
@@ -521,6 +520,16 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
             let maybeParsedInt = parseInteger[int32](argValue.literal.asl)
             if maybeParsedInt.isNone:
               return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found `{argValue.literal.asl}`")
+            else:
+              return ok(genericImplMap)
+        of rltkI64:
+          case argValue.literal.kind:
+          of lkFloat: return err(fmt"{argValue.loc} expected a valid 64-bit signed integer but found float")
+          of lkString: return err(fmt"{argValue.loc} expected a valid 64-bit signed integer but found string")
+          of lkInteger:
+            let maybeParsedInt = parseInteger[int64](argValue.literal.asl)
+            if maybeParsedInt.isNone:
+              return err(fmt"{argValue.loc} expected a valid 64-bit signed integer but found `{argValue.literal.asl}`")
             else:
               return ok(genericImplMap)
         of rltkString:

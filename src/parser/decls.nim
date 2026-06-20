@@ -145,6 +145,7 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
         let prev = types[typeIndex[impType.binding]]
         let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
         return err(newParserError(msg, impType.loc))
+      # echo path, " ", impType.binding.asl
       typeIndex[impType.binding] = types.len
       types.add(newType(impType))
 
@@ -154,6 +155,7 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
       let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, definedType.loc))
     else:
+      # echo path, " ", definedType.name.asl
       typeIndex[definedType.name] = types.len
       types.add(newType(definedType))
   ok(File(path: path, imports: imports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
@@ -176,7 +178,7 @@ proc asl*(file: File, indentWidth: uint32): string =
     lines.add(dt.asl(indentWidth))
   lines.join("\n") & "\n"
 
-proc findTypeId*(file: File, name: Identifier): Result[int, string] =
+proc findTypeId(file: File, name: Identifier): Result[int, string] =
   if name in file.typeIndex: ok(file.typeIndex[name])
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
@@ -184,21 +186,11 @@ proc findType*(file: File, name: Identifier): Result[Type, string] =
   let id = ? file.findTypeId(name)
   ok(file.types[id])
 
-proc findExportedTypeId*(file: File, name: Identifier): Result[int, string] =
-  let id = ? file.findTypeId(name)
-  let aslType = file.types[id]
-  case aslType.kind:
-  of tkImported: err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
-  of tkDefined:
-    let definedType = aslType.definedType
-    if definedType.public: ok(id)
-    else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
-
 proc findExportedType*(file: File, name: Identifier): Result[DefinedType, string] =
-  let id = ? file.findTypeId(name)
-  let aslType = file.types[id]
+  let aslType = ? file.findType(name)
   case aslType.kind:
-  of tkImported: err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
+  of tkImported:
+    err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
   of tkDefined:
     let definedType = aslType.definedType
     if definedType.public: ok(definedType)
@@ -222,7 +214,7 @@ proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
   let parser = newParser(filepath, indentWidth, tokens)
   let maybeFile = parser.run(fileSpec)
   if maybeFile.isErr:
-    err(fmt"{filepath}:{maybeFile.error}")
+    err(fmt"{maybeFile.error}")
   else:
     ok(maybeFile.get)
 

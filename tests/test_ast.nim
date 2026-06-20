@@ -364,25 +364,6 @@ module M:
     check errorContains(r.error, "NoSuchType")
     check errorContains(r.error, "does not exist")
 
-  test "findTypeId returns the same id consistently":
-    let f = parseStr("""
-module A:
-  func go(): u8
-    u8 0
-
-module B:
-  func go(): u8
-    u8 0
-""").get
-    let idA1 = f.findTypeId(id("A"))
-    let idA2 = f.findTypeId(id("A"))
-    let idB = f.findTypeId(id("B"))
-    check idA1.isOk
-    check idA2.isOk
-    check idB.isOk
-    check idA1.get == idA2.get
-    check idA1.get != idB.get
-
   test "findExportedType accepts a public module":
     let f = parseStr("""
 public module Foo:
