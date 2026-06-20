@@ -367,8 +367,10 @@ src/
   analyzer/
     analyzer.nim                   re-exports every component file
     literals.nim                   AnalyzedLiteralBlock
-    imports.nim                    AnalyzedImportedType / AnalyzedImport
-                                   + analyzeImportedType, analyzeImport
+    imports.nim                    AnalyzedImportedType /
+                                   AnalyzedImportDefinition +
+                                   analyzeImportedType,
+                                   analyzeImportDefinition
     argtypes.nim                   ResolvedFileScope + argument-type
                                    cluster (Argument / Defined / Module /
                                    Generic) + dual-context (module ctx /

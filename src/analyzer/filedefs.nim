@@ -14,40 +14,35 @@ import funcrefs
 # AnalyzedFileDefinition
 type AnalyzedFileDefinition* = ref object
   resolved: ResolvedFile
-  imports: seq[AnalyzedImport]
+  imports: seq[AnalyzedImportDefinition]
   definedTypes: seq[AnalyzedDefinedType]
-  modules: seq[AnalyzedModule]
+  scope: ResolvedFileScope
+  definedTypeIndex: AnalyzedDefinedTypeScope
 
-proc newAnalyzedFileDefinition*(resolved: ResolvedFile, imports: seq[AnalyzedImport], definedTypes: seq[AnalyzedDefinedType], modules: seq[AnalyzedModule]): AnalyzedFileDefinition =
-  AnalyzedFileDefinition(resolved: resolved, imports: imports, definedTypes: definedTypes, modules: modules)
+proc newAnalyzedFileDefinition*(resolved: ResolvedFile, imports: seq[AnalyzedImportDefinition], definedTypes: seq[AnalyzedDefinedType], scope: ResolvedFileScope): AnalyzedFileDefinition =
+  var definedTypeIndex: AnalyzedDefinedTypeScope
+  for definedType in definedTypes:
+    definedTypeIndex[definedType.name] = definedType
+  AnalyzedFileDefinition(resolved: resolved, imports: imports, definedTypes: definedTypes, scope: scope, definedTypeIndex: definedTypeIndex)
 
 proc resolved*(f: AnalyzedFileDefinition): ResolvedFile = f.resolved
 proc path*(f: AnalyzedFileDefinition): string = f.resolved.path
-proc imports*(f: AnalyzedFileDefinition): seq[AnalyzedImport] = f.imports
+proc imports*(f: AnalyzedFileDefinition): seq[AnalyzedImportDefinition] = f.imports
 proc definedTypes*(f: AnalyzedFileDefinition): seq[AnalyzedDefinedType] = f.definedTypes
-proc modules*(f: AnalyzedFileDefinition): seq[AnalyzedModule] = f.modules
+proc scope*(f: AnalyzedFileDefinition): ResolvedFileScope = f.scope
+proc definedTypeIndex*(f: AnalyzedFileDefinition): AnalyzedDefinedTypeScope = f.definedTypeIndex
 
 proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
   var fileScope: ResolvedFileScope
-  var analyzedImports: seq[AnalyzedImport]
+  var analyzedImports: seq[AnalyzedImportDefinition]
   for imp in file.imports:
-    let analyzedImport = ? analyzeImport(app, file, imp)
+    let analyzedImport = ? analyzeImportDefinition(app, file, imp)
     analyzedImports.add(analyzedImport)
     for impType in analyzedImport.importedTypes:
       fileScope[impType.binding] = impType.definedType
 
   var analyzedDefinedTypes: seq[AnalyzedDefinedType]
-  var analyzedDefinedTypeScope: AnalyzedDefinedTypeScope
   for aslType in file.definedTypes:
     let analyzedDefinedType = ? analyzeDefinedType(app, file, fileScope, aslType)
     analyzedDefinedTypes.add(analyzedDefinedType)
-    analyzedDefinedTypeScope[analyzedDefinedType.name] = analyzedDefinedType
-
-  var analyzedModules: seq[AnalyzedModule]
-  for definedType in analyzedDefinedTypes:
-    case definedType.kind:
-    of adtkGeneric: discard # generics are already resolved since it is only a definition type
-    of adtkModule:
-      let analyzedModule = ? analyzeModule(app, file, fileScope, definedType.module, analyzedDefinedTypeScope)
-      analyzedModules.add(analyzedModule)
-  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, analyzedModules))
+  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, fileScope))

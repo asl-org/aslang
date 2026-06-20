@@ -1,6 +1,6 @@
 ## Analyzed imports — verifies each imported name resolves to a
 ## defined type in its source file, and bundles the per-file imports
-## into an AnalyzedImport.
+## into an AnalyzedImportDefinition.
 
 import results, strformat, options
 
@@ -24,16 +24,16 @@ proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: Reso
   else:
     ok(newAnalyzedImportedType(impType, maybeImportedType.get))
 
-type AnalyzedImport* = ref object
+type AnalyzedImportDefinition* = ref object
   resolved: ResolvedImport
   importedTypes: seq[AnalyzedImportedType]
 
-proc newAnalyzeImport*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedType]): AnalyzedImport =
-  AnalyzedImport(resolved: resolved, importedTypes: importedTypes)
+proc newAnalyzedImportDefinition*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedType]): AnalyzedImportDefinition =
+  AnalyzedImportDefinition(resolved: resolved, importedTypes: importedTypes)
 
-proc importedTypes*(imp: AnalyzedImport): seq[AnalyzedImportedType] = imp.importedTypes
+proc importedTypes*(imp: AnalyzedImportDefinition): seq[AnalyzedImportedType] = imp.importedTypes
 
-proc analyzeImport*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImport, string] =
+proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
   let maybeImportedFile = app.findFile(imp.impFile)
   if maybeImportedFile.isNone:
     err(fmt"{imp.loc} UNREACHABLE: file `{imp.impFile.path}` does not exist")
@@ -43,4 +43,4 @@ proc analyzeImport*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): 
     for impType in imp.importedTypes:
       let analyzedImportedType = ? analyzeImportedType(app, analyzedImpFile, impType)
       importedTypes.add(analyzedImportedType)
-    ok(newAnalyzeImport(imp, importedTypes))
+    ok(newAnalyzedImportDefinition(imp, importedTypes))

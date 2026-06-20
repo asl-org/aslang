@@ -6,7 +6,7 @@ proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens)
   let resolvedApp = ? resolve(app)
-  discard ? analyze(resolvedApp)
+  ? analyze(resolvedApp)
   ok("[SUCCESS]")
 
 when isMainModule:

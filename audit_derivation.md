@@ -72,7 +72,7 @@ Canonical conformant examples to mirror:
 | `AnalyzedModule` | none (transitively via `def: AnalyzedModuleDefinition`) | — | `resolved: ResolvedModule` | **MISSING** (mild — already reachable transitively) |
 | `AnalyzedVariantPattern` | `resolved: VariantPattern` (**parser type, not resolver**) | naming inconsistency — field called `resolved` but holds parser type | no `ResolvedVariantPattern` exists; resolver also stores parser type raw | **INTENT** (naming smell) |
 
-**Conformant**: `AnalyzedImportedType`, `AnalyzedImport`,
+**Conformant**: `AnalyzedImportedType`, `AnalyzedImportDefinition`,
 `AnalyzedFunctionDefinition`, `AnalyzedVariant`, `AnalyzedUnion`,
 `AnalyzedLiteralBlock`, `AnalyzedGetter`, `AnalyzedFunctionCall`,
 `AnalyzedKeywordArgument`, `AnalyzedStructInitializer`,
