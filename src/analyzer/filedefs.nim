@@ -1,7 +1,7 @@
 ## File / App + the public analyze* entry point. AnalyzedDefinedType
 ## and analyzeDefinedType live in modules.nim alongside their arms.
 
-import results, tables
+import results, tables, sequtils
 
 import funcs
 import parser
@@ -44,10 +44,10 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
     analyzedDefinedTypeScope[analyzedDefinedType.name] = analyzedDefinedType
 
   var analyzedModules: seq[AnalyzedModule]
-  for aslType in file.definedTypes:
+  for (aslType, definedType) in zip(file.definedTypes, analyzedDefinedTypes):
     case aslType.kind:
     of rdtkGeneric: discard # generics are already resolved since it is only a definition type
     of rdtkModule:
-      let analyzedModule = ? analyzeModule(app, file, fileScope, aslType.module, analyzedDefinedTypeScope)
+      let analyzedModule = ? analyzeModule(app, file, fileScope, aslType.module, definedType.module, analyzedDefinedTypeScope)
       analyzedModules.add(analyzedModule)
   ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, analyzedModules))
