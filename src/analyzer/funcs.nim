@@ -24,7 +24,7 @@ proc resolved*(function: AnalyzedUserFunction): ResolvedUserFunction = function.
 proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDefinition = function.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements
 
-proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
+proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
   var funcScope: AnalyzedFunctionScope
   let analyzedFuncDef = ? moduleDef.findFunctionDef(function.def)
   for argDef in analyzedFuncDef.args:
@@ -32,7 +32,7 @@ proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
 
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in function.statements:
-    let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, moduleDef, defScope, funcScope, statement)
+    let analyzedStatement = ? analyzeStatement(app, file, fileScope, moduleDef, defScope, funcScope, statement)
     analyzedStatements.add(analyzedStatement)
     if analyzedStatement.arg.isSome:
       let newArg = analyzedStatement.arg.get
@@ -97,14 +97,14 @@ proc loc*(m: AnalyzedModule): Location = m.def.resolved.loc
 proc name*(m: AnalyzedModule): Identifier = m.def.name
 proc functions*(m: AnalyzedModule): seq[AnalyzedFunction] = m.functions
 
-proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope): Result[AnalyzedModule, string] =
+proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope): Result[AnalyzedModule, string] =
   var analyzedFunctions: seq[AnalyzedFunction]
-  for function in module.functions:
+  for function in moduleDef.resolved.functions:
     case function.kind:
     of rfkExtern:
       let analyzedFuncDef = ? moduleDef.findFunctionDef(function.def)
       analyzedFunctions.add(newAnalyzedFunction(newAnalyzedExternFunction(function.extern, analyzedFuncDef)))
     of rfkUser:
-      let analyzedUserFunction = ? analyzeUserFunction(app, file, fileScope, module, moduleDef, defScope, function.user)
+      let analyzedUserFunction = ? analyzeUserFunction(app, file, fileScope, moduleDef, defScope, function.user)
       analyzedFunctions.add(newAnalyzedFunction(analyzedUserFunction))
   ok(newAnalyzedModule(moduleDef, analyzedFunctions))
