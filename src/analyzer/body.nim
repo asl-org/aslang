@@ -23,6 +23,36 @@ import modules
 import funcrefs
 import patterns
 
+proc analyzeIntegerLiteral[T: SomeInteger](literal: Literal, expected: string): Result[void, string] =
+  case literal.kind:
+  of lkFloat: err(fmt"{literal.loc} expected a valid {expected} but found float")
+  of lkString: err(fmt"{literal.loc} expected a valid {expected} but found string")
+  of lkInteger:
+    let maybeParsedInt = parseInteger[T](literal.asl)
+    if maybeParsedInt.isSome: ok()
+    else: err(fmt"{literal.loc} expected a valid {expected} but found `{literal.asl}`")
+
+proc analyzeStringLiteral(literal: Literal): Result[void, string] =
+  case literal.kind:
+  of lkFloat: err(fmt"{literal.loc} expected a valid string literal but found float")
+  of lkInteger: err(fmt"{literal.loc} expected a valid string literal but found integer")
+  of lkString: ok()
+
+proc analyzeLiteral(literalDef: ResolvedLiteralType, literal: Literal): Result[void, string] =
+  case literalDef:
+  of rltkF32: err(fmt"{literal.loc} todo: analyze literal initializer F32 literal argument")
+  of rltkF64: err(fmt"{literal.loc} todo: analyze literal initializer F64 literal argument")
+  of rltkPointer: err(fmt"{literal.loc} todo: analyze literal initializer Pointer literal argument")
+  of rltkU8: analyzeIntegerLiteral[uint8](literal, "8-bit unsigned integer")
+  of rltkU16: analyzeIntegerLiteral[uint16](literal, "16-bit unsigned integer")
+  of rltkU32: analyzeIntegerLiteral[uint32](literal, "32-bit unsigned integer")
+  of rltkU64: analyzeIntegerLiteral[uint64](literal, "64-bit unsigned integer")
+  of rltkI8: analyzeIntegerLiteral[int8](literal, "8-bit signed integer")
+  of rltkI16: analyzeIntegerLiteral[int16](literal, "16-bit signed integer")
+  of rltkI32: analyzeIntegerLiteral[int32](literal, "32-bit signed integer")
+  of rltkI64: analyzeIntegerLiteral[int64](literal, "64-bit signed integer")
+  of rltkString: literal.analyzeStringLiteral()
+
 # AnalyzedVariable — independent of the big cluster.
 type AnalyzedVariable* = ref object
   name: Identifier
@@ -474,69 +504,9 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
       of adkStruct: return err(fmt"{argValue.loc} funtion call expects a struct initializer `{argDefModule.name.asl}`")
       of adkUnion: return err(fmt"{argValue.loc} funtion call expects a union initializer `{argDefModule.name.asl}`")
       of adkLiteral:
-        let literalField = argDefData.literal
-        case literalField.resolved:
-        of rltkU16: return err(fmt"{argValue.loc} todo: analyze union initializer U16 literal argument")
-        of rltkI8: return err(fmt"{argValue.loc} todo: analyze union initializer I8 literal argument")
-        of rltkI16: return err(fmt"{argValue.loc} todo: analyze union initializer I16 literal argument")
-        of rltkF32: return err(fmt"{argValue.loc} todo: analyze union initializer F32 literal argument")
-        of rltkF64: return err(fmt"{argValue.loc} todo: analyze union initializer F64 literal argument")
-        of rltkPointer: return err(fmt"{argValue.loc} todo: analyze union initializer Pointer literal argument")
-        of rltkU8:
-          case argValue.literal.kind:
-          of lkFloat: return err(fmt"{argValue.loc} expected a valid 8-bit unsigned integer but found float")
-          of lkString: return err(fmt"{argValue.loc} expected a valid 8-bit unsigned integer but found string")
-          of lkInteger:
-            let maybeParsedInt = parseInteger[uint8](argValue.literal.asl)
-            if maybeParsedInt.isNone:
-              return err(fmt"{argValue.loc} expected a valid 8-bit unsigned integer but found `{argValue.literal.asl}`")
-            else:
-              return ok(genericImplMap)
-        of rltkU32:
-          case argValue.literal.kind:
-          of lkFloat: return err(fmt"{argValue.loc} expected a valid 32-bit unsigned integer but found float")
-          of lkString: return err(fmt"{argValue.loc} expected a valid 32-bit unsigned integer but found string")
-          of lkInteger:
-            let maybeParsedInt = parseInteger[uint32](argValue.literal.asl)
-            if maybeParsedInt.isNone:
-              return err(fmt"{argValue.loc} expected a valid 32-bit unsigned integer but found `{argValue.literal.asl}`")
-            else:
-              return ok(genericImplMap)
-        of rltkU64:
-          case argValue.literal.kind:
-          of lkFloat: return err(fmt"{argValue.loc} expected a valid 64-bit unsigned integer but found float")
-          of lkString: return err(fmt"{argValue.loc} expected a valid 64-bit unsigned integer but found string")
-          of lkInteger:
-            let maybeParsedInt = parseInteger[uint64](argValue.literal.asl)
-            if maybeParsedInt.isNone:
-              return err(fmt"{argValue.loc} expected a valid 64-bit unsigned integer but found `{argValue.literal.asl}`")
-            else:
-              return ok(genericImplMap)
-        of rltkI32:
-          case argValue.literal.kind:
-          of lkFloat: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found float")
-          of lkString: return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found string")
-          of lkInteger:
-            let maybeParsedInt = parseInteger[int32](argValue.literal.asl)
-            if maybeParsedInt.isNone:
-              return err(fmt"{argValue.loc} expected a valid 32-bit signed integer but found `{argValue.literal.asl}`")
-            else:
-              return ok(genericImplMap)
-        of rltkI64:
-          case argValue.literal.kind:
-          of lkFloat: return err(fmt"{argValue.loc} expected a valid 64-bit signed integer but found float")
-          of lkString: return err(fmt"{argValue.loc} expected a valid 64-bit signed integer but found string")
-          of lkInteger:
-            let maybeParsedInt = parseInteger[int64](argValue.literal.asl)
-            if maybeParsedInt.isNone:
-              return err(fmt"{argValue.loc} expected a valid 64-bit signed integer but found `{argValue.literal.asl}`")
-            else:
-              return ok(genericImplMap)
-        of rltkString:
-          case argValue.literal.kind:
-          of lkFloat: return err(fmt"{argValue.loc} expected a valid string literal but found float")
-          of lkInteger: return err(fmt"{argValue.loc} expected a valid string literal but found integer")
-          of lkString: return ok(genericImplMap)
+        let maybeValidLiteral = analyzeLiteral(argDefData.literal.resolved, argValue.literal)
+        if maybeValidLiteral.isOk: return ok(genericImplMap)
+        else: return err(maybeValidLiteral.error)
     else:
       let argGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, argDef.argType, argValue.argType.get, argValue.loc)
       genericImplMap = ? genericImplMap.merge(argGenericImplMap)
@@ -704,33 +674,9 @@ proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
     of adkUnion:
       err(fmt"{kwarg.expression.loc} field `{kwarg.name.asl}` expected a union value but found literal")
     of adkLiteral:
-      let literalField = fieldModuleData.literal
-      case literalField.resolved:
-      of rltkU8: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U8 literal argument")
-      of rltkU16: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U16 literal argument")
-      of rltkU32: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U32 literal argument")
-      of rltkU64: err(fmt"{kwarg.expression.loc} todo: analyze union initializer U64 literal argument")
-      of rltkI8: err(fmt"{kwarg.expression.loc} todo: analyze union initializer I8 literal argument")
-      of rltkI16: err(fmt"{kwarg.expression.loc} todo: analyze union initializer I16 literal argument")
-      of rltkI64: err(fmt"{kwarg.expression.loc} todo: analyze union initializer I64 literal argument")
-      of rltkF32: err(fmt"{kwarg.expression.loc} todo: analyze union initializer F32 literal argument")
-      of rltkF64: err(fmt"{kwarg.expression.loc} todo: analyze union initializer F64 literal argument")
-      of rltkPointer: err(fmt"{kwarg.expression.loc} todo: analyze union initializer Pointer literal argument")
-      of rltkString:
-        case analyzedExpression.literal.kind:
-        of lkFloat: err(fmt"{kwarg.expression.loc} expected a valid string literal but found float")
-        of lkInteger: err(fmt"{kwarg.expression.loc} expected a valid string literal but found integer")
-        of lkString: ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
-      of rltkI32:
-        case analyzedExpression.literal.kind:
-        of lkFloat: err(fmt"{kwarg.expression.loc} expected a valid 32-bit signed integer but found float")
-        of lkString: err(fmt"{kwarg.expression.loc} expected a valid 32-bit signed integer but found string")
-        of lkInteger:
-          let maybeParsedInt = parseInteger[int32](analyzedExpression.literal.asl)
-          if maybeParsedInt.isNone:
-            err(fmt"{kwarg.expression.loc} expected a valid 32-bit signed integer but found `{analyzedExpression.literal.asl}`")
-          else:
-            ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
+      let maybeAnalyzedLiteral = analyzeLiteral(fieldModuleData.literal.resolved, kwarg.expression.literal)
+      if maybeAnalyzedLiteral.isErr: err(maybeAnalyzedLiteral.error)
+      else: ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
   else:
     # TODO: Utilize genericImplMap
     let genericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, analyzedField.argType, analyzedExpression.argType.get, analyzedExpression.loc)

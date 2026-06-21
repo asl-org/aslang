@@ -523,20 +523,27 @@ src/
                                    argType); mutation statement wired
                                    (LHS getter + RHS expression —
                                    type equality not yet checked);
-                                   union-context variable case-pattern
-                                   and literal initializer arms still
-                                   return todo; argument-list handles
+                                   literal initializer arm still
+                                   returns todo; argument-list handles
                                    typed (non-literal) args fully and
-                                   has partial literal-arg validation
-                                   wired against rltkU8 / rltkU32 /
-                                   rltkU64 / rltkI32 / rltkString
-                                   (parses the literal text for each
-                                   via parseInteger[T] / passes string
-                                   through); other literal-typed
-                                   positions (U16/I8/I16/I64/F32/F64/
-                                   Pointer) return todo, and struct/
-                                   union-typed positions return a
-                                   "needs initializer" diagnostic.
+                                   has uniform literal-arg validation
+                                   wired against all integer kinds
+                                   (U8/U16/U32/U64/I8/I16/I32/I64) +
+                                   String via the analyzeLiteral
+                                   helper at the top of body.nim,
+                                   which dispatches on
+                                   ResolvedLiteralType and calls
+                                   analyzeIntegerLiteral[T] (generic
+                                   over the target width/signedness)
+                                   or analyzeStringLiteral. F32/F64/
+                                   Pointer literal positions still
+                                   return todo; struct/union-typed
+                                   positions return a "needs
+                                   initializer" diagnostic.
+                                   analyzeKeywordArgument uses the
+                                   same analyzeLiteral helper, so
+                                   literal-typed field values are
+                                   validated by the same code path.
                                    analyzeValueTypeAgainstDefinitionType
                                    takes an explicit `loc: Location`
                                    so type-mismatch errors point at
@@ -694,12 +701,14 @@ overloads by (name, arity); the Analyzer takes those candidates and:
   so the integration suite now passes 17/35 — but the unification
   gap is still a real TODO that future fixtures will surface.
 - Literal type inference: pin down `5` to `u8` / `u32` / etc. from
-  the expected parameter type at the call site. **Partial** — the
-  literal arg branch in `analyzeArgumentList` validates the literal
-  text against rltkU8 / rltkU32 / rltkU64 / rltkI32 / rltkString
-  today; the remaining literal kinds (U16/I8/I16/I64/F32/F64/
-  Pointer) still return a todo, and the impl map isn't yet updated
-  from the literal position.
+  the expected parameter type at the call site. **Mostly wired** —
+  the `analyzeLiteral` helper at the top of `analyzer/body.nim`
+  dispatches on `ResolvedLiteralType` and validates every integer
+  kind (U8/U16/U32/U64/I8/I16/I32/I64) plus String against the
+  expected target. `analyzeArgumentList` and `analyzeKeywordArgument`
+  both route through it, so call args and struct/union kwargs share
+  one code path. F32 / F64 / Pointer still return a todo, and the
+  impl map isn't yet updated from the literal position.
 - Type-correctness checks across statements (assignment compatibility,
   match exhaustiveness, etc.).
 
