@@ -326,15 +326,24 @@ src/
     body.nim                       Getter / LiteralInitializer +
                                    ResolvedStructRef / ResolvedUnionRef
                                    (each tagged over default / impl;
-                                   impl arm resolves the inner
-                                   ArgumentType, default carries just
-                                   the module identifier) + body-level
-                                   cluster (Initializer ↔ FunctionCall ↔
+                                   default arm now carries `module:
+                                   Module` — the resolved receiver
+                                   module looked up via findModule,
+                                   which handles local + imported via
+                                   the file's typeIndex; impl arm
+                                   carries the resolved ArgumentType,
+                                   with the receiver Module reachable
+                                   via argType.definedType.module.
+                                   module) + body-level cluster
+                                   (Initializer ↔ FunctionCall ↔
                                    Expression ↔ Match / CaseBlock ↔
                                    Statement ↔ Assignment / Mutation /
-                                   KeywordArgument). resolveUnionRef +
-                                   resolveStructRef each dispatch on
-                                   the parser-side kind; impl arm runs
+                                   KeywordArgument). resolveStructRef
+                                   + resolveUnionRef each do the
+                                   findModule themselves and stash
+                                   the result on the default arm; the
+                                   initializer wrappers stop redoing
+                                   the lookup. Impl arm runs
                                    resolveArgumentType which reuses
                                    the existing impl-list arity check
                                    from findRequiredImplsForUnion /
@@ -463,10 +472,21 @@ src/
                                    (AnalyzedFunctionCall /
                                    AnalyzedKeywordArgument /
                                    AnalyzedStructRef + AnalyzedUnionRef
-                                   (each tagged default / impl; impl
+                                   (each tagged default / impl;
+                                   default arm carries `module:
+                                   AnalyzedModuleDefinition` looked up
+                                   via defScope.findModuleDef — defScope
+                                   spans local + imported types,
+                                   populated by analyzeFile in
+                                   appdefs.nim — and the wrapper
+                                   initializer procs read it directly
+                                   instead of redoing the lookup. Impl
                                    arm carries the analyzed
                                    ArgumentType used to seed
-                                   substitution) /
+                                   substitution; impl-arm callers
+                                   that still need the receiver moduleDef
+                                   call defScope.findModuleDef with the
+                                   parser-level name) /
                                    AnalyzedUnionInitializer (carries
                                    unionRef + the analyzer-built
                                    argType, which is fully bound on
