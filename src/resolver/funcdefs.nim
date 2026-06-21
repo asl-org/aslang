@@ -22,7 +22,7 @@ proc parsed*(d: ResolvedArgumentDefinition): ArgumentDefinition = d.parsed
 proc name*(d: ResolvedArgumentDefinition): Identifier = d.parsed.name
 proc loc*(d: ResolvedArgumentDefinition): Location = d.argType.loc
 proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
-proc hash*(d: ResolvedArgumentDefinition): Hash = argType.hash
+proc hash*(d: ResolvedArgumentDefinition): Hash = d.argType.hash
 proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
 proc asl*(argDef: ResolvedArgumentDefinition): string =
   fmt"{argDef.name.asl}: {argDef.argType.asl}"

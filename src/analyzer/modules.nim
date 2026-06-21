@@ -2,6 +2,7 @@
 
 import options, results, tables, sequtils, strformat
 
+import tokenizer
 import parser
 import resolver
 import argtypes
@@ -36,6 +37,7 @@ proc requires*(m: AnalyzedModuleDefinition): seq[AnalyzedGenericArgumentType] = 
 proc data*(m: AnalyzedModuleDefinition): Option[AnalyzedData] = m.data
 proc funcDefs*(m: AnalyzedModuleDefinition): seq[AnalyzedFunctionDefinition] = m.funcDefs
 proc name*(m: AnalyzedModuleDefinition): Identifier = m.resolved.name
+proc loc*(m: AnalyzedModuleDefinition): Location = m.resolved.loc
 
 proc findFunctionDefs*(module: AnalyzedModuleDefinition, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
   # TODO: Ensure public access modifier is considered while looking up the function

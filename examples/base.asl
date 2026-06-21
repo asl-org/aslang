@@ -136,6 +136,25 @@ public module u32:
   @extern("u32_compare_u32")
   public func compare(a: u32, b: u32): i8
 
+  # user functions
+  public func div_ceil(a: u32, b: u32): Status[u32]
+    match u32.add(a, b):
+      case Ok { value: val1 }:
+        match u32.subtract(val1, 1):
+          case Ok { value: val2 }:
+            u32.quotient(val2, b)
+          case Err { error: err2 }:
+            Status[u32].Err { error: err2 }
+      case Err { error: err1 }:
+        Status[u32].Err { error: err1 }
+
+  public func max(a: u32, b: u32): u32
+    match u32.compare(a, b):
+      case 1:
+        a
+      case _:
+        b
+
 public module u64:
   literal: "u64"
 
@@ -185,6 +204,9 @@ public module u64:
   # casting
   @extern("u64_from_u8")
   public func from(a: u8): u64
+
+  @extern("u64_from_u32")
+  public func from(a: u32): u64
 
   # user functions
   public func div_ceil(a: u64, b: u64): Status[u64]

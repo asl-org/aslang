@@ -111,32 +111,27 @@ proc newAnalyzedLiteralPatternScope*(literal: ResolvedLiteralType, totalCases: i
   of rltkString: err("match block does not support string values in case patterns")
   of rltkPointer: err("match block does not support pointer values in case patterns")
 
+proc checkDuplicate[T: SomeInteger](values: var HashSet[T], integer: IntegerLiteral, expected: string): Result[void, string] =
+  let maybeInt = parseInteger[T](integer.asl)
+  if maybeInt.isNone:
+    err(fmt"{integer.loc} expected value to be a valid {expected}")
+  elif maybeInt.get in values:
+    err(fmt"{integer.loc} duplicated integer pattern encountered")
+  else:
+    values.incl(maybeInt.get)
+    ok()
+
 proc checkDuplicate(scope: AnalyzedLiteralPatternScope, integer: IntegerLiteral): Result[AnalyzedLiteralPatternScope, string] =
   case scope.kind:
-  of alpskU8:
-    case integer.kind:
-    of ilkSigned:
-      err(fmt"{integer.loc} expected value to be a valid 8-bit unsigned integer")
-    of ilkUnsigned:
-      let maybeU8 = parseInteger[uint8](integer.asl)
-      if maybeU8.isNone: err(fmt"{integer.loc} expected value to be a valid 8-bit unsigned integer")
-      else:
-        let u8Value = maybeU8.get
-        if u8Value in scope.u8Values: err(fmt"{integer.loc} duplicated integer pattern encountered")
-        else: scope.u8Values.incl(u8Value); ok(scope)
-  of alpskU16: err(fmt"{integer.loc} todo: analyze U16 literal case pattern")
-  of alpskU32: err(fmt"{integer.loc} todo: analyze U32 literal case pattern")
-  of alpskU64: err(fmt"{integer.loc} todo: analyze U64 literal case pattern")
-  of alpskI16: err(fmt"{integer.loc} todo: analyze I16 literal case pattern")
-  of alpskI32: err(fmt"{integer.loc} todo: analyze I32 literal case pattern")
-  of alpskI64: err(fmt"{integer.loc} todo: analyze I64 literal case pattern")
-  of alpskI8:
-    let maybeI8 = parseInteger[int8](integer.asl)
-    if maybeI8.isNone: err(fmt"{integer.loc} expected value to be a valid 8-bit signed integer")
-    else:
-      let i8Value = maybeI8.get
-      if i8Value in scope.i8Values: err(fmt"{integer.loc} duplicated integer pattern encountered")
-      else: scope.i8Values.incl(i8Value); ok(scope)
+  of alpskU8: ? checkDuplicate[uint8](scope.u8Values, integer, "valid 8-bit unsigned integer")
+  of alpskU16: ? checkDuplicate[uint16](scope.u16Values, integer, "valid 16-bit unsigned integer")
+  of alpskU32: ? checkDuplicate[uint32](scope.u32Values, integer, "valid 32-bit unsigned integer")
+  of alpskU64: ? checkDuplicate[uint64](scope.u64Values, integer, "valid 64-bit unsigned integer")
+  of alpskI8: ? checkDuplicate[int8](scope.i8Values, integer, "valid 8-bit signed integer")
+  of alpskI16: ? checkDuplicate[int16](scope.i16Values, integer, "valid 16-bit signed integer")
+  of alpskI32: ? checkDuplicate[int32](scope.i32Values, integer, "valid 32-bit signed integer")
+  of alpskI64: ? checkDuplicate[int64](scope.i64Values, integer, "valid 64-bit signed integer")
+  ok(scope)
 
 proc update*(scope: AnalyzedLiteralPatternScope, id: int, pattern: ResolvedCasePattern): Result[AnalyzedLiteralPatternScope, string] =
   case pattern.kind:

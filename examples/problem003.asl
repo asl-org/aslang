@@ -1,4 +1,4 @@
-import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
+import { i8, u8, u32, i64, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 
 # Project Euler #3 style exercise — heavy union-variant matching.
 # Exercises struct data block (Bitset holding Array[Any]), union
@@ -6,49 +6,33 @@ import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 # patterns with field bindings (case Ok { value: value }), nested
 # match expressions, and module-method calls.
 public module Solver:
-  func div_ceil(a: u64, b: u64): u64
-    c = u64.add(a, b)
-    d = u64.subtract(c, 1)
-    u64.quotient(d, b)
+  func mark_non_prime(bitset: Bitset, num: u32, offset: u32): Status[u8]
+    _ = Bitset.set(bitset, num)
+    match u32.add(num, offset):
+      case Ok { value: next_num }:
+        Solver.mark_non_prime(bitset, next_num, offset)
+      case Err { error: err }:
+        Status[u8].Err { error: err }
 
-  func max(a: u64, b: u64): u64
-    op = u64.compare(a, b)
-    _ = match op:
-      case 1:
-        a
-      case _:
-        b
-
-  func mark_non_prime(bitset: Bitset, j: u64, i: u64): Status[u8]
-    status = Bitset.get(bitset, j)
-    match status:
-      case Ok { value: value }:
-        Bitset.set(bitset, j)
-        k = u64.add(j, i)
-        Solver.mark_non_prime(bitset, k, i)
-      case _:
-        status
-
-  func update_ans(i: u64, ans: u64): u64
-    r = u64.remainder(600851475143, i)
-    match r:
+  func update_ans(maybe_prime: u32, ans: u32): u32
+    maybe_prime_u64 = u64.from(maybe_prime)
+    match u64.remainder(600851475143, maybe_prime_u64):
       case 0:
-        Solver.max(ans, i)
+        u32.max(ans, maybe_prime)
       case _:
         ans
 
-  func solve(bitset: Bitset, start: u64, ans: u64): u64
-    status = Bitset.get(bitset, start)
-    match status:
-      case Ok { value: value }:
-        next_start = u64.add(start, 1)
-        match value:
-          case 0:
-            Solver.mark_non_prime(bitset, start, start)
-            new_ans = Solver.update_ans(start, ans)
-            Solver.solve(bitset, next_start, new_ans)
+  func solve(bitset: Bitset, num: u32, ans: u32): u32
+    match Bitset.get(bitset, num):
+      case Ok { value: flag }:
+        next_num = u32.add(num, 1)
+        match flag:
+          case 0: # 0 stands for prime
+            Solver.mark_non_prime(bitset, num, num)
+            new_ans = Solver.update_ans(num, ans)
+            Solver.solve(bitset, next_num, new_ans)
           case _:
-            Solver.solve(bitset, next_start, ans)
+            Solver.solve(bitset, next_num, ans)
       case _:
         ans
 

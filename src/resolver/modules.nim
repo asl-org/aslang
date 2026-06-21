@@ -20,7 +20,7 @@ type ResolvedModule* = ref object
 proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
   for id, function in functions:
-    assert(function.def notin funcDefIndex, "NOTE: should be unreachable")
+    assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
     funcDefIndex[function.def] = id
   ResolvedModule(parsed: parsed, requires: requires, data: data, funcDefIndex: funcDefIndex, functions: functions)
 
