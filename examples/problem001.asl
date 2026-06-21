@@ -36,7 +36,11 @@ public module Solver:
               case Ok { value: c }:
                 match i64.add(a, b):
                   case Ok { value: d }:
-                    e = i64.subtract(d, c)
+                    match i64.subtract(d, c):
+                      case Ok { value: e }:
+                        e
+                      case _:
+                        i64 1
                   case _:
                     i64 1
               case _:

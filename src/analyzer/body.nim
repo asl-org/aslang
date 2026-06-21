@@ -69,6 +69,28 @@ proc analyzeVariable*(scope: AnalyzedFunctionScope, variable: Identifier): Resul
   if variable in scope: ok(newAnalyzedVariable(variable, scope[variable]))
   else: err(fmt"{variable.loc} variable `{variable.asl}` does not exist in scope")
 
+type AnalyzedLiteralInitializer = ref object
+  resolved: ResolvedLiteralInitializer
+  argType: AnalyzedArgumentType
+
+proc newAnalyzedLiteralInitializer(resolved: ResolvedLiteralInitializer, argType: AnalyzedArgumentType): AnalyzedLiteralInitializer =
+  AnalyzedLiteralInitializer(resolved: resolved, argType: argType)
+
+proc loc*(init: AnalyzedLiteralInitializer): Location = init.resolved.loc
+proc argType*(init: AnalyzedLiteralInitializer): AnalyzedArgumentType = init.argType
+
+proc analyzeLiteralInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
+  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, moduleDef.resolved, init.argType)
+  let argDefModule = ? defScope.findModuleDef(analyzedArgType, init.loc)
+  let argDefData = ? defScope.extractDataBlock(argDefModule, init.loc)
+  case argDefData.kind:
+  of adkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
+  of adkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
+  of adkLiteral:
+    let maybeValidLiteral = analyzeLiteral(argDefData.literal.resolved, init.literal)
+    if maybeValidLiteral.isOk: ok(newAnalyzedLiteralInitializer(init, analyzedArgType))
+    else: err(maybeValidLiteral.error)
+
 # AnalyzedGetter — independent of the big cluster.
 type AnalyzedGetter* = ref object
   resolved: ResolvedGetter
@@ -139,9 +161,10 @@ type
     kwargs: seq[AnalyzedKeywordArgument]
 
   AnalyzedInitializerKind* = enum
-    aikUnion, aikStruct
+    aikUnion, aikStruct, aikLiteral
   AnalyzedInitializer* = ref object
     case kind: AnalyzedInitializerKind
+    of aikLiteral: literal: AnalyzedLiteralInitializer
     of aikUnion: union: AnalyzedUnionInitializer
     of aikStruct: struct: AnalyzedStructInitializer
 
@@ -254,6 +277,7 @@ proc newAnalyzedStructInitializer*(resolved: ResolvedStructInitializer, structRe
   AnalyzedStructInitializer(resolved: resolved, structRef: structRef, argType: argType, kwargs: kwargs)
 
 proc resolved*(struct: AnalyzedStructInitializer): ResolvedStructInitializer = struct.resolved
+proc loc*(init: AnalyzedStructInitializer): Location = init.resolved.loc
 proc structRef*(struct: AnalyzedStructInitializer): AnalyzedStructRef = struct.structRef
 proc argType*(struct: AnalyzedStructInitializer): AnalyzedArgumentType = struct.argType
 proc kwargs*(struct: AnalyzedStructInitializer): seq[AnalyzedKeywordArgument] = struct.kwargs
@@ -262,11 +286,15 @@ proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: 
   AnalyzedUnionInitializer(resolved: resolved, unionRef: unionRef, argType: argType, variant: variant, kwargs: kwargs)
 
 proc resolved*(init: AnalyzedUnionInitializer): ResolvedUnionInitializer = init.resolved
+proc loc*(init: AnalyzedUnionInitializer): Location = init.resolved.loc
 proc unionRef*(init: AnalyzedUnionInitializer): AnalyzedUnionRef = init.unionRef
 proc module*(init: AnalyzedUnionInitializer): Module = init.resolved.module
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedArgumentType = init.argType
 proc variant*(init: AnalyzedUnionInitializer): AnalyzedVariant = init.variant
 proc kwargs*(init: AnalyzedUnionInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
+
+proc newAnalyzedInitializer*(literal: AnalyzedLiteralInitializer): AnalyzedInitializer =
+  AnalyzedInitializer(kind: aikLiteral, literal: literal)
 
 proc newAnalyzedInitializer*(union: AnalyzedUnionInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikUnion, union: union)
@@ -286,13 +314,15 @@ proc struct*(init: AnalyzedInitializer): AnalyzedStructInitializer =
 
 proc argType*(init: AnalyzedInitializer): AnalyzedArgumentType =
   case init.kind:
+  of aikLiteral: init.literal.argType
   of aikUnion: init.union.argType
   of aikStruct: init.struct.argType
 
 proc loc*(init: AnalyzedInitializer): Location =
   case init.kind:
-  of aikUnion: init.union.resolved.loc
-  of aikStruct: init.struct.resolved.loc
+  of aikLiteral: init.literal.loc
+  of aikUnion: init.union.loc
+  of aikStruct: init.struct.loc
 
 proc newAnalyzedCaseBlock*(resolved: ResolvedCaseBlock, pattern: AnalyzedCasePattern, statements: seq[AnalyzedStatement]): AnalyzedCaseBlock =
   AnalyzedCaseBlock(resolved: resolved, pattern: pattern, statements: statements)
@@ -834,9 +864,8 @@ proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: 
 proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of rikLiteral:
-    let literal = init.literal
-
-    err(fmt"{init.loc} todo: analyze literal initializer")
+    let analyzedLiteralInit = ? analyzeLiteralInitializer(app, file, fileScope, moduleDef, defScope, funcScope, init.literal)
+    ok(newAnalyzedInitializer(analyzedLiteralInit))
   of rikStruct:
     let analyzedStructInit = ? analyzeStructInitializer(app, file, fileScope, moduleDef, defScope, funcScope, init.struct)
     ok(newAnalyzedInitializer(analyzedStructInit))

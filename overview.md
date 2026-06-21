@@ -543,8 +543,20 @@ src/
                                    argType); mutation statement wired
                                    (LHS getter + RHS expression —
                                    type equality not yet checked);
-                                   literal initializer arm still
-                                   returns todo; argument-list handles
+                                   literal initializer arm wired via
+                                   AnalyzedLiteralInitializer +
+                                   analyzeLiteralInitializer — runs
+                                   analyzeArgumentType for the
+                                   declared type, extracts the data
+                                   block, errors if the receiver is
+                                   struct/union (rejects "you wrote
+                                   a literal where the type expects
+                                   an initializer block"), validates
+                                   the literal value against the
+                                   ResolvedLiteralType via the same
+                                   analyzeLiteral helper used by
+                                   arg-list and kwarg paths;
+                                   argument-list handles
                                    typed (non-literal) args fully and
                                    has uniform literal-arg validation
                                    wired against all integer kinds

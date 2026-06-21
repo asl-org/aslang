@@ -55,6 +55,7 @@ proc parsed*(init: ResolvedLiteralInitializer): LiteralInitializer = init.parsed
 proc value*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 proc argType*(init: ResolvedLiteralInitializer): ResolvedArgumentType = init.argType
 proc loc*(init: ResolvedLiteralInitializer): Location = init.parsed.loc
+proc literal*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 
 proc resolveLiteralInitializer(app: App, file: parser.File,
     fileScope: FileScope, module: Module,
