@@ -582,8 +582,8 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
   let concreteReturns = matchingFuncDef.returns.concrete(genericImpls)
   ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, concreteReturns))
 
-proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, union: AnalyzedUnion): Result[AnalyzedCaseBlock, string] =
-  let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, defScope, funcScope, caseBlock.pattern, union)
+proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType, union: AnalyzedUnion): Result[AnalyzedCaseBlock, string] =
+  let analyzedCasePattern = ? analyzeCasePattern(app, file, fileScope, defScope, funcScope, caseBlock.pattern, subjectType, union)
   var caseScope = funcScope.clone()
   for binding in analyzedCasePattern.bindings:
     # echo fmt"SET {binding.name.asl} {binding.argType.asl}"
@@ -627,7 +627,7 @@ proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string
       return err(fmt"{c.loc} todo: return an error message telling that the case block return types are not same")
   ok()
 
-proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], union: AnalyzedUnion): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, union: AnalyzedUnion): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = newAnalyzedVariantPatternScope(cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
@@ -638,7 +638,7 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFile
 
   var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
   for caseBlock in cases:
-    let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, moduleDef, defScope, funcScope, caseBlock, union)
+    let analyzedCaseBlock = ? analyzeCaseBlock(app, file, fileScope, moduleDef, defScope, funcScope, caseBlock, subjectType, union)
     analyzedCaseBlocks.add(analyzedCaseBlock)
     # echo analyzedCaseBlock.argType.get.asl
   ? verifyUniformReturnType(analyzedCaseBlocks)
@@ -690,7 +690,7 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
           of adatkModule:
             let impls = analyzedSubjectExpr.argType.get.definedType.module.impls
             let concreteUnion = analyzedSubjectDataType.union.concrete(impls)
-            let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, concreteUnion)
+            let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, concreteUnion)
             ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =

@@ -204,10 +204,12 @@ proc bindings*(pattern: AnalyzedCasePattern): seq[AnalyzedArgumentDefinition] =
   of acpkVariable: @[pattern.variable]
   of acpkInteger: newSeq[AnalyzedArgumentDefinition]()
 
-proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, union: AnalyzedUnion): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnion): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} UNREACHABLE: integer literals are not allowed in union case pattern")
-  of rcpkVariable: err(fmt"{pattern.loc} todo: analyze variable case pattern")
+  of rcpkVariable:
+    let analyzedArgDef = newAnalyzedArgumentDefinition(subjectType, pattern.variable)
+    ok(newAnalyzedCasePattern(analyzedArgDef))
   of rcpkVariant:
     let analyzedPattern = ? analyzeVariantCasePattern(app, file, fileScope, defScope, funcScope, pattern.variant, union)
     ok(newAnalyzedCasePattern(analyzedPattern))
