@@ -76,7 +76,7 @@ type
   ResolvedStructRef* = ref object
     parsed: StructRef
     case kind: ResolvedStructRefKind
-    of rsrkDefault: discard
+    of rsrkDefault: module: Module
     of rsrkImpl: argType: ResolvedArgumentType
 
   ResolvedUnionRefKind* = enum
@@ -84,7 +84,7 @@ type
   ResolvedUnionRef* = ref object
     parsed: UnionRef
     case kind: ResolvedUnionRefKind
-    of rurkDefault: discard
+    of rurkDefault: module: Module
     of rurkImpl: argType: ResolvedArgumentType
 
   ResolvedStructInitializer* = ref object
@@ -158,20 +158,24 @@ proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.parsed.name
 proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
 proc expression*(kwarg: ResolvedKeywordArgument): ResolvedExpression = kwarg.expression
 
-proc newResolvedStructRef*(parsed: StructRef): ResolvedStructRef =
-  ## Default kind — carries no resolved payload beyond the parser node.
-  ResolvedStructRef(parsed: parsed, kind: rsrkDefault)
+proc newResolvedStructRef*(parsed: StructRef, module: Module): ResolvedStructRef =
+  ## Default kind — carries the resolved receiver module (looked up from
+  ## the file's typeIndex, handles local and imported alike).
+  ResolvedStructRef(parsed: parsed, kind: rsrkDefault, module: module)
 
 proc newResolvedStructRef*(parsed: StructRef, argType: ResolvedArgumentType): ResolvedStructRef =
-  ## Impl kind — wraps the resolved argument type (root + impls).
+  ## Impl kind — wraps the resolved argument type (root + impls). The
+  ## resolved receiver module is reachable via argType.definedType.module.module.
   ResolvedStructRef(parsed: parsed, kind: rsrkImpl, argType: argType)
 
 proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
 proc kind*(s: ResolvedStructRef): ResolvedStructRefKind = s.kind
-proc module*(s: ResolvedStructRef): Identifier =
+proc module*(s: ResolvedStructRef): Module =
+  ## Returns the resolved receiver module. Default arm reads the stored
+  ## field; impl arm extracts via argType's defined-module root.
   case s.kind:
-  of rsrkDefault: s.parsed.module
-  of rsrkImpl: s.parsed.argType.root
+  of rsrkDefault: s.module
+  of rsrkImpl: s.argType.definedType.module.module
 proc argType*(s: ResolvedStructRef): ResolvedArgumentType =
   assert s.kind == rsrkImpl,
     fmt"ResolvedStructRef.argType accessed but kind is {s.kind}"
@@ -187,20 +191,24 @@ proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.structRef
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 
-proc newResolvedUnionRef*(parsed: UnionRef): ResolvedUnionRef =
-  ## Default kind — carries no resolved payload beyond the parser node.
-  ResolvedUnionRef(parsed: parsed, kind: rurkDefault)
+proc newResolvedUnionRef*(parsed: UnionRef, module: Module): ResolvedUnionRef =
+  ## Default kind — carries the resolved receiver module (looked up
+  ## from the file's typeIndex, handles local and imported alike).
+  ResolvedUnionRef(parsed: parsed, kind: rurkDefault, module: module)
 
 proc newResolvedUnionRef*(parsed: UnionRef, argType: ResolvedArgumentType): ResolvedUnionRef =
-  ## Impl kind — wraps the resolved argument type (root + impls).
+  ## Impl kind — wraps the resolved argument type (root + impls). The
+  ## resolved receiver module is reachable via argType.definedType.module.module.
   ResolvedUnionRef(parsed: parsed, kind: rurkImpl, argType: argType)
 
 proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
 proc kind*(u: ResolvedUnionRef): ResolvedUnionRefKind = u.kind
-proc module*(u: ResolvedUnionRef): Identifier =
+proc module*(u: ResolvedUnionRef): Module =
+  ## Returns the resolved receiver module. Default arm reads the stored
+  ## field; impl arm extracts via argType's defined-module root.
   case u.kind:
-  of rurkDefault: u.parsed.module
-  of rurkImpl: u.parsed.argType.root
+  of rurkDefault: u.module
+  of rurkImpl: u.argType.definedType.module.module
 proc argType*(u: ResolvedUnionRef): ResolvedArgumentType =
   assert u.kind == rurkImpl,
     fmt"ResolvedUnionRef.argType accessed but kind is {u.kind}"
@@ -214,7 +222,7 @@ proc newResolvedUnionInitializer*(parsed: UnionInitializer, unionRef: ResolvedUn
 proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
 proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
 proc unionRef*(init: ResolvedUnionInitializer): ResolvedUnionRef = init.unionRef
-proc module*(init: ResolvedUnionInitializer): Identifier = init.unionRef.module
+proc module*(init: ResolvedUnionInitializer): Module = module(init.unionRef)
 proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
 proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
 
@@ -231,6 +239,10 @@ proc newResolvedInitializer*(
   ResolvedInitializer(kind: rikLiteral, literal: literal)
 
 proc kind*(init: ResolvedInitializer): ResolvedInitializerKind = init.kind
+proc literal*(init: ResolvedInitializer): ResolvedLiteralInitializer =
+  assert init.kind == rikLiteral,
+    fmt"ResolvedInitializer.literal accessed but kind is {init.kind}"
+  init.literal
 proc union*(init: ResolvedInitializer): ResolvedUnionInitializer =
   assert init.kind == rikUnion,
     fmt"ResolvedInitializer.union accessed but kind is {init.kind}"
@@ -404,16 +416,17 @@ proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
       resolvedArgs.add(resolvedArg)
     ok(newResolvedFunctionCall(fncall, resolvedArgs))
 
-proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module: Module, structRef: StructRef, structModule: Module): Result[ResolvedStructRef, string] =
+proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module: Module, structRef: StructRef): Result[ResolvedStructRef, string] =
   ## Resolves a StructRef and validates the kind ↔ requires match.
-  ## Returns the resolved struct-ref alongside the receiver Module (the
-  ## resolver enriches further during data-block lookup).
+  ## Looks up the receiver module via findModule (which handles local
+  ## and imported types alike) and stores it on the default arm.
+  let structModule = ? file.findModule(fileScope, structRef.module)
   case structRef.kind:
   of srkDefault:
     if structModule.requires.isSome:
       err(fmt"{structRef.loc} module `{structModule.name.asl}` declares requires; initializer must specify impl types as `{structModule.name.asl}[...]`")
     else:
-      ok(newResolvedStructRef(structRef))
+      ok(newResolvedStructRef(structRef, structModule))
   of srkImpl:
     if not structModule.requires.isSome:
       err(fmt"{structRef.loc} module `{structModule.name.asl}` has no requires block; initializer must not specify impl types")
@@ -422,8 +435,8 @@ proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module:
       ok(newResolvedStructRef(structRef, resolvedArgType))
 
 proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope, module: Module, scope: FunctionScope, struct: StructInitializer): Result[ResolvedStructInitializer, string] =
-  let structModule = ? file.findModule(fileScope, struct.structRef.module)
-  let resolvedStructRef = ? resolveStructRef(app, file, fileScope, module, struct.structRef, structModule)
+  let resolvedStructRef = ? resolveStructRef(app, file, fileScope, module, struct.structRef)
+  let structModule = module(resolvedStructRef)
   var structBlock = ? structModule.struct(struct.loc)
   if struct.kwargs.len != structBlock.fields.len:
     err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
@@ -438,13 +451,14 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
     ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
 
 proc resolveUnionRef(app: App, file: parser.File, fileScope: FileScope, module: Module, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
-  ## Default arm carries no impls — analyzer infers via leave-as-is.
-  ## Impl arm resolves the explicit argType; arity against the union's
-  ## deduped requires list is checked downstream in resolveUnionInitializer
+  ## Default arm stores the resolved receiver module — drives leave-as-is
+  ## inference at the analyzer. Impl arm resolves the explicit argType;
+  ## arity against the union's deduped requires list is checked downstream
   ## once the resolved union (and its position-indexed requires) is in hand.
+  let unionModule = ? file.findModule(fileScope, unionRef.module)
   case unionRef.kind:
   of urkDefault:
-    ok(newResolvedUnionRef(unionRef))
+    ok(newResolvedUnionRef(unionRef, unionModule))
   of urkImpl:
     let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, unionRef.argType)
     ok(newResolvedUnionRef(unionRef, resolvedArgType))
@@ -453,7 +467,7 @@ proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
   let resolvedUnionRef = ? resolveUnionRef(app, file, fileScope, module, unionInit.unionRef)
-  let initModule = ? file.findModule(fileScope, resolvedUnionRef.module)
+  let initModule = module(resolvedUnionRef)
   let union = ? initModule.union(unionInit.loc)
   let variant = ? union.findVariant(unionInit.variant)
   if unionInit.kwargs.len != variant.fields.len:

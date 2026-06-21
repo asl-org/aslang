@@ -40,9 +40,9 @@ proc analyzeStringLiteral(literal: Literal): Result[void, string] =
 
 proc analyzeLiteral(literalDef: ResolvedLiteralType, literal: Literal): Result[void, string] =
   case literalDef:
-  of rltkF32: err(fmt"{literal.loc} todo: analyze literal initializer F32 literal argument")
-  of rltkF64: err(fmt"{literal.loc} todo: analyze literal initializer F64 literal argument")
-  of rltkPointer: err(fmt"{literal.loc} todo: analyze literal initializer Pointer literal argument")
+  of rltkF32: err(fmt"{literal.loc} todo: analyze literal F32 literal argument")
+  of rltkF64: err(fmt"{literal.loc} todo: analyze literal F64 literal argument")
+  of rltkPointer: err(fmt"{literal.loc} todo: analyze literal Pointer literal argument")
   of rltkU8: analyzeIntegerLiteral[uint8](literal, "8-bit unsigned integer")
   of rltkU16: analyzeIntegerLiteral[uint16](literal, "16-bit unsigned integer")
   of rltkU32: analyzeIntegerLiteral[uint32](literal, "32-bit unsigned integer")
@@ -114,7 +114,7 @@ type
   AnalyzedStructRef* = ref object
     resolved: ResolvedStructRef
     case kind: AnalyzedStructRefKind
-    of asrkDefault: discard
+    of asrkDefault: module: AnalyzedModuleDefinition
     of asrkImpl: argType: AnalyzedArgumentType
 
   AnalyzedUnionRefKind* = enum
@@ -122,7 +122,7 @@ type
   AnalyzedUnionRef* = ref object
     resolved: ResolvedUnionRef
     case kind: AnalyzedUnionRefKind
-    of aurkDefault: discard
+    of aurkDefault: module: AnalyzedModuleDefinition
     of aurkImpl: argType: AnalyzedArgumentType
 
   AnalyzedStructInitializer* = ref object
@@ -203,30 +203,47 @@ proc resolved*(kwarg: AnalyzedKeywordArgument): ResolvedKeywordArgument = kwarg.
 proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDefinition = kwarg.field
 proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
 
-proc newAnalyzedStructRef*(resolved: ResolvedStructRef): AnalyzedStructRef =
-  AnalyzedStructRef(resolved: resolved, kind: asrkDefault)
+proc newAnalyzedStructRef*(resolved: ResolvedStructRef, module: AnalyzedModuleDefinition): AnalyzedStructRef =
+  ## Default kind — stores the analyzed receiver module (looked up via
+  ## findModuleDef, handles local and imported alike).
+  AnalyzedStructRef(resolved: resolved, kind: asrkDefault, module: module)
 
 proc newAnalyzedStructRef*(resolved: ResolvedStructRef, argType: AnalyzedArgumentType): AnalyzedStructRef =
+  ## Impl kind — wraps the analyzed argument type (root + impls).
   AnalyzedStructRef(resolved: resolved, kind: asrkImpl, argType: argType)
 
 proc resolved*(s: AnalyzedStructRef): ResolvedStructRef = s.resolved
 proc kind*(s: AnalyzedStructRef): AnalyzedStructRefKind = s.kind
-proc module*(s: AnalyzedStructRef): Identifier = s.resolved.module
+proc module*(s: AnalyzedStructRef): AnalyzedModuleDefinition =
+  ## Returns the analyzed receiver module. Only valid for the default
+  ## arm; impl-arm callers reach the module via defScope.findModuleDef
+  ## with the parser-level name from `resolved.module.name`.
+  assert s.kind == asrkDefault,
+    fmt"AnalyzedStructRef.module accessed but kind is {s.kind}"
+  s.module
 proc argType*(s: AnalyzedStructRef): AnalyzedArgumentType =
   assert s.kind == asrkImpl,
     fmt"AnalyzedStructRef.argType accessed but kind is {s.kind}"
   s.argType
 proc loc*(s: AnalyzedStructRef): Location = s.resolved.loc
 
-proc newAnalyzedUnionRef*(resolved: ResolvedUnionRef): AnalyzedUnionRef =
-  AnalyzedUnionRef(resolved: resolved, kind: aurkDefault)
+proc newAnalyzedUnionRef*(resolved: ResolvedUnionRef, module: AnalyzedModuleDefinition): AnalyzedUnionRef =
+  ## Default kind — stores the analyzed receiver module.
+  AnalyzedUnionRef(resolved: resolved, kind: aurkDefault, module: module)
 
 proc newAnalyzedUnionRef*(resolved: ResolvedUnionRef, argType: AnalyzedArgumentType): AnalyzedUnionRef =
+  ## Impl kind — wraps the analyzed argument type (root + impls).
   AnalyzedUnionRef(resolved: resolved, kind: aurkImpl, argType: argType)
 
 proc resolved*(u: AnalyzedUnionRef): ResolvedUnionRef = u.resolved
 proc kind*(u: AnalyzedUnionRef): AnalyzedUnionRefKind = u.kind
-proc module*(u: AnalyzedUnionRef): Identifier = u.resolved.module
+proc module*(u: AnalyzedUnionRef): AnalyzedModuleDefinition =
+  ## Returns the analyzed receiver module. Only valid for the default
+  ## arm; impl-arm callers reach the module via defScope.findModuleDef
+  ## with the parser-level name from `resolved.module.name`.
+  assert u.kind == aurkDefault,
+    fmt"AnalyzedUnionRef.module accessed but kind is {u.kind}"
+  u.module
 proc argType*(u: AnalyzedUnionRef): AnalyzedArgumentType =
   assert u.kind == aurkImpl,
     fmt"AnalyzedUnionRef.argType accessed but kind is {u.kind}"
@@ -246,7 +263,7 @@ proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: 
 
 proc resolved*(init: AnalyzedUnionInitializer): ResolvedUnionInitializer = init.resolved
 proc unionRef*(init: AnalyzedUnionInitializer): AnalyzedUnionRef = init.unionRef
-proc module*(init: AnalyzedUnionInitializer): Identifier = init.resolved.module
+proc module*(init: AnalyzedUnionInitializer): Module = init.resolved.module
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedArgumentType = init.argType
 proc variant*(init: AnalyzedUnionInitializer): AnalyzedVariant = init.variant
 proc kwargs*(init: AnalyzedUnionInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
@@ -691,9 +708,11 @@ proc receiverArgType(receiver: AnalyzedModuleDefinition): AnalyzedArgumentType =
   let analyzedModuleArg = newAnalyzedModuleArgumentType(resolvedSelfArg, receiver.resolved)
   newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(analyzedModuleArg))
 
-proc analyzeUnionRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
+proc analyzeUnionRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
   case unionRef.kind:
-  of rurkDefault: ok(newAnalyzedUnionRef(unionRef))
+  of rurkDefault:
+    let receiverDef = ? defScope.findModuleDef(unionRef.module.name, unionRef.loc)
+    ok(newAnalyzedUnionRef(unionRef, receiverDef))
   of rurkImpl:
     let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, moduleDef.resolved, unionRef.argType)
     ok(newAnalyzedUnionRef(unionRef, analyzedArgType))
@@ -706,8 +725,11 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
   ## type matches, and builds the result type with bound concretes at
   ## positions the variant touched + free generics at uncovered positions
   ## (leave-as-is — unification at downstream use sites fills the rest).
-  let analyzedUnionRef = ? analyzeUnionRef(app, file, fileScope, moduleDef, init.unionRef)
-  let receiver = ? defScope.findModuleDef(init.module, init.loc)
+  let analyzedUnionRef = ? analyzeUnionRef(app, file, fileScope, moduleDef, defScope, init.unionRef)
+  let receiver =
+    case analyzedUnionRef.kind:
+    of aurkDefault: analyzedUnionRef.module
+    of aurkImpl: ? defScope.findModuleDef(init.module.name, init.loc)
   if receiver.data.isNone:
     return err(fmt"{init.loc} module `{receiver.name.asl}` is not a union")
   let dataBlock = receiver.data.get
@@ -730,7 +752,7 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
     of aatkDefined:
       case analyzedUnionRef.argType.definedType.kind:
       of adatkGeneric:
-        return err(fmt"{analyzedUnionRef.loc} union receiver `{analyzedUnionRef.module.asl}` cannot be a generic")
+        return err(fmt"{analyzedUnionRef.loc} union receiver `{analyzedUnionRef.resolved.module.name.asl}` cannot be a generic")
       of adatkModule:
         let explicitImpls = analyzedUnionRef.argType.definedType.module.impls
         for genericArgType, position in analyzedUnion.genericTypeIndex:
@@ -774,16 +796,21 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
 
   ok(newAnalyzedUnionInitializer(init, analyzedUnionRef, argType, analyzedVariant, analyzedKwargs))
 
-proc analyzeStructRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
+proc analyzeStructRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
   case structRef.kind:
-  of rsrkDefault: ok(newAnalyzedStructRef(structRef))
+  of rsrkDefault:
+    let receiverDef = ? defScope.findModuleDef(structRef.module.name, structRef.loc)
+    ok(newAnalyzedStructRef(structRef, receiverDef))
   of rsrkImpl:
     let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, moduleDef.resolved, structRef.argType)
     ok(newAnalyzedStructRef(structRef, analyzedArgType))
 
 proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
-  let analyzedStructRef = ? analyzeStructRef(app, file, fileScope, moduleDef, init.structRef)
-  let receiver = ? defScope.findModuleDef(init.structRef.module, init.loc)
+  let analyzedStructRef = ? analyzeStructRef(app, file, fileScope, moduleDef, defScope, init.structRef)
+  let receiver =
+    case analyzedStructRef.kind:
+    of asrkDefault: analyzedStructRef.module
+    of asrkImpl: ? defScope.findModuleDef(init.structRef.module.name, init.loc)
   if receiver.data.isNone:
     return err(fmt"{init.loc} module `{receiver.name.asl}` is not a struct")
   let dataBlock = receiver.data.get
@@ -807,6 +834,8 @@ proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: 
 proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of rikLiteral:
+    let literal = init.literal
+
     err(fmt"{init.loc} todo: analyze literal initializer")
   of rikStruct:
     let analyzedStructInit = ? analyzeStructInitializer(app, file, fileScope, moduleDef, defScope, funcScope, init.struct)
