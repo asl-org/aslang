@@ -1,35 +1,47 @@
-import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
+import { i8, u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 # Project Euler #5 style exercise — gcd/lcm via Euclidean recursion.
 # Exercises integer comparison with signed literal patterns
 # (case -1), mutually-calling functions within a module, and
 # tail-recursive loops.
 public module Example:
-  func gcd(a: u64, b: u64): u64
-    op = u64.compare(b, 0)
-    _ = match op:
+  func gcd(a: u64, b: u64): Status[u64]
+    match u64.compare(b, 0):
       case 0:
-        a
+        Status.Ok { value: a }
       case _:
-        c = u64.remainder(a, b)
-        Example.gcd(b, c)
+        match u64.remainder(a, b):
+          case Ok { value: c }:
+            Example.gcd(b, c)
+          case Err { error: error }:
+            Status[u64].Err { error: error }
 
-  func lcm(a: u64, b: u64): u64
-    c = u64.multiply(a, b)
-    d = Example.gcd(a, b)
-    u64.quotient(c, d)
+  func lcm(a: u64, b: u64): Status[u64]
+    match u64.multiply(a, b):
+      case Ok { value: c }:
+        match Example.gcd(a, b):
+          case Ok { value: d }:
+            u64.quotient(c, d)
+          case Err { error: err2 }:
+            Status[u64].Err { error: err2 }
+      case Err { error: err1 }:
+        Status[u64].Err { error: err1 }
 
-  func solve(i: u64, n: u64, j: u64): u64
+  func solve(i: u64, n: u64, j: u64): Status[u64]
     op = u64.compare(i, n)
     _ = match op:
       case -1:
-        next_i = u64.add(i, 1)
-        next_j = Example.lcm(i, j)
-        Example.solve(next_i, n, next_j)
+        match u64.add(i, 1):
+          case Ok { value: next_i }:
+            match Example.lcm(i, j):
+              case Ok { value: next_j }:
+                Example.solve(next_i, n, next_j)
+              case Err { error: err2 }:
+                Status[u64].Err { error: err2 }
+          case Err { error: err1 }:
+            Status[u64].Err { error: err1 }
       case _:
-        j
+        Status.Ok { value: j }
 
   func start(): u8
-    exit_success = u8 0
-    ans = Example.solve(2, 20, 1)
-    System.print(ans)
-    exit_success
+    Example.solve(2, 20, 1)
+    u8 0

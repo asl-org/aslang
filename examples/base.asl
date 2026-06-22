@@ -142,7 +142,7 @@ public module u32:
       case Ok { value: val1 }:
         match u32.subtract(val1, 1):
           case Ok { value: val2 }:
-            u32.quotient(val2, b)
+            Status.Ok { value: u32.quotient(val2, b) }
           case Err { error: err2 }:
             Status[u32].Err { error: err2 }
       case Err { error: err1 }:
@@ -195,7 +195,7 @@ public module u64:
   public func quotient(a: u64, b: u64): Status[u64]
 
   @extern("u64_remainder_u64")
-  public func remainder(a: u64, b: u64): u64
+  public func remainder(a: u64, b: u64): Status[u64]
 
   # branching
   @extern("u64_compare_u64")
@@ -219,6 +219,13 @@ public module u64:
             Status[u64].Err { error: err2 }
       case Err { error: err1 }:
         Status[u64].Err { error: err1 }
+
+  public func max(a: u64, b: u64): u64
+    match u64.compare(a, b):
+      case 1:
+        a
+      case _:
+        b
 
 public module i8:
   literal: "i8"

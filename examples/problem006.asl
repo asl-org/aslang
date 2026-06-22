@@ -5,20 +5,37 @@ import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 # match, data blocks, or recursion.
 public module Solver:
   func start(): u8
-    exit_success = u8 0
     n = u64 100
-
-    a = u64.subtract(n, 1)
-    b = u64.add(n, 1)
-
-    c = u64.multiply(n, 3)
-    d = u64.add(c, 2)
-
-    e = u64.multiply(a, b)
-    f = u64.multiply(e, d)
-    g = u64.multiply(n, f)
-
-    h = u64.quotient(g, 12)
-    System.print(h)
-
-    exit_success
+    match u64.subtract(n, 1):
+      case Ok { value: a }:
+        match u64.add(n, 1):
+          case Ok { value: b }:
+            match u64.multiply(n, 3):
+              case Ok { value: c }:
+                match u64.add(c, 2):
+                  case Ok { value: d }:
+                    match u64.multiply(a, b):
+                      case Ok { value: e }:
+                        match u64.multiply(e, d):
+                          case Ok { value: f }:
+                            match u64.multiply(n, f):
+                              case Ok { value: g }:
+                                match u64.quotient(g, 12):
+                                  case Ok { value: h }:
+                                    u8 0
+                                  case _:
+                                    u8 1
+                              case _:
+                                u8 1
+                          case _:
+                            u8 1
+                      case _:
+                        u8 1
+                  case _:
+                    u8 1
+              case _:
+                u8 1
+          case _:
+            u8 1
+      case _:
+        u8 1

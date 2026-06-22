@@ -1,73 +1,82 @@
-import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
+import { i8, u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 # Project Euler #4 style exercise — palindrome loop. Exercises
 # match on signed integer literals (case -1, case 1), tail-recursive
 # loops via function recursion, and primitive literal initializers
 # with named types (u8 1, u8 0).
 public module Example:
-  func max(a: u64, b: u64): u64
-    op = u64.compare(a, b)
-    _a = match op:
+  func is_palindrome_loop(original: u64, acc: u64, remaining: u64): Status[u8]
+    match u64.compare(remaining, 0):
       case 1:
-        a
+        match u64.multiply(acc, 10):
+          case Ok { value: num_10x }:
+            match u64.remainder(remaining, 10):
+              case Ok { value: unit_digit }:
+                match u64.add(num_10x, unit_digit):
+                  case Ok { value: new_acc }:
+                    match u64.quotient(remaining, 10):
+                      case Ok { value: dividend }:
+                        Example.is_palindrome_loop(original, new_acc, dividend)
+                      case Err { error: err4 }:
+                        Status[u8].Err { error: err4 }
+                  case Err { error: err2 }:
+                    Status[u8].Err { error: err2 }
+              case Err { error: err3 }:
+                Status[u8].Err { error: err3 }
+          case Err { error: err1 }:
+            Status[u8].Err { error: err1 }
       case _:
-        b
+        match u64.compare(original, acc):
+          case 0:
+            Status.Ok { value: u8 1 }
+          case _:
+            Status.Ok { value: u8 0 }
 
-  func eq(a: u64, b: u64): u8
-    op = u64.compare(a, b)
-    _a = match op:
-      case 0:
-        u8 1
-      case _:
-        u8 0
+  func is_palindrome(num: u64): Status[u8]
+    Example.is_palindrome_loop(num, 0, num)
 
-  func is_palindrome_loop(a: u64, b: u64, c: u64): u8
-    op = u64.compare(c, 0)
-    _a = match op:
-      case 1:
-        b1 = u64.multiply(b, 10)
-        b2 = u64.remainder(c, 10)
-        b3 = u64.add(b1, b2)
+  func update_ans(value: u64, ans: u64): Status[u64]
+    match Example.is_palindrome(value):
+      case Ok { value: comparison }:
+        new_ans = match comparison:
+          case 1:
+            u64.max(value, ans)
+          case _:
+            ans
+        Status[u64].Ok { value: new_ans }
+      case Err { error: err1 }:
+        Status[u64].Err { error: err1 }
 
-        c1 = u64.quotient(c, 10)
-        Example.is_palindrome_loop(a, b3, c1)
-      case _:
-        Example.eq(a, b)
-
-  func is_palindrome(a: u64): u8
-    Example.is_palindrome_loop(a, 0, a)
-
-  func update_ans(a: u64, k: u64): u64
-    op = Example.is_palindrome(a)
-    _a = match op:
-      case 1:
-        Example.max(a, k)
+  func loop_inner(num: u64, j: u64, k: u64, l: u64): u64
+    match u64.compare(j, l):
+      case -1:
+        match u64.multiply(num, j):
+          case Ok { value: a }:
+            match u64.add(j, 1):
+              case Ok { value: next_j }:
+                match Example.update_ans(a, k):
+                  case Ok { value: next_k }:
+                    Example.loop_inner(num, next_j, next_k, l)
+                  case _:
+                    k
+              case _:
+                k
+          case _:
+            k
       case _:
         k
 
-  func loop_inner(i: u64, j: u64, k: u64, l: u64): u64
-    op = u64.compare(j, l)
-    _a = match op:
+  func loop_outer(num: u64, j: u64, k: u64, limit: u64): u64
+    match u64.compare(num, limit):
       case -1:
-        a = u64.multiply(i, j)
-        next_k = Example.update_ans(a, k)
-        next_j = u64.add(j, 1)
-        Example.loop_inner(i, next_j, next_k, l)
-      case _:
-        k
-
-  func loop_outer(i: u64, j: u64, k: u64, l: u64): u64
-    op = u64.compare(i, l)
-    _a = match op:
-      case -1:
-        next_k = Example.loop_inner(i, j, k, l)
-        next_i = u64.add(i, 1)
-        Example.loop_outer(next_i, j, next_k, l)
+        next_k = Example.loop_inner(num, j, k, limit)
+        match u64.add(num, 1):
+          case Ok { value: next_num }:
+            Example.loop_outer(next_num, j, next_k, limit)
+          case _:
+            k
       case _:
         k
 
   func start(): u8
-    exit_success = u8 0
-    ans = Example.loop_outer(100, 100, 0, 1000)
-    System.print(ans)
-
-    exit_success
+    Example.loop_outer(100, 100, 0, 1000)
+    u8 0

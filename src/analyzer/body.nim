@@ -609,7 +609,7 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolved
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(app, file, fileScope, moduleDef, defScope, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
-    echo moduleDef.loc, " ", analyzedStatement.argType.get.asl
+    # echo moduleDef.loc, " ", analyzedStatement.argType.get.asl
     if analyzedStatement.arg.isSome:
       let newArg = analyzedStatement.arg.get
       # echo fmt"SET {newArg.name.asl} {newArg.argType.asl}"
@@ -678,6 +678,7 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFile
   ok(analyzedCaseBlocks)
 
 proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
+  # echo match.loc
   let analyzedSubjectExpr = ? analyzeExpression(app, file, fileScope, moduleDef, defScope, funcScope, match.subject)
   if analyzedSubjectExpr.argType.isNone:
     err(fmt"{analyzedSubjectExpr.loc} todo: analyze case blocks for literal expression")

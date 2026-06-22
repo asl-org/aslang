@@ -1,47 +1,47 @@
-import { u8, u64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+import { i8, u8, u32, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
 # Project Euler #8 style exercise — exercises function overloading
 # (three solve functions with different arity/types in the same
 # module), long string literals spanning a single source line, and
-# u8.subtract / u64.from primitive conversions.
+# u8.subtract / u32.from primitive conversions.
 public module Solver:
-  func max(a: u64, b: u64): u64
-    cmp = u64.compare(a, b)
+  func max(a: u32, b: u32): u32
+    cmp = u32.compare(a, b)
     match cmp:
       case 1:
         a
       case _:
         b
 
-  func solve(str: String, index: u64, count: u64, ans: u64): u64
-    cmp = u64.compare(count, 0)
+  func solve(str: String, index: u32, count: u32, ans: u32): u32
+    cmp = u32.compare(count, 0)
     match cmp:
       case 1:
         status = String.get(str, index)
         match status:
           case Ok { value: ascii }:
             digit = u8.subtract(ascii, 48)
-            digit_u64 = u64.from(digit)
-            next_ans = u64.multiply(ans, digit_u64)
-            next_index = u64.add(index, 1)
-            next_count = u64.subtract(count, 1)
+            digit_u32 = u32.from(digit)
+            next_ans = u32.multiply(ans, digit_u32)
+            next_index = u32.add(index, 1)
+            next_count = u32.subtract(count, 1)
             Solver.solve(str, next_index, next_count, next_ans)
           case _:
-            u64 1
+            u32 1
       case _:
         ans
 
-  func solve(str: String, index: u64, ans: u64): u64
+  func solve(str: String, index: u32, ans: u32): u32
     status = String.get(str, index)
     match status:
       case Ok { value: ascii }:
         result = Solver.solve(str, index, 13, 1)
         max_ans = Solver.max(ans, result)
-        next_index = u64.add(index, 1)
+        next_index = u32.add(index, 1)
         Solver.solve(str, next_index, max_ans)
       case Err { error: error }:
         ans
 
-  func solve(value: String, ans: u64): u64
+  func solve(value: String, ans: u32): u32
     Solver.solve(value, 0, ans)
 
   func start(): u8

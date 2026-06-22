@@ -14,32 +14,49 @@ public module Solver:
       case Err { error: err }:
         Status[u8].Err { error: err }
 
-  func update_ans(maybe_prime: u32, ans: u32): u32
+  func update_ans(maybe_prime: u32, ans: u32): Status[u32]
     maybe_prime_u64 = u64.from(maybe_prime)
     match u64.remainder(600851475143, maybe_prime_u64):
-      case 0:
-        u32.max(ans, maybe_prime)
-      case _:
-        ans
+      case Ok { value: val }:
+        new_ans = match val:
+          case 0:
+            u32.max(ans, maybe_prime)
+          case _:
+            ans
+        Status[u32].Ok { value: new_ans }
+      case Err { error: err1 }:
+        Status[u32].Err { error: err1 }
 
-  func solve(bitset: Bitset, num: u32, ans: u32): u32
+  func solve(bitset: Bitset, num: u32, ans: u32): Status[u32]
     match Bitset.get(bitset, num):
       case Ok { value: flag }:
-        next_num = u32.add(num, 1)
-        match flag:
-          case 0: # 0 stands for prime
-            Solver.mark_non_prime(bitset, num, num)
-            new_ans = Solver.update_ans(num, ans)
-            Solver.solve(bitset, next_num, new_ans)
+        match u32.add(num, 1):
+          case Ok { value: next_num }:
+            match flag:
+              case 0: # 0 stands for prime
+                match Solver.mark_non_prime(bitset, num, num):
+                  case Ok { value: _ }:
+                    match Solver.update_ans(num, ans):
+                      case Ok { value: new_ans }:
+                        Solver.solve(bitset, next_num, new_ans)
+                      case _:
+                        Status.Ok { value: ans }
+                  case _:
+                    Status.Ok { value: ans }
+              case _:
+                Solver.solve(bitset, next_num, ans)
           case _:
-            Solver.solve(bitset, next_num, ans)
+            Status.Ok { value: ans }
       case _:
-        ans
+        Status.Ok { value: ans }
 
   func start(): u8
-    bitset = Bitset.init(1000001)
-
-    ans = Solver.solve(bitset, 2, 0)
-    System.print(ans)
-
-    exit_success = u8 0
+    match Bitset.init(1000001):
+      case Ok { value: bitset }:
+        match Solver.solve(bitset, 2, 0):
+          case Ok { value: _ }:
+            u8 0
+          case _:
+            u8 1
+      case _:
+        u8 1
