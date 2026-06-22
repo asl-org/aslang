@@ -42,6 +42,6 @@ public module Example:
       case _:
         Status.Ok { value: j }
 
-  func start(): u8
+  public func start(): u8
     Example.solve(2, 20, 1)
     u8 0

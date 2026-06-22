@@ -28,7 +28,7 @@ public module Solver:
           case Err { error: err1 }:
             Status[i64].Err { error: err1 }
 
-  func start(): u8
+  public func start(): u8
     match Solver.solve(1, 2, 4000000, 0):
       case Ok { value: x }:
         u8 0

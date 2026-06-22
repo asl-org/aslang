@@ -50,7 +50,7 @@ public module Solver:
       case _:
         Status.Ok { value: ans }
 
-  func start(): u8
+  public func start(): u8
     match Bitset.init(1000001):
       case Ok { value: bitset }:
         match Solver.solve(bitset, 2, 0):

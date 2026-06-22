@@ -24,5 +24,5 @@ module Plan:
     match plan:
       case Free { usage: usage }:
         String.from(usage)
-      case Pro { credits: credits, days: days }:
-        String.concat(String.from(credits), String.from(days))
+      case Pro { credits: credits, users: users }:
+        String.concat(String.from(credits), String.from(users))

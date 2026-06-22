@@ -59,7 +59,7 @@ public module Example:
       case Err { error: err }:
         Status[u32].Err { error: err }
 
-  func start(): u8
+  public func start(): u8
     match Bitset.init(1000001):
       case Ok { value: primes }:
         match Example.solve(primes, 2, 0):

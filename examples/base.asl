@@ -136,6 +136,10 @@ public module u32:
   @extern("u32_compare_u32")
   public func compare(a: u32, b: u32): i8
 
+  # casting
+  @extern("u32_from_u8")
+  public func from(a: u8): u32
+
   # user functions
   public func div_ceil(a: u32, b: u32): Status[u32]
     match u32.add(a, b):

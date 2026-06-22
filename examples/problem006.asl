@@ -4,7 +4,7 @@ import { u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
 # initializers (u64 100) and primitive method calls without any
 # match, data blocks, or recursion.
 public module Solver:
-  func start(): u8
+  public func start(): u8
     n = u64 100
     match u64.subtract(n, 1):
       case Ok { value: a }:

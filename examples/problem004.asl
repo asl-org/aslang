@@ -77,6 +77,6 @@ public module Example:
       case _:
         k
 
-  func start(): u8
+  public func start(): u8
     Example.loop_outer(100, 100, 0, 1000)
     u8 0
