@@ -78,18 +78,26 @@ Resolver ──── (WIP rewrite) Name/shape resolution only. For each
   │                          Function bodies are NOT resolved here —
   │                          that belongs to the Analyzer.
   ▼
-Analyzer ──── (WIP) Walks the ResolvedApp, instantiating generic
-  │                 constraints by substituting concrete impl types
-  │                 into each required generic's funcDefs and
-  │                 verifying the target module implements them.
-  │                 Overload selection at function-call sites is
-  │                 wired (each candidate funcDef is unified against
-  │                 the call's argument types via GenericImplMap +
-  │                 merge; uniqueness picks the survivor). Function-
-  │                 call return types and match-subject unions are
-  │                 concretized via the inferred impls. Union-
-  │                 initializer parametric inference and full body-
-  │                 level type-correctness checks remain WIP.
+Analyzer ──── Walks the ResolvedApp end-to-end and produces an
+  │              AnalyzedAppDefinition carrying a type-rich view of
+  │              every value, expression, and statement in the
+  │              program. Each layer of the analyzer mirrors its
+  │              resolver counterpart via a `resolved: Resolved*`
+  │              back-reference. Overload selection at function-call
+  │              sites is wired (each candidate funcDef is unified
+  │              against the call's argument types via GenericImplMap
+  │              + merge; uniqueness picks the survivor); funcDef
+  │              return types and match-subject unions are
+  │              concretized via the inferred impls. Union
+  │              initializer parametric inference is wired (urkImpl
+  │              substitutes user-supplied impls, urkDefault uses
+  │              leave-as-is over the position-indexed param list).
+  │              Literal initializers, case patterns over all integer
+  │              kinds + String, and the per-arg-list literal
+  │              validation share one analyzeLiteral helper. The
+  │              equality-vs-unification gap (case-arm uniformity)
+  │              and a handful of focused TODOs remain — see the
+  │              "What's Next" section.
   ▼
 (future)
   Codegen   ── target emission (C or LLVM IR).
@@ -169,20 +177,23 @@ Every `Type` in a file (imported or defined) is wrapped in a common
 `Type` umbrella (`tkImported | tkDefined`) so a single `typeIndex`
 lookup serves the resolver.
 
-### Phase 4: Resolution (WIP)
+### Phase 4: Resolution
 
 `src/resolver/{literals, imports, argtypes, funcdefs, funcrefs, body,
-decls, resolver}.nim`
+data, funcs, modules, definedTypes, files, apps, resolver}.nim`
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
 which in turn holds resolved imports plus a `ResolvedDefinedType` for
-each module/generic. As of 2026-05-02 27/35 fixtures resolve clean —
-`base.asl`, `problem001`–`problem010`, and `sample.asl` all green.
-Remaining failures are fixture-maintenance (`multi_import_same_path`
-plus six stale fixtures missing base.asl imports) and one non-public
-`Sample` module. Open resolver stubs cluster around decorators and
-the generic-context `resolveModuleArgumentType` for explicit
-`requires(...)` / `dbkStruct`. Scope:
+each module/generic. Body-level name resolution is complete (variables,
+getters, function calls, initializers, match/case patterns). The
+resolver also enforces the structural requires-block constraints
+(unique generics in requires, must pair with a struct, struct can't
+carry generic fields when requires is present) and now stores the
+resolved receiver module directly on the default arm of
+`ResolvedStructRef` / `ResolvedUnionRef`. Open resolver stubs are
+narrow: a few decorator cases and the generic-context
+`resolveModuleArgumentType` for explicit `requires(...)` /
+`dbkStruct`. Scope:
 
 - **Two-pass walk per file** (files come topo-sorted leaves-first
   from the loader, so imports are always resolved before use).
@@ -232,6 +243,53 @@ the generic-context `resolveModuleArgumentType` for explicit
 - **No structural-size check** — all struct values are pointer-backed
   at runtime, so mutual struct containment does not create infinite
   types. Name cycles are the only cycles, and Pass A dissolves them.
+
+### Phase 5: Analysis
+
+`src/analyzer/{literals, imports, argtypes, funcdefs, funcrefs, body,
+data, funcs, modules, patterns, filedefs, appdefs, analyzer}.nim`
+
+Takes a `ResolvedApp` and returns an `AnalyzedAppDefinition` — a
+type-rich view of every value, expression, and statement in the
+program. Each analyzer type mirrors its resolver counterpart via
+`resolved: Resolved*` back-references and derives metadata through
+accessors rather than duplicating it. Scope:
+
+- **Overload selection** — at each function-call site, every
+  candidate funcDef is unified against the call's argument types
+  via `GenericImplMap` + `merge`. The unique survivor is picked;
+  ambiguity is rejected.
+- **Generic constraint satisfaction** — after unification binds a
+  type parameter, the bound type is checked against every function
+  signature the generic requires.
+- **Concretization** — funcDef return types and match-subject
+  unions are rewritten through `concrete()` using the inferred
+  impls so downstream sites see substituted types.
+- **Union-initializer parametric inference** — the impl arm of
+  `UnionRef` substitutes user-supplied impls into variant fields
+  before type-check; the default arm walks kwargs accumulating a
+  `GenericImplMap` and emits a result type with bound concretes
+  where the variant touched a generic and free generics elsewhere
+  (leave-as-is).
+- **Literal type inference + validation** — the `analyzeLiteral`
+  helper at the top of `analyzer/body.nim` dispatches on
+  `ResolvedLiteralType` and validates the literal text against all
+  integer kinds plus String. `analyzeArgumentList`,
+  `analyzeKeywordArgument`, and `analyzeLiteralInitializer` all
+  route through it.
+- **Case-pattern duplicate detection** — `checkDuplicate[T: SomeInteger]`
+  handles all eight integer kinds in `analyzer/patterns.nim`.
+- **Body-level constructs** — getter (struct-shaped property read),
+  variable case patterns, mutations, assignments, match expressions
+  with case-arm bindings, struct + union initializers (default and
+  impl), literal initializers.
+
+The remaining gaps are listed in **What's Next**. The headline ones
+are the equality-vs-unification trap for free-generic types and the
+substitution-chain handling in `concrete()` — both are flagged in
+`analyzer/argtypes.nim` and surface as case-arm uniformity check
+failures on a handful of fixtures that flow leave-as-is values
+through `verifyUniformReturnType`.
 
 ## Project Structure
 
@@ -457,8 +515,13 @@ src/
                                    acpkInteger / acpkVariable) +
                                    analyzeCasePattern (overloaded for
                                    union vs literal context)
-    body.nim                       (WIP) AnalyzedVariable + analyzeVariable
-                                   / AnalyzedGetter (struct-shaped
+    body.nim                       AnalyzedVariable + analyzeVariable
+                                   / AnalyzedLiteralInitializer +
+                                   analyzeLiteralInitializer (runs
+                                   analyzeArgumentType, extracts the
+                                   data block, validates via the
+                                   shared analyzeLiteral helper) /
+                                   AnalyzedGetter (struct-shaped
                                    module property lookup; carries
                                    `source` — the source variable's
                                    AnalyzedArgumentType — and
@@ -694,57 +757,68 @@ error condition it exercises. 35 fixtures total.
 
 ## What's Next
 
-**Finish the Resolver rewrite** (`src/resolver/`) — narrow scope:
-two-pass walk per file, name and shape resolution only, enforce the
-generic-signature rule. No overload selection, no constraint
-satisfaction, no type-correctness checking — those move to a future
-Analyzer phase.
+The **Analyzer phase is functionally complete** — `analyze*` walks
+the `ResolvedApp` end-to-end and returns an `AnalyzedAppDefinition`
+that holds a type-rich representation of every value, expression,
+and statement in the program. Integration suite at **31/35**; unit
+suite at **196/196**.
 
-**Build the Analyzer** — new phase after the Resolver. The resolver
-already does body-level name resolution and collects candidate
-overloads by (name, arity); the Analyzer takes those candidates and:
-- Performs overload selection: unify each candidate's parameter
-  types with the call site's argument types via `GenericImplMap` +
-  `merge`, pick the unique survivor (reject on ambiguity for v1).
-  **Wired.**
-- Generic constraint satisfaction: after unification binds a type
-  parameter (e.g., `Any := u8`), verify the bound type implements
-  every function signature the generic requires. Cache results.
-  **Wired.**
-- Concretize the matched funcDef's return type and the match
-  subject's union via the inferred impls. **Wired.**
-- Union-initializer parametric inference: **Wired.** Parser carries
-  a `UnionRef` (default vs impl), mirroring `StructRef`. Resolver
-  resolves the impl arm's `ArgumentType` (and the existing arity
-  check on union impls catches mismatches). Analyzer dispatches:
-  the impl arm substitutes the user-supplied impls into variant
-  fields via `concrete()` before type-check; the default arm walks
-  kwargs accumulating a `GenericImplMap` and fills the result
-  argType with bound concretes at covered positions and free
-  generics at uncovered ones (leave-as-is). Free generics in the
-  result type will be resolved by unification at downstream use
-  sites — that unification step is what surfaces the
-  equality-vs-unification TODO in `analyzer/argtypes.nim:194`,
-  visible at the time as a case-arm uniformity check failure on
-  `base.asl` and several `problem*.asl` fixtures. `base.asl` got
-  simplified to sidestep the issue (Pointer/System layer removed,
-  the Any-returning `Array.init` function call replaced by a direct
-  `Array[u32] { size: size }` struct initializer in `Bitset.init`),
-  so the integration suite now passes 17/35 — but the unification
-  gap is still a real TODO that future fixtures will surface.
-- Literal type inference: pin down `5` to `u8` / `u32` / etc. from
-  the expected parameter type at the call site. **Mostly wired** —
-  the `analyzeLiteral` helper at the top of `analyzer/body.nim`
-  dispatches on `ResolvedLiteralType` and validates every integer
-  kind (U8/U16/U32/U64/I8/I16/I32/I64) plus String against the
-  expected target. `analyzeArgumentList` and `analyzeKeywordArgument`
-  both route through it, so call args and struct/union kwargs share
-  one code path. F32 / F64 / Pointer still return a todo, and the
-  impl map isn't yet updated from the literal position.
-- Type-correctness checks across statements (assignment compatibility,
-  match exhaustiveness, etc.).
+What the analyzer does today (all wired):
 
-After analysis:
+- Overload selection at function-call sites — each candidate funcDef
+  is unified against the call's argument types via `GenericImplMap`
+  + `merge`, and uniqueness picks the survivor (ambiguity rejected).
+- Generic constraint satisfaction — once unification binds a type
+  parameter, the bound type is checked against every function
+  signature the generic requires.
+- Concretization — the matched funcDef's return type and the
+  match-subject's union are rewritten through `concrete()` with the
+  inferred impls so downstream sites see substituted types.
+- Union initializer parametric inference — `UnionRef` (mirror of
+  `StructRef`) carries default vs impl; the impl arm substitutes
+  user-supplied impls into variant fields via `concrete()` before
+  type-check, the default arm walks kwargs accumulating a
+  `GenericImplMap` and emits a result type with bound concretes
+  where the variant touched the generic and free generics where it
+  didn't (leave-as-is).
+- Literal type inference — the `analyzeLiteral` helper dispatches on
+  `ResolvedLiteralType` and validates every integer kind
+  (U8/U16/U32/U64/I8/I16/I32/I64) plus String against the expected
+  target. `analyzeArgumentList`, `analyzeKeywordArgument`, and
+  `analyzeLiteralInitializer` all route through it.
+- Case-pattern duplicate detection — `checkDuplicate[T: SomeInteger]`
+  handles all eight integer kinds uniformly.
+- Body-level constructs — getter (struct-shaped property read),
+  variable case patterns, mutations, assignments, match expressions
+  with case-arm bindings, struct + union initializers (default and
+  impl), literal initializers.
+
+Focused TODOs still open:
+
+- **Equality vs unification for analyzed types** (`analyzer/argtypes.nim:194`).
+  `AnalyzedArgumentType.==` is hash equality; assignability against
+  an expected type that carries free generics (post leave-as-is)
+  needs unification. Surfaces as the case-arm uniformity check
+  failing on a handful of fixtures that flow free-generic values
+  through `verifyUniformReturnType`. Fix is to route every
+  assignability check through `analyzeValueTypeAgainstDefinitionType`
+  + `merge`, with eager chain-collapsing in `merge`.
+- **Substitution chains in `concrete()`** — `Sample → K, K → u8`
+  should collapse to `Sample → u8`; today `concrete()` does a
+  single `getOrDefault`. Pairs with the equality fix above.
+- **F32 / F64 / Pointer literal kinds** — `analyzeLiteral` returns
+  a todo for these three.
+- **Impl-map update from literal positions** — when a literal arg
+  flows into a generic position (e.g., `f(K=…)` with literal
+  inferable type), the resulting binding isn't yet recorded.
+- **`findRequiredImplsForFields` nested-impl walk**
+  (`resolver/argtypes.nim:117`) — needs to walk into impls so a
+  field typed `Box[u8, Sample]` contributes `Sample` to the parent's
+  requires.
+- **Type-correctness checks across statements** — assignment
+  compatibility, match exhaustiveness, mutation type equality.
+
+After the analyzer:
 - **IR generation** — lower the analyzed AST into an intermediate
   representation suitable for optimization and code generation.
 - **Code generation** — emit target code (likely C or LLVM IR).
