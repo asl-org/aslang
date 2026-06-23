@@ -52,20 +52,22 @@ let importedTypeSpec* = Spec[ImportedType](
 # Import
 # ============================================================
 
-# TODO(import-shorthand): refactor Import to a tagged union with
-# `ikExplicit { names: seq[ImportedType] }` and `ikShorthand` (no
-# fields, expansion deferred to the resolver). Add a second
-# `newImport` overload for shorthand; the `names*()` accessor
-# becomes kind-asserted. `asl*(Import)` dispatches on kind. See W2
-# in plans/how-is-claude-parsed-whistle.md.
-type Import* = ref object
-  names: seq[ImportedType]
-  source: string
-  path: string # absolute path of the imported file; set during BFS in parse*
-  loc: Location
+type
+  ImportKind* = enum
+    ikExplicit, ikShorthand
+  Import* = ref object
+    source: string
+    path: string # absolute path of the imported file; set during BFS in parse*
+    loc: Location
+    case kind: ImportKind
+    of ikExplicit: names: seq[ImportedType]
+    of ikShorthand: discard
 
 proc newImport*(names: seq[ImportedType], source: string, path: string,
     loc: Location): Result[Import, ParserError] =
+  ## Explicit form: `import { Name, Name as Alias, ... } from "path"`.
+  ## Validates per-import uniqueness of both `name` and `binding`
+  ## (binding = alias if present, else name).
   var nameIndex: Table[Identifier, int]
   var bindingIndex: Table[Identifier, int]
   for index, importType in names:
@@ -84,19 +86,35 @@ proc newImport*(names: seq[ImportedType], source: string, path: string,
     else:
       bindingIndex[binding] = index
 
-  ok(Import(names: names, source: source, path: path, loc: loc))
+  ok(Import(kind: ikExplicit, names: names, source: source, path: path, loc: loc))
 
-proc names*(imp: Import): seq[ImportedType] = imp.names
+proc newImport*(source: string, path: string, loc: Location): Result[Import, ParserError] =
+  ## Shorthand form: `import "path"` — brings every public defined type
+  ## from the target file into scope under its original name. No names
+  ## list at parse time; the resolver expands via `publicTypes()` once
+  ## the target file's parser AST is in hand. No uniqueness check here
+  ## (there are no names yet); collisions are caught at resolver time.
+  ok(Import(kind: ikShorthand, source: source, path: path, loc: loc))
+
+proc kind*(imp: Import): ImportKind = imp.kind
+proc names*(imp: Import): seq[ImportedType] =
+  assert imp.kind == ikExplicit,
+    fmt"Import.names accessed but kind is {imp.kind}"
+  imp.names
 proc source*(imp: Import): string = imp.source
 proc path*(imp: Import): string = imp.path
 proc loc*(imp: Import): Location = imp.loc
 
 proc asl*(imp: Import): string =
-  result = "import { "
-  for i, name in imp.names:
-    if i > 0: result.add(", ")
-    result.add(asl(name))
-  result.add(fmt" }} from ""{imp.source}""")
+  case imp.kind:
+  of ikExplicit:
+    result = "import { "
+    for i, name in imp.names:
+      if i > 0: result.add(", ")
+      result.add(asl(name))
+    result.add(fmt" }} from ""{imp.source}""")
+  of ikShorthand:
+    result = fmt"import ""{imp.source}"""
 
 proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
   ## Resolves an import path relative to the importing file.
