@@ -43,16 +43,6 @@ proc impFile*(i: ResolvedImport): parser.File = i.impFile
 proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] = i.importedTypes
 proc loc*(i: ResolvedImport): Location = i.parsed.loc
 
-# TODO(import-shorthand): after all imports in a file have resolved,
-# run a resolver-stage collision check across the expanded
-# ResolvedImportedType list + the file's local DefinedTypes (likely
-# in src/resolver/files.nim). Build a Table[Identifier, Location]
-# keyed by binding; reject duplicates with "duplicate type
-# declaration encountered, see previous declaration at <loc>"
-# (mirror today's parser-side error from newFile). The parser-side
-# uniqueness check only covers ikExplicit imports today (see W3);
-# this resolver-side check catches shorthand-vs-local +
-# shorthand-vs-explicit + shorthand-vs-shorthand collisions. See W6.
 proc resolveImport*(app: App, file: parser.File,
     imp: Import): Result[ResolvedImport, string] =
   let impFileId = ? app.findFileId(imp.path)

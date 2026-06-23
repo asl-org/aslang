@@ -481,6 +481,66 @@ module Hidden:
     check errorContains(r.error, "Hidden")
     check errorContains(r.error, "does not exist in the scope")
 
+  test "shorthand import vs locally-defined type rejects":
+    # The shorthand brings `u8` from base.asl; the entry file also
+    # defines `u8` locally. The resolver collision check rejects.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import "./base.asl"
+
+module u8:
+  literal: "u8"
+"""),
+      ("base.asl", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate type declaration")
+
+  test "shorthand import vs explicit import of same name rejects":
+    # Importing the same name explicitly and via shorthand from the
+    # same file collides — the explicit `{ u8 }` and the shorthand's
+    # `u8` resolve to the same binding.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8 } from "./base.asl"
+import "./base.asl"
+
+module M:
+  struct:
+    b: u8
+"""),
+      ("base.asl", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate type declaration")
+
+  test "two shorthand imports with overlapping public sets reject":
+    # Two files with overlapping public names imported via shorthand
+    # from one entry — the overlapping name (u8) collides.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import "./a.asl"
+import "./b.asl"
+
+module M:
+  struct:
+    x: u8
+"""),
+      ("a.asl", """
+public module u8:
+  literal: "u8"
+"""),
+      ("b.asl", """
+public module u8:
+  literal: "u8"
+""")
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate type declaration")
+
 suite "resolver — generic signature rule":
 
   test "self-reference inside generic signature is allowed":

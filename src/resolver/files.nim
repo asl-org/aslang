@@ -2,6 +2,7 @@
 
 import results, strformat, tables
 
+import tokenizer
 import parser
 import imports
 import argtypes
@@ -45,6 +46,24 @@ proc findGeneric*(file: ResolvedFile, name: Identifier): Result[ResolvedGeneric,
   of rdtkGeneric: ok(definedType.generic)
   of rdtkModule: err(fmt"{name.loc} expected type `{name.asl}` to be a generic but found module")
 
+proc validateNoDuplicateBindings(resolvedImports: seq[ResolvedImport], file: parser.File): Result[void, string] =
+  ## Catches collisions involving shorthand-expanded names: shorthand
+  ## vs locally-defined type, shorthand vs explicit, and shorthand vs
+  ## shorthand. Explicit-vs-explicit and explicit-vs-local already
+  ## fire in `newFile` at parser time; this check re-runs them on the
+  ## resolved view so the error format stays uniform.
+  var seen: Table[Identifier, Location]
+  for resolvedImport in resolvedImports:
+    for impType in resolvedImport.importedTypes:
+      if impType.binding in seen:
+        return err(fmt"{impType.loc} duplicate type declaration encountered, see previous declaration at {seen[impType.binding]}")
+      seen[impType.binding] = impType.loc
+  for definedType in file.definedTypes:
+    if definedType.name in seen:
+      return err(fmt"{definedType.loc} duplicate type declaration encountered, see previous declaration at {seen[definedType.name]}")
+    seen[definedType.name] = definedType.loc
+  ok()
+
 proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, string] =
   var resolvedImports: seq[ResolvedImport]
   var fileScope: FileScope
@@ -53,6 +72,8 @@ proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, st
     resolvedImports.add(resolvedImport)
     for impType in resolvedImport.importedTypes:
       fileScope[impType.binding] = impType.definedType
+
+  ? validateNoDuplicateBindings(resolvedImports, file)
 
   var resolvedDefinedTypes: seq[ResolvedDefinedType]
   for id, definedType in file.definedTypes:

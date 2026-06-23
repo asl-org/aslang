@@ -139,8 +139,9 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
   # Parser-time typeIndex build: only ikExplicit imports contribute
   # names here. ikShorthand imports have no names until the resolver
   # expands them via `publicTypes()` (the target file isn't parsed
-  # yet at this point). The shorthand-vs-local + shorthand-vs-
-  # explicit collision check moves to the resolver in W6.
+  # yet at this point). Shorthand-vs-local + shorthand-vs-explicit
+  # collisions are caught by validateNoDuplicateBindings in
+  # resolver/files.nim.
   for imp in imports:
     if imp.path == path:
       let msg = "importing the source file in itself is disallowed"
