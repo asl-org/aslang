@@ -548,8 +548,8 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
       let argDefModule = ? defScope.findModuleDef(argDef.argType, argValue.loc)
       let argDefData = ? defScope.extractDataBlock(argDefModule, argValue.loc)
       case argDefData.kind:
-      of adkStruct: return err(fmt"{argValue.loc} funtion call expects a struct initializer `{argDefModule.name.asl}`")
-      of adkUnion: return err(fmt"{argValue.loc} funtion call expects a union initializer `{argDefModule.name.asl}`")
+      of adkStruct: return err(fmt"{argValue.loc} function call expects a struct initializer `{argDefModule.name.asl}`")
+      of adkUnion: return err(fmt"{argValue.loc} function call expects a union initializer `{argDefModule.name.asl}`")
       of adkLiteral:
         let maybeValidLiteral = analyzeLiteral(argDefData.literal.resolved, argValue.literal)
         if maybeValidLiteral.isOk: return ok(genericImplMap)
@@ -644,12 +644,12 @@ proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string
       return err(fmt"{c.loc} todo: return an error message telling that the case block return types are not same")
   ok()
 
-proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, union: AnalyzedUnion): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, union: AnalyzedUnion, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = newAnalyzedVariantPatternScope(cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
 
-  ? hasUncoveredCases(patternScope, union.variants.len)
+  ? hasUncoveredCases(patternScope, union.variants.len, loc)
 
   assert(cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
 
@@ -661,12 +661,12 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFile
   ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
-proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, literal: AnalyzedLiteralBlock): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, literal: AnalyzedLiteralBlock, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = ? newAnalyzedLiteralPatternScope(literal.resolved, cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
 
-  ? hasUncoveredCases(patternScope)
+  ? hasUncoveredCases(patternScope, loc)
 
   assert(cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
 
@@ -692,7 +692,7 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
       if match.cases.len == 0:
         err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
       else:
-        let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, analyzedSubjectDataType.literal)
+        let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, analyzedSubjectDataType.literal, match.loc)
         ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
     of adkUnion:
       if match.cases.len == 0:
@@ -708,7 +708,7 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
           of adatkModule:
             let impls = analyzedSubjectExpr.argType.get.definedType.module.impls
             let concreteUnion = analyzedSubjectDataType.union.concrete(impls)
-            let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, concreteUnion)
+            let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, concreteUnion, match.loc)
             ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =

@@ -30,7 +30,7 @@ proc definedTypes*(file: ResolvedFile): seq[ResolvedDefinedType] = file.definedT
 
 proc findDefinedType*(file: ResolvedFile, name: Identifier): Result[ResolvedDefinedType, string] =
   if name notin file.definedTypeIndex:
-    err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope. 5")
+    err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope")
   else:
     ok(file.definedTypes[file.definedTypeIndex[name]])
 

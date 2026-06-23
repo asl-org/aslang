@@ -254,7 +254,7 @@ proc files*(app: App): seq[File] = app.files
 
 proc findFileId*(app: App, path: string): Result[int, string] =
   if path in app.fileIndex: ok(app.fileIndex[path])
-  else: err(fmt"file '{path}' does not exists")
+  else: err(fmt"file '{path}' does not exist")
 
 proc findFile*(app: App, path: string): Result[File, string] =
   let id = ? app.findFileId(path)

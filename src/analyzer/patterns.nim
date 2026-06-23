@@ -8,6 +8,7 @@
 
 import results, sets, strformat, options, sequtils, strscans, parseutils, strutils
 
+import tokenizer
 import parser
 import resolver
 import argtypes
@@ -70,14 +71,14 @@ proc update*(scope: AnalyzedVariantPatternScope, id: int, pattern: ResolvedCaseP
       ok(scope)
 
 # NOTE: If there is no variable pattern in union matching then all branches must be covered
-proc hasUncoveredCases*(scope: AnalyzedVariantPatternScope, totalVariants: int): Result[void, string] =
+proc hasUncoveredCases*(scope: AnalyzedVariantPatternScope, totalVariants: int, loc: Location): Result[void, string] =
   # TODO: improve error message by showing the uncovered variants
   if scope.variablePatternFound:
     if scope.variants.len < totalVariants: ok()
-    else: err(fmt"variable binding is invalid since all the variants are already covered by the case blocks")
+    else: err(fmt"{loc} variable binding is invalid since all the variants are already covered by the case blocks")
   else:
     if scope.variants.len == totalVariants: ok()
-    else: err(fmt"case blocks do not cover all the variants")
+    else: err(fmt"{loc} case blocks do not cover all the variants")
 
 type
   AnalyzedLiteralPatternScopeKind* = enum
@@ -147,10 +148,10 @@ proc update*(scope: AnalyzedLiteralPatternScope, id: int, pattern: ResolvedCaseP
     scope.checkDuplicate(pattern.integer)
 
 # NOTE: If there is no variable pattern in union matching then all branches must be covered
-proc hasUncoveredCases*(scope: AnalyzedLiteralPatternScope): Result[void, string] =
+proc hasUncoveredCases*(scope: AnalyzedLiteralPatternScope, loc: Location): Result[void, string] =
   # TODO: improve error message by showing the uncovered variants
   if scope.variablePatternFound: ok()
-  else: err(fmt"variable case pattern binding is required for integer literal pattern")
+  else: err(fmt"{loc} variable case pattern binding is required for integer literal pattern")
 
 type AnalyzedVariantPattern* = ref object
   resolved: VariantPattern

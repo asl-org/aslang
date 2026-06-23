@@ -38,7 +38,7 @@ proc asl*(argType: AnalyzedGenericArgumentType): string =
 proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   let genericArg = ? file.findGeneric(genericArgType.parsed.name)
   if genericArg != generic:
-    err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` does not exists in the file `{file.path}` scope")
+    err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` does not exist in the file `{file.path}` scope")
   else:
     ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
 
