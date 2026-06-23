@@ -97,16 +97,26 @@ proc asl*(argType: ResolvedModuleArgumentType): string =
     fmt"{argType.module.name.asl}[{implsJoined}]"
 
 proc findDefinedType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[DefinedType, string] =
-  let fieldType = ? file.findType(name)
-  case fieldType.kind:
-  of tkImported:
-    let importedType = fieldType.imported
-    if importedType.binding notin fileScope:
-      err(fmt"{importedType.loc} type `{importedType.binding.asl}` does not exist in the file scope.")
-    else:
-      ok(fileScope[importedType.binding])
-  of tkDefined:
-    ok(fieldType.definedType)
+  let maybeFieldType = file.findType(name)
+  if maybeFieldType.isOk:
+    let fieldType = maybeFieldType.get
+    case fieldType.kind:
+    of tkImported:
+      let importedType = fieldType.imported
+      if importedType.binding notin fileScope:
+        err(fmt"{importedType.loc} type `{importedType.binding.asl}` does not exist in the file scope.")
+      else:
+        ok(fileScope[importedType.binding])
+    of tkDefined:
+      ok(fieldType.definedType)
+  elif name in fileScope:
+    # Name isn't in the parser's typeIndex (no explicit import or
+    # local definition) but the resolver populated fileScope with it
+    # — i.e., it came from a shorthand `import "file.asl"` expansion
+    # in resolveImport.
+    ok(fileScope[name])
+  else:
+    err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findModule*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Module, string] =
   let initDefinedType = ? file.findDefinedType(fileScope, name)

@@ -438,6 +438,49 @@ module M:
     cleanupDir(dir)
     check r.isOk
 
+  test "shorthand import brings every public type into scope":
+    # `import "./base.asl"` expands to every public defined type in
+    # base.asl (u8, u32, u64, String, Error, Any, Status, Array) under
+    # each type's original name. We exercise this by referencing one
+    # of the imported names (u8) without an explicit binding.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import "./base.asl"
+
+module M:
+  struct:
+    b: u8
+"""),
+      ("base.asl", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "shorthand import skips non-public types":
+    # `Hidden` is non-public in other.asl; the shorthand only brings
+    # in public types, so referencing Hidden in the importing file
+    # must fail at name lookup (not at non-public import).
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import "./other.asl"
+
+module M:
+  struct:
+    h: Hidden
+"""),
+      ("other.asl", """
+public module u8:
+  literal: "u8"
+
+module Hidden:
+  literal: "u8"
+""")
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "Hidden")
+    check errorContains(r.error, "does not exist in the scope")
+
 suite "resolver — generic signature rule":
 
   test "self-reference inside generic signature is allowed":

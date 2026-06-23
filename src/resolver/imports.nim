@@ -4,7 +4,7 @@
 ## resolved imported names. Both are used by the file scope built in
 ## decls.nim.
 
-import results
+import options, results
 
 import tokenizer
 import parser
@@ -43,29 +43,35 @@ proc impFile*(i: ResolvedImport): parser.File = i.impFile
 proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] = i.importedTypes
 proc loc*(i: ResolvedImport): Location = i.parsed.loc
 
-# TODO(import-shorthand): dispatch on `imp.kind` here once the
-# tagged-union Import lands (W2).
-#   - ikExplicit: keep the existing loop below.
-#   - ikShorthand: walk `impFile.publicTypes()`, synthesize a
-#     parser-side ImportedType per public type via
-#     `newImportedType(definedType.name, none(Identifier), imp.loc)`,
-#     and feed each through the same resolveImportedType path (or
-#     newResolvedImportedType directly since the public filter is
-#     already applied). See W5.
-#
-# After expansion finishes for ALL imports in the file, run a
-# resolver-stage collision check (likely co-located with file
-# resolution in src/resolver/files.nim, since the check spans every
-# import + every locally-defined type). Build a Table[Identifier,
-# Location] keyed by binding; reject duplicates with "duplicate
-# type declaration encountered, see previous declaration at <loc>"
-# (mirror today's parser-side error from newFile). See W6.
+# TODO(import-shorthand): after all imports in a file have resolved,
+# run a resolver-stage collision check across the expanded
+# ResolvedImportedType list + the file's local DefinedTypes (likely
+# in src/resolver/files.nim). Build a Table[Identifier, Location]
+# keyed by binding; reject duplicates with "duplicate type
+# declaration encountered, see previous declaration at <loc>"
+# (mirror today's parser-side error from newFile). The parser-side
+# uniqueness check only covers ikExplicit imports today (see W3);
+# this resolver-side check catches shorthand-vs-local +
+# shorthand-vs-explicit + shorthand-vs-shorthand collisions. See W6.
 proc resolveImport*(app: App, file: parser.File,
     imp: Import): Result[ResolvedImport, string] =
   let impFileId = ? app.findFileId(imp.path)
   let impFile = ? app.findFile(imp.path)
   var resolvedImportedTypes: seq[ResolvedImportedType]
-  for impType in imp.names:
-    let resolvedImportedType = ? resolveImportedType(impFile, impType)
-    resolvedImportedTypes.add(resolvedImportedType)
+  case imp.kind:
+  of ikExplicit:
+    for impType in imp.names:
+      let resolvedImportedType = ? resolveImportedType(impFile, impType)
+      resolvedImportedTypes.add(resolvedImportedType)
+  of ikShorthand:
+    # Expand the shorthand into the target file's full public set.
+    # The public filter is already applied by `publicTypes()`, so we
+    # build the ResolvedImportedType directly without re-running
+    # `findExportedType`. Synthesize a parser-side ImportedType per
+    # public type so the back-ref invariant on ResolvedImportedType
+    # is preserved; the synthesized ImportedType uses the import
+    # statement's location for diagnostics.
+    for definedType in impFile.publicTypes:
+      let synthesized = newImportedType(definedType.name, none(Identifier), imp.loc)
+      resolvedImportedTypes.add(newResolvedImportedType(synthesized, definedType))
   ok(newResolvedImport(imp, impFileId, impFile, resolvedImportedTypes))
