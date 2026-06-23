@@ -52,6 +52,12 @@ let importedTypeSpec* = Spec[ImportedType](
 # Import
 # ============================================================
 
+# TODO(import-shorthand): refactor Import to a tagged union with
+# `ikExplicit { names: seq[ImportedType] }` and `ikShorthand` (no
+# fields, expansion deferred to the resolver). Add a second
+# `newImport` overload for shorthand; the `names*()` accessor
+# becomes kind-asserted. `asl*(Import)` dispatches on kind. See W2
+# in plans/how-is-claude-parsed-whistle.md.
 type Import* = ref object
   names: seq[ImportedType]
   source: string
@@ -104,6 +110,13 @@ proc resolveImportPath*(source: string, importingFile: string): Result[string, s
     return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
   ok(resolved)
 
+# TODO(import-shorthand): refactor to `oneOf(explicitImportLineSpec,
+# shorthandImportLineSpec)` once the tagged-union Import lands (W2).
+# The explicit spec stays as-is below; the shorthand spec parses
+# `import` + space + stringLiteralSpec + ignorableLineSpec and builds
+# an ikShorthand Import via the new constructor. Try explicit first
+# — the `{` after `import ` disambiguates immediately. See W4 in
+# plans/how-is-claude-parsed-whistle.md.
 let importLineSpec* = Spec[Import](
   name: "import_line",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =

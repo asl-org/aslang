@@ -136,6 +136,13 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
   var typeIndex: Table[Identifier, int]
   var types: seq[Type]
 
+  # TODO(import-shorthand): once Import is a tagged union (W2),
+  # dispatch on `imp.kind` here — ikExplicit keeps the existing
+  # inner loop; ikShorthand has no names yet (the target file's
+  # public types aren't materialized until resolver time) so skip
+  # the inner loop. The shorthand-vs-local + shorthand-vs-explicit
+  # collision check moves to the resolver in W6. See W3 in
+  # plans/how-is-claude-parsed-whistle.md.
   for imp in imports:
     if imp.path == path:
       let msg = "importing the source file in itself is disallowed"
@@ -195,6 +202,12 @@ proc findExportedType*(file: File, name: Identifier): Result[DefinedType, string
     let definedType = aslType.definedType
     if definedType.public: ok(definedType)
     else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
+
+# TODO(import-shorthand): add `proc publicTypes*(file: File): seq[DefinedType]`
+# here — walks `definedTypes`, filters `dt.public`, returns the seq.
+# Used by the resolver in W5 to expand `ikShorthand` Imports into
+# the full public-type set of the target file. See W1 in
+# plans/how-is-claude-parsed-whistle.md.
 
 # file: import* (module | generic)*
 let fileSpec = Spec[File](

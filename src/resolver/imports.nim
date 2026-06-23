@@ -43,6 +43,23 @@ proc impFile*(i: ResolvedImport): parser.File = i.impFile
 proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] = i.importedTypes
 proc loc*(i: ResolvedImport): Location = i.parsed.loc
 
+# TODO(import-shorthand): dispatch on `imp.kind` here once the
+# tagged-union Import lands (W2).
+#   - ikExplicit: keep the existing loop below.
+#   - ikShorthand: walk `impFile.publicTypes()`, synthesize a
+#     parser-side ImportedType per public type via
+#     `newImportedType(definedType.name, none(Identifier), imp.loc)`,
+#     and feed each through the same resolveImportedType path (or
+#     newResolvedImportedType directly since the public filter is
+#     already applied). See W5.
+#
+# After expansion finishes for ALL imports in the file, run a
+# resolver-stage collision check (likely co-located with file
+# resolution in src/resolver/files.nim, since the check spans every
+# import + every locally-defined type). Build a Table[Identifier,
+# Location] keyed by binding; reject duplicates with "duplicate
+# type declaration encountered, see previous declaration at <loc>"
+# (mirror today's parser-side error from newFile). See W6.
 proc resolveImport*(app: App, file: parser.File,
     imp: Import): Result[ResolvedImport, string] =
   let impFileId = ? app.findFileId(imp.path)
