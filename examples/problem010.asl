@@ -1,4 +1,4 @@
-import { u8, u32, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+import "base.asl"
 # Project Euler #10 style exercise — sum of primes via sieve.
 # The largest single-file example: three top-level modules (Utils,
 # Bitset, Solver) in one file, struct with generic Array[u8] field,

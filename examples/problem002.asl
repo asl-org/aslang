@@ -1,4 +1,4 @@
-import { i8, u8, i64, Status, Any, Error, System } from "base.asl"
+import "base.asl"
 
 # Project Euler #2 style exercise — exercises match-as-expression
 # with integer-literal patterns (case 0, case 1) and wildcard

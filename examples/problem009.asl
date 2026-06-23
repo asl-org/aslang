@@ -1,4 +1,4 @@
-import { i8, u8, u32, u64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+import "base.asl"
 # Project Euler #9 style exercise — Pythagorean triplet search.
 # Exercises inline `# comment` on case arms and at statement scope,
 # function overloading (two solve functions with different arity),

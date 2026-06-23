@@ -1,4 +1,4 @@
-import { u8, u64, i64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+import "base.asl"
 # Match expression forms — exercises standalone match statement,
 # integer-literal case patterns (case 0, case 1), variable binding
 # patterns (case other, case n), and match-as-assignment

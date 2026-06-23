@@ -1,4 +1,4 @@
-import {u8} from "base.asl"
+import "base.asl"
 # Aggregator file — exercises import aliasing ("as Solution1"),
 # multiple import statements from different files, and cross-file
 # module references (Solution1.start through Solution10.start).

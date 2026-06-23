@@ -1,4 +1,4 @@
-import { u8, u32, u64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+import "base.asl"
 
 # Data blocks — one file with two modules, one backed by a struct
 # data block (User { name, age }) and the other by a union data

@@ -2,7 +2,7 @@
 # module with different parameter types (i64, str). Verifies the
 # validator's Table[string, seq[int]] function index accepts
 # same-name duplicates.
-import { u8, i64, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+import "base.asl"
 module Foo:
   func bar(a: i64): i64
     a

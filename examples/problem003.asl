@@ -1,4 +1,4 @@
-import { i8, u8, u32, i64, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
+import "base.asl"
 
 # Project Euler #3 style exercise — heavy union-variant matching.
 # Exercises struct data block (Bitset holding Array[Any]), union

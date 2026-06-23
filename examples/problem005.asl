@@ -1,4 +1,4 @@
-import { i8, u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
+import "base.asl"
 # Project Euler #5 style exercise — gcd/lcm via Euclidean recursion.
 # Exercises integer comparison with signed literal patterns
 # (case -1), mutually-calling functions within a module, and

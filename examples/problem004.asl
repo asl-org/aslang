@@ -1,4 +1,4 @@
-import { i8, u8, u64, Array, Status, Any, Error, Bitset, System } from "base.asl"
+import "base.asl"
 # Project Euler #4 style exercise — palindrome loop. Exercises
 # match on signed integer literals (case -1, case 1), tail-recursive
 # loops via function recursion, and primitive literal initializers

@@ -1,4 +1,4 @@
-import { i8, u8, u32, Array, Status, Any, Error, Bitset, System } from "base.asl"
+import "base.asl"
 
 # Project Euler #7 style exercise — the first file with multiple
 # top-level modules in the same file (Bitset and Example), each

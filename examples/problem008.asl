@@ -1,4 +1,4 @@
-import { i8, u8, u32, Array, Status, Any, Error, Bitset, System, String } from "base.asl"
+import "base.asl"
 # Project Euler #8 style exercise — exercises function overloading
 # (three solve functions with different arity/types in the same
 # module), long string literals spanning a single source line, and

@@ -1,4 +1,4 @@
-import { i64, Status, Any, Error } from "base.asl"
+import "base.asl"
 
 # Project Euler #1 style exercise — covers module with multiple
 # functions, primitive-method calls (i64.add, i64.quotient,
