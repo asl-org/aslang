@@ -119,6 +119,36 @@ public module B:
     check r.isErr
     check errorContains(r.error, "cyclic")
 
+  test "import path without .asl extension is rejected":
+    # `resolveImportPath` requires every import source to end in
+    # `.asl`. Anything else (no extension, wrong extension) is
+    # rejected before BFS attempts to read the file.
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import { Foo } from "./bar.txt"
+
+module M:
+  func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
+  test "shorthand import path without .asl extension is rejected":
+    # Same constraint applies to the shorthand form.
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import "./bar"
+
+module M:
+  func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
   test "parent-directory escape via ../ is rejected":
     # The grammar's importLineSpec calls resolveImportPath; on rejection
     # the error is produced but currently swallowed by the parser's

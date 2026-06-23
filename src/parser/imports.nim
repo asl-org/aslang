@@ -118,9 +118,12 @@ proc asl*(imp: Import): string =
 
 proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
   ## Resolves an import path relative to the importing file.
-  ## Rejects paths that escape to parent directories.
-  ## Normalizes the resolved path so tricks like ./sub/../../escape
-  ## are caught — not just paths starting with "..".
+  ## Rejects paths that don't end in `.asl` and paths that escape to
+  ## parent directories. Normalizes the resolved path so tricks like
+  ## ./sub/../../escape are caught — not just paths starting with "..".
+  let (_, _, ext) = source.splitFile()
+  if ext != ".asl":
+    return err(fmt"{importingFile}: import path '{source}' must end with '.asl' extension")
   let dir = normalizedPath(importingFile.parentDir)
   let resolved = normalizedPath((dir / source).absolutePath)
   let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
