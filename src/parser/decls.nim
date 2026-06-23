@@ -136,25 +136,25 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
   var typeIndex: Table[Identifier, int]
   var types: seq[Type]
 
-  # TODO(import-shorthand): once Import is a tagged union (W2),
-  # dispatch on `imp.kind` here — ikExplicit keeps the existing
-  # inner loop; ikShorthand has no names yet (the target file's
-  # public types aren't materialized until resolver time) so skip
-  # the inner loop. The shorthand-vs-local + shorthand-vs-explicit
-  # collision check moves to the resolver in W6. See W3 in
-  # plans/how-is-claude-parsed-whistle.md.
+  # Parser-time typeIndex build: only ikExplicit imports contribute
+  # names here. ikShorthand imports have no names until the resolver
+  # expands them via `publicTypes()` (the target file isn't parsed
+  # yet at this point). The shorthand-vs-local + shorthand-vs-
+  # explicit collision check moves to the resolver in W6.
   for imp in imports:
     if imp.path == path:
       let msg = "importing the source file in itself is disallowed"
       return err(newParserError(msg, imp.loc))
-    for impType in imp.names:
-      if impType.binding in typeIndex:
-        let prev = types[typeIndex[impType.binding]]
-        let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
-        return err(newParserError(msg, impType.loc))
-      # echo path, " ", impType.binding.asl
-      typeIndex[impType.binding] = types.len
-      types.add(newType(impType))
+    case imp.kind:
+    of ikShorthand: discard
+    of ikExplicit:
+      for impType in imp.names:
+        if impType.binding in typeIndex:
+          let prev = types[typeIndex[impType.binding]]
+          let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
+          return err(newParserError(msg, impType.loc))
+        typeIndex[impType.binding] = types.len
+        types.add(newType(impType))
 
   for definedType in definedTypes:
     if definedType.name in typeIndex:
