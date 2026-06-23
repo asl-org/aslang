@@ -178,6 +178,18 @@ module M:
 """)
     check r.isErr
 
+  test "shorthand import parses":
+    # `import "path"` parses to an ikShorthand Import — the names
+    # list is materialized later by the resolver via publicTypes().
+    let r = parseStr("""
+import "./bar.asl"
+
+module M:
+  func go(): u8
+    u8 0
+""")
+    check r.isOk
+
 suite "grammar — match expressions":
 
   test "match with integer literal cases":

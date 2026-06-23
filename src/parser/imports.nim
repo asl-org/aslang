@@ -128,15 +128,9 @@ proc resolveImportPath*(source: string, importingFile: string): Result[string, s
     return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
   ok(resolved)
 
-# TODO(import-shorthand): refactor to `oneOf(explicitImportLineSpec,
-# shorthandImportLineSpec)` once the tagged-union Import lands (W2).
-# The explicit spec stays as-is below; the shorthand spec parses
-# `import` + space + stringLiteralSpec + ignorableLineSpec and builds
-# an ikShorthand Import via the new constructor. Try explicit first
-# — the `{` after `import ` disambiguates immediately. See W4 in
-# plans/how-is-claude-parsed-whistle.md.
-let importLineSpec* = Spec[Import](
-  name: "import_line",
+# Explicit form: `import { Name, Name as Alias } from "path"`.
+let explicitImportLineSpec* = Spec[Import](
+  name: "explicit_import_line",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.run(keywordSpec("import"))
   discard ? parser.run(atLeastOne(spaceSpec))
@@ -153,6 +147,31 @@ let importLineSpec* = Spec[Import](
   else:
     err(newParserError(maybePath.error, source.loc))
 )
+
+# Shorthand form: `import "path"` — brings every public defined
+# type from the target file into scope under each type's original
+# name. The names list is materialized by the resolver in W5 via
+# `publicTypes()` once the target file's parser AST is available.
+let shorthandImportLineSpec* = Spec[Import](
+  name: "shorthand_import_line",
+  parseFn: proc(parser: Parser): Result[Import, ParserError] =
+  let loc = ? parser.run(keywordSpec("import"))
+  discard ? parser.run(atLeastOne(spaceSpec))
+  let source = ? parser.run(stringLiteralSpec)
+  discard ? parser.run(ignorableLineSpec)
+  let maybePath = resolveImportPath(source.value, parser.filepath)
+  if maybePath.isOk:
+    newImport(source.value, maybePath.get, loc)
+  else:
+    err(newParserError(maybePath.error, source.loc))
+)
+
+# Try explicit first — the `{` after `import ` disambiguates
+# immediately; shorthand backtracks cleanly once explicit fails.
+let importLineSpec* = oneOf("import_line", [
+  explicitImportLineSpec,
+  shorthandImportLineSpec,
+])
 
 let importBlockSpec* = Spec[Import](
   name: "import_block",
