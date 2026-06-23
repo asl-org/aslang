@@ -203,11 +203,15 @@ proc findExportedType*(file: File, name: Identifier): Result[DefinedType, string
     if definedType.public: ok(definedType)
     else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
 
-# TODO(import-shorthand): add `proc publicTypes*(file: File): seq[DefinedType]`
-# here — walks `definedTypes`, filters `dt.public`, returns the seq.
-# Used by the resolver in W5 to expand `ikShorthand` Imports into
-# the full public-type set of the target file. See W1 in
-# plans/how-is-claude-parsed-whistle.md.
+proc publicTypes*(file: File): seq[DefinedType] =
+  ## Returns every public defined type (module or generic) in this
+  ## file, preserving declaration order. Used by the resolver to
+  ## expand `ikShorthand` Imports — `import "file.asl"` brings the
+  ## full public set into the importing file's scope under each
+  ## type's original name.
+  for definedType in file.definedTypes:
+    if definedType.public:
+      result.add(definedType)
 
 # file: import* (module | generic)*
 let fileSpec = Spec[File](
