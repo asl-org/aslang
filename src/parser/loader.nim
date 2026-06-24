@@ -50,20 +50,23 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[App
     let file = ? parseFile(current, indentWidth, dumpTokens)
     parsed[current] = file
 
-    for imp in file.imports:
-      # `imp.absPath` was already resolved when the importing file
-      # was parsed (resolveImportPath ran inside the import-line
-      # spec). Use it directly — re-running resolveImportPath would
-      # produce the same value and slow down BFS unnecessarily.
-      if imp.absPath notin queued:
-        queue.addLast(imp.absPath)
-        queued.incl(imp.absPath)
+    if file.kind == fkAsl:
+      for imp in file.imports:
+        # `imp.absPath` was already resolved when the importing file
+        # was parsed (resolveImportPath ran inside the import-line
+        # spec). Use it directly — re-running resolveImportPath would
+        # produce the same value and slow down BFS unnecessarily.
+        if imp.absPath notin queued:
+          queue.addLast(imp.absPath)
+          queued.incl(imp.absPath)
 
   # Topological sort with cycle detection (leaves first, root last)
   let getNeighbors = proc(path: string): seq[string] =
     if parsed.hasKey(path):
-      for imp in parsed[path].imports:
-        result.add(imp.absPath)
+      let p = parsed[path]
+      if p.kind == fkAsl:
+        for imp in p.imports:
+          result.add(imp.absPath)
   let sortedPaths = ? topoSort(rootPath, getNeighbors)
 
   var files: seq[File]

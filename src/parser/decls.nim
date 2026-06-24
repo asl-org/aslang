@@ -117,39 +117,29 @@ proc loc*(typ: Type): Location =
 # File
 # ============================================================
 
-# TODO(vendor): split File into a tagged union — `fkAsl { imports:
-# seq[Import] }` and `fkAslb { discard }`. Aslb files are the runtime
-# interface: they may contain modules with extern functions but
-# structurally cannot have imports. Asl files may have imports but
-# their modules cannot contain extern functions (validated at
-# construction). The unified `newFile` splits into `newAslFile` /
-# `newAslbFile`. See W6 in plans/how-is-claude-parsed-whistle.md.
-type File* = ref object
-  path: string
-  imports: seq[Import]
-  definedTypes: seq[DefinedType]
-  types: seq[Type]
-  typeIndex: Table[Identifier, int]
+type
+  FileKind* = enum
+    fkAsl, fkAslb
+  File* = ref object
+    path: string
+    definedTypes: seq[DefinedType]
+    types: seq[Type]
+    typeIndex: Table[Identifier, int]
+    case kind: FileKind
+    of fkAsl: imports: seq[Import]
+    of fkAslb: discard
 
-# TODO(vendor): once `File` is split (W6), this becomes `newAslFile`.
-# Two additions:
+# TODO(vendor): newAslFile gains two additions:
 #   - W8: walk every module in definedTypes; reject if any contains
 #     an extern function (asl files cannot host extern functions —
 #     those belong in .aslb).
 #   - W10: take `vendorRoots: VendorRoots`; if "std" in vendorRoots,
 #     prepend a synthesized ikShorthand `import "@std"` to imports
 #     before the typeIndex build.
-# A sibling `newAslbFile(path, definedTypes)` handles fkAslb files —
-# no imports, no vendorRoots, modules may contain extern functions.
-proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
+proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
-  # TODO: Ensure that same file is not used in multiple import statements
-  # var importedFileSet: Hashset[string]
-  # for imp in imports:
-  #   if imp.path in importedFileSet:
-  #     return err(newParserError("", imp.loc))
-  #   importedFileSet.incl(imp.path)
-
+  ## Builds an `fkAsl` File: source files written by users, may
+  ## carry imports, may not host extern functions in their modules.
   var typeIndex: Table[Identifier, int]
   var types: seq[Type]
 
@@ -180,13 +170,50 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
       let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, definedType.loc))
     else:
-      # echo path, " ", definedType.name.asl
       typeIndex[definedType.name] = types.len
       types.add(newType(definedType))
-  ok(File(path: path, imports: imports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+  ok(File(kind: fkAsl, path: path, imports: imports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
 
+proc newAslbFile*(path: string, definedTypes: seq[DefinedType]): Result[
+    File, ParserError] =
+  ## Builds an `fkAslb` File: the runtime interface — no imports
+  ## (structurally — the variant has no imports field), modules may
+  ## host extern functions freely.
+  var typeIndex: Table[Identifier, int]
+  var types: seq[Type]
+  for definedType in definedTypes:
+    if definedType.name in typeIndex:
+      let prev = types[typeIndex[definedType.name]]
+      let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, definedType.loc))
+    else:
+      typeIndex[definedType.name] = types.len
+      types.add(newType(definedType))
+  ok(File(kind: fkAslb, path: path, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+
+proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
+    File, ParserError] =
+  ## Unified entry point — dispatches on the file's extension to the
+  ## appropriate kind constructor. `.aslb` paths with non-empty
+  ## imports are rejected here (the user wrote an import in a
+  ## runtime-interface file). Once W7 splits the parser specs the
+  ## fkAslb arm never receives imports in practice; this dispatcher
+  ## remains the fallback for callers (test helpers, ad-hoc builders)
+  ## that go through the unified entry.
+  if path.endsWith(".aslb"):
+    if imports.len > 0:
+      let msg = fmt"{path}: .aslb files cannot contain import statements (they are the runtime interface, not an implementation)"
+      return err(newParserError(msg, imports[0].loc))
+    newAslbFile(path, definedTypes)
+  else:
+    newAslFile(path, imports, definedTypes)
+
+proc kind*(file: File): FileKind = file.kind
 proc path*(file: File): string = file.path
-proc imports*(file: File): seq[Import] = file.imports
+proc imports*(file: File): seq[Import] =
+  assert file.kind == fkAsl,
+    fmt"File.imports accessed but kind is {file.kind}"
+  file.imports
 proc definedTypes*(file: File): seq[DefinedType] = file.definedTypes
 proc types*(file: File): seq[Type] = file.types
 proc hash*(file: File): Hash = file.path.hash
@@ -194,10 +221,14 @@ proc `==`*(a, b: File): bool = a.hash == b.hash
 
 proc asl*(file: File, indentWidth: uint32): string =
   var lines: seq[string]
-  for imp in file.imports:
-    lines.add(asl(imp))
-  if file.imports.len > 0 and file.definedTypes.len > 0:
-    lines.add("")
+  case file.kind:
+  of fkAsl:
+    for imp in file.imports:
+      lines.add(asl(imp))
+    if file.imports.len > 0 and file.definedTypes.len > 0:
+      lines.add("")
+  of fkAslb:
+    discard
   for i, dt in file.definedTypes:
     if i > 0: lines.add("")
     lines.add(dt.asl(indentWidth))
