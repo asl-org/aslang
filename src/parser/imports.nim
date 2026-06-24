@@ -71,6 +71,19 @@ proc parseImportPath*(source: string, loc: Location): Result[ImportPath, ParserE
   ok(newVendorImportPath(name))
 
 # ============================================================
+# VendorRoots
+# ============================================================
+#
+# A vendor name → absolute path table, built by the CLI from
+# repeated `--vendor="<name>:<path>"` flags (plus the default
+# `std → examples/base.aslb` when not user-supplied). Threaded
+# through `parse*` → `aslFileSpec` → `newAslFile` so that auto-
+# injected `import "@std"` and any user-written `import "@<name>"`
+# resolve via the same lookup.
+
+type VendorRoots* = Table[string, string]
+
+# ============================================================
 # ImportedType
 # ============================================================
 
