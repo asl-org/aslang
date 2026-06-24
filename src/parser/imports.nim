@@ -6,12 +6,69 @@ import helpers
 import identifiers
 import strings
 
-# TODO(vendor): introduce an `ImportPath` tagged union here —
-# `ipkRelative { source: string }` and `ipkVendor { vendorName:
-# string }`. Replaces the bare `Import.source: string`. Includes a
-# parser-time helper `parseImportPath(source: string)` that detects
-# the `@` prefix at parse time and validates the vendor name as an
-# ASL identifier. See W1 in plans/how-is-claude-parsed-whistle.md.
+# ============================================================
+# ImportPath
+# ============================================================
+#
+# The user-typed source of an import — either a relative path
+# (`"./foo.asl"`) or a vendor reference (`"@std"`, `"@runtime"`).
+# Used as the parsed form of `Import.source` once W3 lands; for now
+# it lives standalone and `parseImportPath` is the entry point for
+# converting a raw quoted-string source into the typed form.
+
+type
+  ImportPathKind* = enum
+    ipkRelative, ipkVendor
+  ImportPath* = ref object
+    case kind: ImportPathKind
+    of ipkRelative: relativeSource: string
+    of ipkVendor: vendorName: string
+
+proc newRelativeImportPath*(relativeSource: string): ImportPath =
+  ImportPath(kind: ipkRelative, relativeSource: relativeSource)
+
+proc newVendorImportPath*(vendorName: string): ImportPath =
+  ImportPath(kind: ipkVendor, vendorName: vendorName)
+
+proc kind*(p: ImportPath): ImportPathKind = p.kind
+
+proc relativeSource*(p: ImportPath): string =
+  assert p.kind == ipkRelative,
+    fmt"ImportPath.relativeSource accessed but kind is {p.kind}"
+  p.relativeSource
+
+proc vendorName*(p: ImportPath): string =
+  assert p.kind == ipkVendor,
+    fmt"ImportPath.vendorName accessed but kind is {p.kind}"
+  p.vendorName
+
+proc asl*(p: ImportPath): string =
+  ## Renders the user-visible form of the import source — what the
+  ## user would have typed (or could have typed for compiler-injected
+  ## imports).
+  case p.kind:
+  of ipkRelative: p.relativeSource
+  of ipkVendor: fmt"@{p.vendorName}"
+
+proc parseImportPath*(source: string, loc: Location): Result[ImportPath, ParserError] =
+  ## Converts a raw quoted-string source (the body of an `import "..."`
+  ## clause) into a typed ImportPath. Sources starting with `@` are
+  ## vendor references; the remainder is validated as an ASL
+  ## identifier (head: letter or underscore; tail: letter, digit, or
+  ## underscore). Anything else is treated as a relative path —
+  ## extension and parent-escape checks happen later in
+  ## resolveImportPath.
+  if not source.startsWith("@"):
+    return ok(newRelativeImportPath(source))
+  let name = source[1..^1]
+  if name.len == 0:
+    return err(newParserError("vendor import path '@' is missing a vendor name", loc))
+  if not (name[0].isAlphaAscii or name[0] == '_'):
+    return err(newParserError(fmt"vendor name '{name}' must start with a letter or underscore", loc))
+  for c in name[1..^1]:
+    if not (c.isAlphaNumeric or c == '_'):
+      return err(newParserError(fmt"vendor name '{name}' contains invalid character '{c}' (allowed: letters, digits, underscore)", loc))
+  ok(newVendorImportPath(name))
 
 # ============================================================
 # ImportedType
