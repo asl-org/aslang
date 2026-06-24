@@ -1,4 +1,4 @@
-import strformat, strutils, tables, results, hashes
+import strformat, strutils, tables, results, hashes, os
 
 import tokenizer
 import combinators
@@ -262,9 +262,9 @@ proc publicTypes*(file: File): seq[DefinedType] =
     if definedType.public:
       result.add(definedType)
 
-# file: import* (module | generic)*
-let fileSpec = Spec[File](
-  name: "file",
+# aslFile: import* (module | generic)*
+let aslFileSpec = Spec[File](
+  name: "asl_file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
   let imports = ? parser.run(any(importBlockSpec))
   let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
@@ -272,13 +272,37 @@ let fileSpec = Spec[File](
   if not parser.done():
     # Force a parse attempt to get a specific error message
     discard ? parser.run(typeSpec)
-  newFile(parser.filepath, imports, items)
+  newAslFile(parser.filepath, imports, items)
+)
+
+# aslbFile: (module | generic)*  — no imports section. Aslb files
+# are the runtime interface; they cannot reference other files.
+let aslbFileSpec = Spec[File](
+  name: "aslb_file",
+  parseFn: proc(parser: Parser): Result[File, ParserError] =
+  let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
+  discard parser.run(any(ignorableLineSpec))
+  if not parser.done():
+    # Force a parse attempt to get a specific error message
+    discard ? parser.run(typeSpec)
+  newAslbFile(parser.filepath, items)
 )
 
 proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
     File, string] =
+  ## Dispatches on the file's extension. `.asl` paths run through
+  ## `aslFileSpec` (parses imports + items); `.aslb` paths run
+  ## through `aslbFileSpec` (parses items only — no imports
+  ## section). Anything else fails early — `resolveImportPath`
+  ## rejects non-`.asl`/`.aslb` paths and the CLI rejects non-`.asl`
+  ## entry points, so this defensive arm shouldn't fire in practice.
+  let (_, _, ext) = filepath.splitFile()
+  if ext != ".asl" and ext != ".aslb":
+    return err(fmt"{filepath}: unrecognized file extension '{ext}' — expected '.asl' or '.aslb'")
   let parser = newParser(filepath, indentWidth, tokens)
-  let maybeFile = parser.run(fileSpec)
+  let maybeFile =
+    if ext == ".asl": parser.run(aslFileSpec)
+    else: parser.run(aslbFileSpec)
   if maybeFile.isErr:
     err(fmt"{maybeFile.error}")
   else:
