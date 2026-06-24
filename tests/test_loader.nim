@@ -149,6 +149,23 @@ module M:
     cleanupDir(dir)
     check r.isErr
 
+  test "unknown vendor import is rejected":
+    # `parseImportPath` accepts the `@`-prefix syntactically, but
+    # `resolveImportPath` rejects vendor names that aren't in the
+    # threaded `VendorRoots` table. Tests pass empty vendorRoots by
+    # default, so any `@<name>` reference is "unknown vendor".
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import "@std"
+
+module M:
+  func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
   test "parent-directory escape via ../ is rejected":
     # The grammar's importLineSpec calls resolveImportPath; on rejection
     # the error is produced but currently swallowed by the parser's

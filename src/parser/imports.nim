@@ -193,26 +193,41 @@ proc asl*(imp: Import): string =
   of ikShorthand:
     result = fmt"import ""{asl(imp.parsedPath)}"""
 
-# TODO(vendor): extend with `vendorRoots: VendorRoots` parameter
-# (W2 declares the type alias). Dispatch on the parsed `ImportPath`
-# kind: ipkRelative keeps existing dir-relative + extension +
-# parent-escape logic; ipkVendor does the lookup and errors with
-# "unknown vendor '@<name>'" on miss. See W5 in
-# plans/how-is-claude-parsed-whistle.md.
-proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
-  ## Resolves an import path relative to the importing file.
-  ## Rejects paths that don't end in `.asl` and paths that escape to
-  ## parent directories. Normalizes the resolved path so tricks like
-  ## ./sub/../../escape are caught — not just paths starting with "..".
-  let (_, _, ext) = source.splitFile()
-  if ext != ".asl":
-    return err(fmt"{importingFile}: import path '{source}' must end with '.asl' extension")
-  let dir = normalizedPath(importingFile.parentDir)
-  let resolved = normalizedPath((dir / source).absolutePath)
-  let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
-  if not resolved.startsWith(dirPrefix):
-    return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
-  ok(resolved)
+proc resolveImportPath*(parsedPath: ImportPath, importingFile: string,
+    vendorRoots: VendorRoots): Result[string, string] =
+  ## Resolves an import path to an absolute file path.
+  ##
+  ## - `ipkRelative`: resolves the relative source against the
+  ##   importing file's directory. Rejects sources that don't end in
+  ##   `.asl` / `.aslb` and paths that escape to a parent directory.
+  ##   Normalizes the result so tricks like `./sub/../../escape` are
+  ##   caught (not just sources starting with `..`).
+  ## - `ipkVendor`: looks up the vendor name in `vendorRoots` (the
+  ##   table populated from `--vendor="<name>:<path>"` CLI flags
+  ##   plus the default `std`). The registered target path is
+  ##   already absolute. Missing vendor → diagnostic listing the
+  ##   known ones.
+  case parsedPath.kind:
+  of ipkRelative:
+    let source = parsedPath.relativeSource
+    let (_, _, ext) = source.splitFile()
+    if ext != ".asl" and ext != ".aslb":
+      return err(fmt"{importingFile}: import path '{source}' must end with '.asl' or '.aslb' extension")
+    let dir = normalizedPath(importingFile.parentDir)
+    let resolved = normalizedPath((dir / source).absolutePath)
+    let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
+    if not resolved.startsWith(dirPrefix):
+      return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
+    ok(resolved)
+  of ipkVendor:
+    let name = parsedPath.vendorName
+    if name in vendorRoots:
+      return ok(vendorRoots[name])
+    var knownNames: seq[string]
+    for vendorName in vendorRoots.keys:
+      knownNames.add(vendorName)
+    let knownDesc = if knownNames.len == 0: "(no vendors registered)" else: knownNames.join(", ")
+    err(fmt"{importingFile}: unknown vendor '@{name}' — known vendors: {knownDesc}")
 
 # Explicit form: `import { Name, Name as Alias } from "path"`.
 let explicitImportLineSpec* = Spec[Import](
@@ -228,7 +243,7 @@ let explicitImportLineSpec* = Spec[Import](
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(ignorableLineSpec)
   let parsedPath = ? parseImportPath(source.value, source.loc)
-  let maybePath = resolveImportPath(source.value, parser.filepath)
+  let maybePath = resolveImportPath(parsedPath, parser.filepath, initTable[string, string]())
   if maybePath.isOk:
     newImport(names, parsedPath, maybePath.get, loc)
   else:
@@ -247,7 +262,7 @@ let shorthandImportLineSpec* = Spec[Import](
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(ignorableLineSpec)
   let parsedPath = ? parseImportPath(source.value, source.loc)
-  let maybePath = resolveImportPath(source.value, parser.filepath)
+  let maybePath = resolveImportPath(parsedPath, parser.filepath, initTable[string, string]())
   if maybePath.isOk:
     newImport(parsedPath, maybePath.get, loc)
   else:
