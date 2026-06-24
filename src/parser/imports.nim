@@ -227,13 +227,10 @@ let explicitImportLineSpec* = Spec[Import](
   discard ? parser.run(atLeastOne(spaceSpec))
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(ignorableLineSpec)
+  let parsedPath = ? parseImportPath(source.value, source.loc)
   let maybePath = resolveImportPath(source.value, parser.filepath)
   if maybePath.isOk:
-    # W4 will replace this with parseImportPath so `@<name>` paths
-    # parse as ipkVendor. Today the resolveImportPath call above
-    # rejects anything that isn't a `.asl` / `.aslb` relative path,
-    # so every source reaching this point is genuinely relative.
-    newImport(names, newRelativeImportPath(source.value), maybePath.get, loc)
+    newImport(names, parsedPath, maybePath.get, loc)
   else:
     err(newParserError(maybePath.error, source.loc))
 )
@@ -249,11 +246,10 @@ let shorthandImportLineSpec* = Spec[Import](
   discard ? parser.run(atLeastOne(spaceSpec))
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(ignorableLineSpec)
+  let parsedPath = ? parseImportPath(source.value, source.loc)
   let maybePath = resolveImportPath(source.value, parser.filepath)
   if maybePath.isOk:
-    # W4 will replace this with parseImportPath (see explicit form
-    # above for the same placeholder note).
-    newImport(newRelativeImportPath(source.value), maybePath.get, loc)
+    newImport(parsedPath, maybePath.get, loc)
   else:
     err(newParserError(maybePath.error, source.loc))
 )
