@@ -27,6 +27,14 @@ proc parseFile(filepath: string, indentWidth: uint32,
   let tokens = ? tokenize(source, filepath, dumpTokens)
   parse(filepath, indentWidth, tokens)
 
+# TODO(vendor): accept `vendorRoots: VendorRoots = initTable[string, string]()`
+# as an additional parameter and thread it through `parseFile` →
+# `decls.parse(filepath, indentWidth, tokens, vendorRoots)` → the
+# parameterized `aslFileSpec(vendorRoots)` → `newAslFile`. The BFS
+# `for imp in file.imports` becomes `if file.kind == fkAsl: for imp
+# in file.imports` once W6 splits File. Also: resolveImportPath now
+# also takes vendorRoots so `@vendor` paths surface as dependencies
+# during BFS. See W9 in plans/how-is-claude-parsed-whistle.md.
 proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[App, string] =
   ## BFS through imports, tokenize + parse each file.
   ## Returns App with files in topological order: leaves first, root last.

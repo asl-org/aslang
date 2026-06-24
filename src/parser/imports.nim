@@ -6,6 +6,13 @@ import helpers
 import identifiers
 import strings
 
+# TODO(vendor): introduce an `ImportPath` tagged union here —
+# `ipkRelative { source: string }` and `ipkVendor { vendorName:
+# string }`. Replaces the bare `Import.source: string`. Includes a
+# parser-time helper `parseImportPath(source: string)` that detects
+# the `@` prefix at parse time and validates the vendor name as an
+# ASL identifier. See W1 in plans/how-is-claude-parsed-whistle.md.
+
 # ============================================================
 # ImportedType
 # ============================================================
@@ -116,6 +123,12 @@ proc asl*(imp: Import): string =
   of ikShorthand:
     result = fmt"import ""{imp.source}"""
 
+# TODO(vendor): extend with `vendorRoots: VendorRoots` parameter
+# (W2 declares the type alias). Dispatch on the parsed `ImportPath`
+# kind: ipkRelative keeps existing dir-relative + extension +
+# parent-escape logic; ipkVendor does the lookup and errors with
+# "unknown vendor '@<name>'" on miss. See W5 in
+# plans/how-is-claude-parsed-whistle.md.
 proc resolveImportPath*(source: string, importingFile: string): Result[string, string] =
   ## Resolves an import path relative to the importing file.
   ## Rejects paths that don't end in `.asl` and paths that escape to

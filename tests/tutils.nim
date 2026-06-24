@@ -45,6 +45,15 @@ proc cleanupDir*(dir: string) =
   try: removeDir(dir)
   except CatchableError: discard
 
+# TODO(vendor): every helper here (parseFiles, resolveFiles,
+# analyzeFiles, parseSingle, resolveSingle, analyzeSingle) gains an
+# optional `vendorRoots: VendorRoots = initTable[string, string]()`
+# parameter and threads it to `parse(...)`. Existing tests pass
+# nothing → empty vendorRoots → no auto-injection → behavior
+# unchanged. New tests for the vendor flow construct one explicitly
+# (likely via a `withStdVendor` helper that writes a minimal
+# base.aslb to the temp dir). See W9 in
+# plans/how-is-claude-parsed-whistle.md.
 proc parseFiles*(specs: openArray[FileSpec],
     indentWidth: uint32 = 2): tuple[app: Result[App, string], dir: string] =
   ## Parse a set of files from a temp dir. The first spec is the entry

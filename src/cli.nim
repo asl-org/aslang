@@ -79,6 +79,19 @@ proc `$`*(cmd: AslCommand): string =
   of ackBuild: fmt"asl {cmd.build}"
   of ackHelp: fmt"asl {cmd.help}"
 
+# TODO(vendor): add a repeatable `--vendor="<name>:<path>"` option
+# to the `build` command. After argparse runs, a post-parse
+# validation pass:
+#   1. Split each value on first `:`. Reject empty name or path.
+#   2. Validate name against ASL identifier rules
+#      (parser/identifiers.nim helpers).
+#   3. absolutePath the path.
+#   4. Build a `VendorRoots = Table[string, string]`. Reject
+#      duplicate names pointing at both paths.
+#   5. Default `std → absolutePath("examples/base.aslb")` if "std"
+#      wasn't user-supplied.
+# Thread VendorRoots through AslBuildCommand → asl.nim's `compile`
+# → loader's `parse*`. See W12 in plans/how-is-claude-parsed-whistle.md.
 proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
   var p = newParser:
     command("build"):

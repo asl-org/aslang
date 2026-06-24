@@ -117,6 +117,13 @@ proc loc*(typ: Type): Location =
 # File
 # ============================================================
 
+# TODO(vendor): split File into a tagged union — `fkAsl { imports:
+# seq[Import] }` and `fkAslb { discard }`. Aslb files are the runtime
+# interface: they may contain modules with extern functions but
+# structurally cannot have imports. Asl files may have imports but
+# their modules cannot contain extern functions (validated at
+# construction). The unified `newFile` splits into `newAslFile` /
+# `newAslbFile`. See W6 in plans/how-is-claude-parsed-whistle.md.
 type File* = ref object
   path: string
   imports: seq[Import]
@@ -124,6 +131,16 @@ type File* = ref object
   types: seq[Type]
   typeIndex: Table[Identifier, int]
 
+# TODO(vendor): once `File` is split (W6), this becomes `newAslFile`.
+# Two additions:
+#   - W8: walk every module in definedTypes; reject if any contains
+#     an extern function (asl files cannot host extern functions —
+#     those belong in .aslb).
+#   - W10: take `vendorRoots: VendorRoots`; if "std" in vendorRoots,
+#     prepend a synthesized ikShorthand `import "@std"` to imports
+#     before the typeIndex build.
+# A sibling `newAslbFile(path, definedTypes)` handles fkAslb files —
+# no imports, no vendorRoots, modules may contain extern functions.
 proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
   # TODO: Ensure that same file is not used in multiple import statements
