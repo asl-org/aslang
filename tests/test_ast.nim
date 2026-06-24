@@ -166,7 +166,7 @@ suite "ast — Import invariants":
   test "newImport rejects duplicate names within a single statement":
     let n1 = newImportedType(id("Foo"), none(Identifier), newLocation())
     let n2 = newImportedType(id("Foo"), none(Identifier), newLocation())
-    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    let r = newImport(@[n1, n2], newRelativeImportPath("./bar.asl"), "/abs/bar.asl", newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate import")
 
@@ -175,7 +175,7 @@ suite "ast — Import invariants":
       some(id("B")), newLocation())
     let n2 = newImportedType(id("Bar"),
       some(id("B")), newLocation())
-    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    let r = newImport(@[n1, n2], newRelativeImportPath("./bar.asl"), "/abs/bar.asl", newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate import binding")
 
@@ -183,7 +183,7 @@ suite "ast — Import invariants":
     let n1 = newImportedType(id("Foo"), none(Identifier), newLocation())
     let n2 = newImportedType(id("Bar"),
       some(id("Foo")), newLocation())
-    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    let r = newImport(@[n1, n2], newRelativeImportPath("./bar.asl"), "/abs/bar.asl", newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate import binding")
 
@@ -191,7 +191,7 @@ suite "ast — Import invariants":
     let n1 = newImportedType(id("Foo"), none(Identifier), newLocation())
     let n2 = newImportedType(id("Bar"),
       some(id("B")), newLocation())
-    let r = newImport(@[n1, n2], "./bar.asl", "/abs/bar.asl", newLocation())
+    let r = newImport(@[n1, n2], newRelativeImportPath("./bar.asl"), "/abs/bar.asl", newLocation())
     check r.isOk
 
 suite "ast — KeywordArgumentList invariants":

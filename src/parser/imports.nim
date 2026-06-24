@@ -133,14 +133,14 @@ type
   ImportKind* = enum
     ikExplicit, ikShorthand
   Import* = ref object
-    source: string
-    path: string # absolute path of the imported file; set during BFS in parse*
+    parsedPath: ImportPath # typed parsed source — either `ipkRelative` or `ipkVendor`
+    absPath: string        # absolute path of the imported file; set during BFS in parse*
     loc: Location
     case kind: ImportKind
     of ikExplicit: names: seq[ImportedType]
     of ikShorthand: discard
 
-proc newImport*(names: seq[ImportedType], source: string, path: string,
+proc newImport*(names: seq[ImportedType], parsedPath: ImportPath, absPath: string,
     loc: Location): Result[Import, ParserError] =
   ## Explicit form: `import { Name, Name as Alias, ... } from "path"`.
   ## Validates per-import uniqueness of both `name` and `binding`
@@ -163,23 +163,23 @@ proc newImport*(names: seq[ImportedType], source: string, path: string,
     else:
       bindingIndex[binding] = index
 
-  ok(Import(kind: ikExplicit, names: names, source: source, path: path, loc: loc))
+  ok(Import(kind: ikExplicit, names: names, parsedPath: parsedPath, absPath: absPath, loc: loc))
 
-proc newImport*(source: string, path: string, loc: Location): Result[Import, ParserError] =
+proc newImport*(parsedPath: ImportPath, absPath: string, loc: Location): Result[Import, ParserError] =
   ## Shorthand form: `import "path"` — brings every public defined type
   ## from the target file into scope under its original name. No names
   ## list at parse time; the resolver expands via `publicTypes()` once
   ## the target file's parser AST is in hand. No uniqueness check here
   ## (there are no names yet); collisions are caught at resolver time.
-  ok(Import(kind: ikShorthand, source: source, path: path, loc: loc))
+  ok(Import(kind: ikShorthand, parsedPath: parsedPath, absPath: absPath, loc: loc))
 
 proc kind*(imp: Import): ImportKind = imp.kind
 proc names*(imp: Import): seq[ImportedType] =
   assert imp.kind == ikExplicit,
     fmt"Import.names accessed but kind is {imp.kind}"
   imp.names
-proc source*(imp: Import): string = imp.source
-proc path*(imp: Import): string = imp.path
+proc parsedPath*(imp: Import): ImportPath = imp.parsedPath
+proc absPath*(imp: Import): string = imp.absPath
 proc loc*(imp: Import): Location = imp.loc
 
 proc asl*(imp: Import): string =
@@ -189,9 +189,9 @@ proc asl*(imp: Import): string =
     for i, name in imp.names:
       if i > 0: result.add(", ")
       result.add(asl(name))
-    result.add(fmt" }} from ""{imp.source}""")
+    result.add(fmt" }} from ""{asl(imp.parsedPath)}""")
   of ikShorthand:
-    result = fmt"import ""{imp.source}"""
+    result = fmt"import ""{asl(imp.parsedPath)}"""
 
 # TODO(vendor): extend with `vendorRoots: VendorRoots` parameter
 # (W2 declares the type alias). Dispatch on the parsed `ImportPath`
@@ -229,7 +229,11 @@ let explicitImportLineSpec* = Spec[Import](
   discard ? parser.run(ignorableLineSpec)
   let maybePath = resolveImportPath(source.value, parser.filepath)
   if maybePath.isOk:
-    newImport(names, source.value, maybePath.get, loc)
+    # W4 will replace this with parseImportPath so `@<name>` paths
+    # parse as ipkVendor. Today the resolveImportPath call above
+    # rejects anything that isn't a `.asl` / `.aslb` relative path,
+    # so every source reaching this point is genuinely relative.
+    newImport(names, newRelativeImportPath(source.value), maybePath.get, loc)
   else:
     err(newParserError(maybePath.error, source.loc))
 )
@@ -247,7 +251,9 @@ let shorthandImportLineSpec* = Spec[Import](
   discard ? parser.run(ignorableLineSpec)
   let maybePath = resolveImportPath(source.value, parser.filepath)
   if maybePath.isOk:
-    newImport(source.value, maybePath.get, loc)
+    # W4 will replace this with parseImportPath (see explicit form
+    # above for the same placeholder note).
+    newImport(newRelativeImportPath(source.value), maybePath.get, loc)
   else:
     err(newParserError(maybePath.error, source.loc))
 )

@@ -160,7 +160,7 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
   # collisions are caught by validateNoDuplicateBindings in
   # resolver/files.nim.
   for imp in imports:
-    if imp.path == path:
+    if imp.absPath == path:
       let msg = "importing the source file in itself is disallowed"
       return err(newParserError(msg, imp.loc))
     case imp.kind:

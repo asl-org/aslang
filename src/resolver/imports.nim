@@ -45,8 +45,8 @@ proc loc*(i: ResolvedImport): Location = i.parsed.loc
 
 proc resolveImport*(app: App, file: parser.File,
     imp: Import): Result[ResolvedImport, string] =
-  let impFileId = ? app.findFileId(imp.path)
-  let impFile = ? app.findFile(imp.path)
+  let impFileId = ? app.findFileId(imp.absPath)
+  let impFile = ? app.findFile(imp.absPath)
   var resolvedImportedTypes: seq[ResolvedImportedType]
   case imp.kind:
   of ikExplicit:
