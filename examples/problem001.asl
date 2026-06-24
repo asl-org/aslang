@@ -1,4 +1,4 @@
-import "base.asl"
+import "base.aslb"
 
 # Project Euler #1 style exercise — covers module with multiple
 # functions, primitive-method calls (i64.add, i64.quotient,

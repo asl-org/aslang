@@ -1,4 +1,4 @@
-import "base.asl"
+import "base.aslb"
 
 # Data blocks — one file with two modules, one backed by a struct
 # data block (User { name, age }) and the other by a union data

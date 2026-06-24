@@ -2,7 +2,7 @@
 # rule #2 (file must have ≥1 module or generic) is satisfied by
 # generics alone — previously only exercised via hello.asl which
 # also has a module.
-import "base.asl"
+import "base.aslb"
 generic Eq:
   func eq(a: Eq, b: Eq): u8
   func hash(a: Eq): u64

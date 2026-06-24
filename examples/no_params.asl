@@ -2,7 +2,7 @@
 # with an empty argument-definition list. The parser's
 # argumentDefinitionListSpec must accept `()` with no entries.
 
-import "base.asl"
+import "base.aslb"
 module Foo:
   func start(): u8
     u8 0

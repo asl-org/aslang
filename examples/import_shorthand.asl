@@ -3,7 +3,7 @@
 # base.asl into scope under its original name; the explicit form
 # below adds an aliased binding for a single Solver from
 # problem001.asl. Both forms coexist in one file.
-import "base.asl"
+import "base.aslb"
 import { Solver as Solution1 } from "./problem001.asl"
 
 public module Caller:

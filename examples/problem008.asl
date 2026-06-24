@@ -1,4 +1,4 @@
-import "base.asl"
+import "base.aslb"
 # Project Euler #8 style exercise — exercises function overloading
 # (three solve functions with different arity/types in the same
 # module), long string literals spanning a single source line, and

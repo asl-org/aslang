@@ -1,4 +1,4 @@
-import "base.asl"
+import "base.aslb"
 
 # Project Euler #7 style exercise — the first file with multiple
 # top-level modules in the same file (Bitset and Example), each
