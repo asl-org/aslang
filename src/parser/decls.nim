@@ -134,11 +134,14 @@ type
 # "std" in vendorRoots, prepend a synthesized ikShorthand `import
 # "@std"` to imports before the typeIndex build. See W10 in
 # plans/how-is-claude-parsed-whistle.md.
-proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
+proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType],
+    vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, ParserError] =
   ## Builds an `fkAsl` File: source files written by users, may
   ## carry imports, may not host extern functions in their modules
-  ## (those belong in .aslb files).
+  ## (those belong in .aslb files). `vendorRoots` is unused here
+  ## today; W10 starts consuming it to auto-inject `import "@std"`
+  ## when the table contains a `std` entry.
 
   # asl files cannot host extern functions. Walk every module's
   # function list; reject the first extern found with the extern's
@@ -273,17 +276,24 @@ proc publicTypes*(file: File): seq[DefinedType] =
       result.add(definedType)
 
 # aslFile: import* (module | generic)*
-let aslFileSpec = Spec[File](
-  name: "asl_file",
-  parseFn: proc(parser: Parser): Result[File, ParserError] =
-  let imports = ? parser.run(any(importBlockSpec))
-  let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
-  discard parser.run(any(ignorableLineSpec))
-  if not parser.done():
-    # Force a parse attempt to get a specific error message
-    discard ? parser.run(typeSpec)
-  newAslFile(parser.filepath, imports, items)
-)
+#
+# Parameterized by `vendorRoots` so the parseFn can pass it through
+# to `newAslFile`. Each call to `aslFileSpec(roots)` returns a fresh
+# Spec whose parseFn captures `roots` in its closure. The default
+# closure shape (a `let` Spec) doesn't work here because the
+# constructor needs runtime access to the vendor table.
+proc aslFileSpec(vendorRoots: VendorRoots): Spec[File] =
+  Spec[File](
+    name: "asl_file",
+    parseFn: proc(parser: Parser): Result[File, ParserError] =
+      let imports = ? parser.run(any(importBlockSpec))
+      let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
+      discard parser.run(any(ignorableLineSpec))
+      if not parser.done():
+        # Force a parse attempt to get a specific error message
+        discard ? parser.run(typeSpec)
+      newAslFile(parser.filepath, imports, items, vendorRoots)
+  )
 
 # aslbFile: (module | generic)*  — no imports section. Aslb files
 # are the runtime interface; they cannot reference other files.
@@ -298,12 +308,13 @@ let aslbFileSpec = Spec[File](
   newAslbFile(parser.filepath, items)
 )
 
-proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
+proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token],
+    vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, string] =
   ## Dispatches on the file's extension. `.asl` paths run through
-  ## `aslFileSpec` (parses imports + items); `.aslb` paths run
-  ## through `aslbFileSpec` (parses items only — no imports
-  ## section). Anything else fails early — `resolveImportPath`
+  ## `aslFileSpec(vendorRoots)` (parses imports + items); `.aslb`
+  ## paths run through `aslbFileSpec` (parses items only — no
+  ## imports section). Anything else fails early — `resolveImportPath`
   ## rejects non-`.asl`/`.aslb` paths and the CLI rejects non-`.asl`
   ## entry points, so this defensive arm shouldn't fire in practice.
   let (_, _, ext) = filepath.splitFile()
@@ -311,7 +322,7 @@ proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token]): Result[
     return err(fmt"{filepath}: unrecognized file extension '{ext}' — expected '.asl' or '.aslb'")
   let parser = newParser(filepath, indentWidth, tokens)
   let maybeFile =
-    if ext == ".asl": parser.run(aslFileSpec)
+    if ext == ".asl": parser.run(aslFileSpec(vendorRoots))
     else: parser.run(aslbFileSpec)
   if maybeFile.isErr:
     err(fmt"{maybeFile.error}")

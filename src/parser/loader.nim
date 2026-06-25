@@ -22,22 +22,18 @@ proc readFileSafe(filepath: string): Result[string, string] =
     err(fmt"{filepath} failed to read file.")
 
 proc parseFile(filepath: string, indentWidth: uint32,
-    dumpTokens: bool): Result[File, string] =
+    dumpTokens: bool, vendorRoots: VendorRoots): Result[File, string] =
   let source = ? readFileSafe(filepath)
   let tokens = ? tokenize(source, filepath, dumpTokens)
-  parse(filepath, indentWidth, tokens)
+  parse(filepath, indentWidth, tokens, vendorRoots)
 
-# TODO(vendor): accept `vendorRoots: VendorRoots = initTable[string, string]()`
-# as an additional parameter and thread it through `parseFile` →
-# `decls.parse(filepath, indentWidth, tokens, vendorRoots)` → the
-# parameterized `aslFileSpec(vendorRoots)` → `newAslFile`. The BFS
-# `for imp in file.imports` becomes `if file.kind == fkAsl: for imp
-# in file.imports` once W6 splits File. Also: resolveImportPath now
-# also takes vendorRoots so `@vendor` paths surface as dependencies
-# during BFS. See W9 in plans/how-is-claude-parsed-whistle.md.
-proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[App, string] =
+proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool,
+    vendorRoots: VendorRoots = initTable[string, string]()): Result[App, string] =
   ## BFS through imports, tokenize + parse each file.
   ## Returns App with files in topological order: leaves first, root last.
+  ## `vendorRoots` threads through every `parseFile` call so the
+  ## per-file `aslFileSpec` can hand it to `newAslFile` (which uses
+  ## it to auto-inject `import "@std"` in W10).
   var parsed: Table[string, File]
   var queued: HashSet[string]
   var queue: Deque[string]
@@ -47,7 +43,7 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool): Result[App
 
   while queue.len > 0:
     let current = queue.popFirst()
-    let file = ? parseFile(current, indentWidth, dumpTokens)
+    let file = ? parseFile(current, indentWidth, dumpTokens, vendorRoots)
     parsed[current] = file
 
     if file.kind == fkAsl:
