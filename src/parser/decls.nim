@@ -130,18 +130,19 @@ type
     of fkAsl: imports: seq[Import]
     of fkAslb: discard
 
-# TODO(vendor): newAslFile takes `vendorRoots: VendorRoots`; if
-# "std" in vendorRoots, prepend a synthesized ikShorthand `import
-# "@std"` to imports before the typeIndex build. See W10 in
-# plans/how-is-claude-parsed-whistle.md.
 proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType],
     vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, ParserError] =
   ## Builds an `fkAsl` File: source files written by users, may
   ## carry imports, may not host extern functions in their modules
-  ## (those belong in .aslb files). `vendorRoots` is unused here
-  ## today; W10 starts consuming it to auto-inject `import "@std"`
-  ## when the table contains a `std` entry.
+  ## (those belong in .aslb files). When `vendorRoots` contains a
+  ## `"std"` entry, a synthesized `import "@std"` (ikShorthand) is
+  ## prepended to the imports seq before the typeIndex build, so
+  ## every public defined type from the std vendor target is in
+  ## scope without the user typing the line. Compiler-injected
+  ## imports use a sentinel `newLocation()` — they have no source
+  ## position, and downstream code can't otherwise distinguish them
+  ## from a user-written line.
 
   # asl files cannot host extern functions. Walk every module's
   # function list; reject the first extern found with the extern's
@@ -153,6 +154,12 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
           let msg = fmt"asl files cannot contain extern functions; extern functions belong in .aslb files (the runtime interface)"
           return err(newParserError(msg, fn.loc))
 
+  var allImports = imports
+  if "std" in vendorRoots:
+    let stdImport = ? newImport(newVendorImportPath("std"),
+        vendorRoots["std"], newLocation())
+    allImports.insert(stdImport, 0)
+
   var typeIndex: Table[Identifier, int]
   var types: seq[Type]
 
@@ -162,7 +169,7 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
   # yet at this point). Shorthand-vs-local + shorthand-vs-explicit
   # collisions are caught by validateNoDuplicateBindings in
   # resolver/files.nim.
-  for imp in imports:
+  for imp in allImports:
     if imp.absPath == path:
       let msg = "importing the source file in itself is disallowed"
       return err(newParserError(msg, imp.loc))
@@ -185,7 +192,7 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
     else:
       typeIndex[definedType.name] = types.len
       types.add(newType(definedType))
-  ok(File(kind: fkAsl, path: path, imports: imports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+  ok(File(kind: fkAsl, path: path, imports: allImports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
 
 proc newAslbFile*(path: string, definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
