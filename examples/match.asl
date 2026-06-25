@@ -1,4 +1,3 @@
-import "base.aslb"
 # Match expression forms — exercises standalone match statement,
 # integer-literal case patterns (case 0, case 1), variable binding
 # patterns (case other, case n), and match-as-assignment

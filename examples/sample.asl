@@ -1,4 +1,3 @@
-import "base.aslb"
 # Aggregator file — exercises import aliasing ("as Solution1"),
 # multiple import statements from different files, and cross-file
 # module references (Solution1.start through Solution10.start).

@@ -2,7 +2,6 @@
 # public keyword on module and function, a generic with a single
 # func def, and a call to System.println.
 
-import "base.aslb"
 import { Sample } from "./sample.asl"
 
 generic Key:

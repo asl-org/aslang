@@ -1,4 +1,3 @@
-import "base.aslb"
 # Project Euler #5 style exercise — gcd/lcm via Euclidean recursion.
 # Exercises integer comparison with signed literal patterns
 # (case -1), mutually-calling functions within a module, and

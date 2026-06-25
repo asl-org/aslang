@@ -1,4 +1,6 @@
-import argparse, strformat, results, os
+import argparse, strformat, results, os, tables, strutils
+
+import parser
 
 const Usage = """Usage: asl <command> [options]
 
@@ -9,6 +11,10 @@ Options:
   --debug               Emit source location comments in generated C
   --dump-tokens         Dump token stream to stdout after tokenization
   --indent-width=<N>    Spaces per indentation level (default: 2)
+  --vendor=<name:path>  Register a vendor (repeatable). Vendor paths
+                        are referenced from source as `import "@<name>"`.
+                        Default: `std:examples/base.aslb` when --vendor
+                        does not include a `std` entry.
   [-o|--output]=<file>  Output binary path (default: input filename without extension)
   [-h|--help]           Show this help message"""
 
@@ -19,22 +25,28 @@ type AslBuildCommand* = object
   indentWidth: uint32
   debug: bool
   dumpTokens: bool
+  vendorRoots: VendorRoots
 
 proc newAslBuildCommand(filename: string, outputFile: string,
-    indentWidth: uint32, debug: bool, dumpTokens: bool): AslBuildCommand =
+    indentWidth: uint32, debug: bool, dumpTokens: bool,
+    vendorRoots: VendorRoots): AslBuildCommand =
   AslBuildCommand(filename: filename, outputFile: outputFile,
-      indentWidth: indentWidth, debug: debug, dumpTokens: dumpTokens)
+      indentWidth: indentWidth, debug: debug, dumpTokens: dumpTokens,
+      vendorRoots: vendorRoots)
 
 proc filename*(cmd: AslBuildCommand): string = cmd.filename
 proc outputFile*(cmd: AslBuildCommand): string = cmd.outputFile
 proc indentWidth*(cmd: AslBuildCommand): uint32 = cmd.indentWidth
 proc debug*(cmd: AslBuildCommand): bool = cmd.debug
 proc dumpTokens*(cmd: AslBuildCommand): bool = cmd.dumpTokens
+proc vendorRoots*(cmd: AslBuildCommand): VendorRoots = cmd.vendorRoots
 
 proc `$`*(cmd: AslBuildCommand): string =
   var debugFlags: seq[string]
   if cmd.debug: debugFlags.add("--debug")
   if cmd.dumpTokens: debugFlags.add("--dump-tokens")
+  for name, path in cmd.vendorRoots.pairs:
+    debugFlags.add(fmt"--vendor={name}:{path}")
 
   let debugFlagsStr = debugFlags.join(" ")
   fmt"build {cmd.filename} --output={cmd.outputFile} --indent-width={cmd.indentWidth} {debugFlagsStr}"
@@ -79,25 +91,59 @@ proc `$`*(cmd: AslCommand): string =
   of ackBuild: fmt"asl {cmd.build}"
   of ackHelp: fmt"asl {cmd.help}"
 
-# TODO(vendor): add a repeatable `--vendor="<name>:<path>"` option
-# to the `build` command. After argparse runs, a post-parse
-# validation pass:
-#   1. Split each value on first `:`. Reject empty name or path.
-#   2. Validate name against ASL identifier rules
-#      (parser/identifiers.nim helpers).
-#   3. absolutePath the path.
-#   4. Build a `VendorRoots = Table[string, string]`. Reject
-#      duplicate names pointing at both paths.
-#   5. Default `std → absolutePath("examples/base.aslb")` if "std"
-#      wasn't user-supplied.
-# Thread VendorRoots through AslBuildCommand → asl.nim's `compile`
-# → loader's `parse*`. See W12 in plans/how-is-claude-parsed-whistle.md.
+proc isValidVendorIdent(name: string): bool =
+  ## ASL identifier rules — same shape as the parser's vendor-name
+  ## validation in `parseImportPath`. Head: ASCII letter or
+  ## underscore; tail: letter, digit, or underscore.
+  if name.len == 0: return false
+  if not (name[0].isAlphaAscii or name[0] == '_'): return false
+  for c in name[1..^1]:
+    if not (c.isAlphaNumeric or c == '_'): return false
+  true
+
+proc parseVendorFlag(value: string): Result[(string, string), string] =
+  ## Splits a `--vendor=<name>:<path>` value on its first `:`.
+  ## Validates that both sides are non-empty and `name` is a valid
+  ## ASL identifier (mirroring the parser's rule so user-typed
+  ## `import "@<name>"` and CLI-typed `--vendor=<name>:...` agree
+  ## on what a name looks like).
+  let idx = value.find(':')
+  if idx < 0:
+    return err(fmt"--vendor value '{value}' must use the form '<name>:<path>'")
+  let name = value[0..<idx]
+  let path = value[idx+1..^1]
+  if name.len == 0:
+    return err(fmt"--vendor value '{value}' has an empty vendor name")
+  if path.len == 0:
+    return err(fmt"--vendor value '{value}' has an empty path")
+  if not isValidVendorIdent(name):
+    return err(fmt"--vendor name '{name}' is not a valid ASL identifier (head: letter or underscore; tail: letters, digits, underscore)")
+  ok((name, path))
+
+proc buildVendorRoots(rawFlags: seq[string]): Result[VendorRoots, string] =
+  ## Validates and aggregates every `--vendor=...` value into a
+  ## `VendorRoots` table. Rejects duplicate names with both paths in
+  ## the diagnostic. After all user-supplied flags, defaults `std`
+  ## to `examples/base.aslb` (absolute) when the user did not
+  ## register a `std` vendor of their own.
+  var roots = initTable[string, string]()
+  for raw in rawFlags:
+    let (name, path) = ? parseVendorFlag(raw)
+    let absPath = path.absolutePath
+    if name in roots:
+      return err(fmt"--vendor name '{name}' specified more than once: '{roots[name]}' vs '{absPath}'")
+    roots[name] = absPath
+  if "std" notin roots:
+    roots["std"] = "examples/base.aslb".absolutePath
+  ok(roots)
+
 proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
   var p = newParser:
     command("build"):
       arg("filename", nargs = 1)
       option("-o", "--output")
       option("--indent-width", default = some("2"), choices = @["2", "4"])
+      option("--vendor", multiple = true)
       flag("--debug")
       flag("--dump-tokens")
 
@@ -115,8 +161,9 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
         else: buildOpts.output
 
       let indentWidth = parseInt(buildOpts.indentWidth).uint32
+      let vendorRoots = ? buildVendorRoots(buildOpts.vendor)
       let buildCmd = newAslBuildCommand(buildOpts.filename, outputFile,
-          indentWidth, buildOpts.debug, buildOpts.dumpTokens)
+          indentWidth, buildOpts.debug, buildOpts.dumpTokens, vendorRoots)
       ok(newAslCommand(buildCmd))
     else:
       ok(newAslCommand(newAslHelpCommand()))

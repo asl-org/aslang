@@ -1,4 +1,3 @@
-import "base.aslb"
 # Project Euler #4 style exercise — palindrome loop. Exercises
 # match on signed integer literals (case -1, case 1), tail-recursive
 # loops via function recursion, and primitive literal initializers

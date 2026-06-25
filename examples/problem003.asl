@@ -1,4 +1,3 @@
-import "base.aslb"
 
 # Project Euler #3 style exercise — heavy union-variant matching.
 # Exercises struct data block (Bitset holding Array[Any]), union

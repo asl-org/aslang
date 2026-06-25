@@ -1,4 +1,3 @@
-import "base.aslb"
 # Project Euler #9 style exercise — Pythagorean triplet search.
 # Exercises inline `# comment` on case arms and at statement scope,
 # function overloading (two solve functions with different arity),

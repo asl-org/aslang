@@ -1,4 +1,3 @@
-import "base.aslb"
 
 # Project Euler #2 style exercise — exercises match-as-expression
 # with integer-literal patterns (case 0, case 1) and wildcard
