@@ -29,7 +29,9 @@ public module M:
     check r.isOk
 
   test "module with literal data block":
-    let r = parseStr("""
+    # extern functions only parse in .aslb files (the runtime
+    # interface); newAslFile rejects them otherwise.
+    let r = parseStrAslb("""
 public module u8:
   literal: "u8"
 
@@ -102,7 +104,8 @@ public module Array:
     check r.isOk
 
   test "extern function":
-    let r = parseStr("""
+    # extern functions are only legal in .aslb files.
+    let r = parseStrAslb("""
 public module u8:
   literal: "u8"
 
@@ -331,7 +334,8 @@ module M:
     check r.isOk
 
   test "decorator on an extern function":
-    let r = parseStr("""
+    # extern functions are only legal in .aslb files.
+    let r = parseStrAslb("""
 public module u8:
   literal: "u8"
 

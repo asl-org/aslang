@@ -26,6 +26,13 @@ proc parseStr*(source: string, filepath: string = "",
   let tokens = ? tokenizeStr(source, path)
   decls.parse(path, indentWidth, tokens)
 
+proc parseStrAslb*(source: string, indentWidth: uint32 = 2): Result[decls.File, string] =
+  ## Same as `parseStr` but uses a `.aslb` filepath, so the parser
+  ## dispatches to `aslbFileSpec` / `newAslbFile`. Use for tests of
+  ## grammar elements that are only legal in runtime-interface files
+  ## (extern functions inside modules).
+  parseStr(source, getTempDir() / "asl_parseStr.aslb", indentWidth)
+
 proc writeFiles*(specs: openArray[FileSpec]): string =
   ## Write a set of files into a fresh temp dir. Returns the dir path.
   ## The first entry is treated as the entry point; its name is what
@@ -86,6 +93,14 @@ proc resolveSingle*(source: string,
     indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =
   ## Convenience for a single-file program (no imports).
   resolveFiles([("entry.asl", source)], indentWidth)
+
+proc resolveSingleAslb*(source: string,
+    indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =
+  ## Same as `resolveSingle` but writes the source as `entry.aslb` so
+  ## the parser dispatches to `aslbFileSpec` / `newAslbFile`. Use when
+  ## the source contains modules with extern functions (asl files
+  ## cannot host externs).
+  resolveFiles([("entry.aslb", source)], indentWidth)
 
 proc analyzeFiles*(specs: openArray[FileSpec],
     indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =

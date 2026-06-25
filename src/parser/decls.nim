@@ -5,6 +5,7 @@ import combinators
 import helpers
 import identifiers
 import funcDefs
+import funcs
 import imports
 import generics
 import modules
@@ -129,17 +130,26 @@ type
     of fkAsl: imports: seq[Import]
     of fkAslb: discard
 
-# TODO(vendor): newAslFile gains two additions:
-#   - W8: walk every module in definedTypes; reject if any contains
-#     an extern function (asl files cannot host extern functions —
-#     those belong in .aslb).
-#   - W10: take `vendorRoots: VendorRoots`; if "std" in vendorRoots,
-#     prepend a synthesized ikShorthand `import "@std"` to imports
-#     before the typeIndex build.
+# TODO(vendor): newAslFile takes `vendorRoots: VendorRoots`; if
+# "std" in vendorRoots, prepend a synthesized ikShorthand `import
+# "@std"` to imports before the typeIndex build. See W10 in
+# plans/how-is-claude-parsed-whistle.md.
 proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
   ## Builds an `fkAsl` File: source files written by users, may
-  ## carry imports, may not host extern functions in their modules.
+  ## carry imports, may not host extern functions in their modules
+  ## (those belong in .aslb files).
+
+  # asl files cannot host extern functions. Walk every module's
+  # function list; reject the first extern found with the extern's
+  # own loc so the diagnostic points at the offending decoration.
+  for definedType in definedTypes:
+    if definedType.kind == dtkModule:
+      for fn in definedType.module.functions:
+        if fn.kind == fkExtern:
+          let msg = fmt"asl files cannot contain extern functions; extern functions belong in .aslb files (the runtime interface)"
+          return err(newParserError(msg, fn.loc))
+
   var typeIndex: Table[Identifier, int]
   var types: seq[Type]
 

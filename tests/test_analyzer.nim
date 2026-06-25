@@ -77,14 +77,14 @@ module M:
   test "struct + simple field types analyze":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8, u32 } from "./base.asl"
+import { u8, u32 } from "./base.aslb"
 
 module Point:
   struct:
     x: u32
     y: u32
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -110,13 +110,13 @@ public generic Any:
     # generic when iterating Array's requires.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u8, u32 } from "./base.asl"
+import { Array, Any, u8, u32 } from "./base.aslb"
 
 module N:
   struct:
     a: Array[u8]
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -131,13 +131,13 @@ module N:
     # name.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8 as Byte } from "./base.asl"
+import { u8 as Byte } from "./base.aslb"
 
 module M:
   struct:
     b: Byte
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -152,7 +152,7 @@ suite "analyzer — generic constraint satisfaction":
     # is used.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.asl"
+import { Array, Any, u32 } from "./base.aslb"
 
 public module BadImpl:
   struct:
@@ -162,7 +162,7 @@ module N:
   struct:
     a: Array[BadImpl]
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -175,14 +175,14 @@ module N:
     # use u32 (which implements byte_size).
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.asl"
+import { Array, Any, u32 } from "./base.aslb"
 
 module N:
   struct:
     a: Array[u32]
     b: Array[u32]
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -192,13 +192,13 @@ suite "analyzer — imports":
   test "module that imports + uses a generic + concrete impl works":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Any, Array, u8 } from "./base.asl"
+import { Any, Array, u8 } from "./base.aslb"
 
 module N:
   struct:
     a: Array[u8]
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -206,13 +206,13 @@ module N:
   test "module that imports a type but doesn't use it still analyzes":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8 } from "./base.asl"
+import { u8 } from "./base.aslb"
 
 module M:
   struct:
     a: u8
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -234,7 +234,7 @@ module M:
   test "analyzer error message includes the file path":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.asl"
+import { Array, Any, u32 } from "./base.aslb"
 
 public module BadImpl:
   literal: "bad"
@@ -243,7 +243,7 @@ module N:
   struct:
     a: Array[BadImpl]
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -252,7 +252,7 @@ module N:
   test "analyzer error message includes line:col":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.asl"
+import { Array, Any, u32 } from "./base.aslb"
 
 public module BadImpl:
   literal: "bad"
@@ -261,7 +261,7 @@ module N:
   struct:
     a: Array[BadImpl]
 """),
-      ("base.asl", Base)
+      ("base.aslb", Base)
     ])
     cleanupDir(dir)
     check r.isErr
