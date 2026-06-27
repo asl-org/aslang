@@ -260,3 +260,59 @@ module M:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "importing the source file in itself")
+
+suite "loader — vendor auto-injection":
+
+  test "an .asl file with no explicit imports can reference std vendor types":
+    # No user-written import line. `writeStdVendor` registers a
+    # `std → base.aslb` vendor, and `newAslFile` auto-injects the
+    # shorthand `import "@std"` — bringing `u8` (etc.) into scope.
+    let (vendorRoots, vendorDir) = writeStdVendor()
+    let (r, userDir) = resolveFiles([
+      ("entry.asl", """
+public module Caller:
+  public func go(): u8
+    u8 0
+""")
+    ], 2, vendorRoots)
+    cleanupDir(userDir); cleanupDir(vendorDir)
+    check r.isOk
+
+  test "an .asl file with explicit imports also gets the auto-injected std":
+    # Both the explicit relative import and the auto-injected
+    # shorthand coexist; the typeIndex carries both binding sets.
+    let (vendorRoots, vendorDir) = writeStdVendor()
+    let (r, userDir) = resolveFiles([
+      ("entry.asl", """
+import { Helper } from "./helper.asl"
+
+public module Caller:
+  public func go(): u8
+    u8 0
+"""),
+      ("helper.asl", """
+public module Helper:
+  public func go(): u8
+    u8 0
+""")
+    ], 2, vendorRoots)
+    cleanupDir(userDir); cleanupDir(vendorDir)
+    check r.isOk
+
+  test "auto-injection is not applied to .aslb files":
+    # `parseFiles` writes the entry as the first spec; an `.aslb`
+    # entry dispatches to `aslbFileSpec` → `newAslbFile`, which does
+    # not consume `vendorRoots`. The aslb file therefore does NOT
+    # gain an `@std` import — verifying this by referencing `u8`
+    # from the std vendor without an explicit import, which must
+    # fail to resolve.
+    let (vendorRoots, vendorDir) = writeStdVendor()
+    let (r, userDir) = resolveFiles([
+      ("entry.aslb", """
+public module Caller:
+  public func go(): u8
+    u8 0
+""")
+    ], 2, vendorRoots)
+    cleanupDir(userDir); cleanupDir(vendorDir)
+    check r.isErr

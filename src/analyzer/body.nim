@@ -38,10 +38,19 @@ proc analyzeStringLiteral(literal: Literal): Result[void, string] =
   of lkInteger: err(fmt"{literal.loc} expected a valid string literal but found integer")
   of lkString: ok()
 
+proc analyzeFloatLiteral[T: SomeFloat](literal: Literal, expected: string): Result[void, string] =
+  case literal.kind:
+  of lkInteger: err(fmt"{literal.loc} expected a valid {expected} but found integer")
+  of lkString: err(fmt"{literal.loc} expected a valid {expected} but found string")
+  of lkFloat:
+    let maybeParsedFloat = parseFloat[T](literal.asl)
+    if maybeParsedFloat.isSome: ok()
+    else: err(fmt"{literal.loc} expected a valid {expected} but found `{literal.asl}`")
+
 proc analyzeLiteral(literalDef: ResolvedLiteralType, literal: Literal): Result[void, string] =
   case literalDef:
-  of rltkF32: err(fmt"{literal.loc} todo: analyze literal F32 literal argument")
-  of rltkF64: err(fmt"{literal.loc} todo: analyze literal F64 literal argument")
+  of rltkF32: analyzeFloatLiteral[float32](literal, "32-bit float")
+  of rltkF64: analyzeFloatLiteral[float64](literal, "64-bit float")
   of rltkPointer: err(fmt"{literal.loc} todo: analyze literal Pointer literal argument")
   of rltkU8: analyzeIntegerLiteral[uint8](literal, "8-bit unsigned integer")
   of rltkU16: analyzeIntegerLiteral[uint16](literal, "16-bit unsigned integer")

@@ -409,3 +409,31 @@ module M:
     f64 -0.5
 """)
     check r.isOk
+
+suite "grammar — file-kind invariants":
+
+  test ".aslb file with an import line is rejected":
+    # `aslbFileSpec` parses only modules and generics; the
+    # leading `import` line doesn't match any expected token,
+    # so the parse fails.
+    let r = parseStrAslb("""
+import { Foo } from "./bar.asl"
+
+public module M:
+  func go(): u8
+    u8 0
+""")
+    check r.isErr
+
+  test ".asl file with extern function inside a module is rejected":
+    # `newAslFile` walks every module's function list and rejects
+    # any extern, with a diagnostic that points the user at .aslb
+    # files as the right home for externs.
+    let r = parseStr("""
+public module Sys:
+  @extern("sys_call")
+  public func call(): u8
+""")
+    check r.isErr
+    check errorContains(r.error, "extern functions")
+    check errorContains(r.error, ".aslb")

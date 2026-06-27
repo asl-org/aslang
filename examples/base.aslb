@@ -140,6 +140,12 @@ public module u32:
   @extern("u32_from_u8")
   public func from(a: u8): u32
 
+  @extern("u32_from_f32")
+  public func from(a: f32): Status[u32]
+
+  @extern("u32_from_f64")
+  public func from(a: f64): Status[u32]
+
   # user functions
   public func div_ceil(a: u32, b: u32): Status[u32]
     match u32.add(a, b):
@@ -211,6 +217,9 @@ public module u64:
 
   @extern("u64_from_u32")
   public func from(a: u32): u64
+
+  @extern("u64_from_f64")
+  public func from(a: f64): Status[u64]
 
   # user functions
   public func div_ceil(a: u64, b: u64): Status[u64]
@@ -415,6 +424,14 @@ public module i64:
   @extern("i64_compare_i64")
   public func compare(a: i64, b: i64): i8
 
+# TODO(float-special-values): f32 / f64 modules do not yet expose
+# Inf / -Inf / NaN as values, nor classification predicates
+# (`is_finite`, `is_nan`, `is_inf`). The literal-validator in the
+# analyzer mirrors this: it rejects parse results that classify as
+# Inf or NaN, since there is no surface form to write one. When the
+# language grows special-value literals (`f32.inf`, `f32.nan`, etc.)
+# and classifiers, both this module and the analyzer's parseFloat
+# helper should pick them up.
 public module f32:
   literal: "f32"
 
@@ -451,6 +468,19 @@ public module f32:
   @extern("f32_remainder_f32")
   public func remainder(a: f32, b: f32): f32
 
+  # branching
+  @extern("f32_compare_f32")
+  public func compare(a: f32, b: f32): i8
+
+  # absolute value
+  @extern("f32_abs_f32")
+  public func abs(a: f32): f32
+
+  # casting
+  @extern("f32_from_u32")
+  public func from(a: u32): f32
+
+# See the TODO above f32 — the same special-value gap applies to f64.
 public module f64:
   literal: "f64"
 
@@ -486,6 +516,21 @@ public module f64:
 
   @extern("f64_remainder_f64")
   public func remainder(a: f64, b: f64): f64
+
+  # branching
+  @extern("f64_compare_f64")
+  public func compare(a: f64, b: f64): i8
+
+  # absolute value
+  @extern("f64_abs_f64")
+  public func abs(a: f64): f64
+
+  # casting
+  @extern("f64_from_u32")
+  public func from(a: u32): f64
+
+  @extern("f64_from_u64")
+  public func from(a: u64): f64
 
 public module String:
   literal: "string"

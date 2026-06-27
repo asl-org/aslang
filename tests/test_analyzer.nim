@@ -295,3 +295,131 @@ generic Sized:
 """)
     cleanupDir(dir)
     check r.isOk
+
+suite "analyzer — float literals":
+
+  test "f64 accepts an exactly-representable value":
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 0.5
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "f64 rejects a decimal whose denominator has a 5-factor":
+    # `0.1` = 1/10 = 1/(2 * 5); after reduction the denominator still
+    # has a 5, so the value is not exactly representable in any binary
+    # float — including the widest one we support, f64.
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 0.1
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "64-bit float")
+    check errorContains(r.error, "0.1")
+
+  test "f64 accepts a power-of-two fraction":
+    # `0.0625` = 1/16 = 1/2^4 — denominator is a clean power of 2,
+    # mantissa fits trivially. Exactly representable.
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 0.0625
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "f64 accepts a negative integer-valued literal with exponent":
+    # `-1.5e3` = -1500, an integer — exact.
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 -1.5e3
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "f64 rejects a decimal that would round into the mantissa":
+    # `3.14` = 314/100 = 157/50; denominator has a 5-factor.
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 3.14
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "64-bit float")
+
+  test "f64 rejects an overflowing literal":
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 1.0e400
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "64-bit float")
+    check errorContains(r.error, "1.0e400")
+
+  test "f32 accepts an exactly-representable value":
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+public module M:
+  public func go(): f32
+    f32 0.5
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "f32 rejects a value that loses precision when narrowed":
+    # `0.1` round-trips through `parseFloat[float32]` to a different
+    # f64 value than the parsed input — narrowing dropped bits. The
+    # analyzer surfaces this as a "not a valid 32-bit float" error.
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+public module M:
+  public func go(): f32
+    f32 0.1
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "32-bit float")
+    check errorContains(r.error, "0.1")
+
+  test "f32 rejects an overflowing literal":
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+public module M:
+  public func go(): f32
+    f32 1.0e40
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "32-bit float")

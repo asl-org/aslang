@@ -9,3 +9,4 @@ import test_grammar
 import test_loader
 import test_resolver
 import test_analyzer
+import test_cli

@@ -57,6 +57,40 @@ proc cleanupDir*(dir: string) =
   try: removeDir(dir)
   except CatchableError: discard
 
+const StdVendorBase* = """
+public module u8:
+  literal: "u8"
+
+public module u32:
+  literal: "u32"
+
+public module u64:
+  literal: "u64"
+
+public module String:
+  literal: "string"
+
+public generic Any:
+  func byte_size(items: u32): u64
+
+public module Status:
+  union:
+    Ok { value: Any }
+    Err { error: u8 }
+"""
+
+proc writeStdVendor*(): tuple[vendorRoots: VendorRoots, dir: string] =
+  ## Writes a minimal std vendor `base.aslb` into a fresh temp dir
+  ## and returns a `VendorRoots` mapping `std` → that file, plus the
+  ## dir path for cleanup. Compose with any of the existing parse /
+  ## resolve / analyze helpers by passing `vendorRoots` through
+  ## their optional last parameter — auto-injection in `newAslFile`
+  ## then synthesizes the `import "@std"` line for the user's file.
+  let dir = writeFiles([("base.aslb", StdVendorBase)])
+  var roots = initTable[string, string]()
+  roots["std"] = dir / "base.aslb"
+  (roots, dir)
+
 proc parseFiles*(specs: openArray[FileSpec],
     indentWidth: uint32 = 2,
     vendorRoots: VendorRoots = emptyVendorRoots()): tuple[app: Result[App, string], dir: string] =
