@@ -1,0 +1,667 @@
+# ASL — Language Documentation
+
+ASL ("a Software Language") is a statically-typed systems programming
+language for mission-critical software. The language is under active
+development; this document tracks the syntax that currently parses,
+resolves, and analyzes cleanly through the compiler. Anything not
+written here is either not yet supported or in flux.
+
+For compiler internals (pipeline phases, AST shapes, design patterns),
+see `overview.md`. For active issues and design lessons, see `bugs.md`
+and `lessons.md`.
+
+---
+
+## Source files
+
+ASL distinguishes two file kinds by extension. The compiler enforces
+each kind's invariants at parse time.
+
+| Extension | Purpose | May `import` | May host `@extern` | Auto-injected `@std` |
+|-----------|---------|--------------|--------------------|----------------------|
+| `.asl`    | User source code | yes | no | yes |
+| `.aslb`   | Runtime interface — the boundary between ASL and the host runtime (C, etc.) | no | yes | no |
+
+`examples/base.aslb` is the standard library: every primitive type and
+host-provided function is declared there with an `@extern("c_symbol")`
+decorator. Application code lives in `.asl` files and never declares
+externs.
+
+Every `.asl` file gets `import "@std"` injected at parse time, so
+standard-library types (`u8`..`u64`, `i8`..`i64`, `f32`/`f64`, `String`,
+`Status`, `Array`, `Bitset`, `Error`, etc.) are in scope without a
+written import line.
+
+---
+
+## Lexical conventions
+
+- **Indentation-based.** Block structure follows indentation (default 2
+  spaces; configurable via `--indent-width=N` to 2 or 4). There are no
+  braces around blocks and no semicolons between statements.
+- **Newlines end statements.** A statement runs from the start of a line
+  to the next newline; there is no line continuation.
+- **Comments.** `#` introduces a line comment; the rest of the line is
+  ignored. There is no block-comment syntax.
+- **Identifiers.** Head: ASCII letter or `_`. Tail: ASCII letter, digit,
+  or `_`. Hyphens are not allowed.
+- **String literals.** Double-quoted, with the usual escape sequences.
+- **Number literals.** Decimal integers (`42`, `-1`), decimal floats
+  (`3.14`, `1.5e3`, `-0.5`).
+- **Unicode safety.** The tokenizer rejects bidirectional control
+  codepoints, zero-width characters, and invisible Unicode (Trojan
+  Source defense).
+
+---
+
+## Imports
+
+Three forms, all written at the top of an `.asl` file before any module
+or generic declaration. `.aslb` files cannot contain imports.
+
+### Explicit
+
+```asl
+import { Foo, Bar } from "./util.asl"
+import { Solver as Solution1 } from "./problem001.asl"
+import { Foo, Bar as B, Baz } from "./lib.asl"
+```
+
+Names listed in braces are brought into scope. `as Alias` rebinds a
+name locally.
+
+### Shorthand
+
+```asl
+import "./util.asl"
+```
+
+Every `public` type from the target file is brought in under its
+original name. No braces, no alias list. Useful when you want to use
+many names from a single dependency.
+
+### Vendor
+
+```asl
+import "@std"
+import "@runtime"
+```
+
+`@<name>` references a vendor registered via the CLI's `--vendor` flag
+(see [CLI](#cli)). The compiler resolves `@<name>` against the vendor
+table and treats the entry exactly like a shorthand import of the
+mapped file. `@std` is auto-injected in every `.asl` file, so writing
+it explicitly is redundant.
+
+### Path rules
+
+Relative paths must stay under the importing file's directory subtree
+— `../` and sneaky escapes (`./sub/../../escape`) are rejected. Self-
+import (importing the file you are in) is rejected. Importing the same
+file twice with different aliases is allowed and produces independent
+binding sets.
+
+---
+
+## Top-level declarations
+
+Two kinds of declaration may appear at the top level of a file:
+**modules** and **generics**. A file must contain at least one of them.
+
+### Modules
+
+A module is the primary unit of organization. It optionally carries a
+single data block (struct, union, or literal) and any number of
+functions.
+
+```asl
+module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  func first(p: Pair): u8
+    p.a
+
+  func setA(p: Pair, v: u8): Pair
+    p.a = v
+    p
+```
+
+`public module` exports the module so other files can import it.
+Without `public`, the module is file-local.
+
+### Generics
+
+A generic is an interface: a named list of function signatures that any
+implementing type must provide. There are no bodies inside a generic
+block.
+
+```asl
+generic Eq:
+  func eq(a: Eq, b: Eq): u8
+  func hash(a: Eq): u64
+
+public generic Any:
+  func byte_size(): u64
+```
+
+A generic name inside its own block self-references — `Eq` in `eq(a:
+Eq, b: Eq)` means "whatever type implements me." The **generic
+signature rule** restricts every argument/return type root inside a
+generic to either the generic itself or a module — other generics are
+not accepted.
+
+---
+
+## Data blocks
+
+A module's data block is one of three shapes. The shape determines
+what values of the module's type look like.
+
+### `struct` — product type
+
+```asl
+module User:
+  struct:
+    name: String
+    age: u32
+```
+
+### `union` — sum type with named variants
+
+```asl
+module Plan:
+  union:
+    Free { usage: u32 }
+    Pro { users: u32, credits: u32 }
+```
+
+Each variant carries its own named fields. Variants may be empty
+(`Done {}`).
+
+### `literal` — opaque primitive (only in `.aslb` files)
+
+```asl
+public module u8:
+  literal: "u8"
+```
+
+`literal` declares a primitive type backed by a host-runtime
+representation tagged by the quoted name. Values of a literal type are
+constructed via literal-initializer syntax (`u8 42`). Only `.aslb`
+files may use this shape — application code reuses the primitives the
+runtime exposes.
+
+A module may have **at most one** data block. A module with no data
+block is a namespace for functions (like `System` in `base.aslb`).
+
+---
+
+## Functions
+
+A function has a parameter list and a return type. User functions
+carry a body of one or more indented statements; extern functions are
+bodyless.
+
+### User functions
+
+```asl
+module M:
+  func go(x: u8): u8
+    x
+
+  func add(a: u8, b: u8): u8
+    sum = u8.add(a, b)
+    sum
+```
+
+The body's **trailing expression is the return value** — there is no
+`return` keyword. Earlier statements bind locals or perform side
+effects.
+
+### Public functions
+
+`public func` exports the function across module/file boundaries.
+Without `public`, the function is only callable from inside its own
+module.
+
+### Extern functions (`.aslb` only)
+
+```asl
+public module u8:
+  literal: "u8"
+
+  @extern("u8_add_u8")
+  public func add(a: u8, b: u8): Status[u8]
+```
+
+The `@extern("c_symbol")` decorator names the runtime symbol that
+implements the function. The body is replaced by the host
+implementation. Extern functions are illegal in `.asl` files —
+`newAslFile` rejects them with a diagnostic pointing at `.aslb` as the
+correct home.
+
+### Overloading
+
+Two functions with the same name in the same module are allowed if
+their argument lists differ (in count or in type):
+
+```asl
+module Foo:
+  func bar(a: i64): i64
+    a
+
+  func bar(a: String): String
+    a
+```
+
+Overload resolution happens at the analyzer phase — each call site
+unifies against every candidate, and the unique survivor wins.
+
+### Zero-argument functions
+
+```asl
+module Foo:
+  func start(): u8
+    u8 0
+```
+
+The empty argument list `()` is accepted.
+
+### Decorators
+
+`@<name>(...)` lines attach metadata to the following function. Today
+only `@extern("symbol")` is consumed by the compiler; other decorators
+parse but are not yet wired.
+
+---
+
+## Generic modules — `requires`
+
+A module can be made generic over one or more types by declaring a
+`requires(...)` clause:
+
+```asl
+public module Array:
+  requires(Any)
+
+  struct:
+    size: u32
+
+  @extern("array_get")
+  public func get(arr: Array[Any], index: u32): Status[Any]
+
+  @extern("array_set")
+  public func set(arr: Array[Any], index: u32, item: Any): Status[Array[Any]]
+```
+
+`requires(Any)` says: "to use this module you must supply something
+that implements `Any`." Use sites then parameterize:
+
+```asl
+arr = Array[u32] { size: 100 }
+```
+
+If a module's struct/union fields mention a generic that does not
+appear in `requires`, the generic is treated as an inferred type
+parameter — but the explicit `requires(...)` form is preferred for
+public APIs.
+
+Within an explicit `requires(...)` block, every named generic must be
+distinct.
+
+---
+
+## Types
+
+### Built-in primitives (declared in `base.aslb`)
+
+- **Unsigned integers:** `u8`, `u16`, `u32`, `u64`
+- **Signed integers:** `i8`, `i16`, `i32`, `i64`
+- **Floats:** `f32`, `f64`
+- **String:** `String`
+
+Each primitive module exposes the usual operations as extern
+functions: `add`, `subtract`, `multiply`, `quotient`, `remainder`,
+`compare`, bitwise (`and`, `or`, `xor`, `shr`, `shl`, `not`),
+`byte_size`, and various `from` conversions.
+
+### Result type — `Status[T]`
+
+Every fallible operation returns `Status[T]` instead of throwing.
+`Status` is a union with two variants:
+
+```asl
+public module Status:
+  union:
+    Ok { value: Any }
+    Err { error: Error }
+```
+
+`Error` carries `{ code: i32, message: String }`. Use `match` on a
+`Status` to handle both arms.
+
+### Containers (declared in `base.aslb`)
+
+- **`Array[T]`** — fixed-size array of `T`; field `size: u32`; functions
+  `get`, `set`, `byte_size`.
+- **`Bitset`** — bit-packed set built on `Array[u32]`; functions
+  `init(size)`, `get(index)`, `set(index)`.
+
+### Type-parameter syntax
+
+Type parameters are passed in square brackets:
+
+```asl
+Status[u8]
+Array[u32]
+Map[String, Array[u64]]
+Status[Bitset]
+```
+
+Nesting is unbounded.
+
+---
+
+## Expressions
+
+### Literal initializers
+
+A primitive value is written as `TypeName literal`:
+
+```asl
+u8 0
+i64 -1
+f64 3.14
+f64 1.5e3
+f64 -0.5
+String.from(42)
+```
+
+The type prefix is mandatory — there are no untyped integer literals.
+
+### Local bindings (assignment)
+
+```asl
+sum = u8.add(a, b)
+arr = Array[u32] { size: 100 }
+```
+
+No `let` keyword. The right-hand side is any expression; the
+identifier on the left is bound for the rest of the current scope.
+There is no shadowing within a single scope.
+
+### Discard binding
+
+```asl
+_ = Bitset.set(bitset, num)
+```
+
+`_ = expr` evaluates and throws away the result. Use when you want
+the side effect (or to assert the call type-checks) without naming a
+local.
+
+### Struct initializer
+
+```asl
+User { name: n, age: a }
+```
+
+Curly braces with `field: value` pairs. Field names must match the
+struct exactly. Type parameters (when the struct is generic) are
+attached to the type name: `Pair[u8, u8] { a: u8 0, b: u8 1 }`.
+
+### Union initializer
+
+```asl
+Status.Ok { value: u8 0 }
+Status[u32].Err { error: err1 }
+Plan.Free { usage: u32 100 }
+```
+
+Two forms:
+
+- **Default** (`Module.Variant { … }`) — type parameters are inferred
+  from the kwarg values. Leave-as-is keeps any free generic at its
+  declared position when the variant's fields don't bind it.
+- **Explicit-impl** (`Module[T1, T2].Variant { … }`) — type parameters
+  are supplied. Required when the variant alone cannot determine all
+  type parameters (e.g., `Status[Bitset].Err { error: e }` — `Err`
+  only constrains `Error`, not `Bitset`).
+
+### Module-method calls
+
+```asl
+u32.add(a, b)
+Array.get(arr, i)
+Bitset.set(bitset, num)
+Solver.start()
+System.println("hello")
+```
+
+`Module.func(args)` looks up `func` in `Module` (local or imported)
+and calls it. There is no implicit `self`. Method calls and free-
+function calls share the same syntax.
+
+### Field access
+
+```asl
+p.a
+bitset.bits
+user.name
+```
+
+`obj.field` reads a struct field. Only valid when the receiver's type
+is a struct module and the field name exists in its data block.
+
+### Field mutation
+
+```asl
+p.a = v
+bitset.bits = updated_bits
+```
+
+`obj.field = expr` writes a struct field. (The compiler currently
+treats this as a statement; equality of LHS and RHS types is not yet
+type-checked end-to-end.)
+
+---
+
+## Match expressions
+
+`match` is the core branching construct. It takes a subject and one or
+more `case <pattern>:` arms; each arm has its own indented body. The
+arm's trailing expression is its value, and the entire `match` is an
+expression.
+
+```asl
+match x:
+  case 0:
+    u8 1
+  case 1:
+    u8 2
+  case other:
+    u8 0
+```
+
+A `match` can be used as a statement (its value discarded), or
+assigned:
+
+```asl
+y = match x:
+  case 0:
+    String.from("zero")
+  case n:
+    String.from(n)
+```
+
+All arms must produce the same type — the case-arm uniformity check
+enforces this.
+
+### Patterns
+
+- **Integer literal** — `case 0`, `case 1`, `case -1` (signed literals
+  supported).
+- **Wildcard** — `case _` matches anything and discards.
+- **Variable binding** — `case other` binds the subject to `other` for
+  the arm body.
+- **Variant pattern** — `case Variant { field: name, … }` matches a
+  variant and destructures its fields. `case Ok { value: v }` matches
+  `Status.Ok` and binds the payload to `v`. `case _` works inside a
+  variant context too.
+
+```asl
+match status:
+  case Ok { value: v }:
+    use(v)
+  case Err { error: e }:
+    String.concat("error: ", e.message)
+```
+
+### Idiomatic error propagation
+
+`Status` + `match` replaces try/catch. The idiomatic shape is a
+tower of nested `match … case Ok { value: v } / case Err { error: e }`
+arms:
+
+```asl
+func div_ceil(a: u32, b: u32): Status[u32]
+  match u32.add(a, b):
+    case Ok { value: val1 }:
+      match u32.subtract(val1, 1):
+        case Ok { value: val2 }:
+          Status.Ok { value: u32.quotient(val2, b) }
+        case Err { error: err2 }:
+          Status[u32].Err { error: err2 }
+    case Err { error: err1 }:
+      Status[u32].Err { error: err1 }
+```
+
+This is verbose by design — every fallible call's error path is
+locally visible. There is no syntactic sugar for `?`-style propagation
+today.
+
+---
+
+## Visibility
+
+`public` is the only visibility keyword. It applies to:
+
+- **Modules** — `public module M:` exports the module from its file.
+- **Generics** — `public generic G:` exports the generic.
+- **Functions** — `public func f(...): T` makes the function callable
+  across module boundaries. Functions without `public` are only
+  callable from inside their defining module.
+
+Modules and generics declared without `public` are file-local and
+cannot be imported. Functions in a `generic` block are always callable
+(no explicit `public` needed — the generic itself is the boundary).
+
+---
+
+## CLI
+
+```
+asl build <filename.asl> [options]
+
+Options:
+  --debug               Emit source location comments in generated C
+  --dump-tokens         Dump token stream to stdout after tokenization
+  --indent-width=<N>    Spaces per indentation level (2 or 4; default 2)
+  --vendor=<name>:<path>  Register a vendor (repeatable).
+                          Vendor paths are referenced from source as
+                          `import "@<name>"`. Default:
+                          `std:examples/base.aslb` when --vendor does
+                          not include a `std` entry.
+  [-o|--output]=<file>  Output binary path (default: input filename
+                        without extension)
+  [-h|--help]           Show this help message
+```
+
+### `--vendor` rules
+
+- The flag is repeatable.
+- `<name>` must be a valid ASL identifier (head: letter or `_`; tail:
+  letters, digits, `_`).
+- `<path>` must point at a readable file (typically `.aslb`).
+- Each `<name>` must appear at most once. Duplicate names are rejected
+  with both paths in the error.
+- `std` is added automatically pointing at `examples/base.aslb` if the
+  user does not register their own `std` vendor.
+
+---
+
+## What ASL does not have (yet)
+
+These features are intentionally listed so readers know not to expect
+them. Some are planned; others are explicitly out of scope for the
+current design.
+
+- **Exceptions / throw / try.** All fallibility flows through
+  `Status[T]`.
+- **`return` keyword.** A function's trailing expression is its return
+  value.
+- **Closures / first-class functions.** Functions are not values.
+- **Traits / interfaces beyond generics.** The `generic` + `requires`
+  pair is the entire polymorphism mechanism.
+- **Inheritance / subtyping.** No `extends`, no implicit conversions
+  between primitives. `u32.from(x: u8)` makes the widening explicit.
+- **Mutable globals.** Modules are pure type/function namespaces; no
+  module-level mutable state.
+- **Operator syntax.** No `+`, `-`, `*`, `/`, `==`. Use the module-method
+  forms (`u32.add(a, b)`, `u32.compare(a, b)`).
+- **Block-comment syntax.** Line comments only.
+- **Generic functions (parametric polymorphism on a function alone).**
+  Generics live at the module level — a generic function exists by
+  being a function on a module that `requires(...)` a generic.
+- **Pipe / chain operators.** Nest calls explicitly or bind
+  intermediate values.
+
+---
+
+## Worked example
+
+A complete file that exercises modules, struct + union data blocks,
+match expressions with variant destructuring, function calls, and
+local bindings:
+
+```asl
+# Data blocks — one file with two modules, one backed by a struct
+# data block and the other by a union data block.
+module User:
+  struct:
+    name: String
+    age: u32
+
+  func new(n: String, a: u32): User
+    User { name: n, age: a }
+
+module Plan:
+  union:
+    Free { usage: u32 }
+    Pro { users: u32, credits: u32 }
+
+  func describe(plan: Plan): String
+    free = Plan.Free { usage: u32 100 }
+    match plan:
+      case Free { usage: usage }:
+        String.from(usage)
+      case Pro { credits: credits, users: users }:
+        String.concat(String.from(credits), String.from(users))
+```
+
+For more, see `examples/` — every fixture has a leading comment
+describing what feature it exercises.
+
+---
+
+## Changelog
+
+This section records language changes as they land, newest first.
+
+- **2026-06** — Vendor mechanism + `.asl` / `.aslb` file split.
+  `--vendor="<name>:<path>"` CLI flag (repeatable, dedup-checked).
+  `import "@<name>"` syntax. `.asl` and `.aslb` extensions carry
+  different invariants (imports allowed only in `.asl`; externs only
+  in `.aslb`). `@std` is auto-injected in every `.asl` file.
