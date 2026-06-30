@@ -167,11 +167,15 @@ proc parseFloat*[T: SomeFloat](s: string): Option[T] =
     let narrowed = temp.float32
     if narrowed.classify in {fcInf, fcNegInf, fcNan}: return none(T)
     if narrowed.float64 != temp: return none(T)
-    if not isExactlyRepresentable(s, 24): return none(T)
+    # TEMP: precision-loss / exactness check disabled while we
+    # bootstrap floats — flip back on once consuming code is ready
+    # to spell out lossy decimals as runtime quotients.
+    # if not isExactlyRepresentable(s, 24): return none(T)
     some(narrowed)
   elif T is float64:
     if temp.classify in {fcInf, fcNegInf, fcNan}: return none(T)
-    if not isExactlyRepresentable(s, 53): return none(T)
+    # TEMP: precision-loss / exactness check disabled — see f32 arm.
+    # if not isExactlyRepresentable(s, 53): return none(T)
     some(temp)
 
 type AnalyzedVariantPatternScope* = ref object

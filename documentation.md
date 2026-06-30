@@ -660,6 +660,37 @@ describing what feature it exercises.
 
 This section records language changes as they land, newest first.
 
+- **2026-06 (late)** — Float-literal analyzer + stdlib numeric build-out.
+  The analyzer now validates `f32` / `f64` literal initializers
+  (`f64 0.5`, `f32 1.5e3`): syntactic floats parse via the new
+  `parseFloat[T: SomeFloat]` helper in `analyzer/patterns.nim`,
+  which range-checks against the target kind, rejects `±Inf` / `NaN`
+  (TODO marker covers the future special-value forms), and for
+  `f32` adds a round-trip narrowing test so values that fit in
+  `f64` but not `f32` are caught at the literal site. An exact-
+  representability check (`isExactlyRepresentable(text, mantissaBits)`)
+  is implemented for both kinds but currently **disabled** behind a
+  TEMP comment so day-to-day numeric code (`f64 1.62`, `f64 0.05`)
+  doesn't yet need to be spelled as runtime quotients. Re-enabling
+  it is a one-line uncomment in `patterns.nim`.
+
+  `base.aslb` gains a wider numeric surface:
+
+  - **Integer–float casts:** `u32.from(f32)`, `u32.from(f64)`,
+    `u32.from(i64)` (all `Status[u32]`), `u64.from(f64): Status[u64]`,
+    `i64.from(u32): i64`, `f32.from(u32)`, `f64.from(u32)`,
+    `f64.from(u64)`.
+  - **`i64` utilities:** `abs` (extern), `clamp(x, lo, hi)`,
+    `softmax(x)` (max with zero), `negate(x): Status[i64]`.
+  - **`f64` utilities:** `clamp(x, lo, hi)`, `softmax(x)`,
+    `negate(x): Status[f64]`.
+  - **`f32` / `f64` numeric operations:** `compare(a, b): i8`,
+    `abs(a)` — closing the parity gap with the integer modules.
+  - **`String.from(...)` for every numeric kind:** `u8`, `u16`,
+    `u32` (already present), `u64`, `i8`, `i16`, `i32`, `i64`,
+    `f32`, `f64` — so `String.concat` chains can render any numeric
+    type for `System.println`.
+
 - **2026-06** — Vendor mechanism + `.asl` / `.aslb` file split.
   `--vendor="<name>:<path>"` CLI flag (repeatable, dedup-checked).
   `import "@<name>"` syntax. `.asl` and `.aslb` extensions carry

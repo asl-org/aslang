@@ -146,6 +146,9 @@ public module u32:
   @extern("u32_from_f64")
   public func from(a: f64): Status[u32]
 
+  @extern("u32_from_i64")
+  public func from(a: i64): Status[u32]
+
   # user functions
   public func div_ceil(a: u32, b: u32): Status[u32]
     match u32.add(a, b):
@@ -424,6 +427,36 @@ public module i64:
   @extern("i64_compare_i64")
   public func compare(a: i64, b: i64): i8
 
+  # absolute value
+  @extern("i64_abs_i64")
+  public func abs(a: i64): i64
+
+  # casting
+  @extern("i64_from_u32")
+  public func from(a: u32): i64
+
+  # user functions
+  public func clamp(x: i64, lo: i64, hi: i64): i64
+    match i64.compare(x, lo):
+      case -1:
+        lo
+      case _:
+        match i64.compare(x, hi):
+          case 1:
+            hi
+          case _:
+            x
+
+  public func softmax(x: i64): i64
+    match i64.compare(x, i64 0):
+      case -1:
+        i64 0
+      case _:
+        x
+
+  public func negate(x: i64): Status[i64]
+    i64.subtract(i64 0, x)
+
 # TODO(float-special-values): f32 / f64 modules do not yet expose
 # Inf / -Inf / NaN as values, nor classification predicates
 # (`is_finite`, `is_nan`, `is_inf`). The literal-validator in the
@@ -532,6 +565,28 @@ public module f64:
   @extern("f64_from_u64")
   public func from(a: u64): f64
 
+  # user functions
+  public func clamp(x: f64, lo: f64, hi: f64): f64
+    match f64.compare(x, lo):
+      case -1:
+        lo
+      case _:
+        match f64.compare(x, hi):
+          case 1:
+            hi
+          case _:
+            x
+
+  public func softmax(x: f64): f64
+    match f64.compare(x, f64 0.0):
+      case -1:
+        f64 0.0
+      case _:
+        x
+
+  public func negate(x: f64): Status[f64]
+    f64.subtract(f64 0.0, x)
+
 public module String:
   literal: "string"
 
@@ -542,8 +597,36 @@ public module String:
   @extern("string_get")
   public func get(str: String, index: u32): Status[u8]
 
+  # casting
+  @extern("string_from_u8")
+  public func from(value: u8): String
+
+  @extern("string_from_u16")
+  public func from(value: u16): String
+
   @extern("string_from_u32")
   public func from(value: u32): String
+
+  @extern("string_from_u64")
+  public func from(value: u64): String
+
+  @extern("string_from_i8")
+  public func from(value: i8): String
+
+  @extern("string_from_i16")
+  public func from(value: i16): String
+
+  @extern("string_from_i32")
+  public func from(value: i32): String
+
+  @extern("string_from_i64")
+  public func from(value: i64): String
+
+  @extern("string_from_f32")
+  public func from(value: f32): String
+
+  @extern("string_from_f64")
+  public func from(value: f64): String
 
   @extern("string_concat")
   public func concat(first: String, second: String): String
