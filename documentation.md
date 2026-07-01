@@ -20,9 +20,9 @@ each kind's invariants at parse time.
 | Extension | Purpose | May `import` | May host `@extern` | Auto-injected `@std` |
 |-----------|---------|--------------|--------------------|----------------------|
 | `.asl`    | User source code | yes | no | yes |
-| `.aslb`   | Runtime interface — the boundary between ASL and the host runtime (C, etc.) | no | yes | no |
+| `.aslr`   | Runtime interface — the boundary between ASL and the host runtime (C, etc.) | no | yes | no |
 
-`examples/base.aslb` is the standard library: every primitive type and
+`examples/base.aslr` is the standard library: every primitive type and
 host-provided function is declared there with an `@extern("c_symbol")`
 decorator. Application code lives in `.asl` files and never declares
 externs.
@@ -57,7 +57,7 @@ written import line.
 ## Imports
 
 Three forms, all written at the top of an `.asl` file before any module
-or generic declaration. `.aslb` files cannot contain imports.
+or generic declaration. `.aslr` files cannot contain imports.
 
 ### Explicit
 
@@ -180,7 +180,7 @@ module Plan:
 Each variant carries its own named fields. Variants may be empty
 (`Done {}`).
 
-### `literal` — opaque primitive (only in `.aslb` files)
+### `literal` — opaque primitive (only in `.aslr` files)
 
 ```asl
 public module u8:
@@ -189,12 +189,12 @@ public module u8:
 
 `literal` declares a primitive type backed by a host-runtime
 representation tagged by the quoted name. Values of a literal type are
-constructed via literal-initializer syntax (`u8 42`). Only `.aslb`
+constructed via literal-initializer syntax (`u8 42`). Only `.aslr`
 files may use this shape — application code reuses the primitives the
 runtime exposes.
 
 A module may have **at most one** data block. A module with no data
-block is a namespace for functions (like `System` in `base.aslb`).
+block is a namespace for functions (like `System` in `base.aslr`).
 
 ---
 
@@ -226,7 +226,7 @@ effects.
 Without `public`, the function is only callable from inside its own
 module.
 
-### Extern functions (`.aslb` only)
+### Extern functions (`.aslr` only)
 
 ```asl
 public module u8:
@@ -239,7 +239,7 @@ public module u8:
 The `@extern("c_symbol")` decorator names the runtime symbol that
 implements the function. The body is replaced by the host
 implementation. Extern functions are illegal in `.asl` files —
-`newAslFile` rejects them with a diagnostic pointing at `.aslb` as the
+`newAslFile` rejects them with a diagnostic pointing at `.aslr` as the
 correct home.
 
 ### Overloading
@@ -315,7 +315,7 @@ distinct.
 
 ## Types
 
-### Built-in primitives (declared in `base.aslb`)
+### Built-in primitives (declared in `base.aslr`)
 
 - **Unsigned integers:** `u8`, `u16`, `u32`, `u64`
 - **Signed integers:** `i8`, `i16`, `i32`, `i64`
@@ -342,7 +342,7 @@ public module Status:
 `Error` carries `{ code: i32, message: String }`. Use `match` on a
 `Status` to handle both arms.
 
-### Containers (declared in `base.aslb`)
+### Containers (declared in `base.aslr`)
 
 - **`Array[T]`** — fixed-size array of `T`; field `size: u32`; functions
   `get`, `set`, `byte_size`.
@@ -572,7 +572,7 @@ Options:
   --vendor=<name>:<path>  Register a vendor (repeatable).
                           Vendor paths are referenced from source as
                           `import "@<name>"`. Default:
-                          `std:examples/base.aslb` when --vendor does
+                          `std:examples/base.aslr` when --vendor does
                           not include a `std` entry.
   [-o|--output]=<file>  Output binary path (default: input filename
                         without extension)
@@ -584,10 +584,10 @@ Options:
 - The flag is repeatable.
 - `<name>` must be a valid ASL identifier (head: letter or `_`; tail:
   letters, digits, `_`).
-- `<path>` must point at a readable file (typically `.aslb`).
+- `<path>` must point at a readable file (typically `.aslr`).
 - Each `<name>` must appear at most once. Duplicate names are rejected
   with both paths in the error.
-- `std` is added automatically pointing at `examples/base.aslb` if the
+- `std` is added automatically pointing at `examples/base.aslr` if the
   user does not register their own `std` vendor.
 
 ---
@@ -674,7 +674,7 @@ This section records language changes as they land, newest first.
   doesn't yet need to be spelled as runtime quotients. Re-enabling
   it is a one-line uncomment in `patterns.nim`.
 
-  `base.aslb` gains a wider numeric surface:
+  `base.aslr` gains a wider numeric surface:
 
   - **Integer–float casts:** `u32.from(f32)`, `u32.from(f64)`,
     `u32.from(i64)` (all `Status[u32]`), `u64.from(f64): Status[u64]`,
@@ -691,8 +691,8 @@ This section records language changes as they land, newest first.
     `f32`, `f64` — so `String.concat` chains can render any numeric
     type for `System.println`.
 
-- **2026-06** — Vendor mechanism + `.asl` / `.aslb` file split.
+- **2026-06** — Vendor mechanism + `.asl` / `.aslr` file split.
   `--vendor="<name>:<path>"` CLI flag (repeatable, dedup-checked).
-  `import "@<name>"` syntax. `.asl` and `.aslb` extensions carry
+  `import "@<name>"` syntax. `.asl` and `.aslr` extensions carry
   different invariants (imports allowed only in `.asl`; externs only
-  in `.aslb`). `@std` is auto-injected in every `.asl` file.
+  in `.aslr`). `@std` is auto-injected in every `.asl` file.

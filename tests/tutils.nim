@@ -29,14 +29,14 @@ proc parseStr*(source: string, filepath: string = "",
   let tokens = ? tokenizeStr(source, path)
   decls.parse(path, indentWidth, tokens, vendorRoots)
 
-proc parseStrAslb*(source: string, indentWidth: uint32 = 2): Result[decls.File, string] =
-  ## Same as `parseStr` but uses a `.aslb` filepath, so the parser
-  ## dispatches to `aslbFileSpec` / `newAslbFile`. Use for tests of
+proc parseStrAslr*(source: string, indentWidth: uint32 = 2): Result[decls.File, string] =
+  ## Same as `parseStr` but uses a `.aslr` filepath, so the parser
+  ## dispatches to `aslrFileSpec` / `newAslrFile`. Use for tests of
   ## grammar elements that are only legal in runtime-interface files
-  ## (extern functions inside modules). `.aslb` files never receive
+  ## (extern functions inside modules). `.aslr` files never receive
   ## vendor-driven auto-injection, so this helper does not take
   ## `vendorRoots`.
-  parseStr(source, getTempDir() / "asl_parseStr.aslb", indentWidth)
+  parseStr(source, getTempDir() / "asl_parseStr.aslr", indentWidth)
 
 proc writeFiles*(specs: openArray[FileSpec]): string =
   ## Write a set of files into a fresh temp dir. Returns the dir path.
@@ -80,15 +80,15 @@ public module Status:
 """
 
 proc writeStdVendor*(): tuple[vendorRoots: VendorRoots, dir: string] =
-  ## Writes a minimal std vendor `base.aslb` into a fresh temp dir
+  ## Writes a minimal std vendor `base.aslr` into a fresh temp dir
   ## and returns a `VendorRoots` mapping `std` → that file, plus the
   ## dir path for cleanup. Compose with any of the existing parse /
   ## resolve / analyze helpers by passing `vendorRoots` through
   ## their optional last parameter — auto-injection in `newAslFile`
   ## then synthesizes the `import "@std"` line for the user's file.
-  let dir = writeFiles([("base.aslb", StdVendorBase)])
+  let dir = writeFiles([("base.aslr", StdVendorBase)])
   var roots = initTable[string, string]()
-  roots["std"] = dir / "base.aslb"
+  roots["std"] = dir / "base.aslr"
   (roots, dir)
 
 proc parseFiles*(specs: openArray[FileSpec],
@@ -128,15 +128,15 @@ proc resolveSingle*(source: string,
   ## Convenience for a single-file program (no imports).
   resolveFiles([("entry.asl", source)], indentWidth, vendorRoots)
 
-proc resolveSingleAslb*(source: string,
+proc resolveSingleAslr*(source: string,
     indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =
-  ## Same as `resolveSingle` but writes the source as `entry.aslb` so
-  ## the parser dispatches to `aslbFileSpec` / `newAslbFile`. Use when
+  ## Same as `resolveSingle` but writes the source as `entry.aslr` so
+  ## the parser dispatches to `aslrFileSpec` / `newAslrFile`. Use when
   ## the source contains modules with extern functions (asl files
-  ## cannot host externs). `.aslb` entry points do not receive
+  ## cannot host externs). `.aslr` entry points do not receive
   ## vendor-driven auto-injection, so this helper does not take
   ## `vendorRoots`.
-  resolveFiles([("entry.aslb", source)], indentWidth)
+  resolveFiles([("entry.aslr", source)], indentWidth)
 
 proc analyzeFiles*(specs: openArray[FileSpec],
     indentWidth: uint32 = 2,

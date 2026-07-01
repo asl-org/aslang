@@ -76,7 +76,7 @@ proc parseImportPath*(source: string, loc: Location): Result[ImportPath, ParserE
 #
 # A vendor name → absolute path table, built by the CLI from
 # repeated `--vendor="<name>:<path>"` flags (plus the default
-# `std → examples/base.aslb` when not user-supplied). Threaded
+# `std → examples/base.aslr` when not user-supplied). Threaded
 # through `parse*` → `aslFileSpec` → `newAslFile` so that auto-
 # injected `import "@std"` and any user-written `import "@<name>"`
 # resolve via the same lookup.
@@ -199,7 +199,7 @@ proc resolveImportPath*(parsedPath: ImportPath, importingFile: string,
   ##
   ## - `ipkRelative`: resolves the relative source against the
   ##   importing file's directory. Rejects sources that don't end in
-  ##   `.asl` / `.aslb` and paths that escape to a parent directory.
+  ##   `.asl` / `.aslr` and paths that escape to a parent directory.
   ##   Normalizes the result so tricks like `./sub/../../escape` are
   ##   caught (not just sources starting with `..`).
   ## - `ipkVendor`: looks up the vendor name in `vendorRoots` (the
@@ -211,8 +211,8 @@ proc resolveImportPath*(parsedPath: ImportPath, importingFile: string,
   of ipkRelative:
     let source = parsedPath.relativeSource
     let (_, _, ext) = source.splitFile()
-    if ext != ".asl" and ext != ".aslb":
-      return err(fmt"{importingFile}: import path '{source}' must end with '.asl' or '.aslb' extension")
+    if ext != ".asl" and ext != ".aslr":
+      return err(fmt"{importingFile}: import path '{source}' must end with '.asl' or '.aslr' extension")
     let dir = normalizedPath(importingFile.parentDir)
     let resolved = normalizedPath((dir / source).absolutePath)
     let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep

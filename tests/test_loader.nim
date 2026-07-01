@@ -265,7 +265,7 @@ suite "loader — vendor auto-injection":
 
   test "an .asl file with no explicit imports can reference std vendor types":
     # No user-written import line. `writeStdVendor` registers a
-    # `std → base.aslb` vendor, and `newAslFile` auto-injects the
+    # `std → base.aslr` vendor, and `newAslFile` auto-injects the
     # shorthand `import "@std"` — bringing `u8` (etc.) into scope.
     let (vendorRoots, vendorDir) = writeStdVendor()
     let (r, userDir) = resolveFiles([
@@ -299,16 +299,16 @@ public module Helper:
     cleanupDir(userDir); cleanupDir(vendorDir)
     check r.isOk
 
-  test "auto-injection is not applied to .aslb files":
-    # `parseFiles` writes the entry as the first spec; an `.aslb`
-    # entry dispatches to `aslbFileSpec` → `newAslbFile`, which does
-    # not consume `vendorRoots`. The aslb file therefore does NOT
+  test "auto-injection is not applied to .aslr files":
+    # `parseFiles` writes the entry as the first spec; an `.aslr`
+    # entry dispatches to `aslrFileSpec` → `newAslrFile`, which does
+    # not consume `vendorRoots`. The aslr file therefore does NOT
     # gain an `@std` import — verifying this by referencing `u8`
     # from the std vendor without an explicit import, which must
     # fail to resolve.
     let (vendorRoots, vendorDir) = writeStdVendor()
     let (r, userDir) = resolveFiles([
-      ("entry.aslb", """
+      ("entry.aslr", """
 public module Caller:
   public func go(): u8
     u8 0

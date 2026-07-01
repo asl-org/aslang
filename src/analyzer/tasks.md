@@ -1,6 +1,6 @@
 - [x] Tell me what is the role of every single markdown file.
 
-- [ ] Change the `aslb` file prefix to `aslr` representing asl runtime file.
+- [x] Change the `aslb` file prefix to `aslr` representing asl runtime file.
 
 - [ ] Re-enable the exact floating point value check but don't return error instead print it as warning that the closest approximate value will be used.
 

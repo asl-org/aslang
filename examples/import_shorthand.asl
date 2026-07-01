@@ -1,7 +1,7 @@
 # Exercises the explicit-with-alias import form alongside the
 # auto-injected shorthand of `@std` (which the CLI maps to
-# `examples/base.aslb`). The shorthand brings every public defined
-# type from base.aslb into scope under its original name; the
+# `examples/base.aslr`). The shorthand brings every public defined
+# type from base.aslr into scope under its original name; the
 # explicit form below adds an aliased binding for a single Solver
 # from problem001.asl. Both forms coexist in one file.
 import { Solver as Solution1 } from "./problem001.asl"

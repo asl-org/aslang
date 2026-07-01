@@ -17,15 +17,15 @@ suite "cli — --vendor flag":
 
   test "explicit --vendor=std:... overrides the default":
     let r = parseCliArgs(@["build", "entry.asl",
-        "--vendor=std:./my-runtime.aslb"])
+        "--vendor=std:./my-runtime.aslr"])
     check r.isOk
     let buildCmd = r.get.build.get
     check "std" in buildCmd.vendorRoots
-    check "my-runtime.aslb" in buildCmd.vendorRoots["std"]
+    check "my-runtime.aslr" in buildCmd.vendorRoots["std"]
 
   test "additional vendor entries coexist with default `std`":
     let r = parseCliArgs(@["build", "entry.asl",
-        "--vendor=runtime:./rt.aslb"])
+        "--vendor=runtime:./rt.aslr"])
     check r.isOk
     let buildCmd = r.get.build.get
     check "std" in buildCmd.vendorRoots
@@ -33,12 +33,12 @@ suite "cli — --vendor flag":
 
   test "duplicate vendor name is rejected with both paths":
     let r = parseCliArgs(@["build", "entry.asl",
-        "--vendor=std:./a.aslb",
-        "--vendor=std:./b.aslb"])
+        "--vendor=std:./a.aslr",
+        "--vendor=std:./b.aslr"])
     check r.isErr
     check "specified more than once" in r.error
-    check "a.aslb" in r.error
-    check "b.aslb" in r.error
+    check "a.aslr" in r.error
+    check "b.aslr" in r.error
 
   test "vendor value without `:` separator is rejected":
     let r = parseCliArgs(@["build", "entry.asl",
@@ -48,7 +48,7 @@ suite "cli — --vendor flag":
 
   test "vendor name starting with a digit is rejected":
     let r = parseCliArgs(@["build", "entry.asl",
-        "--vendor=1bad:./x.aslb"])
+        "--vendor=1bad:./x.aslr"])
     check r.isErr
     check "valid ASL identifier" in r.error
 
@@ -57,7 +57,7 @@ suite "cli — --vendor flag":
     # the same rule so `import "@<name>"` and `--vendor=<name>:...`
     # always agree on shape.
     let r = parseCliArgs(@["build", "entry.asl",
-        "--vendor=my-vendor:./x.aslb"])
+        "--vendor=my-vendor:./x.aslr"])
     check r.isErr
     check "valid ASL identifier" in r.error
 
@@ -69,13 +69,13 @@ suite "cli — --vendor flag":
 
   test "vendor name with empty name is rejected":
     let r = parseCliArgs(@["build", "entry.asl",
-        "--vendor=:./x.aslb"])
+        "--vendor=:./x.aslr"])
     check r.isErr
     check "empty vendor name" in r.error
 
   test "vendor path is resolved to an absolute path":
     let r = parseCliArgs(@["build", "entry.asl",
-        "--vendor=rt:./rt.aslb"])
+        "--vendor=rt:./rt.aslr"])
     check r.isOk
     let buildCmd = r.get.build.get
     check buildCmd.vendorRoots["rt"][0] == '/'

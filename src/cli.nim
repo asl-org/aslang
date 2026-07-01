@@ -13,7 +13,7 @@ Options:
   --indent-width=<N>    Spaces per indentation level (default: 2)
   --vendor=<name:path>  Register a vendor (repeatable). Vendor paths
                         are referenced from source as `import "@<name>"`.
-                        Default: `std:examples/base.aslb` when --vendor
+                        Default: `std:examples/base.aslr` when --vendor
                         does not include a `std` entry.
   [-o|--output]=<file>  Output binary path (default: input filename without extension)
   [-h|--help]           Show this help message"""
@@ -124,7 +124,7 @@ proc buildVendorRoots(rawFlags: seq[string]): Result[VendorRoots, string] =
   ## Validates and aggregates every `--vendor=...` value into a
   ## `VendorRoots` table. Rejects duplicate names with both paths in
   ## the diagnostic. After all user-supplied flags, defaults `std`
-  ## to `examples/base.aslb` (absolute) when the user did not
+  ## to `examples/base.aslr` (absolute) when the user did not
   ## register a `std` vendor of their own.
   var roots = initTable[string, string]()
   for raw in rawFlags:
@@ -134,7 +134,7 @@ proc buildVendorRoots(rawFlags: seq[string]): Result[VendorRoots, string] =
       return err(fmt"--vendor name '{name}' specified more than once: '{roots[name]}' vs '{absPath}'")
     roots[name] = absPath
   if "std" notin roots:
-    roots["std"] = "examples/base.aslb".absolutePath
+    roots["std"] = "examples/base.aslr".absolutePath
   ok(roots)
 
 proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =

@@ -154,7 +154,7 @@ proc isExactlyRepresentable*(text: string, mantissaBits: int): bool =
 # TODO(float-special-values): Inf, -Inf, and NaN are deliberately
 # rejected today — there is no surface syntax to write them
 # (`f64 inf` doesn't parse, since the float-literal spec requires
-# digits) and the float modules in base.aslb expose no
+# digits) and the float modules in base.aslr expose no
 # is_finite / is_nan classifiers, so a producer-of-Inf could only
 # come from an arithmetic overflow that ASL already reroutes through
 # Status[T]. When the language grows special-value literals

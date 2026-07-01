@@ -63,29 +63,29 @@ public module u8:
   test "struct + literal type field resolves":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslb"
+import { u8 } from "./base.aslr"
 
 module Pair:
   struct:
     a: u8
     b: u8
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
 
   test "explicit requires(...) generic module resolves":
-    # Base has extern functions, so it must be parsed as .aslb
+    # Base has extern functions, so it must be parsed as .aslr
     # (newAslFile rejects extern in `.asl` source).
-    let (r, dir) = resolveSingleAslb(Base)
+    let (r, dir) = resolveSingleAslr(Base)
     cleanupDir(dir)
     check r.isOk
 
   test "function body with assignments and call chain resolves":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslb"
+import { u8 } from "./base.aslr"
 
 public module Calc:
   public func go(x: u8): u8
@@ -93,7 +93,7 @@ public module Calc:
     z = u8.add(y, x)
     z
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -101,7 +101,7 @@ public module Calc:
   test "match expression with integer + variable patterns resolves":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u64, u8 } from "./base.aslb"
+import { u64, u8 } from "./base.aslr"
 
 public module M:
   public func go(x: u64): u8
@@ -112,7 +112,7 @@ public module M:
         u8 0
     u8 0
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -120,7 +120,7 @@ public module M:
   test "variant case pattern bindings flow into case body scope":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8, Status, Any, Error } from "./base.aslb"
+import { u8, Status, Any, Error } from "./base.aslr"
 
 public module M:
   public func go(s: Status[u8]): u8
@@ -131,7 +131,7 @@ public module M:
         e.code
     u8 0
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -139,13 +139,13 @@ public module M:
   test "union initializer happy path":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8, Status, Any, Error } from "./base.aslb"
+import { u8, Status, Any, Error } from "./base.aslr"
 
 public module M:
   public func ok_one(): Status[u8]
     Status.Ok { value: u8 1 }
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -285,13 +285,13 @@ public module Either:
   test "Array[u8] argument-type resolves through explicit requires":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8, u32, Array, Any } from "./base.aslb"
+import { u8, u32, Array, Any } from "./base.aslr"
 
 public module M:
   public func mk(): Array[Any]
     Array.init(u32 10)
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -312,13 +312,13 @@ module M:
   test "variable not in scope is reported":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslb"
+import { u8 } from "./base.aslr"
 
 public module M:
   public func go(x: u8): u8
     u8.add(x, missing)
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -328,13 +328,13 @@ public module M:
   test "literal-backed type with type parameters is rejected":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslb"
+import { u8 } from "./base.aslr"
 
 module M:
   struct:
     a: u8[u8]
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -343,13 +343,13 @@ module M:
   test "calling a non-existent function on a module is rejected":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslb"
+import { u8 } from "./base.aslr"
 
 public module M:
   public func go(x: u8): u8
     u8.no_such_function(x, x)
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -358,13 +358,13 @@ public module M:
   test "calling a function with the wrong arity is rejected":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslb"
+import { u8 } from "./base.aslr"
 
 public module M:
   public func go(x: u8): u8
     u8.add(x)
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -373,13 +373,13 @@ public module M:
   test "struct initializer with wrong kwarg count is rejected":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8, u32, Error, String } from "./base.aslb"
+import { u8, u32, Error, String } from "./base.aslr"
 
 public module M:
   public func mk(): Error
     Error { code: u32 0 }
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -429,31 +429,31 @@ public module Other:
   test "import alias resolves at use sites":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 as Byte } from "./base.aslb"
+import { u8 as Byte } from "./base.aslr"
 
 module M:
   struct:
     b: Byte
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
 
   test "shorthand import brings every public type into scope":
-    # `import "./base.aslb"` expands to every public defined type in
-    # base.aslb (u8, u32, u64, String, Error, Any, Status, Array) under
+    # `import "./base.aslr"` expands to every public defined type in
+    # base.aslr (u8, u32, u64, String, Error, Any, Status, Array) under
     # each type's original name. We exercise this by referencing one
     # of the imported names (u8) without an explicit binding.
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import "./base.aslb"
+import "./base.aslr"
 
 module M:
   struct:
     b: u8
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isOk
@@ -484,16 +484,16 @@ module Hidden:
     check errorContains(r.error, "does not exist in the scope")
 
   test "shorthand import vs locally-defined type rejects":
-    # The shorthand brings `u8` from base.aslb; the entry file also
+    # The shorthand brings `u8` from base.aslr; the entry file also
     # defines `u8` locally. The resolver collision check rejects.
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import "./base.aslb"
+import "./base.aslr"
 
 module u8:
   literal: "u8"
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isErr
@@ -505,14 +505,14 @@ module u8:
     # `u8` resolve to the same binding.
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslb"
-import "./base.aslb"
+import { u8 } from "./base.aslr"
+import "./base.aslr"
 
 module M:
   struct:
     b: u8
 """),
-      ("base.aslb", Base)
+      ("base.aslr", Base)
     ])
     cleanupDir(dir)
     check r.isErr

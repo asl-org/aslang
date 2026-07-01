@@ -120,7 +120,7 @@ proc loc*(typ: Type): Location =
 
 type
   FileKind* = enum
-    fkAsl, fkAslb
+    fkAsl, fkAslr
   File* = ref object
     path: string
     definedTypes: seq[DefinedType]
@@ -128,14 +128,14 @@ type
     typeIndex: Table[Identifier, int]
     case kind: FileKind
     of fkAsl: imports: seq[Import]
-    of fkAslb: discard
+    of fkAslr: discard
 
 proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType],
     vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, ParserError] =
   ## Builds an `fkAsl` File: source files written by users, may
   ## carry imports, may not host extern functions in their modules
-  ## (those belong in .aslb files). When `vendorRoots` contains a
+  ## (those belong in .aslr files). When `vendorRoots` contains a
   ## `"std"` entry, a synthesized `import "@std"` (ikShorthand) is
   ## prepended to the imports seq before the typeIndex build, so
   ## every public defined type from the std vendor target is in
@@ -151,7 +151,7 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
     if definedType.kind == dtkModule:
       for fn in definedType.module.functions:
         if fn.kind == fkExtern:
-          let msg = fmt"asl files cannot contain extern functions; extern functions belong in .aslb files (the runtime interface)"
+          let msg = fmt"asl files cannot contain extern functions; extern functions belong in .aslr files (the runtime interface)"
           return err(newParserError(msg, fn.loc))
 
   var allImports = imports
@@ -194,9 +194,9 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
       types.add(newType(definedType))
   ok(File(kind: fkAsl, path: path, imports: allImports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
 
-proc newAslbFile*(path: string, definedTypes: seq[DefinedType]): Result[
+proc newAslrFile*(path: string, definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
-  ## Builds an `fkAslb` File: the runtime interface — no imports
+  ## Builds an `fkAslr` File: the runtime interface — no imports
   ## (structurally — the variant has no imports field), modules may
   ## host extern functions freely.
   var typeIndex: Table[Identifier, int]
@@ -209,22 +209,22 @@ proc newAslbFile*(path: string, definedTypes: seq[DefinedType]): Result[
     else:
       typeIndex[definedType.name] = types.len
       types.add(newType(definedType))
-  ok(File(kind: fkAslb, path: path, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+  ok(File(kind: fkAslr, path: path, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
 
 proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
   ## Unified entry point — dispatches on the file's extension to the
-  ## appropriate kind constructor. `.aslb` paths with non-empty
+  ## appropriate kind constructor. `.aslr` paths with non-empty
   ## imports are rejected here (the user wrote an import in a
   ## runtime-interface file). Once W7 splits the parser specs the
-  ## fkAslb arm never receives imports in practice; this dispatcher
+  ## fkAslr arm never receives imports in practice; this dispatcher
   ## remains the fallback for callers (test helpers, ad-hoc builders)
   ## that go through the unified entry.
-  if path.endsWith(".aslb"):
+  if path.endsWith(".aslr"):
     if imports.len > 0:
-      let msg = fmt"{path}: .aslb files cannot contain import statements (they are the runtime interface, not an implementation)"
+      let msg = fmt"{path}: .aslr files cannot contain import statements (they are the runtime interface, not an implementation)"
       return err(newParserError(msg, imports[0].loc))
-    newAslbFile(path, definedTypes)
+    newAslrFile(path, definedTypes)
   else:
     newAslFile(path, imports, definedTypes)
 
@@ -247,7 +247,7 @@ proc asl*(file: File, indentWidth: uint32): string =
       lines.add(asl(imp))
     if file.imports.len > 0 and file.definedTypes.len > 0:
       lines.add("")
-  of fkAslb:
+  of fkAslr:
     discard
   for i, dt in file.definedTypes:
     if i > 0: lines.add("")
@@ -302,35 +302,35 @@ proc aslFileSpec(vendorRoots: VendorRoots): Spec[File] =
       newAslFile(parser.filepath, imports, items, vendorRoots)
   )
 
-# aslbFile: (module | generic)*  — no imports section. Aslb files
+# aslrFile: (module | generic)*  — no imports section. Aslr files
 # are the runtime interface; they cannot reference other files.
-let aslbFileSpec = Spec[File](
-  name: "aslb_file",
+let aslrFileSpec = Spec[File](
+  name: "aslr_file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
   let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
   discard parser.run(any(ignorableLineSpec))
   if not parser.done():
     # Force a parse attempt to get a specific error message
     discard ? parser.run(typeSpec)
-  newAslbFile(parser.filepath, items)
+  newAslrFile(parser.filepath, items)
 )
 
 proc parse*(filepath: string, indentWidth: uint32, tokens: seq[Token],
     vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, string] =
   ## Dispatches on the file's extension. `.asl` paths run through
-  ## `aslFileSpec(vendorRoots)` (parses imports + items); `.aslb`
-  ## paths run through `aslbFileSpec` (parses items only — no
+  ## `aslFileSpec(vendorRoots)` (parses imports + items); `.aslr`
+  ## paths run through `aslrFileSpec` (parses items only — no
   ## imports section). Anything else fails early — `resolveImportPath`
-  ## rejects non-`.asl`/`.aslb` paths and the CLI rejects non-`.asl`
+  ## rejects non-`.asl`/`.aslr` paths and the CLI rejects non-`.asl`
   ## entry points, so this defensive arm shouldn't fire in practice.
   let (_, _, ext) = filepath.splitFile()
-  if ext != ".asl" and ext != ".aslb":
-    return err(fmt"{filepath}: unrecognized file extension '{ext}' — expected '.asl' or '.aslb'")
+  if ext != ".asl" and ext != ".aslr":
+    return err(fmt"{filepath}: unrecognized file extension '{ext}' — expected '.asl' or '.aslr'")
   let parser = newParser(filepath, indentWidth, tokens)
   let maybeFile =
     if ext == ".asl": parser.run(aslFileSpec(vendorRoots))
-    else: parser.run(aslbFileSpec)
+    else: parser.run(aslrFileSpec)
   if maybeFile.isErr:
     err(fmt"{maybeFile.error}")
   else:
