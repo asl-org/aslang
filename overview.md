@@ -105,10 +105,17 @@ Analyzer ──── Walks the ResolvedApp end-to-end and produces an
 
 Orchestrated by `src/asl.nim`:
 ```nim
-let app = ? parse(filepath, indentWidth, dumpTokens)
+let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
 let resolvedApp = ? resolve(app)
-discard ? analyze(resolvedApp)
+let analyzedApp = ? analyze(resolvedApp)
 ```
+
+`analyze*` now returns a structured `AnalyzedApp` (wrapping the
+`AnalyzedAppDefinition` plus a `seq[AnalyzedFile]` where each
+`AnalyzedFile` pairs an `AnalyzedFileDefinition` with the analyzed
+modules parsed out of it) rather than the void result it used to.
+The type itself is not exported today; the return value is the
+handle downstream codegen will thread through.
 
 There is no separate `Validator` phase. Every uniqueness / structural
 rule the validator used to enforce (duplicate names, empty blocks,
@@ -672,8 +679,13 @@ src/
     filedefs.nim                   AnalyzedFileDefinition (with
                                    imports + definedTypes + modules) +
                                    analyzeFileDefinition
-    appdefs.nim                    AnalyzedApp + the public `analyze*`
-                                   entry
+    appdefs.nim                    AnalyzedAppDefinition +
+                                   AnalyzedFile (analyzed file
+                                   def + its analyzed modules) +
+                                   AnalyzedApp (app def + per-file
+                                   analyzed views) + the public
+                                   `analyze*` entry (returns
+                                   `Result[AnalyzedApp, string]`)
 
 examples/
   base.asl                         standard library definition (extern functions)

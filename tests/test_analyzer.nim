@@ -428,3 +428,130 @@ public module M:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "32-bit float")
+
+suite "analyzer — analyze-shape corner cases":
+
+  test "file with only a self-referential generic (no modules) analyzes":
+    # Exercises the `adtkGeneric: discard` branch in analyzeFile —
+    # the returned AnalyzedFile has an empty `modules` seq. The
+    # generic's function signatures only reference the generic
+    # itself (per the generic-signature rule), so no imports are
+    # needed even though we're not writing any modules.
+    let (r, dir) = analyzeSingle("""
+public generic Eq:
+  func eq(a: Eq, b: Eq): Eq
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "file with multiple modules analyzes each of them":
+    # Every module in the file becomes an entry in analyzeFile's
+    # `analyzedModules` seq. This test writes four modules — three
+    # literal primitives plus a struct that consumes them — and
+    # asserts the whole file analyzes end-to-end.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module u32:
+  literal: "u32"
+
+public module u64:
+  literal: "u64"
+
+module Triple:
+  struct:
+    a: u8
+    b: u32
+    c: u64
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "union module with a method that returns a variant analyzes":
+    # Data-block-union + methods on the same module — exercises the
+    # union initializer analysis path inside a function body, which
+    # is a distinct code path from the struct-init tests.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+module Signal:
+  union:
+    On { level: u8 }
+    Off { padding: u8 }
+
+  func off_default(): Signal
+    Signal.Off { padding: u8 0 }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "multi-file program: importer + importee both analyze":
+    # analyze walks the topo-sorted ResolvedFile list; both files
+    # must analyze successfully. The importer references a public
+    # module from the importee — exercises the cross-file lookup
+    # path that analyzeFile performs when threading imports into
+    # the local defScope.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { Helper, u8 } from "./helper.asl"
+
+module Caller:
+  func run(): u8
+    u8 0
+"""),
+      ("helper.asl", """
+public module u8:
+  literal: "u8"
+
+public module Helper:
+  public func value(): u8
+    u8 42
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "extern function in an .aslb file analyzes":
+    # Extern functions have no body to walk; the analyzer wraps
+    # them as `AnalyzedExternFunction` and skips return-type
+    # inference. This test verifies that path via a runtime-
+    # interface (.aslb) file with a public extern.
+    let (r, dir) = analyzeFiles([
+      ("entry.aslb", """
+public module u8:
+  literal: "u8"
+
+  @extern("u8_add_u8")
+  public func add(a: u8, b: u8): u8
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "file with a public function calling an imported module method analyzes":
+    # Cross-module function call resolution: `Helper.value()` in
+    # `entry.asl` resolves against the imported `Helper` module's
+    # public `value` function. Exercises the overload-selection
+    # path with a public-only filter and the funcDef return-type
+    # concretization that follows.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { Helper, u8 } from "./helper.asl"
+
+module Caller:
+  public func run(): u8
+    Helper.value()
+"""),
+      ("helper.asl", """
+public module u8:
+  literal: "u8"
+
+public module Helper:
+  public func value(): u8
+    u8 42
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk

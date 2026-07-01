@@ -37,7 +37,14 @@ proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedAppDefinition, stri
     analyzedFileDefinitions.add(analyzedFileDefinition)
   ok(newAnalyzedAppDefinition(app, analyzedFileDefinitions))
 
-proc analyzeFile(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition): Result[void, string] =
+type AnalyzedFile = ref object
+  def: AnalyzedFileDefinition
+  modules: seq[AnalyzedModule]
+
+proc newAnalyzedFile(def: AnalyzedFileDefinition, modules: seq[AnalyzedModule]): AnalyzedFile =
+  AnalyzedFile(def: def, modules: modules)
+
+proc analyzeFile(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition): Result[AnalyzedFile, string] =
   var defScope = fileDef.definedTypeIndex
   # TODO: Insert imported types in the definition scope
   for imp in fileDef.imports:
@@ -52,10 +59,19 @@ proc analyzeFile(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition)
     of adtkModule:
       let analyzedModule = ? analyzeModule(appDef.resolved, fileDef.resolved, fileDef.scope, definedType.module, defScope)
       analyzedModules.add(analyzedModule)
-  ok()
+  ok(newAnalyzedFile(fileDef, analyzedModules))
 
-proc analyze*(app: ResolvedApp): Result[void, string] =
+type AnalyzedApp = ref object
+  def: AnalyzedAppDefinition
+  files: seq[AnalyzedFile]
+
+proc newAnalyzedApp(def: AnalyzedAppDefinition, files: seq[AnalyzedFile]): AnalyzedApp =
+  AnalyzedApp(def: def, files: files)
+
+proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
   let analyzedAppDef = ? app.analyzeAppDefinition()
+  var analyzedFiles: seq[AnalyzedFile]
   for fileDef in analyzedAppDef.fileDefs:
-    ? analyzedAppDef.analyzeFile(fileDef)
-  ok()
+    let analyzedFile = ? analyzedAppDef.analyzeFile(fileDef)
+    analyzedFiles.add(analyzedFile)
+  ok(newAnalyzedApp(analyzedAppDef, analyzedFiles))

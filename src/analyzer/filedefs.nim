@@ -9,7 +9,6 @@ import resolver
 import imports
 import argtypes
 import funcrefs
-import funcs
 import modules
 
 # AnalyzedFileDefinition
