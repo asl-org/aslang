@@ -101,6 +101,28 @@ import (importing the file you are in) is rejected. Importing the same
 file twice with different aliases is allowed and produces independent
 binding sets.
 
+The `.asl` (and `.aslr`) suffix is **optional** on relative import
+paths. If the source ends in `.asl` or `.aslr`, the resolved path is
+used as-is. Otherwise the compiler tries the resolved path as
+written, then falls back to `<source>.asl`, and finally to
+`<source>.aslr`. `.asl` is tried first because user code almost
+always imports other user code; the `.aslr` case is a belt-and-braces
+last attempt (runtime-interface imports normally flow through
+`@<vendor>` paths). Only if none of the candidates exists is an error
+raised.
+
+```asl
+import { Helper } from "./helper"       # resolves to ./helper.asl
+import { Helper } from "./helper.asl"   # same file
+import "./util"                         # shorthand form, same fallback
+import "./rt"                           # resolves to ./rt.aslr if
+                                        # ./rt.asl doesn't exist
+```
+
+Because the bare and suffixed forms resolve to the same absolute
+path, the loader deduplicates them — writing `./helper` and
+`./helper.asl` in the same file imports the file once.
+
 ---
 
 ## Top-level declarations
@@ -659,6 +681,18 @@ describing what feature it exercises.
 ## Changelog
 
 This section records language changes as they land, newest first.
+
+- **2026-07 (later)** — Optional `.asl` / `.aslr` suffix on relative
+  imports. Import sources like `import { Helper } from "./helper"`
+  (no extension) now resolve. `resolveImportPath` in
+  `src/parser/imports.nim` treats the extension as optional: if the
+  source ends in `.asl` or `.aslr`, use as-is; otherwise try the
+  resolved path first, then fall back to `<source>.asl`, then
+  `<source>.aslr`. `.asl` is preferred because user code almost
+  always imports other user code; `.aslr` is a last-chance attempt.
+  Only if none of the candidates exists is an error raised. Both
+  `./helper` and `./helper.asl` in the same file resolve to the same
+  absolute path so the BFS loader deduplicates them.
 
 - **2026-07** — Float-literal exactness is a warning, not an error.
   The `isExactlyRepresentable` rational-form check (introduced in

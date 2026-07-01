@@ -198,10 +198,18 @@ proc resolveImportPath*(parsedPath: ImportPath, importingFile: string,
   ## Resolves an import path to an absolute file path.
   ##
   ## - `ipkRelative`: resolves the relative source against the
-  ##   importing file's directory. Rejects sources that don't end in
-  ##   `.asl` / `.aslr` and paths that escape to a parent directory.
-  ##   Normalizes the result so tricks like `./sub/../../escape` are
-  ##   caught (not just sources starting with `..`).
+  ##   importing file's directory. Rejects paths that escape to a
+  ##   parent directory (normalized so tricks like
+  ##   `./sub/../../escape` are caught). The `.asl` / `.aslr`
+  ##   suffix is *optional* on the source: if the source ends in
+  ##   `.asl` or `.aslr` the resolved path is used as-is; otherwise
+  ##   the compiler tries the resolved path as typed, then falls
+  ##   back to `<source>.asl` and finally `<source>.aslr`. `.asl`
+  ##   is tried before `.aslr` because user code overwhelmingly
+  ##   imports other user code; the runtime-interface case is a
+  ##   belt-and-braces last attempt (most runtime imports flow
+  ##   through `@<vendor>` paths anyway). Only if none of the
+  ##   candidates exist is an error raised.
   ## - `ipkVendor`: looks up the vendor name in `vendorRoots` (the
   ##   table populated from `--vendor="<name>:<path>"` CLI flags
   ##   plus the default `std`). The registered target path is
@@ -211,14 +219,27 @@ proc resolveImportPath*(parsedPath: ImportPath, importingFile: string,
   of ipkRelative:
     let source = parsedPath.relativeSource
     let (_, _, ext) = source.splitFile()
-    if ext != ".asl" and ext != ".aslr":
-      return err(fmt"{importingFile}: import path '{source}' must end with '.asl' or '.aslr' extension")
     let dir = normalizedPath(importingFile.parentDir)
-    let resolved = normalizedPath((dir / source).absolutePath)
+    let baseResolved = normalizedPath((dir / source).absolutePath)
     let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
-    if not resolved.startsWith(dirPrefix):
+    if not baseResolved.startsWith(dirPrefix):
       return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
-    ok(resolved)
+    if ext == ".asl" or ext == ".aslr":
+      # Explicit extension — defer file-existence to the loader
+      # (matching prior behaviour for typed paths).
+      return ok(baseResolved)
+    # Extensionless (or unrecognized-extension) source: try the bare
+    # path first, then `<source>.asl`, then `<source>.aslr`. Loader
+    # emits the natural "file not found" if none exist.
+    if fileExists(baseResolved):
+      return ok(baseResolved)
+    let withAsl = baseResolved & ".asl"
+    if fileExists(withAsl):
+      return ok(withAsl)
+    let withAslr = baseResolved & ".aslr"
+    if fileExists(withAslr):
+      return ok(withAslr)
+    err(fmt"{importingFile}: import path '{source}' not found (also tried '{source}.asl' and '{source}.aslr')")
   of ipkVendor:
     let name = parsedPath.vendorName
     if name in vendorRoots:

@@ -119,10 +119,14 @@ public module B:
     check r.isErr
     check errorContains(r.error, "cyclic")
 
-  test "import path without .asl extension is rejected":
-    # `resolveImportPath` requires every import source to end in
-    # `.asl`. Anything else (no extension, wrong extension) is
-    # rejected before BFS attempts to read the file.
+  test "import path with unrecognized extension: neither file nor .asl fallback exists":
+    # Explicit-form import of `./bar.txt`. Neither `./bar.txt` nor
+    # `./bar.txt.asl` exists in the temp dir. `resolveImportPath`
+    # tries the bare path first, then the `.asl` fallback, and
+    # errors when both are missing. The specific error message is
+    # currently masked by the parser's `any(importBlockSpec)`
+    # backtracking, so the surface error is a downstream "expected
+    # module" one — we assert only that the parse fails.
     let (r, dir) = parseFiles([
       ("entry.asl", """
 import { Foo } from "./bar.txt"
@@ -135,8 +139,9 @@ module M:
     cleanupDir(dir)
     check r.isErr
 
-  test "shorthand import path without .asl extension is rejected":
-    # Same constraint applies to the shorthand form.
+  test "shorthand import path without extension: fallback also missing errors":
+    # Same shape as above but via the shorthand form. Same
+    # backtracking caveat — only assert `isErr`.
     let (r, dir) = parseFiles([
       ("entry.asl", """
 import "./bar"
@@ -148,6 +153,97 @@ module M:
     ])
     cleanupDir(dir)
     check r.isErr
+
+  test "extensionless explicit import falls back to `<source>.asl`":
+    # User writes `import { Helper } from "./helper"` (no `.asl`
+    # suffix). The importer directory holds `helper.asl`. The
+    # compiler resolves the bare source to that file via the
+    # `.asl` fallback.
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import { Helper } from "./helper"
+
+module Caller:
+  func go(): u8
+    u8 0
+"""),
+      ("helper.asl", """
+public module Helper:
+  public func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "extensionless shorthand import falls back to `<source>.asl`":
+    # Same as above but via the shorthand form.
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import "./helper"
+
+module Caller:
+  func go(): u8
+    u8 0
+"""),
+      ("helper.asl", """
+public module Helper:
+  public func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "extensionless import falls back to `<source>.aslr` when no .asl exists":
+    # If `<source>.asl` is missing but `<source>.aslr` (runtime
+    # interface) is present, the compiler picks that up as the
+    # last-chance fallback. Written via the shorthand form since
+    # the runtime interface is normally shorthand-imported.
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import "./rt"
+
+module Caller:
+  func go(): u8
+    u8 0
+"""),
+      ("rt.aslr", """
+public module Runtime:
+  literal: "runtime_marker"
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "diamond dedup: bare and .asl forms of same import resolve to one file":
+    # `entry.asl` imports `./helper` (bare, resolves via fallback).
+    # `entry.asl` also imports `./helper.asl` (explicit). Both
+    # forms must resolve to the same absolute path so the BFS
+    # loader deduplicates them and parses `helper.asl` exactly
+    # once — verified indirectly by the analyzer accepting the
+    # program (double-import of the same file with different
+    # aliases is allowed; double-parse would show as an error).
+    let (r, dir) = parseFiles([
+      ("entry.asl", """
+import { Helper as First } from "./helper"
+import { Helper as Second } from "./helper.asl"
+
+module Caller:
+  func go(): u8
+    u8 0
+"""),
+      ("helper.asl", """
+public module Helper:
+  public func go(): u8
+    u8 0
+""")
+    ])
+    cleanupDir(dir)
+    check r.isOk
+    # Both import lines resolve to the same absPath — App should
+    # contain only 2 files (entry + helper), not 3.
+    check r.get.files.len == 2
 
   test "unknown vendor import is rejected":
     # `parseImportPath` accepts the `@`-prefix syntactically, but
