@@ -136,20 +136,20 @@ proc isExactlyRepresentable*(text: string, mantissaBits: int): bool =
     return mant <= maxMantissa
 
 # Sibling of `parseInteger` — same `Option[T]` shape, dispatched at
-# compile time on T. The tokenizer has already validated the input as
-# a syntactically valid float literal, so failure modes here are
-# numeric:
+# compile time on T. Only the "value cannot be reduced to a finite
+# T at all" failure modes surface here as `none(T)`:
 #
 #   - out-of-range overflow that `parseutils.parseFloat` reports as
 #     0-chars-consumed (literal text too large to fit in `float`);
 #   - the parsed value classifies as ±Inf or NaN — currently always
 #     rejected (see TODO below);
-#   - the literal is not exactly representable in the target float
-#     kind — `isExactlyRepresentable` decides on a rational basis.
+#   - float32 targets whose narrowed value overflows to ±Inf.
 #
-# float32 takes an additional belt-and-braces narrowing test
-# (round-trip f64 → f32 → f64) so a value that fits in float64 but
-# not float32 is also caught.
+# Exact-representability (precision loss) is deliberately NOT
+# checked here — the caller (`analyzeFloatLiteral` in body.nim)
+# runs `isExactlyRepresentable` after a successful parse and emits
+# a warning for lossy literals, so this proc returns the closest
+# representable value in every finite case.
 #
 # TODO(float-special-values): Inf, -Inf, and NaN are deliberately
 # rejected today — there is no surface syntax to write them
@@ -166,16 +166,9 @@ proc parseFloat*[T: SomeFloat](s: string): Option[T] =
   when T is float32:
     let narrowed = temp.float32
     if narrowed.classify in {fcInf, fcNegInf, fcNan}: return none(T)
-    if narrowed.float64 != temp: return none(T)
-    # TEMP: precision-loss / exactness check disabled while we
-    # bootstrap floats — flip back on once consuming code is ready
-    # to spell out lossy decimals as runtime quotients.
-    # if not isExactlyRepresentable(s, 24): return none(T)
     some(narrowed)
   elif T is float64:
     if temp.classify in {fcInf, fcNegInf, fcNan}: return none(T)
-    # TEMP: precision-loss / exactness check disabled — see f32 arm.
-    # if not isExactlyRepresentable(s, 53): return none(T)
     some(temp)
 
 type AnalyzedVariantPatternScope* = ref object

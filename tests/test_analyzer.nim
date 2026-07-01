@@ -310,25 +310,22 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
-  # TEMP: f64 exactness check is currently disabled in parseFloat
-  # (see patterns.nim). Re-enable this test when the check comes back.
-  #
-  # test "f64 rejects a decimal whose denominator has a 5-factor":
-  #   # `0.1` = 1/10 = 1/(2 * 5); after reduction the denominator still
-  #   # has a 5, so the value is not exactly representable in any binary
-  #   # float — including the widest one we support, f64.
-  #   let (r, dir) = analyzeSingle("""
-  # public module f64:
-  #   literal: "f64"
-  #
-  # public module M:
-  #   public func go(): f64
-  #     f64 0.1
-  # """)
-  #   cleanupDir(dir)
-  #   check r.isErr
-  #   check errorContains(r.error, "64-bit float")
-  #   check errorContains(r.error, "0.1")
+  test "f64 accepts a decimal whose denominator has a 5-factor (warning)":
+    # `0.1` = 1/10 = 1/(2 * 5); after reduction the denominator has
+    # a 5-factor so the value isn't exactly representable in any
+    # binary float. The analyzer accepts the literal (using the
+    # closest representable f64) and writes a `[WARN]` line to
+    # stderr — the analyze result itself is Ok.
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 0.1
+""")
+    cleanupDir(dir)
+    check r.isOk
 
   test "f64 accepts a power-of-two fraction":
     # `0.0625` = 1/16 = 1/2^4 — denominator is a clean power of 2,
@@ -357,21 +354,19 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
-  # TEMP: f64 exactness check is currently disabled in parseFloat.
-  #
-  # test "f64 rejects a decimal that would round into the mantissa":
-  #   # `3.14` = 314/100 = 157/50; denominator has a 5-factor.
-  #   let (r, dir) = analyzeSingle("""
-  # public module f64:
-  #   literal: "f64"
-  #
-  # public module M:
-  #   public func go(): f64
-  #     f64 3.14
-  # """)
-  #   cleanupDir(dir)
-  #   check r.isErr
-  #   check errorContains(r.error, "64-bit float")
+  test "f64 accepts a decimal that would round into the mantissa (warning)":
+    # `3.14` = 314/100 = 157/50; denominator has a 5-factor. Same
+    # accept-with-warning shape as the `0.1` case.
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 3.14
+""")
+    cleanupDir(dir)
+    check r.isOk
 
   test "f64 rejects an overflowing literal":
     let (r, dir) = analyzeSingle("""
@@ -399,10 +394,10 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
-  test "f32 rejects a value that loses precision when narrowed":
-    # `0.1` round-trips through `parseFloat[float32]` to a different
-    # f64 value than the parsed input — narrowing dropped bits. The
-    # analyzer surfaces this as a "not a valid 32-bit float" error.
+  test "f32 accepts a value that loses precision when narrowed (warning)":
+    # `0.1` cannot be represented exactly in either f64 or f32
+    # (denominator has a 5-factor). The analyzer accepts the
+    # closest f32 approximation and emits a `[WARN]` line.
     let (r, dir) = analyzeSingle("""
 public module f32:
   literal: "f32"
@@ -412,9 +407,7 @@ public module M:
     f32 0.1
 """)
     cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "32-bit float")
-    check errorContains(r.error, "0.1")
+    check r.isOk
 
   test "f32 rejects an overflowing literal":
     let (r, dir) = analyzeSingle("""

@@ -44,8 +44,22 @@ proc analyzeFloatLiteral[T: SomeFloat](literal: Literal, expected: string): Resu
   of lkString: err(fmt"{literal.loc} expected a valid {expected} but found string")
   of lkFloat:
     let maybeParsedFloat = parseFloat[T](literal.asl)
-    if maybeParsedFloat.isSome: ok()
-    else: err(fmt"{literal.loc} expected a valid {expected} but found `{literal.asl}`")
+    if maybeParsedFloat.isNone:
+      return err(fmt"{literal.loc} expected a valid {expected} but found `{literal.asl}`")
+    # Exact-representability is a warning, not an error: the closest
+    # approximation stored in the parsed value is still returned as
+    # the literal's value. Emit to stderr with the source location
+    # so users can find and (if they choose) rewrite lossy literals
+    # as runtime quotients of exact-integer literals.
+    # TODO(diagnostics): thread warnings through the analyzer as a
+    # collected seq rather than writing to stderr from deep inside
+    # the pass.
+    const mantissaBits =
+      when T is float32: 24
+      elif T is float64: 53
+    if not isExactlyRepresentable(literal.asl, mantissaBits):
+      stderr.writeLine(fmt"[WARN] {literal.loc} literal `{literal.asl}` cannot be exactly represented in {expected}; using closest approximation")
+    ok()
 
 proc analyzeLiteral(literalDef: ResolvedLiteralType, literal: Literal): Result[void, string] =
   case literalDef:

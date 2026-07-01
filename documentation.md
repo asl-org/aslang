@@ -660,6 +660,27 @@ describing what feature it exercises.
 
 This section records language changes as they land, newest first.
 
+- **2026-07** — Float-literal exactness is a warning, not an error.
+  The `isExactlyRepresentable` rational-form check (introduced in
+  the previous entry) is now consulted from `analyzeFloatLiteral`
+  after a successful parse. If the source literal cannot be
+  represented exactly in the target float kind, the compiler
+  accepts the closest approximation *and* writes a `[WARN]` line
+  to stderr identifying the literal and its source location:
+
+  ```
+  [WARN] path/to/file.asl:3:9 literal `1.62` cannot be exactly
+        representable in 64-bit float; using closest approximation
+  ```
+
+  Lossy literals like `f64 1.62`, `f64 0.1`, `f32 0.05` compile
+  successfully; users are informed at the literal site so they can
+  choose to rewrite as a runtime quotient of exact-integer literals
+  (`f64.quotient(f64 162.0, f64 100.0)`) if the imprecision
+  matters. The previous "TEMP" markers around the exactness call
+  sites in `parseFloat[T]` are removed; the check now lives at the
+  analyzer's literal-body boundary.
+
 - **2026-06 (late)** — Float-literal analyzer + stdlib numeric build-out.
   The analyzer now validates `f32` / `f64` literal initializers
   (`f64 0.5`, `f32 1.5e3`): syntactic floats parse via the new
