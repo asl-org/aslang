@@ -17,15 +17,11 @@ proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgume
   ## via merge()). Generic-uniqueness inside an explicit requires()
   ## block is still enforced by validateRequiresConstraints.
   case field.argType.kind:
-  of ratkImported:
-    assert(false, "todo: walk imported field type to collect nested generics")
-  of ratkDefined:
-    case field.argType.definedType.kind:
-    of rdatkModule: discard
-    of rdatkGeneric:
-      let genericType = field.argType.definedType.generic
-      if genericType notin genericTypeIndex:
-        genericTypeIndex[genericType] = genericTypeIndex.len
+  of ratkModule: discard
+  of ratkGeneric:
+    let genericType = field.argType.generic
+    if genericType notin genericTypeIndex:
+      genericTypeIndex[genericType] = genericTypeIndex.len
 
 # ResolvedStructDef
 type ResolvedStructDef* = ref object

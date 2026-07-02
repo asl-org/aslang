@@ -14,15 +14,11 @@ proc accumulateGenericPosition(genericTypeIndex: var Table[AnalyzedGenericArgume
   ## multiple fields keeps its first position — conflicts surface at
   ## the init site via GenericImplMap.merge(), not here.
   case field.argType.kind:
-  of aatkImported:
-    assert(false, "todo: walk imported field type to collect nested generics")
-  of aatkDefined:
-    case field.argType.definedType.kind:
-    of adatkModule: discard
-    of adatkGeneric:
-      let genericType = field.argType.definedType.generic
-      if genericType notin genericTypeIndex:
-        genericTypeIndex[genericType] = genericTypeIndex.len
+  of aatkModule: discard
+  of aatkGeneric:
+    let genericType = field.argType.generic
+    if genericType notin genericTypeIndex:
+      genericTypeIndex[genericType] = genericTypeIndex.len
 
 # AnalyzedStructDef
 type AnalyzedStructDef* = ref object

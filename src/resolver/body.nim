@@ -166,17 +166,17 @@ proc newResolvedStructRef*(parsed: StructRef, module: Module): ResolvedStructRef
 
 proc newResolvedStructRef*(parsed: StructRef, argType: ResolvedArgumentType): ResolvedStructRef =
   ## Impl kind — wraps the resolved argument type (root + impls). The
-  ## resolved receiver module is reachable via argType.definedType.module.module.
+  ## resolved receiver module is reachable via argType.module.root.
   ResolvedStructRef(parsed: parsed, kind: rsrkImpl, argType: argType)
 
 proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
 proc kind*(s: ResolvedStructRef): ResolvedStructRefKind = s.kind
 proc module*(s: ResolvedStructRef): Module =
   ## Returns the resolved receiver module. Default arm reads the stored
-  ## field; impl arm extracts via argType's defined-module root.
+  ## field; impl arm extracts via argType's module root.
   case s.kind:
   of rsrkDefault: s.module
-  of rsrkImpl: s.argType.definedType.module.module
+  of rsrkImpl: s.argType.module.module
 proc argType*(s: ResolvedStructRef): ResolvedArgumentType =
   assert s.kind == rsrkImpl,
     fmt"ResolvedStructRef.argType accessed but kind is {s.kind}"
@@ -199,17 +199,17 @@ proc newResolvedUnionRef*(parsed: UnionRef, module: Module): ResolvedUnionRef =
 
 proc newResolvedUnionRef*(parsed: UnionRef, argType: ResolvedArgumentType): ResolvedUnionRef =
   ## Impl kind — wraps the resolved argument type (root + impls). The
-  ## resolved receiver module is reachable via argType.definedType.module.module.
+  ## resolved receiver module is reachable via argType.module.root.
   ResolvedUnionRef(parsed: parsed, kind: rurkImpl, argType: argType)
 
 proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
 proc kind*(u: ResolvedUnionRef): ResolvedUnionRefKind = u.kind
 proc module*(u: ResolvedUnionRef): Module =
   ## Returns the resolved receiver module. Default arm reads the stored
-  ## field; impl arm extracts via argType's defined-module root.
+  ## field; impl arm extracts via argType's module root.
   case u.kind:
   of rurkDefault: u.module
-  of rurkImpl: u.argType.definedType.module.module
+  of rurkImpl: u.argType.module.module
 proc argType*(u: ResolvedUnionRef): ResolvedArgumentType =
   assert u.kind == rurkImpl,
     fmt"ResolvedUnionRef.argType accessed but kind is {u.kind}"

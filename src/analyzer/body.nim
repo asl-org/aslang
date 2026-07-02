@@ -510,52 +510,34 @@ proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile,
       genericImplMap = ? genericImplMap.merge(valGenericImplMap)
     ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedDefinedArgumentType, loc: Location): Result[GenericImplMap, string] =
-  case valType.kind:
-  of adatkGeneric:
-    err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
-  of adatkModule:
-    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType, valType.module, loc)
-
 proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case valType.kind:
-  of aatkImported:
-    err(fmt"{loc} todo: analyze imported value type against module argument type")
-  of aatkDefined:
-    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType, valType.definedType, loc)
+  of aatkGeneric:
+    err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
+  of aatkModule:
+    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType, valType.module, loc)
 
 proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   let funcDefs = defType.resolved.concreteImpls(valType.self)
   for funcDef in funcDefs:
     case valType.kind:
-    of aatkImported:
-      return err(fmt"{loc} todo: analyze imported impl type")
-    of aatkDefined:
-      case valType.definedType.kind:
-      of adatkGeneric:
-        let maybeConcreteFuncDef = valType.definedType.generic.resolved.findFunctionDef(funcDef)
-        if maybeConcreteFuncDef.isNone:
-          return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
-      of adatkModule:
-        let maybeConcreteFuncDef = valType.definedType.module.module.findFunctionDef(funcDef)
-        if maybeConcreteFuncDef.isNone:
-          return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
+    of aatkGeneric:
+      let maybeConcreteFuncDef = valType.generic.resolved.findFunctionDef(funcDef)
+      if maybeConcreteFuncDef.isNone:
+        return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
+    of aatkModule:
+      let maybeConcreteFuncDef = valType.module.module.findFunctionDef(funcDef)
+      if maybeConcreteFuncDef.isNone:
+        return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.resolved.name.asl}`")
   var genericImplMap: GenericImplMap
   genericImplMap[defType.resolved] = valType
   ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedDefinedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
-  case defType.kind:
-  of adatkModule: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType.module, valType, loc)
-  of adatkGeneric: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType.generic, valType, loc)
-
 # TODO: Return a map of generic -> argType from the recursive analysis
 proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case defType.kind:
-  of aatkImported:
-    err(fmt"{loc} todo: analyze value type against imported argument type")
-  of aatkDefined:
-    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType.definedType, valType, loc)
+  of aatkModule: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType.module, valType, loc)
+  of aatkGeneric: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defScope, defType.generic, valType, loc)
 
 proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: AnalyzedFunctionDefinition): Result[GenericImplMap, string] =
   # BUG: `zip` below silently truncates to the shorter sequence — if
@@ -722,17 +704,13 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
         err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
       else:
         case analyzedSubjectExpr.argType.get.kind:
-        of aatkImported:
-          err(fmt"{match.loc} todo: handle analyzed imported type in match expression analysis for concrete union module")
-        of aatkDefined:
-          case analyzedSubjectExpr.argType.get.definedType.kind:
-          of adatkGeneric:
-            err(fmt"{match.loc} UNREACHABLE: match block does not support generic types in subject expression")
-          of adatkModule:
-            let impls = analyzedSubjectExpr.argType.get.definedType.module.impls
-            let concreteUnion = analyzedSubjectDataType.union.concrete(impls)
-            let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, concreteUnion, match.loc)
-            ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
+        of aatkGeneric:
+          err(fmt"{match.loc} UNREACHABLE: match block does not support generic types in subject expression")
+        of aatkModule:
+          let impls = analyzedSubjectExpr.argType.get.module.impls
+          let concreteUnion = analyzedSubjectDataType.union.concrete(impls)
+          let analyzedCases = ? analyzeCases(app, file, fileScope, moduleDef, defScope, funcScope, match.cases, analyzedSubjectExpr.argType.get, concreteUnion, match.loc)
+          ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =
   let analyzedExpression = ? analyzeExpression(app, file, fileScope, moduleDef, defScope, funcScope, kwarg.expression)
@@ -760,7 +738,7 @@ proc receiverArgType(receiver: AnalyzedModuleDefinition): AnalyzedArgumentType =
   ## thread, not at the call site).
   let resolvedSelfArg = receiver.resolved.self
   let analyzedModuleArg = newAnalyzedModuleArgumentType(resolvedSelfArg, receiver.resolved)
-  newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(analyzedModuleArg))
+  newAnalyzedArgumentType(analyzedModuleArg)
 
 proc analyzeUnionRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
   case unionRef.kind:
@@ -801,16 +779,12 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
   case analyzedUnionRef.kind:
   of aurkImpl:
     case analyzedUnionRef.argType.kind:
-    of aatkImported:
-      return err(fmt"{analyzedUnionRef.loc} todo: explicit-impl union initializer with imported receiver type")
-    of aatkDefined:
-      case analyzedUnionRef.argType.definedType.kind:
-      of adatkGeneric:
-        return err(fmt"{analyzedUnionRef.loc} union receiver `{analyzedUnionRef.resolved.module.name.asl}` cannot be a generic")
-      of adatkModule:
-        let explicitImpls = analyzedUnionRef.argType.definedType.module.impls
-        for genericArgType, position in analyzedUnion.genericTypeIndex:
-          implMap[genericArgType.resolved] = explicitImpls[position]
+    of aatkGeneric:
+      return err(fmt"{analyzedUnionRef.loc} union receiver `{analyzedUnionRef.resolved.module.name.asl}` cannot be a generic")
+    of aatkModule:
+      let explicitImpls = analyzedUnionRef.argType.module.impls
+      for genericArgType, position in analyzedUnion.genericTypeIndex:
+        implMap[genericArgType.resolved] = explicitImpls[position]
   of aurkDefault: discard
 
   # Walk kwargs. Substitute the variant's field type via implMap before
@@ -843,10 +817,10 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
         if genericArgType.resolved in implMap:
           impls[position] = implMap[genericArgType.resolved]
         else:
-          impls[position] = newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(genericArgType))
+          impls[position] = newAnalyzedArgumentType(genericArgType)
       let resolvedSelfArg = receiver.resolved.self
       let analyzedModuleArg = newAnalyzedModuleArgumentType(resolvedSelfArg, receiver.resolved, impls)
-      newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(analyzedModuleArg))
+      newAnalyzedArgumentType(analyzedModuleArg)
 
   ok(newAnalyzedUnionInitializer(init, analyzedUnionRef, argType, analyzedVariant, analyzedKwargs))
 

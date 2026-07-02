@@ -51,9 +51,11 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, module: R
     ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
 
 # Mutually-recursive cluster: AnalyzedModuleArgumentType's impls
-# field references AnalyzedArgumentType, which case-dispatches into
-# AnalyzedDefinedArgumentType, which case-dispatches back into
-# AnalyzedModuleArgumentType. One `type:` block.
+# field references AnalyzedArgumentType, which case-dispatches back
+# into AnalyzedModuleArgumentType. One `type:` block. Flat
+# two-variant tagged union mirrors the resolver-side flatten —
+# imported types resolve through fileScope and surface as ordinary
+# `aatkModule`/`aatkGeneric` values just like local types.
 type
   GenericImplMap* = Table[ResolvedGeneric, AnalyzedArgumentType]
 
@@ -62,21 +64,13 @@ type
     module: ResolvedModule
     impls: seq[AnalyzedArgumentType]
 
-  AnalyzedDefinedArgumentTypeKind* = enum
-    adatkModule, adatkGeneric
-
-  AnalyzedDefinedArgumentType* = ref object
-    case kind: AnalyzedDefinedArgumentTypeKind
-    of adatkModule: module: AnalyzedModuleArgumentType
-    of adatkGeneric: generic: AnalyzedGenericArgumentType
-
   AnalyzedArgumentTypeKind* = enum
-    aatkImported, aatkDefined
+    aatkModule, aatkGeneric
 
   AnalyzedArgumentType* = ref object
     case kind: AnalyzedArgumentTypeKind
-    of aatkImported: discard
-    of aatkDefined: definedType: AnalyzedDefinedArgumentType
+    of aatkModule: module: AnalyzedModuleArgumentType
+    of aatkGeneric: generic: AnalyzedGenericArgumentType
 
 # Forward declarations for the dual-context overloads — both arities
 # of analyzeArgumentType need to be visible inside
@@ -114,82 +108,52 @@ proc asl*(argType: AnalyzedModuleArgumentType): string =
     let implChildren = impls.join(", ")
     fmt"{argType.module.name.asl}[{implChildren}]"
 
-proc newAnalyzedDefinedArgumentType*(module: AnalyzedModuleArgumentType): AnalyzedDefinedArgumentType =
-  AnalyzedDefinedArgumentType(kind: adatkModule, module: module)
+proc newAnalyzedArgumentType*(module: AnalyzedModuleArgumentType): AnalyzedArgumentType =
+  AnalyzedArgumentType(kind: aatkModule, module: module)
 
-proc newAnalyzedDefinedArgumentType*(generic: AnalyzedGenericArgumentType): AnalyzedDefinedArgumentType =
-  AnalyzedDefinedArgumentType(kind: adatkGeneric, generic: generic)
-
-proc kind*(d: AnalyzedDefinedArgumentType): AnalyzedDefinedArgumentTypeKind = d.kind
-proc module*(d: AnalyzedDefinedArgumentType): AnalyzedModuleArgumentType =
-  assert d.kind == adatkModule,
-    fmt"AnalyzedDefinedArgumentType.module accessed but kind is {d.kind}"
-  d.module
-proc generic*(d: AnalyzedDefinedArgumentType): AnalyzedGenericArgumentType =
-  assert d.kind == adatkGeneric,
-    fmt"AnalyzedDefinedArgumentType.generic accessed but kind is {d.kind}"
-  d.generic
-proc loc*(m: AnalyzedDefinedArgumentType): Location =
-  case m.kind:
-  of adatkModule: m.module.loc
-  of adatkGeneric: m.generic.loc
-
-proc name*(m: AnalyzedDefinedArgumentType): Identifier =
-  case m.kind:
-  of adatkModule: m.module.name
-  of adatkGeneric: m.generic.name
-
-proc self(argType: AnalyzedDefinedArgumentType): ResolvedDefinedArgumentType =
-  case argType.kind:
-  of adatkModule: newResolvedDefinedArgumentType(argType.module.self)
-  of adatkGeneric:
-    # TODO: Fix this dummy location
-    let dummyLocation = newLocation()
-    newResolvedDefinedArgumentType(newResolvedGenericArgumentType(argType.generic.resolved.self, dummyLocation))
-
-proc hash*(m: AnalyzedDefinedArgumentType): Hash =
-  case m.kind:
-  of adatkModule: m.module.hash
-  of adatkGeneric: m.generic.hash
-proc `==`*(a, b: AnalyzedDefinedArgumentType): bool = a.hash == b.hash
-proc asl*(argType: AnalyzedDefinedArgumentType): string =
-  case argType.kind:
-  of adatkGeneric: argType.generic.asl
-  of adatkModule: argType.module.asl
-
-proc newAnalyzedArgumentType*(definedType: AnalyzedDefinedArgumentType): AnalyzedArgumentType =
-  AnalyzedArgumentType(kind: aatkDefined, definedType: definedType)
+proc newAnalyzedArgumentType*(generic: AnalyzedGenericArgumentType): AnalyzedArgumentType =
+  AnalyzedArgumentType(kind: aatkGeneric, generic: generic)
 
 proc kind*(a: AnalyzedArgumentType): AnalyzedArgumentTypeKind = a.kind
-proc definedType*(a: AnalyzedArgumentType): AnalyzedDefinedArgumentType =
-  assert a.kind == aatkDefined,
-    fmt"AnalyzedArgumentType.definedType accessed but kind is {a.kind}"
-  a.definedType
+
+proc module*(a: AnalyzedArgumentType): AnalyzedModuleArgumentType =
+  assert a.kind == aatkModule,
+    fmt"AnalyzedArgumentType.module accessed but kind is {a.kind}"
+  a.module
+
+proc generic*(a: AnalyzedArgumentType): AnalyzedGenericArgumentType =
+  assert a.kind == aatkGeneric,
+    fmt"AnalyzedArgumentType.generic accessed but kind is {a.kind}"
+  a.generic
 
 proc name*(argType: AnalyzedArgumentType): Identifier =
   case argType.kind:
-  of aatkImported: assert(false, "TODO: support analyzed argument type name")
-  of aatkDefined: return argType.definedType.name
+  of aatkModule: argType.module.name
+  of aatkGeneric: argType.generic.name
 
 proc loc*(argType: AnalyzedArgumentType): Location =
   case argType.kind:
-  of aatkImported: assert(false, "TODO: support analyzed argument type location")
-  of aatkDefined: return argType.definedType.loc
+  of aatkModule: argType.module.loc
+  of aatkGeneric: argType.generic.loc
 
 proc self*(argType: AnalyzedArgumentType): ResolvedArgumentType =
   case argType.kind:
-  of aatkImported: assert(false, "TODO: support analyzed argument type self construction")
-  of aatkDefined: return newResolvedArgumentType(argType.definedType.self)
+  of aatkModule: newResolvedArgumentType(argType.module.self)
+  of aatkGeneric:
+    # TODO: Fix this dummy location
+    let dummyLocation = newLocation()
+    newResolvedArgumentType(newResolvedGenericArgumentType(argType.generic.resolved.self, dummyLocation))
 
 proc asl*(argType: AnalyzedArgumentType): string =
   case argType.kind:
-  of aatkImported: assert(false, "TODO: support analyzed argument type asl")
-  of aatkDefined: return argType.definedType.asl
+  of aatkModule: argType.module.asl
+  of aatkGeneric: argType.generic.asl
 
 proc hash*(m: AnalyzedArgumentType): Hash =
   case m.kind:
-  of aatkImported: assert(false, "TODO: support analyzed argument type hash")
-  of aatkDefined: return m.definedType.hash
+  of aatkModule: m.module.hash
+  of aatkGeneric: m.generic.hash
+
 proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 
 # TODO(union-inference): `==` is only correct when both sides are
@@ -211,20 +175,17 @@ proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): Analyzed
   # chain-collapsing in `merge` (cheaper, single pass) — see the TODO
   # there — over recursive lookup here.
   case argType.kind:
-  of aatkImported: assert(false, "TODO: support analyzed argument type concretization")
-  of aatkDefined:
-    case argType.definedType.kind:
-    of adatkModule:
-      let moduleArgType = argType.definedType.module
-      var concreteImpls: seq[AnalyzedArgumentType]
-      for impl in moduleArgType.impls:
-        let concreteImpl = impl.concrete(implMap)
-        concreteImpls.add(concreteImpl)
-      let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
-      return newAnalyzedArgumentType(newAnalyzedDefinedArgumentType(concreteModuleArgType))
-    of adatkGeneric:
-      let genericArgType = argType.definedType.generic
-      return implMap.getOrDefault(genericArgType.resolved, argType)
+  of aatkModule:
+    let moduleArgType = argType.module
+    var concreteImpls: seq[AnalyzedArgumentType]
+    for impl in moduleArgType.impls:
+      let concreteImpl = impl.concrete(implMap)
+      concreteImpls.add(concreteImpl)
+    let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
+    return newAnalyzedArgumentType(concreteModuleArgType)
+  of aatkGeneric:
+    let genericArgType = argType.generic
+    return implMap.getOrDefault(genericArgType.resolved, argType)
 
 proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedArgumentType =
   # TODO(union-inference): handle substitution chains. A single use
@@ -235,16 +196,12 @@ proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], 
   # chain-collapsing in `merge` (cheaper, single pass) — see the TODO
   # there — over recursive lookup here.
   case argType.kind:
-  of aatkImported: assert(false, "TODO: support analyzed argument type concretization")
-  of aatkDefined:
-    case argType.definedType.kind:
-    of adatkModule:
+  of aatkModule: return argType
+  of aatkGeneric:
+    if argType.generic in genericTypeIndex:
+      return impls[genericTypeIndex[argType.generic]]
+    else:
       return argType
-    of adatkGeneric:
-      if argType.definedType.generic in genericTypeIndex:
-        return impls[genericTypeIndex[argType.definedType.generic]]
-      else:
-        return argType
 
 proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
   let maybeTypeModule = file.findModule(argType.module.name)
@@ -274,22 +231,18 @@ proc findArgTypeGeneric(file: ResolvedFile, fileScope: ResolvedFileScope, argTyp
 
 proc analyzeModuleArgumentTypeImpls(baseType: ResolvedGeneric, implType: AnalyzedArgumentType, funcDef: ResolvedFunctionDefinition): Result[void, string] =
   case implType.kind:
-  of aatkImported:
-    err(fmt"{implType.loc} todo: analyze imported impl type")
-  of aatkDefined:
-    case implType.definedType.kind:
-    of adatkGeneric:
-      let maybeConcreteFuncDef = implType.definedType.generic.resolved.findFunctionDef(funcDef)
-      if maybeConcreteFuncDef.isNone:
-        err(fmt"{implType.loc} generic `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
-      else:
-        ok()
-    of adatkModule:
-      let maybeConcreteFuncDef = implType.definedType.module.module.findFunctionDef(funcDef)
-      if maybeConcreteFuncDef.isNone:
-        err(fmt"{implType.loc} module `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
-      else:
-        ok()
+  of aatkGeneric:
+    let maybeConcreteFuncDef = implType.generic.resolved.findFunctionDef(funcDef)
+    if maybeConcreteFuncDef.isNone:
+      err(fmt"{implType.loc} generic `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
+    else:
+      ok()
+  of aatkModule:
+    let maybeConcreteFuncDef = implType.module.module.findFunctionDef(funcDef)
+    if maybeConcreteFuncDef.isNone:
+      err(fmt"{implType.loc} module `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
+    else:
+      ok()
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   var typeModule = ? file.findArgTypeModule(fileScope, argType)
@@ -327,42 +280,22 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
         analyzedImpls.add(analyzedImplArgType)
     ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
-proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
-  case argType.kind:
-  of rdatkGeneric:
-    # echo fmt"BEFORE ANALYZED GENERIC: {argType.generic.asl}"
-    let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, argType.generic)
-    # echo fmt"AFTER ANALYZED GENERIC: {analyzedArgType.asl}"
-    ok(newAnalyzedDefinedArgumentType(analyzedArgType))
-  of rdatkModule:
-    # echo fmt"BEFORE ANALYZED MODULE: {argType.module.asl}"
-    let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, module, argType.module)
-    # echo fmt"BEFORE ANALYZED MODULE: {analyzedArgType.asl}"
-    ok(newAnalyzedDefinedArgumentType(analyzedArgType))
-
-proc analyzeDefinedArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedDefinedArgumentType): Result[AnalyzedDefinedArgumentType, string] =
-  case argType.kind:
-  of rdatkGeneric:
-    let analyzedArgType = ? analyzeGenericArgumentType(app, file, generic, argType.generic)
-    ok(newAnalyzedDefinedArgumentType(analyzedArgType))
-  of rdatkModule:
-    let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, generic, argType.module)
-    ok(newAnalyzedDefinedArgumentType(analyzedArgType))
-
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
-  of ratkImported: err(fmt"todo: analyze imported argument type")
-  of ratkDefined:
-    let analyzedArgType = ? analyzeDefinedArgumentType(app, file, fileScope, module, argType.definedType)
-    # echo fmt"ANALYZED DEFINED: {analyzedArgType.asl}"
+  of ratkGeneric:
+    let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, argType.generic)
+    ok(newAnalyzedArgumentType(analyzedArgType))
+  of ratkModule:
+    let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, module, argType.module)
     ok(newAnalyzedArgumentType(analyzedArgType))
 
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
-  of ratkImported:
-    err(fmt"todo: analyze imported argument type")
-  of ratkDefined:
-    let analyzedArgType = ? analyzeDefinedArgumentType(app, file, fileScope, generic, argType.definedType)
+  of ratkGeneric:
+    let analyzedArgType = ? analyzeGenericArgumentType(app, file, generic, argType.generic)
+    ok(newAnalyzedArgumentType(analyzedArgType))
+  of ratkModule:
+    let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, generic, argType.module)
     ok(newAnalyzedArgumentType(analyzedArgType))
 
 # ------------------------------ GenericImplMap -----------------------------

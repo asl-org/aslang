@@ -34,23 +34,18 @@ proc findModuleDef*(defScope: AnalyzedDefinedTypeScope, name: Identifier, loc: L
 
 proc findModuleDef*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedModuleDefinition, string] =
   case argType.kind:
-  of aatkImported:
-    err(fmt"{loc} todo: analyze case blocks for imported subject type")
-  of aatkDefined:
-    let definedArgType = argType.definedType
-    case definedArgType.kind:
-    of adatkGeneric:
-      err(fmt"{loc} todo: analyze case blocks for generic subject type")
-    of adatkModule:
-      let moduleArgType = definedArgType.module
-      if moduleArgType.name notin defScope:
-        err(fmt"{loc} UNREACHABLE: module `{moduleArgType.name.asl}` is not defined")
-      else:
-        let entry = defScope[moduleArgType.name]
-        case entry.kind:
-        of adtkModule: ok(entry.module)
-        of adtkGeneric:
-          err(fmt"{loc} UNREACHABLE: scope entry `{moduleArgType.name.asl}` is a generic but argType claims module")
+  of aatkGeneric:
+    err(fmt"{loc} todo: analyze case blocks for generic subject type")
+  of aatkModule:
+    let moduleArgType = argType.module
+    if moduleArgType.name notin defScope:
+      err(fmt"{loc} UNREACHABLE: module `{moduleArgType.name.asl}` is not defined")
+    else:
+      let entry = defScope[moduleArgType.name]
+      case entry.kind:
+      of adtkModule: ok(entry.module)
+      of adtkGeneric:
+        err(fmt"{loc} UNREACHABLE: scope entry `{moduleArgType.name.asl}` is a generic but argType claims module")
 
 proc extractDataBlock*(defScope: AnalyzedDefinedTypeScope, module: AnalyzedModuleDefinition, loc: Location): Result[AnalyzedData, string] =
   if module.data.isNone:

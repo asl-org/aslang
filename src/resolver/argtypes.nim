@@ -19,9 +19,13 @@ import parser
 # every resolver file that walks bodies.
 type FileScope* = Table[Identifier, DefinedType]
 
-# ResolvedModuleArgumentType / ResolvedDefinedArgumentType /
+# ResolvedModuleArgumentType / ResolvedGenericArgumentType /
 # ResolvedArgumentType — mutually recursive cluster (an impl is
-# itself a ResolvedArgumentType).
+# itself a ResolvedArgumentType). Flat two-variant tagged union per
+# grammar `ArgumentType: ModuleArgumentType | GenericArgumentType`
+# — imported types resolve through `fileScope` and surface as
+# ordinary `ratkModule`/`ratkGeneric` values just like local types,
+# so there's no separate "imported" variant.
 type
   ResolvedModuleArgumentType* = ref object
     root: Module
@@ -32,21 +36,13 @@ type
     generic: Generic
     loc: Location
 
-  ResolvedDefinedArgumentTypeKind* = enum
-    rdatkModule, rdatkGeneric
-
-  ResolvedDefinedArgumentType* = ref object
-    case kind: ResolvedDefinedArgumentTypeKind
-    of rdatkModule: module: ResolvedModuleArgumentType
-    of rdatkGeneric: generic: ResolvedGenericArgumentType
-
   ResolvedArgumentTypeKind* = enum
-    ratkImported, ratkDefined
+    ratkModule, ratkGeneric
 
   ResolvedArgumentType* = ref object
     case kind: ResolvedArgumentTypeKind
-    of ratkImported: discard
-    of ratkDefined: definedType: ResolvedDefinedArgumentType
+    of ratkModule: module: ResolvedModuleArgumentType
+    of ratkGeneric: generic: ResolvedGenericArgumentType
 
 proc newResolvedGenericArgumentType*(generic: Generic, loc: Location): ResolvedGenericArgumentType =
   ResolvedGenericArgumentType(generic: generic, loc: loc)
@@ -248,53 +244,6 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
   else:
     err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
-# ResolvedDefinedArgumentType
-proc newResolvedDefinedArgumentType*(
-    module: ResolvedModuleArgumentType): ResolvedDefinedArgumentType =
-  ResolvedDefinedArgumentType(kind: rdatkModule, module: module)
-
-proc newResolvedDefinedArgumentType*(
-    generic: ResolvedGenericArgumentType): ResolvedDefinedArgumentType =
-  ResolvedDefinedArgumentType(kind: rdatkGeneric, generic: generic)
-
-proc kind*(argType: ResolvedDefinedArgumentType): ResolvedDefinedArgumentTypeKind = argType.kind
-proc module*(argType: ResolvedDefinedArgumentType): ResolvedModuleArgumentType =
-  assert argType.kind == rdatkModule,
-    fmt"ResolvedDefinedArgumentType.module accessed but kind is {argType.kind}"
-  argType.module
-proc generic*(argType: ResolvedDefinedArgumentType): ResolvedGenericArgumentType =
-  assert argType.kind == rdatkGeneric,
-    fmt"ResolvedDefinedArgumentType.generic accessed but kind is {argType.kind}"
-  argType.generic
-proc name*(argType: ResolvedDefinedArgumentType): Identifier =
-  case argType.kind:
-  of rdatkGeneric: argType.generic.name
-  of rdatkModule: argType.module.name
-proc loc*(argType: ResolvedDefinedArgumentType): Location =
-  case argType.kind:
-  of rdatkGeneric: argType.generic.loc
-  of rdatkModule: argType.module.loc
-proc hash*(argType: ResolvedDefinedArgumentType): Hash =
-  case argType.kind:
-  of rdatkGeneric: argType.generic.hash
-  of rdatkModule: argType.module.hash
-proc `==`*(a, b: ResolvedDefinedArgumentType): bool = a.hash == b.hash
-proc asl*(argType: ResolvedDefinedArgumentType): string =
-  case argType.kind:
-  of rdatkGeneric: argType.generic.asl
-  of rdatkModule: argType.module.asl
-
-proc concreteDefinedArgumentType(argType: ResolvedDefinedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedDefinedArgumentType =
-  case argType.kind:
-  of rdatkModule: return argType
-  of rdatkGeneric:
-    if argType.generic.parsed != generic:
-      return argType
-    else:
-      case concrete.kind:
-      of ratkImported: assert(false, "TODO: support concrete imported impl type")
-      of ratkDefined: return concrete.definedType
-
 proc resolveGenericArgumentType(app: App, file: parser.File, generic: Generic, argType: ArgumentType, genericArgType: Generic): Result[ResolvedGenericArgumentType, string] =
   if genericArgType == generic:
     ok(newResolvedGenericArgumentType(genericArgType, argType.loc))
@@ -307,74 +256,77 @@ proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, arg
   else:
     err(fmt"{genericArgType.loc} generic `{genericArgType.name.asl}` is not allowed to have impls")
 
-# resolveDefinedArgumentType — both context overloads.
-proc resolveDefinedArgumentType(app: App, file: parser.File,
-    fileScope: FileScope, module: Module, argType: ArgumentType,
-    definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
-  case definedType.kind:
-  of dtkGeneric:
-    let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, definedType.generic)
-    ok(newResolvedDefinedArgumentType(resolvedGenericType))
-  of dtkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, module, argType, definedType.module)
-    ok(newResolvedDefinedArgumentType(resolvedModuleType))
-
-proc resolveDefinedArgumentType(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
-    argType: ArgumentType,
-    definedType: DefinedType): Result[ResolvedDefinedArgumentType, string] =
-  case definedType.kind:
-  of dtkGeneric:
-    let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
-    ok(newResolvedDefinedArgumentType(resolvedGenericType))
-  of dtkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic, argType, definedType.module)
-    ok(newResolvedDefinedArgumentType(resolvedModuleType))
-
 # ResolvedArgumentType
-proc newResolvedArgumentType*(definedType: ResolvedDefinedArgumentType): ResolvedArgumentType =
-  ResolvedArgumentType(kind: ratkDefined, definedType: definedType)
+proc newResolvedArgumentType*(module: ResolvedModuleArgumentType): ResolvedArgumentType =
+  ResolvedArgumentType(kind: ratkModule, module: module)
+
+proc newResolvedArgumentType*(generic: ResolvedGenericArgumentType): ResolvedArgumentType =
+  ResolvedArgumentType(kind: ratkGeneric, generic: generic)
 
 proc kind*(argType: ResolvedArgumentType): ResolvedArgumentTypeKind = argType.kind
-proc definedType*(argType: ResolvedArgumentType): ResolvedDefinedArgumentType =
-  assert argType.kind == ratkDefined,
-    fmt"ResolvedArgumentType.definedType accessed but kind is {argType.kind}"
-  argType.definedType
+
+proc module*(argType: ResolvedArgumentType): ResolvedModuleArgumentType =
+  assert argType.kind == ratkModule,
+    fmt"ResolvedArgumentType.module accessed but kind is {argType.kind}"
+  argType.module
+
+proc generic*(argType: ResolvedArgumentType): ResolvedGenericArgumentType =
+  assert argType.kind == ratkGeneric,
+    fmt"ResolvedArgumentType.generic accessed but kind is {argType.kind}"
+  argType.generic
+
 proc name*(argType: ResolvedArgumentType): Identifier =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement `name` for resolved imported argument type")
-  of ratkDefined: return argType.definedType.name
+  of ratkModule: argType.module.name
+  of ratkGeneric: argType.generic.name
+
 proc loc*(argType: ResolvedArgumentType): Location =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement `location` for resolved imported argument type")
-  of ratkDefined: return argType.definedType.loc
+  of ratkModule: argType.module.loc
+  of ratkGeneric: argType.generic.loc
+
 proc hash*(argType: ResolvedArgumentType): Hash =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement `hash` for resolved imported argument type")
-  of ratkDefined: return argType.definedType.hash
+  of ratkModule: argType.module.hash
+  of ratkGeneric: argType.generic.hash
+
 proc `==`*(a, b: ResolvedArgumentType): bool = a.hash == b.hash
+
 proc asl*(argType: ResolvedArgumentType): string =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement `asl` for resolved imported argument type")
-  of ratkDefined: return argType.definedType.asl
+  of ratkModule: argType.module.asl
+  of ratkGeneric: argType.generic.asl
 
 proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
   case argType.kind:
-  of ratkImported: assert(false, "todo: implement `concreteArgumentType` for resolved imported argument type")
-  of ratkDefined:
-    let concreteDefinedArgType = argType.definedType.concreteDefinedArgumentType(concrete, generic)
-    return newResolvedArgumentType(concreteDefinedArgType)
+  of ratkModule: argType
+  of ratkGeneric:
+    if argType.generic.parsed != generic:
+      argType
+    else:
+      concrete
 
 # resolveArgumentType — both context overloads, defined now after
-# the module/defined helpers.
+# the module/generic helpers.
 proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let definedType = ? file.findDefinedType(fileScope, argType.root)
-  let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, fileScope, module, argType, definedType)
-  ok(newResolvedArgumentType(resolvedDefinedType))
+  case definedType.kind:
+  of dtkGeneric:
+    let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, definedType.generic)
+    ok(newResolvedArgumentType(resolvedGenericType))
+  of dtkModule:
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, module, argType, definedType.module)
+    ok(newResolvedArgumentType(resolvedModuleType))
 
 proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let definedType = ? file.findDefinedType(fileScope, argType.root)
-  let resolvedDefinedType = ? resolveDefinedArgumentType(app, file, fileScope, generic, argType, definedType)
-  ok(newResolvedArgumentType(resolvedDefinedType))
+  case definedType.kind:
+  of dtkGeneric:
+    let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
+    ok(newResolvedArgumentType(resolvedGenericType))
+  of dtkModule:
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic, argType, definedType.module)
+    ok(newResolvedArgumentType(resolvedModuleType))
 
 # resolveDataType — post-resolution guard. Confirms the resolved
 # argument's underlying module has a data block (or that we're
@@ -382,33 +334,23 @@ proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, gen
 proc resolveDataType*(file: parser.File, module: Module, arg: ArgumentType,
     resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
   case resolvedArgumentType.kind:
-  of ratkImported:
-    err("todo: resolve imported type argument definition")
-  of ratkDefined:
-    let resolvedDefinedType = resolvedArgumentType.definedType
-    case resolvedDefinedType.kind:
-    of rdatkGeneric:
+  of ratkGeneric:
+    ok()
+  of ratkModule:
+    let resolvedModuleType = resolvedArgumentType.module
+    if resolvedModuleType.root.data.isSome:
       ok()
-    of rdatkModule:
-      let resolvedDefinedModuleType = resolvedDefinedType.module
-      if resolvedDefinedModuleType.root.data.isSome:
-        ok()
-      else:
-        err(fmt"{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
+    else:
+      err(fmt"{arg.loc} module `{resolvedModuleType.root.name.asl}` is not a literal/struct/union")
 
 proc resolveDataType*(file: parser.File, generic: Generic, arg: ArgumentType,
     resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
   case resolvedArgumentType.kind:
-  of ratkImported:
-    err("todo: resolve imported type argument definition")
-  of ratkDefined:
-    let resolvedDefinedType = resolvedArgumentType.definedType
-    case resolvedDefinedType.kind:
-    of rdatkGeneric:
+  of ratkGeneric:
+    ok()
+  of ratkModule:
+    let resolvedModuleType = resolvedArgumentType.module
+    if resolvedModuleType.root.data.isSome:
       ok()
-    of rdatkModule:
-      let resolvedDefinedModuleType = resolvedDefinedType.module
-      if resolvedDefinedModuleType.root.data.isSome:
-        ok()
-      else:
-        err(fmt"{arg.loc} module `{resolvedDefinedModuleType.root.name.asl}` is not a literal/struct/union")
+    else:
+      err(fmt"{arg.loc} module `{resolvedModuleType.root.name.asl}` is not a literal/struct/union")

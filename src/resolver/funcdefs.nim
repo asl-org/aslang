@@ -29,11 +29,8 @@ proc asl*(argDef: ResolvedArgumentDefinition): string =
 
 proc genericRequirement*(d: ResolvedArgumentDefinition): Option[ResolvedGenericArgumentType] =
   case d.argType.kind:
-  of ratkImported: assert(false, "todo: support imported types for requier list")
-  of ratkDefined:
-    case d.argType.definedType.kind:
-    of rdatkModule: discard
-    of rdatkGeneric: result = some(d.argType.definedType.generic)
+  of ratkModule: discard
+  of ratkGeneric: result = some(d.argType.generic)
 
 proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDefinition =
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)

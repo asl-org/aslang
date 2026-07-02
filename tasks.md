@@ -18,7 +18,7 @@
 
 - [x] Move `Setter` from `Expression` to `Statement` in the AST types. Add `VariablePattern` as a first-class `CaseDef` variant (structurally distinct from `LiteralPattern`, `UnionPattern`). Both changes align the AST with what the grammar actually says and eliminate downstream "is this really a value?" and "is this literal or variable?" branches.
 
-- [ ] Split `ArgumentType` at the resolver level into a tagged union: `ResolvedArgumentType: ResolvedModuleArgumentType | ResolvedGenericArgumentType`. Resolver disambiguates at name-lookup time (module vs generic). Every downstream "is this a module or a generic?" check collapses into a `case` arm.
+- [x] Split `ArgumentType` at the resolver level into a tagged union: `ResolvedArgumentType: ResolvedModuleArgumentType | ResolvedGenericArgumentType`. Resolver disambiguates at name-lookup time (module vs generic). Every downstream "is this a module or a generic?" check collapses into a `case` arm.
 
 - [ ] Merge analyzer phase-A into the resolver. Move the definition-level `Analyzed*` types (`AnalyzedStruct`, `AnalyzedUnion`, `AnalyzedVariant`, `AnalyzedData`, `AnalyzedModuleDefinition`, `AnalyzedFileDefinition`, `AnalyzedAppDefinition`, `AnalyzedGeneric`, `AnalyzedDefinedType`) — plus their build procs and definition-level `analyze*` overloads — into the resolver. Fold their added fields into the `Resolved*` counterparts via accessor delegation from the parser back-ref. Delete the now-redundant analyzer-side wrappers.
 

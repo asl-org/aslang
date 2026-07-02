@@ -33,10 +33,7 @@ proc loc*(module: ResolvedModule): Location = module.parsed.loc
 proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
   var impls: seq[ResolvedArgumentType]
   for generic in module.requires:
-    # TODO: Fix this dummy location
-    let dummyLocation = newLocation()
-    let definedType = newResolvedDefinedArgumentType(generic)
-    let argType = newResolvedArgumentType(definedType)
+    let argType = newResolvedArgumentType(generic)
     impls.add(argType)
   newResolvedModuleArgumentType(module.parsed, impls, newLocation())
 
