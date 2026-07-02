@@ -56,6 +56,17 @@ Fixed-width integers: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`,
 `String`, `List`, `Map`, `Array`, `Status`. System interface:
 `System`.
 
+## Domain grammar (source of truth)
+
+The compiler's domain vocabulary — the type names and shapes that
+parser / resolver / analyzer values conform to — is captured in
+`grammar.md`. Every layer's type module traces back to it. When a
+domain concept is renamed, added, or restructured, it lands there
+first; the code catches up.
+
+The ongoing DDD refactor to bring every layer into strict alignment
+with the grammar is tracked in `tasks.md`.
+
 ## Compiler Pipeline
 
 ```

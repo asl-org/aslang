@@ -10,7 +10,7 @@
 # Ordering below is dependency-forward; each item should leave the
 # compiler building + green so the next can pick up cleanly.
 
-- [ ] Lock the domain grammar as source-of-truth. Extract the agreed grammar into a stable file (e.g. `grammar.md` or an appendix in `overview.md`) that parser/resolver/analyzer type definitions can be traced back to. Every subsequent task references this file when it renames or introduces types.
+- [x] Lock the domain grammar as source-of-truth. Extract the agreed grammar into a stable file (e.g. `grammar.md` or an appendix in `overview.md`) that parser/resolver/analyzer type definitions can be traced back to. Every subsequent task references this file when it renames or introduces types.
 
 - [ ] Rename data-block variants to match the grammar's `*Def` suffix: `Struct` → `StructDef`, `Union` → `UnionDef`, existing data-kind `Literal` → `LiteralDef`. Mechanical wave across parser + resolver + analyzer + accessors + tests. Deliberately low-value on its own — this task is a naming alignment so later refactors read cleanly.
 
