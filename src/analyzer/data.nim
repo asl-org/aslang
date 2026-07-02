@@ -24,42 +24,42 @@ proc accumulateGenericPosition(genericTypeIndex: var Table[AnalyzedGenericArgume
       if genericType notin genericTypeIndex:
         genericTypeIndex[genericType] = genericTypeIndex.len
 
-# AnalyzedStruct
-type AnalyzedStruct* = ref object
-  resolved: ResolvedStruct
+# AnalyzedStructDef
+type AnalyzedStructDef* = ref object
+  resolved: ResolvedStructDef
   fields: seq[AnalyzedArgumentDefinition]
   fieldIndex: Table[Identifier, int]
   genericTypeIndex: Table[AnalyzedGenericArgumentType, int]
 
-proc newAnalyzedStruct*(resolved: ResolvedStruct, fields: seq[AnalyzedArgumentDefinition], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedStruct =
+proc newAnalyzedStructDef*(resolved: ResolvedStructDef, fields: seq[AnalyzedArgumentDefinition], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedStructDef =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
     assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name must have been caught by resolver")
     fieldIndex[field.name] = id
-  AnalyzedStruct(resolved: resolved, fields: fields, fieldIndex: fieldIndex, genericTypeIndex: genericTypeIndex)
+  AnalyzedStructDef(resolved: resolved, fields: fields, fieldIndex: fieldIndex, genericTypeIndex: genericTypeIndex)
 
-proc resolved*(s: AnalyzedStruct): ResolvedStruct = s.resolved
-proc loc*(s: AnalyzedStruct): Location = s.resolved.loc
-proc fields*(s: AnalyzedStruct): seq[AnalyzedArgumentDefinition] = s.fields
-proc findField*(s: AnalyzedStruct, name: Identifier): Result[AnalyzedArgumentDefinition, string] =
+proc resolved*(s: AnalyzedStructDef): ResolvedStructDef = s.resolved
+proc loc*(s: AnalyzedStructDef): Location = s.resolved.loc
+proc fields*(s: AnalyzedStructDef): seq[AnalyzedArgumentDefinition] = s.fields
+proc findField*(s: AnalyzedStructDef, name: Identifier): Result[AnalyzedArgumentDefinition, string] =
   if name in s.fieldIndex: ok(s.fields[s.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
-proc concrete*(struct: AnalyzedStruct, impls: seq[AnalyzedArgumentType]): AnalyzedStruct =
+proc concrete*(struct: AnalyzedStructDef, impls: seq[AnalyzedArgumentType]): AnalyzedStructDef =
   var concreteFields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     let concreteField = field.concrete(impls, struct.genericTypeIndex)
     concreteFields.add(concreteField)
-  newAnalyzedStruct(struct.resolved, concreteFields, struct.genericTypeIndex)
+  newAnalyzedStructDef(struct.resolved, concreteFields, struct.genericTypeIndex)
 
-proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStruct): Result[AnalyzedStruct, string] =
+proc analyzeStructDef*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStructDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   var genericTypeIndex: Table[AnalyzedGenericArgumentType, int]
   for field in struct.fields:
     let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(analyzedField)
     analyzedFields.add(analyzedField)
-  ok(newAnalyzedStruct(struct, analyzedFields, genericTypeIndex))
+  ok(newAnalyzedStructDef(struct, analyzedFields, genericTypeIndex))
 
 # AnalyzedVariant
 type AnalyzedVariant* = ref object
@@ -97,41 +97,41 @@ proc analyzeVariant(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFil
     analyzedFields.add(analyzedField)
   ok(newAnalyzedVariant(variant, analyzedFields))
 
-# AnalyzedUnion
-type AnalyzedUnion* = ref object
-  resolved: ResolvedUnion
+# AnalyzedUnionDef
+type AnalyzedUnionDef* = ref object
+  resolved: ResolvedUnionDef
   variants: seq[AnalyzedVariant]
   variantIndex: Table[Identifier, int]
   genericTypeIndex: Table[AnalyzedGenericArgumentType, int]
 
-proc newAnalyzedUnion*(resolved: ResolvedUnion, variants: seq[AnalyzedVariant], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedUnion =
+proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef, variants: seq[AnalyzedVariant], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedUnionDef =
   var variantIndex: Table[Identifier, int]
   for id, variant in variants:
     assert(variant.name notin variantIndex, "UNREACHABLE: this should have been caught in resolution")
     variantIndex[variant.name] = id
-  AnalyzedUnion(resolved: resolved, variants: variants, variantIndex: variantIndex, genericTypeIndex: genericTypeIndex)
+  AnalyzedUnionDef(resolved: resolved, variants: variants, variantIndex: variantIndex, genericTypeIndex: genericTypeIndex)
 
-proc resolved*(u: AnalyzedUnion): ResolvedUnion = u.resolved
-proc variants*(u: AnalyzedUnion): seq[AnalyzedVariant] = u.variants
-proc genericTypeIndex*(u: AnalyzedUnion): Table[AnalyzedGenericArgumentType, int] = u.genericTypeIndex
-proc concrete*(union: AnalyzedUnion, impls: seq[AnalyzedArgumentType]): AnalyzedUnion =
+proc resolved*(u: AnalyzedUnionDef): ResolvedUnionDef = u.resolved
+proc variants*(u: AnalyzedUnionDef): seq[AnalyzedVariant] = u.variants
+proc genericTypeIndex*(u: AnalyzedUnionDef): Table[AnalyzedGenericArgumentType, int] = u.genericTypeIndex
+proc concrete*(union: AnalyzedUnionDef, impls: seq[AnalyzedArgumentType]): AnalyzedUnionDef =
   var concreteVariants: seq[AnalyzedVariant]
   for variant in union.variants:
     let concreteVariant = variant.concrete(impls, union.genericTypeIndex)
     concreteVariants.add(concreteVariant)
-  newAnalyzedUnion(union.resolved, concreteVariants, union.genericTypeIndex)
+  newAnalyzedUnionDef(union.resolved, concreteVariants, union.genericTypeIndex)
 
-proc findVariant*(union: AnalyzedUnion, variant: Identifier): Result[AnalyzedVariant, string] =
+proc findVariant*(union: AnalyzedUnionDef, variant: Identifier): Result[AnalyzedVariant, string] =
   if variant in union.variantIndex: ok(union.variants[union.variantIndex[variant]])
   else: err(fmt"{variant.loc} union does not contain variant `{variant.asl}`")
 
-proc analyzeUnion*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnion): Result[AnalyzedUnion, string] =
+proc analyzeUnionDef*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnionDef, string] =
   var analyzedVariants: seq[AnalyzedVariant]
   var genericTypeIndex: Table[AnalyzedGenericArgumentType, int]
   for variant in union.variants:
     let analyzedVariant = ? analyzeVariant(app, file, fileScope, module, variant, genericTypeIndex)
     analyzedVariants.add(analyzedVariant)
-  ok(newAnalyzedUnion(union, analyzedVariants, genericTypeIndex))
+  ok(newAnalyzedUnionDef(union, analyzedVariants, genericTypeIndex))
 
 # AnalyzedData
 type
@@ -139,29 +139,29 @@ type
     adkLiteral, adkStruct, adkUnion
   AnalyzedData* = ref object
     case kind: AnalyzedDataKind
-    of adkLiteral: literal: AnalyzedLiteralBlock
-    of adkStruct: struct: AnalyzedStruct
-    of adkUnion: union: AnalyzedUnion
+    of adkLiteral: literal: AnalyzedLiteralDef
+    of adkStruct: struct: AnalyzedStructDef
+    of adkUnion: union: AnalyzedUnionDef
 
-proc newAnalyzedData*(literal: AnalyzedLiteralBlock): AnalyzedData =
+proc newAnalyzedData*(literal: AnalyzedLiteralDef): AnalyzedData =
   AnalyzedData(kind: adkLiteral, literal: literal)
 
-proc newAnalyzedData*(struct: AnalyzedStruct): AnalyzedData =
+proc newAnalyzedData*(struct: AnalyzedStructDef): AnalyzedData =
   AnalyzedData(kind: adkStruct, struct: struct)
 
-proc newAnalyzedData*(union: AnalyzedUnion): AnalyzedData =
+proc newAnalyzedData*(union: AnalyzedUnionDef): AnalyzedData =
   AnalyzedData(kind: adkUnion, union: union)
 
 proc kind*(d: AnalyzedData): AnalyzedDataKind = d.kind
-proc literal*(d: AnalyzedData): AnalyzedLiteralBlock =
+proc literal*(d: AnalyzedData): AnalyzedLiteralDef =
   assert d.kind == adkLiteral,
     fmt"AnalyzedData.literal accessed but kind is {d.kind}"
   d.literal
-proc struct*(d: AnalyzedData): AnalyzedStruct =
+proc struct*(d: AnalyzedData): AnalyzedStructDef =
   assert d.kind == adkStruct,
     fmt"AnalyzedData.struct accessed but kind is {d.kind}"
   d.struct
-proc union*(d: AnalyzedData): AnalyzedUnion =
+proc union*(d: AnalyzedData): AnalyzedUnionDef =
   assert d.kind == adkUnion,
     fmt"AnalyzedData.union accessed but kind is {d.kind}"
   d.union
@@ -169,10 +169,10 @@ proc union*(d: AnalyzedData): AnalyzedUnion =
 proc analyzeData*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
   of rdkLiteral:
-    ok(newAnalyzedData(newAnalyzedLiteralBlock(data.literal)))
+    ok(newAnalyzedData(newAnalyzedLiteralDef(data.literal)))
   of rdkStruct:
-    let analyzedStruct = ? analyzeStruct(app, file, fileScope, module, data.struct)
+    let analyzedStruct = ? analyzeStructDef(app, file, fileScope, module, data.struct)
     ok(newAnalyzedData(analyzedStruct))
   of rdkUnion:
-    let analyzedUnion = ? analyzeUnion(app, file, fileScope, module, data.union)
+    let analyzedUnion = ? analyzeUnionDef(app, file, fileScope, module, data.union)
     ok(newAnalyzedData(analyzedUnion))

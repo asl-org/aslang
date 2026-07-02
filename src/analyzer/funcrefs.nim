@@ -62,7 +62,7 @@ proc extractDataBlock*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgu
   let argModule = ? defScope.findModuleDef(argType, loc)
   defScope.extractDataBlock(argModule, loc)
 
-proc extractStructFor*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedStruct, string] =
+proc extractStructFor*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedStructDef, string] =
   let argModule = ? defScope.findModuleDef(argType, loc)
   let dataBlock = ? defScope.extractDataBlock(argModule, loc)
   case dataBlock.kind:
@@ -70,7 +70,7 @@ proc extractStructFor*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgu
   of adkUnion: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found union")
   of adkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
 
-proc extractUnionFor*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedUnion, string] =
+proc extractUnionFor*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedUnionDef, string] =
   let argModule = ? defScope.findModuleDef(argType, loc)
   let dataBlock = ? defScope.extractDataBlock(argModule, loc)
   case dataBlock.kind:

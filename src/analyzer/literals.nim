@@ -3,10 +3,10 @@
 
 import resolver
 
-type AnalyzedLiteralBlock* = ref object
-  resolved: ResolvedLiteralType
+type AnalyzedLiteralDef* = ref object
+  resolved: ResolvedLiteralDef
 
-proc newAnalyzedLiteralBlock*(resolved: ResolvedLiteralType): AnalyzedLiteralBlock =
-  AnalyzedLiteralBlock(resolved: resolved)
+proc newAnalyzedLiteralDef*(resolved: ResolvedLiteralDef): AnalyzedLiteralDef =
+  AnalyzedLiteralDef(resolved: resolved)
 
-proc resolved*(b: AnalyzedLiteralBlock): ResolvedLiteralType = b.resolved
+proc resolved*(b: AnalyzedLiteralDef): ResolvedLiteralDef = b.resolved

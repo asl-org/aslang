@@ -12,7 +12,7 @@
 
 - [x] Lock the domain grammar as source-of-truth. Extract the agreed grammar into a stable file (e.g. `grammar.md` or an appendix in `overview.md`) that parser/resolver/analyzer type definitions can be traced back to. Every subsequent task references this file when it renames or introduces types.
 
-- [ ] Rename data-block variants to match the grammar's `*Def` suffix: `Struct` → `StructDef`, `Union` → `UnionDef`, existing data-kind `Literal` → `LiteralDef`. Mechanical wave across parser + resolver + analyzer + accessors + tests. Deliberately low-value on its own — this task is a naming alignment so later refactors read cleanly.
+- [x] Rename data-block variants to match the grammar's `*Def` suffix: `Struct` → `StructDef`, `Union` → `UnionDef`, existing data-kind `Literal` → `LiteralDef`. Mechanical wave across parser + resolver + analyzer + accessors + tests. Deliberately low-value on its own — this task is a naming alignment so later refactors read cleanly.
 
 - [ ] Introduce role-typed identifiers as distinct newtypes wrapping `Identifier`: `VarName`, `ModuleName`, `GenericName`, `FunctionName`, `TypeName`, `Variant`, `Field`, `Binding`, `Property`, `Source`, `LiteralRef`, `ImportedType`. Migrate call sites layer by layer so mixing them up becomes a compile error. Kills a whole class of "I passed a module name where a variable name was expected" slip-ups.
 

@@ -33,11 +33,11 @@ proc loc*(m: Module): Location = m.loc
 proc hash*(m: Module): Hash = m.loc.hash
 proc `==`*(a, b: Module): bool = a.hash == b.hash
 
-proc struct*(m: Module, loc: Location): Result[Struct, string] =
+proc struct*(m: Module, loc: Location): Result[StructDef, string] =
   if m.data.isSome: m.data.get.struct(m.name)
   else: err(fmt"{loc} module `{m.name.asl}` is not a struct")
 
-proc union*(m: Module, loc: Location): Result[Union, string] =
+proc union*(m: Module, loc: Location): Result[UnionDef, string] =
   if m.data.isSome: m.data.get.union(m.name)
   else: err(fmt"{loc} module `{m.name.asl}` is not a union")
 

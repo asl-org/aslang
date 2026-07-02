@@ -1,6 +1,6 @@
 ## Tests for AST constructor invariants. Many of the duplicate-
-## detection errors that constructors raise (Struct.fieldIndex,
-## Union.variantIndex, VariantPattern bindings, KeywordArgumentList
+## detection errors that constructors raise (StructDef.fieldIndex,
+## UnionDef.variantIndex, VariantPattern bindings, KeywordArgumentList
 ## argIndex, etc.) are unreachable from the grammar surface today
 ## because the parser's `atLeastOne` backtracks past them, so the
 ## tests here exercise the constructors directly.
@@ -71,20 +71,20 @@ suite "ast — Identifier":
     check a.hash == a.hash
     check id("foo").hash == id("foo").hash
 
-suite "ast — Struct invariants":
+suite "ast — StructDef invariants":
 
-  test "newStruct rejects an empty field list":
-    let r = newStruct(@[], newLocation())
+  test "newStructDef rejects an empty field list":
+    let r = newStructDef(@[], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "at least one field")
 
-  test "newStruct rejects duplicate field names":
-    let r = newStruct(@[argDef("a", "u8"), argDef("a", "u16")], newLocation())
+  test "newStructDef rejects duplicate field names":
+    let r = newStructDef(@[argDef("a", "u8"), argDef("a", "u16")], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate field")
 
-  test "newStruct accepts unique field names":
-    let r = newStruct(@[argDef("a", "u8"), argDef("b", "u16")], newLocation())
+  test "newStructDef accepts unique field names":
+    let r = newStructDef(@[argDef("a", "u8"), argDef("b", "u16")], newLocation())
     check r.isOk
     check r.get.fields.len == 2
 
@@ -105,21 +105,21 @@ suite "ast — VariantDefinition invariants":
     let r = newVariantDefinition(id("V"), @[], newLocation())
     check r.isOk
 
-suite "ast — Union invariants":
+suite "ast — UnionDef invariants":
 
-  test "newUnion rejects duplicate variant names":
+  test "newUnionDef rejects duplicate variant names":
     let v1 = newVariantDefinition(id("Same"), @[argDef("x", "u8")],
       newLocation()).get
     let v2 = newVariantDefinition(id("Same"), @[argDef("y", "u8")],
       newLocation()).get
-    let r = newUnion(@[v1, v2], newLocation())
+    let r = newUnionDef(@[v1, v2], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate variant")
 
-  test "newUnion accepts a single variant":
+  test "newUnionDef accepts a single variant":
     let v = newVariantDefinition(id("A"), @[argDef("x", "u8")],
       newLocation()).get
-    let r = newUnion(@[v], newLocation())
+    let r = newUnionDef(@[v], newLocation())
     check r.isOk
 
 suite "ast — ArgumentDefinitionList invariants":
@@ -289,17 +289,17 @@ public module Foo:
     check r.isErr
     check errorContains(r.error, "duplicate")
 
-suite "ast — Struct field lookups":
+suite "ast — StructDef field lookups":
 
   test "findFieldId returns the index of an existing field":
-    let s = newStruct(@[argDef("a", "u8"), argDef("b", "u16")],
+    let s = newStructDef(@[argDef("a", "u8"), argDef("b", "u16")],
       newLocation()).get
     let r = s.findFieldId(id("b"))
     check r.isOk
     check r.get == 1
 
   test "findFieldId reports missing field":
-    let s = newStruct(@[argDef("a", "u8")], newLocation()).get
+    let s = newStructDef(@[argDef("a", "u8")], newLocation()).get
     let r = s.findFieldId(id("missing"))
     check r.isErr
     check errorContains(r.error, "missing")
@@ -321,14 +321,14 @@ suite "ast — VariantDefinition field lookups":
     check r.isErr
     check errorContains(r.error, "Ok")
 
-suite "ast — Union variant lookups":
+suite "ast — UnionDef variant lookups":
 
   test "findVariant returns the matching variant":
     let v1 = newVariantDefinition(id("Ok"),
       @[argDef("value", "u8")], newLocation()).get
     let v2 = newVariantDefinition(id("Err"),
       @[argDef("code", "u8")], newLocation()).get
-    let u = newUnion(@[v1, v2], newLocation()).get
+    let u = newUnionDef(@[v1, v2], newLocation()).get
     let r = u.findVariant(id("Err"))
     check r.isOk
     check r.get.name.value == "Err"
@@ -336,7 +336,7 @@ suite "ast — Union variant lookups":
   test "findVariant reports a missing variant":
     let v = newVariantDefinition(id("Ok"),
       @[argDef("value", "u8")], newLocation()).get
-    let u = newUnion(@[v], newLocation()).get
+    let u = newUnionDef(@[v], newLocation()).get
     let r = u.findVariant(id("NotThere"))
     check r.isErr
     check errorContains(r.error, "NotThere")

@@ -142,10 +142,10 @@ proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields:
     of dtkGeneric: requiredImpls.add(definedFieldType.generic)
   ok(requiredImpls)
 
-proc findRequiredImplsForStruct(file: parser.File, fileScope: FileScope, struct: Struct): Result[seq[Generic], string] =
+proc findRequiredImplsForStruct(file: parser.File, fileScope: FileScope, struct: StructDef): Result[seq[Generic], string] =
   findRequiredImplsForFields(file, fileScope, struct.fields)
 
-proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: Union): Result[seq[Generic], string] =
+proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: UnionDef): Result[seq[Generic], string] =
   # Rust-style: a generic name shared across variants is one shared
   # type parameter, deduped by first-seen order across variants.
   var seen: HashSet[Generic]

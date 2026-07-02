@@ -68,28 +68,28 @@ let literalSpec* = oneOf("literal", [
 ])
 
 # ============================================================
-# LiteralType (data block: `literal: "..."`)
+# LiteralDef (data block: `literal: "..."`)
 # ============================================================
 
-type LiteralType* = ref object
+type LiteralDef* = ref object
   value: StringLiteral
   loc: Location
 
-proc newLiteralType*(value: StringLiteral, loc: Location): LiteralType =
-  LiteralType(value: value, loc: loc)
+proc newLiteralDef*(value: StringLiteral, loc: Location): LiteralDef =
+  LiteralDef(value: value, loc: loc)
 
-proc content*(literalType: LiteralType): string = literalType.value.content
-proc loc*(literalType: LiteralType): Location = literalType.loc
+proc content*(literalType: LiteralDef): string = literalType.value.content
+proc loc*(literalType: LiteralDef): Location = literalType.loc
 
-proc asl*(l: LiteralType): seq[string] =
+proc asl*(l: LiteralDef): seq[string] =
   @[fmt"literal: {asl(l.value)}"]
 
-let literalTypeSpec* = Spec[LiteralType](
+let literalTypeSpec* = Spec[LiteralDef](
   name: "literal_type",
-  parseFn: proc(parser: Parser): Result[LiteralType, ParserError] =
+  parseFn: proc(parser: Parser): Result[LiteralDef, ParserError] =
   discard ? parser.run(indentationSpec)
   let literalKeywordLoc = ? parser.run(keywordSpec("literal"))
   discard ? parser.run(colonWithSpacesSpec)
   let literalType = ? parser.run(stringLiteralSpec)
-  ok(newLiteralType(literalType, literalKeywordLoc))
+  ok(newLiteralDef(literalType, literalKeywordLoc))
 )

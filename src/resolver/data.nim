@@ -27,33 +27,33 @@ proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgume
       if genericType notin genericTypeIndex:
         genericTypeIndex[genericType] = genericTypeIndex.len
 
-# ResolvedStruct
-type ResolvedStruct* = ref object
-  parsed: Struct
+# ResolvedStructDef
+type ResolvedStructDef* = ref object
+  parsed: StructDef
   fields: seq[ResolvedArgumentDefinition]
   genericTypeIndex: Table[ResolvedGenericArgumentType, int]
 
-proc newResolvedStruct*(parsed: Struct, fields: seq[ResolvedArgumentDefinition], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedStruct =
-  ResolvedStruct(parsed: parsed, fields: fields, genericTypeIndex: genericTypeIndex)
+proc newResolvedStructDef*(parsed: StructDef, fields: seq[ResolvedArgumentDefinition], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedStructDef =
+  ResolvedStructDef(parsed: parsed, fields: fields, genericTypeIndex: genericTypeIndex)
 
-proc parsed*(struct: ResolvedStruct): Struct = struct.parsed
-proc loc*(struct: ResolvedStruct): Location = struct.parsed.loc
-proc fields*(struct: ResolvedStruct): seq[ResolvedArgumentDefinition] = struct.fields
+proc parsed*(struct: ResolvedStructDef): StructDef = struct.parsed
+proc loc*(struct: ResolvedStructDef): Location = struct.parsed.loc
+proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDefinition] = struct.fields
 
-proc requires*(struct: ResolvedStruct): seq[ResolvedGenericArgumentType] =
+proc requires*(struct: ResolvedStructDef): seq[ResolvedGenericArgumentType] =
   var requires = newSeq[ResolvedGenericArgumentType](struct.genericTypeIndex.len)
   for genericType, index in struct.genericTypeIndex:
     requires[index] = genericType
   return requires
 
-proc resolveStruct*(app: App, file: parser.File, fileScope: FileScope, module: Module, struct: Struct): Result[ResolvedStruct, string] =
+proc resolveStructDef*(app: App, file: parser.File, fileScope: FileScope, module: Module, struct: StructDef): Result[ResolvedStructDef, string] =
   var resolvedFields: seq[ResolvedArgumentDefinition]
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for field in struct.fields:
     let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
-  ok(newResolvedStruct(struct, resolvedFields, genericTypeIndex))
+  ok(newResolvedStructDef(struct, resolvedFields, genericTypeIndex))
 
 # ResolvedVariant
 type ResolvedVariant* = ref object
@@ -79,18 +79,18 @@ proc resolveVariant(app: App, file: parser.File, fileScope: FileScope, module: M
     resolvedFields.add(resolvedField)
   ok(newResolvedVariant(variant, resolvedFields))
 
-# ResolvedUnion
-type ResolvedUnion* = ref object
-  parsed: Union
+# ResolvedUnionDef
+type ResolvedUnionDef* = ref object
+  parsed: UnionDef
   variants: seq[ResolvedVariant]
   genericTypeIndex: Table[ResolvedGenericArgumentType, int]
 
-proc newResolvedUnion*(parsed: Union, variants: seq[ResolvedVariant], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedUnion =
-  ResolvedUnion(parsed: parsed, variants: variants, genericTypeIndex: genericTypeIndex)
+proc newResolvedUnionDef*(parsed: UnionDef, variants: seq[ResolvedVariant], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedUnionDef =
+  ResolvedUnionDef(parsed: parsed, variants: variants, genericTypeIndex: genericTypeIndex)
 
-proc loc*(union: ResolvedUnion): Location = union.parsed.loc
-proc variants*(union: ResolvedUnion): seq[ResolvedVariant] = union.variants
-proc requires*(union: ResolvedUnion): seq[ResolvedGenericArgumentType] =
+proc loc*(union: ResolvedUnionDef): Location = union.parsed.loc
+proc variants*(union: ResolvedUnionDef): seq[ResolvedVariant] = union.variants
+proc requires*(union: ResolvedUnionDef): seq[ResolvedGenericArgumentType] =
   ## One union scope: a generic name shared across variants is one
   ## shared type parameter (Rust style), so dedup by underlying Generic
   ## identity. Within-variant duplicates are already impossible
@@ -100,14 +100,14 @@ proc requires*(union: ResolvedUnion): seq[ResolvedGenericArgumentType] =
     requires[index] = genericType
   return requires
 
-proc resolveUnion*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, union: Union): Result[ResolvedUnion, string] =
+proc resolveUnionDef*(app: App, file: parser.File, fileScope: FileScope,
+    module: Module, union: UnionDef): Result[ResolvedUnionDef, string] =
   var resolvedVariants: seq[ResolvedVariant]
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for variant in union.variants:
     let resolvedVariant = ? resolveVariant(app, file, fileScope, module, variant, genericTypeIndex)
     resolvedVariants.add(resolvedVariant)
-  ok(newResolvedUnion(union, resolvedVariants, genericTypeIndex))
+  ok(newResolvedUnionDef(union, resolvedVariants, genericTypeIndex))
 
 # ResolvedData
 type
@@ -115,29 +115,29 @@ type
     rdkLiteral, rdkStruct, rdkUnion
   ResolvedData* = ref object
     case kind: ResolvedDataKind
-    of rdkLiteral: literal: ResolvedLiteralType
-    of rdkStruct: struct: ResolvedStruct
-    of rdkUnion: union: ResolvedUnion
+    of rdkLiteral: literal: ResolvedLiteralDef
+    of rdkStruct: struct: ResolvedStructDef
+    of rdkUnion: union: ResolvedUnionDef
 
-proc newResolvedData*(literal: ResolvedLiteralType): ResolvedData =
+proc newResolvedData*(literal: ResolvedLiteralDef): ResolvedData =
   ResolvedData(kind: rdkLiteral, literal: literal)
 
-proc newResolvedData*(struct: ResolvedStruct): ResolvedData =
+proc newResolvedData*(struct: ResolvedStructDef): ResolvedData =
   ResolvedData(kind: rdkStruct, struct: struct)
 
-proc newResolvedData*(union: ResolvedUnion): ResolvedData =
+proc newResolvedData*(union: ResolvedUnionDef): ResolvedData =
   ResolvedData(kind: rdkUnion, union: union)
 
 proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
-proc literal*(data: ResolvedData): ResolvedLiteralType =
+proc literal*(data: ResolvedData): ResolvedLiteralDef =
   assert data.kind == rdkLiteral,
     fmt"ResolvedData.literal accessed but kind is {data.kind}"
   data.literal
-proc struct*(data: ResolvedData): ResolvedStruct =
+proc struct*(data: ResolvedData): ResolvedStructDef =
   assert data.kind == rdkStruct,
     fmt"ResolvedData.struct accessed but kind is {data.kind}"
   data.struct
-proc union*(data: ResolvedData): ResolvedUnion =
+proc union*(data: ResolvedData): ResolvedUnionDef =
   assert data.kind == rdkUnion,
     fmt"ResolvedData.union accessed but kind is {data.kind}"
   data.union
@@ -151,12 +151,12 @@ proc resolveDataBlock*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, data: DataBlock): Result[ResolvedData, string] =
   case data.kind:
   of dbkLiteral:
-    let resolvedLiteralType = ? resolveLiteralType(file, data.literal)
+    let resolvedLiteralType = ? resolveLiteralDef(file, data.literal)
     ok(newResolvedData(resolvedLiteralType))
   of dbkStruct:
-    let resolvedStruct = ? resolveStruct(app, file, fileScope, module,
+    let resolvedStruct = ? resolveStructDef(app, file, fileScope, module,
       data.struct)
     ok(newResolvedData(resolvedStruct))
   of dbkUnion:
-    let resolvedUnion = ? resolveUnion(app, file, fileScope, module, data.union)
+    let resolvedUnion = ? resolveUnionDef(app, file, fileScope, module, data.union)
     ok(newResolvedData(resolvedUnion))

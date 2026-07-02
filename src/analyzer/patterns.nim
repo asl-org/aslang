@@ -223,7 +223,7 @@ type
     of alpskI32: i32Values: HashSet[int32]
     of alpskI64: i64Values: HashSet[int64]
 
-proc newAnalyzedLiteralPatternScope*(literal: ResolvedLiteralType, totalCases: int): Result[AnalyzedLiteralPatternScope, string] =
+proc newAnalyzedLiteralPatternScope*(literal: ResolvedLiteralDef, totalCases: int): Result[AnalyzedLiteralPatternScope, string] =
   case literal:
   of rltkU8: ok(AnalyzedLiteralPatternScope(kind: alpskU8,  totalCases: totalCases, variablePatternFound: false, u8Values:  initHashSet[uint8]()))
   of rltkU16: ok(AnalyzedLiteralPatternScope(kind: alpskU16, totalCases: totalCases, variablePatternFound: false, u16Values: initHashSet[uint16]()))
@@ -294,7 +294,7 @@ proc bindings*(pattern: AnalyzedVariantPattern): seq[AnalyzedArgumentDefinition]
     bindings.add(bindingDef)
   return bindings
 
-proc analyzeVariantCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, variantPattern: VariantPattern, union: AnalyzedUnion): Result[AnalyzedVariantPattern, string] =
+proc analyzeVariantCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, variantPattern: VariantPattern, union: AnalyzedUnionDef): Result[AnalyzedVariantPattern, string] =
   let variant = ? union.findVariant(variantPattern.name)
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variantPattern.fields:
@@ -326,7 +326,7 @@ proc bindings*(pattern: AnalyzedCasePattern): seq[AnalyzedArgumentDefinition] =
   of acpkVariable: @[pattern.variable]
   of acpkInteger: newSeq[AnalyzedArgumentDefinition]()
 
-proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnion): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} UNREACHABLE: integer literals are not allowed in union case pattern")
   of rcpkVariable:

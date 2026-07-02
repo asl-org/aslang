@@ -8,18 +8,18 @@ import literals
 import argtypes
 
 # ============================================================
-# Struct
+# StructDef
 # ============================================================
 
-type Struct* = ref object
+type StructDef* = ref object
   fields: seq[ArgumentDefinition]
   fieldIndex: Table[Identifier, int]
   loc: Location
 
-proc fields*(s: Struct): seq[ArgumentDefinition] = s.fields
-proc loc*(s: Struct): Location = s.loc
+proc fields*(s: StructDef): seq[ArgumentDefinition] = s.fields
+proc loc*(s: StructDef): Location = s.loc
 
-proc newStruct*(fields: seq[ArgumentDefinition], loc: Location): Result[Struct, ParserError] =
+proc newStructDef*(fields: seq[ArgumentDefinition], loc: Location): Result[StructDef, ParserError] =
   if fields.len == 0:
     return err(newParserError("struct must have at least one field", loc))
   var fieldIndex: Table[Identifier, int]
@@ -29,15 +29,15 @@ proc newStruct*(fields: seq[ArgumentDefinition], loc: Location): Result[Struct, 
       let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, field.loc))
     fieldIndex[field.name] = index
-  ok(Struct(fields: fields, fieldIndex: fieldIndex, loc: loc))
+  ok(StructDef(fields: fields, fieldIndex: fieldIndex, loc: loc))
 
-proc asl(s: Struct, indentWidth: uint32): seq[string] =
+proc asl(s: StructDef, indentWidth: uint32): seq[string] =
   result.add("struct:")
   let indent = " ".repeat(indentWidth)
   for field in s.fields:
     result.add(fmt"{indent}{asl(field)}")
 
-proc findFieldId*(struct: Struct, name: Identifier): Result[int, string] =
+proc findFieldId*(struct: StructDef, name: Identifier): Result[int, string] =
   if name notin struct.fieldIndex:
     err(fmt"{name.loc} field `{name.asl}` is not present in the struct")
   else:
@@ -66,8 +66,8 @@ let fieldLineSpec = Spec[ArgumentDefinition](
 
 let structSpec* = blockSpec("struct", structHeaderSpec,
   atLeastOne(fieldLineSpec),
-  proc(h: Location, b: seq[ArgumentDefinition]): Result[Struct, ParserError] =
-  newStruct(b, h))
+  proc(h: Location, b: seq[ArgumentDefinition]): Result[StructDef, ParserError] =
+  newStructDef(b, h))
 
 # ============================================================
 # VariantDefinition
@@ -126,15 +126,15 @@ let variantDefinitionLineSpec = Spec[VariantDefinition](
 )
 
 # ============================================================
-# Union
+# UnionDef
 # ============================================================
 
-type Union* = ref object
+type UnionDef* = ref object
   variants: seq[VariantDefinition]
   variantIndex: Table[Identifier, int]
   loc: Location
 
-proc newUnion*(variants: seq[VariantDefinition], loc: Location): Result[Union, ParserError] =
+proc newUnionDef*(variants: seq[VariantDefinition], loc: Location): Result[UnionDef, ParserError] =
   var variantIndex: Table[Identifier, int]
   for index, variant in variants:
     if variant.name in variantIndex:
@@ -142,24 +142,24 @@ proc newUnion*(variants: seq[VariantDefinition], loc: Location): Result[Union, P
       let msg = fmt"duplicate variant encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, variant.loc))
     variantIndex[variant.name] = index
-  ok(Union(variants: variants, variantIndex: variantIndex, loc: loc))
+  ok(UnionDef(variants: variants, variantIndex: variantIndex, loc: loc))
 
-proc variants*(u: Union): seq[VariantDefinition] = u.variants
-proc loc*(u: Union): Location = u.loc
+proc variants*(u: UnionDef): seq[VariantDefinition] = u.variants
+proc loc*(u: UnionDef): Location = u.loc
 
-proc asl(u: Union, indentWidth: uint32): seq[string] =
+proc asl(u: UnionDef, indentWidth: uint32): seq[string] =
   result.add("union:")
   let indent = " ".repeat(indentWidth)
   for variant in u.variants:
     result.add(fmt"{indent}{asl(variant)}")
 
-proc findVariantId(union: Union, variant: Identifier): Result[int, string] =
+proc findVariantId(union: UnionDef, variant: Identifier): Result[int, string] =
   if variant notin union.variantIndex:
     err(fmt"{variant.loc} variant `{variant.asl}` does not exist in union")
   else:
     ok(union.variantIndex[variant])
 
-proc findVariant*(union: Union, variant: Identifier): Result[VariantDefinition, string] =
+proc findVariant*(union: UnionDef, variant: Identifier): Result[VariantDefinition, string] =
   let variantId = ? union.findVariantId(variant)
   ok(union.variants[variantId])
 
@@ -174,8 +174,8 @@ let unionHeaderSpec = Spec[Location](
 
 let unionSpec* = blockSpec("union", unionHeaderSpec,
   atLeastOne(variantDefinitionLineSpec),
-  proc(h: Location, b: seq[VariantDefinition]): Result[Union, ParserError] =
-  newUnion(b, h))
+  proc(h: Location, b: seq[VariantDefinition]): Result[UnionDef, ParserError] =
+  newUnionDef(b, h))
 
 # ============================================================
 # DataBlock
@@ -186,29 +186,29 @@ type
     dbkLiteral, dbkStruct, dbkUnion
   DataBlock* = ref object
     case kind: DataBlockKind
-    of dbkLiteral: literal: LiteralType
-    of dbkStruct: struct: Struct
-    of dbkUnion: union: Union
+    of dbkLiteral: literal: LiteralDef
+    of dbkStruct: struct: StructDef
+    of dbkUnion: union: UnionDef
 
-proc newDataBlock*(l: LiteralType): DataBlock =
+proc newDataBlock*(l: LiteralDef): DataBlock =
   DataBlock(kind: dbkLiteral, literal: l)
 
-proc newDataBlock*(s: Struct): DataBlock =
+proc newDataBlock*(s: StructDef): DataBlock =
   DataBlock(kind: dbkStruct, struct: s)
 
-proc newDataBlock*(u: Union): DataBlock =
+proc newDataBlock*(u: UnionDef): DataBlock =
   DataBlock(kind: dbkUnion, union: u)
 
 proc kind*(db: DataBlock): DataBlockKind = db.kind
-proc literal*(db: DataBlock): LiteralType =
+proc literal*(db: DataBlock): LiteralDef =
   assert db.kind == dbkLiteral,
     fmt"DataBlock.literal accessed but kind is {db.kind}"
   db.literal
-proc struct*(db: DataBlock): Struct =
+proc struct*(db: DataBlock): StructDef =
   assert db.kind == dbkStruct,
     fmt"DataBlock.struct accessed but kind is {db.kind}"
   db.struct
-proc union*(db: DataBlock): Union =
+proc union*(db: DataBlock): UnionDef =
   assert db.kind == dbkUnion,
     fmt"DataBlock.union accessed but kind is {db.kind}"
   db.union
@@ -225,13 +225,13 @@ proc asl*(db: DataBlock, indentWidth: uint32): seq[string] =
   of dbkStruct: asl(db.struct, indentWidth)
   of dbkUnion: asl(db.union, indentWidth)
 
-proc struct*(db: DataBlock, module: Identifier): Result[Struct, string] =
+proc struct*(db: DataBlock, module: Identifier): Result[StructDef, string] =
   case db.kind:
   of dbkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
   of dbkUnion: err(fmt"{db.loc} module `{module.asl}` is a union")
   of dbkStruct: ok(db.struct)
 
-proc union*(db: DataBlock, module: Identifier): Result[Union, string] =
+proc union*(db: DataBlock, module: Identifier): Result[UnionDef, string] =
   case db.kind:
   of dbkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
   of dbkStruct: err(fmt"{db.loc} module `{module.asl}` is a struct")
@@ -239,9 +239,9 @@ proc union*(db: DataBlock, module: Identifier): Result[Union, string] =
 
 let dataBlockSpec* = oneOf("data_block", [
   literalTypeSpec.map("literal_data",
-    proc(v: LiteralType): DataBlock = newDataBlock(v)),
+    proc(v: LiteralDef): DataBlock = newDataBlock(v)),
   structSpec.map("struct_data",
-    proc(v: Struct): DataBlock = newDataBlock(v)),
+    proc(v: StructDef): DataBlock = newDataBlock(v)),
   unionSpec.map("union_data",
-    proc(v: Union): DataBlock = newDataBlock(v)),
+    proc(v: UnionDef): DataBlock = newDataBlock(v)),
 ])

@@ -5,13 +5,13 @@ import results, strformat
 
 import parser
 
-# ResolvedLiteralType
-type ResolvedLiteralType* = enum
+# ResolvedLiteralDef
+type ResolvedLiteralDef* = enum
   rltkU8, rltkU16, rltkU32, rltkU64
   rltkI8, rltkI16, rltkI32, rltkI64
   rltkF32, rltkF64, rltkString, rltkPointer
 
-proc resolveLiteralType*(file: parser.File, literal: LiteralType): Result[ResolvedLiteralType, string] =
+proc resolveLiteralDef*(file: parser.File, literal: LiteralDef): Result[ResolvedLiteralDef, string] =
   case literal.content:
   of "u8": ok(rltkU8)
   of "u16": ok(rltkU16)
