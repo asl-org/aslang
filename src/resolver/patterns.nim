@@ -48,7 +48,7 @@ proc loc*(pattern: ResolvedCasePattern): Location =
 proc resolveCasePattern*(casePattern: CasePattern): Result[
     ResolvedCasePattern, string] =
   case casePattern.kind:
-  of cpkIntegerLiteral:
+  of cpkInteger:
     ok(newResolvedCasePattern(casePattern.intLit))
   of cpkVariable:
     ok(newResolvedCasePattern(casePattern.variable))

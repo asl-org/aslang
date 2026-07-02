@@ -98,15 +98,15 @@ let unionPatternSpec* = Spec[UnionPattern](
 
 type
   CasePatternKind* = enum
-    cpkIntegerLiteral, cpkVariable, cpkUnion
+    cpkInteger, cpkVariable, cpkUnion
   CasePattern* = ref object
     case kind: CasePatternKind
-    of cpkIntegerLiteral: intLit: IntegerLiteral
+    of cpkInteger: intLit: IntegerLiteral
     of cpkVariable: variable: Identifier
     of cpkUnion: variant: UnionPattern
 
 proc newCasePattern*(intLit: IntegerLiteral): CasePattern =
-  CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
+  CasePattern(kind: cpkInteger, intLit: intLit)
 
 proc newCasePattern*(variable: Identifier): CasePattern =
   CasePattern(kind: cpkVariable, variable: variable)
@@ -117,21 +117,21 @@ proc newCasePattern*(variant: UnionPattern): CasePattern =
 proc kind*(cp: CasePattern): CasePatternKind = cp.kind
 proc loc*(cp: CasePattern): Location =
   case cp.kind:
-  of cpkIntegerLiteral: cp.intLit.loc
+  of cpkInteger: cp.intLit.loc
   of cpkVariable: cp.variable.loc
   of cpkUnion: cp.variant.loc
 
 proc bindings*(cp: CasePattern): seq[Identifier] =
   var bindings: seq[Identifier]
   case cp.kind:
-  of cpkIntegerLiteral: discard
+  of cpkInteger: discard
   of cpkVariable: bindings.add(cp.variable)
   of cpkUnion: bindings.add(cp.variant.bindings)
 
   return bindings
 
 proc intLit*(cp: CasePattern): IntegerLiteral =
-  assert cp.kind == cpkIntegerLiteral,
+  assert cp.kind == cpkInteger,
     fmt"CasePattern.intLit accessed but kind is {cp.kind}"
   cp.intLit
 
@@ -147,7 +147,7 @@ proc variant*(cp: CasePattern): UnionPattern =
 
 proc asl*(pattern: CasePattern): string =
   case pattern.kind:
-  of cpkIntegerLiteral: asl(pattern.intLit)
+  of cpkInteger: asl(pattern.intLit)
   of cpkVariable: asl(pattern.variable)
   of cpkUnion: asl(pattern.variant)
 
