@@ -24,12 +24,15 @@ rule says so.
 - `B*` — zero or more `B`, in order.
 - `B?` — an optional `B`.
 - `# comment` — design-intent note attached to the rule above it.
-- Role-typed identifiers (`VarName`, `ModuleName`, `GenericName`,
-  `FunctionName`, `TypeName`, `Variant`, `Field`, `Binding`,
-  `Property`, `Source`, `LiteralRef`, `ImportedType`) are distinct
-  types wrapping `Identifier`. Structurally they're all identifiers;
-  the type system prevents mixing them so passing a `ModuleName`
-  where a `VarName` is expected is a compile error, not a bug.
+- Role names (`VarName`, `ModuleName`, `GenericName`, `FunctionName`,
+  `TypeName`, `Variant`, `Field`, `Binding`, `Property`, `Source`,
+  `LiteralRef`, `ImportedType`) are *documentation labels* — they
+  identify the role each `Identifier` plays at that position in the
+  grammar. They are NOT distinct types in the code; every one of
+  them is just an `Identifier` at runtime. Their purpose here is
+  readability of the grammar and reviewer intent (a rule that reads
+  `ModuleName` at position N is clearer than one that reads
+  `Identifier` twelve times).
 
 ## Grammar
 
@@ -195,10 +198,13 @@ contributors can find the *why* alongside the *what*.
   syntax is a separate question), `UnionInitializer: … KeywordArgument*`
   (matches the empty-variant cardinality).
 
-- **Role-typed identifiers make misuse a compile error.** Passing a
-  `ModuleName` where a `VarName` is expected — a class of "I copied
-  the wrong string" bug — becomes a type mismatch instead of a
-  runtime-lookup miss three passes later.
+- **Role names are documentation, not distinct types.** The grammar
+  labels each identifier position by its role (`VarName`,
+  `ModuleName`, `GenericName`, etc.) so the shape is readable, but
+  in the code every one of these is just an `Identifier`. Distinct
+  newtypes were considered and dropped: the borrow-op boilerplate
+  outweighed the compile-error protection for what turns out to be
+  a small class of realistic mistakes.
 
 - **Discard (`_ = expr`) is a regular `Assignment` with `VarName = "_"`.**
   `_` is a valid `Identifier`. No dedicated `Discard` statement

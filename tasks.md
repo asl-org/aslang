@@ -14,7 +14,7 @@
 
 - [x] Rename data-block variants to match the grammar's `*Def` suffix: `Struct` → `StructDef`, `Union` → `UnionDef`, existing data-kind `Literal` → `LiteralDef`. Mechanical wave across parser + resolver + analyzer + accessors + tests. Deliberately low-value on its own — this task is a naming alignment so later refactors read cleanly.
 
-- [ ] Introduce role-typed identifiers as distinct newtypes wrapping `Identifier`: `VarName`, `ModuleName`, `GenericName`, `FunctionName`, `TypeName`, `Variant`, `Field`, `Binding`, `Property`, `Source`, `LiteralRef`, `ImportedType`. Migrate call sites layer by layer so mixing them up becomes a compile error. Kills a whole class of "I passed a module name where a variable name was expected" slip-ups.
+- [x] ~~Introduce role-typed identifiers as distinct newtypes wrapping `Identifier`~~ — dropped. The role names (`VarName`, `ModuleName`, `GenericName`, `FunctionName`, `TypeName`, `Variant`, `Field`, `Binding`, `Property`, `Source`, `LiteralRef`, `ImportedType`) in `grammar.md` are documentation labels that clarify each identifier position's role at review time; in the code every one of them stays as `Identifier`. Distinct newtypes would have required ~60 lines of borrow-op boilerplate to protect against a small class of realistic mistakes — the readability-of-the-grammar goal is enough on its own. Left checked as "handled" so the roadmap numbering stays stable.
 
 - [ ] Move `Setter` from `Expression` to `Statement` in the AST types. Add `VariablePattern` as a first-class `CaseDef` variant (structurally distinct from `LiteralPattern`, `UnionPattern`). Both changes align the AST with what the grammar actually says and eliminate downstream "is this really a value?" and "is this literal or variable?" branches.
 
