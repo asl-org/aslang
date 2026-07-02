@@ -7,46 +7,46 @@ import identifiers
 import numbers
 
 # ============================================================
-# VariantPatternField
+# UnionPatternField
 # ============================================================
 
-type VariantPatternField* = ref object
+type UnionPatternField* = ref object
   name: Identifier
   binding: Identifier
   loc: Location
 
-proc newVariantPatternField*(name: Identifier, binding: Identifier,
-    loc: Location): VariantPatternField =
-  VariantPatternField(name: name, binding: binding, loc: loc)
+proc newUnionPatternField*(name: Identifier, binding: Identifier,
+    loc: Location): UnionPatternField =
+  UnionPatternField(name: name, binding: binding, loc: loc)
 
-proc name*(field: VariantPatternField): Identifier = field.name
-proc binding*(field: VariantPatternField): Identifier = field.binding
-proc loc*(field: VariantPatternField): Location = field.loc
+proc name*(field: UnionPatternField): Identifier = field.name
+proc binding*(field: UnionPatternField): Identifier = field.binding
+proc loc*(field: UnionPatternField): Location = field.loc
 
-proc asl(field: VariantPatternField): string =
+proc asl(field: UnionPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"
 
 # Variant pattern field: name ":" binding (both identifiers)
-let variantPatternFieldSpec* = Spec[VariantPatternField](
+let unionPatternFieldSpec* = Spec[UnionPatternField](
   name: "variant_pattern_field",
-  parseFn: proc(parser: Parser): Result[VariantPatternField, ParserError] =
+  parseFn: proc(parser: Parser): Result[UnionPatternField, ParserError] =
   let name = ? parser.run(identifierSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let binding = ? parser.run(identifierSpec)
-  ok(newVariantPatternField(name, binding, name.loc))
+  ok(newUnionPatternField(name, binding, name.loc))
 )
 
 # ============================================================
-# VariantPattern
+# UnionPattern
 # ============================================================
 
-type VariantPattern* = ref object
+type UnionPattern* = ref object
   variant: Identifier
-  fields: seq[VariantPatternField]
+  fields: seq[UnionPatternField]
   bindings: seq[Identifier]
   loc: Location
 
-proc newVariantPattern*(variant: Identifier, fields: seq[VariantPatternField]): Result[VariantPattern, ParserError] =
+proc newUnionPattern*(variant: Identifier, fields: seq[UnionPatternField]): Result[UnionPattern, ParserError] =
   var nameIndex: Table[Identifier, int]
   var bindingIndex: Table[Identifier, int]
   var bindings: seq[Identifier]
@@ -67,14 +67,14 @@ proc newVariantPattern*(variant: Identifier, fields: seq[VariantPatternField]): 
       bindings.add(field.binding)
       bindingIndex[field.binding] = index
 
-  ok(VariantPattern(variant: variant, fields: fields, bindings: bindings))
+  ok(UnionPattern(variant: variant, fields: fields, bindings: bindings))
 
-proc name*(vp: VariantPattern): Identifier = vp.variant
-proc fields*(vp: VariantPattern): seq[VariantPatternField] = vp.fields
-proc bindings*(vp: VariantPattern): seq[Identifier] = vp.bindings
-proc loc*(vp: VariantPattern): Location = vp.name.loc
+proc name*(vp: UnionPattern): Identifier = vp.variant
+proc fields*(vp: UnionPattern): seq[UnionPatternField] = vp.fields
+proc bindings*(vp: UnionPattern): seq[Identifier] = vp.bindings
+proc loc*(vp: UnionPattern): Location = vp.name.loc
 
-proc asl(vp: VariantPattern): string =
+proc asl(vp: UnionPattern): string =
   result = fmt"{asl(vp.variant)} " & "{"
   for i, field in vp.fields:
     if i > 0: result.add(", ")
@@ -82,14 +82,14 @@ proc asl(vp: VariantPattern): string =
   result.add(" }")
 
 # Variant pattern: VariantName { field: binding, field: binding }
-let variantPatternSpec* = Spec[VariantPattern](
+let unionPatternSpec* = Spec[UnionPattern](
   name: "variant_pattern",
-  parseFn: proc(parser: Parser): Result[VariantPattern, ParserError] =
+  parseFn: proc(parser: Parser): Result[UnionPattern, ParserError] =
   let name = ? parser.run(identifierSpec)
   discard parser.run(any(spaceSpec))
   let fields = ? parser.run(contained("variant_fields", "{",
-    separatedBy(variantPatternFieldSpec, commaWithSpacesSpec), "}"))
-  newVariantPattern(name, fields)
+    separatedBy(unionPatternFieldSpec, commaWithSpacesSpec), "}"))
+  newUnionPattern(name, fields)
 )
 
 # ============================================================
@@ -98,12 +98,12 @@ let variantPatternSpec* = Spec[VariantPattern](
 
 type
   CasePatternKind* = enum
-    cpkIntegerLiteral, cpkVariable, cpkVariant
+    cpkIntegerLiteral, cpkVariable, cpkUnion
   CasePattern* = ref object
     case kind: CasePatternKind
     of cpkIntegerLiteral: intLit: IntegerLiteral
     of cpkVariable: variable: Identifier
-    of cpkVariant: variant: VariantPattern
+    of cpkUnion: variant: UnionPattern
 
 proc newCasePattern*(intLit: IntegerLiteral): CasePattern =
   CasePattern(kind: cpkIntegerLiteral, intLit: intLit)
@@ -111,22 +111,22 @@ proc newCasePattern*(intLit: IntegerLiteral): CasePattern =
 proc newCasePattern*(variable: Identifier): CasePattern =
   CasePattern(kind: cpkVariable, variable: variable)
 
-proc newCasePattern*(variant: VariantPattern): CasePattern =
-  CasePattern(kind: cpkVariant, variant: variant)
+proc newCasePattern*(variant: UnionPattern): CasePattern =
+  CasePattern(kind: cpkUnion, variant: variant)
 
 proc kind*(cp: CasePattern): CasePatternKind = cp.kind
 proc loc*(cp: CasePattern): Location =
   case cp.kind:
   of cpkIntegerLiteral: cp.intLit.loc
   of cpkVariable: cp.variable.loc
-  of cpkVariant: cp.variant.loc
+  of cpkUnion: cp.variant.loc
 
 proc bindings*(cp: CasePattern): seq[Identifier] =
   var bindings: seq[Identifier]
   case cp.kind:
   of cpkIntegerLiteral: discard
   of cpkVariable: bindings.add(cp.variable)
-  of cpkVariant: bindings.add(cp.variant.bindings)
+  of cpkUnion: bindings.add(cp.variant.bindings)
 
   return bindings
 
@@ -140,8 +140,8 @@ proc variable*(cp: CasePattern): Identifier =
     fmt"CasePattern.variable accessed but kind is {cp.kind}"
   cp.variable
 
-proc variant*(cp: CasePattern): VariantPattern =
-  assert cp.kind == cpkVariant,
+proc variant*(cp: CasePattern): UnionPattern =
+  assert cp.kind == cpkUnion,
     fmt"CasePattern.variant accessed but kind is {cp.kind}"
   cp.variant
 
@@ -149,13 +149,13 @@ proc asl*(pattern: CasePattern): string =
   case pattern.kind:
   of cpkIntegerLiteral: asl(pattern.intLit)
   of cpkVariable: asl(pattern.variable)
-  of cpkVariant: asl(pattern.variant)
+  of cpkUnion: asl(pattern.variant)
 
 let casePatternSpec* = oneOf("case_pattern", [
   integerLiteralSpec.map("integer_pattern",
     proc(v: IntegerLiteral): CasePattern = newCasePattern(v)),
-  variantPatternSpec.map("variant_pattern",
-    proc(v: VariantPattern): CasePattern = newCasePattern(v)),
+  unionPatternSpec.map("variant_pattern",
+    proc(v: UnionPattern): CasePattern = newCasePattern(v)),
   identifierSpec.map("variable_pattern",
     proc(v: Identifier): CasePattern = newCasePattern(v)),
 ])

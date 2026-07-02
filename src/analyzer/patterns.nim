@@ -171,15 +171,15 @@ proc parseFloat*[T: SomeFloat](s: string): Option[T] =
     if temp.classify in {fcInf, fcNegInf, fcNan}: return none(T)
     some(temp)
 
-type AnalyzedVariantPatternScope* = ref object
+type AnalyzedUnionPatternScope* = ref object
   variablePatternFound: bool
   totalCases: int
   variants: HashSet[Identifier]
 
-proc newAnalyzedVariantPatternScope*(totalCases: int): AnalyzedVariantPatternScope =
-  AnalyzedVariantPatternScope(variablePatternFound: false, totalCases: totalCases, variants: initHashSet[Identifier]())
+proc newAnalyzedUnionPatternScope*(totalCases: int): AnalyzedUnionPatternScope =
+  AnalyzedUnionPatternScope(variablePatternFound: false, totalCases: totalCases, variants: initHashSet[Identifier]())
 
-proc update*(scope: AnalyzedVariantPatternScope, id: int, pattern: ResolvedCasePattern): Result[AnalyzedVariantPatternScope, string] =
+proc update*(scope: AnalyzedUnionPatternScope, id: int, pattern: ResolvedCasePattern): Result[AnalyzedUnionPatternScope, string] =
   case pattern.kind:
   of rcpkInteger:
     err(fmt"{pattern.loc} expected a union variant but found integer literal")
@@ -189,7 +189,7 @@ proc update*(scope: AnalyzedVariantPatternScope, id: int, pattern: ResolvedCaseP
     else:
       scope.variablePatternFound = true
       ok(scope)
-  of rcpkVariant:
+  of rcpkUnion:
     if pattern.variant.name in scope.variants:
       err(fmt"{pattern.variant.loc} found duplicate variant `{pattern.variant.name.asl}`")
     else:
@@ -197,7 +197,7 @@ proc update*(scope: AnalyzedVariantPatternScope, id: int, pattern: ResolvedCaseP
       ok(scope)
 
 # NOTE: If there is no variable pattern in union matching then all branches must be covered
-proc hasUncoveredCases*(scope: AnalyzedVariantPatternScope, totalVariants: int, loc: Location): Result[void, string] =
+proc hasUncoveredCases*(scope: AnalyzedUnionPatternScope, totalVariants: int, loc: Location): Result[void, string] =
   # TODO: improve error message by showing the uncovered variants
   if scope.variablePatternFound:
     if scope.variants.len < totalVariants: ok()
@@ -262,7 +262,7 @@ proc checkDuplicate(scope: AnalyzedLiteralPatternScope, integer: IntegerLiteral)
 
 proc update*(scope: AnalyzedLiteralPatternScope, id: int, pattern: ResolvedCasePattern): Result[AnalyzedLiteralPatternScope, string] =
   case pattern.kind:
-  of rcpkVariant:
+  of rcpkUnion:
     err(fmt"{pattern.loc} expected a literal pattern but found variant pattern")
   of rcpkVariable:
     if id != scope.totalCases - 1:
@@ -279,40 +279,40 @@ proc hasUncoveredCases*(scope: AnalyzedLiteralPatternScope, loc: Location): Resu
   if scope.variablePatternFound: ok()
   else: err(fmt"{loc} variable case pattern binding is required for integer literal pattern")
 
-type AnalyzedVariantPattern* = ref object
-  resolved: VariantPattern
+type AnalyzedUnionPattern* = ref object
+  resolved: UnionPattern
   variant: AnalyzedVariant
   fields: seq[AnalyzedArgumentDefinition]
 
-proc newAnalyzedVariantPattern*(resolved: VariantPattern, variant: AnalyzedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedVariantPattern =
-  AnalyzedVariantPattern(resolved: resolved, variant: variant, fields: fields)
+proc newAnalyzedUnionPattern*(resolved: UnionPattern, variant: AnalyzedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedUnionPattern =
+  AnalyzedUnionPattern(resolved: resolved, variant: variant, fields: fields)
 
-proc bindings*(pattern: AnalyzedVariantPattern): seq[AnalyzedArgumentDefinition] =
+proc bindings*(pattern: AnalyzedUnionPattern): seq[AnalyzedArgumentDefinition] =
   var bindings: seq[AnalyzedArgumentDefinition]
   for (field, argDef) in zip(pattern.resolved.fields, pattern.fields):
     let bindingDef = newAnalyzedArgumentDefinition(argDef.argType, field.binding)
     bindings.add(bindingDef)
   return bindings
 
-proc analyzeVariantCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, variantPattern: VariantPattern, union: AnalyzedUnionDef): Result[AnalyzedVariantPattern, string] =
+proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: AnalyzedUnionDef): Result[AnalyzedUnionPattern, string] =
   let variant = ? union.findVariant(variantPattern.name)
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variantPattern.fields:
     let analyzedField = ? variant.findField(field.name)
     analyzedFields.add(analyzedField)
-  ok(newAnalyzedVariantPattern(variantPattern, variant, analyzedFields))
+  ok(newAnalyzedUnionPattern(variantPattern, variant, analyzedFields))
 
 type
   AnalyzedCasePatternKind* = enum
-    acpkVariant, acpkInteger, acpkVariable
+    acpkUnion, acpkInteger, acpkVariable
   AnalyzedCasePattern* = ref object
     case kind: AnalyzedCasePatternKind
-    of acpkVariant: variant: AnalyzedVariantPattern
+    of acpkUnion: variant: AnalyzedUnionPattern
     of acpkInteger: integer: IntegerLiteral
     of acpkVariable: variable: AnalyzedArgumentDefinition
 
-proc newAnalyzedCasePattern*(variant: AnalyzedVariantPattern): AnalyzedCasePattern =
-  AnalyzedCasePattern(kind: acpkVariant, variant: variant)
+proc newAnalyzedCasePattern*(variant: AnalyzedUnionPattern): AnalyzedCasePattern =
+  AnalyzedCasePattern(kind: acpkUnion, variant: variant)
 
 proc newAnalyzedCasePattern*(integer: IntegerLiteral): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkInteger, integer: integer)
@@ -322,7 +322,7 @@ proc newAnalyzedCasePattern*(variable: AnalyzedArgumentDefinition): AnalyzedCase
 
 proc bindings*(pattern: AnalyzedCasePattern): seq[AnalyzedArgumentDefinition] =
   case pattern.kind:
-  of acpkVariant: pattern.variant.bindings
+  of acpkUnion: pattern.variant.bindings
   of acpkVariable: @[pattern.variable]
   of acpkInteger: newSeq[AnalyzedArgumentDefinition]()
 
@@ -332,13 +332,13 @@ proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
   of rcpkVariable:
     let analyzedArgDef = newAnalyzedArgumentDefinition(subjectType, pattern.variable)
     ok(newAnalyzedCasePattern(analyzedArgDef))
-  of rcpkVariant:
-    let analyzedPattern = ? analyzeVariantCasePattern(app, file, fileScope, defScope, funcScope, pattern.variant, union)
+  of rcpkUnion:
+    let analyzedPattern = ? analyzeUnionCasePattern(app, file, fileScope, defScope, funcScope, pattern.variant, union)
     ok(newAnalyzedCasePattern(analyzedPattern))
 
 proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
-  of rcpkVariant:
+  of rcpkUnion:
     err(fmt"{pattern.loc} UNREACHABLE: union variants are not allowed in literal case pattern")
   of rcpkInteger:
     ok(newAnalyzedCasePattern(pattern.integer))

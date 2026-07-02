@@ -4,7 +4,7 @@
 ##
 ## Every type that participates in the cycle (Initializer ↔
 ## FunctionCall ↔ Expression ↔ Match/CaseBlock ↔ Statement ↔
-## Assignment/Mutation/KeywordArgument) lives in a single type block
+## Assignment/Setter/KeywordArgument) lives in a single type block
 ## — Nim only resolves cross-references inside one block.
 ## Constructors and resolveX procs follow the type block in
 ## per-concept order (matching resolver.nim's original layout).
@@ -114,8 +114,8 @@ type
     parsed: Assignment
     expression: ResolvedExpression
 
-  ResolvedMutation* = ref object
-    parsed: Mutation
+  ResolvedSetter* = ref object
+    parsed: Setter
     getter: ResolvedGetter
     expression: ResolvedExpression
 
@@ -142,12 +142,12 @@ type
     of rekMatchExpr: match: ResolvedMatchExpression
 
   ResolvedStatementKind* = enum
-    rskAssignment, rskExpr, rskMutation
+    rskAssignment, rskExpr, rskSetter
   ResolvedStatement* = ref object
     case kind: ResolvedStatementKind
     of rskAssignment: assignment: ResolvedAssignment
     of rskExpr: expression: ResolvedExpression
-    of rskMutation: mutation: ResolvedMutation
+    of rskSetter: setter: ResolvedSetter
 
 # Constructors for every type in the cluster.
 proc newResolvedKeywordArgument*(parsed: KeywordArgument,
@@ -276,14 +276,14 @@ proc loc*(assignment: ResolvedAssignment): Location = assignment.parsed.loc
 proc target*(assignment: ResolvedAssignment): Identifier = assignment.parsed.target
 proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
 
-proc newResolvedMutation*(parsed: Mutation, getter: ResolvedGetter,
-    expression: ResolvedExpression): ResolvedMutation =
-  ResolvedMutation(parsed: parsed, getter: getter, expression: expression)
+proc newResolvedSetter*(parsed: Setter, getter: ResolvedGetter,
+    expression: ResolvedExpression): ResolvedSetter =
+  ResolvedSetter(parsed: parsed, getter: getter, expression: expression)
 
-proc parsed*(mutation: ResolvedMutation): Mutation = mutation.parsed
-proc loc*(mutation: ResolvedMutation): Location = mutation.parsed.loc
-proc getter*(mutation: ResolvedMutation): ResolvedGetter = mutation.getter
-proc expression*(mutation: ResolvedMutation): ResolvedExpression = mutation.expression
+proc parsed*(setter: ResolvedSetter): Setter = setter.parsed
+proc loc*(setter: ResolvedSetter): Location = setter.parsed.loc
+proc getter*(setter: ResolvedSetter): ResolvedGetter = setter.getter
+proc expression*(setter: ResolvedSetter): ResolvedExpression = setter.expression
 
 proc newResolvedCaseBlock*(parsed: CaseBlock, pattern: ResolvedCasePattern,
     statements: seq[ResolvedStatement]): ResolvedCaseBlock =
@@ -363,8 +363,8 @@ proc newResolvedStatement*(assignment: ResolvedAssignment): ResolvedStatement =
 proc newResolvedStatement*(expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(kind: rskExpr, expression: expression)
 
-proc newResolvedStatement*(mutation: ResolvedMutation): ResolvedStatement =
-  ResolvedStatement(kind: rskMutation, mutation: mutation)
+proc newResolvedStatement*(setter: ResolvedSetter): ResolvedStatement =
+  ResolvedStatement(kind: rskSetter, setter: setter)
 
 proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
 proc expression*(statement: ResolvedStatement): ResolvedExpression =
@@ -375,16 +375,16 @@ proc assignment*(statement: ResolvedStatement): ResolvedAssignment =
   assert statement.kind == rskAssignment,
     fmt"ResolvedStatement.assignment accessed but kind is {statement.kind}"
   statement.assignment
-proc mutation*(statement: ResolvedStatement): ResolvedMutation =
-  assert statement.kind == rskMutation,
-    fmt"ResolvedStatement.mutation accessed but kind is {statement.kind}"
-  statement.mutation
+proc setter*(statement: ResolvedStatement): ResolvedSetter =
+  assert statement.kind == rskSetter,
+    fmt"ResolvedStatement.setter accessed but kind is {statement.kind}"
+  statement.setter
 
 proc loc*(statement: ResolvedStatement): Location =
   case statement.kind:
   of rskAssignment: statement.assignment.loc
   of rskExpr: statement.expression.loc
-  of rskMutation: statement.mutation.loc
+  of rskSetter: statement.setter.loc
 
 # Accessor used by callers to thread bindings into scope.
 proc variable*(statement: ResolvedStatement): Option[Identifier] =
@@ -392,7 +392,7 @@ proc variable*(statement: ResolvedStatement): Option[Identifier] =
   case statement.kind:
   of rskAssignment: some(statement.assignment.target)
   of rskExpr: none(Identifier)
-  of rskMutation: none(Identifier)
+  of rskSetter: none(Identifier)
 
 # Forward declarations for the resolveX procs in the cluster.
 proc resolveExpression*(app: App, file: parser.File, fileScope: FileScope,
@@ -562,13 +562,13 @@ proc resolveAssignment(app: App, file: parser.File, fileScope: FileScope,
     scope, assignment.expression)
   ok(newResolvedAssignment(assignment, resolvedExpression))
 
-proc resolveMutation(app: App, file: parser.File, fileScope: FileScope,
+proc resolveSetter(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
-    mutation: Mutation): Result[ResolvedMutation, string] =
-  let resolvedGetter = ? resolveGetter(file, scope, mutation.target)
+    setter: Setter): Result[ResolvedSetter, string] =
+  let resolvedGetter = ? resolveGetter(file, scope, setter.target)
   let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
-    scope, mutation.expression)
-  ok(newResolvedMutation(mutation, resolvedGetter, resolvedExpression))
+    scope, setter.expression)
+  ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
 proc resolveStatement*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
@@ -582,7 +582,7 @@ proc resolveStatement*(app: App, file: parser.File, fileScope: FileScope,
     let resolvedAssignment = ? resolveAssignment(app, file, fileScope, module,
       scope, statement.assignment)
     ok(newResolvedStatement(resolvedAssignment))
-  of skMutation:
-    let resolvedMutation = ? resolveMutation(app, file, fileScope, module, scope,
-      statement.mutation)
+  of skSetter:
+    let resolvedMutation = ? resolveSetter(app, file, fileScope, module, scope,
+      statement.setter)
     ok(newResolvedStatement(resolvedMutation))

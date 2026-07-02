@@ -1,6 +1,6 @@
 ## Tests for AST constructor invariants. Many of the duplicate-
 ## detection errors that constructors raise (StructDef.fieldIndex,
-## UnionDef.variantIndex, VariantPattern bindings, KeywordArgumentList
+## UnionDef.variantIndex, UnionPattern bindings, KeywordArgumentList
 ## argIndex, etc.) are unreachable from the grammar surface today
 ## because the parser's `atLeastOne` backtracks past them, so the
 ## tests here exercise the constructors directly.
@@ -139,26 +139,26 @@ suite "ast — ArgumentDefinitionList invariants":
     let r = newArgumentDefinitionList(@[], newLocation())
     check r.isOk
 
-suite "ast — VariantPattern invariants":
+suite "ast — UnionPattern invariants":
 
-  test "newVariantPattern rejects duplicate field names":
+  test "newUnionPattern rejects duplicate field names":
     # Two pattern fields with the same `name`, different bindings.
-    let f1 = newVariantPatternField(id("value"), id("a"), newLocation())
-    let f2 = newVariantPatternField(id("value"), id("b"), newLocation())
-    let r = newVariantPattern(id("Ok"), @[f1, f2])
+    let f1 = newUnionPatternField(id("value"), id("a"), newLocation())
+    let f2 = newUnionPatternField(id("value"), id("b"), newLocation())
+    let r = newUnionPattern(id("Ok"), @[f1, f2])
     check r.isErr
     check errorContains(r.error.msg, "duplicate field")
 
-  test "newVariantPattern rejects duplicate bindings":
+  test "newUnionPattern rejects duplicate bindings":
     # Different field names, same binding identifier.
-    let f1 = newVariantPatternField(id("value"), id("x"), newLocation())
-    let f2 = newVariantPatternField(id("error"), id("x"), newLocation())
-    let r = newVariantPattern(id("Ok"), @[f1, f2])
+    let f1 = newUnionPatternField(id("value"), id("x"), newLocation())
+    let f2 = newUnionPatternField(id("error"), id("x"), newLocation())
+    let r = newUnionPattern(id("Ok"), @[f1, f2])
     check r.isErr
     check errorContains(r.error.msg, "duplicate binding")
 
-  test "newVariantPattern accepts an empty fields list":
-    let r = newVariantPattern(id("Ok"), @[])
+  test "newUnionPattern accepts an empty fields list":
+    let r = newUnionPattern(id("Ok"), @[])
     check r.isOk
 
 suite "ast — Import invariants":

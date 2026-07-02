@@ -359,9 +359,9 @@ module M:
 """)
     check r.isOk
 
-suite "grammar — mutation statement":
+suite "grammar — setter statement":
 
-  test "mutation assigns into a getter target":
+  test "setter assigns into a getter target":
     let r = parseStr("""
 module Pair:
   struct:

@@ -5,7 +5,7 @@
 ##
 ## Every type that participates in the cycle (Initializer <->
 ## FunctionCall <-> Expression <-> Match/CaseBlock <-> Statement <->
-## Assignment/Mutation/KeywordArgument) lives in a single type block —
+## Assignment/Setter/KeywordArgument) lives in a single type block —
 ## Nim only resolves cross-references inside one block.
 ## Constructors, accessors, and analyze* procs follow the type block
 ## in per-concept order (matching the original funcs.nim layout).
@@ -206,8 +206,8 @@ type
     resolved: ResolvedAssignment
     expression: AnalyzedExpression
 
-  AnalyzedMutation* = ref object
-    resolved: ResolvedMutation
+  AnalyzedSetter* = ref object
+    resolved: ResolvedSetter
     getter: AnalyzedGetter
     expression: AnalyzedExpression
 
@@ -223,12 +223,12 @@ type
     of aekGetter: getter: AnalyzedGetter
 
   AnalyzedStatementKind* = enum
-    askExpr, askAssignment, askMutation
+    askExpr, askAssignment, askSetter
   AnalyzedStatement* = ref object
     case kind: AnalyzedStatementKind
     of askExpr: expression: AnalyzedExpression
     of askAssignment: assignment: AnalyzedAssignment
-    of askMutation: mutation: AnalyzedMutation
+    of askSetter: setter: AnalyzedSetter
 
 proc argType*(expression: AnalyzedExpression): Option[AnalyzedArgumentType]
 proc argType*(statement: AnalyzedStatement): Option[AnalyzedArgumentType]
@@ -377,14 +377,14 @@ proc target*(assignment: AnalyzedAssignment): Identifier = assignment.resolved.t
 proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression = assignment.expression
 proc argType*(assignment: AnalyzedAssignment): Option[AnalyzedArgumentType] = assignment.expression.argType
 
-proc newAnalyzedMutation*(resolved: ResolvedMutation, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedMutation =
-  AnalyzedMutation(resolved: resolved, getter: getter, expression: expression)
+proc newAnalyzedSetter*(resolved: ResolvedSetter, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedSetter =
+  AnalyzedSetter(resolved: resolved, getter: getter, expression: expression)
 
-proc loc*(mutation: AnalyzedMutation): Location = mutation.resolved.loc
-proc resolved*(mutation: AnalyzedMutation): ResolvedMutation = mutation.resolved
-proc getter*(mutation: AnalyzedMutation): AnalyzedGetter = mutation.getter
-proc expression*(mutation: AnalyzedMutation): AnalyzedExpression = mutation.expression
-proc argType*(mutation: AnalyzedMutation): Option[AnalyzedArgumentType] = mutation.expression.argType
+proc loc*(setter: AnalyzedSetter): Location = setter.resolved.loc
+proc resolved*(setter: AnalyzedSetter): ResolvedSetter = setter.resolved
+proc getter*(setter: AnalyzedSetter): AnalyzedGetter = setter.getter
+proc expression*(setter: AnalyzedSetter): AnalyzedExpression = setter.expression
+proc argType*(setter: AnalyzedSetter): Option[AnalyzedArgumentType] = setter.expression.argType
 
 proc newAnalyzedExpression*(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
@@ -454,8 +454,8 @@ proc newAnalyzedStatement*(expression: AnalyzedExpression): AnalyzedStatement =
 proc newAnalyzedStatement*(assignment: AnalyzedAssignment): AnalyzedStatement =
   AnalyzedStatement(kind: askAssignment, assignment: assignment)
 
-proc newAnalyzedStatement*(mutation: AnalyzedMutation): AnalyzedStatement =
-  AnalyzedStatement(kind: askMutation, mutation: mutation)
+proc newAnalyzedStatement*(setter: AnalyzedSetter): AnalyzedStatement =
+  AnalyzedStatement(kind: askSetter, setter: setter)
 
 proc kind*(statement: AnalyzedStatement): AnalyzedStatementKind = statement.kind
 proc expression*(statement: AnalyzedStatement): AnalyzedExpression =
@@ -466,22 +466,22 @@ proc assignment*(statement: AnalyzedStatement): AnalyzedAssignment =
   assert statement.kind == askAssignment,
     fmt"AnalyzedStatement.assignment accessed but kind is {statement.kind}"
   statement.assignment
-proc mutation*(statement: AnalyzedStatement): AnalyzedMutation =
-  assert statement.kind == askMutation,
-    fmt"AnalyzedStatement.mutation accessed but kind is {statement.kind}"
-  statement.mutation
+proc setter*(statement: AnalyzedStatement): AnalyzedSetter =
+  assert statement.kind == askSetter,
+    fmt"AnalyzedStatement.setter accessed but kind is {statement.kind}"
+  statement.setter
 
 proc loc*(statement: AnalyzedStatement): Location =
   case statement.kind:
   of askExpr: statement.expression.loc
   of askAssignment: statement.assignment.loc
-  of askMutation: statement.mutation.loc
+  of askSetter: statement.setter.loc
 
 proc argType*(statement: AnalyzedStatement): Option[AnalyzedArgumentType] =
   case statement.kind:
   of askExpr: statement.expression.argType
   of askAssignment: statement.assignment.argType
-  of askMutation: statement.mutation.argType
+  of askSetter: statement.setter.argType
 
 proc arg*(statement: AnalyzedStatement): Option[AnalyzedArgumentDefinition] =
   let maybeArgType = statement.argType
@@ -490,7 +490,7 @@ proc arg*(statement: AnalyzedStatement): Option[AnalyzedArgumentDefinition] =
   else:
     case statement.kind:
     of askExpr: return none(AnalyzedArgumentDefinition)
-    of askMutation: return none(AnalyzedArgumentDefinition)
+    of askSetter: return none(AnalyzedArgumentDefinition)
     of askAssignment: return some(newAnalyzedArgumentDefinition(maybeArgType.get, statement.assignment.target))
 
 # Forward declarations for the analyzeX procs in the cluster.
@@ -668,7 +668,7 @@ proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string
   ok()
 
 proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
-  var patternScope = newAnalyzedVariantPatternScope(cases.len)
+  var patternScope = newAnalyzedUnionPatternScope(cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
 
@@ -920,11 +920,11 @@ proc analyzeAssignment*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolve
   let analyzedExpr = ? analyzeExpression(app, file, fileScope, moduleDef, defScope, funcScope, assignment.expression)
   ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
-proc analyzeMutation*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, mutation: ResolvedMutation): Result[AnalyzedMutation, string] =
-  let analyzedGetter = ? analyzeGetter(app, file, fileScope, defScope, funcScope, mutation.getter)
-  let analyzedExpression = ? analyzeExpression(app, file, fileScope, moduleDef, defScope, funcScope, mutation.expression)
+proc analyzeSetter*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, setter: ResolvedSetter): Result[AnalyzedSetter, string] =
+  let analyzedGetter = ? analyzeGetter(app, file, fileScope, defScope, funcScope, setter.getter)
+  let analyzedExpression = ? analyzeExpression(app, file, fileScope, moduleDef, defScope, funcScope, setter.expression)
   # TODO: Ensure that the getter field type and the expression type are same
-  ok(newAnalyzedMutation(mutation, analyzedGetter, analyzedExpression))
+  ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
 
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
@@ -934,6 +934,6 @@ proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolved
   of rskAssignment:
     let analyzedAssignment = ? analyzeAssignment(app, file, fileScope, moduleDef, defScope, funcScope, statement.assignment)
     ok(newAnalyzedStatement(analyzedAssignment))
-  of rskMutation:
-    let analyzedMutation = ? analyzeMutation(app, file, fileScope, moduleDef, defScope, funcScope, statement.mutation)
+  of rskSetter:
+    let analyzedMutation = ? analyzeSetter(app, file, fileScope, moduleDef, defScope, funcScope, statement.setter)
     ok(newAnalyzedStatement(analyzedMutation))

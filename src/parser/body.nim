@@ -185,7 +185,7 @@ type
     expression: Expression
     loc: Location
 
-  Mutation* = ref object
+  Setter* = ref object
     target: Getter
     expression: Expression
     loc: Location
@@ -212,12 +212,12 @@ type
     of ekMatch: match: MatchExpression
 
   StatementKind* = enum
-    skAssignment, skExpr, skMutation
+    skAssignment, skExpr, skSetter
   Statement* = ref object
     case kind: StatementKind
     of skAssignment: assignment: Assignment
     of skExpr: expression: Expression
-    of skMutation: mutation: Mutation
+    of skSetter: setter: Setter
 
   StatementList* = ref object
     statements: seq[Statement]
@@ -362,17 +362,17 @@ proc expression*(assignment: Assignment): Expression = assignment.expression
 proc asl(assignment: Assignment): string =
   fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
 
-# ----------------- Mutation -----------------
-proc newMutation*(target: Getter, expression: Expression,
-    loc: Location): Mutation =
-  Mutation(target: target, expression: expression, loc: loc)
+# ----------------- Setter -----------------
+proc newSetter*(target: Getter, expression: Expression,
+    loc: Location): Setter =
+  Setter(target: target, expression: expression, loc: loc)
 
-proc target*(mutation: Mutation): Getter = mutation.target
-proc expression*(mutation: Mutation): Expression = mutation.expression
-proc loc*(mutation: Mutation): Location = mutation.loc
+proc target*(setter: Setter): Getter = setter.target
+proc expression*(setter: Setter): Expression = setter.expression
+proc loc*(setter: Setter): Location = setter.loc
 
-proc asl(mutation: Mutation): string =
-  fmt"{asl(mutation.target)} = {asl(mutation.expression)}"
+proc asl(setter: Setter): string =
+  fmt"{asl(setter.target)} = {asl(setter.expression)}"
 
 # ----------------- CaseBlock -----------------
 proc newCaseBlock*(pattern: CasePattern, body: StatementList,
@@ -486,8 +486,8 @@ proc newStatement*(assignment: Assignment): Statement =
 proc newStatement*(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
 
-proc newStatement*(mutation: Mutation): Statement =
-  Statement(kind: skMutation, mutation: mutation)
+proc newStatement*(setter: Setter): Statement =
+  Statement(kind: skSetter, setter: setter)
 
 proc kind*(s: Statement): StatementKind = s.kind
 
@@ -501,28 +501,28 @@ proc expression*(s: Statement): Expression =
     fmt"Statement.expression accessed but kind is {s.kind}"
   s.expression
 
-proc mutation*(s: Statement): Mutation =
-  assert s.kind == skMutation,
-    fmt"Statement.mutation accessed but kind is {s.kind}"
-  s.mutation
+proc setter*(s: Statement): Setter =
+  assert s.kind == skSetter,
+    fmt"Statement.setter accessed but kind is {s.kind}"
+  s.setter
 
 proc loc*(statement: Statement): Location =
   case statement.kind:
   of skAssignment: statement.assignment.loc
   of skExpr: statement.expression.loc
-  of skMutation: statement.mutation.loc
+  of skSetter: statement.setter.loc
 
 proc isBlockStatement(stmt: Statement): bool =
   case stmt.kind:
   of skExpr: stmt.expression.kind == ekMatch
   of skAssignment:
     stmt.assignment.expression.kind == ekMatch
-  of skMutation: false
+  of skSetter: false
 
 proc asl*(stmt: Statement): string =
   case stmt.kind:
   of skAssignment: asl(stmt.assignment)
-  of skMutation: asl(stmt.mutation)
+  of skSetter: asl(stmt.setter)
   of skExpr: asl(stmt.expression)
 
 proc aslBlock*(stmt: Statement, indentWidth: uint32): seq[string] =
@@ -536,8 +536,8 @@ proc aslBlock*(stmt: Statement, indentWidth: uint32): seq[string] =
     result.add(fmt"{asl(stmt.assignment.target)} = {matchLines[0]}")
     for i in 1..<matchLines.len:
       result.add(matchLines[i])
-  of skMutation:
-    result = @[asl(stmt.mutation)]
+  of skSetter:
+    result = @[asl(stmt.setter)]
 
 # ----------------- StatementList -----------------
 proc newStatementList*(statements: seq[Statement]): StatementList =
@@ -658,18 +658,18 @@ let assignmentSpec* = Spec[Assignment](
   ok(newAssignment(targetIdent, expression, targetIdent.loc))
 )
 
-let mutationSpec* = Spec[Mutation](
-  name: "mutation",
-  parseFn: proc(parser: Parser): Result[Mutation, ParserError] =
+let setterSpec* = Spec[Setter](
+  name: "setter",
+  parseFn: proc(parser: Parser): Result[Setter, ParserError] =
   let getter = ? parser.run(getterSpec)
   discard ? parser.run(equalsSeparatorSpec)
   let expression = ? parser.run(expressionSpec)
-  ok(newMutation(getter, expression, getter.loc))
+  ok(newSetter(getter, expression, getter.loc))
 )
 
 let inlineStatementSpec* = oneOf("inline_statement", [
-  mutationSpec.map("mutation_statement",
-    proc(v: Mutation): Statement = newStatement(v)),
+  setterSpec.map("mutation_statement",
+    proc(v: Setter): Statement = newStatement(v)),
   assignmentSpec.map("assignment_statement",
     proc(v: Assignment): Statement = newStatement(v)),
   expressionSpec.map("expression_statement",

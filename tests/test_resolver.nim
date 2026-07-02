@@ -150,7 +150,7 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
-  test "mutation statement resolves":
+  test "setter statement resolves":
     let (r, dir) = resolveSingle("""
 module Pair:
   struct:
