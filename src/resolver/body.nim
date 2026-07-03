@@ -6,6 +6,11 @@
 ## accessors live in `types.nim`. This file owns the computed
 ## helpers (loc, source, property, name, target, ...) and the
 ## resolveX procs.
+##
+## Every resolveX proc threads `shells: ResolvedModuleShells` — the
+## table allocated by apps.nim during the declare pass — down to
+## `resolveArgumentType`, which uses it to attach a stable
+## ResolvedModule reference to every ResolvedModuleArgumentType.
 
 import results, options, sets, strformat
 
@@ -39,11 +44,11 @@ proc value*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 proc loc*(init: ResolvedLiteralInitializer): Location = init.parsed.loc
 proc literal*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 
-proc resolveLiteralInitializer(app: App, file: parser.File,
-    fileScope: FileScope, module: Module,
+proc resolveLiteralInitializer(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
     literalInit: LiteralInitializer): Result[
         ResolvedLiteralInitializer, string] =
-  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module,
+  let resolvedArgType = ? resolveArgumentType(app, shells, file, fileScope, module,
     literalInit.argType)
   ok(newResolvedLiteralInitializer(literalInit, resolvedArgType))
 
@@ -101,15 +106,18 @@ proc variable*(statement: ResolvedStatement): Option[Identifier] =
 
 # ---- Forward declarations for the resolveX procs in the cluster ----
 
-proc resolveExpression*(app: App, file: parser.File, fileScope: FileScope,
+proc resolveExpression*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string]
 
-proc resolveStatement*(app: App, file: parser.File, fileScope: FileScope,
+proc resolveStatement*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     statement: Statement): Result[ResolvedStatement, string]
 
-proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
+proc resolveFunctionCall(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let definedType = ? file.findDefinedType(fileScope, fncall.root)
@@ -119,11 +127,13 @@ proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
   else:
     var resolvedArgs: seq[ResolvedExpression]
     for arg in fncall.args:
-      let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope, arg)
+      let resolvedArg = ? resolveExpression(app, shells, file, fileScope, module, scope, arg)
       resolvedArgs.add(resolvedArg)
     ok(newResolvedFunctionCall(fncall, resolvedArgs))
 
-proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module: Module, structRef: StructRef): Result[ResolvedStructRef, string] =
+proc resolveStructRef(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
+    structRef: StructRef): Result[ResolvedStructRef, string] =
   ## Resolves a StructRef and validates the kind ↔ requires match.
   ## Looks up the receiver module via findModule (which handles local
   ## and imported types alike) and stores it on the default arm.
@@ -138,11 +148,13 @@ proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module:
     if not structModule.requires.isSome:
       err(fmt"{structRef.loc} module `{structModule.name.asl}` has no requires block; initializer must not specify impl types")
     else:
-      let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, structRef.argType)
+      let resolvedArgType = ? resolveArgumentType(app, shells, file, fileScope, module, structRef.argType)
       ok(newResolvedStructRef(structRef, resolvedArgType))
 
-proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope, module: Module, scope: FunctionScope, struct: StructInitializer): Result[ResolvedStructInitializer, string] =
-  let resolvedStructRef = ? resolveStructRef(app, file, fileScope, module, struct.structRef)
+proc resolveStructInitializer(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module, scope: FunctionScope,
+    struct: StructInitializer): Result[ResolvedStructInitializer, string] =
+  let resolvedStructRef = ? resolveStructRef(app, shells, file, fileScope, module, struct.structRef)
   let structModule = module(resolvedStructRef)
   var structBlock = ? structModule.struct(struct.loc)
   if struct.kwargs.len != structBlock.fields.len:
@@ -151,13 +163,15 @@ proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope,
     var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
     for kwarg in struct.kwargs:
       let fieldId = ? structBlock.findFieldId(kwarg.name)
-      let resolvedExpression = ? resolveExpression(app, file, fileScope,
+      let resolvedExpression = ? resolveExpression(app, shells, file, fileScope,
         module, scope, kwarg.expression)
       resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
         resolvedExpression)
     ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
 
-proc resolveUnionRef(app: App, file: parser.File, fileScope: FileScope, module: Module, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
+proc resolveUnionRef(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
+    unionRef: UnionRef): Result[ResolvedUnionRef, string] =
   ## Default arm stores the resolved receiver module — drives leave-as-is
   ## inference at the analyzer. Impl arm resolves the explicit argType;
   ## arity against the union's deduped requires list is checked downstream
@@ -167,13 +181,14 @@ proc resolveUnionRef(app: App, file: parser.File, fileScope: FileScope, module: 
   of urkDefault:
     ok(newResolvedUnionRef(unionRef, unionModule))
   of urkImpl:
-    let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, unionRef.argType)
+    let resolvedArgType = ? resolveArgumentType(app, shells, file, fileScope, module, unionRef.argType)
     ok(newResolvedUnionRef(unionRef, resolvedArgType))
 
-proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
+proc resolveUnionInitializer(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
-  let resolvedUnionRef = ? resolveUnionRef(app, file, fileScope, module, unionInit.unionRef)
+  let resolvedUnionRef = ? resolveUnionRef(app, shells, file, fileScope, module, unionInit.unionRef)
   let initModule = module(resolvedUnionRef)
   let union = ? initModule.union(unionInit.loc)
   let variant = ? union.findVariant(unionInit.variant)
@@ -183,30 +198,32 @@ proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     variant.fields.len)
   for kwarg in unionInit.kwargs:
     let fieldId = ? variant.findFieldId(kwarg.name)
-    let resolvedExpression = ? resolveExpression(app, file, fileScope,
+    let resolvedExpression = ? resolveExpression(app, shells, file, fileScope,
       module, scope, kwarg.expression)
     resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
       resolvedExpression)
   ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
 
-proc resolveInitializer(app: App, file: parser.File, fileScope: FileScope,
+proc resolveInitializer(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:
   of ikLiteral:
-    let resolvedLiteralInit = ? resolveLiteralInitializer(app, file, fileScope,
+    let resolvedLiteralInit = ? resolveLiteralInitializer(app, shells, file, fileScope,
       module, initializer.literal)
     ok(newResolvedInitializer(resolvedLiteralInit))
   of ikStruct:
-    let resolvedStructInit = ? resolveStructInitializer(app, file, fileScope,
+    let resolvedStructInit = ? resolveStructInitializer(app, shells, file, fileScope,
       module, scope, initializer.struct)
     ok(newResolvedInitializer(resolvedStructInit))
   of ikUnion:
-    let resolvedUnionInit = ? resolveUnionInitializer(app, file, fileScope,
+    let resolvedUnionInit = ? resolveUnionInitializer(app, shells, file, fileScope,
       module, scope, initializer.union)
     ok(newResolvedInitializer(resolvedUnionInit))
 
-proc resolveCaseBlock(app: App, file: parser.File, fileScope: FileScope,
+proc resolveCaseBlock(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
   let resolvedCasePattern = ? resolveCasePattern(caseBlock.pattern)
@@ -217,26 +234,28 @@ proc resolveCaseBlock(app: App, file: parser.File, fileScope: FileScope,
     childScope.incl(binding)
 
   for statement in caseBlock.statements:
-    let resolvedStatement = ? resolveStatement(app, file, fileScope, module,
+    let resolvedStatement = ? resolveStatement(app, shells, file, fileScope, module,
       childScope, statement)
     resolvedStatements.add(resolvedStatement)
     if resolvedStatement.variable.isSome:
       childScope.incl(resolvedStatement.variable.get)
   ok(newResolvedCaseBlock(caseBlock, resolvedCasePattern, resolvedStatements))
 
-proc resolveMatchExpression(app: App, file: parser.File, fileScope: FileScope,
+proc resolveMatchExpression(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     match: MatchExpression): Result[ResolvedMatchExpression, string] =
-  let resolvedSubject = ? resolveExpression(app, file, fileScope, module, scope,
+  let resolvedSubject = ? resolveExpression(app, shells, file, fileScope, module, scope,
     match.subject)
   var resolvedCaseBlocks: seq[ResolvedCaseBlock]
   for caseBlock in match.cases:
-    let resolvedCaseBlock = ? resolveCaseBlock(app, file, fileScope, module,
+    let resolvedCaseBlock = ? resolveCaseBlock(app, shells, file, fileScope, module,
       scope, caseBlock)
     resolvedCaseBlocks.add(resolvedCaseBlock)
   ok(newResolvedMatchExpression(match, resolvedSubject, resolvedCaseBlocks))
 
-proc resolveExpression*(app: App, file: parser.File, fileScope: FileScope,
+proc resolveExpression*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
@@ -249,46 +268,49 @@ proc resolveExpression*(app: App, file: parser.File, fileScope: FileScope,
     let resolvedVariable = ? resolveVariable(file, scope, expression.variable)
     ok(newResolvedExpression(resolvedVariable))
   of ekFnCall:
-    let resolvedFunctionCall = ? resolveFunctionCall(app, file, fileScope,
+    let resolvedFunctionCall = ? resolveFunctionCall(app, shells, file, fileScope,
       module, scope, expression.fncall)
     ok(newResolvedExpression(resolvedFunctionCall))
   of ekInitializer:
-    let resolvedInitializer = ? resolveInitializer(app, file, fileScope, module,
+    let resolvedInitializer = ? resolveInitializer(app, shells, file, fileScope, module,
       scope, expression.initializer)
     ok(newResolvedExpression(resolvedInitializer))
   of ekMatch:
-    let resolvedMatchExpr = ? resolveMatchExpression(app, file, fileScope,
+    let resolvedMatchExpr = ? resolveMatchExpression(app, shells, file, fileScope,
       module, scope, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))
 
-proc resolveAssignment(app: App, file: parser.File, fileScope: FileScope,
+proc resolveAssignment(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     assignment: Assignment): Result[ResolvedAssignment, string] =
-  let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
+  let resolvedExpression = ? resolveExpression(app, shells, file, fileScope, module,
     scope, assignment.expression)
   ok(newResolvedAssignment(assignment, resolvedExpression))
 
-proc resolveSetter(app: App, file: parser.File, fileScope: FileScope,
+proc resolveSetter(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     setter: Setter): Result[ResolvedSetter, string] =
   let resolvedGetter = ? resolveGetter(file, scope, setter.target)
-  let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
+  let resolvedExpression = ? resolveExpression(app, shells, file, fileScope, module,
     scope, setter.expression)
   ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
-proc resolveStatement*(app: App, file: parser.File, fileScope: FileScope,
+proc resolveStatement*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     statement: Statement): Result[ResolvedStatement, string] =
   case statement.kind:
   of skExpr:
-    let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
+    let resolvedExpression = ? resolveExpression(app, shells, file, fileScope, module,
       scope, statement.expression)
     ok(newResolvedStatement(resolvedExpression))
   of skAssignment:
-    let resolvedAssignment = ? resolveAssignment(app, file, fileScope, module,
+    let resolvedAssignment = ? resolveAssignment(app, shells, file, fileScope, module,
       scope, statement.assignment)
     ok(newResolvedStatement(resolvedAssignment))
   of skSetter:
-    let resolvedMutation = ? resolveSetter(app, file, fileScope, module, scope,
+    let resolvedMutation = ? resolveSetter(app, shells, file, fileScope, module, scope,
       statement.setter)
     ok(newResolvedStatement(resolvedMutation))

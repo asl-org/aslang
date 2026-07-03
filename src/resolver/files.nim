@@ -4,6 +4,7 @@ import results, strformat, tables
 
 import tokenizer
 import parser
+import types
 import imports
 import argtypes
 import definedTypes
@@ -63,7 +64,7 @@ proc validateNoDuplicateBindings(resolvedImports: seq[ResolvedImport], file: par
     seen[definedType.name] = definedType.loc
   ok()
 
-proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, string] =
+proc resolveFile*(app: App, shells: ResolvedModuleShells, id: int, file: parser.File): Result[ResolvedFile, string] =
   var resolvedImports: seq[ResolvedImport]
   var fileScope: FileScope
   if file.kind == fkAsl:
@@ -77,7 +78,7 @@ proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, st
 
   var resolvedDefinedTypes: seq[ResolvedDefinedType]
   for id, definedType in file.definedTypes:
-    let resolvedDefinedType = ? resolveDefinedType(app, file, fileScope, id, definedType)
+    let resolvedDefinedType = ? resolveDefinedType(app, shells, file, fileScope, id, definedType)
     resolvedDefinedTypes.add(resolvedDefinedType)
 
   ok(newResolvedFile(id, file, resolvedImports, resolvedDefinedTypes))

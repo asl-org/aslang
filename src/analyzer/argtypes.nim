@@ -204,14 +204,17 @@ proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], 
       return argType
 
 proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
-  let maybeTypeModule = file.findModule(argType.module.name)
+  # TODO(task 6b): now that `argType.resolvedModule` already carries
+  # the resolved module directly, this lookup is redundant. Task 6b
+  # will drop `findArgTypeModule` in favour of `argType.resolvedModule`.
+  let maybeTypeModule = file.findModule(argType.name)
   if maybeTypeModule.isErr:
-    if argType.module.name notin fileScope:
-      err(fmt"{argType.loc} module `{argType.module.name.asl}` is neither defined nor imported")
+    if argType.name notin fileScope:
+      err(fmt"{argType.loc} module `{argType.name.asl}` is neither defined nor imported")
     else:
-      let importedDefinedType = fileScope[argType.module.name]
+      let importedDefinedType = fileScope[argType.name]
       case importedDefinedType.kind:
-      of rdtkGeneric: err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.module.name.asl}` to be a module but found generic.")
+      of rdtkGeneric: err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.name.asl}` to be a module but found generic.")
       of rdtkModule: ok(importedDefinedType.module)
   else:
     ok(maybeTypeModule.value)
@@ -249,9 +252,9 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
 
   if typeModule.requires.len != argType.impls.len:
     if typeModule.requires.len == 0:
-      err(fmt"{argType.loc} module `{argType.module.name.asl}` does not require any impl types")
+      err(fmt"{argType.loc} module `{argType.name.asl}` does not require any impl types")
     else:
-      err(fmt"{argType.loc} module `{argType.module.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
+      err(fmt"{argType.loc} module `{argType.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
   else:
     var analyzedImpls: seq[AnalyzedArgumentType]
     for (baseType, implType) in zip(typeModule.requires, argType.impls):
@@ -267,9 +270,9 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
 
   if typeModule.requires.len != argType.impls.len:
     if typeModule.requires.len == 0:
-      err(fmt"{argType.loc} module `{argType.module.name.asl}` does not require any impl types")
+      err(fmt"{argType.loc} module `{argType.name.asl}` does not require any impl types")
     else:
-      err(fmt"{argType.loc} module `{argType.module.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
+      err(fmt"{argType.loc} module `{argType.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
   else:
     var analyzedImpls: seq[AnalyzedArgumentType]
     for (baseType, implType) in zip(typeModule.requires, argType.impls):

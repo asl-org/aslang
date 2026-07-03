@@ -24,11 +24,11 @@ proc loc*(definedType: ResolvedDefinedType): Location =
   of rdtkModule: definedType.module.loc
   of rdtkGeneric: definedType.generic.loc
 
-proc resolveDefinedType*(app: App, file: parser.File, fileScope: FileScope, id: int, definedType: DefinedType): Result[ResolvedDefinedType, string] =
+proc resolveDefinedType*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, id: int, definedType: DefinedType): Result[ResolvedDefinedType, string] =
   case definedType.kind:
   of dtkGeneric:
-    let resolvedGeneric = ? resolveGeneric(app, file, fileScope, definedType.generic)
+    let resolvedGeneric = ? resolveGeneric(app, shells, file, fileScope, definedType.generic)
     ok(newResolvedDefinedType(id, resolvedGeneric))
   of dtkModule:
-    let resolvedModule = ? resolveModule(app, file, fileScope, definedType.module)
+    let resolvedModule = ? resolveModule(app, shells, file, fileScope, definedType.module)
     ok(newResolvedDefinedType(id, resolvedModule))

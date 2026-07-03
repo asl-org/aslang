@@ -17,13 +17,13 @@ import body
 
 proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 
-proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module,
+proc resolveUserFunction*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
     function: UserFunction): Result[ResolvedUserFunction, string] =
   if function.decorators.len > 0:
     return err(fmt"{function.loc} todo: resolve decorators in user function")
 
-  let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, fileScope, module, function.def)
+  let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, shells, file, fileScope, module, function.def)
 
   var scope: FunctionScope
   for arg in resolvedFunctionDefinition.args:
@@ -31,7 +31,7 @@ proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
 
   var resolvedStatements: seq[ResolvedStatement]
   for statement in function.statements:
-    let resolvedStatement = ? resolveStatement(app, file, fileScope, module,
+    let resolvedStatement = ? resolveStatement(app, shells, file, fileScope, module,
       scope, statement)
     resolvedStatements.add(resolvedStatement)
     if resolvedStatement.variable.isSome:
@@ -50,14 +50,15 @@ proc loc*(function: ResolvedFunction): Location =
   of rfkExtern: function.extern.loc
   of rfkUser: function.user.loc
 
-proc resolveFunction*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, function: Function): Result[ResolvedFunction, string] =
+proc resolveFunction*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
+    function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
-    let resolvedUserFunction = ? resolveUserFunction(app, file, fileScope,
+    let resolvedUserFunction = ? resolveUserFunction(app, shells, file, fileScope,
       module, function.user)
     ok(newResolvedFunction(resolvedUserFunction))
   of fkExtern:
-    let resolvedExternFunction = ? resolveExternFunction(app, file, fileScope,
+    let resolvedExternFunction = ? resolveExternFunction(app, shells, file, fileScope,
       module, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))

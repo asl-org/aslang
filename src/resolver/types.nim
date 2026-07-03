@@ -38,9 +38,20 @@ type
     rltkF32, rltkF64, rltkString, rltkPointer
 
   # ==== Argument-type cluster (grammar `ArgumentType`) ====
+  #
+  # `resolvedModule` — resolver-level back-ref to the ResolvedModule
+  # (task 6c). The two-pass resolver creates a shell ResolvedModule
+  # for every parser Module up-front so this reference is well-formed
+  # before argument-type resolution runs; the shell is populated with
+  # requires/data/functions/... in the define pass. Consumers that
+  # need the parser Module read it via `resolvedModule.parsed`.
+  #
+  # `ResolvedGenericArgumentType.generic` stays a parser Generic —
+  # task 6c is scoped to the module edge; the generic edge is a
+  # follow-up (see tasks.md).
 
   ResolvedModuleArgumentType* = ref object
-    root: Module
+    resolvedModule: ResolvedModule
     impls: seq[ResolvedArgumentType]
     loc: Location
 
@@ -248,16 +259,23 @@ proc asl*(argType: ResolvedGenericArgumentType): string = argType.generic.name.a
 
 # ---- ResolvedModuleArgumentType ----
 
-proc newResolvedModuleArgumentType*(root: Module, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
-  ResolvedModuleArgumentType(loc: loc, root: root, impls: impls)
+proc newResolvedModuleArgumentType*(resolvedModule: ResolvedModule, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
+  ResolvedModuleArgumentType(loc: loc, resolvedModule: resolvedModule, impls: impls)
 
-proc newResolvedModuleArgumentType*(root: Module, loc: Location): ResolvedModuleArgumentType =
-  newResolvedModuleArgumentType(root, @[], loc)
+proc newResolvedModuleArgumentType*(resolvedModule: ResolvedModule, loc: Location): ResolvedModuleArgumentType =
+  newResolvedModuleArgumentType(resolvedModule, @[], loc)
 
 proc loc*(argType: ResolvedModuleArgumentType): Location = argType.loc
-proc module*(argType: ResolvedModuleArgumentType): Module = argType.root
-proc name*(argType: ResolvedModuleArgumentType): Identifier = argType.root.name
+proc resolvedModule*(argType: ResolvedModuleArgumentType): ResolvedModule = argType.resolvedModule
 proc impls*(argType: ResolvedModuleArgumentType): seq[ResolvedArgumentType] = argType.impls
+proc parsed*(argType: ResolvedModuleArgumentType): Module = argType.resolvedModule.parsed
+  ## Convenience: the parser Module that this argument type refers to.
+  ## Reads through the resolvedModule shell — during the declare pass
+  ## the shell's `parsed` field is always set, so this is safe even
+  ## before the module has been populated.
+proc name*(argType: ResolvedModuleArgumentType): Identifier = argType.resolvedModule.parsed.name
+  ## Convenience: the parser Module's name. Same "always safe on the
+  ## shell" argument as `parsed*` above.
 
 # ---- ResolvedArgumentType (outer tagged union) ----
 
@@ -419,11 +437,12 @@ proc newResolvedStructRef*(parsed: StructRef, argType: ResolvedArgumentType): Re
 proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
 proc kind*(s: ResolvedStructRef): ResolvedStructRefKind = s.kind
 proc module*(s: ResolvedStructRef): Module =
-  ## Returns the resolved receiver module. Default arm reads the
-  ## stored field; impl arm walks through argType's module root.
+  ## Returns the resolved receiver parser Module. Default arm reads
+  ## the stored field; impl arm walks through argType's
+  ## resolvedModule.parsed.
   case s.kind:
   of rsrkDefault: s.module
-  of rsrkImpl: s.argType.module.root
+  of rsrkImpl: s.argType.module.resolvedModule.parsed
 proc argType*(s: ResolvedStructRef): ResolvedArgumentType =
   assert s.kind == rsrkImpl,
     fmt"ResolvedStructRef.argType accessed but kind is {s.kind}"
@@ -455,11 +474,12 @@ proc newResolvedUnionRef*(parsed: UnionRef, argType: ResolvedArgumentType): Reso
 proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
 proc kind*(u: ResolvedUnionRef): ResolvedUnionRefKind = u.kind
 proc module*(u: ResolvedUnionRef): Module =
-  ## Returns the resolved receiver module. Default arm reads the
-  ## stored field; impl arm walks through argType's module root.
+  ## Returns the resolved receiver parser Module. Default arm reads
+  ## the stored field; impl arm walks through argType's
+  ## resolvedModule.parsed.
   case u.kind:
   of rurkDefault: u.module
-  of rurkImpl: u.argType.module.root
+  of rurkImpl: u.argType.module.resolvedModule.parsed
 proc argType*(u: ResolvedUnionRef): ResolvedArgumentType =
   assert u.kind == rurkImpl,
     fmt"ResolvedUnionRef.argType accessed but kind is {u.kind}"
@@ -704,3 +724,51 @@ proc generic*(definedType: ResolvedDefinedType): ResolvedGeneric =
   assert definedType.kind == rdtkGeneric,
     fmt"ResolvedDefinedType.generic accessed but kind is {definedType.kind}"
   definedType.generic
+
+# ============================================================================
+# Two-pass resolver support: shells + populate + shell tables.
+#
+# `ResolvedModuleArgumentType` now holds a `ResolvedModule` reference,
+# but `ResolvedModule` is what the resolver is building — chicken/egg.
+# Resolved by a declare-then-populate pattern:
+#
+#   1. Before any argument type resolves, the declare pass walks
+#      every parser Module in the app and creates a shell
+#      `ResolvedModule` (via `newResolvedModuleShell`) keyed on
+#      parser identity in a `ResolvedModuleShells` table.
+#   2. During the define pass, `resolveArgumentType` looks up the
+#      shell in the table when building a `ResolvedModuleArgumentType`
+#      — the resulting reference is stable even though the shell is
+#      still empty.
+#   3. When each module finishes resolving, its shell is
+#      `populate`d with the freshly-computed requires / data /
+#      functions / indices. After that, every ResolvedModuleArgumentType
+#      dereferences to a fully-formed ResolvedModule.
+#
+# The generic edge (`ResolvedGenericArgumentType.generic`) stays a
+# parser `Generic` — task 6c is scoped to the module edge.
+# ============================================================================
+
+type
+  ResolvedModuleShells* = Table[Module, ResolvedModule]
+
+proc newResolvedModuleShell*(parsed: Module): ResolvedModule =
+  ## Zero-initialised ResolvedModule carrying only its parser back-ref.
+  ## Every parser Module in the app gets one shell during the declare
+  ## pass so ResolvedModuleArgumentType.resolvedModule always resolves.
+  ResolvedModule(parsed: parsed)
+
+proc populate*(module: ResolvedModule,
+    requires: seq[ResolvedGenericArgumentType],
+    data: Option[ResolvedData],
+    functions: seq[ResolvedFunction],
+    funcDefIndex: Table[ResolvedFunctionDefinition, int],
+    funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]) =
+  ## Fill in a shell ResolvedModule after the define pass has walked
+  ## the module. Called once per module — callers rely on the shell
+  ## staying pristine until the define pass completes.
+  module.requires = requires
+  module.data = data
+  module.functions = functions
+  module.funcDefIndex = funcDefIndex
+  module.funcNameArityIndex = funcNameArityIndex

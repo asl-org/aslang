@@ -30,17 +30,18 @@ proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: Re
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)
   newResolvedArgumentDefinition(argDef.parsed, concreteArgType)
 
-proc resolveArgumentDefinition*(app: App, file: parser.File,
-    fileScope: FileScope, module: Module,
+proc resolveArgumentDefinition*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
     arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, module,
+  let resolvedArgumentType = ? resolveArgumentType(app, shells, file, fileScope, module,
     arg.argType)
   ? resolveDataType(file, module, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
 
-proc resolveArgumentDefinition*(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
+proc resolveArgumentDefinition*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, generic: Generic,
     arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
-  let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, generic,
+  let resolvedArgumentType = ? resolveArgumentType(app, shells, file, fileScope, generic,
     arg.argType)
   ? resolveDataType(file, generic, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
@@ -74,28 +75,31 @@ proc concreteFunctionDefinition*(funcDef: ResolvedFunctionDefinition, moduleType
   let concreteReturns = funcDef.returns.concreteArgumentType(moduleType, generic)
   newResolvedFunctionDefinition(funcDef.parsed, concreteArgs, concreteReturns)
 
-proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScope, module: Module, def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
+proc resolveFunctionDefinition*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
+    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolvedArgs: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolvedArg = ? resolveArgumentDefinition(app, file, fileScope, module,
+    let resolvedArg = ? resolveArgumentDefinition(app, shells, file, fileScope, module,
       arg)
     resolvedArgs.add(resolvedArg)
 
-  let resolvedReturnArgType = ? resolveArgumentType(app, file, fileScope, module,
+  let resolvedReturnArgType = ? resolveArgumentType(app, shells, file, fileScope, module,
     def.returns)
   ? resolveDataType(file, module, def.returns, resolvedReturnArgType)
 
   ok(newResolvedFunctionDefinition(def, resolvedArgs,
     resolvedReturnArgType))
 
-proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
+proc resolveFunctionDefinition*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, generic: Generic,
     def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
   var resolvedArgs: seq[ResolvedArgumentDefinition]
   for arg in def.args:
-    let resolvedArg = ? resolveArgumentDefinition(app, file, fileScope, generic, arg)
+    let resolvedArg = ? resolveArgumentDefinition(app, shells, file, fileScope, generic, arg)
     resolvedArgs.add(resolvedArg)
 
-  let resolvedReturnArgType = ? resolveArgumentType(app, file, fileScope, generic,
+  let resolvedReturnArgType = ? resolveArgumentType(app, shells, file, fileScope, generic,
     def.returns)
   ? resolveDataType(file, generic, def.returns, resolvedReturnArgType)
 
@@ -107,9 +111,9 @@ proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScop
 proc ffi*(function: ResolvedExternFunction): string = function.parsed.ffi
 proc loc*(function: ResolvedExternFunction): Location = function.def.loc
 
-proc resolveExternFunction*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module,
+proc resolveExternFunction*(app: App, shells: ResolvedModuleShells,
+    file: parser.File, fileScope: FileScope, module: Module,
     function: ExternFunction): Result[ResolvedExternFunction, string] =
-  let resolvedFunctionDef = ? resolveFunctionDefinition(app, file, fileScope,
+  let resolvedFunctionDef = ? resolveFunctionDefinition(app, shells, file, fileScope,
     module, function.def)
   ok(newResolvedExternFunction(function, resolvedFunctionDef))

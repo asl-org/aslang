@@ -30,6 +30,10 @@ proc buildFuncNameArityIndex(funcDefs: seq[ResolvedFunctionDefinition]): Table[I
 # ---- ResolvedModule front-door constructor + helpers ----
 
 proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
+  ## Full-construction path — used by call sites that don't participate
+  ## in the shell/populate two-pass (currently only tests). Regular
+  ## resolution uses `newResolvedModuleShell` + `populate` in
+  ## `resolveModule` below.
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
   var funcDefs: seq[ResolvedFunctionDefinition]
   for id, function in functions:
@@ -39,6 +43,21 @@ proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentTyp
   newResolvedModuleInternal(parsed, requires, data, funcDefIndex,
     buildFuncNameArityIndex(funcDefs), functions)
 
+proc populateResolvedModule(shell: ResolvedModule,
+    requires: seq[ResolvedGenericArgumentType],
+    data: Option[ResolvedData],
+    functions: seq[ResolvedFunction]) =
+  ## Compute the funcDef and funcNameArity indices from the resolved
+  ## functions, then hand off to types.nim's `populate`.
+  var funcDefIndex: Table[ResolvedFunctionDefinition, int]
+  var funcDefs: seq[ResolvedFunctionDefinition]
+  for id, function in functions:
+    assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
+    funcDefIndex[function.def] = id
+    funcDefs.add(function.def)
+  shell.populate(requires, data, functions, funcDefIndex,
+    buildFuncNameArityIndex(funcDefs))
+
 proc name*(module: ResolvedModule): Identifier = module.parsed.name
 proc loc*(module: ResolvedModule): Location = module.parsed.loc
 proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
@@ -46,7 +65,7 @@ proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
   for generic in module.requires:
     let argType = newResolvedArgumentType(generic)
     impls.add(argType)
-  newResolvedModuleArgumentType(module.parsed, impls, newLocation())
+  newResolvedModuleArgumentType(module, impls, newLocation())
 
 proc hash*(a: ResolvedModule): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedModule): bool = a.hash == b.hash
@@ -96,8 +115,13 @@ proc validateRequiresConstraints(module: Module): Result[void, string] =
   of dbkLiteral, dbkUnion:
     err(fmt"{module.data.get.loc} module `{module.name.asl}` declares requires but data block is not a struct")
 
-proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module): Result[ResolvedModule, string] =
+proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
+    fileScope: FileScope, module: Module): Result[ResolvedModule, string] =
+  ## Fill in the shell allocated for this parser Module during the
+  ## declare pass. `resolveArgumentType` (called transitively from
+  ## resolveDataBlock / resolveFunction) may already have handed out
+  ## `ResolvedModuleArgumentType` values pointing at this shell —
+  ## populating it here makes those forward references complete.
   if module.decorators.len > 0:
     return err("todo: resolve decorators")
 
@@ -115,7 +139,7 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
 
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:
-    let resolvedDataBlock = ? resolveDataBlock(app, file, fileScope, module,
+    let resolvedDataBlock = ? resolveDataBlock(app, shells, file, fileScope, module,
       module.data.get)
     resolvedData = some(resolvedDataBlock)
 
@@ -134,11 +158,16 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
 
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:
-    let resolvedFunction = ? resolveFunction(app, file, fileScope, module,
+    let resolvedFunction = ? resolveFunction(app, shells, file, fileScope, module,
       function)
     resolvedFunctions.add(resolvedFunction)
 
-  ok(newResolvedModule(module, resolvedRequires, resolvedData, resolvedFunctions))
+  # `shells` always carries a shell for every parser Module in the app
+  # (allocated by apps.nim's declare pass). Look it up and populate.
+  assert(module in shells, fmt"UNREACHABLE: no shell allocated for module `{module.name.asl}`")
+  let shell = shells[module]
+  populateResolvedModule(shell, resolvedRequires, resolvedData, resolvedFunctions)
+  ok(shell)
 
 # ---- ResolvedGeneric front-door constructor + helpers ----
 
@@ -179,13 +208,13 @@ proc findFunctionDefs*(generic: ResolvedGeneric, name: Identifier, arity: int): 
   else:
     ok(generic.funcNameArityIndex[name][arity].mapIt(generic.funcDefs[it]))
 
-proc resolveGeneric*(app: App, file: parser.File, fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
+proc resolveGeneric*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
   if generic.decorators.len > 0:
     return err(fmt"{generic.loc} todo: resolve generic decorators")
 
   var resolvedFunctionDefs: seq[ResolvedFunctionDefinition]
   for funcDef in generic.funcDefs:
-    let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, file, fileScope, generic, funcDef)
+    let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, shells, file, fileScope, generic, funcDef)
     resolvedFunctionDefs.add(resolvedFunctionDefinition)
 
   ok(newResolvedGeneric(generic, resolvedFunctionDefs))

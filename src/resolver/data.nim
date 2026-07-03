@@ -43,11 +43,11 @@ proc requires*(struct: ResolvedStructDef): seq[ResolvedGenericArgumentType] =
     requires[index] = genericType
   return requires
 
-proc resolveStructDef*(app: App, file: parser.File, fileScope: FileScope, module: Module, struct: StructDef): Result[ResolvedStructDef, string] =
+proc resolveStructDef*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, module: Module, struct: StructDef): Result[ResolvedStructDef, string] =
   var resolvedFields: seq[ResolvedArgumentDefinition]
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for field in struct.fields:
-    let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module, field)
+    let resolvedField = ? resolveArgumentDefinition(app, shells, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedStructDef(struct, resolvedFields, genericTypeIndex))
@@ -64,10 +64,10 @@ proc findField*(variant: ResolvedVariant, name: Identifier): Result[ResolvedArgu
 # NOTE: `genericTypeIndex` is the union's shared position table — mutated
 # in place as each variant's fields contribute new generics (in
 # declaration order); not returned because the union accumulates it.
-proc resolveVariant(app: App, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDefinition, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
+proc resolveVariant(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDefinition, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
   var resolvedFields: seq[ResolvedArgumentDefinition]
   for field in variant.fields:
-    let resolvedField = ? resolveArgumentDefinition(app, file, fileScope, module, field)
+    let resolvedField = ? resolveArgumentDefinition(app, shells, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedVariant(variant, resolvedFields))
@@ -90,12 +90,12 @@ proc requires*(union: ResolvedUnionDef): seq[ResolvedGenericArgumentType] =
     requires[index] = genericType
   return requires
 
-proc resolveUnionDef*(app: App, file: parser.File, fileScope: FileScope,
+proc resolveUnionDef*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope,
     module: Module, union: UnionDef): Result[ResolvedUnionDef, string] =
   var resolvedVariants: seq[ResolvedVariant]
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for variant in union.variants:
-    let resolvedVariant = ? resolveVariant(app, file, fileScope, module, variant, genericTypeIndex)
+    let resolvedVariant = ? resolveVariant(app, shells, file, fileScope, module, variant, genericTypeIndex)
     resolvedVariants.add(resolvedVariant)
   ok(newResolvedUnionDef(union, resolvedVariants, genericTypeIndex))
 
@@ -107,16 +107,16 @@ proc requires*(data: ResolvedData): seq[ResolvedGenericArgumentType] =
   of rdkStruct: data.struct.requires
   of rdkUnion: data.union.requires
 
-proc resolveDataBlock*(app: App, file: parser.File, fileScope: FileScope,
-    module: Module, data: DataBlock): Result[ResolvedData, string] =
+proc resolveDataBlock*(app: App, shells: ResolvedModuleShells, file: parser.File,
+    fileScope: FileScope, module: Module, data: DataBlock): Result[ResolvedData, string] =
   case data.kind:
   of dbkLiteral:
     let resolvedLiteralType = ? resolveLiteralDef(file, data.literal)
     ok(newResolvedData(resolvedLiteralType))
   of dbkStruct:
-    let resolvedStruct = ? resolveStructDef(app, file, fileScope, module,
+    let resolvedStruct = ? resolveStructDef(app, shells, file, fileScope, module,
       data.struct)
     ok(newResolvedData(resolvedStruct))
   of dbkUnion:
-    let resolvedUnion = ? resolveUnionDef(app, file, fileScope, module, data.union)
+    let resolvedUnion = ? resolveUnionDef(app, shells, file, fileScope, module, data.union)
     ok(newResolvedData(resolvedUnion))
