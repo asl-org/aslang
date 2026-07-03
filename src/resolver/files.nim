@@ -4,10 +4,8 @@ import results, strformat, tables
 
 import tokenizer
 import parser
-import types
+import domain
 import imports
-import argtypes
-import definedTypes
 
 # ResolvedFile
 type ResolvedFile* = ref object

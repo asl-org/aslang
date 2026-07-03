@@ -8,7 +8,7 @@
 import results, tables, options
 
 import parser
-import types
+import domain
 import files
 
 # ResolvedApp + entry
