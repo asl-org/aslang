@@ -1,6 +1,6 @@
 ## Resolution of module and generic top-level blocks.
 
-import results, options, strformat, tables, options, hashes, sets
+import results, options, strformat, tables, options, hashes, sets, sequtils
 
 import tokenizer
 import parser
@@ -9,20 +9,34 @@ import funcdefs
 import data
 import funcs
 
+proc buildFuncNameArityIndex(funcDefs: seq[ResolvedFunctionDefinition]): Table[Identifier, Table[int, seq[int]]] =
+  ## Positions of function definitions indexed by name then arity —
+  ## drives overload lookup at call sites. Used by both ResolvedModule
+  ## and ResolvedGeneric (see below).
+  for id, funcDef in funcDefs:
+    if funcDef.name notin result:
+      result[funcDef.name] = initTable[int, seq[int]]()
+    if funcDef.arity notin result[funcDef.name]:
+      result[funcDef.name][funcDef.arity] = newSeq[int]()
+    result[funcDef.name][funcDef.arity].add(id)
+
 # ResolvedModule
 type ResolvedModule* = ref object
   parsed: Module
   requires: seq[ResolvedGenericArgumentType]
   data: Option[ResolvedData]
   funcDefIndex: Table[ResolvedFunctionDefinition, int]
+  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   functions: seq[ResolvedFunction]
 
 proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
+  var funcDefs: seq[ResolvedFunctionDefinition]
   for id, function in functions:
     assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
     funcDefIndex[function.def] = id
-  ResolvedModule(parsed: parsed, requires: requires, data: data, funcDefIndex: funcDefIndex, functions: functions)
+    funcDefs.add(function.def)
+  ResolvedModule(parsed: parsed, requires: requires, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions)
 
 proc parsed*(module: ResolvedModule): Module = module.parsed
 proc name*(module: ResolvedModule): Identifier = module.parsed.name
@@ -45,6 +59,19 @@ proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDefinitio
     none(ResolvedFunctionDefinition)
   else:
     some(module.functions[module.funcDefIndex[funcDef]].def)
+
+proc findFunctionDefs*(module: ResolvedModule, name: Identifier, arity: int, public: bool): Result[seq[ResolvedFunctionDefinition], string] =
+  ## Overload-lookup entry point — returns every function definition
+  ## that matches `name` + `arity`, optionally filtered to `public` only
+  ## (for external-call receivers). Uniqueness is left to the caller's
+  ## overload-selection step (see analyzer/body.nim's analyzeFunctionCall).
+  if name notin module.funcNameArityIndex:
+    err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}`")
+  elif arity notin module.funcNameArityIndex[name]:
+    err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}` with arity `{arity}`")
+  else:
+    let funcDefs = module.funcNameArityIndex[name][arity].mapIt(module.functions[it].def)
+    ok(if public: funcDefs.filterIt(it.public) else: funcDefs)
 
 proc validateRequiresConstraints(module: Module): Result[void, string] =
   ## Enforces the two structural requires-block constraints:
@@ -121,13 +148,14 @@ type ResolvedGeneric* = ref object
   parsed: Generic
   funcDefs: seq[ResolvedFunctionDefinition]
   funcDefIndex: Table[ResolvedFunctionDefinition, int]
+  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
 proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDefinition]): ResolvedGeneric =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
   for id, funcDef in funcDefs:
     assert(funcDef notin funcDefIndex, "UNREACHABLE: generic resolution broke due to duplicated function definition")
     funcDefIndex[funcDef] = id
-  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex)
+  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs))
 
 proc self*(generic: ResolvedGeneric): Generic = generic.parsed
 proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
@@ -148,6 +176,16 @@ proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDefinit
     none(ResolvedFunctionDefinition)
   else:
     some(generic.funcDefs[generic.funcDefIndex[funcDef]])
+
+proc findFunctionDefs*(generic: ResolvedGeneric, name: Identifier, arity: int): Result[seq[ResolvedFunctionDefinition], string] =
+  ## Overload-lookup for generic funcDefs — every funcDef inside a
+  ## generic is implicitly public (per grammar), so no public filter.
+  if name notin generic.funcNameArityIndex:
+    err(fmt"{name.loc} generic `{generic.name.asl}` does not have a function named `{name.asl}`")
+  elif arity notin generic.funcNameArityIndex[name]:
+    err(fmt"{name.loc} generic `{generic.name.asl}` does not have a function named `{name.asl}` with arity `{arity}`")
+  else:
+    ok(generic.funcNameArityIndex[name][arity].mapIt(generic.funcDefs[it]))
 
 proc resolveGeneric*(app: App, file: parser.File, fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
   if generic.decorators.len > 0:
