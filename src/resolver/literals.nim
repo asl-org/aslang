@@ -1,15 +1,13 @@
 ## Resolved literal types — the discriminator tag a literal-backed
 ## module (u8, u16, ..., string, pointer) carries through resolution.
+##
+## The `ResolvedLiteralDef` type itself lives in `types.nim` alongside
+## every other Resolved* type; this file owns the resolver proc.
 
 import results, strformat
 
 import parser
-
-# ResolvedLiteralDef
-type ResolvedLiteralDef* = enum
-  rltkU8, rltkU16, rltkU32, rltkU64
-  rltkI8, rltkI16, rltkI32, rltkI64
-  rltkF32, rltkF64, rltkString, rltkPointer
+import types
 
 proc resolveLiteralDef*(file: parser.File, literal: LiteralDef): Result[ResolvedLiteralDef, string] =
   case literal.content:

@@ -6,7 +6,6 @@ import tokenizer
 import parser
 import imports
 import argtypes
-import modules
 import definedTypes
 
 # ResolvedFile

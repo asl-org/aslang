@@ -1,9 +1,16 @@
 ## Resolution of module and generic top-level blocks.
+##
+## The `Resolved*` types, their raw constructors, and direct-field
+## accessors live in `types.nim`. This file owns the front-door
+## `newResolvedModule` / `newResolvedGeneric` factories (which
+## compute the funcDefIndex / funcNameArityIndex tables from the
+## function list), the computed helpers, and the resolve procs.
 
 import results, options, strformat, tables, options, hashes, sets, sequtils
 
 import tokenizer
 import parser
+import types
 import argtypes
 import funcdefs
 import data
@@ -20,14 +27,7 @@ proc buildFuncNameArityIndex(funcDefs: seq[ResolvedFunctionDefinition]): Table[I
       result[funcDef.name][funcDef.arity] = newSeq[int]()
     result[funcDef.name][funcDef.arity].add(id)
 
-# ResolvedModule
-type ResolvedModule* = ref object
-  parsed: Module
-  requires: seq[ResolvedGenericArgumentType]
-  data: Option[ResolvedData]
-  funcDefIndex: Table[ResolvedFunctionDefinition, int]
-  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
-  functions: seq[ResolvedFunction]
+# ---- ResolvedModule front-door constructor + helpers ----
 
 proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
@@ -36,13 +36,10 @@ proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentTyp
     assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
     funcDefIndex[function.def] = id
     funcDefs.add(function.def)
-  ResolvedModule(parsed: parsed, requires: requires, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions)
+  newResolvedModuleInternal(parsed, requires, data, funcDefIndex,
+    buildFuncNameArityIndex(funcDefs), functions)
 
-proc parsed*(module: ResolvedModule): Module = module.parsed
 proc name*(module: ResolvedModule): Identifier = module.parsed.name
-proc requires*(module: ResolvedModule): seq[ResolvedGenericArgumentType] = module.requires
-proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
-proc functions*(module: ResolvedModule): seq[ResolvedFunction] = module.functions
 proc loc*(module: ResolvedModule): Location = module.parsed.loc
 proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
   var impls: seq[ResolvedArgumentType]
@@ -143,24 +140,19 @@ proc resolveModule*(app: App, file: parser.File, fileScope: FileScope,
 
   ok(newResolvedModule(module, resolvedRequires, resolvedData, resolvedFunctions))
 
-# ResolvedGeneric
-type ResolvedGeneric* = ref object
-  parsed: Generic
-  funcDefs: seq[ResolvedFunctionDefinition]
-  funcDefIndex: Table[ResolvedFunctionDefinition, int]
-  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
+# ---- ResolvedGeneric front-door constructor + helpers ----
 
 proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDefinition]): ResolvedGeneric =
   var funcDefIndex: Table[ResolvedFunctionDefinition, int]
   for id, funcDef in funcDefs:
     assert(funcDef notin funcDefIndex, "UNREACHABLE: generic resolution broke due to duplicated function definition")
     funcDefIndex[funcDef] = id
-  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs))
+  newResolvedGenericInternal(parsed, funcDefs, funcDefIndex,
+    buildFuncNameArityIndex(funcDefs))
 
 proc self*(generic: ResolvedGeneric): Generic = generic.parsed
 proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
 proc name*(generic: ResolvedGeneric): Identifier = generic.parsed.name
-proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDefinition] = generic.funcDefs
 proc loc*(generic: ResolvedGeneric): Location = generic.parsed.loc
 proc hash*(a: ResolvedGeneric): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedGeneric): bool = a.hash == b.hash

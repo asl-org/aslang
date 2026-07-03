@@ -2,29 +2,21 @@
 ## initializers, function calls, expressions, statements, and the
 ## mutually-recursive cluster they form.
 ##
-## Every type that participates in the cycle (Initializer ↔
-## FunctionCall ↔ Expression ↔ Match/CaseBlock ↔ Statement ↔
-## Assignment/Setter/KeywordArgument) lives in a single type block
-## — Nim only resolves cross-references inside one block.
-## Constructors and resolveX procs follow the type block in
-## per-concept order (matching resolver.nim's original layout).
+## The `Resolved*` types, their constructors, and direct-field
+## accessors live in `types.nim`. This file owns the computed
+## helpers (loc, source, property, name, target, ...) and the
+## resolveX procs.
 
 import results, options, sets, strformat
 
 import tokenizer
 import parser
+import types
 import argtypes
-import funcrefs
 import patterns
 
-# ResolvedGetter — independent of the big cluster.
-type ResolvedGetter* = ref object
-  parsed: Getter
+# ---- ResolvedGetter helpers ----
 
-proc newResolvedGetter*(parsed: Getter): ResolvedGetter =
-  ResolvedGetter(parsed: parsed)
-
-proc parsed*(getter: ResolvedGetter): Getter = getter.parsed
 proc source*(getter: ResolvedGetter): Identifier = getter.parsed.source
 proc property*(getter: ResolvedGetter): Identifier = getter.parsed.property
 proc loc*(getter: ResolvedGetter): Location = getter.parsed.loc
@@ -41,19 +33,9 @@ proc resolveGetter*(file: parser.File, scope: FunctionScope,
   discard ? resolveVariable(file, scope, getter.source)
   ok(newResolvedGetter(getter))
 
-# ResolvedLiteralInitializer — needs ResolvedArgumentType but no
-# ResolvedExpression dependency (literal value is parser AST).
-type ResolvedLiteralInitializer* = ref object
-  parsed: LiteralInitializer
-  argType: ResolvedArgumentType
+# ---- ResolvedLiteralInitializer helpers ----
 
-proc newResolvedLiteralInitializer*(parsed: LiteralInitializer,
-    argType: ResolvedArgumentType): ResolvedLiteralInitializer =
-  ResolvedLiteralInitializer(parsed: parsed, argType: argType)
-
-proc parsed*(init: ResolvedLiteralInitializer): LiteralInitializer = init.parsed
 proc value*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
-proc argType*(init: ResolvedLiteralInitializer): ResolvedArgumentType = init.argType
 proc loc*(init: ResolvedLiteralInitializer): Location = init.parsed.loc
 proc literal*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 
@@ -65,193 +47,17 @@ proc resolveLiteralInitializer(app: App, file: parser.File,
     literalInit.argType)
   ok(newResolvedLiteralInitializer(literalInit, resolvedArgType))
 
-# Mutually-recursive body-level cluster — every type that cycles
-# back to ResolvedExpression / ResolvedStatement must live here.
-type
-  ResolvedKeywordArgument* = ref object
-    parsed: KeywordArgument
-    expression: ResolvedExpression
+# ---- Body-cluster computed helpers ----
 
-  ResolvedStructRefKind* = enum
-    rsrkDefault, rsrkImpl
-  ResolvedStructRef* = ref object
-    parsed: StructRef
-    case kind: ResolvedStructRefKind
-    of rsrkDefault: module: Module
-    of rsrkImpl: argType: ResolvedArgumentType
-
-  ResolvedUnionRefKind* = enum
-    rurkDefault, rurkImpl
-  ResolvedUnionRef* = ref object
-    parsed: UnionRef
-    case kind: ResolvedUnionRefKind
-    of rurkDefault: module: Module
-    of rurkImpl: argType: ResolvedArgumentType
-
-  ResolvedStructInitializer* = ref object
-    parsed: StructInitializer
-    structRef: ResolvedStructRef
-    kwargs: seq[ResolvedKeywordArgument]
-
-  ResolvedUnionInitializer* = ref object
-    parsed: UnionInitializer
-    unionRef: ResolvedUnionRef
-    kwargs: seq[ResolvedKeywordArgument]
-
-  ResolvedInitializerKind* = enum
-    rikStruct, rikUnion, rikLiteral
-  ResolvedInitializer* = ref object
-    case kind: ResolvedInitializerKind
-    of rikStruct: struct: ResolvedStructInitializer
-    of rikUnion: union: ResolvedUnionInitializer
-    of rikLiteral: literal: ResolvedLiteralInitializer
-
-  ResolvedFunctionCall* = ref object
-    parsed: FunctionCall
-    args: seq[ResolvedExpression]
-
-  ResolvedAssignment* = ref object
-    parsed: Assignment
-    expression: ResolvedExpression
-
-  ResolvedSetter* = ref object
-    parsed: Setter
-    getter: ResolvedGetter
-    expression: ResolvedExpression
-
-  ResolvedCaseBlock* = ref object
-    parsed: CaseBlock
-    pattern: ResolvedCasePattern
-    statements: seq[ResolvedStatement]
-
-  ResolvedMatchExpression* = ref object
-    parsed: MatchExpression
-    subject: ResolvedExpression
-    cases: seq[ResolvedCaseBlock]
-
-  ResolvedExpressionKind* = enum
-    rekFunctionCall, rekVariable, rekLiteral, rekInitializer,
-    rekGetter, rekMatchExpr
-  ResolvedExpression* = ref object
-    case kind: ResolvedExpressionKind
-    of rekFunctionCall: fncall: ResolvedFunctionCall
-    of rekVariable: variable: Identifier
-    of rekLiteral: literal: Literal
-    of rekInitializer: initializer: ResolvedInitializer
-    of rekGetter: getter: ResolvedGetter
-    of rekMatchExpr: match: ResolvedMatchExpression
-
-  ResolvedStatementKind* = enum
-    rskAssignment, rskExpr, rskSetter
-  ResolvedStatement* = ref object
-    case kind: ResolvedStatementKind
-    of rskAssignment: assignment: ResolvedAssignment
-    of rskExpr: expression: ResolvedExpression
-    of rskSetter: setter: ResolvedSetter
-
-# Constructors for every type in the cluster.
-proc newResolvedKeywordArgument*(parsed: KeywordArgument,
-    expression: ResolvedExpression): ResolvedKeywordArgument =
-  ResolvedKeywordArgument(parsed: parsed, expression: expression)
-
-proc parsed*(kwarg: ResolvedKeywordArgument): KeywordArgument = kwarg.parsed
 proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.parsed.name
 proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
-proc expression*(kwarg: ResolvedKeywordArgument): ResolvedExpression = kwarg.expression
 
-proc newResolvedStructRef*(parsed: StructRef, module: Module): ResolvedStructRef =
-  ## Default kind — carries the resolved receiver module (looked up from
-  ## the file's typeIndex, handles local and imported alike).
-  ResolvedStructRef(parsed: parsed, kind: rsrkDefault, module: module)
-
-proc newResolvedStructRef*(parsed: StructRef, argType: ResolvedArgumentType): ResolvedStructRef =
-  ## Impl kind — wraps the resolved argument type (root + impls). The
-  ## resolved receiver module is reachable via argType.module.root.
-  ResolvedStructRef(parsed: parsed, kind: rsrkImpl, argType: argType)
-
-proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
-proc kind*(s: ResolvedStructRef): ResolvedStructRefKind = s.kind
-proc module*(s: ResolvedStructRef): Module =
-  ## Returns the resolved receiver module. Default arm reads the stored
-  ## field; impl arm extracts via argType's module root.
-  case s.kind:
-  of rsrkDefault: s.module
-  of rsrkImpl: s.argType.module.module
-proc argType*(s: ResolvedStructRef): ResolvedArgumentType =
-  assert s.kind == rsrkImpl,
-    fmt"ResolvedStructRef.argType accessed but kind is {s.kind}"
-  s.argType
 proc loc*(s: ResolvedStructRef): Location = s.parsed.loc
-
-proc newResolvedStructInitializer*(parsed: StructInitializer, structRef: ResolvedStructRef,
-    kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
-  ResolvedStructInitializer(parsed: parsed, structRef: structRef, kwargs: kwargs)
-
-proc parsed*(struct: ResolvedStructInitializer): StructInitializer = struct.parsed
-proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
-proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.structRef
-proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
-
-proc newResolvedUnionRef*(parsed: UnionRef, module: Module): ResolvedUnionRef =
-  ## Default kind — carries the resolved receiver module (looked up
-  ## from the file's typeIndex, handles local and imported alike).
-  ResolvedUnionRef(parsed: parsed, kind: rurkDefault, module: module)
-
-proc newResolvedUnionRef*(parsed: UnionRef, argType: ResolvedArgumentType): ResolvedUnionRef =
-  ## Impl kind — wraps the resolved argument type (root + impls). The
-  ## resolved receiver module is reachable via argType.module.root.
-  ResolvedUnionRef(parsed: parsed, kind: rurkImpl, argType: argType)
-
-proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
-proc kind*(u: ResolvedUnionRef): ResolvedUnionRefKind = u.kind
-proc module*(u: ResolvedUnionRef): Module =
-  ## Returns the resolved receiver module. Default arm reads the stored
-  ## field; impl arm extracts via argType's module root.
-  case u.kind:
-  of rurkDefault: u.module
-  of rurkImpl: u.argType.module.module
-proc argType*(u: ResolvedUnionRef): ResolvedArgumentType =
-  assert u.kind == rurkImpl,
-    fmt"ResolvedUnionRef.argType accessed but kind is {u.kind}"
-  u.argType
 proc loc*(u: ResolvedUnionRef): Location = u.parsed.loc
-
-proc newResolvedUnionInitializer*(parsed: UnionInitializer, unionRef: ResolvedUnionRef,
-    kwargs: seq[ResolvedKeywordArgument]): ResolvedUnionInitializer =
-  ResolvedUnionInitializer(parsed: parsed, unionRef: unionRef, kwargs: kwargs)
-
-proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
+proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
-proc unionRef*(init: ResolvedUnionInitializer): ResolvedUnionRef = init.unionRef
 proc module*(init: ResolvedUnionInitializer): Module = module(init.unionRef)
 proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
-proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
-
-proc newResolvedInitializer*(
-    struct: ResolvedStructInitializer): ResolvedInitializer =
-  ResolvedInitializer(kind: rikStruct, struct: struct)
-
-proc newResolvedInitializer*(
-    union: ResolvedUnionInitializer): ResolvedInitializer =
-  ResolvedInitializer(kind: rikUnion, union: union)
-
-proc newResolvedInitializer*(
-    literal: ResolvedLiteralInitializer): ResolvedInitializer =
-  ResolvedInitializer(kind: rikLiteral, literal: literal)
-
-proc kind*(init: ResolvedInitializer): ResolvedInitializerKind = init.kind
-proc literal*(init: ResolvedInitializer): ResolvedLiteralInitializer =
-  assert init.kind == rikLiteral,
-    fmt"ResolvedInitializer.literal accessed but kind is {init.kind}"
-  init.literal
-proc union*(init: ResolvedInitializer): ResolvedUnionInitializer =
-  assert init.kind == rikUnion,
-    fmt"ResolvedInitializer.union accessed but kind is {init.kind}"
-  init.union
-proc struct*(init: ResolvedInitializer): ResolvedStructInitializer =
-  assert init.kind == rikStruct,
-    fmt"ResolvedInitializer.struct accessed but kind is {init.kind}"
-  init.struct
 
 proc loc*(init: ResolvedInitializer): Location =
   case init.kind:
@@ -259,126 +65,25 @@ proc loc*(init: ResolvedInitializer): Location =
   of rikStruct: init.struct.loc
   of rikUnion: init.union.loc
 
-proc newResolvedFunctionCall*(parsed: FunctionCall,
-    args: seq[ResolvedExpression]): ResolvedFunctionCall =
-  ResolvedFunctionCall(parsed: parsed, args: args)
-
-proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
-proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 
-proc newResolvedAssignment*(parsed: Assignment,
-    expression: ResolvedExpression): ResolvedAssignment =
-  ResolvedAssignment(parsed: parsed, expression: expression)
-
-proc parsed*(assignment: ResolvedAssignment): Assignment = assignment.parsed
 proc loc*(assignment: ResolvedAssignment): Location = assignment.parsed.loc
 proc target*(assignment: ResolvedAssignment): Identifier = assignment.parsed.target
-proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
 
-proc newResolvedSetter*(parsed: Setter, getter: ResolvedGetter,
-    expression: ResolvedExpression): ResolvedSetter =
-  ResolvedSetter(parsed: parsed, getter: getter, expression: expression)
-
-proc parsed*(setter: ResolvedSetter): Setter = setter.parsed
 proc loc*(setter: ResolvedSetter): Location = setter.parsed.loc
-proc getter*(setter: ResolvedSetter): ResolvedGetter = setter.getter
-proc expression*(setter: ResolvedSetter): ResolvedExpression = setter.expression
-
-proc newResolvedCaseBlock*(parsed: CaseBlock, pattern: ResolvedCasePattern,
-    statements: seq[ResolvedStatement]): ResolvedCaseBlock =
-  ResolvedCaseBlock(parsed: parsed, pattern: pattern, statements: statements)
 
 proc loc*(caseBlock: ResolvedCaseBlock): Location = caseBlock.parsed.loc
-proc pattern*(caseBlock: ResolvedCaseBlock): ResolvedCasePattern = caseBlock.pattern
-proc statements*(caseBlock: ResolvedCaseBlock): seq[ResolvedStatement] = caseBlock.statements
 
-proc newResolvedMatchExpression*(parsed: MatchExpression, subject: ResolvedExpression,
-    cases: seq[ResolvedCaseBlock]): ResolvedMatchExpression =
-  ResolvedMatchExpression(parsed: parsed, subject: subject, cases: cases)
-
-proc parsed*(match: ResolvedMatchExpression): MatchExpression = match.parsed
 proc loc*(match: ResolvedMatchExpression): Location = match.parsed.loc
-proc subject*(match: ResolvedMatchExpression): ResolvedExpression = match.subject
-proc cases*(match: ResolvedMatchExpression): seq[ResolvedCaseBlock] = match.cases
-
-proc newResolvedExpression*(fncall: ResolvedFunctionCall): ResolvedExpression =
-  ResolvedExpression(kind: rekFunctionCall, fncall: fncall)
-
-proc newResolvedExpression*(
-    initializer: ResolvedInitializer): ResolvedExpression =
-  ResolvedExpression(kind: rekInitializer, initializer: initializer)
-
-proc newResolvedExpression*(variable: Identifier): ResolvedExpression =
-  ResolvedExpression(kind: rekVariable, variable: variable)
-
-proc newResolvedExpression*(literal: Literal): ResolvedExpression =
-  ResolvedExpression(kind: rekLiteral, literal: literal)
-
-proc newResolvedExpression*(getter: ResolvedGetter): ResolvedExpression =
-  ResolvedExpression(kind: rekGetter, getter: getter)
-
-proc newResolvedExpression*(
-    match: ResolvedMatchExpression): ResolvedExpression =
-  ResolvedExpression(kind: rekMatchExpr, match: match)
-
-proc kind*(expression: ResolvedExpression): ResolvedExpressionKind = expression.kind
-proc fncall*(expression: ResolvedExpression): ResolvedFunctionCall =
-  assert expression.kind == rekFunctionCall,
-    fmt"ResolvedExpression.fncall accessed but kind is {expression.kind}"
-  expression.fncall
-proc variable*(expression: ResolvedExpression): Identifier =
-  assert expression.kind == rekVariable,
-    fmt"ResolvedExpression.variable accessed but kind is {expression.kind}"
-  expression.variable
-proc literal*(expression: ResolvedExpression): Literal =
-  assert expression.kind == rekLiteral,
-    fmt"ResolvedExpression.literal accessed but kind is {expression.kind}"
-  expression.literal
-proc match*(expression: ResolvedExpression): ResolvedMatchExpression =
-  assert expression.kind == rekMatchExpr,
-    fmt"ResolvedExpression.match accessed but kind is {expression.kind}"
-  expression.match
-proc init*(expression: ResolvedExpression): ResolvedInitializer =
-  assert expression.kind == rekInitializer,
-    fmt"ResolvedExpression.init accessed but kind is {expression.kind}"
-  expression.initializer
-proc getter*(expression: ResolvedExpression): ResolvedGetter =
-  assert expression.kind == rekGetter,
-    fmt"ResolvedExpression.getter accessed but kind is {expression.kind}"
-  expression.getter
 
 proc loc*(expression: ResolvedExpression): Location =
   case expression.kind:
   of rekFunctionCall: expression.fncall.loc
   of rekGetter: expression.getter.loc
-  of rekInitializer: expression.initializer.loc
+  of rekInitializer: expression.init.loc
   of rekMatchExpr: expression.match.loc
   of rekVariable: expression.variable.loc
   of rekLiteral: expression.literal.loc
-
-proc newResolvedStatement*(assignment: ResolvedAssignment): ResolvedStatement =
-  ResolvedStatement(kind: rskAssignment, assignment: assignment)
-
-proc newResolvedStatement*(expression: ResolvedExpression): ResolvedStatement =
-  ResolvedStatement(kind: rskExpr, expression: expression)
-
-proc newResolvedStatement*(setter: ResolvedSetter): ResolvedStatement =
-  ResolvedStatement(kind: rskSetter, setter: setter)
-
-proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
-proc expression*(statement: ResolvedStatement): ResolvedExpression =
-  assert statement.kind == rskExpr,
-    fmt"ResolvedStatement.expression accessed but kind is {statement.kind}"
-  statement.expression
-proc assignment*(statement: ResolvedStatement): ResolvedAssignment =
-  assert statement.kind == rskAssignment,
-    fmt"ResolvedStatement.assignment accessed but kind is {statement.kind}"
-  statement.assignment
-proc setter*(statement: ResolvedStatement): ResolvedSetter =
-  assert statement.kind == rskSetter,
-    fmt"ResolvedStatement.setter accessed but kind is {statement.kind}"
-  statement.setter
 
 proc loc*(statement: ResolvedStatement): Location =
   case statement.kind:
@@ -394,7 +99,8 @@ proc variable*(statement: ResolvedStatement): Option[Identifier] =
   of rskExpr: none(Identifier)
   of rskSetter: none(Identifier)
 
-# Forward declarations for the resolveX procs in the cluster.
+# ---- Forward declarations for the resolveX procs in the cluster ----
+
 proc resolveExpression*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string]

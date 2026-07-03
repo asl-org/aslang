@@ -1,27 +1,21 @@
 ## Function-definition shape: a single argument definition, a full
 ## function signature (definition), and the extern-function form.
-## Each layers on top of argtypes via resolveArgumentType +
-## resolveDataType.
+##
+## The `Resolved*` types, their constructors, and direct-field
+## accessors live in `types.nim`. This file owns the computed
+## helpers (`hash`, `asl`, `arity`, `loc`, `public`, ...) and the
+## resolveX procs.
 
 import results, options, hashes, strformat, strutils
 
 import tokenizer
 import parser
+import types
 import argtypes
 
-# ResolvedArgumentDefinition
-type ResolvedArgumentDefinition* = ref object
-  parsed: ArgumentDefinition
-  argType: ResolvedArgumentType
+# ---- ResolvedArgumentDefinition helpers ----
 
-proc newResolvedArgumentDefinition*(parsed: ArgumentDefinition,
-    argType: ResolvedArgumentType): ResolvedArgumentDefinition =
-  ResolvedArgumentDefinition(parsed: parsed, argType: argType)
-
-proc parsed*(d: ResolvedArgumentDefinition): ArgumentDefinition = d.parsed
-proc name*(d: ResolvedArgumentDefinition): Identifier = d.parsed.name
 proc loc*(d: ResolvedArgumentDefinition): Location = d.argType.loc
-proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
 proc hash*(d: ResolvedArgumentDefinition): Hash = d.argType.hash
 proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
 proc asl*(argDef: ResolvedArgumentDefinition): string =
@@ -51,27 +45,20 @@ proc resolveArgumentDefinition*(app: App, file: parser.File, fileScope: FileScop
   ? resolveDataType(file, generic, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
 
-# ResolvedFunctionDefinition
-type ResolvedFunctionDefinition* = ref object
-  parsed: FunctionDefinition
-  args: seq[ResolvedArgumentDefinition]
-  returns: ResolvedArgumentType
-
-proc newResolvedFunctionDefinition*(parsed: FunctionDefinition, args: seq[ResolvedArgumentDefinition], returns: ResolvedArgumentType): ResolvedFunctionDefinition =
-  ResolvedFunctionDefinition(parsed: parsed, args: args, returns: returns)
+# ---- ResolvedFunctionDefinition helpers ----
 
 proc public*(funcDef: ResolvedFunctionDefinition): bool = funcDef.parsed.public
 proc name*(funcDef: ResolvedFunctionDefinition): Identifier = funcDef.parsed.name
 proc arity*(funcDef: ResolvedFunctionDefinition): int = funcDef.parsed.arity
-proc args*(funcDef: ResolvedFunctionDefinition): seq[ResolvedArgumentDefinition] = funcDef.args
-proc returns*(funcDef: ResolvedFunctionDefinition): ResolvedArgumentType = funcDef.returns
 proc loc*(funcDef: ResolvedFunctionDefinition): Location = funcDef.parsed.loc
+
 proc asl*(funcDef: ResolvedFunctionDefinition): string =
   var args: seq[string]
   for arg in funcDef.args:
     args.add(arg.asl)
   let argsJoined = args.join(", ")
   fmt"func {funcDef.name.asl}({argsJoined}): {funcDef.returns.asl}"
+
 proc hash*(funcDef: ResolvedFunctionDefinition): Hash =
   var acc = funcDef.name.hash
   for arg in funcDef.args:
@@ -115,18 +102,9 @@ proc resolveFunctionDefinition*(app: App, file: parser.File, fileScope: FileScop
   ok(newResolvedFunctionDefinition(def, resolvedArgs,
     resolvedReturnArgType))
 
-# ResolvedExternFunction
-type ResolvedExternFunction* = ref object
-  parsed: ExternFunction
-  def: ResolvedFunctionDefinition
+# ---- ResolvedExternFunction helpers ----
 
-proc newResolvedExternFunction*(parsed: ExternFunction,
-    def: ResolvedFunctionDefinition): ResolvedExternFunction =
-  ResolvedExternFunction(parsed: parsed, def: def)
-
-proc parsed*(function: ResolvedExternFunction): ExternFunction = function.parsed
 proc ffi*(function: ResolvedExternFunction): string = function.parsed.ffi
-proc def*(function: ResolvedExternFunction): ResolvedFunctionDefinition = function.def
 proc loc*(function: ResolvedExternFunction): Location = function.def.loc
 
 proc resolveExternFunction*(app: App, file: parser.File, fileScope: FileScope,

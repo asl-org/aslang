@@ -1,87 +1,44 @@
-## Argument-type resolution. The three Resolved*ArgumentType ref
-## objects are mutually recursive (an impl is itself a
-## ResolvedArgumentType), so they live in one type block. This file
-## also owns FileScope (a Table[Identifier, DefinedType]) since
-## resolveArgumentType is the first proc that consults it.
+## Argument-type resolution.
+##
+## The `Resolved*ArgumentType` types, their constructors, and direct-
+## field accessors live in `types.nim` (Nim requires the whole
+## reachability cycle in one type: block). This file owns the
+## resolveArgumentType overloads, the post-resolution `resolveDataType`
+## guard, and every computed helper (`hash`, `asl`,
+## `concreteArgumentType`, `findDefinedType`, `findModule`) that works
+## through the accessors.
 ##
 ## The procs come in module-context and generic-context overloads.
-## resolveDataType is the post-resolution guard that asserts a
-## referenced module actually has a struct/union/literal data block
-## (or — inside a generic block — that an unsubstituted generic is
-## acceptable as a field/argument type).
+## resolveDataType asserts a referenced module actually has a
+## struct/union/literal data block (or — inside a generic block —
+## that an unsubstituted generic is acceptable as a field/argument
+## type).
 
 import results, options, strformat, tables, hashes, strutils, sets
 
 import tokenizer
 import parser
+import types
+export types  # FileScope, Resolved*ArgumentType, and constructors/accessors
 
-# FileScope alias — keyed by binding (alias-or-name); shared by
-# every resolver file that walks bodies.
-type FileScope* = Table[Identifier, DefinedType]
+# ---- Forward declarations for mutually recursive helpers ----
+#
+# hash/asl on ResolvedArgumentType and ResolvedModuleArgumentType
+# call into each other through the tagged-union dispatch — declare
+# both up front so the definitions later resolve cleanly.
 
-# ResolvedModuleArgumentType / ResolvedGenericArgumentType /
-# ResolvedArgumentType — mutually recursive cluster (an impl is
-# itself a ResolvedArgumentType). Flat two-variant tagged union per
-# grammar `ArgumentType: ModuleArgumentType | GenericArgumentType`
-# — imported types resolve through `fileScope` and surface as
-# ordinary `ratkModule`/`ratkGeneric` values just like local types,
-# so there's no separate "imported" variant.
-type
-  ResolvedModuleArgumentType* = ref object
-    root: Module
-    impls: seq[ResolvedArgumentType]
-    loc: Location
-
-  ResolvedGenericArgumentType* = ref object
-    generic: Generic
-    loc: Location
-
-  ResolvedArgumentTypeKind* = enum
-    ratkModule, ratkGeneric
-
-  ResolvedArgumentType* = ref object
-    case kind: ResolvedArgumentTypeKind
-    of ratkModule: module: ResolvedModuleArgumentType
-    of ratkGeneric: generic: ResolvedGenericArgumentType
-
-proc newResolvedGenericArgumentType*(generic: Generic, loc: Location): ResolvedGenericArgumentType =
-  ResolvedGenericArgumentType(generic: generic, loc: loc)
-
-proc parsed*(argType: ResolvedGenericArgumentType): Generic = argType.generic
-proc name*(argType: ResolvedGenericArgumentType): Identifier = argType.generic.name
-proc loc*(argType: ResolvedGenericArgumentType): Location = argType.loc
-# TODO: hash conflicts may occur because `loc` only considers line and col in hash not file path.
-proc hash*(argType: ResolvedGenericArgumentType): Hash = argType.generic.hash
-proc `==`*(a, b: ResolvedGenericArgumentType): bool = a.hash == b.hash
-proc asl*(argType: ResolvedGenericArgumentType): string = argType.generic.name.asl
-
-# Forward declarations — both context overloads need to be declared
-# up front because resolveModuleArgumentType recurses through them
-# when resolving impls.
 proc hash*(argType: ResolvedArgumentType): Hash
 proc asl*(argType: ResolvedArgumentType): string
 
-proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string]
+# ---- Computed helpers on ResolvedModuleArgumentType ----
 
-proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
-
-# ResolvedModuleArgumentType
-proc newResolvedModuleArgumentType*(root: Module, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
-  ResolvedModuleArgumentType(loc: loc, root: root, impls: impls)
-
-proc newResolvedModuleArgumentType*(root: Module, loc: Location): ResolvedModuleArgumentType =
-  newResolvedModuleArgumentType(root, @[], loc)
-
-proc loc*(argType: ResolvedModuleArgumentType): Location = argType.loc
-proc module*(argType: ResolvedModuleArgumentType): Module = argType.root
-proc name*(argType: ResolvedModuleArgumentType): Identifier = argType.root.name
-proc impls*(argType: ResolvedModuleArgumentType): seq[ResolvedArgumentType] = argType.impls
 proc hash*(argType: ResolvedModuleArgumentType): Hash =
   var acc = argType.module.hash
   for impl in argType.impls:
     acc = acc !& impl.hash
   return acc
 proc `==`*(a, b: ResolvedModuleArgumentType): bool = a.hash == b.hash
+
 proc asl*(argType: ResolvedModuleArgumentType): string =
   if argType.impls.len == 0:
     fmt"{argType.module.name.asl}"
@@ -91,6 +48,41 @@ proc asl*(argType: ResolvedModuleArgumentType): string =
       impls.add(impl.asl)
     let implsJoined = impls.join(", ")
     fmt"{argType.module.name.asl}[{implsJoined}]"
+
+# ---- Computed helpers on ResolvedArgumentType ----
+
+proc name*(argType: ResolvedArgumentType): Identifier =
+  case argType.kind:
+  of ratkModule: argType.module.name
+  of ratkGeneric: argType.generic.name
+
+proc loc*(argType: ResolvedArgumentType): Location =
+  case argType.kind:
+  of ratkModule: argType.module.loc
+  of ratkGeneric: argType.generic.loc
+
+proc hash*(argType: ResolvedArgumentType): Hash =
+  case argType.kind:
+  of ratkModule: argType.module.hash
+  of ratkGeneric: argType.generic.hash
+
+proc `==`*(a, b: ResolvedArgumentType): bool = a.hash == b.hash
+
+proc asl*(argType: ResolvedArgumentType): string =
+  case argType.kind:
+  of ratkModule: argType.module.asl
+  of ratkGeneric: argType.generic.asl
+
+proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
+  case argType.kind:
+  of ratkModule: argType
+  of ratkGeneric:
+    if argType.generic.parsed != generic:
+      argType
+    else:
+      concrete
+
+# ---- Scope lookups ----
 
 proc findDefinedType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[DefinedType, string] =
   let maybeFieldType = file.findType(name)
@@ -153,6 +145,12 @@ proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: U
         seen.incl(generic)
         requiredUnionImpls.add(generic)
   ok(requiredUnionImpls)
+
+# ---- resolveArgumentType forwards ----
+
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string]
+
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope,
@@ -256,56 +254,6 @@ proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, arg
   else:
     err(fmt"{genericArgType.loc} generic `{genericArgType.name.asl}` is not allowed to have impls")
 
-# ResolvedArgumentType
-proc newResolvedArgumentType*(module: ResolvedModuleArgumentType): ResolvedArgumentType =
-  ResolvedArgumentType(kind: ratkModule, module: module)
-
-proc newResolvedArgumentType*(generic: ResolvedGenericArgumentType): ResolvedArgumentType =
-  ResolvedArgumentType(kind: ratkGeneric, generic: generic)
-
-proc kind*(argType: ResolvedArgumentType): ResolvedArgumentTypeKind = argType.kind
-
-proc module*(argType: ResolvedArgumentType): ResolvedModuleArgumentType =
-  assert argType.kind == ratkModule,
-    fmt"ResolvedArgumentType.module accessed but kind is {argType.kind}"
-  argType.module
-
-proc generic*(argType: ResolvedArgumentType): ResolvedGenericArgumentType =
-  assert argType.kind == ratkGeneric,
-    fmt"ResolvedArgumentType.generic accessed but kind is {argType.kind}"
-  argType.generic
-
-proc name*(argType: ResolvedArgumentType): Identifier =
-  case argType.kind:
-  of ratkModule: argType.module.name
-  of ratkGeneric: argType.generic.name
-
-proc loc*(argType: ResolvedArgumentType): Location =
-  case argType.kind:
-  of ratkModule: argType.module.loc
-  of ratkGeneric: argType.generic.loc
-
-proc hash*(argType: ResolvedArgumentType): Hash =
-  case argType.kind:
-  of ratkModule: argType.module.hash
-  of ratkGeneric: argType.generic.hash
-
-proc `==`*(a, b: ResolvedArgumentType): bool = a.hash == b.hash
-
-proc asl*(argType: ResolvedArgumentType): string =
-  case argType.kind:
-  of ratkModule: argType.module.asl
-  of ratkGeneric: argType.generic.asl
-
-proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
-  case argType.kind:
-  of ratkModule: argType
-  of ratkGeneric:
-    if argType.generic.parsed != generic:
-      argType
-    else:
-      concrete
-
 # resolveArgumentType — both context overloads, defined now after
 # the module/generic helpers.
 proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType): Result[ResolvedArgumentType, string] =
@@ -338,10 +286,10 @@ proc resolveDataType*(file: parser.File, module: Module, arg: ArgumentType,
     ok()
   of ratkModule:
     let resolvedModuleType = resolvedArgumentType.module
-    if resolvedModuleType.root.data.isSome:
+    if resolvedModuleType.module.data.isSome:
       ok()
     else:
-      err(fmt"{arg.loc} module `{resolvedModuleType.root.name.asl}` is not a literal/struct/union")
+      err(fmt"{arg.loc} module `{resolvedModuleType.module.name.asl}` is not a literal/struct/union")
 
 proc resolveDataType*(file: parser.File, generic: Generic, arg: ArgumentType,
     resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
@@ -350,7 +298,7 @@ proc resolveDataType*(file: parser.File, generic: Generic, arg: ArgumentType,
     ok()
   of ratkModule:
     let resolvedModuleType = resolvedArgumentType.module
-    if resolvedModuleType.root.data.isSome:
+    if resolvedModuleType.module.data.isSome:
       ok()
     else:
-      err(fmt"{arg.loc} module `{resolvedModuleType.root.name.asl}` is not a literal/struct/union")
+      err(fmt"{arg.loc} module `{resolvedModuleType.module.name.asl}` is not a literal/struct/union")

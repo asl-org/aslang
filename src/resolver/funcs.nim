@@ -1,27 +1,20 @@
 ## User and tagged-union Function resolution.
+##
+## The `Resolved*` types, their constructors, and direct-field
+## accessors live in `types.nim`. This file owns the computed
+## helpers and the resolve procs.
 
 import options, sets, strformat, results
 
 import tokenizer
 import parser
+import types
 import argtypes
 import funcdefs
-import funcrefs
 import body
 
-# ResolvedUserFunction
-type ResolvedUserFunction* = ref object
-  parsed: UserFunction
-  funcDef: ResolvedFunctionDefinition
-  statements: seq[ResolvedStatement]
+# ---- ResolvedUserFunction helpers ----
 
-proc newResolvedUserFunction*(parsed: UserFunction, funcDef: ResolvedFunctionDefinition,
-    statements: seq[ResolvedStatement]): ResolvedUserFunction =
-  ResolvedUserFunction(parsed: parsed, funcDef: funcDef, statements: statements)
-
-proc parsed*(function: ResolvedUserFunction): UserFunction = function.parsed
-proc def*(function: ResolvedUserFunction): ResolvedFunctionDefinition = function.funcDef
-proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
 proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 
 proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
@@ -46,30 +39,8 @@ proc resolveUserFunction*(app: App, file: parser.File, fileScope: FileScope,
 
   ok(newResolvedUserFunction(function, resolvedFunctionDefinition, resolvedStatements))
 
-# ResolvedFunction
-type
-  ResolvedFunctionKind* = enum
-    rfkExtern, rfkUser
-  ResolvedFunction* = ref object
-    case kind: ResolvedFunctionKind
-    of rfkExtern: extern: ResolvedExternFunction
-    of rfkUser: user: ResolvedUserFunction
+# ---- ResolvedFunction helpers ----
 
-proc newResolvedFunction*(extern: ResolvedExternFunction): ResolvedFunction =
-  ResolvedFunction(kind: rfkExtern, extern: extern)
-
-proc newResolvedFunction*(user: ResolvedUserFunction): ResolvedFunction =
-  ResolvedFunction(kind: rfkUser, user: user)
-
-proc kind*(function: ResolvedFunction): ResolvedFunctionKind = function.kind
-proc extern*(function: ResolvedFunction): ResolvedExternFunction =
-  assert function.kind == rfkExtern,
-    fmt"ResolvedFunction.extern accessed but kind is {function.kind}"
-  function.extern
-proc user*(function: ResolvedFunction): ResolvedUserFunction =
-  assert function.kind == rfkUser,
-    fmt"ResolvedFunction.user accessed but kind is {function.kind}"
-  function.user
 proc def*(function: ResolvedFunction): ResolvedFunctionDefinition =
   case function.kind:
   of rfkExtern: function.extern.def

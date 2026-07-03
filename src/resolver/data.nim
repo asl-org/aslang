@@ -1,9 +1,15 @@
 ## Data-block resolution: struct / variant / union / data umbrella.
+##
+## The `Resolved*` types, their constructors, and direct-field
+## accessors live in `types.nim`. This file owns the computed
+## helpers (findField, requires, loc, name, ...) and the resolveX
+## procs.
 
 import results, strformat, tables
 
 import tokenizer
 import parser
+import types
 import literals
 import argtypes
 import funcdefs
@@ -23,24 +29,9 @@ proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgume
     if genericType notin genericTypeIndex:
       genericTypeIndex[genericType] = genericTypeIndex.len
 
-# ResolvedStructDef
-type ResolvedStructDef* = ref object
-  parsed: StructDef
-  fields: seq[ResolvedArgumentDefinition]
-  fieldIndex: Table[Identifier, int]
-  genericTypeIndex: Table[ResolvedGenericArgumentType, int]
+# ---- ResolvedStructDef helpers ----
 
-proc newResolvedStructDef*(parsed: StructDef, fields: seq[ResolvedArgumentDefinition], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedStructDef =
-  var fieldIndex: Table[Identifier, int]
-  for id, field in fields:
-    assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name — should have been caught in parser")
-    fieldIndex[field.name] = id
-  ResolvedStructDef(parsed: parsed, fields: fields, fieldIndex: fieldIndex, genericTypeIndex: genericTypeIndex)
-
-proc parsed*(struct: ResolvedStructDef): StructDef = struct.parsed
 proc loc*(struct: ResolvedStructDef): Location = struct.parsed.loc
-proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDefinition] = struct.fields
-proc genericTypeIndex*(struct: ResolvedStructDef): Table[ResolvedGenericArgumentType, int] = struct.genericTypeIndex
 
 proc findField*(struct: ResolvedStructDef, name: Identifier): Result[ResolvedArgumentDefinition, string] =
   if name in struct.fieldIndex: ok(struct.fields[struct.fieldIndex[name]])
@@ -61,23 +52,10 @@ proc resolveStructDef*(app: App, file: parser.File, fileScope: FileScope, module
     resolvedFields.add(resolvedField)
   ok(newResolvedStructDef(struct, resolvedFields, genericTypeIndex))
 
-# ResolvedVariant
-type ResolvedVariant* = ref object
-  parsed: VariantDefinition
-  fields: seq[ResolvedArgumentDefinition]
-  fieldIndex: Table[Identifier, int]
-
-proc newResolvedVariant*(parsed: VariantDefinition, fields: seq[ResolvedArgumentDefinition]): ResolvedVariant =
-  var fieldIndex: Table[Identifier, int]
-  for id, field in fields:
-    assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name — should have been caught in parser")
-    fieldIndex[field.name] = id
-  ResolvedVariant(parsed: parsed, fields: fields, fieldIndex: fieldIndex)
+# ---- ResolvedVariant helpers ----
 
 proc loc*(variant: ResolvedVariant): Location = variant.parsed.loc
 proc name*(variant: ResolvedVariant): Identifier = variant.parsed.name
-proc parsed*(variant: ResolvedVariant): VariantDefinition = variant.parsed
-proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDefinition] = variant.fields
 
 proc findField*(variant: ResolvedVariant, name: Identifier): Result[ResolvedArgumentDefinition, string] =
   if name in variant.fieldIndex: ok(variant.fields[variant.fieldIndex[name]])
@@ -94,23 +72,9 @@ proc resolveVariant(app: App, file: parser.File, fileScope: FileScope, module: M
     resolvedFields.add(resolvedField)
   ok(newResolvedVariant(variant, resolvedFields))
 
-# ResolvedUnionDef
-type ResolvedUnionDef* = ref object
-  parsed: UnionDef
-  variants: seq[ResolvedVariant]
-  variantIndex: Table[Identifier, int]
-  genericTypeIndex: Table[ResolvedGenericArgumentType, int]
-
-proc newResolvedUnionDef*(parsed: UnionDef, variants: seq[ResolvedVariant], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedUnionDef =
-  var variantIndex: Table[Identifier, int]
-  for id, variant in variants:
-    assert(variant.name notin variantIndex, "UNREACHABLE: duplicate variant — should have been caught in parser")
-    variantIndex[variant.name] = id
-  ResolvedUnionDef(parsed: parsed, variants: variants, variantIndex: variantIndex, genericTypeIndex: genericTypeIndex)
+# ---- ResolvedUnionDef helpers ----
 
 proc loc*(union: ResolvedUnionDef): Location = union.parsed.loc
-proc variants*(union: ResolvedUnionDef): seq[ResolvedVariant] = union.variants
-proc genericTypeIndex*(union: ResolvedUnionDef): Table[ResolvedGenericArgumentType, int] = union.genericTypeIndex
 
 proc findVariant*(union: ResolvedUnionDef, variant: Identifier): Result[ResolvedVariant, string] =
   if variant in union.variantIndex: ok(union.variants[union.variantIndex[variant]])
@@ -135,38 +99,8 @@ proc resolveUnionDef*(app: App, file: parser.File, fileScope: FileScope,
     resolvedVariants.add(resolvedVariant)
   ok(newResolvedUnionDef(union, resolvedVariants, genericTypeIndex))
 
-# ResolvedData
-type
-  ResolvedDataKind* = enum
-    rdkLiteral, rdkStruct, rdkUnion
-  ResolvedData* = ref object
-    case kind: ResolvedDataKind
-    of rdkLiteral: literal: ResolvedLiteralDef
-    of rdkStruct: struct: ResolvedStructDef
-    of rdkUnion: union: ResolvedUnionDef
+# ---- ResolvedData helpers ----
 
-proc newResolvedData*(literal: ResolvedLiteralDef): ResolvedData =
-  ResolvedData(kind: rdkLiteral, literal: literal)
-
-proc newResolvedData*(struct: ResolvedStructDef): ResolvedData =
-  ResolvedData(kind: rdkStruct, struct: struct)
-
-proc newResolvedData*(union: ResolvedUnionDef): ResolvedData =
-  ResolvedData(kind: rdkUnion, union: union)
-
-proc kind*(data: ResolvedData): ResolvedDataKind = data.kind
-proc literal*(data: ResolvedData): ResolvedLiteralDef =
-  assert data.kind == rdkLiteral,
-    fmt"ResolvedData.literal accessed but kind is {data.kind}"
-  data.literal
-proc struct*(data: ResolvedData): ResolvedStructDef =
-  assert data.kind == rdkStruct,
-    fmt"ResolvedData.struct accessed but kind is {data.kind}"
-  data.struct
-proc union*(data: ResolvedData): ResolvedUnionDef =
-  assert data.kind == rdkUnion,
-    fmt"ResolvedData.union accessed but kind is {data.kind}"
-  data.union
 proc requires*(data: ResolvedData): seq[ResolvedGenericArgumentType] =
   case data.kind:
   of rdkLiteral: @[]
