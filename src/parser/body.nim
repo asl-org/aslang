@@ -69,73 +69,55 @@ let literalInitializerSpec* = Spec[LiteralInitializer](
 
 
 # ----------------- StructRef -----------------
-type
-  StructRefKind* = enum
-    srkDefault, srkImpl
-  StructRef* = ref object
-    case kind: StructRefKind
-    of srkDefault: module: Identifier
-    of srkImpl: argType: ArgumentType
+# One shape: the receiver module identifier plus a (possibly empty)
+# impls list. Empty impls === the user wrote `Module { ... }`; non-empty
+# impls === the user wrote `Module[Impl, ...] { ... }`. The parser no
+# longer discriminates between the two surface forms — downstream layers
+# initialise their GenericImplMap from the impls seq directly (empty
+# seq → empty map, non-empty → pre-populated).
+type StructRef* = ref object
+  module: Identifier
+  impls: seq[ArgumentType]
+  loc: Location
 
-proc newStructRef*(module: Identifier): StructRef =
-  StructRef(kind: srkDefault, module: module)
+proc newStructRef*(module: Identifier, impls: seq[ArgumentType],
+    loc: Location): StructRef =
+  StructRef(module: module, impls: impls, loc: loc)
 
-proc newStructRef*(argType: ArgumentType): StructRef =
-  StructRef(kind: srkImpl, argType: argType)
-
-proc kind*(s: StructRef): StructRefKind = s.kind
-proc module*(s: StructRef): Identifier =
-  case s.kind:
-  of srkDefault: s.module
-  of srkImpl: s.argType.root
-proc argType*(s: StructRef): ArgumentType =
-  assert s.kind == srkImpl,
-    fmt"StructRef.argType accessed but kind is {s.kind}"
-  s.argType
-proc loc*(s: StructRef): Location =
-  case s.kind:
-  of srkDefault: s.module.loc
-  of srkImpl: s.argType.loc
+proc module*(s: StructRef): Identifier = s.module
+proc impls*(s: StructRef): seq[ArgumentType] = s.impls
+proc loc*(s: StructRef): Location = s.loc
 proc asl*(s: StructRef): string =
-  case s.kind:
-  of srkDefault: asl(s.module)
-  of srkImpl: asl(s.argType)
+  if s.impls.len == 0:
+    asl(s.module)
+  else:
+    var implStrs: seq[string]
+    for impl in s.impls:
+      implStrs.add(asl(impl))
+    fmt"{asl(s.module)}[{implStrs.join("", "")}]"
 
 # ----------------- UnionRef -----------------
-# Mirror of StructRef: bare form drives leave-as-is inference at the
-# analyzer; impl form is the explicit-impls escape hatch used when
-# partial coverage leaves a generic free and the user wants to pin it.
-type
-  UnionRefKind* = enum
-    urkDefault, urkImpl
-  UnionRef* = ref object
-    case kind: UnionRefKind
-    of urkDefault: module: Identifier
-    of urkImpl: argType: ArgumentType
+# Mirror of StructRef: same one-shape module+impls layout.
+type UnionRef* = ref object
+  module: Identifier
+  impls: seq[ArgumentType]
+  loc: Location
 
-proc newUnionRef*(module: Identifier): UnionRef =
-  UnionRef(kind: urkDefault, module: module)
+proc newUnionRef*(module: Identifier, impls: seq[ArgumentType],
+    loc: Location): UnionRef =
+  UnionRef(module: module, impls: impls, loc: loc)
 
-proc newUnionRef*(argType: ArgumentType): UnionRef =
-  UnionRef(kind: urkImpl, argType: argType)
-
-proc kind*(u: UnionRef): UnionRefKind = u.kind
-proc module*(u: UnionRef): Identifier =
-  case u.kind:
-  of urkDefault: u.module
-  of urkImpl: u.argType.root
-proc argType*(u: UnionRef): ArgumentType =
-  assert u.kind == urkImpl,
-    fmt"UnionRef.argType accessed but kind is {u.kind}"
-  u.argType
-proc loc*(u: UnionRef): Location =
-  case u.kind:
-  of urkDefault: u.module.loc
-  of urkImpl: u.argType.loc
+proc module*(u: UnionRef): Identifier = u.module
+proc impls*(u: UnionRef): seq[ArgumentType] = u.impls
+proc loc*(u: UnionRef): Location = u.loc
 proc asl*(u: UnionRef): string =
-  case u.kind:
-  of urkDefault: asl(u.module)
-  of urkImpl: asl(u.argType)
+  if u.impls.len == 0:
+    asl(u.module)
+  else:
+    var implStrs: seq[string]
+    for impl in u.impls:
+      implStrs.add(asl(impl))
+    fmt"{asl(u.module)}[{implStrs.join("", "")}]"
 
 
 # ============================================================
@@ -596,9 +578,10 @@ let kwargListSpec* = Spec[KeywordArgumentList](
   newKeywordArgumentList(args, loc)
 )
 
-# Type.Variant { fields } (default — drives leave-as-is inference) or
+# Type.Variant { fields } (bare — drives leave-as-is inference) or
 # Type[Impls].Variant { fields } (explicit-impls — escape hatch when
-# leave-as-is can't produce a fully-bound type).
+# leave-as-is can't produce a fully-bound type). Both productions land
+# on the same UnionRef shape carrying an impls seq; empty means bare.
 let unionInitializerSpec* = Spec[UnionInitializer](
   name: "union_initializer",
   parseFn: proc(parser: Parser): Result[UnionInitializer, ParserError] =
@@ -607,23 +590,21 @@ let unionInitializerSpec* = Spec[UnionInitializer](
   let variantName = ? parser.run(identifierSpec)
   discard parser.run(any(spaceSpec))
   let kwargList = ? parser.run(kwargListSpec)
-  let unionRef =
-    if argType.impls.len == 0: newUnionRef(argType.root)
-    else: newUnionRef(argType)
+  let unionRef = newUnionRef(argType.root, argType.impls, argType.loc)
   ok(newUnionInitializer(unionRef, variantName, kwargList, argType.loc))
 )
 
-# Either `Type { fields }` (default kind) or `Type[Impls] { fields }` (impl
-# kind for phantom-typed structs whose module declares a requires block).
+# Either `Type { fields }` (bare) or `Type[Impls] { fields }` (explicit
+# impls, used for phantom-typed structs whose module declares a requires
+# block). Both productions land on the same StructRef shape carrying an
+# impls seq; empty means bare.
 let structInitializerSpec* = Spec[StructInitializer](
   name: "struct_initializer",
   parseFn: proc(parser: Parser): Result[StructInitializer, ParserError] =
   let argType = ? parser.run(argumentTypeSpec)
   discard parser.run(any(spaceSpec))
   let kwargList = ? parser.run(kwargListSpec)
-  let structRef =
-    if argType.impls.len == 0: newStructRef(argType.root)
-    else: newStructRef(argType)
+  let structRef = newStructRef(argType.root, argType.impls, argType.loc)
   ok(newStructInitializer(structRef, kwargList, argType.loc))
 )
 
