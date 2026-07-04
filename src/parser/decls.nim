@@ -148,9 +148,13 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
   # function list; reject the first extern found with the extern's
   # own loc so the diagnostic points at the offending decoration.
   for definedType in definedTypes:
-    if definedType.kind == dtkModule:
+    case definedType.kind:
+    of dtkGeneric: discard
+    of dtkModule:
       for fn in definedType.module.functions:
-        if fn.kind == fkExtern:
+        case fn.kind:
+        of fkUser: discard
+        of fkExtern:
           let msg = fmt"asl files cannot contain extern functions; extern functions belong in .aslr files (the runtime interface)"
           return err(newParserError(msg, fn.loc))
 

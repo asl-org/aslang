@@ -684,9 +684,11 @@ let matchBodySpec* = Spec[MatchExpression](
   # in statementLineSpec). This check guards against future changes that
   # might add match to expressionSpec.
   let subject = ? parser.run(expressionSpec)
-  if subject.kind == ekMatch:
+  case subject.kind:
+  of ekMatch:
     return err(newParserError(
       "match expression cannot be the subject of another match", loc))
+  of ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable: discard
   discard parser.run(any(spaceSpec))
   discard ? parser.run(punctuationSpec(":"))
   discard ? parser.run(ignorableLineSpec)

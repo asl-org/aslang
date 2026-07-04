@@ -61,7 +61,8 @@ proc peek*(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
 proc consumeExceptNewline*(parser: Parser,
     tokenRepr: string): Result[Token, ParserError] =
   let token = ? parser.peek(tokenRepr)
-  if token.kind == tkNewline:
+  case token.kind:
+  of tkNewline:
     let msg = fmt"{token.repr} is not supported as {tokenRepr}"
     err(newParserError(msg, parser.loc))
   else:
