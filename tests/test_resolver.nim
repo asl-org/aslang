@@ -15,8 +15,14 @@ public module u8:
   @extern("u8_add")
   public func add(a: u8, b: u8): u8
 
+  @extern("u8_byte_size")
+  public func byte_size(items: u32): u64
+
 public module u32:
   literal: "u32"
+
+  @extern("u32_byte_size")
+  public func byte_size(items: u32): u64
 
 public module u64:
   literal: "u64"
@@ -24,13 +30,22 @@ public module u64:
   @extern("u64_compare")
   public func compare(a: u64, b: u64): u8
 
+  @extern("u64_byte_size")
+  public func byte_size(items: u32): u64
+
 public module String:
   literal: "string"
+
+  @extern("string_byte_size")
+  public func byte_size(items: u32): u64
 
 public module Error:
   struct:
     code: u32
     message: String
+
+  @extern("error_byte_size")
+  public func byte_size(items: u32): u64
 
 public generic Any:
   func byte_size(items: u32): u64
@@ -175,16 +190,25 @@ public module u8:
 public module u8:
   literal: "u8"
 
+  func byte_size(items: u32): u64
+    u64 1
+
 public module u32:
   literal: "u32"
 
 public module String:
   literal: "string"
 
+  func byte_size(items: u32): u64
+    u64 1
+
 public module Error:
   struct:
     code: u32
     message: String
+
+  func byte_size(items: u32): u64
+    u64 1
 
 public generic Any:
   func byte_size(items: u32): u64

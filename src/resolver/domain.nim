@@ -163,6 +163,13 @@ type
   ResolvedFunctionCall* = ref object
     parsed: FunctionCall
     args: seq[ResolvedExpression]
+    # Task 7: reserved for FunctionCall receivers that carry an
+    # explicit impl list. The parser currently has no impl syntax for
+    # function calls (FunctionCall.root is a bare Identifier, not an
+    # ArgumentType), so this stays empty for now. When impl syntax is
+    # added, the arity+constraint check for these impls will run in
+    # resolveFunctionCall — never in the analyzer.
+    resolvedImpls: seq[ResolvedArgumentType]
 
   ResolvedAssignment* = ref object
     parsed: Assignment
@@ -483,6 +490,50 @@ proc lookupShell(shells: ResolvedModuleShells, root: Module): ResolvedModule =
   assert(root in shells, fmt"UNREACHABLE: no shell allocated for module `{root.name.asl}` at {root.loc}")
   shells[root]
 
+# Constraint-satisfaction check: does `resolvedImpl` provide every
+# funcDef the required generic `base` mandates? Retired the analyzer's
+# equivalent def-time check and moved it here so
+# ResolvedModuleArgumentType.impls is a provably valid value by the
+# time it leaves the resolver.
+#
+# Semantics drift vs the retired analyzer check: verification is by
+# (name, arity) at the parser level, not by concretized-signature
+# hash. Signature-parity (e.g. impl provides `byte_size(items: u16)`
+# where the base generic mandates `byte_size(items: u32)`) is left to
+# the analyzer's value-vs-defType walk at use sites
+# (analyzer/body.nim's `analyzeValueTypeAgainstDefinitionType`), which
+# already runs the strict hash-based check every time a value is
+# type-checked against a definition. The def-time check here catches
+# the "impl is missing the method entirely" case — the common
+# regression path — without needing ResolvedGeneric to be populated at
+# def-time (generics have no shell/populate two-pass, so ordering
+# would otherwise force a wider refactor).
+proc checkImplSatisfiesGeneric(resolvedImpl: ResolvedArgumentType, base: Generic): Result[void, string] =
+  case resolvedImpl.kind:
+  of ratkModule:
+    let implModule = resolvedImpl.module.resolvedModule.parsed
+    for funcDef in base.funcDefs:
+      let maybeFuncDefs = implModule.findFunctionDefs(funcDef.name, funcDef.arity)
+      if maybeFuncDefs.isErr:
+        return err(fmt"{resolvedImpl.module.loc} module `{implModule.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+  of ratkGeneric:
+    let implGeneric = resolvedImpl.generic.parsed
+    for funcDef in base.funcDefs:
+      let maybeFuncDefs = implGeneric.findFunctionDefs(funcDef.name, funcDef.arity)
+      if maybeFuncDefs.isErr:
+        return err(fmt"{resolvedImpl.generic.loc} generic `{implGeneric.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+  ok()
+
+proc findGeneric*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Generic, string] =
+  ## Parser-level generic lookup — mirror of `findModule` for the
+  ## constraint-check helper. Used by resolveModuleArgumentType's
+  ## explicit-requires path to translate each `requires(...)` name into
+  ## its parser Generic so the check can walk its funcDefs.
+  let initDefinedType = ? file.findDefinedType(fileScope, name)
+  case initDefinedType.kind:
+  of dtkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
+  of dtkGeneric: ok(initDefinedType.generic)
+
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope,
@@ -491,13 +542,15 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
   let resolvedRoot = lookupShell(shells, root)
   # NOTE: requires block will override the inferred impl list
   if root.requires.isSome:
-    let expectedImplCount = root.requires.get.generics.len
-    if argType.impls.len != expectedImplCount:
-      return err(fmt"{argType.loc} type `{root.name.asl}` expects `{expectedImplCount}` impls but found `{argType.impls.len}`")
+    let requiredNames = root.requires.get.generics
+    if argType.impls.len != requiredNames.len:
+      return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requiredNames.len}` impls but found `{argType.impls.len}`")
 
     var resolvedImpls: seq[ResolvedArgumentType]
-    for impl in argType.impls:
+    for (requiredName, impl) in zip(requiredNames, argType.impls):
+      let requiredGeneric = ? file.findGeneric(fileScope, requiredName)
       let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, module, impl)
+      ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
       resolvedImpls.add(resolvedImpl)
 
     return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
@@ -517,8 +570,9 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
         return err(fmt"{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
-      for impl in argType.impls:
+      for (requiredGeneric, impl) in zip(requires, argType.impls):
         let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, module, impl)
+        ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
         resolvedImpls.add(resolvedImpl)
 
       return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
@@ -529,8 +583,9 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
         return err(fmt"{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
-      for impl in argType.impls:
+      for (requiredGeneric, impl) in zip(requires, argType.impls):
         let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, module, impl)
+        ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
         resolvedImpls.add(resolvedImpl)
 
       return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
@@ -566,8 +621,9 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
         return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
       var resolvedImpls: seq[ResolvedArgumentType]
-      for impl in argType.impls:
+      for (requiredGeneric, impl) in zip(requires, argType.impls):
         let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, generic, impl)
+        ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
         resolvedImpls.add(resolvedImpl)
 
       return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
@@ -1054,6 +1110,20 @@ proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.s
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 
+proc resolvedImpls*(struct: ResolvedStructInitializer): seq[ResolvedArgumentType] =
+  ## The user-supplied impls threaded through the receiver's argType.
+  ## Empty for `rsrkDefault` (no explicit impls at the call site).
+  ## Non-empty for `rsrkImpl`, populated from
+  ## `structRef.argType.module.impls`.
+  ##
+  ## Invariant: every entry is arity- and constraint-validated at
+  ## resolve time by resolveModuleArgumentType (see the module-context
+  ## overload above). Downstream consumers can treat this seq as a
+  ## provably valid value — no need to re-check.
+  case struct.structRef.kind:
+  of rsrkDefault: @[]
+  of rsrkImpl: struct.structRef.argType.module.impls
+
 # ---- ResolvedUnionRef ----
 
 proc newResolvedUnionRef*(parsed: UnionRef, module: Module): ResolvedUnionRef =
@@ -1095,6 +1165,19 @@ proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
 proc module*(init: ResolvedUnionInitializer): Module = module(init.unionRef)
 proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
 
+proc resolvedImpls*(init: ResolvedUnionInitializer): seq[ResolvedArgumentType] =
+  ## The user-supplied impls threaded through the receiver's argType.
+  ## Empty for `rurkDefault` (no explicit impls at the call site).
+  ## Non-empty for `rurkImpl`, populated from
+  ## `unionRef.argType.module.impls`.
+  ##
+  ## Invariant: every entry is arity- and constraint-validated at
+  ## resolve time by resolveModuleArgumentType. Downstream consumers
+  ## can treat this seq as a provably valid value — no need to re-check.
+  case init.unionRef.kind:
+  of rurkDefault: @[]
+  of rurkImpl: init.unionRef.argType.module.impls
+
 # ---- ResolvedInitializer ----
 
 proc newResolvedInitializer*(struct: ResolvedStructInitializer): ResolvedInitializer =
@@ -1134,6 +1217,17 @@ proc newResolvedFunctionCall*(parsed: FunctionCall,
 proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
+
+proc resolvedImpls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
+  ## Empty for the time being — the parser has no impl syntax for
+  ## FunctionCall receivers. Kept as a first-class accessor so
+  ## downstream code that treats StructInit/UnionInit/FunctionCall
+  ## uniformly (an "impl-carrying node") can pattern-match on it.
+  ##
+  ## Invariant: entries would be arity- and constraint-validated at
+  ## resolve time — the current always-empty seq trivially satisfies
+  ## that.
+  fncall.resolvedImpls
 
 # ---- ResolvedAssignment ----
 

@@ -1,14 +1,18 @@
 ## Analyzed argument-type cluster.
 ##
 ## Mirrors the resolver's argtypes layout: AnalyzedGenericArgumentType,
-## AnalyzedModuleArgumentType, AnalyzedDefinedArgumentType, and
-## AnalyzedArgumentType live here together because they cycle through
-## one another (a module's `impls` is a seq of argument types). Both
-## context overloads (module ctx with ResolvedFileScope, generic ctx)
-## of analyzeGenericArgumentType / analyzeModuleArgumentType /
-## analyzeDefinedArgumentType / analyzeArgumentType live here too.
+## AnalyzedModuleArgumentType, and AnalyzedArgumentType live here
+## together because they cycle through one another (a module's `impls`
+## is a seq of argument types). Both context overloads (module ctx
+## with ResolvedFileScope, generic ctx) of analyzeGenericArgumentType /
+## analyzeModuleArgumentType / analyzeArgumentType live here too.
+##
+## Post-task-7: `analyzeModuleArgumentType` no longer performs
+## arity or generic-constraint validation — that's the resolver's
+## job now. Each ResolvedModuleArgumentType's `impls` seq is a
+## provably valid value by the time the analyzer sees it.
 
-import results, strformat, options, sequtils, strutils, tables, hashes
+import results, strformat, options, strutils, tables, hashes
 
 import tokenizer
 import parser
@@ -47,10 +51,9 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: 
 proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   ## Resolves the generic by checking the current file's own generics
   ## first, then falling back to the file scope for imported names.
-  ## Mirrors the resolver's `findArgTypeGeneric` (see below): a
-  ## `ResolvedGenericArgumentType` whose `.parsed` refers to an imported
-  ## generic still needs its ResolvedGeneric surfaced so downstream code
-  ## can look up its constraint-carrying funcDefs.
+  ## A `ResolvedGenericArgumentType` whose `.parsed` refers to an
+  ## imported generic still needs its ResolvedGeneric surfaced so
+  ## downstream code can look up its constraint-carrying funcDefs.
   let maybeGenericArg = file.findGeneric(genericArgType.parsed.name)
   if maybeGenericArg.isOk:
     ok(newAnalyzedGenericArgumentType(maybeGenericArg.get, genericArgType.loc))
@@ -242,69 +245,27 @@ proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType
   else:
     ok(maybeTypeModule.value)
 
-proc findArgTypeGeneric(file: ResolvedFile, fileScope: ResolvedFileScope, argType: ResolvedGenericArgumentType): Result[ResolvedGeneric, string] =
-  let maybeResolvedGeneric = file.findGeneric(argType.name)
-  if maybeResolvedGeneric.isErr:
-    if argType.name notin fileScope:
-      err(fmt"{argType.loc} generic `{argType.name.asl}` is neither defined nor imported")
-    else:
-      let definedImportedGeneric = fileScope[argType.name]
-      case definedImportedGeneric.kind:
-      of rdtkModule: err(fmt"[UNREACHABLE] {argType.loc} expected `{argType.name.asl}` to be a generic but found module.")
-      of rdtkGeneric: ok(definedImportedGeneric.generic)
-  else:
-    ok(maybeResolvedGeneric.value)
-
-proc analyzeModuleArgumentTypeImpls(baseType: ResolvedGeneric, implType: AnalyzedArgumentType, funcDef: ResolvedFunctionDefinition): Result[void, string] =
-  case implType.kind:
-  of aatkGeneric:
-    let maybeConcreteFuncDef = implType.generic.resolved.findFunctionDef(funcDef)
-    if maybeConcreteFuncDef.isNone:
-      err(fmt"{implType.loc} generic `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
-    else:
-      ok()
-  of aatkModule:
-    let maybeConcreteFuncDef = implType.module.module.findFunctionDef(funcDef)
-    if maybeConcreteFuncDef.isNone:
-      err(fmt"{implType.loc} module `{implType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{baseType.name.asl}`")
-    else:
-      ok()
-
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  var typeModule = ? file.findArgTypeModule(fileScope, argType)
-
-  if typeModule.requires.len != argType.impls.len:
-    if typeModule.requires.len == 0:
-      err(fmt"{argType.loc} module `{argType.name.asl}` does not require any impl types")
-    else:
-      err(fmt"{argType.loc} module `{argType.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
-  else:
-    var analyzedImpls: seq[AnalyzedArgumentType]
-    for (baseType, implType) in zip(typeModule.requires, argType.impls):
-      let resolvedBaseGeneric = ? file.findArgTypeGeneric(fileScope, baseType)
-      let analyzedImplArgType = ? analyzeArgumentType(app, file, fileScope, module, implType)
-      for funcDef in resolvedBaseGeneric.concreteImpls(analyzedImplArgType.self):
-        ? analyzeModuleArgumentTypeImpls(resolvedBaseGeneric, analyzedImplArgType, funcDef)
-      analyzedImpls.add(analyzedImplArgType)
-    ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
+  ## Post-task-7: the resolver already validated arity and
+  ## generic-constraint satisfaction on `argType.impls`. All we need is
+  ## to look up the ResolvedModule via fileScope and lift each impl
+  ## through analyzeArgumentType.
+  let typeModule = ? file.findArgTypeModule(fileScope, argType)
+  var analyzedImpls: seq[AnalyzedArgumentType]
+  for impl in argType.impls:
+    let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, module, impl)
+    analyzedImpls.add(analyzedImpl)
+  ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
+  ## Generic-context twin of the module-context overload above; same
+  ## post-task-7 shape (no arity check, no constraint walk).
   let typeModule = ? file.findArgTypeModule(fileScope, argType)
-
-  if typeModule.requires.len != argType.impls.len:
-    if typeModule.requires.len == 0:
-      err(fmt"{argType.loc} module `{argType.name.asl}` does not require any impl types")
-    else:
-      err(fmt"{argType.loc} module `{argType.name.asl}` requires `{typeModule.requires.len}` impl types but found `{argType.impls.len}`")
-  else:
-    var analyzedImpls: seq[AnalyzedArgumentType]
-    for (baseType, implType) in zip(typeModule.requires, argType.impls):
-      let resolvedBaseGeneric = ? file.findArgTypeGeneric(fileScope, baseType)
-      let analyzedImplArgType = ? analyzeArgumentType(app, file, fileScope, generic, implType)
-      for funcDef in resolvedBaseGeneric.concreteImpls(analyzedImplArgType.self):
-        ? analyzeModuleArgumentTypeImpls(resolvedBaseGeneric, analyzedImplArgType, funcDef)
-        analyzedImpls.add(analyzedImplArgType)
-    ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
+  var analyzedImpls: seq[AnalyzedArgumentType]
+  for impl in argType.impls:
+    let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, generic, impl)
+    analyzedImpls.add(analyzedImpl)
+  ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
