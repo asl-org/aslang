@@ -40,9 +40,9 @@ public module App:
   to an external implementation)
 - **Generics**: type-parameterized function signature blocks
   (`generic Eq: func eq(a: Eq, b: Eq): u8`)
-- **Pattern matching**: `match` expressions with integer literals,
-  variable bindings, and variant destructuring
-  (`case Pro { credits: c }: ...`)
+- **Pattern matching**: `match` expressions with three `CaseDef`
+  shapes — literal (`case 0`), variable binding (`case other`),
+  and variant destructuring (`case Pro { credits: c }: ...`)
 - **Imports**: cross-file module/generic imports with aliasing
   (`import { User as U } from "./user.asl"`)
 - **Visibility**: `public` keyword on modules and functions to
@@ -52,20 +52,28 @@ public module App:
 ### Built-in Types
 
 Fixed-width integers: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`,
-`u32`, `u64`. Floats: `f32`, `f64`. Pointer: `ptr`. Containers:
-`String`, `List`, `Map`, `Array`, `Status`. System interface:
-`System`.
+`u32`, `u64`. Floats: `f32`, `f64`. Text: `String`. Containers:
+`Array`, `Bitset`. Fallibility: `Status[T]` + `Error`. System
+interface: `System`.
 
 ## Domain grammar (source of truth)
 
 The compiler's domain vocabulary — the type names and shapes that
 parser / resolver / analyzer values conform to — is captured in
-`grammar.md`. Every layer's type module traces back to it. When a
-domain concept is renamed, added, or restructured, it lands there
-first; the code catches up.
+[`grammar.md`](grammar.md). Every layer's type module traces back
+to it. When a domain concept is renamed, added, or restructured, it
+lands there first; the code catches up. The DDD-refactor roadmap
+(`tasks.md`) enumerates which renames/reshapings have been applied
+so far — headline landings are `StructDef`/`UnionDef`/`LiteralDef`
+data-block variant names, `Setter` moved to `Statement`,
+`VariablePattern` as a first-class `CaseDef`, the flat
+`ResolvedArgumentType: ResolvedModuleArgumentType |
+ResolvedGenericArgumentType` split, retirement of the 12 def-level
+analyzer wrappers, and collapse of the `StructRef`/`UnionRef`
+default/impl arms into a single shape with an `impls` seq.
 
-The ongoing DDD refactor to bring every layer into strict alignment
-with the grammar is tracked in `tasks.md`.
+The user-facing surface language reference is
+[`documentation.md`](documentation.md).
 
 ## Compiler Pipeline
 
@@ -82,33 +90,42 @@ Parser ────── App           (raw AST + uniqueness/structural checks
   │                          per-file typeIndex covering both imports
   │                          and defined types)
   ▼
-Resolver ──── (WIP rewrite) Name/shape resolution only. For each
-  │                          file, validates that every ArgumentType
-  │                          inside data blocks and function
-  │                          signatures refers to something in scope.
-  │                          Function bodies are NOT resolved here —
-  │                          that belongs to the Analyzer.
+Resolver ──── Walks the parsed App and produces a ResolvedApp:
+  │              name/shape resolution for every ArgumentType,
+  │              body-level name resolution for user-function
+  │              bodies, arity + generic-constraint checks on
+  │              every impl list. Resolved* def-level types carry
+  │              the accessors + indices the analyzer needs
+  │              (findField, findVariant, findFunctionDefs,
+  │              genericTypeIndex, ...). Two-pass shell/populate
+  │              inside domain.nim breaks the ResolvedModule ↔
+  │              ArgumentType cycle: pass A allocates an empty
+  │              ResolvedModule shell for every parser Module so
+  │              back-references resolve; pass B populates each
+  │              shell with the resolved requires/data/functions.
   ▼
-Analyzer ──── Walks the ResolvedApp end-to-end and produces an
-  │              AnalyzedAppDefinition carrying a type-rich view of
-  │              every value, expression, and statement in the
-  │              program. Each layer of the analyzer mirrors its
-  │              resolver counterpart via a `resolved: Resolved*`
-  │              back-reference. Overload selection at function-call
-  │              sites is wired (each candidate funcDef is unified
-  │              against the call's argument types via GenericImplMap
-  │              + merge; uniqueness picks the survivor); funcDef
+Analyzer ──── Walks bodies. Consumes the enriched Resolved* types
+  │              directly via accessors — there are no def-level
+  │              analyzer wrappers. Produces an AnalyzedApp
+  │              carrying a type-rich view of every value,
+  │              expression, and statement in each function body.
+  │              Overload selection at function-call sites is
+  │              wired (each candidate funcDef is unified against
+  │              the call's argument types via GenericImplMap +
+  │              merge; uniqueness picks the survivor); funcDef
   │              return types and match-subject unions are
   │              concretized via the inferred impls. Union
-  │              initializer parametric inference is wired (urkImpl
-  │              substitutes user-supplied impls, urkDefault uses
-  │              leave-as-is over the position-indexed param list).
-  │              Literal initializers, case patterns over all integer
-  │              kinds + String, and the per-arg-list literal
-  │              validation share one analyzeLiteral helper. The
-  │              equality-vs-unification gap (case-arm uniformity)
-  │              and a handful of focused TODOs remain — see the
-  │              "What's Next" section.
+  │              initializer parametric inference reads the
+  │              flattened StructRef / UnionRef `analyzedImpls`
+  │              seq — empty seq → accumulate from kwargs +
+  │              leave-as-is uncovered positions; non-empty seq
+  │              → substitute user-supplied impls into variant
+  │              fields. Literal initializers, case patterns over
+  │              all integer kinds + String, and per-arg-list
+  │              literal validation share one analyzeLiteral
+  │              helper. The equality-vs-unification gap
+  │              (case-arm uniformity) and a handful of focused
+  │              TODOs remain — see the "What's Next" section.
   ▼
 (future)
   Codegen   ── target emission (C or LLVM IR).
@@ -121,12 +138,14 @@ let resolvedApp = ? resolve(app)
 let analyzedApp = ? analyze(resolvedApp)
 ```
 
-`analyze*` now returns a structured `AnalyzedApp` (wrapping the
-`AnalyzedAppDefinition` plus a `seq[AnalyzedFile]` where each
-`AnalyzedFile` pairs an `AnalyzedFileDefinition` with the analyzed
-modules parsed out of it) rather than the void result it used to.
-The type itself is not exported today; the return value is the
-handle downstream codegen will thread through.
+`analyze*` returns a structured `AnalyzedApp` — the `ResolvedApp`
+back-reference plus a `seq[AnalyzedFile]`, where each `AnalyzedFile`
+carries its `ResolvedFile` back-reference, analyzed import definitions,
+and the analyzed modules parsed out of it. There is no separate
+`AnalyzedAppDefinition` / `AnalyzedFileDefinition` layer today — after
+task 6c retired the 12 def-level wrappers, the analyzer's def-level
+view is just the enriched Resolved* types themselves. `AnalyzedApp` is
+the handle downstream codegen will thread through.
 
 There is no separate `Validator` phase. Every uniqueness / structural
 rule the validator used to enforce (duplicate names, empty blocks,
@@ -197,8 +216,8 @@ lookup serves the resolver.
 
 ### Phase 4: Resolution
 
-`src/resolver/{literals, imports, argtypes, funcdefs, funcrefs, body,
-data, funcs, modules, definedTypes, files, apps, resolver}.nim`
+`src/resolver/{domain, literals, patterns, imports, files, apps,
+resolver}.nim`
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
 which in turn holds resolved imports plus a `ResolvedDefinedType` for
@@ -206,89 +225,129 @@ each module/generic. Body-level name resolution is complete (variables,
 getters, function calls, initializers, match/case patterns). The
 resolver also enforces the structural requires-block constraints
 (unique generics in requires, must pair with a struct, struct can't
-carry generic fields when requires is present) and now stores the
-resolved receiver module directly on the default arm of
-`ResolvedStructRef` / `ResolvedUnionRef`. Open resolver stubs are
-narrow: a few decorator cases and the generic-context
-`resolveModuleArgumentType` for explicit `requires(...)` /
-`dbkStruct`. Scope:
+carry generic fields when requires is present), runs the arity +
+generic-constraint checks on every impl list (task 7 moved these here
+from the analyzer), and stores the resolved receiver module directly
+on `ResolvedStructRef` / `ResolvedUnionRef` (single-shape after task 8
+— `resolvedImpls: seq[ResolvedArgumentType]`, empty for the bare
+surface form, populated for the bracketed form). Scope:
 
-- **Two-pass walk per file** (files come topo-sorted leaves-first
+- **File layout — one `domain.nim` for the mutually-recursive cycle.**
+  Nim requires the cycle of `ref object` types rooted at
+  `ResolvedArgumentType` (which reaches through Module / Function /
+  Statement back to itself) to share a single `type:` block, so every
+  type in the cycle plus its constructors, accessors, and `resolve*`
+  procs lives in `src/resolver/domain.nim` (~1900 lines) grouped by
+  concept via `# ==== …` section dividers. Standalone concepts stay
+  in their own files: `ResolvedLiteralDef` in `literals.nim`,
+  `ResolvedCasePattern` in `patterns.nim`, `ResolvedImport` in
+  `imports.nim`, `ResolvedFile` in `files.nim`, `ResolvedApp` in
+  `apps.nim`. Barrel `resolver.nim` re-exports.
+- **Two-pass walk per app** (files come topo-sorted leaves-first
   from the loader, so imports are always resolved before use).
-  - Pass A (declare): register every defined-type name and every
-    imported-binding into a `FileScope` as `ResolvedRef`s (file id
-    + module/generic kind + index within file).
-  - Pass B (define): for each module, resolve its `requires(...)`
-    clause (if any, declaring explicit type parameters), its data
-    block (struct/union/literal), and each function signature. For
-    each generic, resolve each function signature. Every
-    `ArgumentType` root must look up in the scope; impls resolve
-    recursively. When a module has no explicit `requires` but its
-    struct/union fields reference a generic, that generic is treated
-    as an inferred type parameter at use sites.
+  - Pass A (declare, shell): allocate an empty `ResolvedModule`
+    shell for every parser `Module` in the app via
+    `newResolvedModuleShell`, keyed on parser identity in a
+    `ResolvedModuleShells` table. This is the one-shot mechanism
+    that breaks the `ResolvedModuleArgumentType.resolvedModule ↔
+    ResolvedModule` cycle — every downstream reference resolves to
+    a valid (though empty) shell even before its define pass runs.
+    Per-file work in this pass also registers every defined-type
+    name and every imported binding into a `FileScope`.
+  - Pass B (define, populate): for each module, resolve its
+    `requires(...)` clause (if any, declaring explicit type
+    parameters), its data block (`LiteralDef` / `StructDef` /
+    `UnionDef`), and each function signature. For each generic,
+    resolve each function signature. Every `ArgumentType` root must
+    look up in the scope; impls resolve recursively and are
+    arity- + constraint-checked. When the module's define pass
+    completes, `populateResolvedModule` fills in its shell.
+- **Impl-list validation** — `resolveModuleArgumentType` calls
+  `checkImplSatisfiesGeneric` on every impl inference path (explicit
+  `requires(...)`, inferred struct fields, inferred union fields).
+  The check verifies `(name, arity)` at the parser level; downstream
+  `analyzeValueTypeAgainstDefinitionType` catches signature-parity
+  mismatches at use sites.
 - **Generic param-list accumulation** — `accumulateGenericPosition`
-  in `src/resolver/data.nim` walks each field and assigns the next
-  position to any generic seen for the first time; repeated
-  occurrences keep the position they already have. The result lives
-  as `genericTypeIndex: Table[ResolvedGenericArgumentType, int]` on
-  `ResolvedStruct` / `ResolvedUnion` and drives the
-  position-preserving `requires*` accessor; the analyzer mirrors the
-  same index on `AnalyzedStruct` / `AnalyzedUnion` for substitution.
-  No uniqueness rule is enforced at resolution time — the same
-  generic name appearing in multiple fields (within a struct, within
-  a variant, or across variants of one union) is fine, since the
-  analyzer's `GenericImplMap` binds one generic to one concrete type
-  per construction and surfaces any mismatch as a `merge()` error at
-  the init site. Generic-uniqueness inside an explicit `requires(...)`
-  block is the one place that *is* checked — see
-  `validateRequiresConstraints` in `src/resolver/modules.nim`.
+  walks each field and assigns the next position to any generic
+  seen for the first time; repeated occurrences keep the position
+  they already have. The result lives as `genericTypeIndex:
+  Table[ResolvedGenericArgumentType, int]` on `ResolvedStructDef` /
+  `ResolvedUnionDef` and drives the position-preserving `requires*`
+  accessor plus the analyzer's substitution walk. No uniqueness
+  rule is enforced at resolution time — the same generic name
+  appearing in multiple fields is fine, since the analyzer's
+  `GenericImplMap` binds one generic to one concrete type per
+  construction and surfaces any mismatch as a `merge()` error at
+  the init site. Generic-uniqueness inside an explicit
+  `requires(...)` block is the one place that *is* checked.
 - **Generic signature rule** — inside a generic block, a fn
   argument/return type root may only resolve to the current generic
   itself (self-reference) or a module. Other generics are rejected
   at resolve time, keeping each generic's type world bounded.
-- **Body-level name resolution** — the resolver also walks user-
-  function bodies: each statement is dispatched, each expression is
-  resolved, and every function call is matched against candidate
-  function definitions by `(name, arity)` against the target type.
-  A `FunctionScope` (HashSet[Identifier]) tracks the names of
+- **Enriched Resolved* def-level types** — `ResolvedStructDef` /
+  `ResolvedVariant` / `ResolvedUnionDef` / `ResolvedModule` /
+  `ResolvedGeneric` carry every accessor the analyzer's retired
+  phase-A wrappers used to add: `findField`, `findVariant`,
+  `findFunctionDefs(name, arity, public)`, `funcNameArityIndex`,
+  `funcDefIndex`. The analyzer reads these directly rather than
+  rebuilding a parallel def-level view.
+- **Body-level name resolution** — the resolver walks user-function
+  bodies: each statement is dispatched, each expression is resolved,
+  and every function call is matched against candidate function
+  definitions by `(name, arity)` against the target type. A
+  `FunctionScope` (HashSet[Identifier]) tracks the names of
   variables currently in scope; the type of each variable is the
   Analyzer's concern. The resolver collects candidate overloads but
   does not pick the unique one — that's the Analyzer.
 - **Not the resolver's job**: overload selection (picking the unique
-  candidate after matching arg types), generic constraint
-  satisfaction (does an impl actually implement the generic), and
+  candidate after matching concrete arg types) and body-level
   type-correctness checks. Those belong to the Analyzer phase.
 - **No structural-size check** — all struct values are pointer-backed
   at runtime, so mutual struct containment does not create infinite
-  types. Name cycles are the only cycles, and Pass A dissolves them.
+  types. Name cycles are the only cycles, and the shell-pass
+  dissolves them.
+- **Scope limit on `ResolvedGenericArgumentType.generic`** — task 6b
+  only threaded the module edge through the shell/populate two-pass.
+  `ResolvedGenericArgumentType.generic` remains a parser `Generic`
+  reference; the same treatment for generics would follow the same
+  pattern but is deferred (no downstream task needs it yet).
 
 ### Phase 5: Analysis
 
-`src/analyzer/{literals, imports, argtypes, funcdefs, funcrefs, body,
-data, funcs, modules, patterns, filedefs, appdefs, analyzer}.nim`
+`src/analyzer/{argtypes, body, funcrefs, funcs, imports, patterns,
+appdefs, analyzer}.nim` — 8 files, ~1900 lines.
 
-Takes a `ResolvedApp` and returns an `AnalyzedAppDefinition` — a
-type-rich view of every value, expression, and statement in the
-program. Each analyzer type mirrors its resolver counterpart via
-`resolved: Resolved*` back-references and derives metadata through
-accessors rather than duplicating it. Scope:
+Takes a `ResolvedApp` and returns an `AnalyzedApp` — a type-rich view
+of every value, expression, and statement in each function body. The
+analyzer walks **bodies only**; def-level metadata (fields, variants,
+funcDef indices, generic type indices, constraint checks) is read
+directly off the enriched `Resolved*` types via their accessors. Body-
+level analyzed types mirror their resolver counterparts via
+`resolved: Resolved*` back-references. Scope:
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
   via `GenericImplMap` + `merge`. The unique survivor is picked;
   ambiguity is rejected.
-- **Generic constraint satisfaction** — after unification binds a
-  type parameter, the bound type is checked against every function
-  signature the generic requires.
 - **Concretization** — funcDef return types and match-subject
   unions are rewritten through `concrete()` using the inferred
-  impls so downstream sites see substituted types.
-- **Union-initializer parametric inference** — the impl arm of
-  `UnionRef` substitutes user-supplied impls into variant fields
-  before type-check; the default arm walks kwargs accumulating a
-  `GenericImplMap` and emits a result type with bound concretes
-  where the variant touched a generic and free generics elsewhere
-  (leave-as-is).
+  impls so downstream sites see substituted types. `concrete()`
+  has a resolver-keyed overload
+  `(argType, impls, genericTypeIndex: Table[ResolvedGenericArgumentType, int])`
+  since the union/struct genericTypeIndex is read directly off the
+  resolver's data types.
+- **Union-initializer parametric inference** — reads
+  `AnalyzedUnionRef.analyzedImpls` (single-shape after task 8).
+  Empty seq: the initializer walks kwargs accumulating a
+  `GenericImplMap` against variant fields and builds the result
+  argType with bound concretes at covered positions + free
+  generics at uncovered positions (leave-as-is). Non-empty seq:
+  the user-supplied impls are substituted into variant fields via
+  `concrete()` before per-kwarg type-check. The `GenericImplMap`
+  seed loop runs unconditionally — bounded `if position <
+  analyzedImpls.len` gates each per-position seed, so an empty
+  seq is a no-op.
 - **Literal type inference + validation** — the `analyzeLiteral`
   helper at the top of `analyzer/body.nim` dispatches on
   `ResolvedLiteralType` and validates the literal text against all
@@ -298,9 +357,18 @@ accessors rather than duplicating it. Scope:
 - **Case-pattern duplicate detection** — `checkDuplicate[T: SomeInteger]`
   handles all eight integer kinds in `analyzer/patterns.nim`.
 - **Body-level constructs** — getter (struct-shaped property read),
-  variable case patterns, mutations, assignments, match expressions
-  with case-arm bindings, struct + union initializers (default and
-  impl), literal initializers.
+  variable case patterns (`VariablePattern` is a first-class
+  `CaseDef` variant alongside `LiteralPattern` and `UnionPattern`),
+  setters, assignments, match expressions with case-arm bindings,
+  struct + union initializers, literal initializers.
+- **Pattern-side bindings** — `AnalyzedUnionPattern.fields` is now
+  a seq of `AnalyzedBinding = tuple[name: Identifier, argType:
+  AnalyzedArgumentType]` — the body-level replacement for the
+  retired def-level `AnalyzedArgumentDefinition` wrapper.
+- **Scope table** — `ResolvedFileScope` (was
+  `AnalyzedDefinedTypeScope` pre-6c) is the analyzer's single
+  fileScope table, populated by `analyzeFile` in `appdefs.nim`
+  and threaded through every body walker for name lookups.
 
 The remaining gaps are listed in **What's Next**. The headline ones
 are the equality-vs-unification trap for free-generic types and the
@@ -352,25 +420,31 @@ src/
                                    ArgumentDefinitionList + their specs
     funcdefs.nim                   FunctionDefinition + functionDefinition
                                    line / list specs
-    patterns.nim                   VariantPatternField / VariantPattern /
-                                   CasePattern + their specs
+    patterns.nim                   UnionPatternField / UnionPattern /
+                                   CasePattern (variants: cpkInteger,
+                                   cpkVariable, cpkUnion) + their specs
     body.nim                       Getter / LiteralInitializer +
-                                   StructRef + UnionRef (each a tagged
-                                   union over default {module} and
-                                   impl {argType}, driving initializer
-                                   inference vs explicit-impls at the
-                                   analyzer) + body-level mutually-
+                                   StructRef + UnionRef (each a flat
+                                   `module: Identifier + impls:
+                                   seq[ArgumentType]` after task 8 —
+                                   no default/impl arms; empty impls
+                                   = bare surface form, non-empty =
+                                   explicit-impls) + Setter (Statement
+                                   variant, not Expression, after
+                                   task 4) + body-level mutually-
                                    recursive cluster (ArgumentList ↔
                                    FunctionCall ↔ KeywordArgument ↔
                                    Initializer ↔ Expression ↔ Match /
                                    CaseBlock ↔ Statement ↔
                                    StatementList / Assignment /
-                                   Mutation) + their specs
+                                   Setter) + their specs
                                    (unionInitializerSpec parses via
                                    argumentTypeSpec for symmetry with
                                    structInitializerSpec)
-    data.nim                       Struct / VariantDefinition / Union /
-                                   DataBlock + their specs
+    data.nim                       StructDef / VariantDefinition /
+                                   UnionDef / LiteralDef /
+                                   DataBlock (dbkStruct/dbkUnion/dbkLiteral)
+                                   + their specs
     funcs.nim                      UserFunction / ExternFunction /
                                    Function / FunctionList + their specs
     generics.nim                   Generic / Requires + their specs
@@ -384,319 +458,305 @@ src/
 
   resolver/
     resolver.nim                   re-exports every component file
-    literals.nim                   ResolvedLiteralType + resolveLiteralType
-    imports.nim                    ResolvedImportedType / ResolvedImport
-    argtypes.nim                   FileScope + argument-type cluster
-                                   (Argument / Defined / Module)
-                                   + resolveDataType post-resolution guard
-    funcdefs.nim                   ResolvedArgumentDefinition /
-                                   ResolvedFunctionDefinition /
-                                   ResolvedExternFunction
-    funcrefs.nim                   FunctionScope (variable name set
-                                   used by the body walker). Function-
-                                   call name resolution is inlined into
-                                   resolveFunctionCall in body.nim
-                                   since FunctionCall now carries just
-                                   an Identifier root (no impls).
+    literals.nim                   ResolvedLiteralDef + resolveLiteralDef
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
-    body.nim                       Getter / LiteralInitializer +
-                                   ResolvedStructRef / ResolvedUnionRef
-                                   (each tagged over default / impl;
-                                   default arm now carries `module:
-                                   Module` — the resolved receiver
-                                   module looked up via findModule,
-                                   which handles local + imported via
-                                   the file's typeIndex; impl arm
-                                   carries the resolved ArgumentType,
-                                   with the receiver Module reachable
-                                   via argType.definedType.module.
-                                   module) + body-level cluster
-                                   (Initializer ↔ FunctionCall ↔
-                                   Expression ↔ Match / CaseBlock ↔
-                                   Statement ↔ Assignment / Mutation /
-                                   KeywordArgument). resolveStructRef
-                                   + resolveUnionRef each do the
-                                   findModule themselves and stash
-                                   the result on the default arm; the
-                                   initializer wrappers stop redoing
-                                   the lookup. Impl arm runs
-                                   resolveArgumentType which reuses
-                                   the existing impl-list arity check
-                                   from findRequiredImplsForUnion /
-                                   findRequiredImplsForStruct.
-    data.nim                       ResolvedStruct / ResolvedVariant /
-                                   ResolvedUnion / ResolvedData +
-                                   accumulateGenericPosition helper
-                                   (assigns the next position to each
-                                   new generic; repeats keep their
-                                   first position — no uniqueness
-                                   rejection, the analyzer's merge()
-                                   catches actual conflicts at init)
-                                   + position-preserving requires*
-                                   derivation on Struct/Union + their
-                                   resolveX procs (resolveVariant
-                                   threads the union's mutable
-                                   genericTypeIndex across variants
-                                   so positions accumulate in
-                                   declaration order)
-    funcs.nim                      ResolvedUserFunction / ResolvedFunction
-                                   + resolveUserFunction / resolveFunction
-    modules.nim                    ResolvedModule / ResolvedGeneric +
-                                   resolveModule / resolveGeneric
-    definedTypes.nim               ResolvedDefinedType +
-                                   resolveDefinedType
-    files.nim                      ResolvedFile + resolveFile
+    imports.nim                    ResolvedImportedType / ResolvedImport
+    domain.nim                     Every mutually-recursive resolved
+                                   type + its constructors, accessors,
+                                   and resolve* procs, grouped by
+                                   concept via `# ==== …` section
+                                   dividers. ~1900 lines. Nim requires
+                                   the ref-object cycle rooted at
+                                   ResolvedArgumentType (Module ↔
+                                   Function ↔ Statement ↔ ArgumentType)
+                                   to share a single `type:` block, so
+                                   the concepts stay grouped in one
+                                   file rather than fractured across
+                                   many. Cover:
+                                     — Argument-type cluster:
+                                       ResolvedArgumentType (flat
+                                       tagged union over
+                                       ResolvedModuleArgumentType |
+                                       ResolvedGenericArgumentType,
+                                       no ratkImported/ratkDefined
+                                       intermediate) + FileScope +
+                                       resolveArgumentType (module +
+                                       generic context overloads) +
+                                       checkImplSatisfiesGeneric
+                                     — ResolvedModuleShells table +
+                                       shell/populate mechanism that
+                                       breaks the ResolvedModule ↔
+                                       ArgumentType cycle
+                                     — Function-def cluster:
+                                       ResolvedArgumentDefinition /
+                                       ResolvedFunctionDefinition /
+                                       ResolvedExternFunction
+                                     — Data cluster: ResolvedStructDef
+                                       (with fieldIndex + findField +
+                                       genericTypeIndex) /
+                                       ResolvedVariant (with
+                                       fieldIndex + findField) /
+                                       ResolvedUnionDef (with
+                                       variantIndex + findVariant +
+                                       genericTypeIndex) /
+                                       ResolvedData +
+                                       accumulateGenericPosition
+                                     — Body-level cluster:
+                                       ResolvedGetter /
+                                       ResolvedLiteralInitializer /
+                                       ResolvedStructRef +
+                                       ResolvedUnionRef (both flat
+                                       objects with resolvedModule +
+                                       resolvedImpls after task 8;
+                                       empty resolvedImpls = bare
+                                       surface form) /
+                                       ResolvedStructInitializer /
+                                       ResolvedUnionInitializer /
+                                       ResolvedFunctionCall (each
+                                       exposing resolvedImpls*
+                                       accessors) /
+                                       ResolvedInitializer /
+                                       ResolvedAssignment /
+                                       ResolvedSetter (Statement
+                                       variant after task 4) /
+                                       ResolvedCaseBlock /
+                                       ResolvedMatchExpression /
+                                       ResolvedExpression /
+                                       ResolvedStatement +
+                                       FunctionScope (HashSet of
+                                       variable names in scope)
+                                     — Function cluster:
+                                       ResolvedUserFunction /
+                                       ResolvedFunction
+                                     — Module + Generic:
+                                       ResolvedModule (with
+                                       funcDefIndex +
+                                       funcNameArityIndex +
+                                       findFunctionDefs(name, arity,
+                                       public)) / ResolvedGeneric
+                                       (with funcNameArityIndex +
+                                       findFunctionDefs) +
+                                       newResolvedModuleShell +
+                                       populate
+                                     — ResolvedDefinedType (umbrella)
+    imports.nim                    ResolvedImportedType / ResolvedImport
+                                   + resolveImport
+    files.nim                      ResolvedFile + resolveFile (declare
+                                   pass — registers defined-type names
+                                   and imported bindings into FileScope)
     apps.nim                       ResolvedApp + the public `resolve*`
-                                   entry
+                                   entry. Runs buildModuleShells first
+                                   (declare pass: one shell per
+                                   parser Module), then resolves each
+                                   file (define pass: populates each
+                                   shell as its module completes).
 
-  analyzer/
+  analyzer/                        8 files, ~1900 lines. No def-level
+                                   wrappers — the 12 that used to live
+                                   here (AnalyzedStructDef,
+                                   AnalyzedUnionDef, AnalyzedVariant,
+                                   AnalyzedLiteralDef, AnalyzedData,
+                                   AnalyzedModuleDefinition,
+                                   AnalyzedGeneric,
+                                   AnalyzedDefinedType,
+                                   AnalyzedFileDefinition,
+                                   AnalyzedAppDefinition,
+                                   AnalyzedFunctionDefinition,
+                                   AnalyzedArgumentDefinition) were
+                                   retired in task 6c; the analyzer
+                                   reads the enriched Resolved* types
+                                   directly.
     analyzer.nim                   re-exports every component file
-    literals.nim                   AnalyzedLiteralBlock
     imports.nim                    AnalyzedImportedType /
                                    AnalyzedImportDefinition +
-                                   analyzeImportedType,
+                                   analyzeImportedType /
                                    analyzeImportDefinition
-    argtypes.nim                   ResolvedFileScope + argument-type
-                                   cluster (Argument / Defined / Module /
-                                   Generic) + dual-context (module ctx /
-                                   generic ctx) analyze* overloads —
-                                   both now take fileScope so the
-                                   generic-context path can resolve
-                                   imported types via the same
-                                   findArgTypeModule / findArgTypeGeneric
-                                   helpers (which try file-local lookup
-                                   first, then fall back to fileScope) +
-                                   GenericImplMap (Table[ResolvedGeneric,
+    argtypes.nim                   AnalyzedGenericArgumentType /
+                                   AnalyzedModuleArgumentType /
+                                   AnalyzedArgumentType (flat tagged
+                                   union mirroring the resolver's
+                                   shape after task 5) + dual-context
+                                   (module ctx / generic ctx)
+                                   analyze* overloads — both take
+                                   fileScope so the generic-context
+                                   path can resolve imported types
+                                   via the same
+                                   findArgTypeModule /
+                                   findArgTypeGeneric helpers (file-
+                                   local first, then fileScope
+                                   fallback) + GenericImplMap
+                                   (Table[ResolvedGeneric,
                                    AnalyzedArgumentType]) with merge
                                    (conflict-on-different-binding) +
-                                   concrete* overloads (implMap-keyed and
-                                   positional impls + genericTypeIndex)
-    funcdefs.nim                   AnalyzedArgumentDefinition /
-                                   AnalyzedFunctionDefinition + dual-
-                                   context analyze* overloads +
-                                   concrete* (implMap-driven and
-                                   index+impls-driven) so funcDef return
-                                   types substitute through to inferred
-                                   impls at the call site
-    data.nim                       AnalyzedStruct (with fieldIndex +
-                                   findField + genericTypeIndex) /
-                                   AnalyzedVariant / AnalyzedUnion
-                                   (with genericTypeIndex) /
-                                   AnalyzedData + concrete* on each
-                                   (positional impls drive field-type
-                                   substitution via the stored index) +
-                                   accumulateGenericPosition (mirror of
-                                   the resolver-side accumulator) +
-                                   their analyzeX procs (analyzeVariant
-                                   threads the union's mutable
-                                   genericTypeIndex)
-    modules.nim                    AnalyzedModuleDefinition (+ funcDef
-                                   indices and findFunctionDef[s]
-                                   lookups) / AnalyzedGeneric (also has
-                                   funcDef indices + findFunctionDefs;
-                                   generic funcDefs need no public
-                                   filter) / AnalyzedDefinedType
-                                   (umbrella over module + generic;
-                                   module/generic accessors assert kind
-                                   first) + analyzeModuleDefinition /
-                                   analyzeGeneric / analyzeDefinedType
-    funcrefs.nim                   AnalyzedDefinedTypeScope
-                                   (Identifier -> AnalyzedDefinedType,
-                                   indexes both modules and generics)
-                                   with findDefinedType (by name) /
+                                   concrete* overloads (implMap-keyed
+                                   and positional impls +
+                                   genericTypeIndex — the latter
+                                   read off the resolver's data
+                                   types after task 6c)
+    funcrefs.nim                   ResolvedFileScope (Identifier ->
+                                   ResolvedDefinedType, spans local
+                                   + imported types; the analyzer's
+                                   single fileScope table, populated
+                                   by analyzeFile in appdefs.nim.
+                                   Was AnalyzedDefinedTypeScope
+                                   pre-task-6c) + findDefinedType /
                                    findModuleDef (by argType or by
                                    name) / extractDataBlock /
                                    extractStructFor / extractUnionFor
-                                   lookup helpers / AnalyzedFunctionScope
-                                   + clone. Function-call funcDef
-                                   lookup is inlined into
-                                   analyzeFunctionCall in body.nim
-                                   (AnalyzedFunctionRef removed).
+                                   lookup helpers /
+                                   AnalyzedFunctionScope + clone.
+                                   Function-call funcDef lookup is
+                                   inlined into analyzeFunctionCall
+                                   in body.nim.
     patterns.nim                   generic parseInteger[T: SomeInteger]
                                    helper (parseutils + scanf with
                                    compile-time signed/unsigned
                                    dispatch + bounds check against
-                                   T.high/low) / AnalyzedVariantPatternScope
-                                   + update + hasUncoveredCases /
-                                   AnalyzedLiteralPatternScope —
-                                   tagged union over the eight integer
-                                   kinds, exhaustiveness currently
-                                   requires a variable case binding
-                                   since whole-domain coverage is not
-                                   yet computed (literal-pattern
-                                   duplicate detection is implemented
-                                   for u8 / i8 only — the other six
-                                   integer kinds still return todo) /
-                                   AnalyzedVariantPattern +
-                                   analyzeVariantCasePattern /
-                                   AnalyzedCasePattern (acpkVariant /
-                                   acpkInteger / acpkVariable) +
-                                   analyzeCasePattern (overloaded for
-                                   union vs literal context)
+                                   T.high/low) /
+                                   AnalyzedUnionPatternScope + update
+                                   + hasUncoveredCases /
+                                   AnalyzedLiteralPatternScope
+                                   (tagged union over the eight
+                                   integer kinds; whole-domain
+                                   exhaustiveness currently requires
+                                   a variable case binding) /
+                                   AnalyzedUnionPattern (carrying
+                                   `bindings: seq[AnalyzedBinding]`
+                                   where AnalyzedBinding is
+                                   `tuple[name: Identifier, argType:
+                                   AnalyzedArgumentType]` — the
+                                   post-6c replacement for the
+                                   retired def-level
+                                   AnalyzedArgumentDefinition
+                                   wrapper) + analyzeUnionCasePattern
+                                   / AnalyzedCasePattern
+                                   (acpkUnion / acpkInteger /
+                                   acpkVariable — mirrors the
+                                   grammar's CaseDef: UnionPattern |
+                                   LiteralPattern | VariablePattern)
+                                   + analyzeCasePattern (overloaded
+                                   for union vs literal context)
     body.nim                       AnalyzedVariable + analyzeVariable
                                    / AnalyzedLiteralInitializer +
-                                   analyzeLiteralInitializer (runs
-                                   analyzeArgumentType, extracts the
-                                   data block, validates via the
-                                   shared analyzeLiteral helper) /
+                                   analyzeLiteralInitializer /
                                    AnalyzedGetter (struct-shaped
                                    module property lookup; carries
                                    `source` — the source variable's
                                    AnalyzedArgumentType — and
                                    `property` — the resolved field
-                                   def. `argType*()` derives from
-                                   `property.argType`, so a getter
-                                   expression types as the property
-                                   field, not as the source object) +
-                                   analyzeGetter / body-level
-                                   mutually-recursive type cluster
-                                   (AnalyzedFunctionCall /
-                                   AnalyzedKeywordArgument /
-                                   AnalyzedStructRef + AnalyzedUnionRef
-                                   (each tagged default / impl;
-                                   default arm carries `module:
-                                   AnalyzedModuleDefinition` looked up
-                                   via defScope.findModuleDef — defScope
-                                   spans local + imported types,
-                                   populated by analyzeFile in
-                                   appdefs.nim — and the wrapper
-                                   initializer procs read it directly
-                                   instead of redoing the lookup. Impl
-                                   arm carries the analyzed
-                                   ArgumentType used to seed
-                                   substitution; impl-arm callers
-                                   that still need the receiver moduleDef
-                                   call defScope.findModuleDef with the
-                                   parser-level name) /
-                                   AnalyzedUnionInitializer (carries
-                                   unionRef + the analyzer-built
-                                   argType, which is fully bound on
-                                   the impl arm and may carry free
-                                   generics on the default arm) /
-                                   AnalyzedStructInitializer /
-                                   AnalyzedInitializer /
-                                   AnalyzedCaseBlock /
-                                   AnalyzedMatchExpression /
-                                   AnalyzedAssignment /
-                                   AnalyzedMutation /
-                                   AnalyzedExpression /
-                                   AnalyzedStatement) + analyze procs
-                                   (analyzeValueTypeAgainstDefinitionType
-                                   (overload set) / analyzeArgumentList
-                                   (overloaded; the per-funcDef arity
-                                   check + the overload-resolution
-                                   helper share the name) +
-                                   analyzeFunctionCall
-                                   / analyzeCaseBlock (overloaded; union
-                                   ctx + literal ctx; both extend
-                                   caseScope with statement-level
-                                   bindings) / verifyUniformReturnType
-                                   helper / analyzeCases (overloaded;
-                                   shared uniform-return check) /
-                                   analyzeMatchExpression /
-                                   analyzeKeywordArgument (pre-resolved
-                                   field so struct + union initializers
-                                   share it; partial literal-typed
-                                   kwarg inference — i32 and string
-                                   arms wired, other integer / float /
-                                   pointer kinds return todo) /
-                                   analyzeUnionInitializer (dispatches
-                                   on AnalyzedUnionRef kind: aurkImpl
-                                   substitutes the user-supplied impls
-                                   into the variant's field types via
-                                   concrete() and type-checks each
-                                   kwarg; aurkDefault accumulates a
-                                   GenericImplMap from kwarg value
-                                   types against variant fields and
-                                   builds the result argType with
-                                   bound concretes at covered
-                                   positions + free generics at
-                                   uncovered ones — leave-as-is) /
-                                   analyzeStructInitializer /
-                                   analyzeInitializer /
-                                   analyzeExpression /
-                                   analyzeAssignment (extends
-                                   funcScope with the new binding) /
-                                   analyzeMutation / analyzeStatement)
-                                   — variable case-pattern arm wired
-                                   for literal-subject matches (binds
-                                   the variable to the subject's
-                                   argType); mutation statement wired
-                                   (LHS getter + RHS expression —
-                                   type equality not yet checked);
-                                   literal initializer arm wired via
-                                   AnalyzedLiteralInitializer +
-                                   analyzeLiteralInitializer — runs
-                                   analyzeArgumentType for the
-                                   declared type, extracts the data
-                                   block, errors if the receiver is
-                                   struct/union (rejects "you wrote
-                                   a literal where the type expects
-                                   an initializer block"), validates
-                                   the literal value against the
-                                   ResolvedLiteralType via the same
-                                   analyzeLiteral helper used by
-                                   arg-list and kwarg paths;
-                                   argument-list handles
-                                   typed (non-literal) args fully and
-                                   has uniform literal-arg validation
-                                   wired against all integer kinds
-                                   (U8/U16/U32/U64/I8/I16/I32/I64) +
-                                   String via the analyzeLiteral
-                                   helper at the top of body.nim,
-                                   which dispatches on
-                                   ResolvedLiteralType and calls
-                                   analyzeIntegerLiteral[T] (generic
-                                   over the target width/signedness)
-                                   or analyzeStringLiteral. F32/F64/
-                                   Pointer literal positions still
-                                   return todo; struct/union-typed
-                                   positions return a "needs
-                                   initializer" diagnostic.
-                                   analyzeKeywordArgument uses the
-                                   same analyzeLiteral helper, so
-                                   literal-typed field values are
-                                   validated by the same code path.
-                                   analyzeValueTypeAgainstDefinitionType
-                                   takes an explicit `loc: Location`
-                                   so type-mismatch errors point at
-                                   the use site (the offending kwarg
-                                   or call arg) rather than at
-                                   wherever the value's argType
-                                   carries its own loc.
-                                   analyzeFunctionCall concretizes
-                                   the matched funcDef's return type
-                                   via the inferred GenericImplMap;
-                                   the public-only filter on
-                                   findFunctionDefs is now dispatched
-                                   on receiver kind — modules apply
-                                   the "external call needs public"
-                                   rule, generics allow any funcDef
-                                   (their funcDefs aren't required to
-                                   be explicitly marked public).
-                                   analyzeMatchExpression extracts the
-                                   subject's impls and runs the union
-                                   through concrete() so case-arm
-                                   bindings see the substituted field
-                                   types
-    funcs.nim                      AnalyzedUserFunction + AnalyzedExternFunction
-                                   / AnalyzedFunction tagged union /
-                                   AnalyzedModule + analyzeUserFunction
-                                   (enforces last-statement return-type
-                                   match) + analyzeModule (returns
-                                   AnalyzedModule with
-                                   AnalyzedFunction[Extern|User]
-                                   wrappers)
-    filedefs.nim                   AnalyzedFileDefinition (with
-                                   imports + definedTypes + modules) +
-                                   analyzeFileDefinition
-    appdefs.nim                    AnalyzedAppDefinition +
-                                   AnalyzedFile (analyzed file
-                                   def + its analyzed modules) +
-                                   AnalyzedApp (app def + per-file
-                                   analyzed views) + the public
-                                   `analyze*` entry (returns
-                                   `Result[AnalyzedApp, string]`)
+                                   def) + analyzeGetter + body-level
+                                   mutually-recursive type cluster:
+                                     — AnalyzedFunctionCall
+                                     — AnalyzedKeywordArgument
+                                     — AnalyzedStructRef +
+                                       AnalyzedUnionRef (each a flat
+                                       `resolved + analyzedImpls:
+                                       seq[AnalyzedArgumentType]`
+                                       after task 8 — no default/impl
+                                       arms; empty analyzedImpls
+                                       means the initializer walks
+                                       kwargs to accumulate impls,
+                                       non-empty means substitute
+                                       user-supplied impls into
+                                       variant fields)
+                                     — AnalyzedStructInitializer /
+                                       AnalyzedUnionInitializer
+                                       (each carries the analyzer-
+                                       built argType; on the empty-
+                                       impls path it may still
+                                       carry free generics)
+                                     — AnalyzedInitializer /
+                                       AnalyzedCaseBlock /
+                                       AnalyzedMatchExpression
+                                     — AnalyzedAssignment /
+                                       AnalyzedSetter (Statement
+                                       variant after task 4 —
+                                       previously AnalyzedMutation
+                                       when it lived in Expression)
+                                     — AnalyzedExpression /
+                                       AnalyzedStatement
+                                   Analyze procs:
+                                     analyzeValueTypeAgainstDefinitionType
+                                     (overload set — takes explicit
+                                     `loc: Location` so type-mismatch
+                                     errors point at the use site) /
+                                     analyzeArgumentList (per-funcDef
+                                     arity + overload-resolution
+                                     variants) / analyzeFunctionCall
+                                     (public-only filter dispatched
+                                     on receiver kind — modules
+                                     apply the "external call needs
+                                     public" rule; generics allow
+                                     any funcDef. Concretizes the
+                                     matched funcDef's return type
+                                     via the inferred
+                                     GenericImplMap.) /
+                                     analyzeCaseBlock (union +
+                                     literal ctx; both extend
+                                     caseScope with statement-level
+                                     bindings) /
+                                     verifyUniformReturnType /
+                                     analyzeCases (shared
+                                     uniform-return check) /
+                                     analyzeMatchExpression (runs
+                                     concrete() on the subject
+                                     union so case-arm bindings
+                                     see substituted field types) /
+                                     analyzeKeywordArgument (uses
+                                     analyzeLiteral for literal-
+                                     typed kwarg values) /
+                                     analyzeUnionInitializer (single
+                                     code path over analyzedImpls
+                                     — bounded seed loop over
+                                     `if position <
+                                     analyzedImpls.len`) /
+                                     analyzeStructInitializer /
+                                     analyzeInitializer /
+                                     analyzeExpression /
+                                     analyzeAssignment (extends
+                                     funcScope with the new binding)
+                                     / analyzeSetter (LHS getter +
+                                     RHS expression — type equality
+                                     not yet checked) /
+                                     analyzeStatement. The shared
+                                     analyzeLiteral helper at the
+                                     top of body.nim dispatches on
+                                     ResolvedLiteralDef and calls
+                                     analyzeIntegerLiteral[T]
+                                     (generic over target
+                                     width/signedness) or
+                                     analyzeStringLiteral. F32/F64/
+                                     Pointer literal positions
+                                     still return todo; struct/
+                                     union-typed positions return
+                                     a "needs initializer"
+                                     diagnostic.
+    funcs.nim                      AnalyzedUserFunction (holds
+                                   ResolvedFunctionDefinition +
+                                   statements) +
+                                   AnalyzedExternFunction /
+                                   AnalyzedFunction tagged union /
+                                   AnalyzedModule (holds a
+                                   ResolvedModule back-reference +
+                                   AnalyzedFunction list — no
+                                   AnalyzedModuleDefinition wrapper
+                                   after task 6c) +
+                                   analyzeUserFunction (enforces
+                                   last-statement return-type
+                                   match) + analyzeModule
+    appdefs.nim                    AnalyzedFile (ResolvedFile
+                                   back-reference + imports +
+                                   analyzed modules) + AnalyzedApp
+                                   (ResolvedApp back-reference +
+                                   per-file analyzed views) + the
+                                   public `analyze*` entry
+                                   (returns `Result[AnalyzedApp,
+                                   string]`). Post-6c there is no
+                                   AnalyzedFileDefinition /
+                                   AnalyzedAppDefinition split —
+                                   the analyzed value is just the
+                                   files list plus its resolver
+                                   back-reference.
 
 examples/
   base.asl                         standard library definition (extern functions)
@@ -704,10 +764,11 @@ examples/
   errors/*.asl                     negative test fixtures (each documented)
 
 tests/
-  config.nims                      adds src/{,tokenizer,parser,resolver}
-                                   to the search path
-  tutils.nim                       shared helpers (tokenize/parse/resolve
-                                   over in-memory strings + temp dirs)
+  config.nims                      adds src/{,tokenizer,parser,resolver,
+                                   analyzer} to the search path
+  tutils.nim                       shared helpers (tokenize/parse/
+                                   resolve/analyze over in-memory
+                                   strings + temp dirs)
   all.nim                          aggregator that imports test_*.nim
   test_tokenizer.nim               tokenizer unit tests
   test_combinators.nim             Spec / combinator unit tests
@@ -717,10 +778,17 @@ tests/
                                    per-concept grammar specs
   test_loader.nim                  BFS / topo / parent-escape tests
   test_resolver.nim                end-to-end resolver tests
+  test_analyzer.nim                end-to-end analyzer tests
+  test_cli.nim                     CLI parsing tests (--vendor flag,
+                                   etc.)
 
 test.sh                            regression runner (exit-code based)
+grammar.md                         source-of-truth domain grammar
+                                   (see "Domain grammar" section)
+tasks.md                           DDD refactor roadmap
 bugs.md                            issue tracker (open + resolved)
 lessons.md                         design retrospective
+documentation.md                   user-facing language reference
 overview.md                        this file
 ```
 
@@ -764,10 +832,10 @@ string, so error messages always have exact source positions.
 Two suites, both runnable from the repo root:
 
 `nimble test` — unit suite under `tests/`. Each component (tokenizer,
-combinators, AST constructors, grammar, loader, resolver, analyzer)
-has its own `test_*.nim` file aggregated by `tests/all.nim`. 187 tests
-covering positive paths, negative paths, edge cases, and Trojan Source
-defenses in the tokenizer.
+combinators, AST constructors, grammar, loader, resolver, analyzer,
+CLI) has its own `test_*.nim` file aggregated by `tests/all.nim`.
+239 tests covering positive paths, negative paths, edge cases, and
+Trojan Source defenses in the tokenizer.
 
 `./test.sh` — integration suite that drives the binary against
 every `examples/*.asl` fixture and asserts exit codes:
@@ -776,56 +844,64 @@ every `examples/*.asl` fixture and asserts exit codes:
 - **Negative** (`examples/errors/*.asl`): must exit non-zero
 
 Each fixture has a leading `#` comment documenting what feature or
-error condition it exercises. 35 fixtures total.
+error condition it exercises. 35 fixtures total (20 positive + 15
+negative; two of the error fixtures are dependency files skipped by
+the runner).
 
 ## What's Next
 
 The **Analyzer phase is functionally complete** — `analyze*` walks
-the `ResolvedApp` end-to-end and returns an `AnalyzedAppDefinition`
-that holds a type-rich representation of every value, expression,
-and statement in the program. Integration suite at **31/35**; unit
-suite at **196/196**.
+the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
+holds a type-rich representation of every value, expression, and
+statement in each function body. Integration suite at **33/35**;
+unit suite at **239/239**.
 
 What the analyzer does today (all wired):
 
 - Overload selection at function-call sites — each candidate funcDef
   is unified against the call's argument types via `GenericImplMap`
   + `merge`, and uniqueness picks the survivor (ambiguity rejected).
-- Generic constraint satisfaction — once unification binds a type
-  parameter, the bound type is checked against every function
-  signature the generic requires.
+- Impl-list arity + generic constraint satisfaction — task 7 moved
+  these checks into `resolveModuleArgumentType` via
+  `checkImplSatisfiesGeneric`; the analyzer trusts the resolver's
+  result and only runs use-site signature-parity checks via
+  `analyzeValueTypeAgainstDefinitionType`.
 - Concretization — the matched funcDef's return type and the
   match-subject's union are rewritten through `concrete()` with the
   inferred impls so downstream sites see substituted types.
-- Union initializer parametric inference — `UnionRef` (mirror of
-  `StructRef`) carries default vs impl; the impl arm substitutes
-  user-supplied impls into variant fields via `concrete()` before
-  type-check, the default arm walks kwargs accumulating a
-  `GenericImplMap` and emits a result type with bound concretes
-  where the variant touched the generic and free generics where it
-  didn't (leave-as-is).
+- Union initializer parametric inference — reads
+  `AnalyzedUnionRef.analyzedImpls` (single-shape after task 8).
+  Non-empty seq: user-supplied impls are substituted into variant
+  fields via `concrete()` before type-check. Empty seq: the
+  initializer walks kwargs accumulating a `GenericImplMap` and
+  emits a result type with bound concretes where the variant
+  touched the generic and free generics where it didn't
+  (leave-as-is). Single code path — bounded seed loop over
+  `analyzedImpls.len` handles both cases.
 - Literal type inference — the `analyzeLiteral` helper dispatches on
-  `ResolvedLiteralType` and validates every integer kind
+  `ResolvedLiteralDef` and validates every integer kind
   (U8/U16/U32/U64/I8/I16/I32/I64) plus String against the expected
   target. `analyzeArgumentList`, `analyzeKeywordArgument`, and
   `analyzeLiteralInitializer` all route through it.
 - Case-pattern duplicate detection — `checkDuplicate[T: SomeInteger]`
   handles all eight integer kinds uniformly.
 - Body-level constructs — getter (struct-shaped property read),
-  variable case patterns, mutations, assignments, match expressions
-  with case-arm bindings, struct + union initializers (default and
-  impl), literal initializers.
+  variable case patterns (`VariablePattern` is a first-class
+  `CaseDef` variant), setters, assignments, match expressions with
+  case-arm bindings, struct + union initializers, literal
+  initializers.
 
 Focused TODOs still open:
 
-- **Equality vs unification for analyzed types** (`analyzer/argtypes.nim:194`).
-  `AnalyzedArgumentType.==` is hash equality; assignability against
-  an expected type that carries free generics (post leave-as-is)
-  needs unification. Surfaces as the case-arm uniformity check
-  failing on a handful of fixtures that flow free-generic values
-  through `verifyUniformReturnType`. Fix is to route every
-  assignability check through `analyzeValueTypeAgainstDefinitionType`
-  + `merge`, with eager chain-collapsing in `merge`.
+- **Equality vs unification for analyzed types**
+  (`analyzer/argtypes.nim`, the `==` on `AnalyzedArgumentType`).
+  Assignability against an expected type that carries free
+  generics (post leave-as-is) needs unification, not hash equality.
+  Surfaces as the case-arm uniformity check failing on a handful
+  of fixtures that flow free-generic values through
+  `verifyUniformReturnType`. Fix is to route every assignability
+  check through `analyzeValueTypeAgainstDefinitionType` + `merge`,
+  with eager chain-collapsing in `merge`.
 - **Substitution chains in `concrete()`** — `Sample → K, K → u8`
   should collapse to `Sample → u8`; today `concrete()` does a
   single `getOrDefault`. Pairs with the equality fix above.
@@ -835,11 +911,11 @@ Focused TODOs still open:
   flows into a generic position (e.g., `f(K=…)` with literal
   inferable type), the resulting binding isn't yet recorded.
 - **`findRequiredImplsForFields` nested-impl walk**
-  (`resolver/argtypes.nim:117`) — needs to walk into impls so a
-  field typed `Box[u8, Sample]` contributes `Sample` to the parent's
+  (`resolver/domain.nim`) — needs to walk into impls so a field
+  typed `Box[u8, Sample]` contributes `Sample` to the parent's
   requires.
 - **Type-correctness checks across statements** — assignment
-  compatibility, match exhaustiveness, mutation type equality.
+  compatibility, match exhaustiveness, setter type equality.
 
 After the analyzer:
 - **IR generation** — lower the analyzed AST into an intermediate

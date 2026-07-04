@@ -7,8 +7,9 @@ resolves, and analyzes cleanly through the compiler. Anything not
 written here is either not yet supported or in flux.
 
 For compiler internals (pipeline phases, AST shapes, design patterns),
-see `overview.md`. For active issues and design lessons, see `bugs.md`
-and `lessons.md`.
+see `overview.md`. For the domain vocabulary that parser/resolver/analyzer
+types trace back to, see `grammar.md`. For active issues and design
+lessons, see `bugs.md` and `lessons.md`.
 
 ---
 
@@ -442,15 +443,15 @@ Status[u32].Err { error: err1 }
 Plan.Free { usage: u32 100 }
 ```
 
-Two forms:
-
-- **Default** (`Module.Variant { … }`) — type parameters are inferred
-  from the kwarg values. Leave-as-is keeps any free generic at its
-  declared position when the variant's fields don't bind it.
-- **Explicit-impl** (`Module[T1, T2].Variant { … }`) — type parameters
-  are supplied. Required when the variant alone cannot determine all
-  type parameters (e.g., `Status[Bitset].Err { error: e }` — `Err`
-  only constrains `Error`, not `Bitset`).
+Type parameters may be attached to the receiver (`Module[T1, T2].Variant
+{ … }`) or omitted (`Module.Variant { … }`); at the AST level both write
+into the same `UnionRef` shape carrying an `impls` seq (empty for the
+bare form, populated for the bracketed form). When impls are omitted the
+compiler infers them from the kwarg values, leaving any generic the
+variant's fields don't touch at its declared position (leave-as-is).
+Explicit impls are needed when the variant alone cannot determine all
+type parameters — e.g. `Status[Bitset].Err { error: e }`, where `Err`
+only constrains `Error`, not `Bitset`.
 
 ### Module-method calls
 
@@ -484,9 +485,9 @@ p.a = v
 bitset.bits = updated_bits
 ```
 
-`obj.field = expr` writes a struct field. (The compiler currently
-treats this as a statement; equality of LHS and RHS types is not yet
-type-checked end-to-end.)
+`obj.field = expr` writes a struct field. This is a `Setter` statement
+(distinct from an `Assignment`, which binds a new local); equality of
+LHS and RHS types is not yet type-checked end-to-end.
 
 ---
 
@@ -681,6 +682,14 @@ describing what feature it exercises.
 ## Changelog
 
 This section records language changes as they land, newest first.
+
+- **2026-07 (docs sync)** — Documentation aligned with the DDD refactor
+  vocabulary locked in `grammar.md`. Parser/resolver/analyzer types now
+  use `StructDef` / `UnionDef` / `LiteralDef` (was `Struct` / `Union` /
+  `Literal`), `Setter` is a Statement variant (was an Expression), and
+  `StructRef` / `UnionRef` carry a single `impls` seq at every layer
+  (was two arms — default vs impl). No surface-syntax changes; the
+  edits are internal-vocabulary alignment.
 
 - **2026-07 (later)** — Optional `.asl` / `.aslr` suffix on relative
   imports. Import sources like `import { Helper } from "./helper"`
