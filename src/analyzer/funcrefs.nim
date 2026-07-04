@@ -1,77 +1,65 @@
 ## Body-level scopes and the helpers the body walker consumes:
-##   - AnalyzedDefinedTypeScope (module/generic lookup by Identifier)
 ##   - AnalyzedFunctionScope    (variable -> AnalyzedArgumentType)
-## plus `findDefinedType`, `findModuleDef`, `extractDataBlock`,
-## `extractStructFor`, `extractUnionFor`, `clone`.
+## plus `findModuleDef`, `extractDataBlock`, `extractStructFor`,
+## `extractUnionFor`, `clone`.
 ##
-## The funcref validation that used to live here
-## (AnalyzedFunctionRef + analyzeFunctionRef) is inlined into
-## analyzeFunctionCall now that FunctionCall carries just an
-## Identifier root.
+## Defined-type lookup by Identifier lives directly on
+## `ResolvedFileScope` (see argtypes.nim) — post-6c retirement there is
+## no separate `AnalyzedDefinedTypeScope`, since every defined type
+## carried by the scope is already a `ResolvedDefinedType`.
 
 import results, tables, strformat, options
 
 import tokenizer
 import parser
+import resolver
 import argtypes
-import data
-import modules
 
-type AnalyzedDefinedTypeScope* = Table[Identifier, AnalyzedDefinedType]
-
-proc findDefinedType*(defScope: AnalyzedDefinedTypeScope, name: Identifier, loc: Location): Result[AnalyzedDefinedType, string] =
-  if name notin defScope:
+proc findDefinedType*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedDefinedType, string] =
+  if name notin fileScope:
     err(fmt"{loc} UNREACHABLE: type `{name.asl}` is not defined")
   else:
-    ok(defScope[name])
+    ok(fileScope[name])
 
-proc findModuleDef*(defScope: AnalyzedDefinedTypeScope, name: Identifier, loc: Location): Result[AnalyzedModuleDefinition, string] =
-  let entry = ? defScope.findDefinedType(name, loc)
+proc findModuleDef*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedModule, string] =
+  let entry = ? fileScope.findDefinedType(name, loc)
   case entry.kind:
-  of adtkModule: ok(entry.module)
-  of adtkGeneric:
+  of rdtkModule: ok(entry.module)
+  of rdtkGeneric:
     err(fmt"{loc} UNREACHABLE: scope entry `{name.asl}` is a generic but caller expected module")
 
-proc findModuleDef*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedModuleDefinition, string] =
+proc findModuleDef*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedModule, string] =
   case argType.kind:
   of aatkGeneric:
     err(fmt"{loc} todo: analyze case blocks for generic subject type")
   of aatkModule:
-    let moduleArgType = argType.module
-    if moduleArgType.name notin defScope:
-      err(fmt"{loc} UNREACHABLE: module `{moduleArgType.name.asl}` is not defined")
-    else:
-      let entry = defScope[moduleArgType.name]
-      case entry.kind:
-      of adtkModule: ok(entry.module)
-      of adtkGeneric:
-        err(fmt"{loc} UNREACHABLE: scope entry `{moduleArgType.name.asl}` is a generic but argType claims module")
+    ok(argType.module.module)
 
-proc extractDataBlock*(defScope: AnalyzedDefinedTypeScope, module: AnalyzedModuleDefinition, loc: Location): Result[AnalyzedData, string] =
+proc extractDataBlock*(fileScope: ResolvedFileScope, module: ResolvedModule, loc: Location): Result[ResolvedData, string] =
   if module.data.isNone:
     err(fmt"{loc} UNREACHABLE: expression does not return a data type")
   else:
     ok(module.data.get)
 
-proc extractDataBlock*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedData, string] =
-  let argModule = ? defScope.findModuleDef(argType, loc)
-  defScope.extractDataBlock(argModule, loc)
+proc extractDataBlock*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedData, string] =
+  let argModule = ? fileScope.findModuleDef(argType, loc)
+  fileScope.extractDataBlock(argModule, loc)
 
-proc extractStructFor*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedStructDef, string] =
-  let argModule = ? defScope.findModuleDef(argType, loc)
-  let dataBlock = ? defScope.extractDataBlock(argModule, loc)
+proc extractStructFor*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedStructDef, string] =
+  let argModule = ? fileScope.findModuleDef(argType, loc)
+  let dataBlock = ? fileScope.extractDataBlock(argModule, loc)
   case dataBlock.kind:
-  of adkStruct: ok(dataBlock.struct)
-  of adkUnion: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found union")
-  of adkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
+  of rdkStruct: ok(dataBlock.struct)
+  of rdkUnion: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found union")
+  of rdkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
 
-proc extractUnionFor*(defScope: AnalyzedDefinedTypeScope, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedUnionDef, string] =
-  let argModule = ? defScope.findModuleDef(argType, loc)
-  let dataBlock = ? defScope.extractDataBlock(argModule, loc)
+proc extractUnionFor*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedUnionDef, string] =
+  let argModule = ? fileScope.findModuleDef(argType, loc)
+  let dataBlock = ? fileScope.extractDataBlock(argModule, loc)
   case dataBlock.kind:
-  of adkUnion: ok(dataBlock.union)
-  of adkStruct: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found struct")
-  of adkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found literal")
+  of rdkUnion: ok(dataBlock.union)
+  of rdkStruct: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found struct")
+  of rdkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found literal")
 
 type AnalyzedFunctionScope* = Table[Identifier, AnalyzedArgumentType]
 

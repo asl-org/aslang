@@ -7,32 +7,33 @@ import tokenizer
 import parser
 import resolver
 import argtypes
-import funcdefs
-import modules
 import funcrefs
 import body
 
 type AnalyzedUserFunction* = ref object
   resolved: ResolvedUserFunction
-  def: AnalyzedFunctionDefinition
+  def: ResolvedFunctionDefinition
   statements: seq[AnalyzedStatement]
 
-proc newAnalyzedUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDefinition, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
+proc newAnalyzedUserFunction*(resolved: ResolvedUserFunction, def: ResolvedFunctionDefinition, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
   AnalyzedUserFunction(resolved: resolved, def: def, statements: statements)
 
 proc resolved*(function: AnalyzedUserFunction): ResolvedUserFunction = function.resolved
-proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDefinition = function.def
+proc def*(function: AnalyzedUserFunction): ResolvedFunctionDefinition = function.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements
 
-proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
+proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
+  ## Seeds funcScope from the resolved arg definitions (converting each
+  ## resolved argType to the analyzer-side AnalyzedArgumentType in the
+  ## calling module context), then walks statements.
   var funcScope: AnalyzedFunctionScope
-  let analyzedFuncDef = ? moduleDef.findFunctionDef(function.def)
-  for argDef in analyzedFuncDef.args:
-    funcScope[argDef.name] = argDef.argType
+  for argDef in function.def.args:
+    let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, argDef.argType)
+    funcScope[argDef.name] = analyzedArgType
 
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in function.statements:
-    let analyzedStatement = ? analyzeStatement(app, file, fileScope, moduleDef, defScope, funcScope, statement)
+    let analyzedStatement = ? analyzeStatement(app, file, fileScope, module, funcScope, statement)
     analyzedStatements.add(analyzedStatement)
     if analyzedStatement.arg.isSome:
       let newArg = analyzedStatement.arg.get
@@ -45,20 +46,21 @@ proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
     if analyzedStatements[^1].argType.isNone:
       err(fmt"{function.loc} todo: analyze function that returns a literal")
     else:
-      if analyzedStatements[^1].argType.get != analyzedFuncDef.returns:
+      let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, function.def.returns)
+      if analyzedStatements[^1].argType.get != analyzedReturns:
         err(fmt"{function.statements[^1].loc} function does not return the expected return type")
       else:
-        ok(newAnalyzedUserFunction(function, analyzedFuncDef, analyzedStatements))
+        ok(newAnalyzedUserFunction(function, function.def, analyzedStatements))
 
 type AnalyzedExternFunction* = ref object
   resolved: ResolvedExternFunction
-  def: AnalyzedFunctionDefinition
+  def: ResolvedFunctionDefinition
 
-proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDefinition): AnalyzedExternFunction =
+proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: ResolvedFunctionDefinition): AnalyzedExternFunction =
   AnalyzedExternFunction(resolved: resolved, def: def)
 
 proc resolved*(function: AnalyzedExternFunction): ResolvedExternFunction = function.resolved
-proc def*(function: AnalyzedExternFunction): AnalyzedFunctionDefinition = function.def
+proc def*(function: AnalyzedExternFunction): ResolvedFunctionDefinition = function.def
 
 type
   AnalyzedFunctionKind* = enum
@@ -85,26 +87,25 @@ proc extern*(function: AnalyzedFunction): AnalyzedExternFunction =
   function.extern
 
 type AnalyzedModule* = ref object
-  def: AnalyzedModuleDefinition
+  def: ResolvedModule
   functions: seq[AnalyzedFunction]
 
-proc newAnalyzedModule*(def: AnalyzedModuleDefinition, functions: seq[AnalyzedFunction]): AnalyzedModule =
+proc newAnalyzedModule*(def: ResolvedModule, functions: seq[AnalyzedFunction]): AnalyzedModule =
   AnalyzedModule(def: def, functions: functions)
 
-proc def*(m: AnalyzedModule): AnalyzedModuleDefinition = m.def
-proc resolved*(m: AnalyzedModule): ResolvedModule = m.def.resolved
-proc loc*(m: AnalyzedModule): Location = m.def.resolved.loc
+proc def*(m: AnalyzedModule): ResolvedModule = m.def
+proc resolved*(m: AnalyzedModule): ResolvedModule = m.def
+proc loc*(m: AnalyzedModule): Location = m.def.loc
 proc name*(m: AnalyzedModule): Identifier = m.def.name
 proc functions*(m: AnalyzedModule): seq[AnalyzedFunction] = m.functions
 
-proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, moduleDef: AnalyzedModuleDefinition, defScope: AnalyzedDefinedTypeScope): Result[AnalyzedModule, string] =
+proc analyzeModule*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedModule, string] =
   var analyzedFunctions: seq[AnalyzedFunction]
-  for function in moduleDef.resolved.functions:
+  for function in module.functions:
     case function.kind:
     of rfkExtern:
-      let analyzedFuncDef = ? moduleDef.findFunctionDef(function.def)
-      analyzedFunctions.add(newAnalyzedFunction(newAnalyzedExternFunction(function.extern, analyzedFuncDef)))
+      analyzedFunctions.add(newAnalyzedFunction(newAnalyzedExternFunction(function.extern, function.def)))
     of rfkUser:
-      let analyzedUserFunction = ? analyzeUserFunction(app, file, fileScope, moduleDef, defScope, function.user)
+      let analyzedUserFunction = ? analyzeUserFunction(app, file, fileScope, module, function.user)
       analyzedFunctions.add(newAnalyzedFunction(analyzedUserFunction))
-  ok(newAnalyzedModule(moduleDef, analyzedFunctions))
+  ok(newAnalyzedModule(module, analyzedFunctions))

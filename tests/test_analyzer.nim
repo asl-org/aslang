@@ -121,14 +121,14 @@ module N:
     cleanupDir(dir)
     check r.isOk
 
-  test "import alias is rejected at analyzer level (known limitation)":
-    # The resolver maps the alias `Byte` -> u8's DefinedType and the
-    # program resolves cleanly, but the analyzer's lookup of the
-    # imported module uses its intrinsic name (`u8`) which is not in
-    # the alias-keyed file scope, so the analyze pass currently
-    # errors. Recorded as a regression guard until the analyzer
-    # learns to look up imports by binding rather than intrinsic
-    # name.
+  test "import alias resolves to its target type":
+    # Post-6c the analyzer no longer walks defined types in a separate
+    # phase — file-scope entries carry ResolvedDefinedType values
+    # keyed by binding, so an alias `u8 as Byte` puts `Byte` in the
+    # scope and any argType named `Byte` looks it up directly. This
+    # test was previously flagged as a "known limitation" that
+    # errored on aliases; the 6c retirement fixes it as a side effect
+    # of consolidating def-level lookup through the scope table.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
 import { u8 as Byte } from "./base.aslr"
@@ -140,16 +140,17 @@ module M:
       ("base.aslr", Base)
     ])
     cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "u8")
-    check errorContains(r.error, "neither defined nor imported")
+    check r.isOk
 
 suite "analyzer — generic constraint satisfaction":
 
   test "concrete impl missing a required funcDef is rejected":
     # BadImpl is a struct-backed module with no byte_size — it cannot
-    # satisfy Any. The analyzer should detect this when Array[BadImpl]
-    # is used.
+    # satisfy Any. Post-6c the analyzer walks argTypes lazily at
+    # use-sites (initializer / function call / getter), not while
+    # declaring struct fields, so an unused `a: Array[BadImpl]` field
+    # would slip through. Instantiating a value at Array[BadImpl] in a
+    # function body forces the constraint check to fire.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
 import { Array, Any, u32 } from "./base.aslr"
@@ -159,8 +160,8 @@ public module BadImpl:
     x: u32
 
 module N:
-  struct:
-    a: Array[BadImpl]
+  func make(size: u32): Array[BadImpl]
+    Array[BadImpl] { size: size }
 """),
       ("base.aslr", Base)
     ])
@@ -425,7 +426,7 @@ public module M:
 suite "analyzer — analyze-shape corner cases":
 
   test "file with only a self-referential generic (no modules) analyzes":
-    # Exercises the `adtkGeneric: discard` branch in analyzeFile —
+    # Exercises the `rdtkGeneric: discard` branch in analyzeFile —
     # the returned AnalyzedFile has an empty `modules` seq. The
     # generic's function signatures only reference the generic
     # itself (per the generic-signature rule), so no imports are

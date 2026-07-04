@@ -14,8 +14,10 @@ import tokenizer
 import parser
 import resolver
 
-# ResolvedFileScope — Identifier (binding name) → ResolvedDefinedType
-# (the imported defined type pulled in from the source file).
+# ResolvedFileScope — Identifier (binding name) → ResolvedDefinedType.
+# Doubles as the defined-type lookup scope for the body walker
+# (imports contribute per-binding entries; file's local defined types
+# are inserted at the analyzer entry point).
 type ResolvedFileScope* = Table[Identifier, ResolvedDefinedType]
 
 # AnalyzedGenericArgumentType — wraps a ResolvedGeneric with the
@@ -42,13 +44,25 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: 
   else:
     ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
 
-proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, module: ResolvedModule, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
+proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
+  ## Resolves the generic by checking the current file's own generics
+  ## first, then falling back to the file scope for imported names.
+  ## Mirrors the resolver's `findArgTypeGeneric` (see below): a
+  ## `ResolvedGenericArgumentType` whose `.parsed` refers to an imported
+  ## generic still needs its ResolvedGeneric surfaced so downstream code
+  ## can look up its constraint-carrying funcDefs.
   let maybeGenericArg = file.findGeneric(genericArgType.parsed.name)
-  if maybeGenericArg.isErr:
-    err(fmt"{genericArgType.loc} analyze imported generic `{genericArgType.parsed.name.asl}`")
+  if maybeGenericArg.isOk:
+    ok(newAnalyzedGenericArgumentType(maybeGenericArg.get, genericArgType.loc))
+  elif genericArgType.parsed.name in fileScope:
+    let definedType = fileScope[genericArgType.parsed.name]
+    case definedType.kind:
+    of rdtkGeneric:
+      ok(newAnalyzedGenericArgumentType(definedType.generic, genericArgType.loc))
+    of rdtkModule:
+      err(fmt"{genericArgType.loc} [UNREACHABLE] expected `{genericArgType.parsed.name.asl}` to be a generic but found module")
   else:
-    let genericArg = maybeGenericArg.get
-    ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
+    err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` is neither defined nor imported")
 
 # Mutually-recursive cluster: AnalyzedModuleArgumentType's impls
 # field references AnalyzedArgumentType, which case-dispatches back
@@ -187,19 +201,28 @@ proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): Analyzed
     let genericArgType = argType.generic
     return implMap.getOrDefault(genericArgType.resolved, argType)
 
-proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], genericTypeIndex: Table[AnalyzedGenericArgumentType, int]): AnalyzedArgumentType =
-  # TODO(union-inference): handle substitution chains. A single use
-  # site can produce an implMap with both `Sample → K` and `K → u8`
-  # (e.g. `func f(a: Box[u8, K], b: K)` called as
-  # `f(boxFirst, u8 5)`). Today getOrDefault returns the immediate
-  # map value, so `Sample` rewrites to `K`, not `u8`. Prefer eager
-  # chain-collapsing in `merge` (cheaper, single pass) — see the TODO
-  # there — over recursive lookup here.
+proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedArgumentType =
+  ## Positional generic substitution. The `genericTypeIndex` maps each
+  ## generic that a struct/union/variant's field types touch to its
+  ## position in the impl list — this is a resolver-side table
+  ## (`ResolvedStructDef.genericTypeIndex`,
+  ## `ResolvedUnionDef.genericTypeIndex`), so the analyzer-side generic
+  ## argType is translated back through its underlying parser Generic
+  ## to hit the same table entry (both types hash by parser Generic
+  ## identity).
   case argType.kind:
-  of aatkModule: return argType
+  of aatkModule:
+    let moduleArgType = argType.module
+    var concreteImpls: seq[AnalyzedArgumentType]
+    for impl in moduleArgType.impls:
+      let concreteImpl = impl.concrete(impls, genericTypeIndex)
+      concreteImpls.add(concreteImpl)
+    let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
+    return newAnalyzedArgumentType(concreteModuleArgType)
   of aatkGeneric:
-    if argType.generic in genericTypeIndex:
-      return impls[genericTypeIndex[argType.generic]]
+    let key = newResolvedGenericArgumentType(argType.generic.resolved.self, argType.generic.loc)
+    if key in genericTypeIndex:
+      return impls[genericTypeIndex[key]]
     else:
       return argType
 
@@ -286,7 +309,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
   of ratkGeneric:
-    let analyzedArgType = ? analyzeGenericArgumentType(app, file, module, argType.generic)
+    let analyzedArgType = ? analyzeGenericArgumentType(app, file, fileScope, module, argType.generic)
     ok(newAnalyzedArgumentType(analyzedArgType))
   of ratkModule:
     let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, module, argType.module)

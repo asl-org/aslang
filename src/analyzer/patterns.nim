@@ -6,14 +6,12 @@
 ## variant pattern (for union subjects). Body-level callers compose
 ## these via `analyzeCasePattern` / `update` / `hasUncoveredCases`.
 
-import results, sets, strformat, options, sequtils, strscans, parseutils, strutils, math
+import results, sets, strformat, options, strscans, parseutils, strutils, math, tables
 
 import tokenizer
 import parser
 import resolver
 import argtypes
-import funcdefs
-import data
 import funcrefs
 
 proc genericIntScanner*[T: SomeInteger](input: string, res: var T, start: int): int =
@@ -279,28 +277,36 @@ proc hasUncoveredCases*(scope: AnalyzedLiteralPatternScope, loc: Location): Resu
   if scope.variablePatternFound: ok()
   else: err(fmt"{loc} variable case pattern binding is required for integer literal pattern")
 
+# AnalyzedBinding — the (name, argType) pair produced when a case
+# pattern introduces a variable into scope. Body-level replacement for
+# the retired AnalyzedArgumentDefinition wrapper: the analyzer's
+# function scope keys on Identifier and stores AnalyzedArgumentType,
+# so a binding is exactly a name + its analyzed argument type.
+type AnalyzedBinding* = tuple[name: Identifier, argType: AnalyzedArgumentType]
+
 type AnalyzedUnionPattern* = ref object
   resolved: UnionPattern
-  variant: AnalyzedVariant
-  fields: seq[AnalyzedArgumentDefinition]
+  variant: ResolvedVariant
+  bindings: seq[AnalyzedBinding]
 
-proc newAnalyzedUnionPattern*(resolved: UnionPattern, variant: AnalyzedVariant, fields: seq[AnalyzedArgumentDefinition]): AnalyzedUnionPattern =
-  AnalyzedUnionPattern(resolved: resolved, variant: variant, fields: fields)
+proc newAnalyzedUnionPattern*(resolved: UnionPattern, variant: ResolvedVariant, bindings: seq[AnalyzedBinding]): AnalyzedUnionPattern =
+  AnalyzedUnionPattern(resolved: resolved, variant: variant, bindings: bindings)
 
-proc bindings*(pattern: AnalyzedUnionPattern): seq[AnalyzedArgumentDefinition] =
-  var bindings: seq[AnalyzedArgumentDefinition]
-  for (field, argDef) in zip(pattern.resolved.fields, pattern.fields):
-    let bindingDef = newAnalyzedArgumentDefinition(argDef.argType, field.binding)
-    bindings.add(bindingDef)
-  return bindings
+proc bindings*(pattern: AnalyzedUnionPattern): seq[AnalyzedBinding] = pattern.bindings
 
-proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: AnalyzedUnionDef): Result[AnalyzedUnionPattern, string] =
+proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
+  ## Look each user-supplied pattern field up on the resolved variant,
+  ## convert its resolved argType to the analyzer-side value in the
+  ## calling module context, and substitute the subject's impls in for
+  ## any free generic positions the variant's field types touch.
   let variant = ? union.findVariant(variantPattern.name)
-  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  var bindings: seq[AnalyzedBinding]
   for field in variantPattern.fields:
-    let analyzedField = ? variant.findField(field.name)
-    analyzedFields.add(analyzedField)
-  ok(newAnalyzedUnionPattern(variantPattern, variant, analyzedFields))
+    let resolvedField = ? variant.findField(field.name)
+    let analyzedFieldArgType = ? analyzeArgumentType(app, file, fileScope, module, resolvedField.argType)
+    let concreteFieldArgType = analyzedFieldArgType.concrete(subjectImpls, union.genericTypeIndex)
+    bindings.add((name: field.binding, argType: concreteFieldArgType))
+  ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
 type
   AnalyzedCasePatternKind* = enum
@@ -309,7 +315,7 @@ type
     case kind: AnalyzedCasePatternKind
     of acpkUnion: variant: AnalyzedUnionPattern
     of acpkInteger: integer: IntegerLiteral
-    of acpkVariable: variable: AnalyzedArgumentDefinition
+    of acpkVariable: variable: AnalyzedBinding
 
 proc newAnalyzedCasePattern*(variant: AnalyzedUnionPattern): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkUnion, variant: variant)
@@ -317,31 +323,29 @@ proc newAnalyzedCasePattern*(variant: AnalyzedUnionPattern): AnalyzedCasePattern
 proc newAnalyzedCasePattern*(integer: IntegerLiteral): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkInteger, integer: integer)
 
-proc newAnalyzedCasePattern*(variable: AnalyzedArgumentDefinition): AnalyzedCasePattern =
+proc newAnalyzedCasePattern*(variable: AnalyzedBinding): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkVariable, variable: variable)
 
-proc bindings*(pattern: AnalyzedCasePattern): seq[AnalyzedArgumentDefinition] =
+proc bindings*(pattern: AnalyzedCasePattern): seq[AnalyzedBinding] =
   case pattern.kind:
   of acpkUnion: pattern.variant.bindings
   of acpkVariable: @[pattern.variable]
-  of acpkInteger: newSeq[AnalyzedArgumentDefinition]()
+  of acpkInteger: newSeq[AnalyzedBinding]()
 
-proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} UNREACHABLE: integer literals are not allowed in union case pattern")
   of rcpkVariable:
-    let analyzedArgDef = newAnalyzedArgumentDefinition(subjectType, pattern.variable)
-    ok(newAnalyzedCasePattern(analyzedArgDef))
+    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType)))
   of rcpkUnion:
-    let analyzedPattern = ? analyzeUnionCasePattern(app, file, fileScope, defScope, funcScope, pattern.variant, union)
+    let analyzedPattern = ? analyzeUnionCasePattern(app, file, fileScope, module, funcScope, pattern.variant, union, subjectImpls)
     ok(newAnalyzedCasePattern(analyzedPattern))
 
-proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defScope: AnalyzedDefinedTypeScope, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkUnion:
     err(fmt"{pattern.loc} UNREACHABLE: union variants are not allowed in literal case pattern")
   of rcpkInteger:
     ok(newAnalyzedCasePattern(pattern.integer))
   of rcpkVariable:
-    let analyzedArgDef = newAnalyzedArgumentDefinition(subjectType, pattern.variable)
-    ok(newAnalyzedCasePattern(analyzedArgDef))
+    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType)))
