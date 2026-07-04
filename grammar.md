@@ -198,6 +198,18 @@ contributors can find the *why* alongside the *what*.
   syntax is a separate question), `UnionInitializer: … KeywordArgument*`
   (matches the empty-variant cardinality).
 
+- **Structs must have fields; union variants don't have to.** The
+  `+` on `StructDef.ArgumentDef+` vs the `*` on `VariantDef.ArgumentDef*`
+  is a language-level design decision, not accidental. A struct with
+  zero fields is meaningless data — there's nothing there. A union
+  variant with zero fields is a legitimate signal: the variant tag
+  itself is the information. E.g. `Event.Timeout` conveys "a timeout
+  happened" without needing to carry any payload. Downstream syntax
+  work on empty-variant instantiation and pattern matching must
+  respect this asymmetry: `Timeout {}` (empty braces on a struct-like
+  syntax) is not an obligation, and `S {}` for a struct S is not a
+  language goal.
+
 - **Role names are documentation, not distinct types.** The grammar
   labels each identifier position by its role (`VarName`,
   `ModuleName`, `GenericName`, etc.) so the shape is readable, but
