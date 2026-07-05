@@ -1,3 +1,5 @@
+import unicode, strutils
+
 const BidiCodepoints*: array[11, uint32] = [
   0x200E, # LRM
   0x200F, # RLM
@@ -36,5 +38,12 @@ const AsciiMaxValue*: uint32 = 0x7F
 
 const Punctuations*: string = "`~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?"
 
-const Space*: char = ' '
-const Newline*: char = '\n'
+const Space*: string = " "
+const Newline*: string = "\n"
+
+proc isUtf8*(r: Rune): bool = r.uint32 > AsciiMaxValue
+proc isSpace*(r: Rune): bool = $r == Space
+proc isNewline*(r: Rune): bool = $r == Newline
+proc isPunctuation*(r: Rune): bool = $r in Punctuations
+proc isAlphabet*(r: Rune): bool = (not r.isUtf8) and r.char.isAlphaAscii
+proc isDigit*(r: Rune): bool = (not r.isUtf8) and r.char.isDigit
