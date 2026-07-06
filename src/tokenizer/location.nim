@@ -10,9 +10,9 @@ proc newLocation(filepath: string, line, col: int): Location =
 proc newLocation*(filepath: string): Location = newLocation(filepath, 1, 1)
 proc newLocation*(): Location = newLocation("", 1, 1)
 
-proc advance*(loc: Location, line: bool = false): Location =
+proc advance*(loc: Location, isLine: bool): Location =
   var location = loc
-  if line:
+  if isLine:
     location.line += 1
     location.col = 1
   else:

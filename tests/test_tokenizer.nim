@@ -22,14 +22,12 @@ suite "tokenizer — happy paths":
     let r = tokenizeStr("abc")
     check r.isOk
     let toks = r.get
-    # 3 alphabet tokens + trailing newline
-    check toks.len == 4
-    for i in 0..2:
-      check toks[i].kind == tkAlphabet
-    check toks[^1].kind == tkNewline
-    check toks[0].value == "a"
-    check toks[1].value == "b"
-    check toks[2].value == "c"
+    # Consecutive alphabet runes batch into ONE tkAlphabet token
+    # (whole run in .value) + the trailing synthetic newline.
+    check toks.len == 2
+    check toks[0].kind == tkAlphabet
+    check toks[0].value == "abc"
+    check toks[1].kind == tkNewline
 
   test "every TokenKind appears in mixed input":
     let r = tokenizeStr("a 1\n!é")
@@ -55,24 +53,28 @@ suite "tokenizer — happy paths":
     for i in 0..<all.len:
       check toks[i].kind == tkPunctuation
 
-  test "digits 0..9 each tokenize as tkDigit":
+  test "consecutive digits batch into a single tkDigit token":
     let r = tokenizeStr("0123456789")
     check r.isOk
     let toks = r.get
-    check toks.len == 11
-    for i in 0..9:
-      check toks[i].kind == tkDigit
-      check toks[i].value == $i
+    # One batched digit token + trailing synthetic newline.
+    check toks.len == 2
+    check toks[0].kind == tkDigit
+    check toks[0].value == "0123456789"
+    check toks[1].kind == tkNewline
 
   test "trailing newline is appended even when source ends with one":
-    # Two literal newlines in source -> three tkNewline tokens
-    # (two from the source, one synthetic).
+    # Two literal newlines in source batch into a single tkNewline
+    # token with value "\n\n"; the trailing synthetic newline is
+    # appended as a separate token.
     let r = tokenizeStr("\n\n")
     check r.isOk
     let toks = r.get
-    check toks.len == 3
+    check toks.len == 2
     for t in toks:
       check t.kind == tkNewline
+    check toks[0].value == "\n\n"
+    check toks[1].value == "\n"
 
 suite "tokenizer — locations":
 

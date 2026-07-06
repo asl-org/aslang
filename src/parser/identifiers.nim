@@ -76,7 +76,8 @@ let indentationSpec* = Spec[Space](
   let loc = parser.loc
   let spaces = ? parser.run(any(spaceSpec))
 
-  let count = spaces.len.uint32
+  var count: uint32 = 0
+  for space in spaces: count += space.value.len.uint32
   let expected = parser.indentWidth * parser.level
   if count != expected:
     let msg = fmt"indentation error expected {expected} but found {count} space(s)"
