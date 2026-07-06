@@ -67,11 +67,17 @@ suite "combinators — any / atLeastOne":
     check p.index == 0   # nothing consumed
 
   test "any consumes a maximal run":
+    # The tokenizer batches a consecutive digit run into ONE tkDigit
+    # token whose value carries the whole run. `any(digitSpec)` on
+    # "123a" therefore returns a single token — but its .value is
+    # the full "123" run, which is what "maximal" means at the
+    # tokenizer layer.
     let p = mkParser("123a")
     let r = p.run(any(digitSpec()))
     check r.isOk
-    check r.get.len == 3
-    check p.index == 3
+    check r.get.len == 1
+    check r.get[0].value == "123"
+    check p.index == 1
 
   test "atLeastOne fails on zero matches":
     let p = mkParser("a")
@@ -79,10 +85,22 @@ suite "combinators — any / atLeastOne":
     check r.isErr
 
   test "atLeastOne returns one or more":
+    # Same batching note as above — "12" is one tkDigit token whose
+    # value is "12", so atLeastOne succeeds with a single-token seq.
     let p = mkParser("12")
     let r = p.run(atLeastOne(digitSpec()))
     check r.isOk
-    check r.get.len == 2
+    check r.get.len == 1
+    check r.get[0].value == "12"
+
+  test "any consumes multiple tokens when the tokenizer emits multiple":
+    # Punctuation is NOT batched — each punctuation rune is its own
+    # token. Use commas to exercise `any` consuming multiple tokens.
+    let p = mkParser(",,,a")
+    let r = p.run(any(punctuationSpec(",")))
+    check r.isOk
+    check r.get.len == 3
+    check p.index == 3
 
 suite "combinators — optional":
 

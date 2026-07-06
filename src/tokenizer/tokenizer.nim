@@ -143,6 +143,15 @@ proc tokenizeDigit(tokenizer: Tokenizer, start: Location): Result[Token, string]
   else: ok(newToken(tkDigit, $content, start))
 
 proc tokenize(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string] =
+  # Sniff the current position for a compiler-safety violation before
+  # dispatching to specs. Without this pre-check, an unsafe codepoint
+  # (BOM, zero-width, bidi, invisible) would flow through each spec's
+  # rollback path and surface as a generic "unknown token" error —
+  # losing the specific Trojan-Source-defense message peek produces.
+  # When peek errs on a safety issue, propagate that error verbatim.
+  let sniff = tokenizer.peek
+  if sniff.isErr: return err(sniff.error)
+
   for spec in specs:
     let start = ? tokenizer.pin()
     let maybeToken = spec(tokenizer, start)
