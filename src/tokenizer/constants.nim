@@ -35,9 +35,7 @@ const InvisibleCodepoints*: array[18, uint32] = [
 ]
 
 const AsciiMaxValue*: uint32 = 0x7F
-
 const Punctuations*: string = "`~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?"
-
 const Space*: string = " "
 const Newline*: string = "\n"
 

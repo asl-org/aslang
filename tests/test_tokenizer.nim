@@ -203,27 +203,27 @@ suite "tokenizer — error reporting":
     check r.isErr
     check errorContains(r.error, "evil.asl")
 
-  test "TAB is rejected as unknown":
+  test "TAB is rejected as unsupported":
     let r = tokenizeStr("a\tb")
     check r.isErr
-    check errorContains(r.error, "unknown token")
+    check errorContains(r.error, "unsupported token")
 
-  test "carriage return is rejected as unknown":
+  test "carriage return is rejected as unsupported":
     let r = tokenizeStr("a\rb")
     check r.isErr
-    check errorContains(r.error, "unknown token")
+    check errorContains(r.error, "unsupported token")
 
-  test "vertical tab is rejected as unknown":
+  test "vertical tab is rejected as unsupported":
     let r = tokenizeStr("a\x0Bb")
     check r.isErr
-    check errorContains(r.error, "unknown token")
+    check errorContains(r.error, "unsupported token")
 
-  test "form feed is rejected as unknown":
+  test "form feed is rejected as unsupported":
     let r = tokenizeStr("a\x0Cb")
     check r.isErr
-    check errorContains(r.error, "unknown token")
+    check errorContains(r.error, "unsupported token")
 
-  test "NUL byte is rejected as unknown":
+  test "NUL byte is rejected as unsupported":
     let r = tokenizeStr("a\x00b")
     check r.isErr
-    check errorContains(r.error, "unknown token")
+    check errorContains(r.error, "unsupported token")
