@@ -1,5 +1,6 @@
 import strformat
-import location
+
+import ./location
 
 type TokenKind* = enum
   tkPunctuation, tkSpace, tkNewline, tkAlphabet, tkDigit, tkUtf8

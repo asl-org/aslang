@@ -1,9 +1,9 @@
 import results, strformat, unicode, options
 
-import constants
-import location
-import token
-import spec
+import ./tokenizer/constants
+import ./tokenizer/location
+import ./tokenizer/token
+import ./tokenizer/spec
 
 export location
 export token

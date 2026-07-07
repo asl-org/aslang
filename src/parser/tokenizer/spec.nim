@@ -1,6 +1,6 @@
 import unicode
 
-import token
+import ./token
 
 type
   TokenSpecMatcher* = proc(r: Rune): bool {.nimcall.}
