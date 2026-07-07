@@ -58,39 +58,44 @@ proc peek*(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   else:
     ok(parser.tokens[parser.index])
 
-proc consumeExceptNewline*(parser: Parser,
-    tokenRepr: string): Result[Token, ParserError] =
-  let token = ? parser.peek(tokenRepr)
-  case token.kind:
-  of tkNewline:
-    let msg = fmt"{token.repr} is not supported as {tokenRepr}"
+# ============================================================
+# Token matchers — data-driven token consumption
+# ============================================================
+#
+# One `TokenMatcher` record + one `consume` dispatcher replaces the
+# family of `consume*` procs that were doing the same work with
+# different predicates (consumeTokenKind, consumePunctuation,
+# consumeExceptNewline, consumeSpace). Follows the tokenizer's
+# `TokenSpec` collapse — the variation (label + predicate) lives in
+# data; the shared control flow lives in one place.
+
+type
+  TokenMatcher* = ref object
+    label: string
+    predicate: proc(t: Token): bool
+
+proc byKind*(kind: TokenKind, label: string): TokenMatcher =
+  TokenMatcher(label: label,
+    predicate: proc(t: Token): bool = t.kind == kind)
+
+proc byPunctuation*(value: string): TokenMatcher =
+  TokenMatcher(label: "'" & value & "'",
+    predicate: proc(t: Token): bool = t.kind == tkPunctuation and t.value == value)
+
+proc byKindExcept*(kind: TokenKind, label: string): TokenMatcher =
+  TokenMatcher(label: label,
+    predicate: proc(t: Token): bool = t.kind != kind)
+
+let spaceMatcher* = byKind(tkSpace, "space ' '")
+
+proc consume*(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
+  let token = ? parser.peek(matcher.label)
+  if not matcher.predicate(token):
+    let msg = fmt"expected {matcher.label} but found {token.repr}"
     err(newParserError(msg, parser.loc))
   else:
     parser.index += 1
     ok(token)
-
-proc consumeTokenKind*(parser: Parser, kind: TokenKind,
-    tokenRepr: string): Result[Token, ParserError] =
-  let token = ? parser.peek(tokenRepr)
-  if token.kind != kind:
-    let msg = fmt"expected {tokenRepr} but found {token.repr}"
-    err(newParserError(msg, parser.loc))
-  else:
-    parser.index += 1
-    ok(token)
-
-proc consumePunctuation*(parser: Parser,
-    value: string): Result[Token, ParserError] =
-  let token = ? parser.peek(fmt"punctuation '{value}'")
-  if token.kind != tkPunctuation or token.value != value:
-    let msg = fmt"expected punctuation '{value}' but found {token.repr}"
-    err(newParserError(msg, token.loc))
-  else:
-    parser.index += 1
-    ok(token)
-
-proc consumeSpace*(parser: Parser): Result[Token, ParserError] =
-  parser.consumeTokenKind(tkSpace, "space ' '")
 
 # ============================================================
 # Spec[T] — named, typed parser combinator
@@ -206,38 +211,40 @@ proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
 
 proc contained*[T](name: string, open: string, inner: Spec[T],
     close: string): Spec[T] =
+  let openMatcher = byPunctuation(open)
+  let closeMatcher = byPunctuation(close)
   Spec[T](
     name: name,
     parseFn: proc(parser: Parser): Result[T, ParserError] =
-    discard ? parser.consumePunctuation(open)
-    while parser.consumeSpace().isOk: discard
+    discard ? parser.consume(openMatcher)
+    while parser.consume(spaceMatcher).isOk: discard
     let maybeValue = ? parser.run(inner)
-    while parser.consumeSpace().isOk: discard
-    discard ? parser.consumePunctuation(close)
+    while parser.consume(spaceMatcher).isOk: discard
+    discard ? parser.consume(closeMatcher)
     ok(maybeValue)
   )
 
 # ============================================================
-# Leaf token specs
+# Leaf token specs — one-line wrappers over `matcherSpec`
 # ============================================================
+#
+# Kept as named factories so grammar files read as `punctuationSpec(",")`
+# instead of the more verbose `matcherSpec(byPunctuation(","))`. Under
+# the hood all three delegate to the single `TokenMatcher` machinery
+# above.
+
+proc matcherSpec*(matcher: TokenMatcher): Spec[Token] =
+  Spec[Token](
+    name: matcher.label,
+    parseFn: proc(parser: Parser): Result[Token, ParserError] =
+      parser.consume(matcher)
+  )
 
 proc tokenSpec*(kind: TokenKind, tokenRepr: string): Spec[Token] =
-  Spec[Token](
-    name: tokenRepr,
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consumeTokenKind(kind, tokenRepr)
-  )
+  matcherSpec(byKind(kind, tokenRepr))
 
 proc punctuationSpec*(value: string): Spec[Token] =
-  Spec[Token](
-    name: "'" & value & "'",
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consumePunctuation(value)
-  )
+  matcherSpec(byPunctuation(value))
 
 proc anyTokenExceptNewlineSpec*(tokenRepr: string): Spec[Token] =
-  Spec[Token](
-    name: tokenRepr,
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consumeExceptNewline(tokenRepr)
-  )
+  matcherSpec(byKindExcept(tkNewline, tokenRepr))
