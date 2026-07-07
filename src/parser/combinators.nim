@@ -225,6 +225,84 @@ proc contained*[T](name: string, open: string, inner: Spec[T],
   )
 
 # ============================================================
+# Sequence-composition atoms
+# ============================================================
+#
+# Small vocabulary that lets domain-type specs be built out of
+# existing `Spec[T]` values instead of hand-writing a
+# `Spec[T](name: ..., parseFn: proc(...): ...)` block every time.
+# Same "compose atoms into a grammar" pattern the tokenizer uses
+# for its per-kind matchers.
+
+proc prefixed*[P, T](prefix: Spec[P], inner: Spec[T]): Spec[T] =
+  ## Parse `prefix inner`; discard prefix, return inner's value.
+  ## Common shape: `= expression`, `. identifier`, `: expression`.
+  Spec[T](
+    name: inner.name,
+    parseFn: proc(parser: Parser): Result[T, ParserError] =
+      discard ? parser.run(prefix)
+      parser.run(inner)
+  )
+
+proc suffixed*[T, S](inner: Spec[T], suffix: Spec[S]): Spec[T] =
+  ## Parse `inner suffix`; discard suffix, return inner's value.
+  Spec[T](
+    name: inner.name,
+    parseFn: proc(parser: Parser): Result[T, ParserError] =
+      let v = ? parser.run(inner)
+      discard ? parser.run(suffix)
+      ok(v)
+  )
+
+proc between*[O, T, C](open: Spec[O], inner: Spec[T], close: Spec[C]): Spec[T] =
+  ## Parse `open inner close`; discard the delimiters, return inner's
+  ## value. Generalizes `contained` to arbitrary specs (no forced
+  ## whitespace-eating around inner — use `contained` when you want
+  ## the whitespace tolerance the grammar's bracketed forms need).
+  Spec[T](
+    name: inner.name,
+    parseFn: proc(parser: Parser): Result[T, ParserError] =
+      discard ? parser.run(open)
+      let v = ? parser.run(inner)
+      discard ? parser.run(close)
+      ok(v)
+  )
+
+proc pair*[A, B](a: Spec[A], b: Spec[B]): Spec[(A, B)] =
+  ## Parse `a b`; return `(A, B)`. Chain with `.map` to lift into
+  ## a domain type.
+  Spec[(A, B)](
+    name: a.name & " + " & b.name,
+    parseFn: proc(parser: Parser): Result[(A, B), ParserError] =
+      let va = ? parser.run(a)
+      let vb = ? parser.run(b)
+      ok((va, vb))
+  )
+
+proc triple*[A, B, C](a: Spec[A], b: Spec[B], c: Spec[C]): Spec[(A, B, C)] =
+  ## Parse `a b c`; return `(A, B, C)`. Chain with `.map` to lift.
+  Spec[(A, B, C)](
+    name: a.name & " + " & b.name & " + " & c.name,
+    parseFn: proc(parser: Parser): Result[(A, B, C), ParserError] =
+      let va = ? parser.run(a)
+      let vb = ? parser.run(b)
+      let vc = ? parser.run(c)
+      ok((va, vb, vc))
+  )
+
+proc presence*[T](spec: Spec[T]): Spec[bool] =
+  ## Returns true if `spec` matched, false otherwise. Never errors —
+  ## `parser.run(spec)` handles its own rollback on non-fatal failure.
+  ## Turns the `let m = parser.run(x); let flag = m.isOk` idiom into
+  ## a single composable spec.
+  Spec[bool](
+    name: spec.name & "?",
+    parseFn: proc(parser: Parser): Result[bool, ParserError] =
+      let r = parser.run(spec)
+      ok(r.isOk)
+  )
+
+# ============================================================
 # Leaf token specs — one-line wrappers over `matcherSpec`
 # ============================================================
 #
@@ -289,6 +367,20 @@ let ignorableLineSpec* = Spec[Location](
   discard ? parser.run(newlineSpec)
   ok(loc)
 )
+
+# ============================================================
+# Trivia specs — named compositions of the highest-frequency
+# discarded-in-grammar idioms.
+# ============================================================
+#
+# `discard parser.run(any(spaceSpec))` etc. shows up 30+ times
+# across the parser; naming these makes the intent obvious at
+# the call site. The underlying combinators (any, atLeastOne)
+# are unchanged — these are pure aliases.
+
+let ws0* = any(spaceSpec)               ## zero-or-more spaces
+let ws1* = atLeastOne(spaceSpec)        ## one-or-more spaces
+let blankLines* = any(ignorableLineSpec) ## any number of blank/comment lines
 
 # ============================================================
 # Separator helpers
