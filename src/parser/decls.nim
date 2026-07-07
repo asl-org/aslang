@@ -70,13 +70,7 @@ let typeSpec = oneOf("type_block", [
     proc(v: Generic): DefinedType = newDefinedType(v)),
 ])
 
-let definedTypeBlockSpec = Spec[DefinedType](
-  name: "type_block_block",
-  parseFn: proc(parser: Parser): Result[DefinedType, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
-  let item = ? parser.run(typeSpec)
-  ok(item)
-)
+let definedTypeBlockSpec = prefixed(blankLines, typeSpec)
 
 # ============================================================
 # Type (umbrella over imported and defined types)
@@ -298,7 +292,7 @@ proc aslFileSpec(vendorRoots: VendorRoots): Spec[File] =
     parseFn: proc(parser: Parser): Result[File, ParserError] =
       let imports = ? parser.run(any(importBlockSpec))
       let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
-      discard parser.run(any(ignorableLineSpec))
+      discard parser.run(blankLines)
       if not parser.done():
         # Force a parse attempt to get a specific error message
         discard ? parser.run(typeSpec)
@@ -311,7 +305,7 @@ let aslrFileSpec = Spec[File](
   name: "aslr_file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
   let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   if not parser.done():
     # Force a parse attempt to get a specific error message
     discard ? parser.run(typeSpec)

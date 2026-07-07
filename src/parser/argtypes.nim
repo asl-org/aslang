@@ -68,14 +68,9 @@ proc newArgumentDefinition*(name: Identifier, argType: ArgumentType,
 proc asl*(argDef: ArgumentDefinition): string =
   fmt"{asl(argDef.name)}: {asl(argDef.argType)}"
 
-let argumentDefinitionSpec* = Spec[ArgumentDefinition](
-  name: "argument_definition",
-  parseFn: proc(parser: Parser): Result[ArgumentDefinition, ParserError] =
-  let argName = ? parser.run(identifierSpec)
-  discard ? parser.run(colonWithSpacesSpec)
-  let argType = ? parser.run(argumentTypeSpec)
-  ok(newArgumentDefinition(argName, argType, argName.loc))
-)
+let argumentDefinitionSpec* = pair(identifierSpec, prefixed(colonWithSpacesSpec, argumentTypeSpec)).map(
+  "argument_definition",
+  proc(t: (Identifier, ArgumentType)): ArgumentDefinition = newArgumentDefinition(t[0], t[1], t[0].loc))
 
 # ============================================================
 # ArgumentDefinitionList ((name: T, name: T, ...))

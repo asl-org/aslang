@@ -96,14 +96,13 @@ type ModuleHeader = tuple[public: bool, name: Identifier, loc: Location]
 let moduleHeaderSpec = Spec[ModuleHeader](
   name: "module_header",
   parseFn: proc(parser: Parser): Result[ModuleHeader, ParserError] =
-  let maybePublic = parser.run(keywordSpec("public"))
-  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
-  let public = maybePublic.isOk
+  let public = ? parser.run(presence(keywordSpec("public")))
+  if public: discard ? parser.run(ws1)
 
   let loc = ? parser.run(keywordSpec("module"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let nameIdent = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok((public, nameIdent, loc))
 )
@@ -115,9 +114,9 @@ type ModuleBody = tuple[requires: Option[Requires], data: Option[DataBlock],
 let moduleBodySpec = Spec[ModuleBody](
   name: "module_body",
   parseFn: proc(parser: Parser): Result[ModuleBody, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   let requires = ? parser.run(optional(requiresSpec))
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   let data = ? parser.run(optional(dataBlockSpec))
   let funcList = ? parser.run(functionListSpec)
   ok((requires, data, funcList))

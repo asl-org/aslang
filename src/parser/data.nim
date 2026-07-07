@@ -43,25 +43,12 @@ proc findFieldId*(struct: StructDef, name: Identifier): Result[int, string] =
     ok(struct.fieldIndex[name])
 
 # struct: field+ (field is identifier ":" argumentType)
-let structHeaderSpec = Spec[Location](
-  name: "struct_header",
-  parseFn: proc(parser: Parser): Result[Location, ParserError] =
-  let loc = ? parser.run(keywordSpec("struct"))
-  discard parser.run(any(spaceSpec))
-  discard ? parser.run(punctuationSpec(":"))
-  ok(loc)
-)
+let structHeaderSpec = suffixed(keywordSpec("struct"),
+  pair(ws0, punctuationSpec(":")))
 
 # Each field line: indentation + argumentDefinition + newline
-let fieldLineSpec = Spec[ArgumentDefinition](
-  name: "field_line",
-  parseFn: proc(parser: Parser): Result[ArgumentDefinition, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
-  discard ? parser.run(indentationSpec)
-  let argDef = ? parser.run(argumentDefinitionSpec)
-  discard ? parser.run(ignorableLineSpec)
-  ok(argDef)
-)
+let fieldLineSpec = prefixed(pair(blankLines, indentationSpec),
+  suffixed(argumentDefinitionSpec, ignorableLineSpec))
 
 let structSpec* = blockSpec("struct", structHeaderSpec,
   atLeastOne(fieldLineSpec),
@@ -112,10 +99,10 @@ proc findFieldId*(variant: VariantDefinition, name: Identifier): Result[int, str
 let variantDefinitionLineSpec = Spec[VariantDefinition](
   name: "variant_definition_line",
   parseFn: proc(parser: Parser): Result[VariantDefinition, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   discard ? parser.run(indentationSpec)
   let name = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   let maybeFields = ? parser.run(optional(contained("variant_fields", "{",
     separatedBy(argumentDefinitionSpec, commaWithSpacesSpec), "}")))
   var fields: seq[ArgumentDefinition]
@@ -162,14 +149,8 @@ proc findVariant*(union: UnionDef, variant: Identifier): Result[VariantDefinitio
   let variantId = ? union.findVariantId(variant)
   ok(union.variants[variantId])
 
-let unionHeaderSpec = Spec[Location](
-  name: "union_header",
-  parseFn: proc(parser: Parser): Result[Location, ParserError] =
-  let loc = ? parser.run(keywordSpec("union"))
-  discard parser.run(any(spaceSpec))
-  discard ? parser.run(punctuationSpec(":"))
-  ok(loc)
-)
+let unionHeaderSpec = suffixed(keywordSpec("union"),
+  pair(ws0, punctuationSpec(":")))
 
 let unionSpec* = blockSpec("union", unionHeaderSpec,
   atLeastOne(variantDefinitionLineSpec),

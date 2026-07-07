@@ -27,14 +27,9 @@ proc loc*(g: Getter): Location = g.loc
 proc asl(getter: Getter): string =
   fmt"{asl(getter.source)}.{asl(getter.property)}"
 
-let getterSpec* = Spec[Getter](
-  name: "getter",
-  parseFn: proc(parser: Parser): Result[Getter, ParserError] =
-  let source = ? parser.run(identifierSpec)
-  discard ? parser.run(punctuationSpec("."))
-  let property = ? parser.run(identifierSpec)
-  ok(newGetter(source, property, source.loc))
-)
+let getterSpec* = pair(identifierSpec, prefixed(punctuationSpec("."), identifierSpec)).map(
+  "getter",
+  proc(t: (Identifier, Identifier)): Getter = newGetter(t[0], t[1], t[0].loc))
 
 # ============================================================
 # LiteralInitializer
@@ -56,14 +51,10 @@ proc asl(prim: LiteralInitializer): string =
   fmt"{asl(prim.argType)} {asl(prim.value)}"
 
 # type literal
-let literalInitializerSpec* = Spec[LiteralInitializer](
-  name: "literal_initializer",
-  parseFn: proc(parser: Parser): Result[LiteralInitializer, ParserError] =
-  let argType = ? parser.run(argumentTypeSpec)
-  discard ? parser.run(atLeastOne(spaceSpec))
-  let value = ? parser.run(literalSpec)
-  ok(newLiteralInitializer(argType, value, argType.loc))
-)
+let literalInitializerSpec* = pair(argumentTypeSpec, prefixed(ws1, literalSpec)).map(
+  "literal_initializer",
+  proc(t: (ArgumentType, Literal)): LiteralInitializer =
+    newLiteralInitializer(t[0], t[1], t[0].loc))
 
 
 
@@ -548,25 +539,17 @@ let argumentListSpec* = Spec[ArgumentList](
   ok(newArgumentList(args, loc))
 )
 
-let functionCallSpec* = Spec[FunctionCall](
-  name: "function_call",
-  parseFn: proc(parser: Parser): Result[FunctionCall, ParserError] =
-  let root = ? parser.run(identifierSpec)
-  discard ? parser.run(punctuationSpec("."))
-  let funcNameIdent = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
-  let argList = ? parser.run(argumentListSpec)
-  ok(newFunctionCall(root, funcNameIdent, argList))
-)
+let functionCallSpec* = triple(
+    identifierSpec,
+    prefixed(punctuationSpec("."), identifierSpec),
+    prefixed(ws0, argumentListSpec)
+  ).map("function_call",
+    proc(t: (Identifier, Identifier, ArgumentList)): FunctionCall =
+      newFunctionCall(t[0], t[1], t[2]))
 
-let kwargSpec* = Spec[KeywordArgument](
-  name: "keyword_argument",
-  parseFn: proc(parser: Parser): Result[KeywordArgument, ParserError] =
-  let name = ? parser.run(identifierSpec)
-  discard ? parser.run(colonWithSpacesSpec)
-  let expression = ? parser.run(expressionSpec)
-  ok(newKeywordArgument(name, expression, name.loc))
-)
+let kwargSpec* = pair(identifierSpec, prefixed(colonWithSpacesSpec, expressionSpec)).map(
+  "keyword_argument",
+  proc(t: (Identifier, Expression)): KeywordArgument = newKeywordArgument(t[0], t[1], t[0].loc))
 
 let kwargListSpec* = Spec[KeywordArgumentList](
   name: "keyword_argument_list",
@@ -581,31 +564,24 @@ let kwargListSpec* = Spec[KeywordArgumentList](
 # Type[Impls].Variant { fields } (explicit-impls — escape hatch when
 # leave-as-is can't produce a fully-bound type). Both productions land
 # on the same UnionRef shape carrying an impls seq; empty means bare.
-let unionInitializerSpec* = Spec[UnionInitializer](
-  name: "union_initializer",
-  parseFn: proc(parser: Parser): Result[UnionInitializer, ParserError] =
-  let argType = ? parser.run(argumentTypeSpec)
-  discard ? parser.run(punctuationSpec("."))
-  let variantName = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
-  let kwargList = ? parser.run(kwargListSpec)
-  let unionRef = newUnionRef(argType.root, argType.impls, argType.loc)
-  ok(newUnionInitializer(unionRef, variantName, kwargList, argType.loc))
-)
+let unionInitializerSpec* = triple(
+    argumentTypeSpec,
+    prefixed(punctuationSpec("."), identifierSpec),
+    prefixed(ws0, kwargListSpec)
+  ).map("union_initializer",
+    proc(t: (ArgumentType, Identifier, KeywordArgumentList)): UnionInitializer =
+      let unionRef = newUnionRef(t[0].root, t[0].impls, t[0].loc)
+      newUnionInitializer(unionRef, t[1], t[2], t[0].loc))
 
 # Either `Type { fields }` (bare) or `Type[Impls] { fields }` (explicit
 # impls, used for phantom-typed structs whose module declares a requires
 # block). Both productions land on the same StructRef shape carrying an
 # impls seq; empty means bare.
-let structInitializerSpec* = Spec[StructInitializer](
-  name: "struct_initializer",
-  parseFn: proc(parser: Parser): Result[StructInitializer, ParserError] =
-  let argType = ? parser.run(argumentTypeSpec)
-  discard parser.run(any(spaceSpec))
-  let kwargList = ? parser.run(kwargListSpec)
-  let structRef = newStructRef(argType.root, argType.impls, argType.loc)
-  ok(newStructInitializer(structRef, kwargList, argType.loc))
-)
+let structInitializerSpec* = pair(argumentTypeSpec, prefixed(ws0, kwargListSpec)).map(
+  "struct_initializer",
+  proc(t: (ArgumentType, KeywordArgumentList)): StructInitializer =
+    let structRef = newStructRef(t[0].root, t[0].impls, t[0].loc)
+    newStructInitializer(structRef, t[1], t[0].loc))
 
 let initializerSpec* = oneOf("initializer", [
   unionInitializerSpec.map("union",
@@ -629,23 +605,13 @@ expressionSpec.parseFn = oneOf("expression", [
     proc(v: Identifier): Expression = newExpression(v)),
 ]).parseFn
 
-let assignmentSpec* = Spec[Assignment](
-  name: "assignment",
-  parseFn: proc(parser: Parser): Result[Assignment, ParserError] =
-  let targetIdent = ? parser.run(identifierSpec)
-  discard ? parser.run(equalsSeparatorSpec)
-  let expression = ? parser.run(expressionSpec)
-  ok(newAssignment(targetIdent, expression, targetIdent.loc))
-)
+let assignmentSpec* = pair(identifierSpec, prefixed(equalsSeparatorSpec, expressionSpec)).map(
+  "assignment",
+  proc(t: (Identifier, Expression)): Assignment = newAssignment(t[0], t[1], t[0].loc))
 
-let setterSpec* = Spec[Setter](
-  name: "setter",
-  parseFn: proc(parser: Parser): Result[Setter, ParserError] =
-  let getter = ? parser.run(getterSpec)
-  discard ? parser.run(equalsSeparatorSpec)
-  let expression = ? parser.run(expressionSpec)
-  ok(newSetter(getter, expression, getter.loc))
-)
+let setterSpec* = pair(getterSpec, prefixed(equalsSeparatorSpec, expressionSpec)).map(
+  "setter",
+  proc(t: (Getter, Expression)): Setter = newSetter(t[0], t[1], t[0].loc))
 
 let inlineStatementSpec* = oneOf("inline_statement", [
   setterSpec.map("mutation_statement",
@@ -656,16 +622,8 @@ let inlineStatementSpec* = oneOf("inline_statement", [
     proc(v: Expression): Statement = newStatement(v)),
 ])
 
-let caseHeaderSpec = Spec[CasePattern](
-  name: "case_header",
-  parseFn: proc(parser: Parser): Result[CasePattern, ParserError] =
-  discard ? parser.run(keywordSpec("case"))
-  discard ? parser.run(atLeastOne(spaceSpec))
-  let pattern = ? parser.run(casePatternSpec)
-  discard parser.run(any(spaceSpec))
-  discard ? parser.run(punctuationSpec(":"))
-  ok(pattern)
-)
+let caseHeaderSpec = prefixed(pair(keywordSpec("case"), ws1),
+  suffixed(casePatternSpec, pair(ws0, punctuationSpec(":"))))
 
 let caseBlockSpec* = blockSpec("case", caseHeaderSpec, statementListSpec,
   proc(h: CasePattern, b: StatementList): CaseBlock =
@@ -677,7 +635,7 @@ let matchBodySpec* = Spec[MatchExpression](
   name: "match_body",
   parseFn: proc(parser: Parser): Result[MatchExpression, ParserError] =
   let loc = ? parser.run(keywordSpec("match"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   # Match expressions cannot be the subject of another match expression.
   # expressionSpec intentionally excludes match (match is parsed separately
   # in statementLineSpec). This check guards against future changes that
@@ -688,14 +646,14 @@ let matchBodySpec* = Spec[MatchExpression](
     return err(newParserError(
       "match expression cannot be the subject of another match", loc))
   of ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable: discard
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   discard ? parser.run(ignorableLineSpec)
   parser.level += 1
   let casesBody = atLeastOne(Spec[CaseBlock](
     name: "case_block_line",
     parseFn: proc(parser: Parser): Result[CaseBlock, ParserError] =
-    discard parser.run(any(ignorableLineSpec))
+    discard parser.run(blankLines)
     let cb = ? parser.run(caseBlockSpec)
     ok(cb)
   ))
@@ -710,7 +668,7 @@ let matchBodySpec* = Spec[MatchExpression](
 let statementLineSpec* = Spec[Statement](
   name: "statement_line",
   parseFn: proc(parser: Parser): Result[Statement, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   discard ? parser.run(indentationSpec)
   # Try match assignment: identifier = match ...:
   let maybeMatchAssign = parser.run(Spec[Statement](

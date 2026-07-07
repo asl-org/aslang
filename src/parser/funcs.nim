@@ -39,14 +39,13 @@ proc asl*(funcDef: FunctionDefinition): string =
 let functionDefinitionSpec* = Spec[FunctionDefinition](
   name: "function_definition",
   parseFn: proc(parser: Parser): Result[FunctionDefinition, ParserError] =
-  let maybePublic = parser.run(keywordSpec("public"))
-  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
-  let public = maybePublic.isOk
+  let public = ? parser.run(presence(keywordSpec("public")))
+  if public: discard ? parser.run(ws1)
 
   let funcLoc = ? parser.run(keywordSpec("func"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let funcName = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   let argDefList = ? parser.run(argumentDefinitionListSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let returnType = ? parser.run(argumentTypeSpec)
@@ -55,14 +54,8 @@ let functionDefinitionSpec* = Spec[FunctionDefinition](
 
 # Function definition line: indentation + function signature + newline
 # Used by genericSpec via functionDefinitionListSpec.
-let functionDefinitionLineSpec* = Spec[FunctionDefinition](
-  name: "function_definition_line",
-  parseFn: proc(parser: Parser): Result[FunctionDefinition, ParserError] =
-  discard ? parser.run(indentationSpec)
-  let funcDef = ? parser.run(functionDefinitionSpec)
-  discard ? parser.run(ignorableLineSpec)
-  ok(funcDef)
-)
+let functionDefinitionLineSpec* = prefixed(indentationSpec,
+  suffixed(functionDefinitionSpec, ignorableLineSpec))
 
 let functionDefinitionListSpec* = atLeastOne(functionDefinitionLineSpec)
 
@@ -131,7 +124,7 @@ let externFunctionSpec = Spec[ExternFunction](
   discard ? parser.run(indentationSpec)
   discard ? parser.run(punctuationSpec("@"))
   discard ? parser.run(keywordSpec("extern"))
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   let loc = parser.loc
   let symbol = ? parser.run(contained("extern_symbol", "(", stringLiteralSpec, ")"))
   discard ? parser.run(ignorableLineSpec)
@@ -201,7 +194,7 @@ proc asl*(fn: Function, indentWidth: uint32): seq[string] =
 let funcBlockSpec = Spec[Function](
   name: "function_block",
   parseFn: proc(parser: Parser): Result[Function, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   let f = parser.run(externFunctionSpec)
   if f.isOk: return ok(newFunction(f.get))
   let u = ? parser.run(userFunctionSpec)

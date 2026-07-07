@@ -69,13 +69,12 @@ type GenericHeader = tuple[public: bool, name: Identifier, loc: Location]
 let genericHeaderSpec = Spec[GenericHeader](
   name: "generic_header",
   parseFn: proc(parser: Parser): Result[GenericHeader, ParserError] =
-  let maybePublic = parser.run(keywordSpec("public"))
-  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
-  let public = maybePublic.isOk
+  let public = ? parser.run(presence(keywordSpec("public")))
+  if public: discard ? parser.run(ws1)
   let loc = ? parser.run(keywordSpec("generic"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let nameIdent = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok((public, nameIdent, loc))
 )
@@ -107,14 +106,8 @@ proc asl*(r: Requires): string =
   result.add(")")
 
 # requires(Generic, Generic, ...)
-let requiresSpec* = Spec[Requires](
-  name: "requires",
-  parseFn: proc(parser: Parser): Result[Requires, ParserError] =
-  discard ? parser.run(indentationSpec)
-  let loc = ? parser.run(keywordSpec("requires"))
-  discard parser.run(any(spaceSpec))
-  let generics = ? parser.run(contained("requires_generics", "(",
-    separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
-  discard ? parser.run(ignorableLineSpec)
-  ok(newRequires(generics, loc))
-)
+let requiresSpec* = pair(prefixed(indentationSpec, keywordSpec("requires")),
+    prefixed(ws0, suffixed(contained("requires_generics", "(",
+      separatedBy(identifierSpec, commaWithSpacesSpec), ")"), ignorableLineSpec))).map(
+  "requires",
+  proc(t: (Location, seq[Identifier])): Requires = newRequires(t[1], t[0]))

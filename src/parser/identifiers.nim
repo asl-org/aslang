@@ -73,7 +73,7 @@ let indentationSpec* = Spec[Space](
   name: "indentation",
   parseFn: proc(parser: Parser): Result[Space, ParserError] =
   let loc = parser.loc
-  let spaces = ? parser.run(any(spaceSpec))
+  let spaces = ? parser.run(ws0)
 
   var count: uint32 = 0
   for space in spaces: count += space.value.len.uint32
@@ -98,15 +98,10 @@ proc newDecorator*(name: Identifier): Decorator =
 proc asl*(decorator: Decorator): string =
   fmt"@{asl(decorator.name)}"
 
-let decoratorLineSpec* = Spec[Decorator](
-  name: "decorator_line",
-  parseFn: proc(parser: Parser): Result[Decorator, ParserError] =
-  discard ? parser.run(indentationSpec)
-  discard ? parser.run(punctuationSpec("@"))
-  let name = ? parser.run(identifierSpec)
-  discard ? parser.run(ignorableLineSpec)
-  ok(newDecorator(name))
-)
+let decoratorLineSpec* = prefixed(pair(indentationSpec, punctuationSpec("@")),
+    suffixed(identifierSpec, ignorableLineSpec)).map(
+  "decorator_line",
+  proc(v: Identifier): Decorator = newDecorator(v))
 
 # ============================================================
 # Block helpers

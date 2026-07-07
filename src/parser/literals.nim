@@ -126,16 +126,11 @@ proc asl*(signed: SignedIntegerLiteral): string =
   fmt"{signed.sign}{asl(signed.value)}"
 
 # (+ | -) digit+
-let signedIntegerLiteralSpec* = Spec[SignedIntegerLiteral](
-  name: "signed_integer_literal",
-  parseFn: proc(parser: Parser): Result[SignedIntegerLiteral, ParserError] =
-  let signToken = ? parser.run(oneOf("sign", [
-    punctuationSpec("+"),
-    punctuationSpec("-"),
-  ]))
-  let uint = ? parser.run(unsignedIntegerLiteralSpec)
-  ok(newSignedIntegerLiteral(signToken.value, uint, signToken.loc))
-)
+let signSpec = oneOf("sign", [punctuationSpec("+"), punctuationSpec("-")])
+let signedIntegerLiteralSpec* = pair(signSpec, unsignedIntegerLiteralSpec).map(
+  "signed_integer_literal",
+  proc(t: (Token, UnsignedIntegerLiteral)): SignedIntegerLiteral =
+    newSignedIntegerLiteral(t[0].value, t[1], t[0].loc))
 
 type
   IntegerLiteralKind* = enum
@@ -311,12 +306,7 @@ proc loc*(literalType: LiteralDef): Location = literalType.loc
 proc asl*(l: LiteralDef): seq[string] =
   @[fmt"literal: {asl(l.value)}"]
 
-let literalTypeSpec* = Spec[LiteralDef](
-  name: "literal_type",
-  parseFn: proc(parser: Parser): Result[LiteralDef, ParserError] =
-  discard ? parser.run(indentationSpec)
-  let literalKeywordLoc = ? parser.run(keywordSpec("literal"))
-  discard ? parser.run(colonWithSpacesSpec)
-  let literalType = ? parser.run(stringLiteralSpec)
-  ok(newLiteralDef(literalType, literalKeywordLoc))
-)
+let literalTypeSpec* = pair(prefixed(indentationSpec, keywordSpec("literal")),
+    prefixed(colonWithSpacesSpec, stringLiteralSpec)).map(
+  "literal_type",
+  proc(t: (Location, StringLiteral)): LiteralDef = newLiteralDef(t[1], t[0]))
