@@ -2,7 +2,6 @@ import strformat, strutils, results, hashes
 
 import tokenizer
 import combinators
-import helpers
 
 # ============================================================
 # Identifier

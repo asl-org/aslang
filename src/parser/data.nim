@@ -2,7 +2,6 @@ import strformat, strutils, options, tables, results
 
 import tokenizer
 import combinators
-import helpers
 import identifiers
 import literals
 import argtypes

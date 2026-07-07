@@ -2,9 +2,8 @@ import strformat, strutils, tables, results, hashes
 
 import tokenizer
 import combinators
-import helpers
 import identifiers
-import funcdefs
+import funcs
 
 # ============================================================
 # Generic

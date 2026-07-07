@@ -2,7 +2,6 @@ import strformat, options, tables, results
 
 import tokenizer
 import combinators
-import helpers
 import identifiers
 
 # ============================================================

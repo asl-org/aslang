@@ -2,9 +2,8 @@ import strformat, tables, results
 
 import tokenizer
 import combinators
-import helpers
 import identifiers
-import numbers
+import literals
 
 # ============================================================
 # UnionPatternField

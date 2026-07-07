@@ -6,9 +6,9 @@
 import tokenizer/location
 export location
 
-import combinators, helpers, identifiers, strings, numbers, literals, imports,
-       argtypes, funcdefs, patterns, body, data, funcs, generics, modules,
+import combinators, identifiers, literals, imports,
+       argtypes, patterns, body, data, funcs, generics, modules,
        decls, loader
-export combinators, helpers, identifiers, strings, numbers, literals, imports,
-       argtypes, funcdefs, patterns, body, data, funcs, generics, modules,
+export combinators, identifiers, literals, imports,
+       argtypes, patterns, body, data, funcs, generics, modules,
        decls, loader
