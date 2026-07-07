@@ -1,6 +1,6 @@
 switch("path", "$projectDir/../src")
-switch("path", "$projectDir/../src/tokenizer")
 switch("path", "$projectDir/../src/parser")
+switch("path", "$projectDir/../src/parser/tokenizer")
 switch("path", "$projectDir/../src/resolver")
 switch("path", "$projectDir/../src/analyzer")
 switch("hints", "off")
