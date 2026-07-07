@@ -14,7 +14,6 @@
 
 import results, strformat, options, strutils, tables, hashes
 
-import tokenizer
 import parser
 import resolver
 

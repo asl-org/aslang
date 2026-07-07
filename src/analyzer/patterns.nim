@@ -8,7 +8,6 @@
 
 import results, sets, strformat, options, strscans, parseutils, strutils, math, tables
 
-import tokenizer
 import parser
 import resolver
 import argtypes

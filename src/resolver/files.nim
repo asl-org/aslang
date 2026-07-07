@@ -2,7 +2,6 @@
 
 import results, strformat, tables
 
-import tokenizer
 import parser
 import domain
 import imports

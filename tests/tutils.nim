@@ -16,7 +16,7 @@ var dirCounter {.threadvar.}: int
 proc tokenizeStr*(source: string, filepath: string = "test.asl"):
     Result[seq[Token], string] =
   ## Tokenize a string with a synthetic filepath.
-  tokenize(source, filepath, false)
+  tokenize(source, filepath)
 
 proc parseStr*(source: string, filepath: string = "",
     indentWidth: uint32 = 2,

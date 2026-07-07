@@ -6,7 +6,6 @@
 
 import options, results
 
-import tokenizer
 import parser
 
 # ResolvedImportedType

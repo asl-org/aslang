@@ -97,7 +97,7 @@ proc tokenize(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string
   let head = ? tokenizer.peek
   err(fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`")
 
-proc tokenize*(source: string, filepath: string, dumpTokens: bool = false): Result[seq[Token], string] =
+proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   let specs = @[
     newCollectiveTokenSpec("a utf8 character", tkUtf8, isUtf8),
     newCollectiveTokenSpec("an alphabet", tkAlphabet, isAlphabet),
@@ -116,11 +116,4 @@ proc tokenize*(source: string, filepath: string, dumpTokens: bool = false): Resu
   # Normalize trailing newline character handling
   let trailingNewline = newToken(tkNewline, $Newline, tokenizer.loc)
   tokens.add(trailingNewline)
-
-  # Dump tokens
-  if dumpTokens:
-    echo fmt"--- // START {filepath} tokens ({tokens.len}) ---"
-    for token in tokens: echo token
-    echo fmt"--- // END {filepath} ---"
-
   ok(tokens)

@@ -1,4 +1,4 @@
-import os, unicode, tables, deques, sets, results, strformat
+import os, unicode, tables, deques, sets, results, strformat, strutils
 
 import tokenizer, imports, decls, utils
 
@@ -21,10 +21,19 @@ proc readFileSafe(filepath: string): Result[string, string] =
   except CatchableError:
     err(fmt"{filepath} failed to read file.")
 
+proc dump(filepath: string, tokens: seq[Token]): string =
+  var content: seq[string]
+  content.add(fmt"--- // START {filepath} tokens ({tokens.len}) ---")
+  for token in tokens:
+    content.add($(token))
+  content.add(fmt"--- // END {filepath} ---")
+  return content.join("\n")
+
 proc parseFile(filepath: string, indentWidth: uint32,
     dumpTokens: bool, vendorRoots: VendorRoots): Result[File, string] =
   let source = ? readFileSafe(filepath)
-  let tokens = ? tokenize(source, filepath, dumpTokens)
+  let tokens = ? tokenize(source, filepath)
+  if dumpTokens: echo filepath.dump(tokens)
   parse(filepath, indentWidth, tokens, vendorRoots)
 
 proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool,

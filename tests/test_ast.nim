@@ -7,7 +7,6 @@
 
 import unittest, options, results, strutils
 
-import tokenizer
 import parser
 import tutils
 

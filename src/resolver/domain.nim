@@ -14,7 +14,6 @@
 
 import results, options, tables, sets, hashes, strformat, strutils, sequtils
 
-import tokenizer
 import parser
 import literals
 import patterns

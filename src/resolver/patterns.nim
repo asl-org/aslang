@@ -5,7 +5,6 @@
 
 import results, strformat
 
-import tokenizer
 import parser
 
 type

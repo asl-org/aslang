@@ -10,7 +10,6 @@
 
 import results, tables, strformat, options
 
-import tokenizer
 import parser
 import resolver
 import argtypes
