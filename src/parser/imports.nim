@@ -1,9 +1,9 @@
 import strformat, strutils, options, tables, results, os
 
-import tokenizer
-import combinators
-import identifiers
-import literals
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./literals
 
 # ============================================================
 # ImportPath

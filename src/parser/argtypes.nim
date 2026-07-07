@@ -1,8 +1,8 @@
 import strformat, options, tables, results
 
-import tokenizer
-import combinators
-import identifiers
+import ./tokenizer
+import ./combinators
+import ./identifiers
 
 # ============================================================
 # ArgumentType (self-recursive: List[Map[String, Int]])

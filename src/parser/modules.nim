@@ -1,12 +1,12 @@
 import strformat, strutils, options, tables, results, hashes
 
-import tokenizer
-import combinators
-import identifiers
-import data
-import funcs
-import funcs
-import generics
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./data
+import ./funcs
+import ./funcs
+import ./generics
 
 # ============================================================
 # Module

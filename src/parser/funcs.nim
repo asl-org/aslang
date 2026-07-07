@@ -1,11 +1,11 @@
 import strformat, strutils, tables, results
 
-import tokenizer
-import combinators
-import identifiers
-import literals
-import argtypes
-import body
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./literals
+import ./argtypes
+import ./body
 
 # ============================================================
 # FunctionDefinition (signature only, no body)

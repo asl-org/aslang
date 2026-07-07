@@ -1,7 +1,7 @@
 import strformat, strutils, results, hashes
 
-import tokenizer
-import combinators
+import ./tokenizer
+import ./combinators
 
 # ============================================================
 # Identifier

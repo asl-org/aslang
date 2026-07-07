@@ -1,6 +1,6 @@
 import strformat, results, options
 
-import tokenizer
+import ./tokenizer
 
 # ============================================================
 # Parser Error

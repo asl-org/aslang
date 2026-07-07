@@ -1,8 +1,8 @@
 import strformat, results
 
-import tokenizer
-import combinators
-import identifiers
+import ./tokenizer
+import ./combinators
+import ./identifiers
 
 # ============================================================
 # StringContent (internal — one character of a string literal)

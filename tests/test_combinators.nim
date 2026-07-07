@@ -5,7 +5,7 @@
 
 import unittest, options, results
 
-import tokenizer
+import parser/tokenizer
 import parser
 import tutils
 

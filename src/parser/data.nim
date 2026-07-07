@@ -1,10 +1,10 @@
 import strformat, strutils, options, tables, results
 
-import tokenizer
-import combinators
-import identifiers
-import literals
-import argtypes
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./literals
+import ./argtypes
 
 # ============================================================
 # StructDef

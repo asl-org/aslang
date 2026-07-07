@@ -1,13 +1,13 @@
 import strformat, strutils, tables, results, hashes, os
 
-import tokenizer
-import combinators
-import identifiers
-import funcs
-import funcs
-import imports
-import generics
-import modules
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./funcs
+import ./funcs
+import ./imports
+import ./generics
+import ./modules
 
 # ============================================================
 # DefinedType

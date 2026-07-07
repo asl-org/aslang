@@ -1,9 +1,9 @@
 import strformat, strutils, tables, results, hashes
 
-import tokenizer
-import combinators
-import identifiers
-import funcs
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./funcs
 
 # ============================================================
 # Generic

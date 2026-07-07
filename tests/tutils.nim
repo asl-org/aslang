@@ -2,7 +2,7 @@
 
 import os, results, strutils, tables
 
-import tokenizer
+import parser/tokenizer
 import parser
 import resolver
 import analyzer
