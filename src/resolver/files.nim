@@ -61,7 +61,7 @@ proc validateNoDuplicateBindings(resolvedImports: seq[ResolvedImport], file: par
     seen[definedType.name] = definedType.loc
   ok()
 
-proc resolveFile*(app: App, shells: ResolvedModuleShells, id: int, file: parser.File): Result[ResolvedFile, string] =
+proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, string] =
   var resolvedImports: seq[ResolvedImport]
   var fileScope: FileScope
   case file.kind:
@@ -77,7 +77,7 @@ proc resolveFile*(app: App, shells: ResolvedModuleShells, id: int, file: parser.
 
   var resolvedTypes: seq[ResolvedType]
   for id, definedType in file.types:
-    let resolvedType = ? resolveType(app, shells, file, fileScope, id, definedType)
+    let resolvedType = ? resolveType(app, file, fileScope, id, definedType)
     resolvedTypes.add(resolvedType)
 
   ok(newResolvedFile(id, file, resolvedImports, resolvedTypes))

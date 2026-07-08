@@ -153,10 +153,12 @@ type
 
   AnalyzedStructRef* = ref object
     resolved: ResolvedStructRef
+    module: ResolvedModule
     analyzedImpls: seq[AnalyzedArgumentType]
 
   AnalyzedUnionRef* = ref object
     resolved: ResolvedUnionRef
+    module: ResolvedModule
     analyzedImpls: seq[AnalyzedArgumentType]
 
   AnalyzedStructInitializer* = ref object
@@ -239,25 +241,27 @@ proc field*(kwarg: AnalyzedKeywordArgument): ResolvedArgumentDef = kwarg.field
 proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
 
 proc newAnalyzedStructRef*(resolved: ResolvedStructRef,
+    module: ResolvedModule,
     analyzedImpls: seq[AnalyzedArgumentType]): AnalyzedStructRef =
   ## One-shape constructor. `analyzedImpls` mirrors the resolver's
-  ## `resolvedImpls` seq: empty when the surface form was bare,
+  ## `impls` seq: empty when the surface form was bare,
   ## non-empty (arity + constraint validated at resolve time) when the
   ## surface form supplied explicit impls.
-  AnalyzedStructRef(resolved: resolved, analyzedImpls: analyzedImpls)
+  AnalyzedStructRef(resolved: resolved, module: module, analyzedImpls: analyzedImpls)
 
 proc resolved*(s: AnalyzedStructRef): ResolvedStructRef = s.resolved
-proc module*(s: AnalyzedStructRef): ResolvedModule = s.resolved.resolvedModule
+proc module*(s: AnalyzedStructRef): ResolvedModule = s.module
 proc analyzedImpls*(s: AnalyzedStructRef): seq[AnalyzedArgumentType] = s.analyzedImpls
 proc loc*(s: AnalyzedStructRef): Location = s.resolved.loc
 
 proc newAnalyzedUnionRef*(resolved: ResolvedUnionRef,
+    module: ResolvedModule,
     analyzedImpls: seq[AnalyzedArgumentType]): AnalyzedUnionRef =
   ## One-shape constructor. See `newAnalyzedStructRef` for shape rules.
-  AnalyzedUnionRef(resolved: resolved, analyzedImpls: analyzedImpls)
+  AnalyzedUnionRef(resolved: resolved, module: module, analyzedImpls: analyzedImpls)
 
 proc resolved*(u: AnalyzedUnionRef): ResolvedUnionRef = u.resolved
-proc module*(u: AnalyzedUnionRef): ResolvedModule = u.resolved.resolvedModule
+proc module*(u: AnalyzedUnionRef): ResolvedModule = u.module
 proc analyzedImpls*(u: AnalyzedUnionRef): seq[AnalyzedArgumentType] = u.analyzedImpls
 proc loc*(u: AnalyzedUnionRef): Location = u.resolved.loc
 
@@ -702,12 +706,14 @@ proc receiverArgType(receiver: ResolvedModule): AnalyzedArgumentType =
   newAnalyzedArgumentType(analyzedModuleArg)
 
 proc analyzeUnionRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
-  ## Walks the resolver's already-checked `resolvedImpls` seq once and
+  ## Walks the resolver's already-checked `impls` seq once and
   ## produces the analyzer-side equivalents. Empty in → empty out.
-  var analyzedImpls = newSeq[AnalyzedArgumentType](unionRef.resolvedImpls.len)
-  for i, resolvedImpl in unionRef.resolvedImpls:
+  ## See `analyzeStructRef` for the parser-Module -> ResolvedModule lookup.
+  let resolvedModule = ? fileScope.findModuleDef(unionRef.module.name, unionRef.loc)
+  var analyzedImpls = newSeq[AnalyzedArgumentType](unionRef.impls.len)
+  for i, resolvedImpl in unionRef.impls:
     analyzedImpls[i] = ? analyzeArgumentType(app, file, fileScope, module, resolvedImpl)
-  ok(newAnalyzedUnionRef(unionRef, analyzedImpls))
+  ok(newAnalyzedUnionRef(unionRef, resolvedModule, analyzedImpls))
 
 proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
   ## Single code path over the union initializer:
@@ -783,12 +789,17 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
   ok(newAnalyzedUnionInitializer(init, analyzedUnionRef, argType, resolvedVariant, analyzedKwargs))
 
 proc analyzeStructRef(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
-  ## Walks the resolver's already-checked `resolvedImpls` seq once and
+  ## Walks the resolver's already-checked `impls` seq once and
   ## produces the analyzer-side equivalents. Empty in → empty out.
-  var analyzedImpls = newSeq[AnalyzedArgumentType](structRef.resolvedImpls.len)
-  for i, resolvedImpl in structRef.resolvedImpls:
+  ## The parser Module carried on `structRef.module` is looked up here
+  ## into a ResolvedModule via `fileScope.findModuleDef` — the resolver
+  ## keeps struct/union refs parser-level to break the ref cycle;
+  ## analyzer types can hold the resolved view freely.
+  let resolvedModule = ? fileScope.findModuleDef(structRef.module.name, structRef.loc)
+  var analyzedImpls = newSeq[AnalyzedArgumentType](structRef.impls.len)
+  for i, resolvedImpl in structRef.impls:
     analyzedImpls[i] = ? analyzeArgumentType(app, file, fileScope, module, resolvedImpl)
-  ok(newAnalyzedStructRef(structRef, analyzedImpls))
+  ok(newAnalyzedStructRef(structRef, resolvedModule, analyzedImpls))
 
 proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
   ## Single code path over the struct initializer. Receiver is the

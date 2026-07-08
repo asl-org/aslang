@@ -229,9 +229,11 @@ proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], 
       return argType
 
 proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
-  # TODO(task 6b): now that `argType.resolvedModule` already carries
-  # the resolved module directly, this lookup is redundant. Task 6b
-  # will drop `findArgTypeModule` in favour of `argType.resolvedModule`.
+  ## Look up the ResolvedModule for a resolved argument type. The
+  ## argType carries a parser Module identifier — resolver-side types
+  ## intentionally do not back-ref ResolvedModule (would cycle). We
+  ## look up locally (file.findModule) first, then via fileScope for
+  ## imported bindings.
   let maybeTypeModule = file.findModule(argType.name)
   if maybeTypeModule.isErr:
     if argType.name notin fileScope:

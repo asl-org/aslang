@@ -41,19 +41,22 @@ type FunctionScope* = HashSet[Identifier]
 type
   # ==== Argument-type cluster (grammar `ArgumentType`) ====
   #
-  # `resolvedModule` — resolver-level back-ref to the ResolvedModule
-  # (task 6c). The two-pass resolver creates a shell ResolvedModule
-  # for every parser Module up-front so this reference is well-formed
-  # before argument-type resolution runs; the shell is populated with
-  # requires/data/functions/... in the define pass. Consumers that
-  # need the parser Module read it via `resolvedModule.parsed`.
+  # `module` on ResolvedModuleArgumentType / ResolvedStructRef /
+  # ResolvedUnionRef is the parser Module identifier (not a
+  # ResolvedModule reference). The resolver DOES NOT reach back into
+  # ResolvedModule from resolved argument types — that would create a
+  # ref-object cycle (ResolvedArgumentType → ResolvedModule →
+  # signatures with ResolvedArgumentType). Consumers who need the
+  # resolved-side view look it up at their site via
+  # `ResolvedFile.findModule(name)` — for imported types the target
+  # file is already fully resolved; for local types the analyzer
+  # runs after resolution completes.
   #
-  # `ResolvedGenericArgumentType.generic` stays a parser Generic —
-  # task 6c is scoped to the module edge; the generic edge is a
-  # follow-up (see tasks.md).
+  # `ResolvedGenericArgumentType.generic` is a parser Generic for the
+  # same reason.
 
   ResolvedModuleArgumentType* = ref object
-    resolvedModule: ResolvedModule
+    module: Module
     impls: seq[ResolvedArgumentType]
     loc: Location
 
@@ -127,13 +130,13 @@ type
 
   ResolvedStructRef* = ref object
     parsed: StructRef
-    resolvedModule: ResolvedModule
-    resolvedImpls: seq[ResolvedArgumentType]
+    module: Module
+    impls: seq[ResolvedArgumentType]
 
   ResolvedUnionRef* = ref object
     parsed: UnionRef
-    resolvedModule: ResolvedModule
-    resolvedImpls: seq[ResolvedArgumentType]
+    module: Module
+    impls: seq[ResolvedArgumentType]
 
   ResolvedStructInitializer* = ref object
     parsed: StructInitializer
@@ -162,7 +165,7 @@ type
     # ArgumentType), so this stays empty for now. When impl syntax is
     # added, the arity+constraint check for these impls will run in
     # resolveFunctionCall — never in the analyzer.
-    resolvedImpls: seq[ResolvedArgumentType]
+    impls: seq[ResolvedArgumentType]
 
   ResolvedAssignment* = ref object
     parsed: Assignment
@@ -244,34 +247,6 @@ type
     of rdtkGeneric: generic: ResolvedGeneric
 
 # =====================================================================
-# Shell table for the two-pass resolver.
-#
-# `ResolvedModuleArgumentType` holds a `ResolvedModule` reference,
-# but `ResolvedModule` is what the resolver is building — chicken/egg.
-# Resolved by a declare-then-populate pattern:
-#
-#   1. Before any argument type resolves, the declare pass walks
-#      every parser Module in the app and creates a shell
-#      `ResolvedModule` (via `newResolvedModuleShell`) keyed on
-#      parser identity in a `ResolvedModuleShells` table.
-#   2. During the define pass, `resolveArgumentType` looks up the
-#      shell in the table when building a `ResolvedModuleArgumentType`
-#      — the resulting reference is stable even though the shell is
-#      still empty.
-#   3. When each module finishes resolving, its shell is
-#      `populate`d with the freshly-computed requires / data /
-#      functions / indices. After that, every ResolvedModuleArgumentType
-#      dereferences to a fully-formed ResolvedModule.
-#
-# The alias lives up here because virtually every `resolve*` proc
-# threads it through. The shell constructor and `populate` proc live
-# with the Module section further down.
-# =====================================================================
-
-type
-  ResolvedModuleShells* = Table[Module, ResolvedModule]
-
-# =====================================================================
 # Forward declarations
 #
 # Only the mutual-recursion points that cross section boundaries or
@@ -285,22 +260,18 @@ proc asl*(argType: ResolvedArgumentType): string
 
 # resolveArgumentType (both context overloads) is called by the
 # module-context resolveModuleArgumentType helper for impls.
-proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     argType: ArgumentType): Result[ResolvedArgumentType, string]
 
-proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, generic: Generic,
+proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType): Result[ResolvedArgumentType, string]
 
 # resolveExpression / resolveStatement form the body-cluster cycle.
-proc resolveExpression*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveExpression*(app: App,     file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string]
 
-proc resolveStatement*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveStatement*(app: App,     file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     statement: Statement): Result[ResolvedStatement, string]
 
@@ -322,28 +293,24 @@ proc asl*(argType: ResolvedGenericArgumentType): string = argType.generic.name.a
 
 # ---- ResolvedModuleArgumentType ----
 
-proc newResolvedModuleArgumentType*(resolvedModule: ResolvedModule, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
-  ResolvedModuleArgumentType(loc: loc, resolvedModule: resolvedModule, impls: impls)
+proc newResolvedModuleArgumentType*(module: Module, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
+  ResolvedModuleArgumentType(loc: loc, module: module, impls: impls)
 
-proc newResolvedModuleArgumentType*(resolvedModule: ResolvedModule, loc: Location): ResolvedModuleArgumentType =
-  newResolvedModuleArgumentType(resolvedModule, @[], loc)
+proc newResolvedModuleArgumentType*(module: Module, loc: Location): ResolvedModuleArgumentType =
+  newResolvedModuleArgumentType(module, @[], loc)
 
 proc loc*(argType: ResolvedModuleArgumentType): Location = argType.loc
-proc resolvedModule*(argType: ResolvedModuleArgumentType): ResolvedModule = argType.resolvedModule
+proc module*(argType: ResolvedModuleArgumentType): Module = argType.module
 proc impls*(argType: ResolvedModuleArgumentType): seq[ResolvedArgumentType] = argType.impls
-proc parsed*(argType: ResolvedModuleArgumentType): Module = argType.resolvedModule.parsed
-  ## Convenience: the parser Module that this argument type refers to.
-  ## Reads through the resolvedModule shell — during the declare pass
-  ## the shell's `parsed` field is always set, so this is safe even
-  ## before the module has been populated.
-proc name*(argType: ResolvedModuleArgumentType): Identifier = argType.resolvedModule.parsed.name
-  ## Convenience: the parser Module's name. Same "always safe on the
-  ## shell" argument as `parsed*` above.
+proc parsed*(argType: ResolvedModuleArgumentType): Module = argType.module
+  ## The parser Module that this argument type refers to. Consumers who
+  ## need the ResolvedModule look it up at their site via
+  ## `ResolvedFile.findModule(module.name)`.
+proc name*(argType: ResolvedModuleArgumentType): Identifier = argType.module.name
 
 proc hash*(argType: ResolvedModuleArgumentType): Hash =
-  # Hash by parser Module identity (the resolvedModule shell is
-  # created keyed on Module, so parsed.hash is the stable identity).
-  var acc = argType.parsed.hash
+  # Hash by parser Module identity.
+  var acc = argType.module.hash
   for impl in argType.impls:
     acc = acc !& impl.hash
   return acc
@@ -469,13 +436,6 @@ proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: U
 
 # ---- resolveArgumentType internals ----
 
-proc lookupShell(shells: ResolvedModuleShells, root: Module): ResolvedModule =
-  ## Look up the shell allocated during the declare pass. Every parser
-  ## Module reachable through resolution must have a shell — the
-  ## declare pass in apps.nim walks every Type in every file.
-  assert(root in shells, fmt"UNREACHABLE: no shell allocated for module `{root.name.asl}` at {root.loc}")
-  shells[root]
-
 # Constraint-satisfaction check: does `resolvedImpl` provide every
 # funcDef the required generic `base` mandates? Retired the analyzer's
 # equivalent def-time check and moved it here so
@@ -491,13 +451,12 @@ proc lookupShell(shells: ResolvedModuleShells, root: Module): ResolvedModule =
 # already runs the strict hash-based check every time a value is
 # type-checked against a definition. The def-time check here catches
 # the "impl is missing the method entirely" case — the common
-# regression path — without needing ResolvedGeneric to be populated at
-# def-time (generics have no shell/populate two-pass, so ordering
-# would otherwise force a wider refactor).
+# regression path — using the parser-level `findFunctionDefs` API
+# directly, no resolver-side lookup needed.
 proc checkImplSatisfiesGeneric(resolvedImpl: ResolvedArgumentType, base: Generic): Result[void, string] =
   case resolvedImpl.kind:
   of ratkModule:
-    let implModule = resolvedImpl.module.resolvedModule.parsed
+    let implModule = resolvedImpl.module.module
     for funcDef in base.funcDefs:
       let maybeFuncDefs = implModule.findFunctionDefs(funcDef.name, funcDef.arity)
       if maybeFuncDefs.isErr:
@@ -521,25 +480,23 @@ proc findGeneric*(file: parser.File, fileScope: FileScope, name: Identifier): Re
   of tkGeneric: ok(initType.generic)
 
 # resolveModuleArgumentType — module context.
-proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope,
     module: Module, argType: ArgumentType,
     root: Module): Result[ResolvedModuleArgumentType, string] =
-  let resolvedRoot = lookupShell(shells, root)
-  # NOTE: requires block will override the inferred impl list
+    # NOTE: requires block will override the inferred impl list
   if root.requires.isSome:
     let requiredNames = root.requires.get.generics
     if argType.impls.len != requiredNames.len:
       return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requiredNames.len}` impls but found `{argType.impls.len}`")
 
-    var resolvedImpls: seq[ResolvedArgumentType]
+    var impls: seq[ResolvedArgumentType]
     for (requiredName, impl) in zip(requiredNames, argType.impls):
       let requiredGeneric = ? file.findGeneric(fileScope, requiredName)
-      let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, module, impl)
+      let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
       ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-      resolvedImpls.add(resolvedImpl)
+      impls.add(resolvedImpl)
 
-    return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
+    return ok(newResolvedModuleArgumentType(root, impls, argType.loc))
 
   # NOTE: infer the impl list from struct/union block
   if root.data.isSome:
@@ -547,7 +504,7 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
     case dataDef.kind:
     of ddkLiteral:
       if argType.impls.len == 0:
-        return ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
+        return ok(newResolvedModuleArgumentType(root, argType.loc))
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of ddkStruct:
@@ -555,39 +512,37 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
-      var resolvedImpls: seq[ResolvedArgumentType]
+      var impls: seq[ResolvedArgumentType]
       for (requiredGeneric, impl) in zip(requires, argType.impls):
-        let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, module, impl)
+        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
         ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-        resolvedImpls.add(resolvedImpl)
+        impls.add(resolvedImpl)
 
-      return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
+      return ok(newResolvedModuleArgumentType(root, impls, argType.loc))
 
     of ddkUnion:
       let requires = ? file.findRequiredImplsForUnion(fileScope, dataDef.union)
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
-      var resolvedImpls: seq[ResolvedArgumentType]
+      var impls: seq[ResolvedArgumentType]
       for (requiredGeneric, impl) in zip(requires, argType.impls):
-        let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, module, impl)
+        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
         ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-        resolvedImpls.add(resolvedImpl)
+        impls.add(resolvedImpl)
 
-      return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
+      return ok(newResolvedModuleArgumentType(root, impls, argType.loc))
 
   if argType.impls.len == 0:
-    ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
+    ok(newResolvedModuleArgumentType(root, argType.loc))
   else:
     err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
 # resolveModuleArgumentType — generic context. Mirrors module-context
 # but with the self-only rule and a still-stubbed ddkStruct path.
-proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, generic: Generic,
+proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType,
     root: Module): Result[ResolvedModuleArgumentType, string] =
-  let resolvedRoot = lookupShell(shells, root)
   if root.requires.isSome:
     return err("todo: resolve requires block in argument type")
 
@@ -598,7 +553,7 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
       return err(fmt"{dataDef.loc} todo: resolve struct block in argument type")
     of ddkLiteral:
       if argType.impls.len == 0:
-        return ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
+        return ok(newResolvedModuleArgumentType(root, argType.loc))
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
     of ddkUnion:
@@ -606,16 +561,16 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
-      var resolvedImpls: seq[ResolvedArgumentType]
+      var impls: seq[ResolvedArgumentType]
       for (requiredGeneric, impl) in zip(requires, argType.impls):
-        let resolvedImpl = ? resolveArgumentType(app, shells, file, fileScope, generic, impl)
+        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, generic, impl)
         ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-        resolvedImpls.add(resolvedImpl)
+        impls.add(resolvedImpl)
 
-      return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
+      return ok(newResolvedModuleArgumentType(root, impls, argType.loc))
 
   if argType.impls.len == 0:
-    ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
+    ok(newResolvedModuleArgumentType(root, argType.loc))
   else:
     err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
@@ -632,8 +587,7 @@ proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, arg
     err(fmt"{genericArgType.loc} generic `{genericArgType.name.asl}` is not allowed to have impls")
 
 # resolveArgumentType — both context overloads.
-proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let definedType = ? file.findType(fileScope, argType.root)
   case definedType.kind:
@@ -641,11 +595,10 @@ proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, definedType.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of tkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, shells, file, fileScope, module, argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, module, argType, definedType.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
-proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, generic: Generic,
+proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let definedType = ? file.findType(fileScope, argType.root)
   case definedType.kind:
@@ -653,18 +606,14 @@ proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of tkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, shells, file, fileScope, generic, argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic, argType, definedType.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
 # resolveDataType — post-resolution guard. Confirms the resolved
 # argument's underlying module has a data block (or that we're
 # pointing at an unsubstituted generic, which is acceptable).
-#
-# Reads through the parser Module via `parsed*` — the shell
-# ResolvedModule's own `data` field may still be empty at the time
-# this guard runs (shells populate only after resolveModule finishes
-# its own data block + functions), but the parser Module's data
-# option is set at parse time and always available.
+# Reads through the parser Module — set at parse time and always
+# available.
 proc resolveDataType*(file: parser.File, module: Module, arg: ArgumentType,
     resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
   case resolvedArgumentType.kind:
@@ -714,18 +663,16 @@ proc concreteArgumentDef(argDef: ResolvedArgumentDef, concrete: ResolvedArgument
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)
   newResolvedArgumentDef(argDef.parsed, concreteArgType)
 
-proc resolveArgumentDef*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveArgumentDef*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     arg: ArgumentDef): Result[ResolvedArgumentDef, string] =
-  let resolvedArgumentType = ? resolveArgumentType(app, shells, file, fileScope, module,
+  let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, module,
     arg.argType)
   ? resolveDataType(file, module, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDef(arg, resolvedArgumentType))
 
-proc resolveArgumentDef*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, generic: Generic,
+proc resolveArgumentDef*(app: App,     file: parser.File, fileScope: FileScope, generic: Generic,
     arg: ArgumentDef): Result[ResolvedArgumentDef, string] =
-  let resolvedArgumentType = ? resolveArgumentType(app, shells, file, fileScope, generic,
+  let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, generic,
     arg.argType)
   ? resolveDataType(file, generic, arg.argType, resolvedArgumentType)
   ok(newResolvedArgumentDef(arg, resolvedArgumentType))
@@ -767,31 +714,29 @@ proc concreteFunctionDef*(funcDef: ResolvedFunctionDef, moduleType: ResolvedArgu
   let concreteReturns = funcDef.returns.concreteArgumentType(moduleType, generic)
   newResolvedFunctionDef(funcDef.parsed, concreteArgs, concreteReturns)
 
-proc resolveFunctionDef*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveFunctionDef*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     def: FunctionDef): Result[ResolvedFunctionDef, string] =
   var resolvedArgs: seq[ResolvedArgumentDef]
   for arg in def.args:
-    let resolvedArg = ? resolveArgumentDef(app, shells, file, fileScope, module,
+    let resolvedArg = ? resolveArgumentDef(app, file, fileScope, module,
       arg)
     resolvedArgs.add(resolvedArg)
 
-  let resolvedReturnArgType = ? resolveArgumentType(app, shells, file, fileScope, module,
+  let resolvedReturnArgType = ? resolveArgumentType(app, file, fileScope, module,
     def.returns)
   ? resolveDataType(file, module, def.returns, resolvedReturnArgType)
 
   ok(newResolvedFunctionDef(def, resolvedArgs,
     resolvedReturnArgType))
 
-proc resolveFunctionDef*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, generic: Generic,
+proc resolveFunctionDef*(app: App,     file: parser.File, fileScope: FileScope, generic: Generic,
     def: FunctionDef): Result[ResolvedFunctionDef, string] =
   var resolvedArgs: seq[ResolvedArgumentDef]
   for arg in def.args:
-    let resolvedArg = ? resolveArgumentDef(app, shells, file, fileScope, generic, arg)
+    let resolvedArg = ? resolveArgumentDef(app, file, fileScope, generic, arg)
     resolvedArgs.add(resolvedArg)
 
-  let resolvedReturnArgType = ? resolveArgumentType(app, shells, file, fileScope, generic,
+  let resolvedReturnArgType = ? resolveArgumentType(app, file, fileScope, generic,
     def.returns)
   ? resolveDataType(file, generic, def.returns, resolvedReturnArgType)
 
@@ -809,10 +754,9 @@ proc def*(function: ResolvedExternFunction): ResolvedFunctionDef = function.def
 proc ffi*(function: ResolvedExternFunction): string = function.parsed.ffi
 proc loc*(function: ResolvedExternFunction): Location = function.def.loc
 
-proc resolveExternFunction*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveExternFunction*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     function: ExternFunction): Result[ResolvedExternFunction, string] =
-  let resolvedFunctionDef = ? resolveFunctionDef(app, shells, file, fileScope,
+  let resolvedFunctionDef = ? resolveFunctionDef(app, file, fileScope,
     module, function.def)
   ok(newResolvedExternFunction(function, resolvedFunctionDef))
 
@@ -863,11 +807,11 @@ proc requires*(struct: ResolvedStructDef): seq[ResolvedGenericArgumentType] =
     requires[index] = genericType
   return requires
 
-proc resolveStructDef*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, module: Module, struct: StructDef): Result[ResolvedStructDef, string] =
+proc resolveStructDef*(app: App, file: parser.File, fileScope: FileScope, module: Module, struct: StructDef): Result[ResolvedStructDef, string] =
   var resolvedFields: seq[ResolvedArgumentDef]
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for field in struct.fields:
-    let resolvedField = ? resolveArgumentDef(app, shells, file, fileScope, module, field)
+    let resolvedField = ? resolveArgumentDef(app, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedStructDef(struct, resolvedFields, genericTypeIndex))
@@ -895,10 +839,10 @@ proc findField*(variant: ResolvedVariant, name: Identifier): Result[ResolvedArgu
 # NOTE: `genericTypeIndex` is the union's shared position table — mutated
 # in place as each variant's fields contribute new generics (in
 # declaration order); not returned because the union accumulates it.
-proc resolveVariant(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDef, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
+proc resolveVariant(app: App, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDef, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
   var resolvedFields: seq[ResolvedArgumentDef]
   for field in variant.fields:
-    let resolvedField = ? resolveArgumentDef(app, shells, file, fileScope, module, field)
+    let resolvedField = ? resolveArgumentDef(app, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedVariant(variant, resolvedFields))
@@ -933,12 +877,12 @@ proc requires*(union: ResolvedUnionDef): seq[ResolvedGenericArgumentType] =
     requires[index] = genericType
   return requires
 
-proc resolveUnionDef*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope,
+proc resolveUnionDef*(app: App, file: parser.File, fileScope: FileScope,
     module: Module, union: UnionDef): Result[ResolvedUnionDef, string] =
   var resolvedVariants: seq[ResolvedVariant]
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for variant in union.variants:
-    let resolvedVariant = ? resolveVariant(app, shells, file, fileScope, module, variant, genericTypeIndex)
+    let resolvedVariant = ? resolveVariant(app, file, fileScope, module, variant, genericTypeIndex)
     resolvedVariants.add(resolvedVariant)
   ok(newResolvedUnionDef(union, resolvedVariants, genericTypeIndex))
 
@@ -973,18 +917,18 @@ proc requires*(data: ResolvedData): seq[ResolvedGenericArgumentType] =
   of rdkStruct: data.struct.requires
   of rdkUnion: data.union.requires
 
-proc resolveDataDef*(app: App, shells: ResolvedModuleShells, file: parser.File,
+proc resolveDataDef*(app: App, file: parser.File,
     fileScope: FileScope, module: Module, data: DataDef): Result[ResolvedData, string] =
   case data.kind:
   of ddkLiteral:
     let resolvedLiteralType = ? resolveLiteralDef(file, data.literal)
     ok(newResolvedData(resolvedLiteralType))
   of ddkStruct:
-    let resolvedStruct = ? resolveStructDef(app, shells, file, fileScope, module,
+    let resolvedStruct = ? resolveStructDef(app, file, fileScope, module,
       data.struct)
     ok(newResolvedData(resolvedStruct))
   of ddkUnion:
-    let resolvedUnion = ? resolveUnionDef(app, shells, file, fileScope, module, data.union)
+    let resolvedUnion = ? resolveUnionDef(app, file, fileScope, module, data.union)
     ok(newResolvedData(resolvedUnion))
 
 # =====================================================================
@@ -993,7 +937,7 @@ proc resolveDataDef*(app: App, shells: ResolvedModuleShells, file: parser.File,
 #  StructInitializer, UnionInitializer, Initializer, FunctionCall,
 #  Assignment, Setter, CaseBlock, MatchExpression, Expression, Statement)
 #
-# Every resolveX proc threads `shells: ResolvedModuleShells` — the
+# Every resolveX proc threads `` — the
 # table allocated by apps.nim during the declare pass — down to
 # `resolveArgumentType`, which uses it to attach a stable
 # ResolvedModule reference to every ResolvedModuleArgumentType.
@@ -1033,11 +977,10 @@ proc value*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 proc loc*(init: ResolvedLiteralInitializer): Location = init.parsed.loc
 proc literal*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 
-proc resolveLiteralInitializer(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveLiteralInitializer(app: App, file: parser.File, fileScope: FileScope, module: Module,
     literalInit: LiteralInitializer): Result[
         ResolvedLiteralInitializer, string] =
-  let resolvedArgType = ? resolveArgumentType(app, shells, file, fileScope, module,
+  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module,
     literalInit.argType)
   ok(newResolvedLiteralInitializer(literalInit, resolvedArgType))
 
@@ -1054,18 +997,16 @@ proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
 
 # ---- ResolvedStructRef ----
 
-proc newResolvedStructRef*(parsed: StructRef, resolvedModule: ResolvedModule,
-    resolvedImpls: seq[ResolvedArgumentType]): ResolvedStructRef =
-  ## One-shape constructor. `resolvedImpls` is empty when the surface
+proc newResolvedStructRef*(parsed: StructRef, module: Module,
+    impls: seq[ResolvedArgumentType]): ResolvedStructRef =
+  ## One-shape constructor. `impls` is empty when the surface
   ## form was `Module { ... }` and non-empty (arity + constraint checked)
   ## when the surface form was `Module[Impl, ...] { ... }`.
-  ResolvedStructRef(parsed: parsed, resolvedModule: resolvedModule,
-    resolvedImpls: resolvedImpls)
+  ResolvedStructRef(parsed: parsed, module: module, impls: impls)
 
 proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
-proc resolvedModule*(s: ResolvedStructRef): ResolvedModule = s.resolvedModule
-proc module*(s: ResolvedStructRef): Module = s.resolvedModule.parsed
-proc resolvedImpls*(s: ResolvedStructRef): seq[ResolvedArgumentType] = s.resolvedImpls
+proc module*(s: ResolvedStructRef): Module = s.module
+proc impls*(s: ResolvedStructRef): seq[ResolvedArgumentType] = s.impls
 proc loc*(s: ResolvedStructRef): Location = s.parsed.loc
 
 # ---- ResolvedStructInitializer ----
@@ -1080,7 +1021,7 @@ proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.s
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 
-proc resolvedImpls*(struct: ResolvedStructInitializer): seq[ResolvedArgumentType] =
+proc impls*(struct: ResolvedStructInitializer): seq[ResolvedArgumentType] =
   ## Delegates to the underlying structRef. Empty === bare initializer,
   ## non-empty === explicit-impls initializer.
   ##
@@ -1088,22 +1029,20 @@ proc resolvedImpls*(struct: ResolvedStructInitializer): seq[ResolvedArgumentType
   ## resolve time by resolveModuleArgumentType (see the module-context
   ## overload above). Downstream consumers can treat this seq as a
   ## provably valid value — no need to re-check.
-  struct.structRef.resolvedImpls
+  struct.structRef.impls
 
 # ---- ResolvedUnionRef ----
 
-proc newResolvedUnionRef*(parsed: UnionRef, resolvedModule: ResolvedModule,
-    resolvedImpls: seq[ResolvedArgumentType]): ResolvedUnionRef =
-  ## One-shape constructor. `resolvedImpls` is empty when the surface
+proc newResolvedUnionRef*(parsed: UnionRef, module: Module,
+    impls: seq[ResolvedArgumentType]): ResolvedUnionRef =
+  ## One-shape constructor. `impls` is empty when the surface
   ## form was `Module.Variant { ... }` and non-empty (arity + constraint
   ## checked) when the surface form was `Module[Impl, ...].Variant { ... }`.
-  ResolvedUnionRef(parsed: parsed, resolvedModule: resolvedModule,
-    resolvedImpls: resolvedImpls)
+  ResolvedUnionRef(parsed: parsed, module: module, impls: impls)
 
 proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
-proc resolvedModule*(u: ResolvedUnionRef): ResolvedModule = u.resolvedModule
-proc module*(u: ResolvedUnionRef): Module = u.resolvedModule.parsed
-proc resolvedImpls*(u: ResolvedUnionRef): seq[ResolvedArgumentType] = u.resolvedImpls
+proc module*(u: ResolvedUnionRef): Module = u.module
+proc impls*(u: ResolvedUnionRef): seq[ResolvedArgumentType] = u.impls
 proc loc*(u: ResolvedUnionRef): Location = u.parsed.loc
 
 # ---- ResolvedUnionInitializer ----
@@ -1120,14 +1059,14 @@ proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
 proc module*(init: ResolvedUnionInitializer): Module = module(init.unionRef)
 proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
 
-proc resolvedImpls*(init: ResolvedUnionInitializer): seq[ResolvedArgumentType] =
+proc impls*(init: ResolvedUnionInitializer): seq[ResolvedArgumentType] =
   ## Delegates to the underlying unionRef. Empty === bare initializer,
   ## non-empty === explicit-impls initializer.
   ##
   ## Invariant: every entry is arity- and constraint-validated at
   ## resolve time by resolveModuleArgumentType. Downstream consumers
   ## can treat this seq as a provably valid value — no need to re-check.
-  init.unionRef.resolvedImpls
+  init.unionRef.impls
 
 # ---- ResolvedInitializer ----
 
@@ -1169,7 +1108,7 @@ proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
 
-proc resolvedImpls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
+proc impls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
   ## Empty for the time being — the parser has no impl syntax for
   ## FunctionCall receivers. Kept as a first-class accessor so
   ## downstream code that treats StructInit/UnionInit/FunctionCall
@@ -1178,7 +1117,7 @@ proc resolvedImpls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
   ## Invariant: entries would be arity- and constraint-validated at
   ## resolve time — the current always-empty seq trivially satisfies
   ## that.
-  fncall.resolvedImpls
+  fncall.impls
 
 # ---- ResolvedAssignment ----
 
@@ -1319,8 +1258,7 @@ proc variable*(statement: ResolvedStatement): Option[Identifier] =
 
 # ---- Body resolve* procs ----
 
-proc resolveFunctionCall(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let definedType = ? file.findType(fileScope, fncall.root)
@@ -1330,37 +1268,34 @@ proc resolveFunctionCall(app: App, shells: ResolvedModuleShells,
   else:
     var resolvedArgs: seq[ResolvedExpression]
     for arg in fncall.args:
-      let resolvedArg = ? resolveExpression(app, shells, file, fileScope, module, scope, arg)
+      let resolvedArg = ? resolveExpression(app, file, fileScope, module, scope, arg)
       resolvedArgs.add(resolvedArg)
     ok(newResolvedFunctionCall(fncall, resolvedArgs))
 
-proc resolveStructRef(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module: Module,
     structRef: StructRef): Result[ResolvedStructRef, string] =
-  ## Resolves a StructRef into the one-shape (module + resolvedImpls).
+  ## Resolves a StructRef into the one-shape (module + impls).
   ## Validates the "receiver-declares-requires ↔ impls-provided" match
-  ## and delegates to resolveModuleArgumentType so the resolvedImpls
+  ## and delegates to resolveModuleArgumentType so the impls
   ## seq is arity- and constraint-checked at resolve time.
   let structModule = ? file.findModule(fileScope, structRef.module)
   if structRef.impls.len == 0 and structModule.requires.isSome:
     return err(fmt"{structRef.loc} module `{structModule.name.asl}` declares requires; initializer must specify impl types as `{structModule.name.asl}[...]`")
   if structRef.impls.len > 0 and not structModule.requires.isSome:
     return err(fmt"{structRef.loc} module `{structModule.name.asl}` has no requires block; initializer must not specify impl types")
-  let resolvedRoot = lookupShell(shells, structModule)
   if structRef.impls.len == 0:
-    return ok(newResolvedStructRef(structRef, resolvedRoot, @[]))
+    return ok(newResolvedStructRef(structRef, structModule, @[]))
   # Reuse the module-context argType resolver so arity + constraint
   # validation stays in one place. Build a synthetic ArgumentType from
   # the parser StructRef's (module, impls, loc) and unwrap its
-  # resolvedImpls after the check.
+  # impls after the check.
   let syntheticArgType = newArgumentType(structRef.module, structRef.impls, structRef.loc)
-  let resolvedArgType = ? resolveArgumentType(app, shells, file, fileScope, module, syntheticArgType)
-  ok(newResolvedStructRef(structRef, resolvedRoot, resolvedArgType.module.impls))
+  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, syntheticArgType)
+  ok(newResolvedStructRef(structRef, structModule, resolvedArgType.module.impls))
 
-proc resolveStructInitializer(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module, scope: FunctionScope,
+proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope, module: Module, scope: FunctionScope,
     struct: StructInitializer): Result[ResolvedStructInitializer, string] =
-  let resolvedStructRef = ? resolveStructRef(app, shells, file, fileScope, module, struct.structRef)
+  let resolvedStructRef = ? resolveStructRef(app, file, fileScope, module, struct.structRef)
   let structModule = module(resolvedStructRef)
   var structBlock = ? structModule.struct(struct.loc)
   if struct.kwargs.len != structBlock.fields.len:
@@ -1369,33 +1304,30 @@ proc resolveStructInitializer(app: App, shells: ResolvedModuleShells,
     var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
     for kwarg in struct.kwargs:
       let fieldId = ? structBlock.findFieldId(kwarg.name)
-      let resolvedExpression = ? resolveExpression(app, shells, file, fileScope,
+      let resolvedExpression = ? resolveExpression(app, file, fileScope,
         module, scope, kwarg.expression)
       resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
         resolvedExpression)
     ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
 
-proc resolveUnionRef(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveUnionRef(app: App, file: parser.File, fileScope: FileScope, module: Module,
     unionRef: UnionRef): Result[ResolvedUnionRef, string] =
-  ## Resolves a UnionRef into the one-shape (module + resolvedImpls).
+  ## Resolves a UnionRef into the one-shape (module + impls).
   ## Empty impls drive leave-as-is inference at the analyzer; non-empty
   ## impls are arity- and constraint-checked here via
   ## resolveModuleArgumentType so the analyzer can seed its
   ## GenericImplMap from the seq directly.
   let unionModule = ? file.findModule(fileScope, unionRef.module)
-  let resolvedRoot = lookupShell(shells, unionModule)
   if unionRef.impls.len == 0:
-    return ok(newResolvedUnionRef(unionRef, resolvedRoot, @[]))
+    return ok(newResolvedUnionRef(unionRef, unionModule, @[]))
   let syntheticArgType = newArgumentType(unionRef.module, unionRef.impls, unionRef.loc)
-  let resolvedArgType = ? resolveArgumentType(app, shells, file, fileScope, module, syntheticArgType)
-  ok(newResolvedUnionRef(unionRef, resolvedRoot, resolvedArgType.module.impls))
+  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, syntheticArgType)
+  ok(newResolvedUnionRef(unionRef, unionModule, resolvedArgType.module.impls))
 
-proc resolveUnionInitializer(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveUnionInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
-  let resolvedUnionRef = ? resolveUnionRef(app, shells, file, fileScope, module, unionInit.unionRef)
+  let resolvedUnionRef = ? resolveUnionRef(app, file, fileScope, module, unionInit.unionRef)
   let initModule = module(resolvedUnionRef)
   let union = ? initModule.union(unionInit.loc)
   let variant = ? union.findVariant(unionInit.variant)
@@ -1405,32 +1337,30 @@ proc resolveUnionInitializer(app: App, shells: ResolvedModuleShells,
     variant.fields.len)
   for kwarg in unionInit.kwargs:
     let fieldId = ? variant.findFieldId(kwarg.name)
-    let resolvedExpression = ? resolveExpression(app, shells, file, fileScope,
+    let resolvedExpression = ? resolveExpression(app, file, fileScope,
       module, scope, kwarg.expression)
     resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg,
       resolvedExpression)
   ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
 
-proc resolveInitializer(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveInitializer(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:
   of ikLiteral:
-    let resolvedLiteralInit = ? resolveLiteralInitializer(app, shells, file, fileScope,
+    let resolvedLiteralInit = ? resolveLiteralInitializer(app, file, fileScope,
       module, initializer.literal)
     ok(newResolvedInitializer(resolvedLiteralInit))
   of ikStruct:
-    let resolvedStructInit = ? resolveStructInitializer(app, shells, file, fileScope,
+    let resolvedStructInit = ? resolveStructInitializer(app, file, fileScope,
       module, scope, initializer.struct)
     ok(newResolvedInitializer(resolvedStructInit))
   of ikUnion:
-    let resolvedUnionInit = ? resolveUnionInitializer(app, shells, file, fileScope,
+    let resolvedUnionInit = ? resolveUnionInitializer(app, file, fileScope,
       module, scope, initializer.union)
     ok(newResolvedInitializer(resolvedUnionInit))
 
-proc resolveCaseBlock(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveCaseBlock(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
   let resolvedCasePattern = ? resolveCasePattern(caseBlock.pattern)
@@ -1441,28 +1371,26 @@ proc resolveCaseBlock(app: App, shells: ResolvedModuleShells,
     childScope.incl(binding)
 
   for statement in caseBlock.statements:
-    let resolvedStatement = ? resolveStatement(app, shells, file, fileScope, module,
+    let resolvedStatement = ? resolveStatement(app, file, fileScope, module,
       childScope, statement)
     resolvedStatements.add(resolvedStatement)
     if resolvedStatement.variable.isSome:
       childScope.incl(resolvedStatement.variable.get)
   ok(newResolvedCaseBlock(caseBlock, resolvedCasePattern, resolvedStatements))
 
-proc resolveMatchExpression(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveMatchExpression(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     match: MatchExpression): Result[ResolvedMatchExpression, string] =
-  let resolvedSubject = ? resolveExpression(app, shells, file, fileScope, module, scope,
+  let resolvedSubject = ? resolveExpression(app, file, fileScope, module, scope,
     match.subject)
   var resolvedCaseBlocks: seq[ResolvedCaseBlock]
   for caseBlock in match.cases:
-    let resolvedCaseBlock = ? resolveCaseBlock(app, shells, file, fileScope, module,
+    let resolvedCaseBlock = ? resolveCaseBlock(app, file, fileScope, module,
       scope, caseBlock)
     resolvedCaseBlocks.add(resolvedCaseBlock)
   ok(newResolvedMatchExpression(match, resolvedSubject, resolvedCaseBlocks))
 
-proc resolveExpression*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveExpression*(app: App,     file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
@@ -1475,50 +1403,47 @@ proc resolveExpression*(app: App, shells: ResolvedModuleShells,
     let resolvedVariable = ? resolveVariable(file, scope, expression.variable)
     ok(newResolvedExpression(resolvedVariable))
   of ekFnCall:
-    let resolvedFunctionCall = ? resolveFunctionCall(app, shells, file, fileScope,
+    let resolvedFunctionCall = ? resolveFunctionCall(app, file, fileScope,
       module, scope, expression.fncall)
     ok(newResolvedExpression(resolvedFunctionCall))
   of ekInitializer:
-    let resolvedInitializer = ? resolveInitializer(app, shells, file, fileScope, module,
+    let resolvedInitializer = ? resolveInitializer(app, file, fileScope, module,
       scope, expression.initializer)
     ok(newResolvedExpression(resolvedInitializer))
   of ekMatch:
-    let resolvedMatchExpr = ? resolveMatchExpression(app, shells, file, fileScope,
+    let resolvedMatchExpr = ? resolveMatchExpression(app, file, fileScope,
       module, scope, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))
 
-proc resolveAssignment(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveAssignment(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     assignment: Assignment): Result[ResolvedAssignment, string] =
-  let resolvedExpression = ? resolveExpression(app, shells, file, fileScope, module,
+  let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
     scope, assignment.expression)
   ok(newResolvedAssignment(assignment, resolvedExpression))
 
-proc resolveSetter(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveSetter(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     setter: Setter): Result[ResolvedSetter, string] =
   let resolvedGetter = ? resolveGetter(file, scope, setter.target)
-  let resolvedExpression = ? resolveExpression(app, shells, file, fileScope, module,
+  let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
     scope, setter.expression)
   ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
-proc resolveStatement*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope,
+proc resolveStatement*(app: App,     file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     statement: Statement): Result[ResolvedStatement, string] =
   case statement.kind:
   of skExpr:
-    let resolvedExpression = ? resolveExpression(app, shells, file, fileScope, module,
+    let resolvedExpression = ? resolveExpression(app, file, fileScope, module,
       scope, statement.expression)
     ok(newResolvedStatement(resolvedExpression))
   of skAssignment:
-    let resolvedAssignment = ? resolveAssignment(app, shells, file, fileScope, module,
+    let resolvedAssignment = ? resolveAssignment(app, file, fileScope, module,
       scope, statement.assignment)
     ok(newResolvedStatement(resolvedAssignment))
   of skSetter:
-    let resolvedMutation = ? resolveSetter(app, shells, file, fileScope, module, scope,
+    let resolvedMutation = ? resolveSetter(app, file, fileScope, module, scope,
       statement.setter)
     ok(newResolvedStatement(resolvedMutation))
 
@@ -1538,13 +1463,12 @@ proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.funcDe
 proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
 proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 
-proc resolveUserFunction*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveUserFunction*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     function: UserFunction): Result[ResolvedUserFunction, string] =
   if function.decorators.len > 0:
     return err(fmt"{function.loc} todo: resolve decorators in user function")
 
-  let resolvedFunctionDef = ? resolveFunctionDef(app, shells, file, fileScope, module, function.def)
+  let resolvedFunctionDef = ? resolveFunctionDef(app, file, fileScope, module, function.def)
 
   var scope: FunctionScope
   for arg in resolvedFunctionDef.args:
@@ -1552,7 +1476,7 @@ proc resolveUserFunction*(app: App, shells: ResolvedModuleShells,
 
   var resolvedStatements: seq[ResolvedStatement]
   for statement in function.statements:
-    let resolvedStatement = ? resolveStatement(app, shells, file, fileScope, module,
+    let resolvedStatement = ? resolveStatement(app, file, fileScope, module,
       scope, statement)
     resolvedStatements.add(resolvedStatement)
     if resolvedStatement.variable.isSome:
@@ -1587,29 +1511,23 @@ proc loc*(function: ResolvedFunction): Location =
   of rfkExtern: function.extern.loc
   of rfkUser: function.user.loc
 
-proc resolveFunction*(app: App, shells: ResolvedModuleShells,
-    file: parser.File, fileScope: FileScope, module: Module,
+proc resolveFunction*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
-    let resolvedUserFunction = ? resolveUserFunction(app, shells, file, fileScope,
+    let resolvedUserFunction = ? resolveUserFunction(app, file, fileScope,
       module, function.user)
     ok(newResolvedFunction(resolvedUserFunction))
   of fkExtern:
-    let resolvedExternFunction = ? resolveExternFunction(app, shells, file, fileScope,
+    let resolvedExternFunction = ? resolveExternFunction(app, file, fileScope,
       module, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))
 
 # =====================================================================
 # Module + Generic
-#
-# Includes the shell/populate mechanism used by the two-pass resolver
-# — `newResolvedModuleShell` allocates an empty shell for every parser
-# Module during the declare pass in apps.nim, and `populate` fills it
-# in when its define pass completes.
 # =====================================================================
 
-# ---- Module: raw ctor, shell, populate ----
+# ---- Module: raw ctor + front-door ----
 
 proc newResolvedModuleInternal(parsed: Module,
     requires: seq[ResolvedGenericArgumentType],
@@ -1622,27 +1540,6 @@ proc newResolvedModuleInternal(parsed: Module,
   ResolvedModule(parsed: parsed, requires: requires, data: data,
     funcDefIndex: funcDefIndex, funcNameArityIndex: funcNameArityIndex,
     functions: functions)
-
-proc newResolvedModuleShell*(parsed: Module): ResolvedModule =
-  ## Zero-initialised ResolvedModule carrying only its parser back-ref.
-  ## Every parser Module in the app gets one shell during the declare
-  ## pass so ResolvedModuleArgumentType.resolvedModule always resolves.
-  ResolvedModule(parsed: parsed)
-
-proc populate(module: ResolvedModule,
-    requires: seq[ResolvedGenericArgumentType],
-    data: Option[ResolvedData],
-    functions: seq[ResolvedFunction],
-    funcDefIndex: Table[ResolvedFunctionDef, int],
-    funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]) =
-  ## Fill in a shell ResolvedModule after the define pass has walked
-  ## the module. Called once per module — callers rely on the shell
-  ## staying pristine until the define pass completes.
-  module.requires = requires
-  module.data = data
-  module.functions = functions
-  module.funcDefIndex = funcDefIndex
-  module.funcNameArityIndex = funcNameArityIndex
 
 proc buildFuncNameArityIndex(funcDefs: seq[ResolvedFunctionDef]): Table[Identifier, Table[int, seq[int]]] =
   ## Positions of function definitions indexed by name then arity —
@@ -1658,10 +1555,9 @@ proc buildFuncNameArityIndex(funcDefs: seq[ResolvedFunctionDef]): Table[Identifi
 # ---- ResolvedModule front-door constructor + helpers ----
 
 proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
-  ## Full-construction path — used by call sites that don't participate
-  ## in the shell/populate two-pass (currently only tests). Regular
-  ## resolution uses `newResolvedModuleShell` + `populate` in
-  ## `resolveModule` below.
+  ## Front-door: compute the funcDef/funcNameArity indices from the
+  ## resolved functions and construct the ResolvedModule. Used by
+  ## `resolveModule` and by tests that construct modules directly.
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   var funcDefs: seq[ResolvedFunctionDef]
   for id, function in functions:
@@ -1670,21 +1566,6 @@ proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentTyp
     funcDefs.add(function.def)
   newResolvedModuleInternal(parsed, requires, data, funcDefIndex,
     buildFuncNameArityIndex(funcDefs), functions)
-
-proc populateResolvedModule(shell: ResolvedModule,
-    requires: seq[ResolvedGenericArgumentType],
-    data: Option[ResolvedData],
-    functions: seq[ResolvedFunction]) =
-  ## Compute the funcDef and funcNameArity indices from the resolved
-  ## functions, then hand off to the shell's `populate`.
-  var funcDefIndex: Table[ResolvedFunctionDef, int]
-  var funcDefs: seq[ResolvedFunctionDef]
-  for id, function in functions:
-    assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
-    funcDefIndex[function.def] = id
-    funcDefs.add(function.def)
-  shell.populate(requires, data, functions, funcDefIndex,
-    buildFuncNameArityIndex(funcDefs))
 
 proc parsed*(module: ResolvedModule): Module = module.parsed
 proc requires*(module: ResolvedModule): seq[ResolvedGenericArgumentType] = module.requires
@@ -1699,7 +1580,7 @@ proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
   for generic in module.requires:
     let argType = newResolvedArgumentType(generic)
     impls.add(argType)
-  newResolvedModuleArgumentType(module, impls, newLocation())
+  newResolvedModuleArgumentType(module.parsed, impls, newLocation())
 
 proc hash*(a: ResolvedModule): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedModule): bool = a.hash == b.hash
@@ -1749,13 +1630,12 @@ proc validateRequiresConstraints(module: Module): Result[void, string] =
   of ddkLiteral, ddkUnion:
     err(fmt"{module.data.get.loc} module `{module.name.asl}` declares requires but data block is not a struct")
 
-proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
+proc resolveModule*(app: App, file: parser.File,
     fileScope: FileScope, module: Module): Result[ResolvedModule, string] =
-  ## Fill in the shell allocated for this parser Module during the
-  ## declare pass. `resolveArgumentType` (called transitively from
-  ## resolveDataDef / resolveFunction) may already have handed out
-  ## `ResolvedModuleArgumentType` values pointing at this shell —
-  ## populating it here makes those forward references complete.
+  ## Resolve every part of the parser Module and construct the
+  ## `ResolvedModule` in one pass. Argument types along the way carry
+  ## parser `Module` back-refs, so there's no need for a two-pass
+  ## shell/populate structure.
   if module.decorators.len > 0:
     return err("todo: resolve decorators")
 
@@ -1773,7 +1653,7 @@ proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
 
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:
-    let resolvedDataDef = ? resolveDataDef(app, shells, file, fileScope, module,
+    let resolvedDataDef = ? resolveDataDef(app, file, fileScope, module,
       module.data.get)
     resolvedData = some(resolvedDataDef)
 
@@ -1792,16 +1672,12 @@ proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
 
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:
-    let resolvedFunction = ? resolveFunction(app, shells, file, fileScope, module,
+    let resolvedFunction = ? resolveFunction(app, file, fileScope, module,
       function)
     resolvedFunctions.add(resolvedFunction)
 
-  # `shells` always carries a shell for every parser Module in the app
-  # (allocated by apps.nim's declare pass). Look it up and populate.
-  assert(module in shells, fmt"UNREACHABLE: no shell allocated for module `{module.name.asl}`")
-  let shell = shells[module]
-  populateResolvedModule(shell, resolvedRequires, resolvedData, resolvedFunctions)
-  ok(shell)
+  ok(newResolvedModule(module, resolvedRequires, resolvedData,
+    resolvedFunctions))
 
 # ---- ResolvedGeneric: raw ctor + front-door ----
 
@@ -1855,13 +1731,13 @@ proc findFunctionDefs*(generic: ResolvedGeneric, name: Identifier, arity: int): 
   else:
     ok(generic.funcNameArityIndex[name][arity].mapIt(generic.funcDefs[it]))
 
-proc resolveGeneric*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
+proc resolveGeneric*(app: App, file: parser.File, fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
   if generic.decorators.len > 0:
     return err(fmt"{generic.loc} todo: resolve generic decorators")
 
   var resolvedFunctionDefs: seq[ResolvedFunctionDef]
   for funcDef in generic.funcDefs:
-    let resolvedFunctionDef = ? resolveFunctionDef(app, shells, file, fileScope, generic, funcDef)
+    let resolvedFunctionDef = ? resolveFunctionDef(app, file, fileScope, generic, funcDef)
     resolvedFunctionDefs.add(resolvedFunctionDef)
 
   ok(newResolvedGeneric(generic, resolvedFunctionDefs))
@@ -1896,11 +1772,11 @@ proc loc*(definedType: ResolvedType): Location =
   of rdtkModule: definedType.module.loc
   of rdtkGeneric: definedType.generic.loc
 
-proc resolveType*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, id: int, definedType: Type): Result[ResolvedType, string] =
+proc resolveType*(app: App, file: parser.File, fileScope: FileScope, id: int, definedType: Type): Result[ResolvedType, string] =
   case definedType.kind:
   of tkGeneric:
-    let resolvedGeneric = ? resolveGeneric(app, shells, file, fileScope, definedType.generic)
+    let resolvedGeneric = ? resolveGeneric(app, file, fileScope, definedType.generic)
     ok(newResolvedType(id, resolvedGeneric))
   of tkModule:
-    let resolvedModule = ? resolveModule(app, shells, file, fileScope, definedType.module)
+    let resolvedModule = ? resolveModule(app, file, fileScope, definedType.module)
     ok(newResolvedType(id, resolvedModule))
