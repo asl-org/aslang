@@ -86,8 +86,6 @@ proc byKindExcept(kind: TokenKind, label: string): TokenMatcher =
   TokenMatcher(label: label,
     predicate: proc(t: Token): bool = t.kind != kind)
 
-let spaceMatcher = byKind(tkSpace, "space ' '")
-
 proc consume*(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
   let token = ? parser.peek(matcher.label)
   if not matcher.predicate(token):
@@ -209,21 +207,6 @@ proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
     ok(items)
   )
 
-proc contained*[T](name: string, open: string, inner: Spec[T],
-    close: string): Spec[T] =
-  let openMatcher = byPunctuation(open)
-  let closeMatcher = byPunctuation(close)
-  Spec[T](
-    name: name,
-    parseFn: proc(parser: Parser): Result[T, ParserError] =
-    discard ? parser.consume(openMatcher)
-    while parser.consume(spaceMatcher).isOk: discard
-    let maybeValue = ? parser.run(inner)
-    while parser.consume(spaceMatcher).isOk: discard
-    discard ? parser.consume(closeMatcher)
-    ok(maybeValue)
-  )
-
 # ============================================================
 # Sequence-composition atoms
 # ============================================================
@@ -326,7 +309,7 @@ proc anyTokenExceptNewlineSpec*(tokenRepr: string): Spec[Token] =
 #
 # Named singletons for grammar files. Backed by `matcherSpec` under
 # the hood; kept named because grammar code reads better as
-# `parser.run(spaceSpec)` than `parser.run(matcherSpec(spaceMatcher))`.
+# `parser.run(spaceSpec)` than `parser.run(matcherSpec(byKind(...)))`.
 
 let spaceSpec* = tokenSpec(tkSpace, "space ' '")
 let newlineSpec* = tokenSpec(tkNewline, "newline '\\n'")
@@ -353,6 +336,15 @@ let doubleQuoteSpec* = punctuationSpec("\"")
 
 let ws0* = any(spaceSpec)               ## zero-or-more spaces
 let ws1* = atLeastOne(spaceSpec)        ## one-or-more spaces
+
+proc contained*[T](name: string, open: string, inner: Spec[T],
+    close: string): Spec[T] =
+  ## Parse `open ws0 inner ws0 close`; return only inner. Grammar
+  ## brackets tolerate whitespace on both sides of the content.
+  let composed = prefixed(
+    pair(punctuationSpec(open), ws0),
+    suffixed(inner, pair(ws0, punctuationSpec(close))))
+  Spec[T](name: name, parseFn: composed.parseFn)
 
 # ============================================================
 # Comment + ignorable line
@@ -384,14 +376,9 @@ let blankLines* = any(ignorableLineSpec) ## any number of blank/comment lines
 # ============================================================
 
 proc separatorSpec*(sep: string): Spec[Token] =
-  Spec[Token](
-    name: "'" & sep & "'",
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    discard ? parser.run(ws0)
-    let token = ? parser.run(punctuationSpec(sep))
-    discard ? parser.run(ws0)
-    ok(token)
-  )
+  ## Parse `ws0 sep ws0`; return the sep token. Whitespace-tolerant
+  ## on both sides of the punctuation.
+  prefixed(ws0, suffixed(punctuationSpec(sep), ws0))
 
 let commaWithSpacesSpec* = separatorSpec(",")
 let colonWithSpacesSpec* = separatorSpec(":")
