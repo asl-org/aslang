@@ -170,18 +170,36 @@ Source defense).
 
 ### Phase 2: Parsing
 
-`src/parser/{combinators, helpers, identifiers, strings, numbers,
-literals, imports, argtypes, funcdefs, patterns, body, data, funcs,
-generics, modules, decls, loader, parser}.nim`
+`src/parser.nim` (barrel) + `src/parser/{combinators, identifiers,
+literals, imports, argtypes, patterns, body, data, funcs, generics,
+modules, decls, loader}.nim` + `src/parser/tokenizer/` (nested
+tokenizer barrel + subfolder).
 
-Recursive descent via composable `Spec[T]` combinators:
+Recursive descent via composable `Spec[T]` combinators. Two families:
 
+**Primitives** — the historical layer:
 - `oneOf` — ordered alternatives with backtracking
 - `any` / `atLeastOne` — repetition (zero-or-more / one-or-more)
-- `optional` — zero-or-one
+- `optional` — zero-or-one, returns `Option[T]`
 - `separatedBy` — comma-separated lists
 - `contained` — delimited containers (`(...)`, `[...]`, `{...}`)
 - `map` — transform parse result
+
+**Sequence-composition atoms** — landed via Tasks 14–15 to eliminate
+the `let X = Spec[T](parseFn: ...)` scaffolding on ~20 hand-written
+specs:
+- `prefixed(prefix, inner)` — parse `prefix inner`, discard prefix
+- `suffixed(inner, suffix)` — parse `inner suffix`, discard suffix
+- `pair(a, b)` — sequence into `(A, B)` tuple; `.map` to lift
+- `triple(a, b, c)` — three-spec sequence into `(A, B, C)`
+- `separated(a, sep, b)` — `pair(a, prefixed(sep, b))` — the
+  grammar-natural "X separator Y" shape (8 sites)
+- `presence(spec) → Spec[bool]` — rollback-safe test, distinct from
+  `optional`
+- `indentedLine(inner)` — `prefixed(indent, suffixed(inner, eol))`;
+  the block-body item shape (4 sites)
+- `ws0` / `ws1` / `blankLines` — named trivia specs; drop-in
+  replacements for `any(spaceSpec)` etc.
 - `blockSpec` / `decoratedBlockSpec` — indented blocks with headers
 
 Backtracking via checkpoint/restore on `parser.index`. Fatal errors
@@ -192,7 +210,9 @@ Forward-declared specs enable mutual recursion
 **Multi-file resolution** (`loader.nim`): BFS traversal of imports,
 tokenize + parse each dependency, topological sort via DFS with
 cycle detection. Parent-directory escape prevention
-(`./sub/../../escape` caught by normalizing the resolved path).
+(`./sub/../../escape` caught by normalizing the resolved path). Both
+graph algorithms live in `src/utils.nim` — `bfs[T, V]` is generic;
+`topoSort` is currently string-typed.
 
 ### Phase 3: Parser-level indexing (absorbed)
 
@@ -202,17 +222,24 @@ during construction double as the validation mechanism (`Table`
 insertion fails on duplicate key).
 
 Indices on AST nodes:
-- `File.typeIndex` — `Identifier -> int` covering **both** imported
-  types and defined types (modules + generics) in one namespace.
+- `File.typeIndex` — `Identifier -> int` into `File.types` (locally-
+  defined `Type` = module or generic).
+- `File.importedNameIndex` — `Identifier -> ImportedType` covering
+  every explicit-import binding on `fkAsl` files. Duplicate detection
+  at parse time checks both indexes so an imported name and a local
+  definition sharing an identifier collide immediately.
 - `Module.functionIndex` / `Generic.funcDefIndex` — allow function
   overloading by keying on `seq[int]`.
-- `Struct.fieldIndex`, `Union.variantIndex`, `VariantDefinition.fieldIndex`,
-  `ArgumentDefinitionList.argDefIndex` — per-block duplicate detection.
+- `StructDef.fieldIndex`, `UnionDef.variantIndex`, `VariantDef.fieldIndex`,
+  `ArgumentDefList.argDefIndex` — per-block duplicate detection.
 - `App.fileIndex` — absolute path → file index.
 
-Every `Type` in a file (imported or defined) is wrapped in a common
-`Type` umbrella (`tkImported | tkDefined`) so a single `typeIndex`
-lookup serves the resolver.
+The parser exposes two focused lookups instead of a union:
+`findType(name): Type` (local defs only) and
+`findImportedName(name): ImportedType`. The historical `Type` umbrella
+(`tkImported | tkDefined`) was retired — every downstream caller
+already unwrapped it, so the union was ceremony that leaked through
+the public API.
 
 ### Phase 4: Resolution
 
@@ -383,78 +410,98 @@ through `verifyUniformReturnType`.
 src/
   asl.nim                          entry point
   cli.nim                          CLI parsing via argparse
-  utils.nim                        topological sort + cycle detection
+  utils.nim                        generic bfs[T, V] + topoSort with
+                                   cycle detection
   nim.cfg                          per-component module search paths
+  parser.nim                       parser barrel (re-exports everything
+                                   under parser/) — the public entry
+                                   for the parser layer
 
-  tokenizer/
-    tokenizer.nim                  token types + tokenize() (index-based
-                                   rune loop for lookahead)
-    location.nim                   Location type + accessors (newLocation,
-                                   advance, $, hash, ==, <); re-exported
-                                   through tokenizer.nim
-    constants.nim                  BidiCodepoints / ZeroWidthCodepoints /
-                                   InvisibleCodepoints arrays +
-                                   AsciiMaxValue / Punctuations / Space /
-                                   Newline constants
-
-  parser/
-    parser.nim                     re-exports every component file
-    combinators.nim                Spec[T] + combinator procs
-    helpers.nim                    shared low-level specs (token kinds,
-                                   punctuation, comment, ignorableLine,
-                                   separators)
+  parser/                          parser internals (private to the
+                                   barrel; consumers say `import parser`)
+    combinators.nim                Spec[T] + Parser + all combinators.
+                                   Primitives: oneOf / any / atLeastOne /
+                                   optional / separatedBy / contained /
+                                   map. Atoms (Tasks 14–15): prefixed /
+                                   suffixed / pair / triple / separated /
+                                   presence. Trivia: ws0 / ws1 /
+                                   blankLines. Comment / ignorableLine
+                                   / separator specs.
     identifiers.nim                Identifier / Space / Decorator
                                    + identifierSpec / keywordSpec /
-                                   indentationSpec / decoratorLineSpec
-                                   + blockSpec / decoratedBlockSpec helpers
-    strings.nim                    StringContent / StringLiteral +
-                                   escapedSpec helpers + stringLiteralSpec
-    numbers.nim                    UnsignedIntegerLiteral /
-                                   SignedIntegerLiteral / IntegerLiteral /
-                                   FloatLiteral + their specs
-    literals.nim                   Literal umbrella + LiteralType +
-                                   literalSpec / literalTypeSpec
-    imports.nim                    ImportedType / Import + their specs
-                                   + resolveImportPath
-    argtypes.nim                   ArgumentType / ArgumentDefinition /
-                                   ArgumentDefinitionList + their specs
-    funcdefs.nim                   FunctionDefinition + functionDefinition
-                                   line / list specs
+                                   indentationSpec / indentedLine /
+                                   decoratorLineSpec + blockSpec /
+                                   decoratedBlockSpec.
+    literals.nim                   Literal (lkString/lkInteger/lkFloat) +
+                                   StringLiteral / IntegerLiteral (union
+                                   over Signed/Unsigned) / FloatLiteral +
+                                   LiteralDef + all leaf-literal specs.
+    imports.nim                    ImportedType / Import (ikExplicit/
+                                   ikShorthand) / ImportPath (ipkRelative/
+                                   ipkVendor) / VendorRoots +
+                                   parseImportPath + resolveImportPath.
+    argtypes.nim                   ArgumentType / ArgumentDef /
+                                   ArgumentDefList + their specs.
     patterns.nim                   UnionPatternField / UnionPattern /
-                                   CasePattern (variants: cpkInteger,
-                                   cpkVariable, cpkUnion) + their specs
-    body.nim                       Getter / LiteralInitializer +
-                                   StructRef + UnionRef (each a flat
+                                   CasePattern (cpkInteger / cpkVariable /
+                                   cpkUnion) + their specs.
+    body.nim                       Getter / LiteralInitializer + StructRef
+                                   + UnionRef (each a flat
                                    `module: Identifier + impls:
                                    seq[ArgumentType]` after task 8 —
-                                   no default/impl arms; empty impls
-                                   = bare surface form, non-empty =
-                                   explicit-impls) + Setter (Statement
-                                   variant, not Expression, after
-                                   task 4) + body-level mutually-
-                                   recursive cluster (ArgumentList ↔
+                                   empty impls = bare surface form,
+                                   non-empty = explicit-impls) + Setter
+                                   (Statement variant after task 4) +
+                                   body-level cluster (ArgumentList ↔
                                    FunctionCall ↔ KeywordArgument ↔
                                    Initializer ↔ Expression ↔ Match /
                                    CaseBlock ↔ Statement ↔
-                                   StatementList / Assignment /
-                                   Setter) + their specs
-                                   (unionInitializerSpec parses via
-                                   argumentTypeSpec for symmetry with
-                                   structInitializerSpec)
-    data.nim                       StructDef / VariantDefinition /
-                                   UnionDef / LiteralDef /
-                                   DataBlock (dbkStruct/dbkUnion/dbkLiteral)
-                                   + their specs
-    funcs.nim                      UserFunction / ExternFunction /
-                                   Function / FunctionList + their specs
-    generics.nim                   Generic / Requires + their specs
-    modules.nim                    Module + moduleHeader / moduleBody /
-                                   moduleSpec
-    decls.nim                      DefinedType / Type / File / App +
-                                   typeSpec / definedTypeBlockSpec /
-                                   fileSpec + the public single-file
-                                   `parse*` entry
-    loader.nim                     BFS multi-file resolution + parse*()
+                                   StatementList / Assignment / Setter)
+                                   + their specs.
+    data.nim                       StructDef / VariantDef / UnionDef /
+                                   DataDef (ddkStruct/ddkUnion/ddkLiteral)
+                                   + their specs.
+    funcs.nim                      FunctionDef + UserFunction /
+                                   ExternFunction / Function (fkUser/
+                                   fkExtern) / FunctionList + their
+                                   specs (functionDefSpec /
+                                   functionDefLineSpec /
+                                   functionDefListSpec /
+                                   userFunctionSpec / externFunctionSpec
+                                   / functionSpec / functionListSpec).
+    generics.nim                   Generic / Requires + their specs.
+    modules.nim                    Module + moduleHeaderSpec /
+                                   moduleBodySpec / moduleSpec.
+    decls.nim                      Type (tkModule/tkGeneric) / File
+                                   (fkAsl/fkAslr) / App + typeSpec /
+                                   aslFileSpec / aslrFileSpec + the
+                                   public `parse*` entry. File carries
+                                   separate `typeIndex` (local defs) +
+                                   `importedNameIndex` (imports) —
+                                   the former `Type` umbrella retired.
+                                   `findType(name)` returns a locally-
+                                   defined `Type`;
+                                   `findImportedName(name)` returns an
+                                   `ImportedType`.
+    loader.nim                     BFS multi-file resolution via
+                                   `bfs[string, File]` from utils, then
+                                   `topoSort` for dependency order.
+                                   `importPaths(file)` helper feeds both
+                                   passes.
+    tokenizer.nim                  tokenizer barrel — re-exports Token /
+                                   TokenKind / Location / tokenize.
+    tokenizer/
+      constants.nim                BidiCodepoints / ZeroWidthCodepoints /
+                                   InvisibleCodepoints arrays +
+                                   AsciiMaxValue / Punctuations / Space /
+                                   Newline constants.
+      location.nim                 Location type + accessors (newLocation,
+                                   advance, $, hash, ==, <); re-exported
+                                   through parser.nim (every AST node
+                                   carries one).
+      token.nim                    Token type + accessors.
+      spec.nim                     Data-driven per-kind TokenSpec array
+                                   + the tokenize loop's dispatcher.
 
   resolver/
     resolver.nim                   re-exports every component file
@@ -808,9 +855,13 @@ with unexported fields. Public accessor procs (`proc name*(m): T`)
 provide readonly access. Variant-field accessors assert the kind
 before returning (`assert db.kind == dbkStruct`).
 
-**Tagged unions** — `Expression`, `Statement`, `DataBlock`,
-`Initializer`, `CasePattern`, `Function`, `DefinedType`, `Type` all
-use `case kind:` discriminators with exhaustive matching.
+**Tagged unions** — `Expression`, `Statement`, `DataDef`,
+`Initializer`, `CasePattern`, `Function`, `Type`, `File`,
+`ImportPath` all use `case kind:` discriminators with exhaustive
+matching. Naming normalized: every "definition" concept uses the
+`Def` suffix (`ArgumentDef`, `FunctionDef`, `VariantDef`, `StructDef`,
+`UnionDef`, `LiteralDef`, `DataDef`) so the union umbrella and its
+arms all rhyme.
 
 **Uniqueness via indexed construction** — the parser builds
 `Table[Identifier, int]` lookup tables inside every constructor that
@@ -833,9 +884,11 @@ Two suites, both runnable from the repo root:
 
 `nimble test` — unit suite under `tests/`. Each component (tokenizer,
 combinators, AST constructors, grammar, loader, resolver, analyzer,
-CLI) has its own `test_*.nim` file aggregated by `tests/all.nim`.
-239 tests covering positive paths, negative paths, edge cases, and
-Trojan Source defenses in the tokenizer.
+CLI, utils) has its own `test_*.nim` file aggregated by
+`tests/all.nim`. **271 tests** covering positive paths, negative
+paths, edge cases, Trojan Source defenses in the tokenizer, direct
+rollback / composition tests for every combinator atom, and the
+generic graph algorithms in `src/utils.nim`.
 
 `./test.sh` — integration suite that drives the binary against
 every `examples/*.asl` fixture and asserts exit codes:
@@ -854,7 +907,12 @@ The **Analyzer phase is functionally complete** — `analyze*` walks
 the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
 holds a type-rich representation of every value, expression, and
 statement in each function body. Integration suite at **33/35**;
-unit suite at **239/239**.
+unit suite at **271/271**. Recent parser + naming refactor (Tasks
+11–15 + follow-ups): data-driven combinator atoms, spec-name
+normalization, `Type` umbrella retired in favour of split
+`typeIndex` / `importedNameIndex` on `File`, `DefinedType` renamed
+to `Type` across parser/resolver/analyzer, `Definition` normalized
+to `Def` everywhere. See tasks.md for the full trail.
 
 What the analyzer does today (all wired):
 

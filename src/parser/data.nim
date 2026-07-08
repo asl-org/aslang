@@ -162,15 +162,15 @@ let unionSpec* = blockSpec("union", unionHeaderSpec,
 
 type
   DataDefKind* = enum
-    dbkLiteral, ddkStruct, ddkUnion
+    ddkLiteral, ddkStruct, ddkUnion
   DataDef* = ref object
     case kind: DataDefKind
-    of dbkLiteral: literal: LiteralDef
+    of ddkLiteral: literal: LiteralDef
     of ddkStruct: struct: StructDef
     of ddkUnion: union: UnionDef
 
 proc newDataDef*(l: LiteralDef): DataDef =
-  DataDef(kind: dbkLiteral, literal: l)
+  DataDef(kind: ddkLiteral, literal: l)
 
 proc newDataDef*(s: StructDef): DataDef =
   DataDef(kind: ddkStruct, struct: s)
@@ -180,7 +180,7 @@ proc newDataDef*(u: UnionDef): DataDef =
 
 proc kind*(db: DataDef): DataDefKind = db.kind
 proc literal*(db: DataDef): LiteralDef =
-  assert db.kind == dbkLiteral,
+  assert db.kind == ddkLiteral,
     fmt"DataDef.literal accessed but kind is {db.kind}"
   db.literal
 proc struct*(db: DataDef): StructDef =
@@ -194,25 +194,25 @@ proc union*(db: DataDef): UnionDef =
 
 proc loc*(db: DataDef): Location =
   case db.kind:
-  of dbkLiteral: db.literal.loc
+  of ddkLiteral: db.literal.loc
   of ddkStruct: db.struct.loc
   of ddkUnion: db.union.loc
 
 proc asl*(db: DataDef, indentWidth: uint32): seq[string] =
   case db.kind:
-  of dbkLiteral: asl(db.literal)
+  of ddkLiteral: asl(db.literal)
   of ddkStruct: asl(db.struct, indentWidth)
   of ddkUnion: asl(db.union, indentWidth)
 
 proc struct*(db: DataDef, module: Identifier): Result[StructDef, string] =
   case db.kind:
-  of dbkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
+  of ddkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
   of ddkUnion: err(fmt"{db.loc} module `{module.asl}` is a union")
   of ddkStruct: ok(db.struct)
 
 proc union*(db: DataDef, module: Identifier): Result[UnionDef, string] =
   case db.kind:
-  of dbkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
+  of ddkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
   of ddkStruct: err(fmt"{db.loc} module `{module.asl}` is a struct")
   of ddkUnion: ok(db.union)
 

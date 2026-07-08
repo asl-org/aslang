@@ -1,5 +1,86 @@
 # Lessons Learned
 
+## 2026-07-08 — Parser refactor arc (Tasks 11–15 + naming polish)
+
+End-of-day status: parser layer normalized to a data-driven,
+atom-composable form. Unit suite 240 → 271 (+31 tests covering the
+new atoms + retired-umbrella lookup paths). Integration steady at
+33/35. `refactor/parser` merged into `refactor/ddd-align`.
+
+Lessons from the arc — patterns that recurred and reshaped the work:
+
+- **Frequency-driven atoms, not aesthetics-driven ones.** New
+  combinator atoms only landed after measuring: `separated` was
+  the 8th call site of `pair(a, prefixed(sep, b))`; `indentedLine`
+  was the 4th of `prefixed(indent, suffixed(inner, eol))`. Every
+  smaller-frequency candidate (`blockHeader`, `keywordFlag`, tuple-3
+  variants of `separated`) got skipped: 2–3 sites is not enough
+  signal to know if you're naming a real concept or over-fitting
+  what's currently there. The frequency table (from a
+  grep-and-count of every combinator's call sites) was the artifact
+  that made "should we abstract this?" answerable.
+
+- **Retire the umbrella when every caller unwraps.** The parser's
+  `Type = tkImported | tkDefined` union looked structural but
+  in-code every caller went `.definedType` immediately. A whole-
+  codebase grep found exactly TWO sites that inspected the
+  `.imported` branch. The union was a parse-time implementation
+  detail leaking through the public API; splitting `File` into
+  two indexes and exposing focused `findType` / `findImportedName`
+  procs collapsed a whole tier of case-switching without losing
+  parse-time duplicate-detection. Whole-codebase caller pattern
+  is a stronger signal than "the union is technically correct."
+
+- **Concepts (Nim 2.2) are not the right abstraction here.** Tried
+  to genericize `bfs` + `topoSort` behind `Graph[N]` /
+  `LazyGraph[N, V]` concepts. Compiled clean, unit tests 240/0,
+  integration collapsed to 15/35 with `KeyError: <garbled bytes>`
+  in Table lookups. Same failure with graph types as object and as
+  ref object, same with `graph.root` UFCS and `root(graph)` proc-
+  call, same with bare generics + explicit type params. Never
+  fully diagnosed — suspected concept-parameterized recursive
+  procs generating incorrect code across module boundaries. Saved
+  to auto-memory as `feedback_nim_concepts_unreliable`. Callbacks
+  are the reliable abstraction shape in this codebase; prototype
+  concept-based generics in a scratch file first and always run
+  the integration suite before trusting unit-test pass.
+
+- **Naming families rhyme; force them to when they don't.** The
+  refactor turned up three suffix families for block umbrellas
+  (`structSpec` bare, `caseBlockSpec` with `Block`, `matchBodySpec`
+  with `Body`) that reflected only the historical order specs were
+  added, not any semantic distinction. Same with the
+  `Def` / `Definition` bimodal split — `StructDef` / `UnionDef`
+  short-form on data-block umbrellas but `ArgumentDefinition` /
+  `FunctionDefinition` long-form on members, arbitrarily. Once
+  named, standardizing on the shorter form (bare noun +
+  `LineSpec` + `Def`) removed a whole class of "why is this called
+  X and not Y" questions. Costs: perl word-boundary replaces
+  across 15 files. Benefits: every new reader stops noticing the
+  inconsistency.
+
+- **Retire dead code aggressively during a refactor, not after.**
+  Every wave surfaced code that stopped having callers — `between`
+  (added in Task 14, zero external users at Task-16 cleanup);
+  `genericRequirement*` (exported, zero callers anywhere);
+  `matcherSpec` / `byKindExcept` / `spaceMatcher` (only used
+  internally by other atoms). Grepping caller counts at each
+  cleanup pass caught these fast. `nim check --warning:UnusedImport`
+  caught the two duplicate `import ./funcs` lines in
+  `modules.nim` / `decls.nim` that had survived multiple earlier
+  refactors. Cleaning as we went kept every commit's semantics
+  small and localized.
+
+- **Frequency counts stop working eventually.** After `separated`
+  and `indentedLine`, the next-most-common composed patterns were
+  2–3 sites each (`blockHeader`, `keywordFlag`, `prefixed(ws0, X)`).
+  A `blockItems` combinator to hide the last two `*LineSpec`
+  intermediates was proposed and rejected — it moved complexity
+  around without dissolving it (the 5 non-trivial line specs still
+  needed to exist somewhere named). The signal that the well was
+  running dry: the same 2–3-site patterns kept surfacing in each
+  new frequency table. Stop when the frequency curve flattens.
+
 ## 2026-06-22 — Analyzer phase functionally complete (milestone)
 
 End-of-day status: `analyze*` walks the `ResolvedApp` end-to-end and produces an `AnalyzedAppDefinition` carrying type-rich information for every value, expression, and statement in the program. Unit suite 196/196; integration suite 31/35. The four remaining integration failures all hit one of three named TODOs (equality-vs-unification, substitution-chain handling in `concrete()`, and a couple of `Pointer`/`System`-shaped imports). Nothing speculative or architectural is blocking forward progress to IR generation.

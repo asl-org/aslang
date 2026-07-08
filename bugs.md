@@ -17,7 +17,7 @@
 
 ### New grammar (needed for base.asl)
 
-- [ ] **`literal:` data block** — `literal: "u8"` inside a module declares the module as a built-in literal type. Needs a new `DataBlockKind` variant (`dbkLiteral` exists in AST but grammar doesn't parse it yet). `base.asl` uses this for every numeric module.
+- [ ] **`literal:` data block** — `literal: "u8"` inside a module declares the module as a built-in literal type. `DataDefKind` variant `ddkLiteral` exists in AST but the grammar spec still doesn't parse it as a data-block shape. `base.aslr` uses this for every numeric module.
 - [ ] **`requires(TypeParam)` on modules** — `requires(Any)` declares that a module is parameterized (like `Array[Any]`). Not in the grammar yet. Used by `Array` and potentially other generic containers in `base.asl`.
 - [ ] **`public generic`** — `genericHeaderSpec` doesn't parse an optional `public` keyword prefix. `base.asl` has `public generic Any:` which fails at parse time.
 - [ ] **`Pointer` as a type name** — `base.asl` uses `Pointer` (capitalized) as a type for raw pointers. Currently the built-in is `ptr` (lowercase). Either add `Pointer` as a built-in alias or let it be resolved as a module type.
@@ -32,7 +32,7 @@
 
 - [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser/{body, decls}.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
 
-- [ ] **PSR-17: Unwrap `ArgumentDefinitionList` and `ArgumentList`** (`src/parser/{argtypes, body}.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDefinition` and `FunctionCall`.
+- [ ] **PSR-17: Unwrap `ArgumentDefList` and `ArgumentList`** (`src/parser/{argtypes, body}.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDef` and `FunctionCall`.
 
 - [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser/helpers.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
 

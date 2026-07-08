@@ -545,7 +545,7 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
   if root.data.isSome:
     let dataDef = root.data.get
     case dataDef.kind:
-    of dbkLiteral:
+    of ddkLiteral:
       if argType.impls.len == 0:
         return ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
       else:
@@ -596,7 +596,7 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
     case dataDef.kind:
     of ddkStruct:
       return err(fmt"{dataDef.loc} todo: resolve struct block in argument type")
-    of dbkLiteral:
+    of ddkLiteral:
       if argType.impls.len == 0:
         return ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
       else:
@@ -976,7 +976,7 @@ proc requires*(data: ResolvedData): seq[ResolvedGenericArgumentType] =
 proc resolveDataDef*(app: App, shells: ResolvedModuleShells, file: parser.File,
     fileScope: FileScope, module: Module, data: DataDef): Result[ResolvedData, string] =
   case data.kind:
-  of dbkLiteral:
+  of ddkLiteral:
     let resolvedLiteralType = ? resolveLiteralDef(file, data.literal)
     ok(newResolvedData(resolvedLiteralType))
   of ddkStruct:
@@ -1746,7 +1746,7 @@ proc validateRequiresConstraints(module: Module): Result[void, string] =
     return err(fmt"{requires.loc} module `{module.name.asl}` declares requires but has no data block; requires must pair with a struct")
   case module.data.get.kind:
   of ddkStruct: ok()
-  of dbkLiteral, ddkUnion:
+  of ddkLiteral, ddkUnion:
     err(fmt"{module.data.get.loc} module `{module.name.asl}` declares requires but data block is not a struct")
 
 proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
