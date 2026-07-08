@@ -204,3 +204,128 @@ suite "combinators — map":
     let s = digitSpec().map("digit_str", proc(t: Token): string = t.value)
     let r = p.run(s)
     check r.isErr
+
+suite "combinators — prefixed":
+
+  test "prefixed discards the prefix and returns inner":
+    let p = mkParser(" 5")
+    let s = prefixed(spaceSpec(), digitSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get.kind == tkDigit
+    check r.get.value == "5"
+
+  test "prefixed fails and rolls back when the prefix is absent":
+    let p = mkParser("5")
+    let s = prefixed(spaceSpec(), digitSpec())
+    let r = p.run(s)
+    check r.isErr
+    check p.index == 0
+
+  test "prefixed fails and rolls back when inner is absent":
+    # Prefix matches but inner doesn't — parser.run wraps the whole
+    # composition, so the space that was consumed must be rewound.
+    let p = mkParser(" a")
+    let s = prefixed(spaceSpec(), digitSpec())
+    let r = p.run(s)
+    check r.isErr
+    check p.index == 0
+
+suite "combinators — suffixed":
+
+  test "suffixed discards the suffix and returns inner":
+    let p = mkParser("5 ")
+    let s = suffixed(digitSpec(), spaceSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get.kind == tkDigit
+    check r.get.value == "5"
+
+  test "suffixed fails and rolls back when the suffix is absent":
+    let p = mkParser("5a")
+    let s = suffixed(digitSpec(), spaceSpec())
+    let r = p.run(s)
+    check r.isErr
+    check p.index == 0
+
+suite "combinators — pair":
+
+  test "pair returns both values as a tuple":
+    let p = mkParser("5a")
+    let s = pair(digitSpec(), alphaSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get[0].kind == tkDigit
+    check r.get[1].kind == tkAlphabet
+
+  test "pair rolls back index when the second spec fails":
+    let p = mkParser("55")
+    let s = pair(digitSpec(), alphaSpec())
+    let r = p.run(s)
+    check r.isErr
+    check p.index == 0
+
+suite "combinators — triple":
+
+  test "triple returns all three values":
+    let p = mkParser("5 a")
+    let s = triple(digitSpec(), spaceSpec(), alphaSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get[0].kind == tkDigit
+    check r.get[1].kind == tkSpace
+    check r.get[2].kind == tkAlphabet
+
+  test "triple rolls back when the last spec fails":
+    let p = mkParser("5 5")
+    let s = triple(digitSpec(), spaceSpec(), alphaSpec())
+    let r = p.run(s)
+    check r.isErr
+    check p.index == 0
+
+suite "combinators — separated":
+
+  test "separated returns left and right, discarding the separator":
+    let p = mkParser("5 a")
+    let s = separated(digitSpec(), spaceSpec(), alphaSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get[0].kind == tkDigit
+    check r.get[1].kind == tkAlphabet
+
+  test "separated fails when the separator is missing":
+    let p = mkParser("5a")
+    let s = separated(digitSpec(), spaceSpec(), alphaSpec())
+    let r = p.run(s)
+    check r.isErr
+    check p.index == 0
+
+  test "separated composes with punctuation as the separator":
+    # Explicit-tight separator: `.` between two alpha tokens.
+    let p = mkParser("a.b")
+    let s = separated(alphaSpec(), punctuationSpec("."), alphaSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get[0].value == "a"
+    check r.get[1].value == "b"
+
+suite "combinators — presence":
+
+  test "presence returns true when the spec matches":
+    let p = mkParser("5")
+    let s = presence(digitSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get == true
+    # Position advances past the matched digit.
+    check p.index == 1
+
+  test "presence returns false without error when the spec doesn't match":
+    let p = mkParser("a")
+    let s = presence(digitSpec())
+    let r = p.run(s)
+    check r.isOk
+    check r.get == false
+    # Position rolled back because the inner spec's failure was
+    # captured, not propagated.
+    check p.index == 0

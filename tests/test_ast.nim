@@ -391,6 +391,69 @@ public module Foo:
     let r = f.findExportedType(id("NotThere"))
     check r.isErr
 
+  test "findType errors on an imported name (imports live in a separate index)":
+    # The imported name `Bar` exists on the file, but findType is
+    # scoped to *locally-defined* types only. The imported binding
+    # lives on `importedNameIndex` and is only surfaced via
+    # `findImportedName`.
+    let f = parseStr("""
+import { Bar } from "./bar.asl"
+
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findType(id("Bar"))
+    check r.isErr
+    check errorContains(r.error, "not defined")
+
+  test "findImportedName returns the imported binding":
+    let f = parseStr("""
+import { Bar } from "./bar.asl"
+
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findImportedName(id("Bar"))
+    check r.isOk
+
+  test "findImportedName reports an unimported name":
+    let f = parseStr("""
+import { Bar } from "./bar.asl"
+
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findImportedName(id("NotImported"))
+    check r.isErr
+    check errorContains(r.error, "not imported")
+
+  test "findImportedName always errors on an .aslr file":
+    let f = parseStrAslr("""
+module M:
+  func go(): u8
+    u8 0
+""").get
+    let r = f.findImportedName(id("Anything"))
+    check r.isErr
+    check errorContains(r.error, "aslr")
+
+  test "duplicate binding across an import and a local module is caught at parse time":
+    # Importing `M` and defining a local module named `M` collide on
+    # the same identifier — the parser's cross-index duplicate check
+    # rejects this at newAslFile time.
+    let r = parseStr("""
+import { M } from "./bar.asl"
+
+module M:
+  func go(): u8
+    u8 0
+""")
+    check r.isErr
+    check errorContains(r.error, "duplicate")
+
 suite "ast — Module function lookups":
 
   test "findFunctionDefs returns matching overloads by (name, arity)":
