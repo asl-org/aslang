@@ -3,7 +3,7 @@
 import results, strformat, tables
 
 import parser
-import domain
+import argtypes, modules
 import imports
 
 # ResolvedFile
