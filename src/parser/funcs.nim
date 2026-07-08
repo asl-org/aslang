@@ -190,7 +190,7 @@ proc asl*(fn: Function, indentWidth: uint32): seq[string] =
 
 # Each function block skips leading ignorable lines then parses a function.
 # any() backtracks the ignorable line consumption if no function follows.
-let funcBlockSpec = Spec[Function](
+let functionSpec = Spec[Function](
   name: "function_block",
   parseFn: proc(parser: Parser): Result[Function, ParserError] =
   discard parser.run(blankLines)
@@ -222,5 +222,5 @@ proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserErro
 proc functions*(fnlist: FunctionList): seq[Function] = fnlist.functions
 proc len*(fnlist: FunctionList): int = fnlist.functions.len
 
-let functionListSpec* = any(funcBlockSpec).map("function_list",
+let functionListSpec* = any(functionSpec).map("function_list",
   proc(fns: seq[Function]): Result[FunctionList, ParserError] = newFunctionList(fns))

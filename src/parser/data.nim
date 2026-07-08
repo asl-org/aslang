@@ -47,10 +47,10 @@ let structHeaderSpec = suffixed(keywordSpec("struct"),
   pair(ws0, punctuationSpec(":")))
 
 # Each field line: (blank lines) + indentation + argumentDefinition + newline
-let fieldLineSpec = prefixed(blankLines, indentedLine(argumentDefinitionSpec))
+let argumentDefinitionLineSpec = prefixed(blankLines, indentedLine(argumentDefinitionSpec))
 
 let structSpec* = blockSpec("struct", structHeaderSpec,
-  atLeastOne(fieldLineSpec),
+  atLeastOne(argumentDefinitionLineSpec),
   proc(h: Location, b: seq[ArgumentDefinition]): Result[StructDef, ParserError] =
   newStructDef(b, h))
 
@@ -216,7 +216,7 @@ proc union*(db: DataBlock, module: Identifier): Result[UnionDef, string] =
   of dbkStruct: err(fmt"{db.loc} module `{module.asl}` is a struct")
   of dbkUnion: ok(db.union)
 
-let dataBlockSpec* = oneOf("data_block", [
+let dataSpec* = oneOf("data_block", [
   literalTypeSpec.map("literal_data",
     proc(v: LiteralDef): DataBlock = newDataBlock(v)),
   structSpec.map("struct_data",

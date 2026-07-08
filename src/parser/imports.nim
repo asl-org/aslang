@@ -296,7 +296,7 @@ let importLineSpec* = oneOf("import_line", [
   shorthandImportLineSpec,
 ])
 
-let importBlockSpec* = Spec[Import](
+let importSpec* = Spec[Import](
   name: "import_block",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
   discard parser.run(blankLines)

@@ -622,16 +622,16 @@ let inlineStatementSpec* = oneOf("inline_statement", [
     proc(v: Expression): Statement = newStatement(v)),
 ])
 
-let caseHeaderSpec = prefixed(pair(keywordSpec("case"), ws1),
+let caseLineSpec = prefixed(pair(keywordSpec("case"), ws1),
   suffixed(casePatternSpec, pair(ws0, punctuationSpec(":"))))
 
-let caseBlockSpec* = blockSpec("case", caseHeaderSpec, statementListSpec,
+let caseSpec* = blockSpec("case", caseLineSpec, statementListSpec,
   proc(h: CasePattern, b: StatementList): CaseBlock =
   newCaseBlock(h, b, h.loc))
 
 # Match body: parses "match" keyword + subject + ":" + newline + caseBlocks
 # Does NOT consume indentation — caller handles that
-let matchBodySpec* = Spec[MatchExpression](
+let matchSpec* = Spec[MatchExpression](
   name: "match_body",
   parseFn: proc(parser: Parser): Result[MatchExpression, ParserError] =
   let loc = ? parser.run(keywordSpec("match"))
@@ -654,7 +654,7 @@ let matchBodySpec* = Spec[MatchExpression](
     name: "case_block_line",
     parseFn: proc(parser: Parser): Result[CaseBlock, ParserError] =
     discard parser.run(blankLines)
-    let cb = ? parser.run(caseBlockSpec)
+    let cb = ? parser.run(caseSpec)
     ok(cb)
   ))
   let casesResult = casesBody.parseFn(parser)
@@ -676,12 +676,12 @@ let statementLineSpec* = Spec[Statement](
     parseFn: proc(parser: Parser): Result[Statement, ParserError] =
     let target = ? parser.run(identifierSpec)
     discard ? parser.run(equalsSeparatorSpec)
-    let matchExpr = ? parser.run(matchBodySpec)
+    let matchExpr = ? parser.run(matchSpec)
     ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
   ))
   if maybeMatchAssign.isOk: return ok(maybeMatchAssign.get)
   # Try standalone match: match ...:
-  let maybeMatch = parser.run(matchBodySpec)
+  let maybeMatch = parser.run(matchSpec)
   if maybeMatch.isOk:
     return ok(newStatement(newExpression(maybeMatch.get)))
   # Inline statements: statement + newline

@@ -255,7 +255,7 @@ module A:
     check errorContains(r.error, "duplicate")
 
   test "file with only imports (no defined types) is rejected":
-    # `atLeastOne(definedTypeBlockSpec)` in aslFileSpec enforces this.
+    # `atLeastOne(definedTypeSpec)` in aslFileSpec enforces this.
     let (r, dir) = parseFiles([
       ("entry.asl", """
 import { Foo } from "./other.asl"

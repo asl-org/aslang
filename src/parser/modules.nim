@@ -116,7 +116,7 @@ let moduleBodySpec = Spec[ModuleBody](
   discard parser.run(blankLines)
   let requires = ? parser.run(optional(requiresSpec))
   discard parser.run(blankLines)
-  let data = ? parser.run(optional(dataBlockSpec))
+  let data = ? parser.run(optional(dataSpec))
   let funcList = ? parser.run(functionListSpec)
   ok((requires, data, funcList))
 )
