@@ -49,40 +49,40 @@ argumentTypeSpec.parseFn = proc(parser: Parser): Result[ArgumentType, ParserErro
     ok(newArgumentType(rootIdent, rootIdent.loc))
 
 # ============================================================
-# ArgumentDefinition (name: ArgumentType)
+# ArgumentDef (name: ArgumentType)
 # ============================================================
 
-type ArgumentDefinition* = ref object
+type ArgumentDef* = ref object
   name: Identifier
   argType: ArgumentType
   loc: Location
 
-proc name*(argDef: ArgumentDefinition): Identifier = argDef.name
-proc argType*(argDef: ArgumentDefinition): ArgumentType = argDef.argType
-proc loc*(argDef: ArgumentDefinition): Location = argDef.loc
+proc name*(argDef: ArgumentDef): Identifier = argDef.name
+proc argType*(argDef: ArgumentDef): ArgumentType = argDef.argType
+proc loc*(argDef: ArgumentDef): Location = argDef.loc
 
-proc newArgumentDefinition*(name: Identifier, argType: ArgumentType,
-    loc: Location): ArgumentDefinition =
-  ArgumentDefinition(name: name, argType: argType, loc: loc)
+proc newArgumentDef*(name: Identifier, argType: ArgumentType,
+    loc: Location): ArgumentDef =
+  ArgumentDef(name: name, argType: argType, loc: loc)
 
-proc asl*(argDef: ArgumentDefinition): string =
+proc asl*(argDef: ArgumentDef): string =
   fmt"{asl(argDef.name)}: {asl(argDef.argType)}"
 
-let argumentDefinitionSpec* = separated(identifierSpec, colonWithSpacesSpec, argumentTypeSpec).map(
+let argumentDefSpec* = separated(identifierSpec, colonWithSpacesSpec, argumentTypeSpec).map(
   "argument_definition",
-  proc(t: (Identifier, ArgumentType)): ArgumentDefinition = newArgumentDefinition(t[0], t[1], t[0].loc))
+  proc(t: (Identifier, ArgumentType)): ArgumentDef = newArgumentDef(t[0], t[1], t[0].loc))
 
 # ============================================================
-# ArgumentDefinitionList ((name: T, name: T, ...))
+# ArgumentDefList ((name: T, name: T, ...))
 # ============================================================
 
-type ArgumentDefinitionList* = ref object
-  argDefs: seq[ArgumentDefinition]
+type ArgumentDefList* = ref object
+  argDefs: seq[ArgumentDef]
   argNameIndex: Table[Identifier, int]
   loc: Location
 
-proc newArgumentDefinitionList*(argDefs: seq[ArgumentDefinition],
-    loc: Location): Result[ArgumentDefinitionList, ParserError] =
+proc newArgumentDefList*(argDefs: seq[ArgumentDef],
+    loc: Location): Result[ArgumentDefList, ParserError] =
   var argNameIndex: Table[Identifier, int]
   for index, argDef in argDefs:
     if argDef.name in argNameIndex:
@@ -90,26 +90,26 @@ proc newArgumentDefinitionList*(argDefs: seq[ArgumentDefinition],
       let msg = fmt"duplicate argument encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, argDef.loc))
     argNameIndex[argDef.name] = index
-  ok(ArgumentDefinitionList(argDefs: argDefs, argNameIndex: argNameIndex, loc: loc))
+  ok(ArgumentDefList(argDefs: argDefs, argNameIndex: argNameIndex, loc: loc))
 
-proc argDefs*(argDefList: ArgumentDefinitionList): seq[ArgumentDefinition] =
+proc argDefs*(argDefList: ArgumentDefList): seq[ArgumentDef] =
   argDefList.argDefs
 
-proc arity*(argDefList: ArgumentDefinitionList): int =
+proc arity*(argDefList: ArgumentDefList): int =
   argDefList.argDefs.len
 
-proc asl*(argDefList: ArgumentDefinitionList): string =
+proc asl*(argDefList: ArgumentDefList): string =
   result = "("
   for i, argDef in argDefList.argDefs:
     if i > 0: result.add(", ")
     result.add(asl(argDef))
   result.add(")")
 
-let argumentDefinitionListSpec* = Spec[ArgumentDefinitionList](
+let argumentDefListSpec* = Spec[ArgumentDefList](
   name: "argument_definition_list",
-  parseFn: proc(parser: Parser): Result[ArgumentDefinitionList, ParserError] =
+  parseFn: proc(parser: Parser): Result[ArgumentDefList, ParserError] =
   let loc = parser.loc
   let argDefs = ? parser.run(contained("argument_definition_list", "(",
-    separatedBy(argumentDefinitionSpec, commaWithSpacesSpec), ")"))
-  newArgumentDefinitionList(argDefs, loc)
+    separatedBy(argumentDefSpec, commaWithSpacesSpec), ")"))
+  newArgumentDefList(argDefs, loc)
 )

@@ -8,37 +8,37 @@ import ./argtypes
 import ./body
 
 # ============================================================
-# FunctionDefinition (signature only, no body)
+# FunctionDef (signature only, no body)
 # ============================================================
 
-type FunctionDefinition* = ref object
+type FunctionDef* = ref object
   public: bool
   name: Identifier
-  argDefList: ArgumentDefinitionList
+  argDefList: ArgumentDefList
   returns: ArgumentType
   loc: Location
 
-proc public*(fd: FunctionDefinition): bool = fd.public
-proc name*(fd: FunctionDefinition): Identifier = fd.name
-proc args*(fd: FunctionDefinition): seq[
-    ArgumentDefinition] = fd.argDefList.argDefs
-proc returns*(fd: FunctionDefinition): ArgumentType = fd.returns
-proc loc*(fd: FunctionDefinition): Location = fd.loc
-proc arity*(fd: FunctionDefinition): int = fd.argDefList.arity
+proc public*(fd: FunctionDef): bool = fd.public
+proc name*(fd: FunctionDef): Identifier = fd.name
+proc args*(fd: FunctionDef): seq[
+    ArgumentDef] = fd.argDefList.argDefs
+proc returns*(fd: FunctionDef): ArgumentType = fd.returns
+proc loc*(fd: FunctionDef): Location = fd.loc
+proc arity*(fd: FunctionDef): int = fd.argDefList.arity
 
-proc newFunctionDefinition*(public: bool, name: Identifier,
-    argDefList: ArgumentDefinitionList, returns: ArgumentType,
-    loc: Location): FunctionDefinition =
-  FunctionDefinition(public: public, name: name, argDefList: argDefList,
+proc newFunctionDef*(public: bool, name: Identifier,
+    argDefList: ArgumentDefList, returns: ArgumentType,
+    loc: Location): FunctionDef =
+  FunctionDef(public: public, name: name, argDefList: argDefList,
       returns: returns, loc: loc)
 
-proc asl*(funcDef: FunctionDefinition): string =
+proc asl*(funcDef: FunctionDef): string =
   let prefix = if funcDef.public: "public func" else: "func"
   fmt"{prefix} {asl(funcDef.name)}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
 
-let functionDefinitionSpec* = Spec[FunctionDefinition](
+let functionDefSpec* = Spec[FunctionDef](
   name: "function_definition",
-  parseFn: proc(parser: Parser): Result[FunctionDefinition, ParserError] =
+  parseFn: proc(parser: Parser): Result[FunctionDef, ParserError] =
   let public = ? parser.run(presence(keywordSpec("public")))
   if public: discard ? parser.run(ws1)
 
@@ -46,17 +46,17 @@ let functionDefinitionSpec* = Spec[FunctionDefinition](
   discard ? parser.run(ws1)
   let funcName = ? parser.run(identifierSpec)
   discard parser.run(ws0)
-  let argDefList = ? parser.run(argumentDefinitionListSpec)
+  let argDefList = ? parser.run(argumentDefListSpec)
   discard ? parser.run(colonWithSpacesSpec)
   let returnType = ? parser.run(argumentTypeSpec)
-  ok(newFunctionDefinition(public, funcName, argDefList, returnType, funcLoc))
+  ok(newFunctionDef(public, funcName, argDefList, returnType, funcLoc))
 )
 
 # Function definition line: indentation + function signature + newline
-# Used by genericSpec via functionDefinitionListSpec.
-let functionDefinitionLineSpec* = indentedLine(functionDefinitionSpec)
+# Used by genericSpec via functionDefListSpec.
+let functionDefLineSpec* = indentedLine(functionDefSpec)
 
-let functionDefinitionListSpec* = atLeastOne(functionDefinitionLineSpec)
+let functionDefListSpec* = atLeastOne(functionDefLineSpec)
 
 # ============================================================
 # UserFunction
@@ -64,16 +64,16 @@ let functionDefinitionListSpec* = atLeastOne(functionDefinitionLineSpec)
 
 type UserFunction* = ref object
   decorators: seq[Decorator]
-  def: FunctionDefinition
+  def: FunctionDef
   statementList: StatementList
 
-proc newUserFunction*(decorators: seq[Decorator], def: FunctionDefinition,
+proc newUserFunction*(decorators: seq[Decorator], def: FunctionDef,
     statementList: StatementList): UserFunction =
   UserFunction(decorators: decorators, def: def, statementList: statementList)
 
 proc loc*(fn: UserFunction): Location = fn.def.loc
 proc name*(fn: UserFunction): Identifier = fn.def.name
-proc def*(fn: UserFunction): FunctionDefinition = fn.def
+proc def*(fn: UserFunction): FunctionDef = fn.def
 proc statements*(fn: UserFunction): seq[Statement] = fn.statementList.statements
 proc decorators*(fn: UserFunction): seq[Decorator] = fn.decorators
 proc arity*(fn: UserFunction): int = fn.def.arity
@@ -87,9 +87,9 @@ proc asl(fn: UserFunction, indentWidth: uint32): seq[string] =
     for line in aslBlock(stmt, indentWidth):
       result.add(fmt"{indent}{line}")
 
-let userFunctionSpec = decoratedBlockSpec("user_function", functionDefinitionSpec,
+let userFunctionSpec = decoratedBlockSpec("user_function", functionDefSpec,
   statementListSpec,
-  proc(d: seq[Decorator], h: FunctionDefinition, b: StatementList): UserFunction =
+  proc(d: seq[Decorator], h: FunctionDef, b: StatementList): UserFunction =
   newUserFunction(d, h, b))
 
 # ============================================================
@@ -98,16 +98,16 @@ let userFunctionSpec = decoratedBlockSpec("user_function", functionDefinitionSpe
 
 type ExternFunction* = ref object
   ffi: string
-  def: FunctionDefinition
+  def: FunctionDef
   loc: Location
 
 proc ffi*(fn: ExternFunction): string = fn.ffi
 proc name*(fn: ExternFunction): Identifier = fn.def.name
-proc def*(fn: ExternFunction): FunctionDefinition = fn.def
+proc def*(fn: ExternFunction): FunctionDef = fn.def
 proc arity*(fn: ExternFunction): int = fn.def.arity
 proc loc*(fn: ExternFunction): Location = fn.loc
 
-proc newExternFunction*(ffi: string, def: FunctionDefinition,
+proc newExternFunction*(ffi: string, def: FunctionDef,
     loc: Location): ExternFunction =
   ExternFunction(ffi: ffi, def: def, loc: loc)
 
@@ -128,7 +128,7 @@ let externFunctionSpec = Spec[ExternFunction](
   let symbol = ? parser.run(contained("extern_symbol", "(", stringLiteralSpec, ")"))
   discard ? parser.run(ignorableLineSpec)
   discard ? parser.run(indentationSpec)
-  let def = ? parser.run(functionDefinitionSpec)
+  let def = ? parser.run(functionDefSpec)
   discard ? parser.run(ignorableLineSpec)
   ok(newExternFunction(symbol.value, def, loc))
 )
@@ -173,7 +173,7 @@ proc name*(fn: Function): Identifier =
   of fkUser: fn.user.name
   of fkExtern: fn.extern.name
 
-proc def*(fn: Function): FunctionDefinition =
+proc def*(fn: Function): FunctionDef =
   case fn.kind:
   of fkUser: fn.user.def
   of fkExtern: fn.extern.def

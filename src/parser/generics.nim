@@ -13,21 +13,21 @@ type Generic* = ref object
   decorators: seq[Decorator]
   public: bool
   name: Identifier
-  funcDefs: seq[FunctionDefinition]
+  funcDefs: seq[FunctionDef]
   funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[string, seq[int]]
   loc: Location
 
 proc public*(g: Generic): bool = g.public
 proc name*(g: Generic): Identifier = g.name
-proc funcDefs*(g: Generic): seq[FunctionDefinition] = g.funcDefs
+proc funcDefs*(g: Generic): seq[FunctionDef] = g.funcDefs
 proc decorators*(g: Generic): seq[Decorator] = g.decorators
 proc loc*(g: Generic): Location = g.loc
 proc hash*(g: Generic): Hash = g.loc.hash
 proc `==`*(a, b: Generic): bool = a.hash == b.hash
 
 proc newGeneric*(decorators: seq[Decorator], public: bool, name: Identifier,
-    funcDefs: seq[FunctionDefinition], loc: Location): Result[Generic, ParserError] =
+    funcDefs: seq[FunctionDef], loc: Location): Result[Generic, ParserError] =
   var funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
   var funcDefIndex: Table[string, seq[int]]
   for index, def in funcDefs:
@@ -57,9 +57,9 @@ proc findFunctionDefIds(generic: Generic, name: Identifier, arity: int): Result[
   else:
     ok(generic.funcDefArityIndex[name][arity])
 
-proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
   let funcIds = ? generic.findFunctionDefIds(name, arity)
-  var funcs: seq[FunctionDefinition]
+  var funcs: seq[FunctionDef]
   for id in funcIds:
     funcs.add(generic.funcDefs[id])
   ok(funcs)
@@ -80,8 +80,8 @@ let genericHeaderSpec = Spec[GenericHeader](
 )
 
 let genericSpec* = blockSpec("generic", genericHeaderSpec,
-  functionDefinitionListSpec,
-  proc(h: GenericHeader, b: seq[FunctionDefinition]): Result[Generic, ParserError] =
+  functionDefListSpec,
+  proc(h: GenericHeader, b: seq[FunctionDef]): Result[Generic, ParserError] =
   newGeneric(@[], h.public, h.name, b, h.loc))
 
 # ============================================================

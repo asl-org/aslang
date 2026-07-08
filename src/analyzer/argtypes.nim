@@ -178,7 +178,7 @@ proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 # expected type (Box[u8, MyImpl]) is unification, not equality. Audit
 # every callsite of AnalyzedArgumentType `==` used for assignability
 # (value-type vs expected-type matches in arg checks, return checks,
-# kwarg checks) and route through analyzeValueTypeAgainstDefinitionType
+# kwarg checks) and route through analyzeValueTypeAgainstDefType
 # / GenericImplMap merge instead. Pure type-identity uses
 # (deduplication, table keying) stay as-is.
 

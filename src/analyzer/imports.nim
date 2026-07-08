@@ -1,6 +1,6 @@
 ## Analyzed imports — verifies each imported name resolves to a
 ## defined type in its source file, and bundles the per-file imports
-## into an AnalyzedImportDefinition.
+## into an AnalyzedImportDef.
 
 import results, strformat, options
 
@@ -24,17 +24,17 @@ proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: Reso
   else:
     ok(newAnalyzedImportedType(impType, maybeImportedType.get))
 
-type AnalyzedImportDefinition* = ref object
+type AnalyzedImportDef* = ref object
   resolved: ResolvedImport
   importedTypes: seq[AnalyzedImportedType]
 
-proc newAnalyzedImportDefinition*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedType]): AnalyzedImportDefinition =
-  AnalyzedImportDefinition(resolved: resolved, importedTypes: importedTypes)
+proc newAnalyzedImportDef*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedType]): AnalyzedImportDef =
+  AnalyzedImportDef(resolved: resolved, importedTypes: importedTypes)
 
-proc importedTypes*(imp: AnalyzedImportDefinition): seq[AnalyzedImportedType] = imp.importedTypes
-proc path*(imp: AnalyzedImportDefinition): string = imp.resolved.impFile.path
+proc importedTypes*(imp: AnalyzedImportDef): seq[AnalyzedImportedType] = imp.importedTypes
+proc path*(imp: AnalyzedImportDef): string = imp.resolved.impFile.path
 
-proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
+proc analyzeImportDef*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDef, string] =
   let maybeImportedFile = app.findFile(imp.impFile)
   if maybeImportedFile.isNone:
     err(fmt"{imp.loc} UNREACHABLE: file `{imp.impFile.path}` does not exist")
@@ -44,4 +44,4 @@ proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: Resolve
     for impType in imp.importedTypes:
       let analyzedImportedType = ? analyzeImportedType(app, analyzedImpFile, impType)
       importedTypes.add(analyzedImportedType)
-    ok(newAnalyzedImportDefinition(imp, importedTypes))
+    ok(newAnalyzedImportDef(imp, importedTypes))

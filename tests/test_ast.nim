@@ -20,8 +20,8 @@ proc id(s: string): Identifier =
 proc argType(name: string): ArgumentType =
   newArgumentType(id(name), newLocation())
 
-proc argDef(name, typeName: string): ArgumentDefinition =
-  newArgumentDefinition(id(name), argType(typeName), newLocation())
+proc argDef(name, typeName: string): ArgumentDef =
+  newArgumentDef(id(name), argType(typeName), newLocation())
 
 suite "ast — Identifier":
 
@@ -87,55 +87,55 @@ suite "ast — StructDef invariants":
     check r.isOk
     check r.get.fields.len == 2
 
-suite "ast — VariantDefinition invariants":
+suite "ast — VariantDef invariants":
 
-  test "newVariantDefinition rejects duplicate field names within a variant":
-    let r = newVariantDefinition(id("V"),
+  test "newVariantDef rejects duplicate field names within a variant":
+    let r = newVariantDef(id("V"),
       @[argDef("x", "u8"), argDef("x", "u16")], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate field")
 
-  test "newVariantDefinition accepts unique fields":
-    let r = newVariantDefinition(id("V"),
+  test "newVariantDef accepts unique fields":
+    let r = newVariantDef(id("V"),
       @[argDef("x", "u8"), argDef("y", "u16")], newLocation())
     check r.isOk
 
-  test "newVariantDefinition accepts an empty fields list":
-    let r = newVariantDefinition(id("V"), @[], newLocation())
+  test "newVariantDef accepts an empty fields list":
+    let r = newVariantDef(id("V"), @[], newLocation())
     check r.isOk
 
 suite "ast — UnionDef invariants":
 
   test "newUnionDef rejects duplicate variant names":
-    let v1 = newVariantDefinition(id("Same"), @[argDef("x", "u8")],
+    let v1 = newVariantDef(id("Same"), @[argDef("x", "u8")],
       newLocation()).get
-    let v2 = newVariantDefinition(id("Same"), @[argDef("y", "u8")],
+    let v2 = newVariantDef(id("Same"), @[argDef("y", "u8")],
       newLocation()).get
     let r = newUnionDef(@[v1, v2], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate variant")
 
   test "newUnionDef accepts a single variant":
-    let v = newVariantDefinition(id("A"), @[argDef("x", "u8")],
+    let v = newVariantDef(id("A"), @[argDef("x", "u8")],
       newLocation()).get
     let r = newUnionDef(@[v], newLocation())
     check r.isOk
 
-suite "ast — ArgumentDefinitionList invariants":
+suite "ast — ArgumentDefList invariants":
 
-  test "newArgumentDefinitionList rejects duplicate argument names":
-    let r = newArgumentDefinitionList(
+  test "newArgumentDefList rejects duplicate argument names":
+    let r = newArgumentDefList(
       @[argDef("a", "u8"), argDef("a", "u8")], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate argument")
 
-  test "newArgumentDefinitionList accepts unique args":
-    let r = newArgumentDefinitionList(
+  test "newArgumentDefList accepts unique args":
+    let r = newArgumentDefList(
       @[argDef("a", "u8"), argDef("b", "u16")], newLocation())
     check r.isOk
 
-  test "newArgumentDefinitionList accepts an empty list":
-    let r = newArgumentDefinitionList(@[], newLocation())
+  test "newArgumentDefList accepts an empty list":
+    let r = newArgumentDefList(@[], newLocation())
     check r.isOk
 
 suite "ast — UnionPattern invariants":
@@ -304,17 +304,17 @@ suite "ast — StructDef field lookups":
     check errorContains(r.error, "missing")
     check errorContains(r.error, "not present")
 
-suite "ast — VariantDefinition field lookups":
+suite "ast — VariantDef field lookups":
 
   test "findFieldId returns the index of an existing variant field":
-    let v = newVariantDefinition(id("Ok"),
+    let v = newVariantDef(id("Ok"),
       @[argDef("value", "u8"), argDef("flag", "u8")], newLocation()).get
     let r = v.findFieldId(id("flag"))
     check r.isOk
     check r.get == 1
 
   test "findFieldId on a variant reports missing field":
-    let v = newVariantDefinition(id("Ok"),
+    let v = newVariantDef(id("Ok"),
       @[argDef("value", "u8")], newLocation()).get
     let r = v.findFieldId(id("missing"))
     check r.isErr
@@ -323,9 +323,9 @@ suite "ast — VariantDefinition field lookups":
 suite "ast — UnionDef variant lookups":
 
   test "findVariant returns the matching variant":
-    let v1 = newVariantDefinition(id("Ok"),
+    let v1 = newVariantDef(id("Ok"),
       @[argDef("value", "u8")], newLocation()).get
-    let v2 = newVariantDefinition(id("Err"),
+    let v2 = newVariantDef(id("Err"),
       @[argDef("code", "u8")], newLocation()).get
     let u = newUnionDef(@[v1, v2], newLocation()).get
     let r = u.findVariant(id("Err"))
@@ -333,7 +333,7 @@ suite "ast — UnionDef variant lookups":
     check r.get.name.value == "Err"
 
   test "findVariant reports a missing variant":
-    let v = newVariantDefinition(id("Ok"),
+    let v = newVariantDef(id("Ok"),
       @[argDef("value", "u8")], newLocation()).get
     let u = newUnionDef(@[v], newLocation()).get
     let r = u.findVariant(id("NotThere"))

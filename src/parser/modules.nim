@@ -16,7 +16,7 @@ type Module* = ref object
   public: bool
   name: Identifier
   requires: Option[Requires]
-  data: Option[DataBlock]
+  data: Option[DataDef]
   funcList: FunctionList
   functionIndex: Table[Identifier, Table[int, seq[int]]]
   loc: Location
@@ -24,7 +24,7 @@ type Module* = ref object
 proc public*(m: Module): bool = m.public
 proc name*(m: Module): Identifier = m.name
 proc requires*(m: Module): Option[Requires] = m.requires
-proc data*(m: Module): Option[DataBlock] = m.data
+proc data*(m: Module): Option[DataDef] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
 proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
@@ -40,7 +40,7 @@ proc union*(m: Module, loc: Location): Result[UnionDef, string] =
   else: err(fmt"{loc} module `{m.name.asl}` is not a union")
 
 proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
-    requires: Option[Requires], data: Option[DataBlock],
+    requires: Option[Requires], data: Option[DataDef],
     funcList: FunctionList, loc: Location): Result[Module, ParserError] =
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
@@ -83,9 +83,9 @@ proc findFunctionDefIds(module: Module, name: Identifier, arity: int): Result[se
   else:
     ok(module.functionIndex[name][arity])
 
-proc findFunctionDefs*(module: Module, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+proc findFunctionDefs*(module: Module, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
   let funcDefIds = ? module.findFunctionDefIds(name, arity)
-  var funcDefs: seq[FunctionDefinition]
+  var funcDefs: seq[FunctionDef]
   for id in funcDefIds:
     funcDefs.add(module.functions[id].def)
   ok(funcDefs)
@@ -107,7 +107,7 @@ let moduleHeaderSpec = Spec[ModuleHeader](
 )
 
 # Module body: optional requires + optional data block + function list
-type ModuleBody = tuple[requires: Option[Requires], data: Option[DataBlock],
+type ModuleBody = tuple[requires: Option[Requires], data: Option[DataDef],
     funcList: FunctionList]
 
 let moduleBodySpec = Spec[ModuleBody](

@@ -57,7 +57,7 @@ proc asl(definedType: DefinedType, indentWidth: uint32): seq[string] =
   of dtkModule: definedType.module.asl(indentWidth)
   of dtkGeneric: definedType.generic.asl(indentWidth)
 
-proc findFunctionDefs*(definedType: DefinedType, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+proc findFunctionDefs*(definedType: DefinedType, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
   case definedType.kind:
   of dtkModule: definedType.module.findFunctionDefs(name, arity)
   of dtkGeneric: definedType.generic.findFunctionDefs(name, arity)

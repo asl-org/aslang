@@ -1,6 +1,6 @@
 ## Body-level scopes and the helpers the body walker consumes:
 ##   - AnalyzedFunctionScope    (variable -> AnalyzedArgumentType)
-## plus `findModuleDef`, `extractDataBlock`, `extractStructFor`,
+## plus `findModuleDef`, `extractDataDef`, `extractStructFor`,
 ## `extractUnionFor`, `clone`.
 ##
 ## Defined-type lookup by Identifier lives directly on
@@ -34,29 +34,29 @@ proc findModuleDef*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType,
   of aatkModule:
     ok(argType.module.module)
 
-proc extractDataBlock*(fileScope: ResolvedFileScope, module: ResolvedModule, loc: Location): Result[ResolvedData, string] =
+proc extractDataDef*(fileScope: ResolvedFileScope, module: ResolvedModule, loc: Location): Result[ResolvedData, string] =
   if module.data.isNone:
     err(fmt"{loc} UNREACHABLE: expression does not return a data type")
   else:
     ok(module.data.get)
 
-proc extractDataBlock*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedData, string] =
+proc extractDataDef*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedData, string] =
   let argModule = ? fileScope.findModuleDef(argType, loc)
-  fileScope.extractDataBlock(argModule, loc)
+  fileScope.extractDataDef(argModule, loc)
 
 proc extractStructFor*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedStructDef, string] =
   let argModule = ? fileScope.findModuleDef(argType, loc)
-  let dataBlock = ? fileScope.extractDataBlock(argModule, loc)
-  case dataBlock.kind:
-  of rdkStruct: ok(dataBlock.struct)
+  let dataDef = ? fileScope.extractDataDef(argModule, loc)
+  case dataDef.kind:
+  of rdkStruct: ok(dataDef.struct)
   of rdkUnion: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found union")
   of rdkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
 
 proc extractUnionFor*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedUnionDef, string] =
   let argModule = ? fileScope.findModuleDef(argType, loc)
-  let dataBlock = ? fileScope.extractDataBlock(argModule, loc)
-  case dataBlock.kind:
-  of rdkUnion: ok(dataBlock.union)
+  let dataDef = ? fileScope.extractDataDef(argModule, loc)
+  case dataDef.kind:
+  of rdkUnion: ok(dataDef.union)
   of rdkStruct: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found struct")
   of rdkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found literal")
 
