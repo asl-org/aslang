@@ -54,8 +54,7 @@ let functionDefinitionSpec* = Spec[FunctionDefinition](
 
 # Function definition line: indentation + function signature + newline
 # Used by genericSpec via functionDefinitionListSpec.
-let functionDefinitionLineSpec* = prefixed(indentationSpec,
-  suffixed(functionDefinitionSpec, ignorableLineSpec))
+let functionDefinitionLineSpec* = indentedLine(functionDefinitionSpec)
 
 let functionDefinitionListSpec* = atLeastOne(functionDefinitionLineSpec)
 

@@ -106,8 +106,8 @@ proc asl*(r: Requires): string =
   result.add(")")
 
 # requires(Generic, Generic, ...)
-let requiresSpec* = pair(prefixed(indentationSpec, keywordSpec("requires")),
-    prefixed(ws0, suffixed(contained("requires_generics", "(",
-      separatedBy(identifierSpec, commaWithSpacesSpec), ")"), ignorableLineSpec))).map(
+let requiresSpec* = indentedLine(pair(keywordSpec("requires"),
+    prefixed(ws0, contained("requires_generics", "(",
+      separatedBy(identifierSpec, commaWithSpacesSpec), ")")))).map(
   "requires",
   proc(t: (Location, seq[Identifier])): Requires = newRequires(t[1], t[0]))

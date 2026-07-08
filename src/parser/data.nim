@@ -46,9 +46,8 @@ proc findFieldId*(struct: StructDef, name: Identifier): Result[int, string] =
 let structHeaderSpec = suffixed(keywordSpec("struct"),
   pair(ws0, punctuationSpec(":")))
 
-# Each field line: indentation + argumentDefinition + newline
-let fieldLineSpec = prefixed(pair(blankLines, indentationSpec),
-  suffixed(argumentDefinitionSpec, ignorableLineSpec))
+# Each field line: (blank lines) + indentation + argumentDefinition + newline
+let fieldLineSpec = prefixed(blankLines, indentedLine(argumentDefinitionSpec))
 
 let structSpec* = blockSpec("struct", structHeaderSpec,
   atLeastOne(fieldLineSpec),

@@ -85,6 +85,14 @@ let indentationSpec* = Spec[Space](
     ok(newSpace(count, loc))
 )
 
+proc indentedLine*[T](inner: Spec[T]): Spec[T] =
+  ## Parse `indentation inner ignorable_line`; return only inner.
+  ## The grammar-natural shape for "one item on its own indented
+  ## line" — decorators, field definitions, function definitions,
+  ## etc. Prepend `blankLines` at the call site when the line may
+  ## be preceded by blank/comment lines.
+  prefixed(indentationSpec, suffixed(inner, ignorableLineSpec))
+
 # ============================================================
 # Decorator
 # ============================================================
@@ -98,8 +106,8 @@ proc newDecorator*(name: Identifier): Decorator =
 proc asl*(decorator: Decorator): string =
   fmt"@{asl(decorator.name)}"
 
-let decoratorLineSpec* = prefixed(pair(indentationSpec, punctuationSpec("@")),
-    suffixed(identifierSpec, ignorableLineSpec)).map(
+let decoratorLineSpec* = indentedLine(
+    prefixed(punctuationSpec("@"), identifierSpec)).map(
   "decorator_line",
   proc(v: Identifier): Decorator = newDecorator(v))
 
