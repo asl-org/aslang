@@ -1,6 +1,6 @@
 import strformat, results, options
 
-import tokenizer
+import ./tokenizer
 
 # ============================================================
 # Parser Error
@@ -58,39 +58,42 @@ proc peek*(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   else:
     ok(parser.tokens[parser.index])
 
-proc consumeExceptNewline*(parser: Parser,
-    tokenRepr: string): Result[Token, ParserError] =
-  let token = ? parser.peek(tokenRepr)
-  case token.kind:
-  of tkNewline:
-    let msg = fmt"{token.repr} is not supported as {tokenRepr}"
+# ============================================================
+# Token matchers — data-driven token consumption
+# ============================================================
+#
+# One `TokenMatcher` record + one `consume` dispatcher replaces the
+# family of `consume*` procs that were doing the same work with
+# different predicates (consumeTokenKind, consumePunctuation,
+# consumeExceptNewline, consumeSpace). Follows the tokenizer's
+# `TokenSpec` collapse — the variation (label + predicate) lives in
+# data; the shared control flow lives in one place.
+
+type
+  TokenMatcher* = ref object
+    label: string
+    predicate: proc(t: Token): bool
+
+proc byKind*(kind: TokenKind, label: string): TokenMatcher =
+  TokenMatcher(label: label,
+    predicate: proc(t: Token): bool = t.kind == kind)
+
+proc byPunctuation*(value: string): TokenMatcher =
+  TokenMatcher(label: "'" & value & "'",
+    predicate: proc(t: Token): bool = t.kind == tkPunctuation and t.value == value)
+
+proc byKindExcept(kind: TokenKind, label: string): TokenMatcher =
+  TokenMatcher(label: label,
+    predicate: proc(t: Token): bool = t.kind != kind)
+
+proc consume*(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
+  let token = ? parser.peek(matcher.label)
+  if not matcher.predicate(token):
+    let msg = fmt"expected {matcher.label} but found {token.repr}"
     err(newParserError(msg, parser.loc))
   else:
     parser.index += 1
     ok(token)
-
-proc consumeTokenKind*(parser: Parser, kind: TokenKind,
-    tokenRepr: string): Result[Token, ParserError] =
-  let token = ? parser.peek(tokenRepr)
-  if token.kind != kind:
-    let msg = fmt"expected {tokenRepr} but found {token.repr}"
-    err(newParserError(msg, parser.loc))
-  else:
-    parser.index += 1
-    ok(token)
-
-proc consumePunctuation*(parser: Parser,
-    value: string): Result[Token, ParserError] =
-  let token = ? parser.peek(fmt"punctuation '{value}'")
-  if token.kind != tkPunctuation or token.value != value:
-    let msg = fmt"expected punctuation '{value}' but found {token.repr}"
-    err(newParserError(msg, token.loc))
-  else:
-    parser.index += 1
-    ok(token)
-
-proc consumeSpace*(parser: Parser): Result[Token, ParserError] =
-  parser.consumeTokenKind(tkSpace, "space ' '")
 
 # ============================================================
 # Spec[T] — named, typed parser combinator
@@ -204,40 +207,179 @@ proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
     ok(items)
   )
 
-proc contained*[T](name: string, open: string, inner: Spec[T],
-    close: string): Spec[T] =
+# ============================================================
+# Sequence-composition atoms
+# ============================================================
+#
+# Small vocabulary that lets domain-type specs be built out of
+# existing `Spec[T]` values instead of hand-writing a
+# `Spec[T](name: ..., parseFn: proc(...): ...)` block every time.
+# Same "compose atoms into a grammar" pattern the tokenizer uses
+# for its per-kind matchers.
+
+proc prefixed*[P, T](prefix: Spec[P], inner: Spec[T]): Spec[T] =
+  ## Parse `prefix inner`; discard prefix, return inner's value.
+  ## Common shape: `= expression`, `. identifier`, `: expression`.
   Spec[T](
-    name: name,
+    name: inner.name,
     parseFn: proc(parser: Parser): Result[T, ParserError] =
-    discard ? parser.consumePunctuation(open)
-    while parser.consumeSpace().isOk: discard
-    let maybeValue = ? parser.run(inner)
-    while parser.consumeSpace().isOk: discard
-    discard ? parser.consumePunctuation(close)
-    ok(maybeValue)
+      discard ? parser.run(prefix)
+      parser.run(inner)
+  )
+
+proc suffixed*[T, S](inner: Spec[T], suffix: Spec[S]): Spec[T] =
+  ## Parse `inner suffix`; discard suffix, return inner's value.
+  Spec[T](
+    name: inner.name,
+    parseFn: proc(parser: Parser): Result[T, ParserError] =
+      let v = ? parser.run(inner)
+      discard ? parser.run(suffix)
+      ok(v)
+  )
+
+proc pair*[A, B](a: Spec[A], b: Spec[B]): Spec[(A, B)] =
+  ## Parse `a b`; return `(A, B)`. Chain with `.map` to lift into
+  ## a domain type.
+  Spec[(A, B)](
+    name: a.name & " + " & b.name,
+    parseFn: proc(parser: Parser): Result[(A, B), ParserError] =
+      let va = ? parser.run(a)
+      let vb = ? parser.run(b)
+      ok((va, vb))
+  )
+
+proc separated*[A, S, B](a: Spec[A], sep: Spec[S], b: Spec[B]): Spec[(A, B)] =
+  ## Parse `a sep b`; discard the separator, return `(A, B)`. Reads
+  ## like the grammar rule "a separated-by sep from b". The
+  ## grammar-natural collapse of `pair(a, prefixed(sep, b))` — same
+  ## behaviour, one atom instead of two nested ones.
+  pair(a, prefixed(sep, b))
+
+proc triple*[A, B, C](a: Spec[A], b: Spec[B], c: Spec[C]): Spec[(A, B, C)] =
+  ## Parse `a b c`; return `(A, B, C)`. Chain with `.map` to lift.
+  Spec[(A, B, C)](
+    name: a.name & " + " & b.name & " + " & c.name,
+    parseFn: proc(parser: Parser): Result[(A, B, C), ParserError] =
+      let va = ? parser.run(a)
+      let vb = ? parser.run(b)
+      let vc = ? parser.run(c)
+      ok((va, vb, vc))
+  )
+
+proc presence*[T](spec: Spec[T]): Spec[bool] =
+  ## Returns true if `spec` matched, false otherwise. Never errors —
+  ## `parser.run(spec)` handles its own rollback on non-fatal failure.
+  ## Turns the `let m = parser.run(x); let flag = m.isOk` idiom into
+  ## a single composable spec.
+  Spec[bool](
+    name: spec.name & "?",
+    parseFn: proc(parser: Parser): Result[bool, ParserError] =
+      let r = parser.run(spec)
+      ok(r.isOk)
   )
 
 # ============================================================
-# Leaf token specs
+# Leaf token specs — one-line wrappers over `matcherSpec`
 # ============================================================
+#
+# Kept as named factories so grammar files read as `punctuationSpec(",")`
+# instead of the more verbose `matcherSpec(byPunctuation(","))`. Under
+# the hood all three delegate to the single `TokenMatcher` machinery
+# above.
+
+proc matcherSpec(matcher: TokenMatcher): Spec[Token] =
+  Spec[Token](
+    name: matcher.label,
+    parseFn: proc(parser: Parser): Result[Token, ParserError] =
+      parser.consume(matcher)
+  )
 
 proc tokenSpec*(kind: TokenKind, tokenRepr: string): Spec[Token] =
-  Spec[Token](
-    name: tokenRepr,
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consumeTokenKind(kind, tokenRepr)
-  )
+  matcherSpec(byKind(kind, tokenRepr))
 
 proc punctuationSpec*(value: string): Spec[Token] =
-  Spec[Token](
-    name: "'" & value & "'",
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consumePunctuation(value)
-  )
+  matcherSpec(byPunctuation(value))
 
 proc anyTokenExceptNewlineSpec*(tokenRepr: string): Spec[Token] =
-  Spec[Token](
-    name: tokenRepr,
-    parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    parser.consumeExceptNewline(tokenRepr)
-  )
+  matcherSpec(byKindExcept(tkNewline, tokenRepr))
+
+# ============================================================
+# Static leaf specs (token-kind + common punctuation)
+# ============================================================
+#
+# Named singletons for grammar files. Backed by `matcherSpec` under
+# the hood; kept named because grammar code reads better as
+# `parser.run(spaceSpec)` than `parser.run(matcherSpec(byKind(...)))`.
+
+let spaceSpec* = tokenSpec(tkSpace, "space ' '")
+let newlineSpec* = tokenSpec(tkNewline, "newline '\\n'")
+let alphabetSpec* = tokenSpec(tkAlphabet, "alphabet [a-zA-Z]")
+let digitSpec* = tokenSpec(tkDigit, "digit [0-9]")
+
+let underscoreSpec* = punctuationSpec("_")
+let hashSpec* = punctuationSpec("#")
+let backslashSpec* = punctuationSpec("\\")
+let doubleQuoteSpec* = punctuationSpec("\"")
+
+# ============================================================
+# Trivia specs — named compositions of the highest-frequency
+# discarded-in-grammar idioms.
+# ============================================================
+#
+# `discard parser.run(any(spaceSpec))` etc. shows up 30+ times
+# across the parser; naming these makes the intent obvious at
+# the call site. The underlying combinators (any, atLeastOne)
+# are unchanged — these are pure aliases.
+#
+# `blankLines` sits with `ignorableLineSpec` below because it
+# depends on it; `ws0`/`ws1` live here alongside `spaceSpec`.
+
+let ws0* = any(spaceSpec)               ## zero-or-more spaces
+let ws1* = atLeastOne(spaceSpec)        ## one-or-more spaces
+
+proc contained*[T](name: string, open: string, inner: Spec[T],
+    close: string): Spec[T] =
+  ## Parse `open ws0 inner ws0 close`; return only inner. Grammar
+  ## brackets tolerate whitespace on both sides of the content.
+  let composed = prefixed(
+    pair(punctuationSpec(open), ws0),
+    suffixed(inner, pair(ws0, punctuationSpec(close))))
+  Spec[T](name: name, parseFn: composed.parseFn)
+
+# ============================================================
+# Comment + ignorable line
+# ============================================================
+
+let commentSpec* = Spec[Location](
+  name: "comment",
+  parseFn: proc(parser: Parser): Result[Location, ParserError] =
+  let hashtag = ? parser.run(hashSpec)
+  discard parser.run(any(anyTokenExceptNewlineSpec("comment character")))
+  ok(hashtag.loc)
+)
+
+# space* comment? newline
+let ignorableLineSpec* = Spec[Location](
+  name: "ignorable_line",
+  parseFn: proc(parser: Parser): Result[Location, ParserError] =
+  let loc = parser.loc
+  discard ? parser.run(ws0)
+  discard ? parser.run(optional(commentSpec))
+  discard ? parser.run(newlineSpec)
+  ok(loc)
+)
+
+let blankLines* = any(ignorableLineSpec) ## any number of blank/comment lines
+
+# ============================================================
+# Separator helpers
+# ============================================================
+
+proc separatorSpec*(sep: string): Spec[Token] =
+  ## Parse `ws0 sep ws0`; return the sep token. Whitespace-tolerant
+  ## on both sides of the punctuation.
+  prefixed(ws0, suffixed(punctuationSpec(sep), ws0))
+
+let commaWithSpacesSpec* = separatorSpec(",")
+let colonWithSpacesSpec* = separatorSpec(":")
+let equalsSeparatorSpec* = separatorSpec("=")

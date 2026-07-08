@@ -1,10 +1,9 @@
 import strformat, strutils, options, tables, results, os
 
-import tokenizer
-import combinators
-import helpers
-import identifiers
-import strings
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./literals
 
 # ============================================================
 # ImportPath
@@ -114,13 +113,13 @@ let importedTypeSpec* = Spec[ImportedType](
   name: "import_name",
   parseFn: proc(parser: Parser): Result[ImportedType, ParserError] =
   let name = ? parser.run(identifierSpec)
-  let maybeAs = parser.run(atLeastOne(spaceSpec))
+  let maybeAs = parser.run(ws1)
   if maybeAs.isErr:
     return ok(newImportedType(name, none(Identifier), name.loc))
   let maybeAsKeyword = parser.run(keywordSpec("as"))
   if maybeAsKeyword.isErr:
     return ok(newImportedType(name, none(Identifier), name.loc))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let alias = ? parser.run(identifierSpec)
   ok(newImportedType(name, some(alias), name.loc))
 )
@@ -255,12 +254,12 @@ let explicitImportLineSpec* = Spec[Import](
   name: "explicit_import_line",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.run(keywordSpec("import"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let names = ? parser.run(contained("import_names", "{",
     separatedBy(importedTypeSpec, commaWithSpacesSpec), "}"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   discard ? parser.run(keywordSpec("from"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(ignorableLineSpec)
   let parsedPath = ? parseImportPath(source.value, source.loc)
@@ -279,7 +278,7 @@ let shorthandImportLineSpec* = Spec[Import](
   name: "shorthand_import_line",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.run(keywordSpec("import"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let source = ? parser.run(stringLiteralSpec)
   discard ? parser.run(ignorableLineSpec)
   let parsedPath = ? parseImportPath(source.value, source.loc)
@@ -297,10 +296,10 @@ let importLineSpec* = oneOf("import_line", [
   shorthandImportLineSpec,
 ])
 
-let importBlockSpec* = Spec[Import](
+let importSpec* = Spec[Import](
   name: "import_block",
   parseFn: proc(parser: Parser): Result[Import, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   let imp = ? parser.run(importLineSpec)
   ok(imp)
 )

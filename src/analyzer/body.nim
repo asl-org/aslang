@@ -100,7 +100,7 @@ proc argType*(init: AnalyzedLiteralInitializer): AnalyzedArgumentType = init.arg
 proc analyzeLiteralInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
   let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
   let argDefModule = ? fileScope.findModuleDef(analyzedArgType, init.loc)
-  let argDefData = ? fileScope.extractDataBlock(argDefModule, init.loc)
+  let argDefData = ? fileScope.extractDataDef(argDefModule, init.loc)
   case argDefData.kind:
   of rdkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of rdkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
@@ -113,17 +113,17 @@ proc analyzeLiteralInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope:
 type AnalyzedGetter* = ref object
   resolved: ResolvedGetter
   source: AnalyzedArgumentType
-  property: ResolvedArgumentDefinition
+  property: ResolvedArgumentDef
   propertyArgType: AnalyzedArgumentType
 
-proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, property: ResolvedArgumentDefinition, propertyArgType: AnalyzedArgumentType): AnalyzedGetter =
+proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, property: ResolvedArgumentDef, propertyArgType: AnalyzedArgumentType): AnalyzedGetter =
   AnalyzedGetter(resolved: resolved, source: source, property: property, propertyArgType: propertyArgType)
 
 proc loc*(getter: AnalyzedGetter): Location = getter.resolved.loc
 proc resolved*(getter: AnalyzedGetter): ResolvedGetter = getter.resolved
 proc source*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.source
 proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.propertyArgType
-proc property*(getter: AnalyzedGetter): ResolvedArgumentDefinition = getter.property
+proc property*(getter: AnalyzedGetter): ResolvedArgumentDef = getter.property
 
 proc analyzeGetter*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
   if getter.source notin funcScope:
@@ -141,14 +141,14 @@ proc analyzeGetter*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFil
 type
   AnalyzedFunctionCall* = ref object
     resolved: ResolvedFunctionCall
-    def: ResolvedFunctionDefinition
+    def: ResolvedFunctionDef
     args: seq[AnalyzedExpression]
     returns: AnalyzedArgumentType
 
   AnalyzedKeywordArgument* = ref object
     # todo: add a concrete type
     resolved: ResolvedKeywordArgument
-    field: ResolvedArgumentDefinition
+    field: ResolvedArgumentDef
     expression: AnalyzedExpression
 
   AnalyzedStructRef* = ref object
@@ -222,20 +222,20 @@ type
 proc argType*(expression: AnalyzedExpression): Option[AnalyzedArgumentType]
 proc argType*(statement: AnalyzedStatement): Option[AnalyzedArgumentType]
 
-proc newAnalyzedFunctionCall*(resolved: ResolvedFunctionCall, def: ResolvedFunctionDefinition, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
+proc newAnalyzedFunctionCall*(resolved: ResolvedFunctionCall, def: ResolvedFunctionDef, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
   AnalyzedFunctionCall(resolved: resolved, def: def, args: args, returns: returns)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.resolved.loc
 proc resolved*(fncall: AnalyzedFunctionCall): ResolvedFunctionCall = fncall.resolved
-proc def*(fncall: AnalyzedFunctionCall): ResolvedFunctionDefinition = fncall.def
+proc def*(fncall: AnalyzedFunctionCall): ResolvedFunctionDef = fncall.def
 proc args*(fncall: AnalyzedFunctionCall): seq[AnalyzedExpression] = fncall.args
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType = fncall.returns
 
-proc newAnalyzedKeywordArgument*(resolved: ResolvedKeywordArgument, field: ResolvedArgumentDefinition, expression: AnalyzedExpression): AnalyzedKeywordArgument =
+proc newAnalyzedKeywordArgument*(resolved: ResolvedKeywordArgument, field: ResolvedArgumentDef, expression: AnalyzedExpression): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(resolved: resolved, field: field, expression: expression)
 
 proc resolved*(kwarg: AnalyzedKeywordArgument): ResolvedKeywordArgument = kwarg.resolved
-proc field*(kwarg: AnalyzedKeywordArgument): ResolvedArgumentDefinition = kwarg.field
+proc field*(kwarg: AnalyzedKeywordArgument): ResolvedArgumentDef = kwarg.field
 proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
 
 proc newAnalyzedStructRef*(resolved: ResolvedStructRef,
@@ -463,26 +463,26 @@ proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolve
 
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string]
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
+proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
   if defType.module != valType.module:
     err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
   else:
     var genericImplMap: GenericImplMap
     for (defImpl, valImpl) in zip(defType.impls, valType.impls):
-      let valGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defImpl, valImpl, loc)
+      let valGenericImplMap = ? analyzeValueTypeAgainstDefType(app, file, fileScope, defImpl, valImpl, loc)
       genericImplMap = ? genericImplMap.merge(valGenericImplMap)
     ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case valType.kind:
   of aatkGeneric:
     err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
   of aatkModule:
-    analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defType, valType.module, loc)
+    analyzeValueTypeAgainstDefType(app, file, fileScope, defType, valType.module, loc)
 
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   let funcDefs = defType.resolved.concreteImpls(valType.self)
   for funcDef in funcDefs:
     case valType.kind:
@@ -499,12 +499,12 @@ proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile,
   ok(genericImplMap)
 
 # TODO: Return a map of generic -> argType from the recursive analysis
-proc analyzeValueTypeAgainstDefinitionType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case defType.kind:
-  of aatkModule: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defType.module, valType, loc)
-  of aatkGeneric: analyzeValueTypeAgainstDefinitionType(app, file, fileScope, defType.generic, valType, loc)
+  of aatkModule: analyzeValueTypeAgainstDefType(app, file, fileScope, defType.module, valType, loc)
+  of aatkGeneric: analyzeValueTypeAgainstDefType(app, file, fileScope, defType.generic, valType, loc)
 
-proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: ResolvedFunctionDefinition): Result[GenericImplMap, string] =
+proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: ResolvedFunctionDef): Result[GenericImplMap, string] =
   # BUG: `zip` below silently truncates to the shorter sequence — if
   # funcDef.args.len != argValues.len the type-check walks only the common
   # prefix and reports success. Today the resolver's arity check prevents
@@ -517,7 +517,7 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
     let argDefAnalyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, argDef.argType)
     if argValue.argType.isNone:
       let argDefModule = ? fileScope.findModuleDef(argDefAnalyzedArgType, argValue.loc)
-      let argDefData = ? fileScope.extractDataBlock(argDefModule, argValue.loc)
+      let argDefData = ? fileScope.extractDataDef(argDefModule, argValue.loc)
       case argDefData.kind:
       of rdkStruct: return err(fmt"{argValue.loc} function call expects a struct initializer `{argDefModule.name.asl}`")
       of rdkUnion: return err(fmt"{argValue.loc} function call expects a union initializer `{argDefModule.name.asl}`")
@@ -526,12 +526,12 @@ proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
         if maybeValidLiteral.isOk: return ok(genericImplMap)
         else: return err(maybeValidLiteral.error)
     else:
-      let argGenericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, argDefAnalyzedArgType, argValue.argType.get, argValue.loc)
+      let argGenericImplMap = ? analyzeValueTypeAgainstDefType(app, file, fileScope, argDefAnalyzedArgType, argValue.argType.get, argValue.loc)
       genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
-proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[ResolvedFunctionDefinition], analyzedArgs: seq[AnalyzedExpression]): Result[(ResolvedFunctionDefinition, GenericImplMap), string] =
-  var matches: seq[(ResolvedFunctionDefinition, GenericImplMap)]
+proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[ResolvedFunctionDef], analyzedArgs: seq[AnalyzedExpression]): Result[(ResolvedFunctionDef, GenericImplMap), string] =
+  var matches: seq[(ResolvedFunctionDef, GenericImplMap)]
   var errors: seq[string]
   for index, funcDef in funcDefs:
     let maybeGenericImplMap = analyzeArgumentList(app, file, fileScope, module, funcScope, analyzedArgs, funcDef)
@@ -553,7 +553,7 @@ proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let definedType = ? fileScope.findDefinedType(fncall.parsed.root, fncall.loc)
+  let definedType = ? fileScope.findType(fncall.parsed.root, fncall.loc)
   let public =
     case definedType.kind:
     of rdtkModule: (module != definedType.module)
@@ -650,7 +650,7 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
   if analyzedSubjectExpr.argType.isNone:
     err(fmt"{analyzedSubjectExpr.loc} todo: analyze case blocks for literal expression")
   else:
-    let analyzedSubjectDataType = ? fileScope.extractDataBlock(analyzedSubjectExpr.argType.get, analyzedSubjectExpr.loc)
+    let analyzedSubjectDataType = ? fileScope.extractDataDef(analyzedSubjectExpr.argType.get, analyzedSubjectExpr.loc)
     case analyzedSubjectDataType.kind:
     of rdkStruct:
       let moduleName = analyzedSubjectExpr.argType.get.name
@@ -673,11 +673,11 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
           let analyzedCases = ? analyzeCases(app, file, fileScope, module, funcScope, match.cases, analyzedSubjectExpr.argType.get, analyzedSubjectDataType.union, impls, match.loc)
           ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
-proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: ResolvedArgumentDefinition, analyzedFieldArgType: AnalyzedArgumentType): Result[AnalyzedKeywordArgument, string] =
+proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: ResolvedArgumentDef, analyzedFieldArgType: AnalyzedArgumentType): Result[AnalyzedKeywordArgument, string] =
   let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression)
   if analyzedExpression.argType.isNone:
     let fieldModule = ? fileScope.findModuleDef(analyzedFieldArgType, kwarg.expression.loc)
-    let fieldModuleData = ? fileScope.extractDataBlock(fieldModule, kwarg.expression.loc)
+    let fieldModuleData = ? fileScope.extractDataDef(fieldModule, kwarg.expression.loc)
     case fieldModuleData.kind:
     of rdkStruct:
       err(fmt"{kwarg.expression.loc} field `{kwarg.name.asl}` expected a struct value but found literal")
@@ -688,8 +688,8 @@ proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
       if maybeAnalyzedLiteral.isErr: err(maybeAnalyzedLiteral.error)
       else: ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
   else:
-    # TODO: Utilize genericImplMap
-    let genericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType.get, analyzedExpression.loc)
+    # TODO: Utilize the returned generic impl map
+    discard ? analyzeValueTypeAgainstDefType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType.get, analyzedExpression.loc)
     ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
 proc receiverArgType(receiver: ResolvedModule): AnalyzedArgumentType =
@@ -725,12 +725,12 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
   let receiver = analyzedUnionRef.module
   if receiver.data.isNone:
     return err(fmt"{init.loc} module `{receiver.name.asl}` is not a union")
-  let dataBlock = receiver.data.get
-  case dataBlock.kind:
+  let dataDef = receiver.data.get
+  case dataDef.kind:
   of rdkLiteral: return err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
   of rdkStruct: return err(fmt"{init.loc} module `{receiver.name.asl}` is a struct")
   of rdkUnion: discard
-  let resolvedUnion = dataBlock.union
+  let resolvedUnion = dataDef.union
   let resolvedVariant = ? resolvedUnion.findVariant(init.variant)
   let analyzedImpls = analyzedUnionRef.analyzedImpls
   let hasExplicitImpls = analyzedImpls.len > 0
@@ -760,7 +760,7 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
     if analyzedExpression.argType.isNone:
       return err(fmt"{kwarg.expression.loc} todo: literal-typed kwarg in union initializer")
     let fieldType = analyzedFieldArgType.concrete(implMap)
-    let local = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, fieldType, analyzedExpression.argType.get, analyzedExpression.loc)
+    let local = ? analyzeValueTypeAgainstDefType(app, file, fileScope, fieldType, analyzedExpression.argType.get, analyzedExpression.loc)
     if not hasExplicitImpls:
       implMap = ? implMap.merge(local)
     analyzedKwargs.add(newAnalyzedKeywordArgument(kwarg, resolvedField, analyzedExpression))
@@ -803,14 +803,14 @@ proc analyzeStructInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: 
   let receiver = analyzedStructRef.module
   if receiver.data.isNone:
     return err(fmt"{init.loc} module `{receiver.name.asl}` is not a struct")
-  let dataBlock = receiver.data.get
-  case dataBlock.kind:
+  let dataDef = receiver.data.get
+  case dataDef.kind:
   of rdkLiteral: err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
   of rdkUnion: err(fmt"{init.loc} module `{receiver.name.asl}` is a union")
   of rdkStruct:
     var analyzedKwargs: seq[AnalyzedKeywordArgument]
     for kwarg in init.kwargs:
-      let resolvedField = ? dataBlock.struct.findField(kwarg.name)
+      let resolvedField = ? dataDef.struct.findField(kwarg.name)
       let analyzedFieldArgType = ? analyzeArgumentType(app, file, fileScope, module, resolvedField.argType)
       let analyzedKwarg = ? analyzeKeywordArgument(app, file, fileScope, module, funcScope, kwarg, resolvedField, analyzedFieldArgType)
       analyzedKwargs.add(analyzedKwarg)

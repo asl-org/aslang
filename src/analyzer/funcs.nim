@@ -11,14 +11,14 @@ import body
 
 type AnalyzedUserFunction* = ref object
   resolved: ResolvedUserFunction
-  def: ResolvedFunctionDefinition
+  def: ResolvedFunctionDef
   statements: seq[AnalyzedStatement]
 
-proc newAnalyzedUserFunction*(resolved: ResolvedUserFunction, def: ResolvedFunctionDefinition, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
+proc newAnalyzedUserFunction*(resolved: ResolvedUserFunction, def: ResolvedFunctionDef, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
   AnalyzedUserFunction(resolved: resolved, def: def, statements: statements)
 
 proc resolved*(function: AnalyzedUserFunction): ResolvedUserFunction = function.resolved
-proc def*(function: AnalyzedUserFunction): ResolvedFunctionDefinition = function.def
+proc def*(function: AnalyzedUserFunction): ResolvedFunctionDef = function.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements
 
 proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
@@ -53,13 +53,13 @@ proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
 
 type AnalyzedExternFunction* = ref object
   resolved: ResolvedExternFunction
-  def: ResolvedFunctionDefinition
+  def: ResolvedFunctionDef
 
-proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: ResolvedFunctionDefinition): AnalyzedExternFunction =
+proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: ResolvedFunctionDef): AnalyzedExternFunction =
   AnalyzedExternFunction(resolved: resolved, def: def)
 
 proc resolved*(function: AnalyzedExternFunction): ResolvedExternFunction = function.resolved
-proc def*(function: AnalyzedExternFunction): ResolvedFunctionDefinition = function.def
+proc def*(function: AnalyzedExternFunction): ResolvedFunctionDef = function.def
 
 type
   AnalyzedFunctionKind* = enum

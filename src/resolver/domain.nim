@@ -24,7 +24,7 @@ import patterns
 
 # FileScope alias — keyed by binding (alias-or-name); shared by
 # every resolver file that walks bodies.
-type FileScope* = Table[Identifier, DefinedType]
+type FileScope* = Table[Identifier, Type]
 
 # FunctionScope alias — names of variables currently in scope inside
 # a function body.
@@ -71,30 +71,30 @@ type
 
   # ==== Function-definition shape ====
 
-  ResolvedArgumentDefinition* = ref object
-    parsed: ArgumentDefinition
+  ResolvedArgumentDef* = ref object
+    parsed: ArgumentDef
     argType: ResolvedArgumentType
 
-  ResolvedFunctionDefinition* = ref object
-    parsed: FunctionDefinition
-    args: seq[ResolvedArgumentDefinition]
+  ResolvedFunctionDef* = ref object
+    parsed: FunctionDef
+    args: seq[ResolvedArgumentDef]
     returns: ResolvedArgumentType
 
   ResolvedExternFunction* = ref object
     parsed: ExternFunction
-    def: ResolvedFunctionDefinition
+    def: ResolvedFunctionDef
 
   # ==== Data-block shapes ====
 
   ResolvedStructDef* = ref object
     parsed: StructDef
-    fields: seq[ResolvedArgumentDefinition]
+    fields: seq[ResolvedArgumentDef]
     fieldIndex: Table[Identifier, int]
     genericTypeIndex: Table[ResolvedGenericArgumentType, int]
 
   ResolvedVariant* = ref object
-    parsed: VariantDefinition
-    fields: seq[ResolvedArgumentDefinition]
+    parsed: VariantDef
+    fields: seq[ResolvedArgumentDef]
     fieldIndex: Table[Identifier, int]
 
   ResolvedUnionDef* = ref object
@@ -207,7 +207,7 @@ type
 
   ResolvedUserFunction* = ref object
     parsed: UserFunction
-    funcDef: ResolvedFunctionDefinition
+    funcDef: ResolvedFunctionDef
     statements: seq[ResolvedStatement]
 
   ResolvedFunctionKind* = enum
@@ -223,23 +223,23 @@ type
     parsed: Module
     requires: seq[ResolvedGenericArgumentType]
     data: Option[ResolvedData]
-    funcDefIndex: Table[ResolvedFunctionDefinition, int]
+    funcDefIndex: Table[ResolvedFunctionDef, int]
     funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
     functions: seq[ResolvedFunction]
 
   ResolvedGeneric* = ref object
     parsed: Generic
-    funcDefs: seq[ResolvedFunctionDefinition]
-    funcDefIndex: Table[ResolvedFunctionDefinition, int]
+    funcDefs: seq[ResolvedFunctionDef]
+    funcDefIndex: Table[ResolvedFunctionDef, int]
     funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
-  # ==== DefinedType umbrella ====
+  # ==== Type umbrella ====
 
-  ResolvedDefinedTypeKind* = enum
+  ResolvedTypeKind* = enum
     rdtkModule, rdtkGeneric
-  ResolvedDefinedType* = ref object
+  ResolvedType* = ref object
     id: int
-    case kind: ResolvedDefinedTypeKind
+    case kind: ResolvedTypeKind
     of rdtkModule: module: ResolvedModule
     of rdtkGeneric: generic: ResolvedGeneric
 
@@ -412,35 +412,28 @@ proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgu
 
 # ---- Scope lookups ----
 
-proc findDefinedType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[DefinedType, string] =
-  let maybeFieldType = file.findType(name)
-  if maybeFieldType.isOk:
-    let fieldType = maybeFieldType.get
-    case fieldType.kind:
-    of tkImported:
-      let importedType = fieldType.imported
-      if importedType.binding notin fileScope:
-        err(fmt"{importedType.loc} type `{importedType.binding.asl}` does not exist in the file scope.")
-      else:
-        ok(fileScope[importedType.binding])
-    of tkDefined:
-      ok(fieldType.definedType)
-  elif name in fileScope:
-    # Name isn't in the parser's typeIndex (no explicit import or
-    # local definition) but the resolver populated fileScope with it
-    # — i.e., it came from a shorthand `import "file.asl"` expansion
-    # in resolveImport.
-    ok(fileScope[name])
-  else:
-    err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
+proc findType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Type, string] =
+  let maybeLocal = file.findType(name)
+  if maybeLocal.isOk: return maybeLocal
+  let maybeImported = file.findImportedName(name)
+  if maybeImported.isOk:
+    let importedType = maybeImported.get
+    if importedType.binding notin fileScope:
+      return err(fmt"{importedType.loc} type `{importedType.binding.asl}` does not exist in the file scope.")
+    return ok(fileScope[importedType.binding])
+  # Name isn't in the parser's local-def or imported-name indexes
+  # but the resolver may have populated fileScope with it via a
+  # shorthand `import "file.asl"` expansion in resolveImport.
+  if name in fileScope: ok(fileScope[name])
+  else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findModule*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Module, string] =
-  let initDefinedType = ? file.findDefinedType(fileScope, name)
-  case initDefinedType.kind:
-  of dtkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
-  of dtkModule: ok(initDefinedType.module)
+  let initType = ? file.findType(fileScope, name)
+  case initType.kind:
+  of tkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
+  of tkModule: ok(initType.module)
 
-proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields: seq[ArgumentDefinition]): Result[seq[Generic], string] =
+proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields: seq[ArgumentDef]): Result[seq[Generic], string] =
   # TODO(union-inference): walk impls recursively. Today this only
   # looks at the field's top-level root, so a field typed
   # `Box[u8, Sample]` returns nothing — even though the containing
@@ -452,10 +445,10 @@ proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields:
   # anywhere in the tree, deduped by first-seen order.
   var requiredImpls: seq[Generic]
   for field in fields:
-    let definedFieldType = ? file.findDefinedType(fileScope, field.argType.root)
+    let definedFieldType = ? file.findType(fileScope, field.argType.root)
     case definedFieldType.kind:
-    of dtkModule: discard
-    of dtkGeneric: requiredImpls.add(definedFieldType.generic)
+    of tkModule: discard
+    of tkGeneric: requiredImpls.add(definedFieldType.generic)
   ok(requiredImpls)
 
 proc findRequiredImplsForStruct(file: parser.File, fileScope: FileScope, struct: StructDef): Result[seq[Generic], string] =
@@ -479,7 +472,7 @@ proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: U
 proc lookupShell(shells: ResolvedModuleShells, root: Module): ResolvedModule =
   ## Look up the shell allocated during the declare pass. Every parser
   ## Module reachable through resolution must have a shell — the
-  ## declare pass in apps.nim walks every DefinedType in every file.
+  ## declare pass in apps.nim walks every Type in every file.
   assert(root in shells, fmt"UNREACHABLE: no shell allocated for module `{root.name.asl}` at {root.loc}")
   shells[root]
 
@@ -494,7 +487,7 @@ proc lookupShell(shells: ResolvedModuleShells, root: Module): ResolvedModule =
 # hash. Signature-parity (e.g. impl provides `byte_size(items: u16)`
 # where the base generic mandates `byte_size(items: u32)`) is left to
 # the analyzer's value-vs-defType walk at use sites
-# (analyzer/body.nim's `analyzeValueTypeAgainstDefinitionType`), which
+# (analyzer/body.nim's `analyzeValueTypeAgainstDefType`), which
 # already runs the strict hash-based check every time a value is
 # type-checked against a definition. The def-time check here catches
 # the "impl is missing the method entirely" case — the common
@@ -522,10 +515,10 @@ proc findGeneric*(file: parser.File, fileScope: FileScope, name: Identifier): Re
   ## constraint-check helper. Used by resolveModuleArgumentType's
   ## explicit-requires path to translate each `requires(...)` name into
   ## its parser Generic so the check can walk its funcDefs.
-  let initDefinedType = ? file.findDefinedType(fileScope, name)
-  case initDefinedType.kind:
-  of dtkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
-  of dtkGeneric: ok(initDefinedType.generic)
+  let initType = ? file.findType(fileScope, name)
+  case initType.kind:
+  of tkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
+  of tkGeneric: ok(initType.generic)
 
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
@@ -550,15 +543,15 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
 
   # NOTE: infer the impl list from struct/union block
   if root.data.isSome:
-    let dataBlock = root.data.get
-    case dataBlock.kind:
+    let dataDef = root.data.get
+    case dataDef.kind:
     of dbkLiteral:
       if argType.impls.len == 0:
         return ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
-    of dbkStruct:
-      let requires = ? file.findRequiredImplsForStruct(fileScope, dataBlock.struct)
+    of ddkStruct:
+      let requires = ? file.findRequiredImplsForStruct(fileScope, dataDef.struct)
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
@@ -570,8 +563,8 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
 
       return ok(newResolvedModuleArgumentType(resolvedRoot, resolvedImpls, argType.loc))
 
-    of dbkUnion:
-      let requires = ? file.findRequiredImplsForUnion(fileScope, dataBlock.union)
+    of ddkUnion:
+      let requires = ? file.findRequiredImplsForUnion(fileScope, dataDef.union)
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
@@ -589,7 +582,7 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
     err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
 # resolveModuleArgumentType — generic context. Mirrors module-context
-# but with the self-only rule and a still-stubbed dbkStruct path.
+# but with the self-only rule and a still-stubbed ddkStruct path.
 proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType,
@@ -599,17 +592,17 @@ proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
     return err("todo: resolve requires block in argument type")
 
   if root.data.isSome:
-    let dataBlock = root.data.get
-    case dataBlock.kind:
-    of dbkStruct:
-      return err(fmt"{dataBlock.loc} todo: resolve struct block in argument type")
+    let dataDef = root.data.get
+    case dataDef.kind:
+    of ddkStruct:
+      return err(fmt"{dataDef.loc} todo: resolve struct block in argument type")
     of dbkLiteral:
       if argType.impls.len == 0:
         return ok(newResolvedModuleArgumentType(resolvedRoot, argType.loc))
       else:
         return err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
-    of dbkUnion:
-      var requires = ? findRequiredImplsForUnion(file, fileScope, dataBlock.union)
+    of ddkUnion:
+      var requires = ? findRequiredImplsForUnion(file, fileScope, dataDef.union)
       if argType.impls.len != requires.len:
         return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
 
@@ -642,24 +635,24 @@ proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, arg
 proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, module: Module,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let definedType = ? file.findDefinedType(fileScope, argType.root)
+  let definedType = ? file.findType(fileScope, argType.root)
   case definedType.kind:
-  of dtkGeneric:
+  of tkGeneric:
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, definedType.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
-  of dtkModule:
+  of tkModule:
     let resolvedModuleType = ? resolveModuleArgumentType(app, shells, file, fileScope, module, argType, definedType.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
 proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let definedType = ? file.findDefinedType(fileScope, argType.root)
+  let definedType = ? file.findType(fileScope, argType.root)
   case definedType.kind:
-  of dtkGeneric:
+  of tkGeneric:
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
-  of dtkModule:
+  of tkModule:
     let resolvedModuleType = ? resolveModuleArgumentType(app, shells, file, fileScope, generic, argType, definedType.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
@@ -698,93 +691,88 @@ proc resolveDataType*(file: parser.File, generic: Generic, arg: ArgumentType,
 
 # =====================================================================
 # Function definitions
-# (ResolvedArgumentDefinition, ResolvedFunctionDefinition,
+# (ResolvedArgumentDef, ResolvedFunctionDef,
 #  ResolvedExternFunction)
 # =====================================================================
 
-# ---- ResolvedArgumentDefinition ----
+# ---- ResolvedArgumentDef ----
 
-proc newResolvedArgumentDefinition*(parsed: ArgumentDefinition,
-    argType: ResolvedArgumentType): ResolvedArgumentDefinition =
-  ResolvedArgumentDefinition(parsed: parsed, argType: argType)
+proc newResolvedArgumentDef*(parsed: ArgumentDef,
+    argType: ResolvedArgumentType): ResolvedArgumentDef =
+  ResolvedArgumentDef(parsed: parsed, argType: argType)
 
-proc parsed*(d: ResolvedArgumentDefinition): ArgumentDefinition = d.parsed
-proc name*(d: ResolvedArgumentDefinition): Identifier = d.parsed.name
-proc argType*(d: ResolvedArgumentDefinition): ResolvedArgumentType = d.argType
-proc loc*(d: ResolvedArgumentDefinition): Location = d.argType.loc
-proc hash*(d: ResolvedArgumentDefinition): Hash = d.argType.hash
-proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
-proc asl*(argDef: ResolvedArgumentDefinition): string =
+proc parsed*(d: ResolvedArgumentDef): ArgumentDef = d.parsed
+proc name*(d: ResolvedArgumentDef): Identifier = d.parsed.name
+proc argType*(d: ResolvedArgumentDef): ResolvedArgumentType = d.argType
+proc loc*(d: ResolvedArgumentDef): Location = d.argType.loc
+proc hash*(d: ResolvedArgumentDef): Hash = d.argType.hash
+proc `==`*(a, b: ResolvedArgumentDef): bool = a.hash == b.hash
+proc asl*(argDef: ResolvedArgumentDef): string =
   fmt"{argDef.name.asl}: {argDef.argType.asl}"
 
-proc genericRequirement*(d: ResolvedArgumentDefinition): Option[ResolvedGenericArgumentType] =
-  case d.argType.kind:
-  of ratkModule: discard
-  of ratkGeneric: result = some(d.argType.generic)
-
-proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDefinition =
+proc concreteArgumentDef(argDef: ResolvedArgumentDef, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDef =
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)
-  newResolvedArgumentDefinition(argDef.parsed, concreteArgType)
+  newResolvedArgumentDef(argDef.parsed, concreteArgType)
 
-proc resolveArgumentDefinition*(app: App, shells: ResolvedModuleShells,
+proc resolveArgumentDef*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, module: Module,
-    arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+    arg: ArgumentDef): Result[ResolvedArgumentDef, string] =
   let resolvedArgumentType = ? resolveArgumentType(app, shells, file, fileScope, module,
     arg.argType)
   ? resolveDataType(file, module, arg.argType, resolvedArgumentType)
-  ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
+  ok(newResolvedArgumentDef(arg, resolvedArgumentType))
 
-proc resolveArgumentDefinition*(app: App, shells: ResolvedModuleShells,
+proc resolveArgumentDef*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, generic: Generic,
-    arg: ArgumentDefinition): Result[ResolvedArgumentDefinition, string] =
+    arg: ArgumentDef): Result[ResolvedArgumentDef, string] =
   let resolvedArgumentType = ? resolveArgumentType(app, shells, file, fileScope, generic,
     arg.argType)
   ? resolveDataType(file, generic, arg.argType, resolvedArgumentType)
-  ok(newResolvedArgumentDefinition(arg, resolvedArgumentType))
+  ok(newResolvedArgumentDef(arg, resolvedArgumentType))
 
-# ---- ResolvedFunctionDefinition ----
+# ---- ResolvedFunctionDef ----
 
-proc newResolvedFunctionDefinition*(parsed: FunctionDefinition,
-    args: seq[ResolvedArgumentDefinition],
-    returns: ResolvedArgumentType): ResolvedFunctionDefinition =
-  ResolvedFunctionDefinition(parsed: parsed, args: args, returns: returns)
+proc newResolvedFunctionDef*(parsed: FunctionDef,
+    args: seq[ResolvedArgumentDef],
+    returns: ResolvedArgumentType): ResolvedFunctionDef =
+  ResolvedFunctionDef(parsed: parsed, args: args, returns: returns)
 
-proc parsed*(funcDef: ResolvedFunctionDefinition): FunctionDefinition = funcDef.parsed
-proc args*(funcDef: ResolvedFunctionDefinition): seq[ResolvedArgumentDefinition] = funcDef.args
-proc returns*(funcDef: ResolvedFunctionDefinition): ResolvedArgumentType = funcDef.returns
-proc public*(funcDef: ResolvedFunctionDefinition): bool = funcDef.parsed.public
-proc name*(funcDef: ResolvedFunctionDefinition): Identifier = funcDef.parsed.name
-proc arity*(funcDef: ResolvedFunctionDefinition): int = funcDef.parsed.arity
-proc loc*(funcDef: ResolvedFunctionDefinition): Location = funcDef.parsed.loc
+proc parsed*(funcDef: ResolvedFunctionDef): FunctionDef = funcDef.parsed
+proc args*(funcDef: ResolvedFunctionDef): seq[ResolvedArgumentDef] = funcDef.args
+proc returns*(funcDef: ResolvedFunctionDef): ResolvedArgumentType = funcDef.returns
+proc public*(funcDef: ResolvedFunctionDef): bool = funcDef.parsed.public
+proc name*(funcDef: ResolvedFunctionDef): Identifier = funcDef.parsed.name
+proc arity*(funcDef: ResolvedFunctionDef): int = funcDef.parsed.arity
+proc loc*(funcDef: ResolvedFunctionDef): Location = funcDef.parsed.loc
 
-proc asl*(funcDef: ResolvedFunctionDefinition): string =
+proc asl*(funcDef: ResolvedFunctionDef): string =
   var args: seq[string]
   for arg in funcDef.args:
     args.add(arg.asl)
   let argsJoined = args.join(", ")
   fmt"func {funcDef.name.asl}({argsJoined}): {funcDef.returns.asl}"
 
-proc hash*(funcDef: ResolvedFunctionDefinition): Hash =
+proc hash*(funcDef: ResolvedFunctionDef): Hash =
   var acc = funcDef.name.hash
   for arg in funcDef.args:
     acc = acc !& arg.hash
   return acc
 
-proc `==`*(a, b: ResolvedFunctionDefinition): bool = a.hash == b.hash
+proc `==`*(a, b: ResolvedFunctionDef): bool = a.hash == b.hash
 
-proc concreteFunctionDefinition*(funcDef: ResolvedFunctionDefinition, moduleType: ResolvedArgumentType, generic: Generic): ResolvedFunctionDefinition =
-  var concreteArgs: seq[ResolvedArgumentDefinition]
+proc concreteFunctionDef*(funcDef: ResolvedFunctionDef, moduleType: ResolvedArgumentType, generic: Generic): ResolvedFunctionDef =
+  var concreteArgs: seq[ResolvedArgumentDef]
   for arg in funcDef.args:
-    concreteArgs.add(arg.concreteArgumentDefinition(moduleType, generic))
+    concreteArgs.add(arg.concreteArgumentDef(moduleType, generic))
   let concreteReturns = funcDef.returns.concreteArgumentType(moduleType, generic)
-  newResolvedFunctionDefinition(funcDef.parsed, concreteArgs, concreteReturns)
+  newResolvedFunctionDef(funcDef.parsed, concreteArgs, concreteReturns)
 
-proc resolveFunctionDefinition*(app: App, shells: ResolvedModuleShells,
+proc resolveFunctionDef*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, module: Module,
-    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
-  var resolvedArgs: seq[ResolvedArgumentDefinition]
+    def: FunctionDef): Result[ResolvedFunctionDef, string] =
+  var resolvedArgs: seq[ResolvedArgumentDef]
   for arg in def.args:
-    let resolvedArg = ? resolveArgumentDefinition(app, shells, file, fileScope, module,
+    let resolvedArg = ? resolveArgumentDef(app, shells, file, fileScope, module,
       arg)
     resolvedArgs.add(resolvedArg)
 
@@ -792,39 +780,39 @@ proc resolveFunctionDefinition*(app: App, shells: ResolvedModuleShells,
     def.returns)
   ? resolveDataType(file, module, def.returns, resolvedReturnArgType)
 
-  ok(newResolvedFunctionDefinition(def, resolvedArgs,
+  ok(newResolvedFunctionDef(def, resolvedArgs,
     resolvedReturnArgType))
 
-proc resolveFunctionDefinition*(app: App, shells: ResolvedModuleShells,
+proc resolveFunctionDef*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, generic: Generic,
-    def: FunctionDefinition): Result[ResolvedFunctionDefinition, string] =
-  var resolvedArgs: seq[ResolvedArgumentDefinition]
+    def: FunctionDef): Result[ResolvedFunctionDef, string] =
+  var resolvedArgs: seq[ResolvedArgumentDef]
   for arg in def.args:
-    let resolvedArg = ? resolveArgumentDefinition(app, shells, file, fileScope, generic, arg)
+    let resolvedArg = ? resolveArgumentDef(app, shells, file, fileScope, generic, arg)
     resolvedArgs.add(resolvedArg)
 
   let resolvedReturnArgType = ? resolveArgumentType(app, shells, file, fileScope, generic,
     def.returns)
   ? resolveDataType(file, generic, def.returns, resolvedReturnArgType)
 
-  ok(newResolvedFunctionDefinition(def, resolvedArgs,
+  ok(newResolvedFunctionDef(def, resolvedArgs,
     resolvedReturnArgType))
 
 # ---- ResolvedExternFunction ----
 
 proc newResolvedExternFunction*(parsed: ExternFunction,
-    def: ResolvedFunctionDefinition): ResolvedExternFunction =
+    def: ResolvedFunctionDef): ResolvedExternFunction =
   ResolvedExternFunction(parsed: parsed, def: def)
 
 proc parsed*(function: ResolvedExternFunction): ExternFunction = function.parsed
-proc def*(function: ResolvedExternFunction): ResolvedFunctionDefinition = function.def
+proc def*(function: ResolvedExternFunction): ResolvedFunctionDef = function.def
 proc ffi*(function: ResolvedExternFunction): string = function.parsed.ffi
 proc loc*(function: ResolvedExternFunction): Location = function.def.loc
 
 proc resolveExternFunction*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, module: Module,
     function: ExternFunction): Result[ResolvedExternFunction, string] =
-  let resolvedFunctionDef = ? resolveFunctionDefinition(app, shells, file, fileScope,
+  let resolvedFunctionDef = ? resolveFunctionDef(app, shells, file, fileScope,
     module, function.def)
   ok(newResolvedExternFunction(function, resolvedFunctionDef))
 
@@ -833,7 +821,7 @@ proc resolveExternFunction*(app: App, shells: ResolvedModuleShells,
 # (ResolvedStructDef, ResolvedVariant, ResolvedUnionDef, ResolvedData)
 # =====================================================================
 
-proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgumentType, int], field: ResolvedArgumentDefinition) =
+proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgumentType, int], field: ResolvedArgumentDef) =
   ## Assigns the next position to each new generic encountered in
   ## field types. Same name across multiple fields keeps its first
   ## position — the analyzer's GenericImplMap binds one generic to
@@ -851,7 +839,7 @@ proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgume
 # ---- ResolvedStructDef ----
 
 proc newResolvedStructDef*(parsed: StructDef,
-    fields: seq[ResolvedArgumentDefinition],
+    fields: seq[ResolvedArgumentDef],
     genericTypeIndex: Table[ResolvedGenericArgumentType, int]): ResolvedStructDef =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
@@ -860,12 +848,12 @@ proc newResolvedStructDef*(parsed: StructDef,
   ResolvedStructDef(parsed: parsed, fields: fields, fieldIndex: fieldIndex, genericTypeIndex: genericTypeIndex)
 
 proc parsed*(struct: ResolvedStructDef): StructDef = struct.parsed
-proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDefinition] = struct.fields
+proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDef] = struct.fields
 proc genericTypeIndex*(struct: ResolvedStructDef): Table[ResolvedGenericArgumentType, int] = struct.genericTypeIndex
 proc fieldIndex*(struct: ResolvedStructDef): Table[Identifier, int] = struct.fieldIndex
 proc loc*(struct: ResolvedStructDef): Location = struct.parsed.loc
 
-proc findField*(struct: ResolvedStructDef, name: Identifier): Result[ResolvedArgumentDefinition, string] =
+proc findField*(struct: ResolvedStructDef, name: Identifier): Result[ResolvedArgumentDef, string] =
   if name in struct.fieldIndex: ok(struct.fields[struct.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
@@ -876,41 +864,41 @@ proc requires*(struct: ResolvedStructDef): seq[ResolvedGenericArgumentType] =
   return requires
 
 proc resolveStructDef*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, module: Module, struct: StructDef): Result[ResolvedStructDef, string] =
-  var resolvedFields: seq[ResolvedArgumentDefinition]
+  var resolvedFields: seq[ResolvedArgumentDef]
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for field in struct.fields:
-    let resolvedField = ? resolveArgumentDefinition(app, shells, file, fileScope, module, field)
+    let resolvedField = ? resolveArgumentDef(app, shells, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedStructDef(struct, resolvedFields, genericTypeIndex))
 
 # ---- ResolvedVariant ----
 
-proc newResolvedVariant*(parsed: VariantDefinition,
-    fields: seq[ResolvedArgumentDefinition]): ResolvedVariant =
+proc newResolvedVariant*(parsed: VariantDef,
+    fields: seq[ResolvedArgumentDef]): ResolvedVariant =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
     assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name — should have been caught in parser")
     fieldIndex[field.name] = id
   ResolvedVariant(parsed: parsed, fields: fields, fieldIndex: fieldIndex)
 
-proc parsed*(variant: ResolvedVariant): VariantDefinition = variant.parsed
-proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDefinition] = variant.fields
+proc parsed*(variant: ResolvedVariant): VariantDef = variant.parsed
+proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDef] = variant.fields
 proc fieldIndex*(variant: ResolvedVariant): Table[Identifier, int] = variant.fieldIndex
 proc loc*(variant: ResolvedVariant): Location = variant.parsed.loc
 proc name*(variant: ResolvedVariant): Identifier = variant.parsed.name
 
-proc findField*(variant: ResolvedVariant, name: Identifier): Result[ResolvedArgumentDefinition, string] =
+proc findField*(variant: ResolvedVariant, name: Identifier): Result[ResolvedArgumentDef, string] =
   if name in variant.fieldIndex: ok(variant.fields[variant.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
 # NOTE: `genericTypeIndex` is the union's shared position table — mutated
 # in place as each variant's fields contribute new generics (in
 # declaration order); not returned because the union accumulates it.
-proc resolveVariant(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDefinition, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
-  var resolvedFields: seq[ResolvedArgumentDefinition]
+proc resolveVariant(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, module: Module, variant: VariantDef, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
+  var resolvedFields: seq[ResolvedArgumentDef]
   for field in variant.fields:
-    let resolvedField = ? resolveArgumentDefinition(app, shells, file, fileScope, module, field)
+    let resolvedField = ? resolveArgumentDef(app, shells, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
   ok(newResolvedVariant(variant, resolvedFields))
@@ -985,17 +973,17 @@ proc requires*(data: ResolvedData): seq[ResolvedGenericArgumentType] =
   of rdkStruct: data.struct.requires
   of rdkUnion: data.union.requires
 
-proc resolveDataBlock*(app: App, shells: ResolvedModuleShells, file: parser.File,
-    fileScope: FileScope, module: Module, data: DataBlock): Result[ResolvedData, string] =
+proc resolveDataDef*(app: App, shells: ResolvedModuleShells, file: parser.File,
+    fileScope: FileScope, module: Module, data: DataDef): Result[ResolvedData, string] =
   case data.kind:
   of dbkLiteral:
     let resolvedLiteralType = ? resolveLiteralDef(file, data.literal)
     ok(newResolvedData(resolvedLiteralType))
-  of dbkStruct:
+  of ddkStruct:
     let resolvedStruct = ? resolveStructDef(app, shells, file, fileScope, module,
       data.struct)
     ok(newResolvedData(resolvedStruct))
-  of dbkUnion:
+  of ddkUnion:
     let resolvedUnion = ? resolveUnionDef(app, shells, file, fileScope, module, data.union)
     ok(newResolvedData(resolvedUnion))
 
@@ -1335,7 +1323,7 @@ proc resolveFunctionCall(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let definedType = ? file.findDefinedType(fileScope, fncall.root)
+  let definedType = ? file.findType(fileScope, fncall.root)
   let funcDefs = ? definedType.findFunctionDefs(fncall.name, fncall.args.len)
   if funcDefs.len == 0:
     err(fmt"{fncall.loc} generic `{definedType.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
@@ -1541,12 +1529,12 @@ proc resolveStatement*(app: App, shells: ResolvedModuleShells,
 # ---- ResolvedUserFunction ----
 
 proc newResolvedUserFunction*(parsed: UserFunction,
-    funcDef: ResolvedFunctionDefinition,
+    funcDef: ResolvedFunctionDef,
     statements: seq[ResolvedStatement]): ResolvedUserFunction =
   ResolvedUserFunction(parsed: parsed, funcDef: funcDef, statements: statements)
 
 proc parsed*(function: ResolvedUserFunction): UserFunction = function.parsed
-proc def*(function: ResolvedUserFunction): ResolvedFunctionDefinition = function.funcDef
+proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.funcDef
 proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
 proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 
@@ -1556,10 +1544,10 @@ proc resolveUserFunction*(app: App, shells: ResolvedModuleShells,
   if function.decorators.len > 0:
     return err(fmt"{function.loc} todo: resolve decorators in user function")
 
-  let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, shells, file, fileScope, module, function.def)
+  let resolvedFunctionDef = ? resolveFunctionDef(app, shells, file, fileScope, module, function.def)
 
   var scope: FunctionScope
-  for arg in resolvedFunctionDefinition.args:
+  for arg in resolvedFunctionDef.args:
     scope.incl(arg.name)
 
   var resolvedStatements: seq[ResolvedStatement]
@@ -1570,7 +1558,7 @@ proc resolveUserFunction*(app: App, shells: ResolvedModuleShells,
     if resolvedStatement.variable.isSome:
       scope.incl(resolvedStatement.variable.get)
 
-  ok(newResolvedUserFunction(function, resolvedFunctionDefinition, resolvedStatements))
+  ok(newResolvedUserFunction(function, resolvedFunctionDef, resolvedStatements))
 
 # ---- ResolvedFunction (tagged union) ----
 
@@ -1590,7 +1578,7 @@ proc user*(function: ResolvedFunction): ResolvedUserFunction =
     fmt"ResolvedFunction.user accessed but kind is {function.kind}"
   function.user
 
-proc def*(function: ResolvedFunction): ResolvedFunctionDefinition =
+proc def*(function: ResolvedFunction): ResolvedFunctionDef =
   case function.kind:
   of rfkExtern: function.extern.def
   of rfkUser: function.user.def
@@ -1626,7 +1614,7 @@ proc resolveFunction*(app: App, shells: ResolvedModuleShells,
 proc newResolvedModuleInternal(parsed: Module,
     requires: seq[ResolvedGenericArgumentType],
     data: Option[ResolvedData],
-    funcDefIndex: Table[ResolvedFunctionDefinition, int],
+    funcDefIndex: Table[ResolvedFunctionDef, int],
     funcNameArityIndex: Table[Identifier, Table[int, seq[int]]],
     functions: seq[ResolvedFunction]): ResolvedModule =
   ## Raw constructor used by the front-door `newResolvedModule`, which
@@ -1645,7 +1633,7 @@ proc populate(module: ResolvedModule,
     requires: seq[ResolvedGenericArgumentType],
     data: Option[ResolvedData],
     functions: seq[ResolvedFunction],
-    funcDefIndex: Table[ResolvedFunctionDefinition, int],
+    funcDefIndex: Table[ResolvedFunctionDef, int],
     funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]) =
   ## Fill in a shell ResolvedModule after the define pass has walked
   ## the module. Called once per module — callers rely on the shell
@@ -1656,7 +1644,7 @@ proc populate(module: ResolvedModule,
   module.funcDefIndex = funcDefIndex
   module.funcNameArityIndex = funcNameArityIndex
 
-proc buildFuncNameArityIndex(funcDefs: seq[ResolvedFunctionDefinition]): Table[Identifier, Table[int, seq[int]]] =
+proc buildFuncNameArityIndex(funcDefs: seq[ResolvedFunctionDef]): Table[Identifier, Table[int, seq[int]]] =
   ## Positions of function definitions indexed by name then arity —
   ## drives overload lookup at call sites. Used by both ResolvedModule
   ## and ResolvedGeneric (see below).
@@ -1674,8 +1662,8 @@ proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentTyp
   ## in the shell/populate two-pass (currently only tests). Regular
   ## resolution uses `newResolvedModuleShell` + `populate` in
   ## `resolveModule` below.
-  var funcDefIndex: Table[ResolvedFunctionDefinition, int]
-  var funcDefs: seq[ResolvedFunctionDefinition]
+  var funcDefIndex: Table[ResolvedFunctionDef, int]
+  var funcDefs: seq[ResolvedFunctionDef]
   for id, function in functions:
     assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
     funcDefIndex[function.def] = id
@@ -1689,8 +1677,8 @@ proc populateResolvedModule(shell: ResolvedModule,
     functions: seq[ResolvedFunction]) =
   ## Compute the funcDef and funcNameArity indices from the resolved
   ## functions, then hand off to the shell's `populate`.
-  var funcDefIndex: Table[ResolvedFunctionDefinition, int]
-  var funcDefs: seq[ResolvedFunctionDefinition]
+  var funcDefIndex: Table[ResolvedFunctionDef, int]
+  var funcDefs: seq[ResolvedFunctionDef]
   for id, function in functions:
     assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
     funcDefIndex[function.def] = id
@@ -1702,7 +1690,7 @@ proc parsed*(module: ResolvedModule): Module = module.parsed
 proc requires*(module: ResolvedModule): seq[ResolvedGenericArgumentType] = module.requires
 proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
 proc functions*(module: ResolvedModule): seq[ResolvedFunction] = module.functions
-proc funcDefIndex*(module: ResolvedModule): Table[ResolvedFunctionDefinition, int] = module.funcDefIndex
+proc funcDefIndex*(module: ResolvedModule): Table[ResolvedFunctionDef, int] = module.funcDefIndex
 proc funcNameArityIndex*(module: ResolvedModule): Table[Identifier, Table[int, seq[int]]] = module.funcNameArityIndex
 proc name*(module: ResolvedModule): Identifier = module.parsed.name
 proc loc*(module: ResolvedModule): Location = module.parsed.loc
@@ -1716,13 +1704,13 @@ proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
 proc hash*(a: ResolvedModule): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedModule): bool = a.hash == b.hash
 
-proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDefinition): Option[ResolvedFunctionDefinition] =
+proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDef): Option[ResolvedFunctionDef] =
   if funcDef notin module.funcDefIndex:
-    none(ResolvedFunctionDefinition)
+    none(ResolvedFunctionDef)
   else:
     some(module.functions[module.funcDefIndex[funcDef]].def)
 
-proc findFunctionDefs*(module: ResolvedModule, name: Identifier, arity: int, public: bool): Result[seq[ResolvedFunctionDefinition], string] =
+proc findFunctionDefs*(module: ResolvedModule, name: Identifier, arity: int, public: bool): Result[seq[ResolvedFunctionDef], string] =
   ## Overload-lookup entry point — returns every function definition
   ## that matches `name` + `arity`, optionally filtered to `public` only
   ## (for external-call receivers). Uniqueness is left to the caller's
@@ -1757,15 +1745,15 @@ proc validateRequiresConstraints(module: Module): Result[void, string] =
   if module.data.isNone:
     return err(fmt"{requires.loc} module `{module.name.asl}` declares requires but has no data block; requires must pair with a struct")
   case module.data.get.kind:
-  of dbkStruct: ok()
-  of dbkLiteral, dbkUnion:
+  of ddkStruct: ok()
+  of dbkLiteral, ddkUnion:
     err(fmt"{module.data.get.loc} module `{module.name.asl}` declares requires but data block is not a struct")
 
 proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
     fileScope: FileScope, module: Module): Result[ResolvedModule, string] =
   ## Fill in the shell allocated for this parser Module during the
   ## declare pass. `resolveArgumentType` (called transitively from
-  ## resolveDataBlock / resolveFunction) may already have handed out
+  ## resolveDataDef / resolveFunction) may already have handed out
   ## `ResolvedModuleArgumentType` values pointing at this shell —
   ## populating it here makes those forward references complete.
   if module.decorators.len > 0:
@@ -1776,18 +1764,18 @@ proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
   var resolvedRequires: seq[ResolvedGenericArgumentType]
   if module.requires.isSome:
     for generic in module.requires.get.generics:
-      let definedType = ? file.findDefinedType(fileScope, generic)
+      let definedType = ? file.findType(fileScope, generic)
       case definedType.kind:
-      of dtkModule:
+      of tkModule:
         return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
-      of dtkGeneric:
+      of tkGeneric:
         resolvedRequires.add(newResolvedGenericArgumentType(definedType.generic, generic.loc))
 
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:
-    let resolvedDataBlock = ? resolveDataBlock(app, shells, file, fileScope, module,
+    let resolvedDataDef = ? resolveDataDef(app, shells, file, fileScope, module,
       module.data.get)
-    resolvedData = some(resolvedDataBlock)
+    resolvedData = some(resolvedDataDef)
 
   # NOTE: Infer requires list if not explicitly mentioned.
   if module.requires.isNone and resolvedData.isSome:
@@ -1818,16 +1806,16 @@ proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
 # ---- ResolvedGeneric: raw ctor + front-door ----
 
 proc newResolvedGenericInternal(parsed: Generic,
-    funcDefs: seq[ResolvedFunctionDefinition],
-    funcDefIndex: Table[ResolvedFunctionDefinition, int],
+    funcDefs: seq[ResolvedFunctionDef],
+    funcDefIndex: Table[ResolvedFunctionDef, int],
     funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]): ResolvedGeneric =
   ## Raw constructor used by the front-door `newResolvedGeneric`, which
   ## computes the two indices from the funcDef list.
   ResolvedGeneric(parsed: parsed, funcDefs: funcDefs,
     funcDefIndex: funcDefIndex, funcNameArityIndex: funcNameArityIndex)
 
-proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDefinition]): ResolvedGeneric =
-  var funcDefIndex: Table[ResolvedFunctionDefinition, int]
+proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): ResolvedGeneric =
+  var funcDefIndex: Table[ResolvedFunctionDef, int]
   for id, funcDef in funcDefs:
     assert(funcDef notin funcDefIndex, "UNREACHABLE: generic resolution broke due to duplicated function definition")
     funcDefIndex[funcDef] = id
@@ -1835,8 +1823,8 @@ proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDefiniti
     buildFuncNameArityIndex(funcDefs))
 
 proc parsed*(generic: ResolvedGeneric): Generic = generic.parsed
-proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDefinition] = generic.funcDefs
-proc funcDefIndex*(generic: ResolvedGeneric): Table[ResolvedFunctionDefinition, int] = generic.funcDefIndex
+proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDef] = generic.funcDefs
+proc funcDefIndex*(generic: ResolvedGeneric): Table[ResolvedFunctionDef, int] = generic.funcDefIndex
 proc funcNameArityIndex*(generic: ResolvedGeneric): Table[Identifier, Table[int, seq[int]]] = generic.funcNameArityIndex
 proc self*(generic: ResolvedGeneric): Generic = generic.parsed
 proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
@@ -1845,19 +1833,19 @@ proc loc*(generic: ResolvedGeneric): Location = generic.parsed.loc
 proc hash*(a: ResolvedGeneric): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedGeneric): bool = a.hash == b.hash
 
-proc concreteImpls*(generic: ResolvedGeneric, concrete: ResolvedArgumentType): seq[ResolvedFunctionDefinition] =
-  var concreteFuncDefs: seq[ResolvedFunctionDefinition]
+proc concreteImpls*(generic: ResolvedGeneric, concrete: ResolvedArgumentType): seq[ResolvedFunctionDef] =
+  var concreteFuncDefs: seq[ResolvedFunctionDef]
   for def in generic.funcDefs:
-    concreteFuncDefs.add(def.concreteFunctionDefinition(concrete, generic.parsed))
+    concreteFuncDefs.add(def.concreteFunctionDef(concrete, generic.parsed))
   return concreteFuncDefs
 
-proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDefinition): Option[ResolvedFunctionDefinition] =
+proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): Option[ResolvedFunctionDef] =
   if funcDef notin generic.funcDefIndex:
-    none(ResolvedFunctionDefinition)
+    none(ResolvedFunctionDef)
   else:
     some(generic.funcDefs[generic.funcDefIndex[funcDef]])
 
-proc findFunctionDefs*(generic: ResolvedGeneric, name: Identifier, arity: int): Result[seq[ResolvedFunctionDefinition], string] =
+proc findFunctionDefs*(generic: ResolvedGeneric, name: Identifier, arity: int): Result[seq[ResolvedFunctionDef], string] =
   ## Overload-lookup for generic funcDefs — every funcDef inside a
   ## generic is implicitly public (per grammar), so no public filter.
   if name notin generic.funcNameArityIndex:
@@ -1871,48 +1859,48 @@ proc resolveGeneric*(app: App, shells: ResolvedModuleShells, file: parser.File, 
   if generic.decorators.len > 0:
     return err(fmt"{generic.loc} todo: resolve generic decorators")
 
-  var resolvedFunctionDefs: seq[ResolvedFunctionDefinition]
+  var resolvedFunctionDefs: seq[ResolvedFunctionDef]
   for funcDef in generic.funcDefs:
-    let resolvedFunctionDefinition = ? resolveFunctionDefinition(app, shells, file, fileScope, generic, funcDef)
-    resolvedFunctionDefs.add(resolvedFunctionDefinition)
+    let resolvedFunctionDef = ? resolveFunctionDef(app, shells, file, fileScope, generic, funcDef)
+    resolvedFunctionDefs.add(resolvedFunctionDef)
 
   ok(newResolvedGeneric(generic, resolvedFunctionDefs))
 
 # =====================================================================
-# DefinedType umbrella
+# Type umbrella
 # =====================================================================
 
-proc newResolvedDefinedType*(id: int, module: ResolvedModule): ResolvedDefinedType =
-  ResolvedDefinedType(id: id, kind: rdtkModule, module: module)
+proc newResolvedType*(id: int, module: ResolvedModule): ResolvedType =
+  ResolvedType(id: id, kind: rdtkModule, module: module)
 
-proc newResolvedDefinedType*(id: int, generic: ResolvedGeneric): ResolvedDefinedType =
-  ResolvedDefinedType(id: id, kind: rdtkGeneric, generic: generic)
+proc newResolvedType*(id: int, generic: ResolvedGeneric): ResolvedType =
+  ResolvedType(id: id, kind: rdtkGeneric, generic: generic)
 
-proc kind*(definedType: ResolvedDefinedType): ResolvedDefinedTypeKind = definedType.kind
-proc module*(definedType: ResolvedDefinedType): ResolvedModule =
+proc kind*(definedType: ResolvedType): ResolvedTypeKind = definedType.kind
+proc module*(definedType: ResolvedType): ResolvedModule =
   assert definedType.kind == rdtkModule,
-    fmt"ResolvedDefinedType.module accessed but kind is {definedType.kind}"
+    fmt"ResolvedType.module accessed but kind is {definedType.kind}"
   definedType.module
-proc generic*(definedType: ResolvedDefinedType): ResolvedGeneric =
+proc generic*(definedType: ResolvedType): ResolvedGeneric =
   assert definedType.kind == rdtkGeneric,
-    fmt"ResolvedDefinedType.generic accessed but kind is {definedType.kind}"
+    fmt"ResolvedType.generic accessed but kind is {definedType.kind}"
   definedType.generic
 
-proc name*(definedType: ResolvedDefinedType): Identifier =
+proc name*(definedType: ResolvedType): Identifier =
   case definedType.kind:
   of rdtkModule: definedType.module.name
   of rdtkGeneric: definedType.generic.name
 
-proc loc*(definedType: ResolvedDefinedType): Location =
+proc loc*(definedType: ResolvedType): Location =
   case definedType.kind:
   of rdtkModule: definedType.module.loc
   of rdtkGeneric: definedType.generic.loc
 
-proc resolveDefinedType*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, id: int, definedType: DefinedType): Result[ResolvedDefinedType, string] =
+proc resolveType*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, id: int, definedType: Type): Result[ResolvedType, string] =
   case definedType.kind:
-  of dtkGeneric:
+  of tkGeneric:
     let resolvedGeneric = ? resolveGeneric(app, shells, file, fileScope, definedType.generic)
-    ok(newResolvedDefinedType(id, resolvedGeneric))
-  of dtkModule:
+    ok(newResolvedType(id, resolvedGeneric))
+  of tkModule:
     let resolvedModule = ? resolveModule(app, shells, file, fileScope, definedType.module)
-    ok(newResolvedDefinedType(id, resolvedModule))
+    ok(newResolvedType(id, resolvedModule))

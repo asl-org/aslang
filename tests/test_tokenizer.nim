@@ -6,7 +6,7 @@
 
 import unittest, results
 
-import tokenizer
+import parser/tokenizer
 import tutils
 
 suite "tokenizer — happy paths":

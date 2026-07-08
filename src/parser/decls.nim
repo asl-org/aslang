@@ -1,118 +1,75 @@
 import strformat, strutils, tables, results, hashes, os
 
-import tokenizer
-import combinators
-import helpers
-import identifiers
-import funcDefs
-import funcs
-import imports
-import generics
-import modules
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./funcs
+import ./imports
+import ./generics
+import ./modules
 
 # ============================================================
-# DefinedType
-# ============================================================
-
-type
-  DefinedTypeKind* = enum
-    dtkModule, dtkGeneric
-  DefinedType* = ref object
-    case kind: DefinedTypeKind
-    of dtkModule: module: Module
-    of dtkGeneric: generic: Generic
-
-proc newDefinedType*(module: Module): DefinedType =
-  DefinedType(kind: dtkModule, module: module)
-
-proc newDefinedType*(generic: Generic): DefinedType =
-  DefinedType(kind: dtkGeneric, generic: generic)
-
-proc kind*(dt: DefinedType): DefinedTypeKind = dt.kind
-proc public*(dt: DefinedType): bool =
-  case dt.kind:
-  of dtkModule: dt.module.public
-  of dtkGeneric: dt.generic.public
-
-proc module*(dt: DefinedType): Module =
-  assert dt.kind == dtkModule,
-    fmt"DefinedType.module accessed but kind is {dt.kind}"
-  dt.module
-
-proc generic*(dt: DefinedType): Generic =
-  assert dt.kind == dtkGeneric,
-    fmt"DefinedType.generic accessed but kind is {dt.kind}"
-  dt.generic
-
-proc name*(definedType: DefinedType): Identifier =
-  case definedType.kind:
-  of dtkModule: definedType.module.name
-  of dtkGeneric: definedType.generic.name
-
-proc loc*(definedType: DefinedType): Location =
-  case definedType.kind:
-  of dtkModule: definedType.module.loc
-  of dtkGeneric: definedType.generic.loc
-
-proc asl(definedType: DefinedType, indentWidth: uint32): seq[string] =
-  case definedType.kind:
-  of dtkModule: definedType.module.asl(indentWidth)
-  of dtkGeneric: definedType.generic.asl(indentWidth)
-
-proc findFunctionDefs*(definedType: DefinedType, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
-  case definedType.kind:
-  of dtkModule: definedType.module.findFunctionDefs(name, arity)
-  of dtkGeneric: definedType.generic.findFunctionDefs(name, arity)
-
-let typeSpec = oneOf("type_block", [
-  moduleSpec.map("module_item",
-    proc(v: Module): DefinedType = newDefinedType(v)),
-  genericSpec.map("generic_item",
-    proc(v: Generic): DefinedType = newDefinedType(v)),
-])
-
-let definedTypeBlockSpec = Spec[DefinedType](
-  name: "type_block_block",
-  parseFn: proc(parser: Parser): Result[DefinedType, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
-  let item = ? parser.run(typeSpec)
-  ok(item)
-)
-
-# ============================================================
-# Type (umbrella over imported and defined types)
+# Type
 # ============================================================
 
 type
   TypeKind* = enum
-    tkImported, tkDefined
+    tkModule, tkGeneric
   Type* = ref object
     case kind: TypeKind
-    of tkImported: imported: ImportedType
-    of tkDefined: definedType: DefinedType
+    of tkModule: module: Module
+    of tkGeneric: generic: Generic
 
-proc newType(imported: ImportedType): Type =
-  Type(kind: tkImported, imported: imported)
+proc newType*(module: Module): Type =
+  Type(kind: tkModule, module: module)
 
-proc newType(definedType: DefinedType): Type =
-  Type(kind: tkDefined, definedType: definedType)
+proc newType*(generic: Generic): Type =
+  Type(kind: tkGeneric, generic: generic)
 
-proc kind*(typ: Type): TypeKind = typ.kind
+proc kind*(dt: Type): TypeKind = dt.kind
+proc public*(dt: Type): bool =
+  case dt.kind:
+  of tkModule: dt.module.public
+  of tkGeneric: dt.generic.public
 
-proc imported*(typ: Type): ImportedType =
-  assert typ.kind == tkImported,
-    fmt"Type.imported accessed but kind is {typ.kind}"
-  typ.imported
+proc module*(dt: Type): Module =
+  assert dt.kind == tkModule,
+    fmt"Type.module accessed but kind is {dt.kind}"
+  dt.module
 
-proc definedType*(typ: Type): DefinedType =
-  assert typ.kind == tkDefined,
-    fmt"Type.definedType accessed but kind is {typ.kind}"
-  typ.definedType
+proc generic*(dt: Type): Generic =
+  assert dt.kind == tkGeneric,
+    fmt"Type.generic accessed but kind is {dt.kind}"
+  dt.generic
 
-proc loc*(typ: Type): Location =
-  case typ.kind:
-  of tkImported: typ.imported.loc
-  of tkDefined: typ.definedType.loc
+proc name*(definedType: Type): Identifier =
+  case definedType.kind:
+  of tkModule: definedType.module.name
+  of tkGeneric: definedType.generic.name
+
+proc loc*(definedType: Type): Location =
+  case definedType.kind:
+  of tkModule: definedType.module.loc
+  of tkGeneric: definedType.generic.loc
+
+proc asl(definedType: Type, indentWidth: uint32): seq[string] =
+  case definedType.kind:
+  of tkModule: definedType.module.asl(indentWidth)
+  of tkGeneric: definedType.generic.asl(indentWidth)
+
+proc findFunctionDefs*(definedType: Type, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
+  case definedType.kind:
+  of tkModule: definedType.module.findFunctionDefs(name, arity)
+  of tkGeneric: definedType.generic.findFunctionDefs(name, arity)
+
+let typeSpec = oneOf("type_block", [
+  moduleSpec.map("module_item",
+    proc(v: Module): Type = newType(v)),
+  genericSpec.map("generic_item",
+    proc(v: Generic): Type = newType(v)),
+])
+
+let definedTypeSpec = prefixed(blankLines, typeSpec)
 
 # ============================================================
 # File
@@ -123,14 +80,15 @@ type
     fkAsl, fkAslr
   File* = ref object
     path: string
-    definedTypes: seq[DefinedType]
     types: seq[Type]
     typeIndex: Table[Identifier, int]
     case kind: FileKind
-    of fkAsl: imports: seq[Import]
+    of fkAsl:
+      imports: seq[Import]
+      importedNameIndex: Table[Identifier, ImportedType]
     of fkAslr: discard
 
-proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType],
+proc newAslFile*(path: string, imports: seq[Import], types: seq[Type],
     vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, ParserError] =
   ## Builds an `fkAsl` File: source files written by users, may
@@ -147,10 +105,10 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
   # asl files cannot host extern functions. Walk every module's
   # function list; reject the first extern found with the extern's
   # own loc so the diagnostic points at the offending decoration.
-  for definedType in definedTypes:
+  for definedType in types:
     case definedType.kind:
-    of dtkGeneric: discard
-    of dtkModule:
+    of tkGeneric: discard
+    of tkModule:
       for fn in definedType.module.functions:
         case fn.kind:
         of fkUser: discard
@@ -164,15 +122,15 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
         vendorRoots["std"], newLocation())
     allImports.insert(stdImport, 0)
 
+  var importedNameIndex: Table[Identifier, ImportedType]
   var typeIndex: Table[Identifier, int]
-  var types: seq[Type]
 
-  # Parser-time typeIndex build: only ikExplicit imports contribute
-  # names here. ikShorthand imports have no names until the resolver
-  # expands them via `publicTypes()` (the target file isn't parsed
-  # yet at this point). Shorthand-vs-local + shorthand-vs-explicit
-  # collisions are caught by validateNoDuplicateBindings in
-  # resolver/files.nim.
+  # Parser-time index build: only ikExplicit imports contribute
+  # names to `importedNameIndex`. ikShorthand imports have no names
+  # until the resolver expands them via `publicTypes()` (the target
+  # file isn't parsed yet at this point). Shorthand-vs-local +
+  # shorthand-vs-explicit collisions are caught by
+  # validateNoDuplicateBindings in resolver/files.nim.
   for imp in allImports:
     if imp.absPath == path:
       let msg = "importing the source file in itself is disallowed"
@@ -181,41 +139,41 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
     of ikShorthand: discard
     of ikExplicit:
       for impType in imp.names:
-        if impType.binding in typeIndex:
-          let prev = types[typeIndex[impType.binding]]
+        if impType.binding in importedNameIndex:
+          let prev = importedNameIndex[impType.binding]
           let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
           return err(newParserError(msg, impType.loc))
-        typeIndex[impType.binding] = types.len
-        types.add(newType(impType))
+        importedNameIndex[impType.binding] = impType
 
-  for definedType in definedTypes:
+  for i, definedType in types:
+    if definedType.name in importedNameIndex:
+      let prev = importedNameIndex[definedType.name]
+      let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, definedType.loc))
     if definedType.name in typeIndex:
       let prev = types[typeIndex[definedType.name]]
       let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, definedType.loc))
-    else:
-      typeIndex[definedType.name] = types.len
-      types.add(newType(definedType))
-  ok(File(kind: fkAsl, path: path, imports: allImports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+    typeIndex[definedType.name] = i
+  ok(File(kind: fkAsl, path: path, imports: allImports, types: types,
+    typeIndex: typeIndex, importedNameIndex: importedNameIndex))
 
-proc newAslrFile*(path: string, definedTypes: seq[DefinedType]): Result[
+proc newAslrFile*(path: string, types: seq[Type]): Result[
     File, ParserError] =
   ## Builds an `fkAslr` File: the runtime interface — no imports
   ## (structurally — the variant has no imports field), modules may
   ## host extern functions freely.
   var typeIndex: Table[Identifier, int]
-  var types: seq[Type]
-  for definedType in definedTypes:
+  for i, definedType in types:
     if definedType.name in typeIndex:
       let prev = types[typeIndex[definedType.name]]
       let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, definedType.loc))
-    else:
-      typeIndex[definedType.name] = types.len
-      types.add(newType(definedType))
-  ok(File(kind: fkAslr, path: path, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+    typeIndex[definedType.name] = i
+  ok(File(kind: fkAslr, path: path, types: types,
+    typeIndex: typeIndex))
 
-proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
+proc newFile*(path: string, imports: seq[Import], types: seq[Type]): Result[
     File, ParserError] =
   ## Unified entry point — dispatches on the file's extension to the
   ## appropriate kind constructor. `.aslr` paths with non-empty
@@ -228,9 +186,9 @@ proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]
     if imports.len > 0:
       let msg = fmt"{path}: .aslr files cannot contain import statements (they are the runtime interface, not an implementation)"
       return err(newParserError(msg, imports[0].loc))
-    newAslrFile(path, definedTypes)
+    newAslrFile(path, types)
   else:
-    newAslFile(path, imports, definedTypes)
+    newAslFile(path, imports, types)
 
 proc kind*(file: File): FileKind = file.kind
 proc path*(file: File): string = file.path
@@ -238,7 +196,6 @@ proc imports*(file: File): seq[Import] =
   assert file.kind == fkAsl,
     fmt"File.imports accessed but kind is {file.kind}"
   file.imports
-proc definedTypes*(file: File): seq[DefinedType] = file.definedTypes
 proc types*(file: File): seq[Type] = file.types
 proc hash*(file: File): Hash = file.path.hash
 proc `==`*(a, b: File): bool = a.hash == b.hash
@@ -249,40 +206,46 @@ proc asl*(file: File, indentWidth: uint32): string =
   of fkAsl:
     for imp in file.imports:
       lines.add(asl(imp))
-    if file.imports.len > 0 and file.definedTypes.len > 0:
+    if file.imports.len > 0 and file.types.len > 0:
       lines.add("")
   of fkAslr:
     discard
-  for i, dt in file.definedTypes:
+  for i, dt in file.types:
     if i > 0: lines.add("")
     lines.add(dt.asl(indentWidth))
   lines.join("\n") & "\n"
 
-proc findTypeId(file: File, name: Identifier): Result[int, string] =
-  if name in file.typeIndex: ok(file.typeIndex[name])
-  else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
-
 proc findType*(file: File, name: Identifier): Result[Type, string] =
-  let id = ? file.findTypeId(name)
-  ok(file.types[id])
-
-proc findExportedType*(file: File, name: Identifier): Result[DefinedType, string] =
-  let aslType = ? file.findType(name)
-  case aslType.kind:
-  of tkImported:
+  ## Locally-defined type lookup. Errors if the name refers to an
+  ## imported binding (use `findImportedName` for that) or is unknown.
+  if name in file.typeIndex:
+    ok(file.types[file.typeIndex[name]])
+  else:
     err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
-  of tkDefined:
-    let definedType = aslType.definedType
-    if definedType.public: ok(definedType)
-    else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
 
-proc publicTypes*(file: File): seq[DefinedType] =
+proc findImportedName*(file: File, name: Identifier): Result[ImportedType, string] =
+  ## Imported-binding lookup — the parse-time placeholder pointing at
+  ## a name in another file. `fkAslr` files have no imports and always
+  ## return an error.
+  case file.kind:
+  of fkAsl:
+    if name in file.importedNameIndex: ok(file.importedNameIndex[name])
+    else: err(fmt"{name.loc} type `{name.asl}` is not imported in file `{file.path}`")
+  of fkAslr:
+    err(fmt"{name.loc} aslr files have no imports")
+
+proc findExportedType*(file: File, name: Identifier): Result[Type, string] =
+  let definedType = ? file.findType(name)
+  if definedType.public: ok(definedType)
+  else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
+
+proc publicTypes*(file: File): seq[Type] =
   ## Returns every public defined type (module or generic) in this
   ## file, preserving declaration order. Used by the resolver to
   ## expand `ikShorthand` Imports — `import "file.asl"` brings the
   ## full public set into the importing file's scope under each
   ## type's original name.
-  for definedType in file.definedTypes:
+  for definedType in file.types:
     if definedType.public:
       result.add(definedType)
 
@@ -297,9 +260,9 @@ proc aslFileSpec(vendorRoots: VendorRoots): Spec[File] =
   Spec[File](
     name: "asl_file",
     parseFn: proc(parser: Parser): Result[File, ParserError] =
-      let imports = ? parser.run(any(importBlockSpec))
-      let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
-      discard parser.run(any(ignorableLineSpec))
+      let imports = ? parser.run(any(importSpec))
+      let items = ? parser.run(atLeastOne(definedTypeSpec))
+      discard parser.run(blankLines)
       if not parser.done():
         # Force a parse attempt to get a specific error message
         discard ? parser.run(typeSpec)
@@ -311,8 +274,8 @@ proc aslFileSpec(vendorRoots: VendorRoots): Spec[File] =
 let aslrFileSpec = Spec[File](
   name: "aslr_file",
   parseFn: proc(parser: Parser): Result[File, ParserError] =
-  let items = ? parser.run(atLeastOne(definedTypeBlockSpec))
-  discard parser.run(any(ignorableLineSpec))
+  let items = ? parser.run(atLeastOne(definedTypeSpec))
+  discard parser.run(blankLines)
   if not parser.done():
     # Force a parse attempt to get a specific error message
     discard ? parser.run(typeSpec)

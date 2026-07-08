@@ -18,15 +18,15 @@ import funcs
 
 type AnalyzedFile* = ref object
   resolved: ResolvedFile
-  imports: seq[AnalyzedImportDefinition]
+  imports: seq[AnalyzedImportDef]
   modules: seq[AnalyzedModule]
 
-proc newAnalyzedFile*(resolved: ResolvedFile, imports: seq[AnalyzedImportDefinition], modules: seq[AnalyzedModule]): AnalyzedFile =
+proc newAnalyzedFile*(resolved: ResolvedFile, imports: seq[AnalyzedImportDef], modules: seq[AnalyzedModule]): AnalyzedFile =
   AnalyzedFile(resolved: resolved, imports: imports, modules: modules)
 
 proc resolved*(f: AnalyzedFile): ResolvedFile = f.resolved
 proc path*(f: AnalyzedFile): string = f.resolved.path
-proc imports*(f: AnalyzedFile): seq[AnalyzedImportDefinition] = f.imports
+proc imports*(f: AnalyzedFile): seq[AnalyzedImportDef] = f.imports
 proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules
 
 type AnalyzedApp* = ref object
@@ -44,18 +44,18 @@ proc analyzeFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, str
   ## the imported file) + this file's own defined types, then drive
   ## per-module body analysis.
   var fileScope: ResolvedFileScope
-  var analyzedImports: seq[AnalyzedImportDefinition]
+  var analyzedImports: seq[AnalyzedImportDef]
   for imp in file.imports:
-    let analyzedImport = ? analyzeImportDefinition(app, file, imp)
+    let analyzedImport = ? analyzeImportDef(app, file, imp)
     analyzedImports.add(analyzedImport)
     for impType in analyzedImport.importedTypes:
       fileScope[impType.binding] = impType.definedType
 
-  for definedType in file.definedTypes:
+  for definedType in file.types:
     fileScope[definedType.name] = definedType
 
   var analyzedModules: seq[AnalyzedModule]
-  for definedType in file.definedTypes:
+  for definedType in file.types:
     case definedType.kind:
     of rdtkGeneric: discard # generics are already resolved since it is only a definition type
     of rdtkModule:

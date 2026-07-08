@@ -1,13 +1,11 @@
 import strformat, strutils, options, tables, results, hashes
 
-import tokenizer
-import combinators
-import helpers
-import identifiers
-import data
-import funcDefs
-import funcs
-import generics
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./data
+import ./funcs
+import ./generics
 
 # ============================================================
 # Module
@@ -18,7 +16,7 @@ type Module* = ref object
   public: bool
   name: Identifier
   requires: Option[Requires]
-  data: Option[DataBlock]
+  data: Option[DataDef]
   funcList: FunctionList
   functionIndex: Table[Identifier, Table[int, seq[int]]]
   loc: Location
@@ -26,7 +24,7 @@ type Module* = ref object
 proc public*(m: Module): bool = m.public
 proc name*(m: Module): Identifier = m.name
 proc requires*(m: Module): Option[Requires] = m.requires
-proc data*(m: Module): Option[DataBlock] = m.data
+proc data*(m: Module): Option[DataDef] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
 proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
@@ -42,7 +40,7 @@ proc union*(m: Module, loc: Location): Result[UnionDef, string] =
   else: err(fmt"{loc} module `{m.name.asl}` is not a union")
 
 proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
-    requires: Option[Requires], data: Option[DataBlock],
+    requires: Option[Requires], data: Option[DataDef],
     funcList: FunctionList, loc: Location): Result[Module, ParserError] =
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
@@ -85,9 +83,9 @@ proc findFunctionDefIds(module: Module, name: Identifier, arity: int): Result[se
   else:
     ok(module.functionIndex[name][arity])
 
-proc findFunctionDefs*(module: Module, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+proc findFunctionDefs*(module: Module, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
   let funcDefIds = ? module.findFunctionDefIds(name, arity)
-  var funcDefs: seq[FunctionDefinition]
+  var funcDefs: seq[FunctionDef]
   for id in funcDefIds:
     funcDefs.add(module.functions[id].def)
   ok(funcDefs)
@@ -97,29 +95,28 @@ type ModuleHeader = tuple[public: bool, name: Identifier, loc: Location]
 let moduleHeaderSpec = Spec[ModuleHeader](
   name: "module_header",
   parseFn: proc(parser: Parser): Result[ModuleHeader, ParserError] =
-  let maybePublic = parser.run(keywordSpec("public"))
-  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
-  let public = maybePublic.isOk
+  let public = ? parser.run(presence(keywordSpec("public")))
+  if public: discard ? parser.run(ws1)
 
   let loc = ? parser.run(keywordSpec("module"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let nameIdent = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok((public, nameIdent, loc))
 )
 
 # Module body: optional requires + optional data block + function list
-type ModuleBody = tuple[requires: Option[Requires], data: Option[DataBlock],
+type ModuleBody = tuple[requires: Option[Requires], data: Option[DataDef],
     funcList: FunctionList]
 
 let moduleBodySpec = Spec[ModuleBody](
   name: "module_body",
   parseFn: proc(parser: Parser): Result[ModuleBody, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   let requires = ? parser.run(optional(requiresSpec))
-  discard parser.run(any(ignorableLineSpec))
-  let data = ? parser.run(optional(dataBlockSpec))
+  discard parser.run(blankLines)
+  let data = ? parser.run(optional(dataSpec))
   let funcList = ? parser.run(functionListSpec)
   ok((requires, data, funcList))
 )

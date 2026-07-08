@@ -1,10 +1,9 @@
 import strformat, strutils, tables, results, hashes
 
-import tokenizer
-import combinators
-import helpers
-import identifiers
-import funcdefs
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./funcs
 
 # ============================================================
 # Generic
@@ -14,21 +13,21 @@ type Generic* = ref object
   decorators: seq[Decorator]
   public: bool
   name: Identifier
-  funcDefs: seq[FunctionDefinition]
+  funcDefs: seq[FunctionDef]
   funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[string, seq[int]]
   loc: Location
 
 proc public*(g: Generic): bool = g.public
 proc name*(g: Generic): Identifier = g.name
-proc funcDefs*(g: Generic): seq[FunctionDefinition] = g.funcDefs
+proc funcDefs*(g: Generic): seq[FunctionDef] = g.funcDefs
 proc decorators*(g: Generic): seq[Decorator] = g.decorators
 proc loc*(g: Generic): Location = g.loc
 proc hash*(g: Generic): Hash = g.loc.hash
 proc `==`*(a, b: Generic): bool = a.hash == b.hash
 
 proc newGeneric*(decorators: seq[Decorator], public: bool, name: Identifier,
-    funcDefs: seq[FunctionDefinition], loc: Location): Result[Generic, ParserError] =
+    funcDefs: seq[FunctionDef], loc: Location): Result[Generic, ParserError] =
   var funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
   var funcDefIndex: Table[string, seq[int]]
   for index, def in funcDefs:
@@ -58,9 +57,9 @@ proc findFunctionDefIds(generic: Generic, name: Identifier, arity: int): Result[
   else:
     ok(generic.funcDefArityIndex[name][arity])
 
-proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[seq[FunctionDefinition], string] =
+proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
   let funcIds = ? generic.findFunctionDefIds(name, arity)
-  var funcs: seq[FunctionDefinition]
+  var funcs: seq[FunctionDef]
   for id in funcIds:
     funcs.add(generic.funcDefs[id])
   ok(funcs)
@@ -70,20 +69,19 @@ type GenericHeader = tuple[public: bool, name: Identifier, loc: Location]
 let genericHeaderSpec = Spec[GenericHeader](
   name: "generic_header",
   parseFn: proc(parser: Parser): Result[GenericHeader, ParserError] =
-  let maybePublic = parser.run(keywordSpec("public"))
-  if maybePublic.isOk: discard ? parser.run(atLeastOne(spaceSpec))
-  let public = maybePublic.isOk
+  let public = ? parser.run(presence(keywordSpec("public")))
+  if public: discard ? parser.run(ws1)
   let loc = ? parser.run(keywordSpec("generic"))
-  discard ? parser.run(atLeastOne(spaceSpec))
+  discard ? parser.run(ws1)
   let nameIdent = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok((public, nameIdent, loc))
 )
 
 let genericSpec* = blockSpec("generic", genericHeaderSpec,
-  functionDefinitionListSpec,
-  proc(h: GenericHeader, b: seq[FunctionDefinition]): Result[Generic, ParserError] =
+  functionDefListSpec,
+  proc(h: GenericHeader, b: seq[FunctionDef]): Result[Generic, ParserError] =
   newGeneric(@[], h.public, h.name, b, h.loc))
 
 # ============================================================
@@ -108,14 +106,8 @@ proc asl*(r: Requires): string =
   result.add(")")
 
 # requires(Generic, Generic, ...)
-let requiresSpec* = Spec[Requires](
-  name: "requires",
-  parseFn: proc(parser: Parser): Result[Requires, ParserError] =
-  discard ? parser.run(indentationSpec)
-  let loc = ? parser.run(keywordSpec("requires"))
-  discard parser.run(any(spaceSpec))
-  let generics = ? parser.run(contained("requires_generics", "(",
-    separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
-  discard ? parser.run(ignorableLineSpec)
-  ok(newRequires(generics, loc))
-)
+let requiresSpec* = indentedLine(pair(keywordSpec("requires"),
+    prefixed(ws0, contained("requires_generics", "(",
+      separatedBy(identifierSpec, commaWithSpacesSpec), ")")))).map(
+  "requires",
+  proc(t: (Location, seq[Identifier])): Requires = newRequires(t[1], t[0]))

@@ -1,10 +1,9 @@
 import strformat, tables, results
 
-import tokenizer
-import combinators
-import helpers
-import identifiers
-import numbers
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./literals
 
 # ============================================================
 # UnionPatternField
@@ -27,14 +26,9 @@ proc asl(field: UnionPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"
 
 # Variant pattern field: name ":" binding (both identifiers)
-let unionPatternFieldSpec* = Spec[UnionPatternField](
-  name: "variant_pattern_field",
-  parseFn: proc(parser: Parser): Result[UnionPatternField, ParserError] =
-  let name = ? parser.run(identifierSpec)
-  discard ? parser.run(colonWithSpacesSpec)
-  let binding = ? parser.run(identifierSpec)
-  ok(newUnionPatternField(name, binding, name.loc))
-)
+let unionPatternFieldSpec* = separated(identifierSpec, colonWithSpacesSpec, identifierSpec).map(
+  "variant_pattern_field",
+  proc(t: (Identifier, Identifier)): UnionPatternField = newUnionPatternField(t[0], t[1], t[0].loc))
 
 # ============================================================
 # UnionPattern
@@ -82,15 +76,12 @@ proc asl(vp: UnionPattern): string =
   result.add(" }")
 
 # Variant pattern: VariantName { field: binding, field: binding }
-let unionPatternSpec* = Spec[UnionPattern](
-  name: "variant_pattern",
-  parseFn: proc(parser: Parser): Result[UnionPattern, ParserError] =
-  let name = ? parser.run(identifierSpec)
-  discard parser.run(any(spaceSpec))
-  let fields = ? parser.run(contained("variant_fields", "{",
-    separatedBy(unionPatternFieldSpec, commaWithSpacesSpec), "}"))
-  newUnionPattern(name, fields)
-)
+let unionPatternSpec* = pair(identifierSpec,
+    prefixed(ws0, contained("variant_fields", "{",
+      separatedBy(unionPatternFieldSpec, commaWithSpacesSpec), "}"))).map(
+  "variant_pattern",
+  proc(t: (Identifier, seq[UnionPatternField])): Result[UnionPattern, ParserError] =
+    newUnionPattern(t[0], t[1]))
 
 # ============================================================
 # CasePattern

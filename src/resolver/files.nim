@@ -1,4 +1,4 @@
-## DefinedType / File / App + the public resolve* entry point.
+## Type / File / App + the public resolve* entry point.
 
 import results, strformat, tables
 
@@ -11,34 +11,34 @@ type ResolvedFile* = ref object
   id: int
   parsed: parser.File
   imports: seq[ResolvedImport]
-  definedTypes: seq[ResolvedDefinedType]
-  definedTypeIndex: Table[Identifier, int]
+  types: seq[ResolvedType]
+  typeIndex: Table[Identifier, int]
 
-proc newResolvedFile*(id: int, parsed: parser.File, imports: seq[ResolvedImport], definedTypes: seq[ResolvedDefinedType]): ResolvedFile =
-  var definedTypeIndex: Table[Identifier, int]
-  for id, definedType in definedTypes:
-    definedTypeIndex[definedType.name] = id
-  ResolvedFile(id: id, parsed: parsed, imports: imports, definedTypes: definedTypes, definedTypeIndex: definedTypeIndex)
+proc newResolvedFile*(id: int, parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType]): ResolvedFile =
+  var typeIndex: Table[Identifier, int]
+  for id, definedType in types:
+    typeIndex[definedType.name] = id
+  ResolvedFile(id: id, parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
 
 proc path*(file: ResolvedFile): string = file.parsed.path
 proc parsed*(file: ResolvedFile): parser.File = file.parsed
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
-proc definedTypes*(file: ResolvedFile): seq[ResolvedDefinedType] = file.definedTypes
+proc types*(file: ResolvedFile): seq[ResolvedType] = file.types
 
-proc findDefinedType*(file: ResolvedFile, name: Identifier): Result[ResolvedDefinedType, string] =
-  if name notin file.definedTypeIndex:
+proc findType*(file: ResolvedFile, name: Identifier): Result[ResolvedType, string] =
+  if name notin file.typeIndex:
     err(fmt"{name.loc} type `{name.asl}` does not exist in the file scope")
   else:
-    ok(file.definedTypes[file.definedTypeIndex[name]])
+    ok(file.types[file.typeIndex[name]])
 
 proc findModule*(file: ResolvedFile, name: Identifier): Result[ResolvedModule, string] =
-  let definedType = ? file.findDefinedType(name)
+  let definedType = ? file.findType(name)
   case definedType.kind:
   of rdtkModule: ok(definedType.module)
   of rdtkGeneric: err(fmt"{name.loc} expected type `{name.asl}` to be a module but found generic")
 
 proc findGeneric*(file: ResolvedFile, name: Identifier): Result[ResolvedGeneric, string] =
-  let definedType = ? file.findDefinedType(name)
+  let definedType = ? file.findType(name)
   case definedType.kind:
   of rdtkGeneric: ok(definedType.generic)
   of rdtkModule: err(fmt"{name.loc} expected type `{name.asl}` to be a generic but found module")
@@ -55,7 +55,7 @@ proc validateNoDuplicateBindings(resolvedImports: seq[ResolvedImport], file: par
       if impType.binding in seen:
         return err(fmt"{impType.loc} duplicate type declaration encountered, see previous declaration at {seen[impType.binding]}")
       seen[impType.binding] = impType.loc
-  for definedType in file.definedTypes:
+  for definedType in file.types:
     if definedType.name in seen:
       return err(fmt"{definedType.loc} duplicate type declaration encountered, see previous declaration at {seen[definedType.name]}")
     seen[definedType.name] = definedType.loc
@@ -75,9 +75,9 @@ proc resolveFile*(app: App, shells: ResolvedModuleShells, id: int, file: parser.
 
   ? validateNoDuplicateBindings(resolvedImports, file)
 
-  var resolvedDefinedTypes: seq[ResolvedDefinedType]
-  for id, definedType in file.definedTypes:
-    let resolvedDefinedType = ? resolveDefinedType(app, shells, file, fileScope, id, definedType)
-    resolvedDefinedTypes.add(resolvedDefinedType)
+  var resolvedTypes: seq[ResolvedType]
+  for id, definedType in file.types:
+    let resolvedType = ? resolveType(app, shells, file, fileScope, id, definedType)
+    resolvedTypes.add(resolvedType)
 
-  ok(newResolvedFile(id, file, resolvedImports, resolvedDefinedTypes))
+  ok(newResolvedFile(id, file, resolvedImports, resolvedTypes))

@@ -123,7 +123,7 @@ module N:
 
   test "import alias resolves to its target type":
     # Post-6c the analyzer no longer walks defined types in a separate
-    # phase — file-scope entries carry ResolvedDefinedType values
+    # phase — file-scope entries carry ResolvedType values
     # keyed by binding, so an alias `u8 as Byte` puts `Byte` in the
     # scope and any argType named `Byte` looks it up directly. This
     # test was previously flagged as a "known limitation" that

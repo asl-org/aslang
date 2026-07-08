@@ -1,5 +1,5 @@
 ## Import resolution. ResolvedImportedType captures the (name,
-## binding, target parser DefinedType) triple for a single imported
+## binding, target parser Type) triple for a single imported
 ## name; ResolvedImport bundles the target file with the seq of
 ## resolved imported names. Both are used by the file scope built in
 ## decls.nim.
@@ -11,16 +11,16 @@ import parser
 # ResolvedImportedType
 type ResolvedImportedType* = ref object
   parsed: ImportedType
-  definedType: DefinedType
+  definedType: Type
 
-proc newResolvedImportedType*(parsed: ImportedType, definedType: DefinedType): ResolvedImportedType =
+proc newResolvedImportedType*(parsed: ImportedType, definedType: Type): ResolvedImportedType =
   ResolvedImportedType(parsed: parsed, definedType: definedType)
 
 proc parsed*(t: ResolvedImportedType): ImportedType = t.parsed
 proc name*(t: ResolvedImportedType): Identifier = t.parsed.name
 proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding
 proc loc*(t: ResolvedImportedType): Location = t.parsed.binding.loc
-proc definedType*(t: ResolvedImportedType): DefinedType = t.definedType
+proc definedType*(t: ResolvedImportedType): Type = t.definedType
 
 proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
     ResolvedImportedType, string] =

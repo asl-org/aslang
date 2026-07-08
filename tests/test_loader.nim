@@ -124,7 +124,7 @@ public module B:
     # `./bar.txt.asl` exists in the temp dir. `resolveImportPath`
     # tries the bare path first, then the `.asl` fallback, and
     # errors when both are missing. The specific error message is
-    # currently masked by the parser's `any(importBlockSpec)`
+    # currently masked by the parser's `any(importSpec)`
     # backtracking, so the surface error is a downstream "expected
     # module" one — we assert only that the parse fails.
     let (r, dir) = parseFiles([
@@ -265,7 +265,7 @@ module M:
   test "parent-directory escape via ../ is rejected":
     # The grammar's importLineSpec calls resolveImportPath; on rejection
     # the error is produced but currently swallowed by the parser's
-    # `any(importBlockSpec)` backtracking, so the surface error is the
+    # `any(importSpec)` backtracking, so the surface error is the
     # generic "expected module" message. We assert only that the parse
     # fails — the constructor invariant is what we care about.
     let (r, dir) = parseFiles([

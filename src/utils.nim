@@ -1,4 +1,35 @@
-import results, strformat, strutils, sets
+import results, strformat, strutils, sets, tables, deques, hashes
+
+proc bfs*[T, V](
+    root: T,
+    process: proc(node: T): Result[V, string],
+    neighbors: proc(value: V): seq[T]): Result[Table[T, V], string] =
+  ## Breadth-first walk starting at `root`. For each un-visited node
+  ## `n`, calls `process(n)` to derive a value `v`, records `n -> v`
+  ## in the returned table, then enqueues every entry in
+  ## `neighbors(v)` that hasn't been seen yet. Any `process` error
+  ## aborts the walk and propagates.
+  ##
+  ## `T` must be hashable (usable as a Table key). `V` is the
+  ## per-node computed value — for the parser's file loader, T is
+  ## a filepath and V is the parsed File.
+  var visited: Table[T, V]
+  var queued: HashSet[T]
+  var queue: Deque[T]
+
+  queue.addLast(root)
+  queued.incl(root)
+
+  while queue.len > 0:
+    let current = queue.popFirst()
+    let value = ? process(current)
+    visited[current] = value
+    for next in neighbors(value):
+      if next notin queued:
+        queue.addLast(next)
+        queued.incl(next)
+
+  ok(visited)
 
 proc topoSort*(
     node: string,

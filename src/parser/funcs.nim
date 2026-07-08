@@ -1,12 +1,62 @@
 import strformat, strutils, tables, results
 
-import tokenizer
-import combinators
-import helpers
-import identifiers
-import strings
-import funcdefs
-import body
+import ./tokenizer
+import ./combinators
+import ./identifiers
+import ./literals
+import ./argtypes
+import ./body
+
+# ============================================================
+# FunctionDef (signature only, no body)
+# ============================================================
+
+type FunctionDef* = ref object
+  public: bool
+  name: Identifier
+  argDefList: ArgumentDefList
+  returns: ArgumentType
+  loc: Location
+
+proc public*(fd: FunctionDef): bool = fd.public
+proc name*(fd: FunctionDef): Identifier = fd.name
+proc args*(fd: FunctionDef): seq[
+    ArgumentDef] = fd.argDefList.argDefs
+proc returns*(fd: FunctionDef): ArgumentType = fd.returns
+proc loc*(fd: FunctionDef): Location = fd.loc
+proc arity*(fd: FunctionDef): int = fd.argDefList.arity
+
+proc newFunctionDef*(public: bool, name: Identifier,
+    argDefList: ArgumentDefList, returns: ArgumentType,
+    loc: Location): FunctionDef =
+  FunctionDef(public: public, name: name, argDefList: argDefList,
+      returns: returns, loc: loc)
+
+proc asl*(funcDef: FunctionDef): string =
+  let prefix = if funcDef.public: "public func" else: "func"
+  fmt"{prefix} {asl(funcDef.name)}{asl(funcDef.argDefList)}: {asl(funcDef.returns)}"
+
+let functionDefSpec* = Spec[FunctionDef](
+  name: "function_definition",
+  parseFn: proc(parser: Parser): Result[FunctionDef, ParserError] =
+  let public = ? parser.run(presence(keywordSpec("public")))
+  if public: discard ? parser.run(ws1)
+
+  let funcLoc = ? parser.run(keywordSpec("func"))
+  discard ? parser.run(ws1)
+  let funcName = ? parser.run(identifierSpec)
+  discard parser.run(ws0)
+  let argDefList = ? parser.run(argumentDefListSpec)
+  discard ? parser.run(colonWithSpacesSpec)
+  let returnType = ? parser.run(argumentTypeSpec)
+  ok(newFunctionDef(public, funcName, argDefList, returnType, funcLoc))
+)
+
+# Function definition line: indentation + function signature + newline
+# Used by genericSpec via functionDefListSpec.
+let functionDefLineSpec* = indentedLine(functionDefSpec)
+
+let functionDefListSpec* = atLeastOne(functionDefLineSpec)
 
 # ============================================================
 # UserFunction
@@ -14,16 +64,16 @@ import body
 
 type UserFunction* = ref object
   decorators: seq[Decorator]
-  def: FunctionDefinition
+  def: FunctionDef
   statementList: StatementList
 
-proc newUserFunction*(decorators: seq[Decorator], def: FunctionDefinition,
+proc newUserFunction*(decorators: seq[Decorator], def: FunctionDef,
     statementList: StatementList): UserFunction =
   UserFunction(decorators: decorators, def: def, statementList: statementList)
 
 proc loc*(fn: UserFunction): Location = fn.def.loc
 proc name*(fn: UserFunction): Identifier = fn.def.name
-proc def*(fn: UserFunction): FunctionDefinition = fn.def
+proc def*(fn: UserFunction): FunctionDef = fn.def
 proc statements*(fn: UserFunction): seq[Statement] = fn.statementList.statements
 proc decorators*(fn: UserFunction): seq[Decorator] = fn.decorators
 proc arity*(fn: UserFunction): int = fn.def.arity
@@ -37,9 +87,9 @@ proc asl(fn: UserFunction, indentWidth: uint32): seq[string] =
     for line in aslBlock(stmt, indentWidth):
       result.add(fmt"{indent}{line}")
 
-let userFunctionSpec = decoratedBlockSpec("user_function", functionDefinitionSpec,
+let userFunctionSpec = decoratedBlockSpec("user_function", functionDefSpec,
   statementListSpec,
-  proc(d: seq[Decorator], h: FunctionDefinition, b: StatementList): UserFunction =
+  proc(d: seq[Decorator], h: FunctionDef, b: StatementList): UserFunction =
   newUserFunction(d, h, b))
 
 # ============================================================
@@ -48,16 +98,16 @@ let userFunctionSpec = decoratedBlockSpec("user_function", functionDefinitionSpe
 
 type ExternFunction* = ref object
   ffi: string
-  def: FunctionDefinition
+  def: FunctionDef
   loc: Location
 
 proc ffi*(fn: ExternFunction): string = fn.ffi
 proc name*(fn: ExternFunction): Identifier = fn.def.name
-proc def*(fn: ExternFunction): FunctionDefinition = fn.def
+proc def*(fn: ExternFunction): FunctionDef = fn.def
 proc arity*(fn: ExternFunction): int = fn.def.arity
 proc loc*(fn: ExternFunction): Location = fn.loc
 
-proc newExternFunction*(ffi: string, def: FunctionDefinition,
+proc newExternFunction*(ffi: string, def: FunctionDef,
     loc: Location): ExternFunction =
   ExternFunction(ffi: ffi, def: def, loc: loc)
 
@@ -73,12 +123,12 @@ let externFunctionSpec = Spec[ExternFunction](
   discard ? parser.run(indentationSpec)
   discard ? parser.run(punctuationSpec("@"))
   discard ? parser.run(keywordSpec("extern"))
-  discard parser.run(any(spaceSpec))
+  discard parser.run(ws0)
   let loc = parser.loc
   let symbol = ? parser.run(contained("extern_symbol", "(", stringLiteralSpec, ")"))
   discard ? parser.run(ignorableLineSpec)
   discard ? parser.run(indentationSpec)
-  let def = ? parser.run(functionDefinitionSpec)
+  let def = ? parser.run(functionDefSpec)
   discard ? parser.run(ignorableLineSpec)
   ok(newExternFunction(symbol.value, def, loc))
 )
@@ -123,7 +173,7 @@ proc name*(fn: Function): Identifier =
   of fkUser: fn.user.name
   of fkExtern: fn.extern.name
 
-proc def*(fn: Function): FunctionDefinition =
+proc def*(fn: Function): FunctionDef =
   case fn.kind:
   of fkUser: fn.user.def
   of fkExtern: fn.extern.def
@@ -140,10 +190,10 @@ proc asl*(fn: Function, indentWidth: uint32): seq[string] =
 
 # Each function block skips leading ignorable lines then parses a function.
 # any() backtracks the ignorable line consumption if no function follows.
-let funcBlockSpec = Spec[Function](
+let functionSpec = Spec[Function](
   name: "function_block",
   parseFn: proc(parser: Parser): Result[Function, ParserError] =
-  discard parser.run(any(ignorableLineSpec))
+  discard parser.run(blankLines)
   let f = parser.run(externFunctionSpec)
   if f.isOk: return ok(newFunction(f.get))
   let u = ? parser.run(userFunctionSpec)
@@ -172,5 +222,5 @@ proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserErro
 proc functions*(fnlist: FunctionList): seq[Function] = fnlist.functions
 proc len*(fnlist: FunctionList): int = fnlist.functions.len
 
-let functionListSpec* = any(funcBlockSpec).map("function_list",
+let functionListSpec* = any(functionSpec).map("function_list",
   proc(fns: seq[Function]): Result[FunctionList, ParserError] = newFunctionList(fns))

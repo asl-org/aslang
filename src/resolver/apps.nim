@@ -28,19 +28,19 @@ proc findFile*(app: ResolvedApp, file: parser.File): Option[ResolvedFile] =
   else: some(app.files[app.fileIndex[file]])
 
 proc buildModuleShells(app: App): ResolvedModuleShells =
-  ## Declare pass: walk every DefinedType in every file (both
+  ## Declare pass: walk every Type in every file (both
   ## `.asl` sources and `.aslr` runtime files) and allocate a shell
   ## ResolvedModule for each parser Module. The shells are empty
   ## except for their `parsed` back-ref; the define pass `populate`s
   ## each one when the corresponding module resolves.
   for file in app.files:
-    for definedType in file.definedTypes:
+    for definedType in file.types:
       case definedType.kind:
-      of dtkModule:
+      of tkModule:
         let parsedModule = definedType.module
         if parsedModule notin result:
           result[parsedModule] = newResolvedModuleShell(parsedModule)
-      of dtkGeneric:
+      of tkGeneric:
         discard  # generic edge stays parser-level (task 6c scope limit)
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
