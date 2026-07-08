@@ -24,7 +24,7 @@ import patterns
 
 # FileScope alias — keyed by binding (alias-or-name); shared by
 # every resolver file that walks bodies.
-type FileScope* = Table[Identifier, DefinedType]
+type FileScope* = Table[Identifier, Type]
 
 # FunctionScope alias — names of variables currently in scope inside
 # a function body.
@@ -233,13 +233,13 @@ type
     funcDefIndex: Table[ResolvedFunctionDef, int]
     funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
-  # ==== DefinedType umbrella ====
+  # ==== Type umbrella ====
 
-  ResolvedDefinedTypeKind* = enum
+  ResolvedTypeKind* = enum
     rdtkModule, rdtkGeneric
-  ResolvedDefinedType* = ref object
+  ResolvedType* = ref object
     id: int
-    case kind: ResolvedDefinedTypeKind
+    case kind: ResolvedTypeKind
     of rdtkModule: module: ResolvedModule
     of rdtkGeneric: generic: ResolvedGeneric
 
@@ -412,8 +412,8 @@ proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgu
 
 # ---- Scope lookups ----
 
-proc findDefinedType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[DefinedType, string] =
-  let maybeLocal = file.findDefinedType(name)
+proc findType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Type, string] =
+  let maybeLocal = file.findType(name)
   if maybeLocal.isOk: return maybeLocal
   let maybeImported = file.findImportedName(name)
   if maybeImported.isOk:
@@ -428,10 +428,10 @@ proc findDefinedType*(file: parser.File, fileScope: FileScope, name: Identifier)
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findModule*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Module, string] =
-  let initDefinedType = ? file.findDefinedType(fileScope, name)
-  case initDefinedType.kind:
-  of dtkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
-  of dtkModule: ok(initDefinedType.module)
+  let initType = ? file.findType(fileScope, name)
+  case initType.kind:
+  of tkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
+  of tkModule: ok(initType.module)
 
 proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields: seq[ArgumentDef]): Result[seq[Generic], string] =
   # TODO(union-inference): walk impls recursively. Today this only
@@ -445,10 +445,10 @@ proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields:
   # anywhere in the tree, deduped by first-seen order.
   var requiredImpls: seq[Generic]
   for field in fields:
-    let definedFieldType = ? file.findDefinedType(fileScope, field.argType.root)
+    let definedFieldType = ? file.findType(fileScope, field.argType.root)
     case definedFieldType.kind:
-    of dtkModule: discard
-    of dtkGeneric: requiredImpls.add(definedFieldType.generic)
+    of tkModule: discard
+    of tkGeneric: requiredImpls.add(definedFieldType.generic)
   ok(requiredImpls)
 
 proc findRequiredImplsForStruct(file: parser.File, fileScope: FileScope, struct: StructDef): Result[seq[Generic], string] =
@@ -472,7 +472,7 @@ proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: U
 proc lookupShell(shells: ResolvedModuleShells, root: Module): ResolvedModule =
   ## Look up the shell allocated during the declare pass. Every parser
   ## Module reachable through resolution must have a shell — the
-  ## declare pass in apps.nim walks every DefinedType in every file.
+  ## declare pass in apps.nim walks every Type in every file.
   assert(root in shells, fmt"UNREACHABLE: no shell allocated for module `{root.name.asl}` at {root.loc}")
   shells[root]
 
@@ -515,10 +515,10 @@ proc findGeneric*(file: parser.File, fileScope: FileScope, name: Identifier): Re
   ## constraint-check helper. Used by resolveModuleArgumentType's
   ## explicit-requires path to translate each `requires(...)` name into
   ## its parser Generic so the check can walk its funcDefs.
-  let initDefinedType = ? file.findDefinedType(fileScope, name)
-  case initDefinedType.kind:
-  of dtkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
-  of dtkGeneric: ok(initDefinedType.generic)
+  let initType = ? file.findType(fileScope, name)
+  case initType.kind:
+  of tkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
+  of tkGeneric: ok(initType.generic)
 
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, shells: ResolvedModuleShells,
@@ -635,24 +635,24 @@ proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, arg
 proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, module: Module,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let definedType = ? file.findDefinedType(fileScope, argType.root)
+  let definedType = ? file.findType(fileScope, argType.root)
   case definedType.kind:
-  of dtkGeneric:
+  of tkGeneric:
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, definedType.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
-  of dtkModule:
+  of tkModule:
     let resolvedModuleType = ? resolveModuleArgumentType(app, shells, file, fileScope, module, argType, definedType.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
 proc resolveArgumentType*(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let definedType = ? file.findDefinedType(fileScope, argType.root)
+  let definedType = ? file.findType(fileScope, argType.root)
   case definedType.kind:
-  of dtkGeneric:
+  of tkGeneric:
     let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
-  of dtkModule:
+  of tkModule:
     let resolvedModuleType = ? resolveModuleArgumentType(app, shells, file, fileScope, generic, argType, definedType.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
@@ -1323,7 +1323,7 @@ proc resolveFunctionCall(app: App, shells: ResolvedModuleShells,
     file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let definedType = ? file.findDefinedType(fileScope, fncall.root)
+  let definedType = ? file.findType(fileScope, fncall.root)
   let funcDefs = ? definedType.findFunctionDefs(fncall.name, fncall.args.len)
   if funcDefs.len == 0:
     err(fmt"{fncall.loc} generic `{definedType.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
@@ -1764,11 +1764,11 @@ proc resolveModule*(app: App, shells: ResolvedModuleShells, file: parser.File,
   var resolvedRequires: seq[ResolvedGenericArgumentType]
   if module.requires.isSome:
     for generic in module.requires.get.generics:
-      let definedType = ? file.findDefinedType(fileScope, generic)
+      let definedType = ? file.findType(fileScope, generic)
       case definedType.kind:
-      of dtkModule:
+      of tkModule:
         return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
-      of dtkGeneric:
+      of tkGeneric:
         resolvedRequires.add(newResolvedGenericArgumentType(definedType.generic, generic.loc))
 
   var resolvedData: Option[ResolvedData]
@@ -1867,40 +1867,40 @@ proc resolveGeneric*(app: App, shells: ResolvedModuleShells, file: parser.File, 
   ok(newResolvedGeneric(generic, resolvedFunctionDefs))
 
 # =====================================================================
-# DefinedType umbrella
+# Type umbrella
 # =====================================================================
 
-proc newResolvedDefinedType*(id: int, module: ResolvedModule): ResolvedDefinedType =
-  ResolvedDefinedType(id: id, kind: rdtkModule, module: module)
+proc newResolvedType*(id: int, module: ResolvedModule): ResolvedType =
+  ResolvedType(id: id, kind: rdtkModule, module: module)
 
-proc newResolvedDefinedType*(id: int, generic: ResolvedGeneric): ResolvedDefinedType =
-  ResolvedDefinedType(id: id, kind: rdtkGeneric, generic: generic)
+proc newResolvedType*(id: int, generic: ResolvedGeneric): ResolvedType =
+  ResolvedType(id: id, kind: rdtkGeneric, generic: generic)
 
-proc kind*(definedType: ResolvedDefinedType): ResolvedDefinedTypeKind = definedType.kind
-proc module*(definedType: ResolvedDefinedType): ResolvedModule =
+proc kind*(definedType: ResolvedType): ResolvedTypeKind = definedType.kind
+proc module*(definedType: ResolvedType): ResolvedModule =
   assert definedType.kind == rdtkModule,
-    fmt"ResolvedDefinedType.module accessed but kind is {definedType.kind}"
+    fmt"ResolvedType.module accessed but kind is {definedType.kind}"
   definedType.module
-proc generic*(definedType: ResolvedDefinedType): ResolvedGeneric =
+proc generic*(definedType: ResolvedType): ResolvedGeneric =
   assert definedType.kind == rdtkGeneric,
-    fmt"ResolvedDefinedType.generic accessed but kind is {definedType.kind}"
+    fmt"ResolvedType.generic accessed but kind is {definedType.kind}"
   definedType.generic
 
-proc name*(definedType: ResolvedDefinedType): Identifier =
+proc name*(definedType: ResolvedType): Identifier =
   case definedType.kind:
   of rdtkModule: definedType.module.name
   of rdtkGeneric: definedType.generic.name
 
-proc loc*(definedType: ResolvedDefinedType): Location =
+proc loc*(definedType: ResolvedType): Location =
   case definedType.kind:
   of rdtkModule: definedType.module.loc
   of rdtkGeneric: definedType.generic.loc
 
-proc resolveDefinedType*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, id: int, definedType: DefinedType): Result[ResolvedDefinedType, string] =
+proc resolveType*(app: App, shells: ResolvedModuleShells, file: parser.File, fileScope: FileScope, id: int, definedType: Type): Result[ResolvedType, string] =
   case definedType.kind:
-  of dtkGeneric:
+  of tkGeneric:
     let resolvedGeneric = ? resolveGeneric(app, shells, file, fileScope, definedType.generic)
-    ok(newResolvedDefinedType(id, resolvedGeneric))
-  of dtkModule:
+    ok(newResolvedType(id, resolvedGeneric))
+  of tkModule:
     let resolvedModule = ? resolveModule(app, shells, file, fileScope, definedType.module)
-    ok(newResolvedDefinedType(id, resolvedModule))
+    ok(newResolvedType(id, resolvedModule))

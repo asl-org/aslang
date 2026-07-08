@@ -17,11 +17,11 @@ import results, strformat, options, strutils, tables, hashes
 import parser
 import resolver
 
-# ResolvedFileScope — Identifier (binding name) → ResolvedDefinedType.
+# ResolvedFileScope — Identifier (binding name) → ResolvedType.
 # Doubles as the defined-type lookup scope for the body walker
 # (imports contribute per-binding entries; file's local defined types
 # are inserted at the analyzer entry point).
-type ResolvedFileScope* = Table[Identifier, ResolvedDefinedType]
+type ResolvedFileScope* = Table[Identifier, ResolvedType]
 
 # AnalyzedGenericArgumentType — wraps a ResolvedGeneric with the
 # use-site location so analyzer diagnostics can point precisely.
@@ -237,10 +237,10 @@ proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType
     if argType.name notin fileScope:
       err(fmt"{argType.loc} module `{argType.name.asl}` is neither defined nor imported")
     else:
-      let importedDefinedType = fileScope[argType.name]
-      case importedDefinedType.kind:
+      let importedType = fileScope[argType.name]
+      case importedType.kind:
       of rdtkGeneric: err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.name.asl}` to be a module but found generic.")
-      of rdtkModule: ok(importedDefinedType.module)
+      of rdtkModule: ok(importedType.module)
   else:
     ok(maybeTypeModule.value)
 

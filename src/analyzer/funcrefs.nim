@@ -5,8 +5,8 @@
 ##
 ## Defined-type lookup by Identifier lives directly on
 ## `ResolvedFileScope` (see argtypes.nim) — post-6c retirement there is
-## no separate `AnalyzedDefinedTypeScope`, since every defined type
-## carried by the scope is already a `ResolvedDefinedType`.
+## no separate `AnalyzedTypeScope`, since every defined type
+## carried by the scope is already a `ResolvedType`.
 
 import results, tables, strformat, options
 
@@ -14,14 +14,14 @@ import parser
 import resolver
 import argtypes
 
-proc findDefinedType*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedDefinedType, string] =
+proc findType*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedType, string] =
   if name notin fileScope:
     err(fmt"{loc} UNREACHABLE: type `{name.asl}` is not defined")
   else:
     ok(fileScope[name])
 
 proc findModuleDef*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedModule, string] =
-  let entry = ? fileScope.findDefinedType(name, loc)
+  let entry = ? fileScope.findType(name, loc)
   case entry.kind:
   of rdtkModule: ok(entry.module)
   of rdtkGeneric:

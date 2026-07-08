@@ -553,7 +553,7 @@ proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let definedType = ? fileScope.findDefinedType(fncall.parsed.root, fncall.loc)
+  let definedType = ? fileScope.findType(fncall.parsed.root, fncall.loc)
   let public =
     case definedType.kind:
     of rdtkModule: (module != definedType.module)
