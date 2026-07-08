@@ -4,7 +4,6 @@ import ./tokenizer
 import ./combinators
 import ./identifiers
 import ./funcs
-import ./funcs
 import ./imports
 import ./generics
 import ./modules

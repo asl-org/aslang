@@ -688,8 +688,8 @@ proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
       if maybeAnalyzedLiteral.isErr: err(maybeAnalyzedLiteral.error)
       else: ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
   else:
-    # TODO: Utilize genericImplMap
-    let genericImplMap = ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType.get, analyzedExpression.loc)
+    # TODO: Utilize the returned generic impl map
+    discard ? analyzeValueTypeAgainstDefinitionType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType.get, analyzedExpression.loc)
     ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
 proc receiverArgType(receiver: ResolvedModule): AnalyzedArgumentType =

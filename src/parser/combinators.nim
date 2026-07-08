@@ -82,11 +82,11 @@ proc byPunctuation*(value: string): TokenMatcher =
   TokenMatcher(label: "'" & value & "'",
     predicate: proc(t: Token): bool = t.kind == tkPunctuation and t.value == value)
 
-proc byKindExcept*(kind: TokenKind, label: string): TokenMatcher =
+proc byKindExcept(kind: TokenKind, label: string): TokenMatcher =
   TokenMatcher(label: label,
     predicate: proc(t: Token): bool = t.kind != kind)
 
-let spaceMatcher* = byKind(tkSpace, "space ' '")
+let spaceMatcher = byKind(tkSpace, "space ' '")
 
 proc consume*(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
   let token = ? parser.peek(matcher.label)
@@ -254,20 +254,6 @@ proc suffixed*[T, S](inner: Spec[T], suffix: Spec[S]): Spec[T] =
       ok(v)
   )
 
-proc between*[O, T, C](open: Spec[O], inner: Spec[T], close: Spec[C]): Spec[T] =
-  ## Parse `open inner close`; discard the delimiters, return inner's
-  ## value. Generalizes `contained` to arbitrary specs (no forced
-  ## whitespace-eating around inner — use `contained` when you want
-  ## the whitespace tolerance the grammar's bracketed forms need).
-  Spec[T](
-    name: inner.name,
-    parseFn: proc(parser: Parser): Result[T, ParserError] =
-      discard ? parser.run(open)
-      let v = ? parser.run(inner)
-      discard ? parser.run(close)
-      ok(v)
-  )
-
 proc pair*[A, B](a: Spec[A], b: Spec[B]): Spec[(A, B)] =
   ## Parse `a b`; return `(A, B)`. Chain with `.map` to lift into
   ## a domain type.
@@ -311,7 +297,7 @@ proc presence*[T](spec: Spec[T]): Spec[bool] =
 # the hood all three delegate to the single `TokenMatcher` machinery
 # above.
 
-proc matcherSpec*(matcher: TokenMatcher): Spec[Token] =
+proc matcherSpec(matcher: TokenMatcher): Spec[Token] =
   Spec[Token](
     name: matcher.label,
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
@@ -346,6 +332,22 @@ let backslashSpec* = punctuationSpec("\\")
 let doubleQuoteSpec* = punctuationSpec("\"")
 
 # ============================================================
+# Trivia specs — named compositions of the highest-frequency
+# discarded-in-grammar idioms.
+# ============================================================
+#
+# `discard parser.run(any(spaceSpec))` etc. shows up 30+ times
+# across the parser; naming these makes the intent obvious at
+# the call site. The underlying combinators (any, atLeastOne)
+# are unchanged — these are pure aliases.
+#
+# `blankLines` sits with `ignorableLineSpec` below because it
+# depends on it; `ws0`/`ws1` live here alongside `spaceSpec`.
+
+let ws0* = any(spaceSpec)               ## zero-or-more spaces
+let ws1* = atLeastOne(spaceSpec)        ## one-or-more spaces
+
+# ============================================================
 # Comment + ignorable line
 # ============================================================
 
@@ -362,24 +364,12 @@ let ignorableLineSpec* = Spec[Location](
   name: "ignorable_line",
   parseFn: proc(parser: Parser): Result[Location, ParserError] =
   let loc = parser.loc
-  discard ? parser.run(any(spaceSpec))
+  discard ? parser.run(ws0)
   discard ? parser.run(optional(commentSpec))
   discard ? parser.run(newlineSpec)
   ok(loc)
 )
 
-# ============================================================
-# Trivia specs — named compositions of the highest-frequency
-# discarded-in-grammar idioms.
-# ============================================================
-#
-# `discard parser.run(any(spaceSpec))` etc. shows up 30+ times
-# across the parser; naming these makes the intent obvious at
-# the call site. The underlying combinators (any, atLeastOne)
-# are unchanged — these are pure aliases.
-
-let ws0* = any(spaceSpec)               ## zero-or-more spaces
-let ws1* = atLeastOne(spaceSpec)        ## one-or-more spaces
 let blankLines* = any(ignorableLineSpec) ## any number of blank/comment lines
 
 # ============================================================
@@ -390,9 +380,9 @@ proc separatorSpec*(sep: string): Spec[Token] =
   Spec[Token](
     name: "'" & sep & "'",
     parseFn: proc(parser: Parser): Result[Token, ParserError] =
-    discard ? parser.run(any(spaceSpec))
+    discard ? parser.run(ws0)
     let token = ? parser.run(punctuationSpec(sep))
-    discard ? parser.run(any(spaceSpec))
+    discard ? parser.run(ws0)
     ok(token)
   )
 

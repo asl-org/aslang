@@ -717,11 +717,6 @@ proc `==`*(a, b: ResolvedArgumentDefinition): bool = a.hash == b.hash
 proc asl*(argDef: ResolvedArgumentDefinition): string =
   fmt"{argDef.name.asl}: {argDef.argType.asl}"
 
-proc genericRequirement*(d: ResolvedArgumentDefinition): Option[ResolvedGenericArgumentType] =
-  case d.argType.kind:
-  of ratkModule: discard
-  of ratkGeneric: result = some(d.argType.generic)
-
 proc concreteArgumentDefinition(argDef: ResolvedArgumentDefinition, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentDefinition =
   let concreteArgType = argDef.argType.concreteArgumentType(concrete, generic)
   newResolvedArgumentDefinition(argDef.parsed, concreteArgType)

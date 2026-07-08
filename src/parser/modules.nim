@@ -5,7 +5,6 @@ import ./combinators
 import ./identifiers
 import ./data
 import ./funcs
-import ./funcs
 import ./generics
 
 # ============================================================
