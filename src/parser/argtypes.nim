@@ -68,7 +68,7 @@ proc newArgumentDefinition*(name: Identifier, argType: ArgumentType,
 proc asl*(argDef: ArgumentDefinition): string =
   fmt"{asl(argDef.name)}: {asl(argDef.argType)}"
 
-let argumentDefinitionSpec* = pair(identifierSpec, prefixed(colonWithSpacesSpec, argumentTypeSpec)).map(
+let argumentDefinitionSpec* = separated(identifierSpec, colonWithSpacesSpec, argumentTypeSpec).map(
   "argument_definition",
   proc(t: (Identifier, ArgumentType)): ArgumentDefinition = newArgumentDefinition(t[0], t[1], t[0].loc))
 

@@ -26,7 +26,7 @@ proc asl(field: UnionPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"
 
 # Variant pattern field: name ":" binding (both identifiers)
-let unionPatternFieldSpec* = pair(identifierSpec, prefixed(colonWithSpacesSpec, identifierSpec)).map(
+let unionPatternFieldSpec* = separated(identifierSpec, colonWithSpacesSpec, identifierSpec).map(
   "variant_pattern_field",
   proc(t: (Identifier, Identifier)): UnionPatternField = newUnionPatternField(t[0], t[1], t[0].loc))
 

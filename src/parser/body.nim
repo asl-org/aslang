@@ -27,7 +27,7 @@ proc loc*(g: Getter): Location = g.loc
 proc asl(getter: Getter): string =
   fmt"{asl(getter.source)}.{asl(getter.property)}"
 
-let getterSpec* = pair(identifierSpec, prefixed(punctuationSpec("."), identifierSpec)).map(
+let getterSpec* = separated(identifierSpec, punctuationSpec("."), identifierSpec).map(
   "getter",
   proc(t: (Identifier, Identifier)): Getter = newGetter(t[0], t[1], t[0].loc))
 
@@ -51,7 +51,7 @@ proc asl(prim: LiteralInitializer): string =
   fmt"{asl(prim.argType)} {asl(prim.value)}"
 
 # type literal
-let literalInitializerSpec* = pair(argumentTypeSpec, prefixed(ws1, literalSpec)).map(
+let literalInitializerSpec* = separated(argumentTypeSpec, ws1, literalSpec).map(
   "literal_initializer",
   proc(t: (ArgumentType, Literal)): LiteralInitializer =
     newLiteralInitializer(t[0], t[1], t[0].loc))
@@ -547,7 +547,7 @@ let functionCallSpec* = triple(
     proc(t: (Identifier, Identifier, ArgumentList)): FunctionCall =
       newFunctionCall(t[0], t[1], t[2]))
 
-let kwargSpec* = pair(identifierSpec, prefixed(colonWithSpacesSpec, expressionSpec)).map(
+let kwargSpec* = separated(identifierSpec, colonWithSpacesSpec, expressionSpec).map(
   "keyword_argument",
   proc(t: (Identifier, Expression)): KeywordArgument = newKeywordArgument(t[0], t[1], t[0].loc))
 
@@ -577,7 +577,7 @@ let unionInitializerSpec* = triple(
 # impls, used for phantom-typed structs whose module declares a requires
 # block). Both productions land on the same StructRef shape carrying an
 # impls seq; empty means bare.
-let structInitializerSpec* = pair(argumentTypeSpec, prefixed(ws0, kwargListSpec)).map(
+let structInitializerSpec* = separated(argumentTypeSpec, ws0, kwargListSpec).map(
   "struct_initializer",
   proc(t: (ArgumentType, KeywordArgumentList)): StructInitializer =
     let structRef = newStructRef(t[0].root, t[0].impls, t[0].loc)
@@ -605,11 +605,11 @@ expressionSpec.parseFn = oneOf("expression", [
     proc(v: Identifier): Expression = newExpression(v)),
 ]).parseFn
 
-let assignmentSpec* = pair(identifierSpec, prefixed(equalsSeparatorSpec, expressionSpec)).map(
+let assignmentSpec* = separated(identifierSpec, equalsSeparatorSpec, expressionSpec).map(
   "assignment",
   proc(t: (Identifier, Expression)): Assignment = newAssignment(t[0], t[1], t[0].loc))
 
-let setterSpec* = pair(getterSpec, prefixed(equalsSeparatorSpec, expressionSpec)).map(
+let setterSpec* = separated(getterSpec, equalsSeparatorSpec, expressionSpec).map(
   "setter",
   proc(t: (Getter, Expression)): Setter = newSetter(t[0], t[1], t[0].loc))
 

@@ -265,6 +265,13 @@ proc pair*[A, B](a: Spec[A], b: Spec[B]): Spec[(A, B)] =
       ok((va, vb))
   )
 
+proc separated*[A, S, B](a: Spec[A], sep: Spec[S], b: Spec[B]): Spec[(A, B)] =
+  ## Parse `a sep b`; discard the separator, return `(A, B)`. Reads
+  ## like the grammar rule "a separated-by sep from b". The
+  ## grammar-natural collapse of `pair(a, prefixed(sep, b))` — same
+  ## behaviour, one atom instead of two nested ones.
+  pair(a, prefixed(sep, b))
+
 proc triple*[A, B, C](a: Spec[A], b: Spec[B], c: Spec[C]): Spec[(A, B, C)] =
   ## Parse `a b c`; return `(A, B, C)`. Chain with `.map` to lift.
   Spec[(A, B, C)](
