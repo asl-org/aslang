@@ -1,5 +1,48 @@
 # Lessons Learned
 
+## 2026-07-08 — Resolver architecture: shells retired, domain.nim split six ways
+
+End-of-day status: `src/resolver/domain.nim` (1782 lines, single
+type block, single file) split into six cohesive cluster files
+(`argtypes` / `funcdefs` / `data` / `body` / `funcs` / `modules`).
+Unit suite 271/0, integration 33/35 — unchanged either side of
+the refactor.
+
+Two lessons:
+
+- **A workaround written to service the wrong invariant becomes
+  architecture.** Task 6b introduced the shell/populate two-pass
+  to service `ResolvedModuleArgumentType.resolvedModule:
+  ResolvedModule` — a field that was itself the drift. The
+  original design intent was that resolved argument types hold
+  the *parser* `Module` identifier, not a back-ref into the
+  resolver's own world. Task 6b flipped that on the theory that
+  carrying the resolved back-ref would let downstream layers skip
+  the lookup; the ref-object cycle it created is what forced the
+  shell/populate mechanism to grow. Two commits landed almost
+  back-to-back: field flipped back to parser `Module` (−129 LOC
+  across resolver + analyzer), and then the shells' one reason
+  to exist evaporated — deleted wholesale. The lesson is not
+  "avoid shells" specifically; it's that when a mechanism exists
+  only to service a single field's type choice, question the
+  field before hardening the mechanism.
+
+- **Cycle constraints propagate — one field change unlocks the
+  file split.** Nim requires mutually-recursive `ref object`
+  types to share a single `type:` block. Task 6b's back-ref
+  wired every resolved-cluster type into one giant cycle
+  (`ResolvedArgumentType → ResolvedModule → ResolvedFunction →
+  ResolvedFunctionDef → ResolvedArgumentType`), which is why
+  everything ended up in `domain.nim`. Reverting the field to
+  parser `Module` broke the cycle at exactly one point — and
+  the ripple was that the *six* naturally-cohesive sub-clusters
+  (argument-type, funcdef, data, body, funcs, module) suddenly
+  formed a strict dependency order (argtypes → funcdefs → data
+  → body → funcs → modules) with no back-edges. A 1782-line file
+  became six files sized 99–633 lines each, each cluster a
+  single `type:` block. When one refactor unlocks a much larger
+  structural improvement, ship the larger improvement.
+
 ## 2026-07-08 — Parser refactor arc (Tasks 11–15 + naming polish)
 
 End-of-day status: parser layer normalized to a data-driven,

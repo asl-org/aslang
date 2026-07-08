@@ -97,12 +97,12 @@ Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              every impl list. Resolved* def-level types carry
   │              the accessors + indices the analyzer needs
   │              (findField, findVariant, findFunctionDefs,
-  │              genericTypeIndex, ...). Two-pass shell/populate
-  │              inside domain.nim breaks the ResolvedModule ↔
-  │              ArgumentType cycle: pass A allocates an empty
-  │              ResolvedModule shell for every parser Module so
-  │              back-references resolve; pass B populates each
-  │              shell with the resolved requires/data/functions.
+  │              genericTypeIndex, ...). Single-pass: resolved
+  │              argument types + struct/union refs hold the parser
+  │              `Module` identifier (not a ResolvedModule back-ref),
+  │              so no ref-object cycle forms. Downstream layers
+  │              that need the resolved module do the lookup at
+  │              their site via `ResolvedFile.findModule(name)`.
   ▼
 Analyzer ──── Walks bodies. Consumes the enriched Resolved* types
   │              directly via accessors — there are no def-level
@@ -243,52 +243,61 @@ the public API.
 
 ### Phase 4: Resolution
 
-`src/resolver/{domain, literals, patterns, imports, files, apps,
-resolver}.nim`
+`src/resolver/{argtypes, funcdefs, data, body, funcs, modules,
+literals, patterns, imports, files, apps, resolver}.nim`
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
-which in turn holds resolved imports plus a `ResolvedDefinedType` for
-each module/generic. Body-level name resolution is complete (variables,
+which in turn holds resolved imports plus a `ResolvedType` for each
+module/generic. Body-level name resolution is complete (variables,
 getters, function calls, initializers, match/case patterns). The
 resolver also enforces the structural requires-block constraints
 (unique generics in requires, must pair with a struct, struct can't
 carry generic fields when requires is present), runs the arity +
 generic-constraint checks on every impl list (task 7 moved these here
-from the analyzer), and stores the resolved receiver module directly
-on `ResolvedStructRef` / `ResolvedUnionRef` (single-shape after task 8
-— `resolvedImpls: seq[ResolvedArgumentType]`, empty for the bare
-surface form, populated for the bracketed form). Scope:
+from the analyzer), and stores the parser Module identifier on
+`ResolvedStructRef` / `ResolvedUnionRef` (single-shape after task 8 —
+`impls: seq[ResolvedArgumentType]`, empty for the bare surface form,
+populated for the bracketed form). Scope:
 
-- **File layout — one `domain.nim` for the mutually-recursive cycle.**
-  Nim requires the cycle of `ref object` types rooted at
-  `ResolvedArgumentType` (which reaches through Module / Function /
-  Statement back to itself) to share a single `type:` block, so every
-  type in the cycle plus its constructors, accessors, and `resolve*`
-  procs lives in `src/resolver/domain.nim` (~1900 lines) grouped by
-  concept via `# ==== …` section dividers. Standalone concepts stay
-  in their own files: `ResolvedLiteralDef` in `literals.nim`,
-  `ResolvedCasePattern` in `patterns.nim`, `ResolvedImport` in
-  `imports.nim`, `ResolvedFile` in `files.nim`, `ResolvedApp` in
-  `apps.nim`. Barrel `resolver.nim` re-exports.
-- **Two-pass walk per app** (files come topo-sorted leaves-first
-  from the loader, so imports are always resolved before use).
-  - Pass A (declare, shell): allocate an empty `ResolvedModule`
-    shell for every parser `Module` in the app via
-    `newResolvedModuleShell`, keyed on parser identity in a
-    `ResolvedModuleShells` table. This is the one-shot mechanism
-    that breaks the `ResolvedModuleArgumentType.resolvedModule ↔
-    ResolvedModule` cycle — every downstream reference resolves to
-    a valid (though empty) shell even before its define pass runs.
-    Per-file work in this pass also registers every defined-type
-    name and every imported binding into a `FileScope`.
-  - Pass B (define, populate): for each module, resolve its
-    `requires(...)` clause (if any, declaring explicit type
-    parameters), its data block (`LiteralDef` / `StructDef` /
-    `UnionDef`), and each function signature. For each generic,
-    resolve each function signature. Every `ArgumentType` root must
-    look up in the scope; impls resolve recursively and are
-    arity- + constraint-checked. When the module's define pass
-    completes, `populateResolvedModule` fills in its shell.
+- **File layout — six cohesive cluster files.** After retiring the
+  shell/populate mechanism, no ref-object cycle spans multiple
+  clusters, so `domain.nim` split cleanly along dependency order:
+  - `argtypes.nim` — `ResolvedArgumentType` cluster + `FileScope` /
+    `FunctionScope` + scope lookups (`findType`, `findModule`,
+    `findGeneric`, `findRequiredImpls*`) + argument-type resolution
+    (`resolveArgumentType`, `resolveModuleArgumentType`,
+    `resolveGenericArgumentType`, `resolveDataType`) +
+    `checkImplSatisfiesGeneric`.
+  - `funcdefs.nim` — `ResolvedArgumentDef`, `ResolvedFunctionDef`,
+    `ResolvedExternFunction` + their resolve procs.
+  - `data.nim` — `ResolvedStructDef`, `ResolvedVariant`,
+    `ResolvedUnionDef`, `ResolvedData` + `accumulateGenericPosition`
+    and the def-level resolvers.
+  - `body.nim` — the self-mutually-recursive expression/statement/
+    initializer cluster (Getter, LiteralInitializer, KeywordArgument,
+    StructRef, UnionRef, StructInitializer, UnionInitializer,
+    Initializer, FunctionCall, Assignment, Setter, CaseBlock,
+    MatchExpression, Expression, Statement).
+  - `funcs.nim` — `ResolvedUserFunction` + tagged `ResolvedFunction`.
+  - `modules.nim` — `ResolvedModule`, `ResolvedGeneric`, tagged
+    `ResolvedType` + `resolveModule` / `resolveGeneric` /
+    `resolveType` + `validateRequiresConstraints` + `findFunctionDef` /
+    `findFunctionDefs`.
+
+  Standalone concepts stay in their own files: `ResolvedLiteralDef`
+  in `literals.nim`, `ResolvedCasePattern` in `patterns.nim`,
+  `ResolvedImport` in `imports.nim`, `ResolvedFile` in `files.nim`,
+  `ResolvedApp` in `apps.nim`. Barrel `resolver.nim` re-exports the
+  full surface.
+- **Single-pass walk per app** (files come topo-sorted leaves-first
+  from the loader, so imports are always resolved before use). For
+  each file: build the `FileScope` (locally-defined names +
+  imported bindings). Then for each defined type resolve requires
+  (if any), the data block, and each function signature/body.
+  Argument types along the way carry parser Module identifiers, so
+  every `ResolvedModuleArgumentType` is well-formed at construction
+  without any forward-reference dance. The historical shell /
+  populate two-pass has been retired.
 - **Impl-list validation** — `resolveModuleArgumentType` calls
   `checkImplSatisfiesGeneric` on every impl inference path (explicit
   `requires(...)`, inferred struct fields, inferred union fields).
@@ -332,13 +341,13 @@ surface form, populated for the bracketed form). Scope:
   type-correctness checks. Those belong to the Analyzer phase.
 - **No structural-size check** — all struct values are pointer-backed
   at runtime, so mutual struct containment does not create infinite
-  types. Name cycles are the only cycles, and the shell-pass
-  dissolves them.
-- **Scope limit on `ResolvedGenericArgumentType.generic`** — task 6b
-  only threaded the module edge through the shell/populate two-pass.
-  `ResolvedGenericArgumentType.generic` remains a parser `Generic`
-  reference; the same treatment for generics would follow the same
-  pattern but is deferred (no downstream task needs it yet).
+  types. Name cycles are the only cycles, and holding parser
+  identifiers (not resolved back-refs) inside the argument-type
+  cluster dissolves them.
+- **`ResolvedGenericArgumentType.generic` is a parser `Generic`.**
+  Same rule as `ResolvedModuleArgumentType.module: Module` — no
+  resolved back-refs inside the argument-type cluster. Downstream
+  layers do the resolved-side lookup at their site.
 
 ### Phase 5: Analysis
 
@@ -508,95 +517,74 @@ src/
     literals.nim                   ResolvedLiteralDef + resolveLiteralDef
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
     imports.nim                    ResolvedImportedType / ResolvedImport
-    domain.nim                     Every mutually-recursive resolved
-                                   type + its constructors, accessors,
-                                   and resolve* procs, grouped by
-                                   concept via `# ==== …` section
-                                   dividers. ~1900 lines. Nim requires
-                                   the ref-object cycle rooted at
-                                   ResolvedArgumentType (Module ↔
-                                   Function ↔ Statement ↔ ArgumentType)
-                                   to share a single `type:` block, so
-                                   the concepts stay grouped in one
-                                   file rather than fractured across
-                                   many. Cover:
-                                     — Argument-type cluster:
-                                       ResolvedArgumentType (flat
-                                       tagged union over
-                                       ResolvedModuleArgumentType |
-                                       ResolvedGenericArgumentType,
-                                       no ratkImported/ratkDefined
-                                       intermediate) + FileScope +
-                                       resolveArgumentType (module +
-                                       generic context overloads) +
-                                       checkImplSatisfiesGeneric
-                                     — ResolvedModuleShells table +
-                                       shell/populate mechanism that
-                                       breaks the ResolvedModule ↔
-                                       ArgumentType cycle
-                                     — Function-def cluster:
-                                       ResolvedArgumentDefinition /
-                                       ResolvedFunctionDefinition /
-                                       ResolvedExternFunction
-                                     — Data cluster: ResolvedStructDef
-                                       (with fieldIndex + findField +
-                                       genericTypeIndex) /
-                                       ResolvedVariant (with
-                                       fieldIndex + findField) /
-                                       ResolvedUnionDef (with
-                                       variantIndex + findVariant +
-                                       genericTypeIndex) /
-                                       ResolvedData +
-                                       accumulateGenericPosition
-                                     — Body-level cluster:
-                                       ResolvedGetter /
-                                       ResolvedLiteralInitializer /
-                                       ResolvedStructRef +
-                                       ResolvedUnionRef (both flat
-                                       objects with resolvedModule +
-                                       resolvedImpls after task 8;
-                                       empty resolvedImpls = bare
-                                       surface form) /
-                                       ResolvedStructInitializer /
-                                       ResolvedUnionInitializer /
-                                       ResolvedFunctionCall (each
-                                       exposing resolvedImpls*
-                                       accessors) /
-                                       ResolvedInitializer /
-                                       ResolvedAssignment /
-                                       ResolvedSetter (Statement
-                                       variant after task 4) /
-                                       ResolvedCaseBlock /
-                                       ResolvedMatchExpression /
-                                       ResolvedExpression /
-                                       ResolvedStatement +
-                                       FunctionScope (HashSet of
-                                       variable names in scope)
-                                     — Function cluster:
-                                       ResolvedUserFunction /
-                                       ResolvedFunction
-                                     — Module + Generic:
-                                       ResolvedModule (with
-                                       funcDefIndex +
-                                       funcNameArityIndex +
-                                       findFunctionDefs(name, arity,
-                                       public)) / ResolvedGeneric
-                                       (with funcNameArityIndex +
-                                       findFunctionDefs) +
-                                       newResolvedModuleShell +
-                                       populate
-                                     — ResolvedDefinedType (umbrella)
-    imports.nim                    ResolvedImportedType / ResolvedImport
                                    + resolveImport
-    files.nim                      ResolvedFile + resolveFile (declare
-                                   pass — registers defined-type names
-                                   and imported bindings into FileScope)
+    argtypes.nim                   Argument-type cluster (~410L):
+                                   ResolvedArgumentType (flat tagged
+                                   union over ResolvedModuleArgumentType
+                                   | ResolvedGenericArgumentType — both
+                                   carry the *parser* Module/Generic,
+                                   never a resolved back-ref, so no
+                                   ref-object cycle forms) + FileScope /
+                                   FunctionScope + findType / findModule
+                                   / findGeneric / findRequiredImpls*
+                                   + checkImplSatisfiesGeneric +
+                                   resolveModuleArgumentType (module +
+                                   generic context overloads) +
+                                   resolveArgumentType +
+                                   resolveDataType.
+    funcdefs.nim                   ResolvedArgumentDef /
+                                   ResolvedFunctionDef /
+                                   ResolvedExternFunction + resolve*
+                                   procs. Reads argtypes.
+    data.nim                       ResolvedStructDef (fieldIndex +
+                                   findField + genericTypeIndex) /
+                                   ResolvedVariant (fieldIndex +
+                                   findField) / ResolvedUnionDef
+                                   (variantIndex + findVariant +
+                                   genericTypeIndex) / ResolvedData +
+                                   accumulateGenericPosition. Reads
+                                   argtypes + funcdefs.
+    body.nim                       Self-mutually-recursive body cluster
+                                   (~630L): ResolvedGetter /
+                                   ResolvedLiteralInitializer /
+                                   ResolvedKeywordArgument /
+                                   ResolvedStructRef + ResolvedUnionRef
+                                   (both flat objects carrying parser
+                                   `Module` + `impls` seq — empty for
+                                   the bare surface form, populated for
+                                   the bracketed form) /
+                                   ResolvedStructInitializer /
+                                   ResolvedUnionInitializer /
+                                   ResolvedFunctionCall /
+                                   ResolvedInitializer /
+                                   ResolvedAssignment / ResolvedSetter
+                                   (Statement variant after task 4) /
+                                   ResolvedCaseBlock /
+                                   ResolvedMatchExpression /
+                                   ResolvedExpression /
+                                   ResolvedStatement + all their
+                                   resolve procs. Reads argtypes +
+                                   funcdefs + data.
+    funcs.nim                      ResolvedUserFunction + tagged
+                                   ResolvedFunction (fkUser / fkExtern)
+                                   + resolveUserFunction /
+                                   resolveFunction. Reads funcdefs +
+                                   body.
+    modules.nim                    ResolvedModule (funcDefIndex +
+                                   funcNameArityIndex +
+                                   findFunctionDefs(name, arity,
+                                   public)) / ResolvedGeneric (same
+                                   accessors) / tagged ResolvedType +
+                                   validateRequiresConstraints +
+                                   resolveModule / resolveGeneric /
+                                   resolveType. Reads argtypes +
+                                   funcdefs + data + funcs.
+    files.nim                      ResolvedFile + resolveFile
+                                   (registers defined-type names and
+                                   imported bindings into FileScope).
     apps.nim                       ResolvedApp + the public `resolve*`
-                                   entry. Runs buildModuleShells first
-                                   (declare pass: one shell per
-                                   parser Module), then resolves each
-                                   file (define pass: populates each
-                                   shell as its module completes).
+                                   entry. Single-pass walk over the
+                                   topo-sorted files.
 
   analyzer/                        8 files, ~1900 lines. No def-level
                                    wrappers — the 12 that used to live
@@ -969,7 +957,7 @@ Focused TODOs still open:
   flows into a generic position (e.g., `f(K=…)` with literal
   inferable type), the resulting binding isn't yet recorded.
 - **`findRequiredImplsForFields` nested-impl walk**
-  (`resolver/domain.nim`) — needs to walk into impls so a field
+  (`resolver/argtypes.nim`) — needs to walk into impls so a field
   typed `Box[u8, Sample]` contributes `Sample` to the parent's
   requires.
 - **Type-correctness checks across statements** — assignment
