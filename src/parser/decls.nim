@@ -72,41 +72,6 @@ let typeSpec = oneOf("type_block", [
 let definedTypeSpec = prefixed(blankLines, typeSpec)
 
 # ============================================================
-# Type (umbrella over imported and defined types)
-# ============================================================
-
-type
-  TypeKind* = enum
-    tkImported, tkDefined
-  Type* = ref object
-    case kind: TypeKind
-    of tkImported: imported: ImportedType
-    of tkDefined: definedType: DefinedType
-
-proc newType(imported: ImportedType): Type =
-  Type(kind: tkImported, imported: imported)
-
-proc newType(definedType: DefinedType): Type =
-  Type(kind: tkDefined, definedType: definedType)
-
-proc kind*(typ: Type): TypeKind = typ.kind
-
-proc imported*(typ: Type): ImportedType =
-  assert typ.kind == tkImported,
-    fmt"Type.imported accessed but kind is {typ.kind}"
-  typ.imported
-
-proc definedType*(typ: Type): DefinedType =
-  assert typ.kind == tkDefined,
-    fmt"Type.definedType accessed but kind is {typ.kind}"
-  typ.definedType
-
-proc loc*(typ: Type): Location =
-  case typ.kind:
-  of tkImported: typ.imported.loc
-  of tkDefined: typ.definedType.loc
-
-# ============================================================
 # File
 # ============================================================
 
@@ -116,10 +81,11 @@ type
   File* = ref object
     path: string
     definedTypes: seq[DefinedType]
-    types: seq[Type]
-    typeIndex: Table[Identifier, int]
+    definedTypeIndex: Table[Identifier, int]
     case kind: FileKind
-    of fkAsl: imports: seq[Import]
+    of fkAsl:
+      imports: seq[Import]
+      importedNameIndex: Table[Identifier, ImportedType]
     of fkAslr: discard
 
 proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType],
@@ -156,15 +122,15 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
         vendorRoots["std"], newLocation())
     allImports.insert(stdImport, 0)
 
-  var typeIndex: Table[Identifier, int]
-  var types: seq[Type]
+  var importedNameIndex: Table[Identifier, ImportedType]
+  var definedTypeIndex: Table[Identifier, int]
 
-  # Parser-time typeIndex build: only ikExplicit imports contribute
-  # names here. ikShorthand imports have no names until the resolver
-  # expands them via `publicTypes()` (the target file isn't parsed
-  # yet at this point). Shorthand-vs-local + shorthand-vs-explicit
-  # collisions are caught by validateNoDuplicateBindings in
-  # resolver/files.nim.
+  # Parser-time index build: only ikExplicit imports contribute
+  # names to `importedNameIndex`. ikShorthand imports have no names
+  # until the resolver expands them via `publicTypes()` (the target
+  # file isn't parsed yet at this point). Shorthand-vs-local +
+  # shorthand-vs-explicit collisions are caught by
+  # validateNoDuplicateBindings in resolver/files.nim.
   for imp in allImports:
     if imp.absPath == path:
       let msg = "importing the source file in itself is disallowed"
@@ -173,39 +139,39 @@ proc newAslFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedTy
     of ikShorthand: discard
     of ikExplicit:
       for impType in imp.names:
-        if impType.binding in typeIndex:
-          let prev = types[typeIndex[impType.binding]]
+        if impType.binding in importedNameIndex:
+          let prev = importedNameIndex[impType.binding]
           let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
           return err(newParserError(msg, impType.loc))
-        typeIndex[impType.binding] = types.len
-        types.add(newType(impType))
+        importedNameIndex[impType.binding] = impType
 
-  for definedType in definedTypes:
-    if definedType.name in typeIndex:
-      let prev = types[typeIndex[definedType.name]]
+  for i, definedType in definedTypes:
+    if definedType.name in importedNameIndex:
+      let prev = importedNameIndex[definedType.name]
       let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, definedType.loc))
-    else:
-      typeIndex[definedType.name] = types.len
-      types.add(newType(definedType))
-  ok(File(kind: fkAsl, path: path, imports: allImports, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+    if definedType.name in definedTypeIndex:
+      let prev = definedTypes[definedTypeIndex[definedType.name]]
+      let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, definedType.loc))
+    definedTypeIndex[definedType.name] = i
+  ok(File(kind: fkAsl, path: path, imports: allImports, definedTypes: definedTypes,
+    definedTypeIndex: definedTypeIndex, importedNameIndex: importedNameIndex))
 
 proc newAslrFile*(path: string, definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
   ## Builds an `fkAslr` File: the runtime interface — no imports
   ## (structurally — the variant has no imports field), modules may
   ## host extern functions freely.
-  var typeIndex: Table[Identifier, int]
-  var types: seq[Type]
-  for definedType in definedTypes:
-    if definedType.name in typeIndex:
-      let prev = types[typeIndex[definedType.name]]
+  var definedTypeIndex: Table[Identifier, int]
+  for i, definedType in definedTypes:
+    if definedType.name in definedTypeIndex:
+      let prev = definedTypes[definedTypeIndex[definedType.name]]
       let msg = fmt"duplicate type declaration encountered, see previous declaration at {prev.loc}"
       return err(newParserError(msg, definedType.loc))
-    else:
-      typeIndex[definedType.name] = types.len
-      types.add(newType(definedType))
-  ok(File(kind: fkAslr, path: path, definedTypes: definedTypes, types: types, typeIndex: typeIndex))
+    definedTypeIndex[definedType.name] = i
+  ok(File(kind: fkAslr, path: path, definedTypes: definedTypes,
+    definedTypeIndex: definedTypeIndex))
 
 proc newFile*(path: string, imports: seq[Import], definedTypes: seq[DefinedType]): Result[
     File, ParserError] =
@@ -231,7 +197,6 @@ proc imports*(file: File): seq[Import] =
     fmt"File.imports accessed but kind is {file.kind}"
   file.imports
 proc definedTypes*(file: File): seq[DefinedType] = file.definedTypes
-proc types*(file: File): seq[Type] = file.types
 proc hash*(file: File): Hash = file.path.hash
 proc `==`*(a, b: File): bool = a.hash == b.hash
 
@@ -250,23 +215,29 @@ proc asl*(file: File, indentWidth: uint32): string =
     lines.add(dt.asl(indentWidth))
   lines.join("\n") & "\n"
 
-proc findTypeId(file: File, name: Identifier): Result[int, string] =
-  if name in file.typeIndex: ok(file.typeIndex[name])
-  else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
+proc findDefinedType*(file: File, name: Identifier): Result[DefinedType, string] =
+  ## Locally-defined type lookup. Errors if the name refers to an
+  ## imported binding (use `findImportedName` for that) or is unknown.
+  if name in file.definedTypeIndex:
+    ok(file.definedTypes[file.definedTypeIndex[name]])
+  else:
+    err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
 
-proc findType*(file: File, name: Identifier): Result[Type, string] =
-  let id = ? file.findTypeId(name)
-  ok(file.types[id])
+proc findImportedName*(file: File, name: Identifier): Result[ImportedType, string] =
+  ## Imported-binding lookup — the parse-time placeholder pointing at
+  ## a name in another file. `fkAslr` files have no imports and always
+  ## return an error.
+  case file.kind:
+  of fkAsl:
+    if name in file.importedNameIndex: ok(file.importedNameIndex[name])
+    else: err(fmt"{name.loc} type `{name.asl}` is not imported in file `{file.path}`")
+  of fkAslr:
+    err(fmt"{name.loc} aslr files have no imports")
 
 proc findExportedType*(file: File, name: Identifier): Result[DefinedType, string] =
-  let aslType = ? file.findType(name)
-  case aslType.kind:
-  of tkImported:
-    err(fmt"{name.loc} type `{name.asl}` is not defined in file `{file.path}`")
-  of tkDefined:
-    let definedType = aslType.definedType
-    if definedType.public: ok(definedType)
-    else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
+  let definedType = ? file.findDefinedType(name)
+  if definedType.public: ok(definedType)
+  else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
 
 proc publicTypes*(file: File): seq[DefinedType] =
   ## Returns every public defined type (module or generic) in this

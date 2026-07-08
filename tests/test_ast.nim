@@ -342,26 +342,26 @@ suite "ast — UnionDef variant lookups":
 
 suite "ast — File type lookups":
 
-  test "findType resolves a locally-defined type":
+  test "findDefinedType resolves a locally-defined type":
     let f = parseStr("""
 module M:
   func go(): u8
     u8 0
 """).get
-    let r = f.findType(id("M"))
+    let r = f.findDefinedType(id("M"))
     check r.isOk
-    check r.get.kind == tkDefined
+    check r.get.kind == dtkModule
 
-  test "findType reports a missing name":
+  test "findDefinedType reports a missing name":
     let f = parseStr("""
 module M:
   func go(): u8
     u8 0
 """).get
-    let r = f.findType(id("NoSuchType"))
+    let r = f.findDefinedType(id("NoSuchType"))
     check r.isErr
     check errorContains(r.error, "NoSuchType")
-    check errorContains(r.error, "does not exist")
+    check errorContains(r.error, "not defined")
 
   test "findExportedType accepts a public module":
     let f = parseStr("""
@@ -402,7 +402,7 @@ module M:
   func go(x: u8): u8
     x
 """).get
-    let m = f.findType(id("M")).get.definedType.module
+    let m = f.findDefinedType(id("M")).get.module
     let zero = m.findFunctionDefs(id("go"), 0)
     let one = m.findFunctionDefs(id("go"), 1)
     check zero.isOk
@@ -416,7 +416,7 @@ module M:
   func go(): u8
     u8 0
 """).get
-    let m = f.findType(id("M")).get.definedType.module
+    let m = f.findDefinedType(id("M")).get.module
     let r = m.findFunctionDefs(id("missing"), 0)
     check r.isErr
     check errorContains(r.error, "missing")
@@ -427,7 +427,7 @@ module M:
   func go(): u8
     u8 0
 """).get
-    let m = f.findType(id("M")).get.definedType.module
+    let m = f.findDefinedType(id("M")).get.module
     let r = m.findFunctionDefs(id("go"), 2)
     check r.isErr
     check errorContains(r.error, "arity")
@@ -439,7 +439,7 @@ suite "ast — Generic function-def lookups":
 generic Eq:
   func eq(a: Eq, b: Eq): u8
 """).get
-    let g = f.findType(id("Eq")).get.definedType.generic
+    let g = f.findDefinedType(id("Eq")).get.generic
     let r = g.findFunctionDefs(id("eq"), 2)
     check r.isOk
     check r.get.len == 1
@@ -449,7 +449,7 @@ generic Eq:
 generic Eq:
   func eq(a: Eq, b: Eq): u8
 """).get
-    let g = f.findType(id("Eq")).get.definedType.generic
+    let g = f.findDefinedType(id("Eq")).get.generic
     let r = g.findFunctionDefs(id("missing"), 2)
     check r.isErr
 
