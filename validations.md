@@ -221,7 +221,19 @@ Source: `tests/test_grammar.nim` and `tests/test_ast.nim`.
 - **Overloading by parameter arity is allowed** in one module — two
   `func go` with different argument counts coexist.
 
-### 4.6 Decorators
+### 4.6 Variant definitions require braces
+
+- **`Timeout` alone (no braces) is rejected.** Every variant
+  declaration inside a `union:` block must carry `{...}`. Zero-field
+  variants must be written `Timeout { }`. This mirrors the
+  case-pattern side (`case Timeout { }:`) — braces on the definition
+  match braces on the pattern, so `case Timeout:` (bare) is
+  unambiguous as a variable binding rather than a variant match.
+  Locked in by `bare-identifier variant definition is rejected`
+  (test_grammar.nim) and `variant definition with empty braces
+  parses`.
+
+### 4.7 Decorators
 
 - **`@extern("symbol")` is the only decorator with defined semantics.**
   Other decorator names parse but currently produce a "todo: resolve

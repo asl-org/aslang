@@ -58,6 +58,33 @@ module Either:
 """)
     check r.isOk
 
+  test "variant definition with empty braces parses":
+    # `Timeout { }` — zero-field variant using the explicit-empty
+    # form. Braces are required on variant definitions so the shape
+    # mirrors the case-pattern side (`case Timeout { }:`).
+    let r = parseStr("""
+module Signal:
+  union:
+    Timeout { }
+    Value { data: u8 }
+""")
+    check r.isOk
+
+  test "bare-identifier variant definition is rejected":
+    # `Timeout` (no braces) would be visually ambiguous with a
+    # variable-binding case pattern. Rejecting bare identifiers on
+    # the definition side removes that ambiguity: every variant
+    # declaration carries braces, so `case Timeout:` in a match
+    # unambiguously means "bind the subject to a variable named
+    # Timeout", not "match the Timeout variant".
+    let r = parseStr("""
+module Signal:
+  union:
+    Timeout
+    Value { data: u8 }
+""")
+    check r.isErr
+
   test "module with requires(...) clause":
     let r = parseStr("""
 public generic Any:
@@ -224,6 +251,29 @@ module M:
         v
       case Err { error: e }:
         e
+    u8 0
+""")
+    check r.isOk
+
+  test "case pattern with empty braces parses":
+    # Zero-field variants are matched with `case Timeout { }:` —
+    # the same braces-required rule that governs variant definitions
+    # governs case patterns. `case Timeout:` (no braces) parses too
+    # but as a variable binding, not a variant match (see
+    # `casePatternSpec` — the `variable` arm is the tail alternative).
+    let r = parseStr("""
+public module Signal:
+  union:
+    Timeout { }
+    Value { data: u8 }
+
+module M:
+  func go(s: Signal): u8
+    _ = match s:
+      case Timeout { }:
+        u8 0
+      case Value { data: d }:
+        d
     u8 0
 """)
     check r.isOk

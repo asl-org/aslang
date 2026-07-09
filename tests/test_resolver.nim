@@ -523,7 +523,7 @@ import { u8 } from "./base.aslr"
 
 public module Signal:
   union:
-    Timeout
+    Timeout { }
     Value { data: u8 }
 
 public module M:
@@ -805,8 +805,8 @@ public module Array:
 public module Array:
   requires(K)
   union:
-    A
-    B
+    A { }
+    B { }
 """)
     cleanupDir(dir)
     check r.isErr

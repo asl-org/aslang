@@ -94,7 +94,11 @@ proc findFieldId*(variant: VariantDef, name: Identifier): Result[int, string] =
   else:
     ok(variant.fieldIndex[name])
 
-# union: variant+ (variant is identifier space* ("{" argDef, argDef "}")?)
+# union: variant+ (variant is identifier space* "{" (argDef, argDef)* "}")
+# Braces are required — empty variants must be written `Timeout { }`. This
+# mirrors the case-pattern side (`case Timeout { }:`) so the two shapes
+# stay visually consistent and there's no bare `Timeout` form to confuse
+# with a variable-binding case pattern.
 let variantDefLineSpec = Spec[VariantDef](
   name: "variant_definition_line",
   parseFn: proc(parser: Parser): Result[VariantDef, ParserError] =
@@ -102,10 +106,8 @@ let variantDefLineSpec = Spec[VariantDef](
   discard ? parser.run(indentationSpec)
   let name = ? parser.run(identifierSpec)
   discard parser.run(ws0)
-  let maybeFields = ? parser.run(optional(contained("variant_fields", "{",
-    separatedBy(argumentDefSpec, commaWithSpacesSpec), "}")))
-  var fields: seq[ArgumentDef]
-  if maybeFields.isSome: fields = maybeFields.get
+  let fields = ? parser.run(contained("variant_fields", "{",
+    separatedBy(argumentDefSpec, commaWithSpacesSpec), "}"))
   discard ? parser.run(ignorableLineSpec)
   newVariantDef(name, fields, name.loc)
 )
