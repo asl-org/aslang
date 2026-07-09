@@ -1,5 +1,15 @@
 # Lessons Learned
 
+## 2026-07-09 — Nest layers by dependency; selectively re-export
+
+Moved the parser inside the resolver (`src/parser.nim` → `src/resolver/parser.nim`, `src/parser/` → `src/resolver/parser/`) so the layout mirrors the parser+tokenizer nesting one level up. Promoted the resolver barrel from `src/resolver/resolver.nim` to `src/resolver.nim` at the same time. Everything green through the move (284/0 unit, 33/35 integration).
+
+Two lessons from this pass:
+
+- **Directory layout should encode dependency direction.** The parser is a compile-time dependency of the resolver, and the resolver is a compile-time dependency of the analyzer. The old layout had all three as siblings under `src/`, which read as "peer packages" — but they aren't peers, they're stacked. Nesting parser inside resolver made the actual relationship visible in the filesystem: you can't reach the parser without going through the resolver. Same shape as tokenizer already nested inside parser. The lesson is small: when a layer is a strict dependency (never used standalone by anything except the layer above it), express it as a sub-tree, not a sibling.
+
+- **Re-export the API surface, not the scaffolding.** The parser barrel exposes 13 modules; only 12 of them (AST types + `parse*` entry) are useful to consumers. The 13th — `combinators.nim` — holds `Spec[T]`, `oneOf`, `pair`, `prefixed`, and the trivia/separator specs. That's parsing scaffolding: it's what the parser is BUILT WITH, not what it produces. `grep` across resolver+analyzer+cli+asl.nim confirmed zero external uses. Dropping it from the parser barrel's export list makes `import resolver` deliver the clean AST surface without leaking the underlying combinator machinery, and the one test that genuinely needs combinators does one explicit `import resolver/parser/combinators` — the natural way to say "I'm deliberately reaching into internals." The rule that emerged: when barrelling a layer, re-export what the caller uses, not what the implementation uses.
+
 ## 2026-07-08 — Resolver architecture: shells retired, domain.nim split six ways
 
 End-of-day status: `src/resolver/domain.nim` (1782 lines, single
