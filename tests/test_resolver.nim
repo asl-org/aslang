@@ -503,6 +503,38 @@ public module M:
     cleanupDir(dir)
     check r.isErr
 
+  test "union initializer with no fields resolves against a zero-field variant":
+    # A union variant declared with zero fields (parser AST accepts
+    # this today — see `newVariantDef accepts an empty fields list`)
+    # must be initializable with `Variant {}` (empty kwargs). The
+    # domain rule is count equality: 0 fields require 0 kwargs.
+    #
+    # Currently FAILS at parse time because `newKeywordArgumentList`
+    # rejects empty lists — a StructInitializer-side rule ("struct
+    # needs ≥ 1 field") that leaked onto the shared list constructor
+    # and blocks the union side too. Fixing this test requires
+    # moving that check off the shared KeywordArgumentList and onto
+    # each initializer: struct rejects empty; union delegates to the
+    # resolver's `kwargs.len != variant.fields.len` count check,
+    # which naturally handles zero for empty variants.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8 } from "./base.aslr"
+
+public module Signal:
+  union:
+    Timeout
+    Value { data: u8 }
+
+public module M:
+  public func timeout(): Signal
+    Signal.Timeout {}
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
 suite "resolver — imports":
 
   test "importing a non-public type is rejected":
