@@ -409,6 +409,100 @@ public module M:
     check r.isErr
     check errorContains(r.error, "expects")
 
+suite "resolver — struct/union initializer field mapping":
+  # Domain invariant (from grammar.md): a struct/union initializer's
+  # kwargs must map one-to-one onto the struct fields / variant fields.
+  # No extras, no missing, no duplicates. This suite pins the four cells
+  # per initializer × per case so the invariant stays visible to future
+  # readers. Some tests fail at parse time (parser AST constructors —
+  # `newKeywordArgumentList` catches empty + duplicate kwargs); the rest
+  # fail at the resolver's count-equality check. Either way the domain
+  # rule holds.
+
+  test "struct initializer with extra fields is rejected":
+    # `Error` has 2 fields (code, message). Passing 3 kwargs must fail.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, u32, Error, String } from "./base.aslr"
+
+public module M:
+  public func mk(): Error
+    Error { code: u32 0, message: String "hi", extra: u8 3 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "expects")
+
+  test "union initializer with exact fields resolves":
+    # `Status.Ok` has 1 field (`value: Any`). Passing 1 kwarg with
+    # the correct name resolves.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+public module M:
+  public func mk(): Status[u8]
+    Status.Ok { value: u8 1 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "union initializer with extra fields is rejected":
+    # `Status.Ok` has 1 field (`value: Any`). Passing 2 kwargs must fail.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+public module M:
+  public func mk(): Status[u8]
+    Status.Ok { value: u8 1, extra: u8 2 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "expects")
+
+  test "union initializer with missing fields is rejected":
+    # `Status.Ok` has 1 field. Passing 0 kwargs (`{}`) must fail.
+    # Today this is caught at parse time by `newKeywordArgumentList`
+    # (empty list rejection). After allowing empty kwarg lists at
+    # parse, this will be caught by the resolver's count check.
+    # Either origin surfaces as isErr — no message assertion.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+public module M:
+  public func mk(): Status[u8]
+    Status.Ok {}
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
+  test "union initializer with duplicate fields is rejected":
+    # `newKeywordArgumentList` catches duplicate kwarg names at parse
+    # time, so the failure surfaces regardless of what struct/union
+    # the initializer targets.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+public module M:
+  public func mk(): Status[u8]
+    Status.Ok { value: u8 1, value: u8 2 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
 suite "resolver — imports":
 
   test "importing a non-public type is rejected":
