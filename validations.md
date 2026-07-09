@@ -153,9 +153,13 @@ invalid AST value from ever existing.
 
 ### 3.7 `KeywordArgumentList`
 
-- Rejects an **empty list** — a struct/union initializer must supply
-  at least one field.
 - Rejects **duplicate kwarg names.**
+- **Accepts an empty list.** Emptiness is a per-initializer concern,
+  not a list-level one. `StructInitializer`'s "no empty structs" rule
+  falls out of `newStructDef` (≥ 1 field guaranteed by construction)
+  plus the resolver's `kwargs.len != fields.len` count check.
+  `UnionInitializer` needs empty to be legal so `Variant {}` works
+  against a zero-field variant.
 
 ### 3.8 `Module`
 
@@ -337,10 +341,36 @@ Source: `tests/test_resolver.nim`.
 - **Wrong arity call** — `Module.fn(a, b)` when `fn` takes one arg is
   rejected with `arity` in the error.
 
-### 7.2 Struct initializer arity
+### 7.2 Initializer field mapping (struct + union)
 
-- **Wrong kwarg count** — `Struct { a: 1 }` when the struct has two
-  fields is rejected. Error contains "expects".
+Domain rule: a struct or union initializer's kwargs must map one-to-
+one onto the target's fields — no extras, no missing, no duplicates.
+The resolver enforces the count-equality half; the parser AST layer
+enforces the duplicate half.
+
+Struct:
+- **Exact count.** `Struct { a: 1, b: 2 }` against a two-field struct
+  resolves.
+- **Extra fields rejected.** `Struct { a: 1, b: 2, c: 3 }` against a
+  two-field struct is rejected. Error contains "expects".
+- **Missing fields rejected.** `Struct { a: 1 }` against a two-field
+  struct is rejected.
+- **Empty initializer implicitly rejected.** `newStructDef`
+  guarantees ≥ 1 field structurally, so `Struct {}` is 0 ≠ N by the
+  count check with no dedicated rule needed.
+- **Duplicate kwarg names rejected** at parse time by
+  `newKeywordArgumentList`.
+
+Union:
+- **Exact count.** `Union.Variant { field: value }` against a
+  variant with the same field count resolves.
+- **Extra fields rejected.**
+- **Missing fields rejected** (when the variant has ≥ 1 field).
+- **Zero-field variant accepts empty initializer.** `Union.Empty {}`
+  against a variant declared with no fields resolves — the count
+  check trivially matches 0 to 0. This is why the shared
+  `KeywordArgumentList` allows empty lists (§ 3.7).
+- **Duplicate kwarg names rejected** at parse time.
 
 ### 7.3 Argument-type impl-list arity
 

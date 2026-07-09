@@ -195,10 +195,14 @@ suite "ast — Import invariants":
 
 suite "ast — KeywordArgumentList invariants":
 
-  test "newKeywordArgumentList rejects an empty list":
+  test "newKeywordArgumentList accepts an empty list":
+    # Emptiness is a per-initializer concern, not a list-level one.
+    # StructInitializer's "no empty structs" rule falls out of
+    # `newStructDef` (≥ 1 field guaranteed) + the resolver's
+    # `kwargs.len != fields.len` check. UnionInitializer needs empty
+    # to be legal so `Variant {}` works against a zero-field variant.
     let r = newKeywordArgumentList(@[], newLocation())
-    check r.isErr
-    check errorContains(r.error.msg, "at least 1 field")
+    check r.isOk
 
   test "newKeywordArgumentList rejects duplicate kwarg names":
     let kw1 = newKeywordArgument(id("a"),

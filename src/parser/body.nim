@@ -238,10 +238,12 @@ proc asl(kwarg: KeywordArgument): string =
 
 # ----------------- KeywordArgumentList -----------------
 proc newKeywordArgumentList*(args: seq[KeywordArgument], loc: Location): Result[KeywordArgumentList, ParserError] =
-  if args.len == 0:
-    let msg = "keyword argument list must contain at least 1 field"
-    return err(newParserError(msg, loc))
-
+  ## `KeywordArgumentList` carries the raw kwarg sequence + a duplicate
+  ## check. Emptiness is a per-initializer concern, not a list-level
+  ## one: `StructInitializer`'s "no empty structs" rule falls out of
+  ## `newStructDef` (≥ 1 field guaranteed) combined with the resolver's
+  ## `kwargs.len != fields.len` count check; `UnionInitializer` needs
+  ## empty to be legal so `Variant {}` on a zero-field variant works.
   var argIndex: Table[Identifier, int]
   for index, arg in args:
     if arg.name in argIndex:
