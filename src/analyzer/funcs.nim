@@ -3,7 +3,6 @@
 
 import results, strformat, tables, options
 
-import parser
 import resolver
 import argtypes
 import funcrefs

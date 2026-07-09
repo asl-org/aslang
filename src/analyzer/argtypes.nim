@@ -14,7 +14,6 @@
 
 import results, strformat, options, strutils, tables, hashes
 
-import parser
 import resolver
 
 # ResolvedFileScope — Identifier (binding name) → ResolvedType.

@@ -12,7 +12,6 @@
 
 import results, tables, strformat, sequtils, options, strutils
 
-import parser
 import resolver
 import argtypes
 import funcrefs

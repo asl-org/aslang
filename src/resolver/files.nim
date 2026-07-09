@@ -2,7 +2,7 @@
 
 import results, strformat, tables
 
-import parser
+import ./parser
 import argtypes, modules
 import imports
 

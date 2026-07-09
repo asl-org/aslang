@@ -4,7 +4,7 @@
 
 import results, strformat, tables, hashes, sequtils
 
-import parser
+import ./parser
 import argtypes
 import funcdefs
 import literals  # ResolvedLiteralDef

@@ -7,7 +7,7 @@
 
 import results, strformat
 
-import parser
+import ./parser
 
 type
   ResolvedLiteralDef* = enum

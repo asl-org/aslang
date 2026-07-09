@@ -3,7 +3,7 @@
 
 import results, strformat, options, tables, sets
 
-import parser
+import ./parser
 import argtypes
 import funcdefs
 import body

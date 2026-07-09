@@ -5,7 +5,7 @@
 
 import results, strformat, strutils, options, tables, hashes, sets, sequtils
 
-import parser
+import ./parser
 
 type FileScope* = Table[Identifier, Type]
   ## Populated by resolver/imports.nim (imported-name → imported Type)

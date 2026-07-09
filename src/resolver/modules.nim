@@ -5,7 +5,7 @@
 
 import results, strformat, strutils, options, tables, hashes, sequtils, sets
 
-import parser
+import ./parser
 import argtypes
 import funcdefs
 import data

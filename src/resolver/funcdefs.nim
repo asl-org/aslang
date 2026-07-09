@@ -4,7 +4,7 @@
 
 import results, strformat, strutils, options, tables, hashes
 
-import parser
+import ./parser
 import argtypes
 
 type

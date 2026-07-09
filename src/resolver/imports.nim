@@ -6,7 +6,7 @@
 
 import options, results
 
-import parser
+import ./parser
 
 # ResolvedImportedType
 type ResolvedImportedType* = ref object

@@ -7,7 +7,7 @@
 
 import results, tables, options
 
-import parser
+import ./parser
 import files
 
 # ResolvedApp + entry

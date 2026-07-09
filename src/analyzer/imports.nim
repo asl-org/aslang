@@ -4,7 +4,6 @@
 
 import results, strformat, options
 
-import parser
 import resolver
 
 type AnalyzedImportedType* = ref object

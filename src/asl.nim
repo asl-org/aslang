@@ -1,6 +1,6 @@
 import os, results, strformat
 
-import cli, parser, resolver, analyzer
+import cli, analyzer
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath

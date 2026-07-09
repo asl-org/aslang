@@ -1,6 +1,6 @@
 import argparse, strformat, results, os, tables, strutils
 
-import parser
+import resolver
 
 const Usage = """Usage: asl <command> [options]
 

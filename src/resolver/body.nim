@@ -7,7 +7,7 @@
 
 import results, strformat, options, tables, hashes, sets
 
-import parser
+import ./parser
 import argtypes
 import funcdefs
 import data
