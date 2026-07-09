@@ -1,7 +1,6 @@
 import os, unicode, tables, sets, results, strformat, strutils
 
-import ./tokenizer, ./imports, ./decls
-import utils
+import ./tokenizer, ./imports, ./decls, ./utils
 
 # Disambiguate against system File (syncio.File)
 type File = decls.File

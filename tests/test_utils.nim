@@ -1,13 +1,13 @@
-## Tests for the generic graph utilities in `src/utils.nim`:
-## `bfs` (breadth-first walk with per-node processing) and
-## `topoSort` (DFS topological sort with cycle detection). Both are
-## exercised indirectly through the parser's file loader in
-## `test_loader.nim`, but these tests target their algorithmic
-## corners directly.
+## Tests for the generic graph utilities in
+## `src/resolver/parser/utils.nim`: `bfs` (breadth-first walk with
+## per-node processing) and `topoSort` (DFS topological sort with
+## cycle detection). Both are exercised indirectly through the
+## parser's file loader in `test_loader.nim`, but these tests target
+## their algorithmic corners directly.
 
 import unittest, results, strutils, tables
 
-import utils
+import resolver/parser/utils
 
 # --- bfs helpers ----------------------------------------------------
 # `bfs[T, V]` needs a `process(node): Result[V, string]` and a
