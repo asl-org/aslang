@@ -535,6 +535,75 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
+  test "struct initializer with fully empty fields is rejected":
+    # Edge of the "missing fields" case: 0 kwargs against a struct
+    # with 2 fields. Since the parser now accepts `{}` (empty kwarg
+    # list) the failure surfaces at the resolver's count check
+    # (0 != 2), not at parse time.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u32, Error, String } from "./base.aslr"
+
+public module M:
+  public func mk(): Error
+    Error {}
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "expects")
+
+  test "struct initializer with a wrong field name is rejected":
+    # Right count but wrong name. `Error` has (code, message);
+    # the initializer passes (wrong_name, message). The count check
+    # passes but `findFieldId` on `wrong_name` fails.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u32, Error, String } from "./base.aslr"
+
+public module M:
+  public func mk(): Error
+    Error { wrong_name: u32 0, message: String "hi" }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
+  test "union initializer with a non-existent variant is rejected":
+    # `Status` has variants Ok / Err; the initializer names a
+    # variant `Absent` that isn't in the union. `union.findVariant`
+    # returns err after the union has already resolved cleanly.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+public module M:
+  public func mk(): Status[u8]
+    Status.Absent { value: u8 1 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
+  test "union initializer with wrong field name is rejected":
+    # `Status.Ok` has field `value`. The initializer passes `wrong`
+    # with the correct count. `variant.findFieldId` on `wrong` fails.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+public module M:
+  public func mk(): Status[u8]
+    Status.Ok { wrong: u8 1 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
 suite "resolver — imports":
 
   test "importing a non-public type is rejected":

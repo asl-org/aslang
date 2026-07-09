@@ -549,3 +549,28 @@ public module Helper:
     ])
     cleanupDir(dir)
     check r.isOk
+
+  test "case pattern referencing a non-existent variant is rejected":
+    # The analyzer's `analyzeUnionCasePattern` calls
+    # `union.findVariant(variantPattern.name)` — if the pattern
+    # names `Absent`, which isn't a variant of Status, the lookup
+    # fails and the whole analysis errors.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+module M:
+  func go(s: Status[u8]): u8
+    _ = match s:
+      case Ok { value: v }:
+        v
+      case Absent { }:
+        u8 0
+      case Err { error: e }:
+        u8 0
+    u8 0
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr

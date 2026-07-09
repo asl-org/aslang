@@ -898,7 +898,7 @@ Two suites, both runnable from the repo root:
 `nimble test` — unit suite under `tests/`. Each component (tokenizer,
 combinators, AST constructors, grammar, loader, resolver, analyzer,
 CLI, utils) has its own `test_*.nim` file aggregated by
-`tests/all.nim`. **271 tests** covering positive paths, negative
+`tests/all.nim`. **289 tests** covering positive paths, negative
 paths, edge cases, Trojan Source defenses in the tokenizer, direct
 rollback / composition tests for every combinator atom, and the
 generic graph algorithms in `src/utils.nim`.
@@ -920,7 +920,7 @@ The **Analyzer phase is functionally complete** — `analyze*` walks
 the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
 holds a type-rich representation of every value, expression, and
 statement in each function body. Integration suite at **33/35**;
-unit suite at **271/271**. Recent parser + naming refactor (Tasks
+unit suite at **289/289**. Recent parser + naming refactor (Tasks
 11–15 + follow-ups): data-driven combinator atoms, spec-name
 normalization, `Type` umbrella retired in favour of split
 `typeIndex` / `importedNameIndex` on `File`, `DefinedType` renamed

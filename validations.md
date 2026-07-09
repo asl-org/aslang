@@ -7,7 +7,7 @@ Grouped by pipeline phase — lexer, parser (AST constructors + grammar
 specs), loader, resolver, analyzer, CLI. Each entry names the test
 file that pins the rule down.
 
-Coverage as of this document: **271 unit tests + 33/35 integration
+Coverage as of this document: **289 unit tests + 33/35 integration
 fixtures.** The two failing fixtures are pre-existing analyzer TODOs
 (equality-vs-unification, substitution chains) documented in
 `overview.md`'s "What's Next".
@@ -367,9 +367,13 @@ Struct:
   two-field struct is rejected. Error contains "expects".
 - **Missing fields rejected.** `Struct { a: 1 }` against a two-field
   struct is rejected.
-- **Empty initializer implicitly rejected.** `newStructDef`
-  guarantees ≥ 1 field structurally, so `Struct {}` is 0 ≠ N by the
-  count check with no dedicated rule needed.
+- **Fully empty initializer rejected.** `Struct {}` against a struct
+  with ≥ 1 field is rejected by the same count check (0 != N).
+  `newStructDef` guarantees structs always have ≥ 1 field, so the
+  edge case of a "zero-field struct" is structurally impossible.
+- **Wrong field name rejected.** Right count but wrong kwarg name —
+  `Error { wrong_name: u32 0, message: String "x" }` — falls through
+  the count check and fails at `structBlock.findFieldId`.
 - **Duplicate kwarg names rejected** at parse time by
   `newKeywordArgumentList`.
 
@@ -382,6 +386,11 @@ Union:
   against a variant declared with no fields resolves — the count
   check trivially matches 0 to 0. This is why the shared
   `KeywordArgumentList` allows empty lists (§ 3.7).
+- **Non-existent variant rejected.** `Union.NoSuchVariant { … }`
+  fails at `union.findVariant` after the union has resolved cleanly.
+- **Wrong field name in variant rejected.** Right count but wrong
+  kwarg name (`Union.Ok { wrong: v }`) fails at
+  `variant.findFieldId`.
 - **Duplicate kwarg names rejected** at parse time.
 
 ### 7.3 Argument-type impl-list arity
@@ -486,7 +495,14 @@ analyzer checks the value fits the target type:
 - **Integer literal** vs float target — rejected with "expected float
   ... but found integer".
 
-### 8.4 Error propagation
+### 8.4 Case-pattern variant reference
+
+- **A case pattern that names a variant not defined on the union
+  subject is rejected.** `analyzeUnionCasePattern` calls
+  `union.findVariant(patternName)`; a missing variant surfaces as
+  an analyzer error with the variant name in the message.
+
+### 8.5 Error propagation
 
 - **Resolver errors propagate through `analyze*`.** A `NoSuchType`
   from name resolution surfaces at the analyzer boundary with the
@@ -494,7 +510,7 @@ analyzer checks the value fits the target type:
 - **Every analyzer error carries the file path and `line:column`**
   location.
 
-### 8.5 Successful analysis (positive path)
+### 8.6 Successful analysis (positive path)
 
 The suite also documents what MUST analyze cleanly — these implicitly
 constrain future refactors:
