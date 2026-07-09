@@ -4,7 +4,7 @@
 ## location tracking, security validation (UTF-8 + Trojan-Source
 ## defense), and the trailing-newline normalization invariant.
 
-import unittest, results
+import unittest, results, strutils
 
 import parser/tokenizer
 import tutils
@@ -75,6 +75,60 @@ suite "tokenizer — happy paths":
       check t.kind == tkNewline
     check toks[0].value == "\n\n"
     check toks[1].value == "\n"
+
+  test "consecutive spaces batch into a single tkSpace token":
+    # Four spaces should produce ONE tkSpace token whose `.value.len`
+    # counts the runs. Both tkSpace and tkNewline are declared as
+    # collective specs (see `newCollectiveTokenSpec` in
+    # `parser/tokenizer.nim`), so the batching invariant is symmetric
+    # with the alphabet/digit rule tested above.
+    let r = tokenizeStr("    ")
+    check r.isOk
+    let toks = r.get
+    # One batched space token + the trailing synthetic newline.
+    check toks.len == 2
+    check toks[0].kind == tkSpace
+    check toks[0].value == "    "
+    check toks[0].value.len == 4
+    check toks[1].kind == tkNewline
+
+  test "space count is recoverable from token.value.len":
+    # Verifies the explicit "value.len == number of spaces" contract
+    # that indentationSpec relies on for level checks.
+    for n in [1, 2, 3, 7, 16]:
+      let source = ' '.repeat(n)
+      let r = tokenizeStr(source)
+      check r.isOk
+      let toks = r.get
+      check toks[0].kind == tkSpace
+      check toks[0].value.len == n
+
+  test "newline count is recoverable from token.value.len":
+    # Same contract on the newline side — blank-line grammar rules
+    # count how many `\n` runes a tkNewline token carries.
+    for n in [1, 2, 3, 5]:
+      let source = '\n'.repeat(n)
+      let r = tokenizeStr(source)
+      check r.isOk
+      let toks = r.get
+      # First token = batched literal newlines; last = trailing synthetic.
+      check toks[0].kind == tkNewline
+      check toks[0].value.len == n
+
+  test "space and newline runs stay in separate tokens":
+    # A space run followed by a newline run must NOT merge into a
+    # single collective token — batching is per-kind. `"  \n\n"`
+    # yields tkSpace("  ") then tkNewline("\n\n") then the synthetic.
+    let r = tokenizeStr("  \n\n")
+    check r.isOk
+    let toks = r.get
+    check toks.len == 3
+    check toks[0].kind == tkSpace
+    check toks[0].value == "  "
+    check toks[1].kind == tkNewline
+    check toks[1].value == "\n\n"
+    check toks[2].kind == tkNewline   # synthetic trailing
+    check toks[2].value == "\n"
 
 suite "tokenizer — locations":
 

@@ -23,11 +23,24 @@ Source: `tests/test_tokenizer.nim`.
 - The token stream **always ends in a synthetic `tkNewline`**, even
   for empty input or input already ending in a newline (the trailing
   synthetic is a separate token from any trailing literal newlines).
-- **Consecutive alphabet runes batch into one `tkAlphabet` token**;
-  the whole run lives in `.value`.
-- **Consecutive digits batch into one `tkDigit` token.**
+- **Consecutive same-kind runes batch into one collective token** for
+  every "collective" spec kind. The four collective kinds are:
+  `tkAlphabet`, `tkDigit`, `tkSpace`, `tkNewline`. In every case the
+  whole run lives in `.value` and `.value.len` is recoverable as the
+  rune count of the run. Concretely:
+  - `tkAlphabet` — `"abc"` → one token, `.value == "abc"`.
+  - `tkDigit` — `"0123456789"` → one token, `.value == "0123456789"`.
+  - `tkSpace` — four spaces → one token, `.value.len == 4`. The
+    parser's `indentationSpec` relies on this count for level
+    checks.
+  - `tkNewline` — three literal newlines → one token,
+    `.value.len == 3`. Blank-line grammar rules count runs off this.
+- **Runs of different collective kinds do NOT merge.** `"  \n\n"`
+  yields `tkSpace("  ")` then `tkNewline("\n\n")` then the trailing
+  synthetic newline — batching is per-kind, not cross-kind.
 - Every defined punctuation character (`` `~!@#$%^&*()-_=+[]{}\|;:'",<.>/?``)
-  produces exactly one `tkPunctuation` token.
+  produces exactly one `tkPunctuation` token — punctuation is
+  individual, never collective.
 
 ### 1.2 Trojan Source defense
 
