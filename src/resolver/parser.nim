@@ -6,6 +6,12 @@
 import ./parser/tokenizer/location
 export location
 
+# combinators.nim (Spec[T] + oneOf / any / pair / prefixed / ...) is
+# imported but NOT re-exported. It's parser-internal scaffolding.
+# Downstream layers (resolver, analyzer, cli, asl.nim) consume the
+# parser through the AST types + `parse*` entry point below; the
+# combinator machinery has no callers outside the parser layer.
+# Parser tests that need it import `./parser/combinators` directly.
 import ./parser/combinators
 import ./parser/identifiers
 import ./parser/literals
@@ -19,6 +25,6 @@ import ./parser/generics
 import ./parser/modules
 import ./parser/decls
 import ./parser/loader
-export combinators, identifiers, literals, imports,
+export identifiers, literals, imports,
        argtypes, patterns, body, data, funcs, generics, modules,
        decls, loader
