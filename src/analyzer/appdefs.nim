@@ -11,7 +11,7 @@
 
 import results, tables
 
-import resolver
+import ./resolver
 import argtypes
 import imports
 import funcs

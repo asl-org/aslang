@@ -12,7 +12,7 @@
 
 import results, tables, strformat, sequtils, options, strutils
 
-import resolver
+import ./resolver
 import argtypes
 import funcrefs
 import patterns

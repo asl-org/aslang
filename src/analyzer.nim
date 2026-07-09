@@ -6,7 +6,7 @@
 ## Under the nesting convention, `src/asl.nim` only needs `import
 ## cli, analyzer` to reach every construct in the compiler.
 
-import ./resolver
+import ./analyzer/resolver
 export resolver
 
 import ./analyzer/imports

@@ -8,7 +8,7 @@
 
 import results, sets, strformat, options, strscans, parseutils, strutils, math, tables
 
-import resolver
+import ./resolver
 import argtypes
 import funcrefs
 

@@ -10,7 +10,7 @@
 
 import results, tables, strformat, options
 
-import resolver
+import ./resolver
 import argtypes
 
 proc findType*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedType, string] =

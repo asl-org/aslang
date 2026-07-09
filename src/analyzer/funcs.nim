@@ -3,7 +3,7 @@
 
 import results, strformat, tables, options
 
-import resolver
+import ./resolver
 import argtypes
 import funcrefs
 import body

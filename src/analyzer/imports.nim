@@ -4,7 +4,7 @@
 
 import results, strformat, options
 
-import resolver
+import ./resolver
 
 type AnalyzedImportedType* = ref object
   resolved: ResolvedImportedType

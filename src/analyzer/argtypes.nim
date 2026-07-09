@@ -14,7 +14,7 @@
 
 import results, strformat, options, strutils, tables, hashes
 
-import resolver
+import ./resolver
 
 # ResolvedFileScope — Identifier (binding name) → ResolvedType.
 # Doubles as the defined-type lookup scope for the body walker
