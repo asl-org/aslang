@@ -7,7 +7,7 @@
 
 import unittest, results
 
-import parser
+import analyzer
 import tutils
 
 suite "grammar — modules":

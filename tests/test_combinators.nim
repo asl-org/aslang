@@ -5,9 +5,9 @@
 
 import unittest, options, results
 
-import resolver/parser/tokenizer
-import resolver/parser/combinators
-import parser
+import analyzer/resolver/parser/tokenizer
+import analyzer/resolver/parser/combinators
+import analyzer
 import tutils
 
 # A few tiny leaf specs we can compose into bigger tests without

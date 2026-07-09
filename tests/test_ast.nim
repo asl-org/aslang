@@ -7,7 +7,7 @@
 
 import unittest, options, results, strutils
 
-import parser
+import analyzer
 import tutils
 
 proc id(s: string): Identifier =

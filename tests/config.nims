@@ -1,5 +1,3 @@
 switch("path", "$projectDir/../src")
-switch("path", "$projectDir/../src/analyzer")
-switch("path", "$projectDir/../src/analyzer/resolver")
 switch("hints", "off")
 switch("warning", "UnusedImport:off")
