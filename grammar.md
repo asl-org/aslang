@@ -98,7 +98,15 @@ Statement: Assignment | Setter | Expression
 Assignment: VarName Expression
 VarName: Identifier
 
-Expression: Initializer | FunctionCall | Getter | Variable | MatchExpression
+Expression: Initializer | FunctionCall | Getter | Variable | MatchExpression | Literal
+# A bare `Literal` in expression position is syntactic sugar for a
+# `LiteralInitializer` with a default type prefix — `i32` for integer
+# literals, `f32` for float, `String` for string. The expansion happens
+# at the analyzer layer via contextual defaulting: bare literals in
+# concrete-typed positions (function args with concrete arg type, kwarg
+# fields with concrete field type, setter RHS) adopt the position's
+# declared type; bare literals in generic-typed or unconstrained
+# positions (`x = 10`) take the default. See §8.3a of validations.md.
 
 Initializer: LiteralInitializer | StructInitializer | UnionInitializer
 LiteralInitializer: LiteralRef Literal

@@ -1,5 +1,24 @@
 # Lessons Learned
 
+## 2026-07-10 — Contextual defaulting for bare literals: type in from the caller, default at the leaf
+
+`x = 10` needs a type — but *which* type is a context question, not a parser question. Two shapes to think about:
+
+- **Concrete-typed positions adapt.** `u8.add(10, 20)`, `Struct { count: 10 }`, `x = getter.field` in a setter — the callee / field / getter already declares a type. The literal should fit-check against that type and land as an expression of that type. No default needed.
+- **Generic-typed positions and unconstrained positions default.** `f[K](10)` — K has no concrete constraint at the call site; a default (`i32`) has to bind K. `y = 10` at the top level — nothing downstream constrains y yet; default. Both use the same defaults: `i32` for integer literals, `f32` for float, `String` for string.
+
+The mechanism is one parameter — `expected: Option[AnalyzedArgumentType]` — threaded through `analyzeExpression`. Every caller passes what it knows: the callee's arg type, the field type, the getter type, or `none` if it doesn't know. The `rekLiteral` arm dispatches on `expected`: `some(module w/ literal spec)` → adopt, else → default. That's the whole rule.
+
+Three lessons:
+
+- **Don't over-swing to parser rewriting when the analyzer already needs to know.** My first instinct was to make the parser expand `10` into `i32 10` at parse time — clean-looking, no analyzer plumbing. But it would have regressed every `u8.add(10, 20)` in the codebase: forcing `i32` at parse time erases the concrete-adopt behavior that concrete-typed positions were already relying on. The gap wasn't at the parser layer; it was that the analyzer couldn't type an unconstrained literal. Solve the problem where the missing information actually is.
+
+- **Ambiguity is a language-design question, not an implementation one.** The user's rule was clean: "for concrete arg defs it should just work; the only real failure mode is generic." That translated directly into the analyzer contract — concrete positions never ambiguate (the concrete type wins); generic positions get the default; overloaded functions get per-candidate analysis and the existing multi-match error catches genuine ambiguity if it arises. No new ambiguity policy needed, no analyzer-specific tie-break rules.
+
+- **A silent bug lasts as long as the analyzer's shortcuts do.** Removing the ad-hoc bare-literal branch in `analyzeArgumentList` surfaced a real type error that had been sitting in `examples/base.aslr` — `u8.and(1, shifted)` where `shifted: u32`. The old code fit-checked `1` as u8, hit its early-return, and never looked at `shifted`. The fix wasn't just wiring the new mechanism; it also meant patching a fixture that had been passing by accident for months. Shortcuts around type-check gaps mask bugs shaped like the gap.
+
+Aftermath: `AnalyzedExpression.aekLiteral` variant is deleted (nothing constructs an untyped expression anymore), and every `argType` accessor drops its `Option` wrapper. Four TODOs disappear: three flavors of "todo: handle literal in <site>" and one "todo: analyze function that returns a literal." When the AST guarantees every expression is typed, the downstream code stops needing "did the type materialize?" branches.
+
 ## 2026-07-09 — Nest layers by dependency; selectively re-export
 
 Moved the parser inside the resolver (`src/parser.nim` → `src/resolver/parser.nim`, `src/parser/` → `src/resolver/parser/`) so the layout mirrors the parser+tokenizer nesting one level up. Promoted the resolver barrel from `src/resolver/resolver.nim` to `src/resolver.nim` at the same time. Everything green through the move (284/0 unit, 33/35 integration).

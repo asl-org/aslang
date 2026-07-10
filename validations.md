@@ -495,6 +495,49 @@ analyzer checks the value fits the target type:
 - **Integer literal** vs float target — rejected with "expected float
   ... but found integer".
 
+### 8.3a Bare-literal contextual defaulting
+
+Bare literals in expression position (`x = 10`, `f(1)`, `Struct { field:
+"data" }`) don't carry a source-level type prefix. The analyzer picks
+one by threading an `expected: Option[AnalyzedArgumentType]` into
+`analyzeExpression`; the `rekLiteral` arm dispatches through
+`analyzeBareLiteral`:
+
+- `expected = some(concrete module w/ literal data def)` → **adopt** the
+  concrete type (concrete adapt). `u8.add(10, 20)` picks up `u8` for
+  each bare literal; `Struct { field: 10 }` where `field: u32` picks up
+  `u32`.
+- `expected = some(generic)` → **default** to `i32` / `f32` / `String`.
+  The binding contributes to the generic-impl map at the call site,
+  letting the caller substitute the concrete instantiation downstream.
+- `expected = none` → **default** to `i32` / `f32` / `String`. This is
+  the bare-assignment case (`x = 10`) and the bare-statement case (a
+  bare literal as the last expression of a function body — though
+  in practice a valid return path will have some prior constraint).
+
+Fit-checking against the chosen module's literal spec happens next
+(§8.2 / §8.3 rules apply). A bare literal targeted at a struct or
+union module is rejected — the user wrote a literal where an
+initializer was expected.
+
+Concrete-position wiring:
+
+- **Function-call args** — per candidate (overloads): each candidate's
+  declared arg types are the `expected` for the corresponding call
+  arg. First match wins; ambiguity fires the existing multi-match
+  error.
+- **Struct kwargs** — the field's declared type is `expected`.
+- **Union kwargs** — the field's declared type, first concretized
+  through the current `GenericImplMap`, is `expected`. Free-generic
+  fields on the bare path fall through to the default rule and
+  contribute to the impl map.
+- **Setter RHS** — the getter's field type is `expected`.
+
+Defaults are looked up in the file scope. Every `.asl` file gets `@std`
+auto-injection that brings `i32` / `f32` / `String` into scope; a bare
+literal in a file that skipped that injection surfaces a clear error
+naming the missing default type.
+
 ### 8.4 Case-pattern variant reference
 
 - **A case pattern that names a variant not defined on the union

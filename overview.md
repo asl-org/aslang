@@ -398,6 +398,21 @@ level analyzed types mirror their resolver counterparts via
   integer kinds plus String. `analyzeArgumentList`,
   `analyzeKeywordArgument`, and `analyzeLiteralInitializer` all
   route through it.
+- **Bare-literal contextual defaulting** — bare literals (`x = 10`,
+  `f(1)`, `Struct { field: "data" }`) parse as `ekLiteral`
+  expressions and reach the analyzer typeless. `analyzeExpression`
+  takes an `expected: Option[AnalyzedArgumentType]` from every
+  caller; the `rekLiteral` arm dispatches through `analyzeBareLiteral`,
+  which picks a concrete type by rule: `some(module w/ literal data
+  def)` → adopt (concrete adapt); `some(generic)` or `none` →
+  default to `i32` / `f32` / `String`. The value is then fit-checked
+  and wrapped as an `AnalyzedLiteralInitializer` under `aekInitializer`,
+  so no downstream site sees an untyped bare literal. Defaults must
+  be in scope — `@std` auto-injection handles this for every `.asl`
+  file. Concrete positions thread `expected` from the callee's
+  declared arg types (per-candidate for overloads), the struct/
+  union kwarg's field type (post-implMap concretization for unions),
+  and the setter RHS's getter type.
 - **Case-pattern duplicate detection** — `checkDuplicate[T: SomeInteger]`
   handles all eight integer kinds in `analyzer/patterns.nim`.
 - **Body-level constructs** — getter (struct-shaped property read),
