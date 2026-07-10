@@ -202,12 +202,11 @@ type
     expression: AnalyzedExpression
 
   AnalyzedExpressionKind* = enum
-    aekVariable, aekFunctionCall, aekLiteral, aekMatchExpr, aekInitializer, aekGetter
+    aekVariable, aekFunctionCall, aekMatchExpr, aekInitializer, aekGetter
   AnalyzedExpression* = ref object
     case kind: AnalyzedExpressionKind
     of aekVariable: variable: AnalyzedVariable
     of aekFunctionCall: fncall: AnalyzedFunctionCall
-    of aekLiteral: literal: Literal
     of aekMatchExpr: match: AnalyzedMatchExpression
     of aekInitializer: init: AnalyzedInitializer
     of aekGetter: getter: AnalyzedGetter
@@ -220,8 +219,8 @@ type
     of askAssignment: assignment: AnalyzedAssignment
     of askSetter: setter: AnalyzedSetter
 
-proc argType*(expression: AnalyzedExpression): Option[AnalyzedArgumentType]
-proc argType*(statement: AnalyzedStatement): Option[AnalyzedArgumentType]
+proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
+proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
 
 proc newAnalyzedFunctionCall*(resolved: ResolvedFunctionCall, def: ResolvedFunctionDef, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
   AnalyzedFunctionCall(resolved: resolved, def: def, args: args, returns: returns)
@@ -323,7 +322,7 @@ proc resolved*(caseBlock: AnalyzedCaseBlock): ResolvedCaseBlock = caseBlock.reso
 proc pattern*(caseBlock: AnalyzedCaseBlock): AnalyzedCasePattern = caseBlock.pattern
 proc statements*(caseBlock: AnalyzedCaseBlock): seq[AnalyzedStatement] = caseBlock.statements
 
-proc argType*(caseBlock: AnalyzedCaseBlock): Option[AnalyzedArgumentType] =
+proc argType*(caseBlock: AnalyzedCaseBlock): AnalyzedArgumentType =
   assert(caseBlock.statements.len > 0, "UNREACHABLE: should have been caught by resolver")
   caseBlock.statements[^1].argType
 
@@ -343,7 +342,7 @@ proc loc*(assignment: AnalyzedAssignment): Location = assignment.resolved.loc
 proc resolved*(assignment: AnalyzedAssignment): ResolvedAssignment = assignment.resolved
 proc target*(assignment: AnalyzedAssignment): Identifier = assignment.resolved.target
 proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression = assignment.expression
-proc argType*(assignment: AnalyzedAssignment): Option[AnalyzedArgumentType] = assignment.expression.argType
+proc argType*(assignment: AnalyzedAssignment): AnalyzedArgumentType = assignment.expression.argType
 
 proc newAnalyzedSetter*(resolved: ResolvedSetter, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedSetter =
   AnalyzedSetter(resolved: resolved, getter: getter, expression: expression)
@@ -352,16 +351,13 @@ proc loc*(setter: AnalyzedSetter): Location = setter.resolved.loc
 proc resolved*(setter: AnalyzedSetter): ResolvedSetter = setter.resolved
 proc getter*(setter: AnalyzedSetter): AnalyzedGetter = setter.getter
 proc expression*(setter: AnalyzedSetter): AnalyzedExpression = setter.expression
-proc argType*(setter: AnalyzedSetter): Option[AnalyzedArgumentType] = setter.expression.argType
+proc argType*(setter: AnalyzedSetter): AnalyzedArgumentType = setter.expression.argType
 
 proc newAnalyzedExpression*(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
 
 proc newAnalyzedExpression*(fncall: AnalyzedFunctionCall): AnalyzedExpression =
   AnalyzedExpression(kind: aekFunctionCall, fncall: fncall)
-
-proc newAnalyzedExpression*(literal: Literal): AnalyzedExpression =
-  AnalyzedExpression(kind: aekLiteral, literal: literal)
 
 proc newAnalyzedExpression*(match: AnalyzedMatchExpression): AnalyzedExpression =
   AnalyzedExpression(kind: aekMatchExpr, match: match)
@@ -381,10 +377,6 @@ proc fncall*(expression: AnalyzedExpression): AnalyzedFunctionCall =
   assert expression.kind == aekFunctionCall,
     fmt"AnalyzedExpression.fncall accessed but kind is {expression.kind}"
   expression.fncall
-proc literal*(expression: AnalyzedExpression): Literal =
-  assert expression.kind == aekLiteral,
-    fmt"AnalyzedExpression.literal accessed but kind is {expression.kind}"
-  expression.literal
 proc match*(expression: AnalyzedExpression): AnalyzedMatchExpression =
   assert expression.kind == aekMatchExpr,
     fmt"AnalyzedExpression.match accessed but kind is {expression.kind}"
@@ -402,19 +394,17 @@ proc loc*(expression: AnalyzedExpression): Location =
   case expression.kind:
   of aekFunctionCall: expression.fncall.loc
   of aekVariable: expression.variable.loc
-  of aekLiteral: expression.literal.loc
   of aekGetter: expression.getter.loc
   of aekMatchExpr: expression.match.loc
   of aekInitializer: expression.init.loc
 
-proc argType*(expression: AnalyzedExpression): Option[AnalyzedArgumentType] =
+proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
   case expression.kind:
-  of aekLiteral: none(AnalyzedArgumentType)
-  of aekFunctionCall: some(expression.fncall.returns)
-  of aekVariable: some(expression.variable.argType)
-  of aekMatchExpr: some(expression.match.returns)
-  of aekInitializer: some(expression.init.argType)
-  of aekGetter: some(expression.getter.argType)
+  of aekFunctionCall: expression.fncall.returns
+  of aekVariable: expression.variable.argType
+  of aekMatchExpr: expression.match.returns
+  of aekInitializer: expression.init.argType
+  of aekGetter: expression.getter.argType
 
 proc newAnalyzedStatement*(expression: AnalyzedExpression): AnalyzedStatement =
   AnalyzedStatement(kind: askExpr, expression: expression)
@@ -445,21 +435,19 @@ proc loc*(statement: AnalyzedStatement): Location =
   of askAssignment: statement.assignment.loc
   of askSetter: statement.setter.loc
 
-proc argType*(statement: AnalyzedStatement): Option[AnalyzedArgumentType] =
+proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType =
   case statement.kind:
   of askExpr: statement.expression.argType
   of askAssignment: statement.assignment.argType
   of askSetter: statement.setter.argType
 
 proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
-  let maybeArgType = statement.argType
-  if maybeArgType.isNone:
-    assert(maybeArgType.isSome, fmt"{statement.loc} todo: support argType for statement")
-  else:
-    case statement.kind:
-    of askExpr: return none(AnalyzedBinding)
-    of askSetter: return none(AnalyzedBinding)
-    of askAssignment: return some((name: statement.assignment.target, argType: maybeArgType.get))
+  # Only assignments introduce a new binding into the function scope;
+  # bare-expression and setter statements return none. Post-Approach C
+  # every statement's argType is concrete, so no "no-type" fallback.
+  case statement.kind:
+  of askExpr, askSetter: none(AnalyzedBinding)
+  of askAssignment: some((name: statement.assignment.target, argType: statement.argType))
 
 # Forward declarations for the analyzeX procs in the cluster.
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
@@ -508,17 +496,16 @@ proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileSc
   of aatkGeneric: analyzeValueTypeAgainstDefType(app, file, fileScope, defType.generic, valType, loc)
 
 proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: ResolvedFunctionDef): Result[GenericImplMap, string] =
-  # Post-Approach C, `argValue.argType` is always `some(...)` — every
-  # bare literal flows through `analyzeBareLiteral` and picks up either
-  # the caller's expected type or a default (i32/f32/String). The old
-  # "argType.isNone" branch that fit-checked bare literals inline is
-  # gone; per-candidate type context is threaded from `analyzeFunctionCall`.
+  # Every analyzed expression carries a concrete argType post-Approach C;
+  # bare literals adopt the caller's expected type or default to i32/f32/
+  # String at the analyzeBareLiteral site. Per-candidate type context is
+  # threaded from `analyzeFunctionCall`.
   assert(funcDef.args.len == argValues.len,
     fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {funcDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
   var genericImplMap: GenericImplMap
   for (argDef, argValue) in zip(funcDef.args, argValues):
     let argDefAnalyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, argDef.argType)
-    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(app, file, fileScope, argDefAnalyzedArgType, argValue.argType.get, argValue.loc)
+    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(app, file, fileScope, argDefAnalyzedArgType, argValue.argType, argValue.loc)
     genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
@@ -613,12 +600,8 @@ proc analyzeCaseBlock*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolved
 
 proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string] =
   let expected = cases[0].argType
-  if expected.isNone:
-    return err(fmt"{cases[0].loc} todo: handle case block returning literal type")
   for c in cases:
-    if c.argType.isNone:
-      return err(fmt"{c.loc} todo: handle case block returning literal type")
-    if c.argType.get != expected.get:
+    if c.argType != expected:
       return err(fmt"{c.loc} todo: return an error message telling that the case block return types are not same")
   ok()
 
@@ -656,38 +639,35 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFile
 
 proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
   let analyzedSubjectExpr = ? analyzeExpression(app, file, fileScope, module, funcScope, match.subject, none(AnalyzedArgumentType))
-  if analyzedSubjectExpr.argType.isNone:
-    err(fmt"{analyzedSubjectExpr.loc} todo: analyze case blocks for literal expression")
-  else:
-    let analyzedSubjectDataType = ? fileScope.extractDataDef(analyzedSubjectExpr.argType.get, analyzedSubjectExpr.loc)
-    case analyzedSubjectDataType.kind:
-    of rdkStruct:
-      let moduleName = analyzedSubjectExpr.argType.get.name
-      err(fmt"{match.loc} match block only supports literal and union types but subject expression returns `{moduleName.asl}` a struct type")
-    of rdkLiteral:
-      if match.cases.len == 0:
-        err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
-      else:
-        let analyzedCases = ? analyzeCases(app, file, fileScope, module, funcScope, match.cases, analyzedSubjectExpr.argType.get, analyzedSubjectDataType.literal, match.loc)
-        ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
-    of rdkUnion:
-      if match.cases.len == 0:
-        err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
-      else:
-        case analyzedSubjectExpr.argType.get.kind:
-        of aatkGeneric:
-          err(fmt"{match.loc} UNREACHABLE: match block does not support generic types in subject expression")
-        of aatkModule:
-          let impls = analyzedSubjectExpr.argType.get.module.impls
-          let analyzedCases = ? analyzeCases(app, file, fileScope, module, funcScope, match.cases, analyzedSubjectExpr.argType.get, analyzedSubjectDataType.union, impls, match.loc)
-          ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
+  let subjectArgType = analyzedSubjectExpr.argType
+  let analyzedSubjectDataType = ? fileScope.extractDataDef(subjectArgType, analyzedSubjectExpr.loc)
+  case analyzedSubjectDataType.kind:
+  of rdkStruct:
+    err(fmt"{match.loc} match block only supports literal and union types but subject expression returns `{subjectArgType.name.asl}` a struct type")
+  of rdkLiteral:
+    if match.cases.len == 0:
+      err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
+    else:
+      let analyzedCases = ? analyzeCases(app, file, fileScope, module, funcScope, match.cases, subjectArgType, analyzedSubjectDataType.literal, match.loc)
+      ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType))
+  of rdkUnion:
+    if match.cases.len == 0:
+      err(fmt"{match.loc} UNREACHABLE: match block does not contain any case blocks")
+    else:
+      case subjectArgType.kind:
+      of aatkGeneric:
+        err(fmt"{match.loc} UNREACHABLE: match block does not support generic types in subject expression")
+      of aatkModule:
+        let impls = subjectArgType.module.impls
+        let analyzedCases = ? analyzeCases(app, file, fileScope, module, funcScope, match.cases, subjectArgType, analyzedSubjectDataType.union, impls, match.loc)
+        ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: ResolvedArgumentDef, analyzedFieldArgType: AnalyzedArgumentType): Result[AnalyzedKeywordArgument, string] =
   # Field's declared type is the expected context — bare literals in
   # kwarg values adapt when concrete, default when generic.
   let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, some(analyzedFieldArgType))
   # TODO: Utilize the returned generic impl map
-  discard ? analyzeValueTypeAgainstDefType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType.get, analyzedExpression.loc)
+  discard ? analyzeValueTypeAgainstDefType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType, analyzedExpression.loc)
   ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
 proc receiverArgType(receiver: ResolvedModule): AnalyzedArgumentType =
@@ -762,7 +742,7 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
     # a free generic on the bare path.
     let fieldType = analyzedFieldArgType.concrete(implMap)
     let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, some(fieldType))
-    let local = ? analyzeValueTypeAgainstDefType(app, file, fileScope, fieldType, analyzedExpression.argType.get, analyzedExpression.loc)
+    let local = ? analyzeValueTypeAgainstDefType(app, file, fileScope, fieldType, analyzedExpression.argType, analyzedExpression.loc)
     if not hasExplicitImpls:
       implMap = ? implMap.merge(local)
     analyzedKwargs.add(newAnalyzedKeywordArgument(kwarg, resolvedField, analyzedExpression))

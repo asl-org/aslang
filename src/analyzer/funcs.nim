@@ -37,18 +37,14 @@ proc analyzeUserFunction*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
       let newArg = analyzedStatement.arg.get
       funcScope[newArg.name] = newArg.argType
 
-  #TODO: ensure that last statement always returns a type that matches with the function defintion's return type
   if function.statements.len == 0:
     err(fmt"{function.loc} UNREACHABLE: should have been caught by the resolver")
   else:
-    if analyzedStatements[^1].argType.isNone:
-      err(fmt"{function.loc} todo: analyze function that returns a literal")
+    let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, function.def.returns)
+    if analyzedStatements[^1].argType != analyzedReturns:
+      err(fmt"{function.statements[^1].loc} function does not return the expected return type")
     else:
-      let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, function.def.returns)
-      if analyzedStatements[^1].argType.get != analyzedReturns:
-        err(fmt"{function.statements[^1].loc} function does not return the expected return type")
-      else:
-        ok(newAnalyzedUserFunction(function, function.def, analyzedStatements))
+      ok(newAnalyzedUserFunction(function, function.def, analyzedStatements))
 
 type AnalyzedExternFunction* = ref object
   resolved: ResolvedExternFunction
