@@ -462,7 +462,7 @@ proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
     of askAssignment: return some((name: statement.assignment.target, argType: maybeArgType.get))
 
 # Forward declarations for the analyzeX procs in the cluster.
-proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string]
+proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
 
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string]
 
@@ -568,7 +568,7 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
 
   var analyzedArgs: seq[AnalyzedExpression]
   for arg in fncall.args:
-    let analyzedArg = ? analyzeExpression(app, file, fileScope, module, funcScope, arg)
+    let analyzedArg = ? analyzeExpression(app, file, fileScope, module, funcScope, arg, none(AnalyzedArgumentType))
     analyzedArgs.add(analyzedArg)
 
   let (matchingFuncDef, genericImpls) = ? analyzeArgumentList(app, file, fileScope, module, funcScope, fncall, funcDefs, analyzedArgs)
@@ -649,7 +649,7 @@ proc analyzeCases*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFile
   ok(analyzedCaseBlocks)
 
 proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
-  let analyzedSubjectExpr = ? analyzeExpression(app, file, fileScope, module, funcScope, match.subject)
+  let analyzedSubjectExpr = ? analyzeExpression(app, file, fileScope, module, funcScope, match.subject, none(AnalyzedArgumentType))
   if analyzedSubjectExpr.argType.isNone:
     err(fmt"{analyzedSubjectExpr.loc} todo: analyze case blocks for literal expression")
   else:
@@ -677,7 +677,7 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
           ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: ResolvedArgumentDef, analyzedFieldArgType: AnalyzedArgumentType): Result[AnalyzedKeywordArgument, string] =
-  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression)
+  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, none(AnalyzedArgumentType))
   if analyzedExpression.argType.isNone:
     let fieldModule = ? fileScope.findModuleDef(analyzedFieldArgType, kwarg.expression.loc)
     let fieldModuleData = ? fileScope.extractDataDef(fieldModule, kwarg.expression.loc)
@@ -761,7 +761,7 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
   for kwarg in init.kwargs:
     let resolvedField = ? resolvedVariant.findField(kwarg.name)
     let analyzedFieldArgType = ? analyzeArgumentType(app, file, fileScope, module, resolvedField.argType)
-    let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression)
+    let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, none(AnalyzedArgumentType))
     if analyzedExpression.argType.isNone:
       return err(fmt"{kwarg.expression.loc} todo: literal-typed kwarg in union initializer")
     let fieldType = analyzedFieldArgType.concrete(implMap)
@@ -845,7 +845,7 @@ proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     let analyzedUnionInit = ? analyzeUnionInitializer(app, file, fileScope, module, funcScope, init.union)
     ok(newAnalyzedInitializer(analyzedUnionInit))
 
-proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression): Result[AnalyzedExpression, string] =
+proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
   case expression.kind:
   of rekLiteral: ok(newAnalyzedExpression(expression.literal))
   of rekVariable:
@@ -865,19 +865,19 @@ proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolve
     ok(newAnalyzedExpression(analyzedMatchExpr))
 
 proc analyzeAssignment*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, assignment: ResolvedAssignment): Result[AnalyzedAssignment, string] =
-  let analyzedExpr = ? analyzeExpression(app, file, fileScope, module, funcScope, assignment.expression)
+  let analyzedExpr = ? analyzeExpression(app, file, fileScope, module, funcScope, assignment.expression, none(AnalyzedArgumentType))
   ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
 proc analyzeSetter*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, setter: ResolvedSetter): Result[AnalyzedSetter, string] =
   let analyzedGetter = ? analyzeGetter(app, file, fileScope, module, funcScope, setter.getter)
-  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, setter.expression)
+  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, setter.expression, none(AnalyzedArgumentType))
   # TODO: Ensure that the getter field type and the expression type are same
   ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
 
 proc analyzeStatement*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
   of rskExpr:
-    let analyzedExpr = ? analyzeExpression(app, file, fileScope, module, funcScope, statement.expression)
+    let analyzedExpr = ? analyzeExpression(app, file, fileScope, module, funcScope, statement.expression, none(AnalyzedArgumentType))
     ok(newAnalyzedStatement(analyzedExpr))
   of rskAssignment:
     let analyzedAssignment = ? analyzeAssignment(app, file, fileScope, module, funcScope, statement.assignment)
