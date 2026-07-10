@@ -44,6 +44,10 @@ public module u8:
   @extern("u8_compare_u8")
   public func compare(a: u8, b: u8): i8
 
+  # conversions
+  @extern("u8_from_u32")
+  public func from(a: u32): Status[u8]
+
 public module u16:
   literal: "u16"
 
@@ -690,8 +694,8 @@ public module Bitset:
       case Ok { value: value }:
         sub_index = u32.remainder(index, 32)
         shifted = u32.shr(value, sub_index)
-        bit_value = u8.and(1, shifted)
-        Status.Ok { value: bit_value }
+        bit_value = u32.and(1, shifted)
+        u8.from(bit_value)
       case Err { error: error }:
         Status[u8].Err { error: error }
 

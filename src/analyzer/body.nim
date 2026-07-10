@@ -87,13 +87,13 @@ proc analyzeVariable*(scope: AnalyzedFunctionScope, variable: Identifier): Resul
   else: err(fmt"{variable.loc} variable `{variable.asl}` does not exist in scope")
 
 type AnalyzedLiteralInitializer = ref object
-  resolved: ResolvedLiteralInitializer
+  literal: Literal
   argType: AnalyzedArgumentType
 
-proc newAnalyzedLiteralInitializer(resolved: ResolvedLiteralInitializer, argType: AnalyzedArgumentType): AnalyzedLiteralInitializer =
-  AnalyzedLiteralInitializer(resolved: resolved, argType: argType)
+proc newAnalyzedLiteralInitializer(literal: Literal, argType: AnalyzedArgumentType): AnalyzedLiteralInitializer =
+  AnalyzedLiteralInitializer(literal: literal, argType: argType)
 
-proc loc*(init: AnalyzedLiteralInitializer): Location = init.resolved.loc
+proc loc*(init: AnalyzedLiteralInitializer): Location = init.literal.loc
 proc argType*(init: AnalyzedLiteralInitializer): AnalyzedArgumentType = init.argType
 
 proc analyzeLiteralInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
@@ -105,7 +105,7 @@ proc analyzeLiteralInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope:
   of rdkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of rdkLiteral:
     let maybeValidLiteral = analyzeLiteral(argDefData.literal, init.literal)
-    if maybeValidLiteral.isOk: ok(newAnalyzedLiteralInitializer(init, analyzedArgType))
+    if maybeValidLiteral.isOk: ok(newAnalyzedLiteralInitializer(init.literal, analyzedArgType))
     else: err(maybeValidLiteral.error)
 
 # AnalyzedGetter — independent of the big cluster.
@@ -508,38 +508,49 @@ proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileSc
   of aatkGeneric: analyzeValueTypeAgainstDefType(app, file, fileScope, defType.generic, valType, loc)
 
 proc analyzeArgumentList*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: ResolvedFunctionDef): Result[GenericImplMap, string] =
-  # BUG: `zip` below silently truncates to the shorter sequence — if
-  # funcDef.args.len != argValues.len the type-check walks only the common
-  # prefix and reports success. Today the resolver's arity check prevents
-  # this from being reachable, but the defensive assert traps the mismatch
-  # if overload selection is ever wired wrong upstream.
+  # Post-Approach C, `argValue.argType` is always `some(...)` — every
+  # bare literal flows through `analyzeBareLiteral` and picks up either
+  # the caller's expected type or a default (i32/f32/String). The old
+  # "argType.isNone" branch that fit-checked bare literals inline is
+  # gone; per-candidate type context is threaded from `analyzeFunctionCall`.
   assert(funcDef.args.len == argValues.len,
     fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {funcDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
   var genericImplMap: GenericImplMap
   for (argDef, argValue) in zip(funcDef.args, argValues):
     let argDefAnalyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, argDef.argType)
-    if argValue.argType.isNone:
-      let argDefModule = ? fileScope.findModuleDef(argDefAnalyzedArgType, argValue.loc)
-      let argDefData = ? fileScope.extractDataDef(argDefModule, argValue.loc)
-      case argDefData.kind:
-      of rdkStruct: return err(fmt"{argValue.loc} function call expects a struct initializer `{argDefModule.name.asl}`")
-      of rdkUnion: return err(fmt"{argValue.loc} function call expects a union initializer `{argDefModule.name.asl}`")
-      of rdkLiteral:
-        let maybeValidLiteral = analyzeLiteral(argDefData.literal, argValue.literal)
-        if maybeValidLiteral.isOk: return ok(genericImplMap)
-        else: return err(maybeValidLiteral.error)
-    else:
-      let argGenericImplMap = ? analyzeValueTypeAgainstDefType(app, file, fileScope, argDefAnalyzedArgType, argValue.argType.get, argValue.loc)
-      genericImplMap = ? genericImplMap.merge(argGenericImplMap)
+    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(app, file, fileScope, argDefAnalyzedArgType, argValue.argType.get, argValue.loc)
+    genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
-proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[ResolvedFunctionDef], analyzedArgs: seq[AnalyzedExpression]): Result[(ResolvedFunctionDef, GenericImplMap), string] =
-  var matches: seq[(ResolvedFunctionDef, GenericImplMap)]
+proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[ResolvedFunctionDef]): Result[(ResolvedFunctionDef, seq[AnalyzedExpression], GenericImplMap), string] =
+  # Per-candidate analysis: for each funcDef, walk the call's raw
+  # arguments and analyze each with the candidate's declared arg type
+  # as the expected context. Bare literals adopt the declared type when
+  # concrete, or default to i32/f32/String otherwise (`analyzeBareLiteral`).
+  # First candidate whose args analyze + type-check wins; ambiguity fires
+  # the existing multi-match error path.
+  var matches: seq[(ResolvedFunctionDef, seq[AnalyzedExpression], GenericImplMap)]
   var errors: seq[string]
   for index, funcDef in funcDefs:
+    var analyzedArgs: seq[AnalyzedExpression]
+    var candidateErr = ""
+    for i in 0..<fncall.args.len:
+      let maybeArgDefType = analyzeArgumentType(app, file, fileScope, module, funcDef.args[i].argType)
+      if maybeArgDefType.isErr:
+        candidateErr = maybeArgDefType.error
+        break
+      let maybeAnalyzed = analyzeExpression(app, file, fileScope, module, funcScope, fncall.args[i], some(maybeArgDefType.get))
+      if maybeAnalyzed.isErr:
+        candidateErr = maybeAnalyzed.error
+        break
+      analyzedArgs.add(maybeAnalyzed.get)
+    if candidateErr.len > 0:
+      errors.add(fmt"[{index + 1}] - {candidateErr}")
+      errors.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
+      continue
     let maybeGenericImplMap = analyzeArgumentList(app, file, fileScope, module, funcScope, analyzedArgs, funcDef)
     if maybeGenericImplMap.isOk:
-      matches.add((funcDef, maybeGenericImplMap.get))
+      matches.add((funcDef, analyzedArgs, maybeGenericImplMap.get))
     else:
       errors.add(fmt"[{index + 1}] - " & maybeGenericImplMap.error)
       errors.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
@@ -566,12 +577,7 @@ proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
     of rdtkModule: ? typ.module.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
     of rdtkGeneric: ? typ.generic.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len)
 
-  var analyzedArgs: seq[AnalyzedExpression]
-  for arg in fncall.args:
-    let analyzedArg = ? analyzeExpression(app, file, fileScope, module, funcScope, arg, none(AnalyzedArgumentType))
-    analyzedArgs.add(analyzedArg)
-
-  let (matchingFuncDef, genericImpls) = ? analyzeArgumentList(app, file, fileScope, module, funcScope, fncall, funcDefs, analyzedArgs)
+  let (matchingFuncDef, analyzedArgs, genericImpls) = ? analyzeArgumentList(app, file, fileScope, module, funcScope, fncall, funcDefs)
   # NOTE: compute concrete return type from the inferred implementation types
   let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, matchingFuncDef.returns)
   let concreteReturns = analyzedReturns.concrete(genericImpls)
@@ -677,23 +683,12 @@ proc analyzeMatchExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: Re
           ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType.get))
 
 proc analyzeKeywordArgument*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: ResolvedArgumentDef, analyzedFieldArgType: AnalyzedArgumentType): Result[AnalyzedKeywordArgument, string] =
-  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, none(AnalyzedArgumentType))
-  if analyzedExpression.argType.isNone:
-    let fieldModule = ? fileScope.findModuleDef(analyzedFieldArgType, kwarg.expression.loc)
-    let fieldModuleData = ? fileScope.extractDataDef(fieldModule, kwarg.expression.loc)
-    case fieldModuleData.kind:
-    of rdkStruct:
-      err(fmt"{kwarg.expression.loc} field `{kwarg.name.asl}` expected a struct value but found literal")
-    of rdkUnion:
-      err(fmt"{kwarg.expression.loc} field `{kwarg.name.asl}` expected a union value but found literal")
-    of rdkLiteral:
-      let maybeAnalyzedLiteral = analyzeLiteral(fieldModuleData.literal, kwarg.expression.literal)
-      if maybeAnalyzedLiteral.isErr: err(maybeAnalyzedLiteral.error)
-      else: ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
-  else:
-    # TODO: Utilize the returned generic impl map
-    discard ? analyzeValueTypeAgainstDefType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType.get, analyzedExpression.loc)
-    ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
+  # Field's declared type is the expected context — bare literals in
+  # kwarg values adapt when concrete, default when generic.
+  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, some(analyzedFieldArgType))
+  # TODO: Utilize the returned generic impl map
+  discard ? analyzeValueTypeAgainstDefType(app, file, fileScope, analyzedFieldArgType, analyzedExpression.argType.get, analyzedExpression.loc)
+  ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
 proc receiverArgType(receiver: ResolvedModule): AnalyzedArgumentType =
   ## Builds an AnalyzedArgumentType pointing at the receiver module with
@@ -761,10 +756,12 @@ proc analyzeUnionInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: R
   for kwarg in init.kwargs:
     let resolvedField = ? resolvedVariant.findField(kwarg.name)
     let analyzedFieldArgType = ? analyzeArgumentType(app, file, fileScope, module, resolvedField.argType)
-    let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, none(AnalyzedArgumentType))
-    if analyzedExpression.argType.isNone:
-      return err(fmt"{kwarg.expression.loc} todo: literal-typed kwarg in union initializer")
+    # Concretize the field type via the current implMap before analyzing
+    # the value so bare-literal kwargs adopt the concrete instantiation
+    # when known, and default (i32/f32/String) when the field is still
+    # a free generic on the bare path.
     let fieldType = analyzedFieldArgType.concrete(implMap)
+    let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, kwarg.expression, some(fieldType))
     let local = ? analyzeValueTypeAgainstDefType(app, file, fileScope, fieldType, analyzedExpression.argType.get, analyzedExpression.loc)
     if not hasExplicitImpls:
       implMap = ? implMap.merge(local)
@@ -845,9 +842,55 @@ proc analyzeInitializer*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     let analyzedUnionInit = ? analyzeUnionInitializer(app, file, fileScope, module, funcScope, init.union)
     ok(newAnalyzedInitializer(analyzedUnionInit))
 
+proc defaultLiteralArgType(fileScope: ResolvedFileScope, literal: Literal): Result[AnalyzedArgumentType, string] =
+  ## Look up the default module for a bare-literal kind. Integer → i32,
+  ## Float → f32, String → String. The default must be reachable via the
+  ## file scope — `@std` auto-injection in .asl files puts these three
+  ## in scope; if the caller is analyzing a file that skipped that
+  ## injection (or a fixture that omits the type entirely), the lookup
+  ## fails with a user-facing error naming the missing default.
+  let defaultName = case literal.kind:
+    of lkInteger: "i32"
+    of lkFloat: "f32"
+    of lkString: "String"
+  let identResult = newIdentifier(defaultName, literal.loc)
+  assert identResult.isOk,
+    fmt"BUG: default literal type name `{defaultName}` should always satisfy newIdentifier"
+  let ident = identResult.get
+  if ident notin fileScope:
+    return err(fmt"{literal.loc} bare literal defaults to `{defaultName}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
+  let module = ? fileScope.findModuleDef(ident, literal.loc)
+  ok(receiverArgType(module))
+
+proc analyzeBareLiteral(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, literal: Literal, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
+  ## Approach C — pick a concrete type for the bare literal.
+  ##   - `expected = some(module)`  → adopt the module type. If the
+  ##     module's data def is struct/union the caller wrote a literal
+  ##     where an initializer was expected → error with a clear message.
+  ##   - `expected = some(generic)` → default (the binding contributes
+  ##     to the generic-impl map at the call site).
+  ##   - `expected = none`          → default (bare assignment / bare
+  ##     statement).
+  ## Then fit-check the value against the chosen module's literal spec.
+  let concreteArgType =
+    if expected.isSome and expected.get.kind == aatkModule:
+      expected.get
+    else:
+      ? defaultLiteralArgType(fileScope, literal)
+  let argDefModule = ? fileScope.findModuleDef(concreteArgType, literal.loc)
+  let argDefData = ? fileScope.extractDataDef(argDefModule, literal.loc)
+  case argDefData.kind:
+  of rdkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
+  of rdkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
+  of rdkLiteral:
+    ? analyzeLiteral(argDefData.literal, literal)
+    ok(newAnalyzedLiteralInitializer(literal, concreteArgType))
+
 proc analyzeExpression*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
   case expression.kind:
-  of rekLiteral: ok(newAnalyzedExpression(expression.literal))
+  of rekLiteral:
+    let bareLit = ? analyzeBareLiteral(app, file, fileScope, module, funcScope, expression.literal, expected)
+    ok(newAnalyzedExpression(newAnalyzedInitializer(bareLit)))
   of rekVariable:
     let analyzedVariable = ? analyzeVariable(funcScope, expression.variable)
     ok(newAnalyzedExpression(analyzedVariable))
@@ -870,7 +913,8 @@ proc analyzeAssignment*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolve
 
 proc analyzeSetter*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, setter: ResolvedSetter): Result[AnalyzedSetter, string] =
   let analyzedGetter = ? analyzeGetter(app, file, fileScope, module, funcScope, setter.getter)
-  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, setter.expression, none(AnalyzedArgumentType))
+  # RHS must match the getter's field type — thread that as expected.
+  let analyzedExpression = ? analyzeExpression(app, file, fileScope, module, funcScope, setter.expression, some(analyzedGetter.argType))
   # TODO: Ensure that the getter field type and the expression type are same
   ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
 
