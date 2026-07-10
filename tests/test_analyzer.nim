@@ -574,3 +574,88 @@ module M:
     ])
     cleanupDir(dir)
     check r.isErr
+
+suite "analyzer — bare literal defaulting":
+  # Contextual defaulting for bare literals in expression position.
+  # Rule (Approach C): the analyzer threads an `expected` type into
+  # every expression analysis; when the expression is a bare literal,
+  #   • `expected = some(concrete)` → adopt the concrete type (adapt).
+  #   • `expected = some(generic)`  → default to `i32`/`f32`/`String`
+  #     so the binding contributes to the generic-impl map.
+  #   • `expected = none`           → default to `i32`/`f32`/`String`
+  #     (bare-assignment / bare-statement case).
+  # Defaults must be in scope; every test fixture defines them
+  # inline (the real compiler relies on `@std` auto-injection).
+
+  test "bare integer literal in assignment defaults to i32":
+    # `x = 10` has no expected context; x picks up i32 by default.
+    # Downstream `i32.add(x, x)` then matches with x as i32.
+    # (`add` body just returns `a` — enough to type-check.)
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+  public func add(a: i32, b: i32): i32
+    a
+
+public module M:
+  public func go(): i32
+    x = 10
+    i32.add(x, x)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare float literal in assignment defaults to f32":
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+  public func add(a: f32, b: f32): f32
+    a
+
+public module M:
+  public func go(): f32
+    y = 1.0
+    f32.add(y, y)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare string literal in assignment defaults to String":
+    let (r, dir) = analyzeSingle("""
+public module u32:
+  literal: "u32"
+
+public module String:
+  literal: "string"
+
+  public func length(s: String): u32
+    u32 0
+
+public module M:
+  public func go(): u32
+    z = "data"
+    String.length(z)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare integer literal adapts to concrete u8 function arg (regression guard)":
+    # This is the case Approach C must NOT regress. `u8.add(10, 20)`
+    # today walks the arg-list bare-literal branch and succeeds; with
+    # Approach C the same call has to succeed via the concrete-adopt
+    # path (expected = some(u8)) — i.e. no forced i32 default.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+  public func add(a: u8, b: u8): u8
+    a
+
+public module M:
+  public func go(): u8
+    u8.add(10, 20)
+""")
+    cleanupDir(dir)
+    check r.isOk
