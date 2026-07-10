@@ -49,17 +49,17 @@ proc analyzeFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, str
     let analyzedImport = ? analyzeImportDef(app, file, imp)
     analyzedImports.add(analyzedImport)
     for impType in analyzedImport.importedTypes:
-      fileScope[impType.binding] = impType.definedType
+      fileScope[impType.binding] = impType.typ
 
-  for definedType in file.types:
-    fileScope[definedType.name] = definedType
+  for typ in file.types:
+    fileScope[typ.name] = typ
 
   var analyzedModules: seq[AnalyzedModule]
-  for definedType in file.types:
-    case definedType.kind:
+  for typ in file.types:
+    case typ.kind:
     of rdtkGeneric: discard # generics are already resolved since it is only a definition type
     of rdtkModule:
-      let analyzedModule = ? analyzeModule(app, file, fileScope, definedType.module)
+      let analyzedModule = ? analyzeModule(app, file, fileScope, typ.module)
       analyzedModules.add(analyzedModule)
   ok(newAnalyzedFile(file, analyzedImports, analyzedModules))
 

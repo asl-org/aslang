@@ -157,12 +157,12 @@ proc resolveModule*(app: App, file: parser.File,
   var resolvedRequires: seq[ResolvedGenericArgumentType]
   if module.requires.isSome:
     for generic in module.requires.get.generics:
-      let definedType = ? file.findType(fileScope, generic)
-      case definedType.kind:
+      let typ = ? file.findType(fileScope, generic)
+      case typ.kind:
       of tkModule:
         return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
       of tkGeneric:
-        resolvedRequires.add(newResolvedGenericArgumentType(definedType.generic, generic.loc))
+        resolvedRequires.add(newResolvedGenericArgumentType(typ.generic, generic.loc))
 
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:
@@ -265,31 +265,31 @@ proc newResolvedType*(id: int, module: ResolvedModule): ResolvedType =
 proc newResolvedType*(id: int, generic: ResolvedGeneric): ResolvedType =
   ResolvedType(id: id, kind: rdtkGeneric, generic: generic)
 
-proc kind*(definedType: ResolvedType): ResolvedTypeKind = definedType.kind
-proc module*(definedType: ResolvedType): ResolvedModule =
-  assert definedType.kind == rdtkModule,
-    fmt"ResolvedType.module accessed but kind is {definedType.kind}"
-  definedType.module
-proc generic*(definedType: ResolvedType): ResolvedGeneric =
-  assert definedType.kind == rdtkGeneric,
-    fmt"ResolvedType.generic accessed but kind is {definedType.kind}"
-  definedType.generic
+proc kind*(typ: ResolvedType): ResolvedTypeKind = typ.kind
+proc module*(typ: ResolvedType): ResolvedModule =
+  assert typ.kind == rdtkModule,
+    fmt"ResolvedType.module accessed but kind is {typ.kind}"
+  typ.module
+proc generic*(typ: ResolvedType): ResolvedGeneric =
+  assert typ.kind == rdtkGeneric,
+    fmt"ResolvedType.generic accessed but kind is {typ.kind}"
+  typ.generic
 
-proc name*(definedType: ResolvedType): Identifier =
-  case definedType.kind:
-  of rdtkModule: definedType.module.name
-  of rdtkGeneric: definedType.generic.name
+proc name*(typ: ResolvedType): Identifier =
+  case typ.kind:
+  of rdtkModule: typ.module.name
+  of rdtkGeneric: typ.generic.name
 
-proc loc*(definedType: ResolvedType): Location =
-  case definedType.kind:
-  of rdtkModule: definedType.module.loc
-  of rdtkGeneric: definedType.generic.loc
+proc loc*(typ: ResolvedType): Location =
+  case typ.kind:
+  of rdtkModule: typ.module.loc
+  of rdtkGeneric: typ.generic.loc
 
-proc resolveType*(app: App, file: parser.File, fileScope: FileScope, id: int, definedType: Type): Result[ResolvedType, string] =
-  case definedType.kind:
+proc resolveType*(app: App, file: parser.File, fileScope: FileScope, id: int, typ: Type): Result[ResolvedType, string] =
+  case typ.kind:
   of tkGeneric:
-    let resolvedGeneric = ? resolveGeneric(app, file, fileScope, definedType.generic)
+    let resolvedGeneric = ? resolveGeneric(app, file, fileScope, typ.generic)
     ok(newResolvedType(id, resolvedGeneric))
   of tkModule:
-    let resolvedModule = ? resolveModule(app, file, fileScope, definedType.module)
+    let resolvedModule = ? resolveModule(app, file, fileScope, typ.module)
     ok(newResolvedType(id, resolvedModule))

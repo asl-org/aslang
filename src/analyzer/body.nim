@@ -556,15 +556,15 @@ proc analyzeArgumentList(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let definedType = ? fileScope.findType(fncall.parsed.root, fncall.loc)
+  let typ = ? fileScope.findType(fncall.parsed.root, fncall.loc)
   let public =
-    case definedType.kind:
-    of rdtkModule: (module != definedType.module)
+    case typ.kind:
+    of rdtkModule: (module != typ.module)
     of rdtkGeneric: true # generic func defs are not required to be explicitly marked public
   let funcDefs =
-    case definedType.kind:
-    of rdtkModule: ? definedType.module.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
-    of rdtkGeneric: ? definedType.generic.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len)
+    case typ.kind:
+    of rdtkModule: ? typ.module.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
+    of rdtkGeneric: ? typ.generic.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len)
 
   var analyzedArgs: seq[AnalyzedExpression]
   for arg in fncall.args:

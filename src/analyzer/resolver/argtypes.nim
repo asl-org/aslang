@@ -356,24 +356,24 @@ proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, arg
 # resolveArgumentType — both context overloads.
 proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let definedType = ? file.findType(fileScope, argType.root)
-  case definedType.kind:
+  let typ = ? file.findType(fileScope, argType.root)
+  case typ.kind:
   of tkGeneric:
-    let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, definedType.generic)
+    let resolvedGenericType = ? resolveGenericArgumentType(app, file, module, argType, typ.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of tkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, module, argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, module, argType, typ.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
 proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let definedType = ? file.findType(fileScope, argType.root)
-  case definedType.kind:
+  let typ = ? file.findType(fileScope, argType.root)
+  case typ.kind:
   of tkGeneric:
-    let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, definedType.generic)
+    let resolvedGenericType = ? resolveGenericArgumentType(app, file, generic, argType, typ.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of tkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic, argType, definedType.module)
+    let resolvedModuleType = ? resolveModuleArgumentType(app, file, fileScope, generic, argType, typ.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
 # resolveDataType — post-resolution guard. Confirms the resolved

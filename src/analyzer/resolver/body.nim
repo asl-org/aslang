@@ -445,10 +445,10 @@ proc variable*(statement: ResolvedStatement): Option[Identifier] =
 proc resolveFunctionCall(app: App, file: parser.File, fileScope: FileScope,
     module: Module, scope: FunctionScope,
     fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let definedType = ? file.findType(fileScope, fncall.root)
-  let funcDefs = ? definedType.findFunctionDefs(fncall.name, fncall.args.len)
+  let typ = ? file.findType(fileScope, fncall.root)
+  let funcDefs = ? typ.findFunctionDefs(fncall.name, fncall.args.len)
   if funcDefs.len == 0:
-    err(fmt"{fncall.loc} generic `{definedType.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
+    err(fmt"{fncall.loc} generic `{typ.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
   else:
     var resolvedArgs: seq[ResolvedExpression]
     for arg in fncall.args:

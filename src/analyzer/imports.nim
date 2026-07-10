@@ -8,18 +8,18 @@ import ./resolver
 
 type AnalyzedImportedType* = ref object
   resolved: ResolvedImportedType
-  definedType: ResolvedType
+  typ: ResolvedType
 
-proc newAnalyzedImportedType*(resolved: ResolvedImportedType, definedType: ResolvedType): AnalyzedImportedType =
-  AnalyzedImportedType(resolved: resolved, definedType: definedType)
+proc newAnalyzedImportedType*(resolved: ResolvedImportedType, typ: ResolvedType): AnalyzedImportedType =
+  AnalyzedImportedType(resolved: resolved, typ: typ)
 
 proc binding*(impType: AnalyzedImportedType): Identifier = impType.resolved.binding
-proc definedType*(impType: AnalyzedImportedType): ResolvedType = impType.definedType
+proc typ*(impType: AnalyzedImportedType): ResolvedType = impType.typ
 
 proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedType, string] =
-  let maybeImportedType = impFile.findType(impType.definedType.name)
+  let maybeImportedType = impFile.findType(impType.typ.name)
   if maybeImportedType.isErr:
-    err(fmt"{impType.loc} type `{impType.definedType.name.asl}` is not defined in the file")
+    err(fmt"{impType.loc} type `{impType.typ.name.asl}` is not defined in the file")
   else:
     ok(newAnalyzedImportedType(impType, maybeImportedType.get))
 

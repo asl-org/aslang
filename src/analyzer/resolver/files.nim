@@ -16,8 +16,8 @@ type ResolvedFile* = ref object
 
 proc newResolvedFile*(id: int, parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType]): ResolvedFile =
   var typeIndex: Table[Identifier, int]
-  for id, definedType in types:
-    typeIndex[definedType.name] = id
+  for id, typ in types:
+    typeIndex[typ.name] = id
   ResolvedFile(id: id, parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
 
 proc path*(file: ResolvedFile): string = file.parsed.path
@@ -32,15 +32,15 @@ proc findType*(file: ResolvedFile, name: Identifier): Result[ResolvedType, strin
     ok(file.types[file.typeIndex[name]])
 
 proc findModule*(file: ResolvedFile, name: Identifier): Result[ResolvedModule, string] =
-  let definedType = ? file.findType(name)
-  case definedType.kind:
-  of rdtkModule: ok(definedType.module)
+  let typ = ? file.findType(name)
+  case typ.kind:
+  of rdtkModule: ok(typ.module)
   of rdtkGeneric: err(fmt"{name.loc} expected type `{name.asl}` to be a module but found generic")
 
 proc findGeneric*(file: ResolvedFile, name: Identifier): Result[ResolvedGeneric, string] =
-  let definedType = ? file.findType(name)
-  case definedType.kind:
-  of rdtkGeneric: ok(definedType.generic)
+  let typ = ? file.findType(name)
+  case typ.kind:
+  of rdtkGeneric: ok(typ.generic)
   of rdtkModule: err(fmt"{name.loc} expected type `{name.asl}` to be a generic but found module")
 
 proc validateNoDuplicateBindings(resolvedImports: seq[ResolvedImport], file: parser.File): Result[void, string] =
@@ -55,10 +55,10 @@ proc validateNoDuplicateBindings(resolvedImports: seq[ResolvedImport], file: par
       if impType.binding in seen:
         return err(fmt"{impType.loc} duplicate type declaration encountered, see previous declaration at {seen[impType.binding]}")
       seen[impType.binding] = impType.loc
-  for definedType in file.types:
-    if definedType.name in seen:
-      return err(fmt"{definedType.loc} duplicate type declaration encountered, see previous declaration at {seen[definedType.name]}")
-    seen[definedType.name] = definedType.loc
+  for typ in file.types:
+    if typ.name in seen:
+      return err(fmt"{typ.loc} duplicate type declaration encountered, see previous declaration at {seen[typ.name]}")
+    seen[typ.name] = typ.loc
   ok()
 
 proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, string] =
@@ -70,14 +70,14 @@ proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, st
       let resolvedImport = ? resolveImport(app, file, imp)
       resolvedImports.add(resolvedImport)
       for impType in resolvedImport.importedTypes:
-        fileScope[impType.binding] = impType.definedType
+        fileScope[impType.binding] = impType.typ
   of fkAslr: discard
 
   ? validateNoDuplicateBindings(resolvedImports, file)
 
   var resolvedTypes: seq[ResolvedType]
-  for id, definedType in file.types:
-    let resolvedType = ? resolveType(app, file, fileScope, id, definedType)
+  for id, typ in file.types:
+    let resolvedType = ? resolveType(app, file, fileScope, id, typ)
     resolvedTypes.add(resolvedType)
 
   ok(newResolvedFile(id, file, resolvedImports, resolvedTypes))

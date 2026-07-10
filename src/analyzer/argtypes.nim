@@ -56,10 +56,10 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope
   if maybeGenericArg.isOk:
     ok(newAnalyzedGenericArgumentType(maybeGenericArg.get, genericArgType.loc))
   elif genericArgType.parsed.name in fileScope:
-    let definedType = fileScope[genericArgType.parsed.name]
-    case definedType.kind:
+    let typ = fileScope[genericArgType.parsed.name]
+    case typ.kind:
     of rdtkGeneric:
-      ok(newAnalyzedGenericArgumentType(definedType.generic, genericArgType.loc))
+      ok(newAnalyzedGenericArgumentType(typ.generic, genericArgType.loc))
     of rdtkModule:
       err(fmt"{genericArgType.loc} [UNREACHABLE] expected `{genericArgType.parsed.name.asl}` to be a generic but found module")
   else:

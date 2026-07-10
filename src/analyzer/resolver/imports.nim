@@ -11,16 +11,16 @@ import ./parser
 # ResolvedImportedType
 type ResolvedImportedType* = ref object
   parsed: ImportedType
-  definedType: Type
+  typ: Type
 
-proc newResolvedImportedType*(parsed: ImportedType, definedType: Type): ResolvedImportedType =
-  ResolvedImportedType(parsed: parsed, definedType: definedType)
+proc newResolvedImportedType*(parsed: ImportedType, typ: Type): ResolvedImportedType =
+  ResolvedImportedType(parsed: parsed, typ: typ)
 
 proc parsed*(t: ResolvedImportedType): ImportedType = t.parsed
 proc name*(t: ResolvedImportedType): Identifier = t.parsed.name
 proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding
 proc loc*(t: ResolvedImportedType): Location = t.parsed.binding.loc
-proc definedType*(t: ResolvedImportedType): Type = t.definedType
+proc typ*(t: ResolvedImportedType): Type = t.typ
 
 proc resolveImportedType(impFile: parser.File, impType: ImportedType): Result[
     ResolvedImportedType, string] =
@@ -60,7 +60,7 @@ proc resolveImport*(app: App, file: parser.File,
     # public type so the back-ref invariant on ResolvedImportedType
     # is preserved; the synthesized ImportedType uses the import
     # statement's location for diagnostics.
-    for definedType in impFile.publicTypes:
-      let synthesized = newImportedType(definedType.name, none(Identifier), imp.loc)
-      resolvedImportedTypes.add(newResolvedImportedType(synthesized, definedType))
+    for typ in impFile.publicTypes:
+      let synthesized = newImportedType(typ.name, none(Identifier), imp.loc)
+      resolvedImportedTypes.add(newResolvedImportedType(synthesized, typ))
   ok(newResolvedImport(imp, impFileId, impFile, resolvedImportedTypes))
