@@ -1,5 +1,17 @@
 # Lessons Learned
 
+## 2026-07-11 — Sugar at the parser layer stays sugar: no AST changes downstream
+
+Added kwarg shorthand for struct/union initializers (`Struct { x }` = `Struct { x: x }`) and matching sugar for union case patterns (`case Ok { value }` = `case Ok { value: value }`). The mechanism is entirely a parser transformation: two specs change from `separated(id, ':', value)` to `pair(id, optional(':' value))`; when the optional suffix is absent, the `.map` callback synthesizes a `newExpression(id)` (initializer side) or reuses the identifier as its own binding (pattern side). The resolver and analyzer see the same `KeywordArgument` / `UnionPatternField` shape they've always processed.
+
+Three observations that lined up nicely:
+
+- **The grammar was ahead of the implementation.** `KeywordArgumentPattern: Field Binding?` was already documented with the shorthand comment before it was actually accepted by the parser. Grammar-first design meant the doc surface didn't need to move for the pattern side — only the mirroring `KeywordArgument: VarName Expression?` line needed updating.
+
+- **Location reuse over synthetic sentinels.** When the shorthand `Struct { x }` errors out (say, `x` isn't in scope), the diagnostic pointing at `x` in the shorthand form is exactly what the user wants — same as if they'd written the explicit `x: x` and the error pointed at the second `x`. No `Location.synthetic()` machinery was needed; the shorthand identifier's location carries through cleanly for both `name` and the synthesized value/binding.
+
+- **A test-fixture bug can hide behind a broken feature.** One analyzer test wrote `Status[u8]` where `Status` had no generic parameters. The parser accepts `Status[u8]` (bracketed impls list is grammar-legal), and the grammar test happily passes. The analyzer's impl-arity check catches it — but only if analysis reaches that point. While shorthand was still failing at the parser, the arity mismatch never surfaced. Once shorthand landed, both tests failed on the arity mismatch instead of the shorthand. Fixture bugs that live downstream of the feature you're testing hide until the feature works.
+
 ## 2026-07-10 — Contextual defaulting for bare literals: type in from the caller, default at the leaf
 
 `x = 10` needs a type — but *which* type is a context question, not a parser question. Two shapes to think about:

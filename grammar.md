@@ -117,7 +117,11 @@ Literal: IntegerLiteral | FloatLiteral | StringLiteral
 StructInitializer: ArgumentType KeywordArgument+
 UnionInitializer: ArgumentType Variant KeywordArgument*
 Variant: Identifier
-KeywordArgument: VarName Expression
+KeywordArgument: VarName Expression?
+# If `Expression` is absent, the value is synthesized as a bare
+# Variable of the same name — `Struct { x }` is equivalent to
+# `Struct { x: x }`. Mirrors the `KeywordArgumentPattern: Field
+# Binding?` sugar on the case-pattern side.
 
 FunctionCall: FunctionRef Expression*
 Getter: Source Property

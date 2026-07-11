@@ -239,6 +239,27 @@ Source: `tests/test_grammar.nim` and `tests/test_ast.nim`.
   Other decorator names parse but currently produce a "todo: resolve
   decorators" error at the resolver.
 
+### 4.8 Kwarg + union-pattern shorthand
+
+Sugar at the parser layer for the "field and same-named local share a
+name" idiom.
+
+- **Initializer kwarg shorthand.** `Struct { x }` desugars to
+  `Struct { x: x }`; missing `: expression` is synthesized as a bare
+  Variable of the same name at the same source location. Applies
+  uniformly to struct and union initializers, and can be mixed with
+  explicit kwargs (`Struct { a, b: u8 5 }`).
+- **Union-pattern field-binding shorthand.** `case Ok { value }`
+  desugars to `case Ok { value: value }`; missing `: binding` is
+  synthesized as an Identifier binding of the same name.
+- **AST is unchanged** — both surfaces collapse into the same
+  `KeywordArgument` / `UnionPatternField` shape the resolver and
+  analyzer have always seen. Duplicate-field detection (§3.7 and
+  `UnionPattern`'s per-name check) and every downstream rule work
+  transparently. Locked in by `grammar — kwarg + pattern shorthand`
+  (test_grammar.nim, 5 tests) and `analyzer — kwarg + pattern
+  shorthand end-to-end` (test_analyzer.nim, 3 tests).
+
 ---
 
 ## 5. Loader / import-path validations
