@@ -659,3 +659,67 @@ public module M:
 """)
     cleanupDir(dir)
     check r.isOk
+
+suite "analyzer — kwarg + pattern shorthand end-to-end":
+  # Sugar at the parser layer: `Struct { x }` == `Struct { x: x }`;
+  # `case Ok { value }` == `case Ok { value: value }`. Downstream sees
+  # the explicit form, so a program using shorthand must analyze
+  # cleanly for the same reasons the explicit form does.
+
+  test "struct initializer kwarg shorthand analyzes":
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  public func mk(): Pair
+    a = u8 1
+    b = u8 2
+    Pair { a, b }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "union initializer kwarg shorthand analyzes":
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  public func mk(): Status[u8]
+    value = u8 42
+    Status.Ok { value }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "union pattern field-binding shorthand analyzes":
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  public func extract(s: Status[u8]): u8
+    _ = match s:
+      case Ok { value }:
+        value
+      case Err { error }:
+        error
+    u8 0
+""")
+    cleanupDir(dir)
+    check r.isOk

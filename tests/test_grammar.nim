@@ -487,3 +487,85 @@ public module Sys:
     check r.isErr
     check errorContains(r.error, "extern functions")
     check errorContains(r.error, ".aslr")
+
+suite "grammar — kwarg + pattern shorthand":
+  # `Struct { x }` is sugar for `Struct { x: x }` — the parser
+  # synthesizes the value expression as a bare Variable of the same
+  # name. Same shape for union initializers (`Status.Ok { value }`)
+  # and for union-pattern field bindings (`case Ok { value }` = `case
+  # Ok { value: value }`). Downstream (resolver / analyzer) sees the
+  # explicit form as if the user had typed it out.
+
+  test "struct initializer with kwarg shorthand parses":
+    let r = parseStr("""
+module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  func mk(): Pair
+    a = u8 1
+    b = u8 2
+    Pair { a, b }
+""")
+    check r.isOk
+
+  test "struct initializer mixing shorthand and explicit kwargs parses":
+    let r = parseStr("""
+module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  func mk(): Pair
+    a = u8 1
+    Pair { a, b: u8 2 }
+""")
+    check r.isOk
+
+  test "union initializer with kwarg shorthand parses":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func mk(): Status[u8]
+    value = u8 42
+    Status.Ok { value }
+""")
+    check r.isOk
+
+  test "union pattern with field-binding shorthand parses":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func go(s: Status[u8]): u8
+    _ = match s:
+      case Ok { value }:
+        value
+      case Err { error }:
+        error
+    u8 0
+""")
+    check r.isOk
+
+  test "union pattern mixing shorthand and explicit field bindings parses":
+    let r = parseStr("""
+public module Pair:
+  union:
+    Both { a: u8, b: u8 }
+
+module M:
+  func go(p: Pair): u8
+    _ = match p:
+      case Both { a, b: x }:
+        a
+    u8 0
+""")
+    check r.isOk
