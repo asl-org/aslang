@@ -695,7 +695,7 @@ public module Status:
     Err { error: u8 }
 
 module M:
-  public func mk(): Status[u8]
+  public func mk(): Status
     value = u8 42
     Status.Ok { value }
 """)
@@ -713,7 +713,7 @@ public module Status:
     Err { error: u8 }
 
 module M:
-  public func extract(s: Status[u8]): u8
+  public func extract(s: Status): u8
     _ = match s:
       case Ok { value }:
         value

@@ -549,9 +549,18 @@ let functionCallSpec* = triple(
     proc(t: (Identifier, Identifier, ArgumentList)): FunctionCall =
       newFunctionCall(t[0], t[1], t[2]))
 
-let kwargSpec* = separated(identifierSpec, colonWithSpacesSpec, expressionSpec).map(
-  "keyword_argument",
-  proc(t: (Identifier, Expression)): KeywordArgument = newKeywordArgument(t[0], t[1], t[0].loc))
+let kwargSpec* = pair(
+    identifierSpec,
+    optional(prefixed(colonWithSpacesSpec, expressionSpec))
+  ).map("keyword_argument",
+    proc(t: (Identifier, Option[Expression])): KeywordArgument =
+      # Shorthand: `Struct { x }` is sugar for `Struct { x: x }`. When
+      # the `: expression` suffix is absent the value is synthesized as
+      # a bare Variable of the same name; the shorthand identifier's
+      # location carries through so diagnostics point at the source
+      # token the user actually wrote.
+      let expr = if t[1].isSome: t[1].get else: newExpression(t[0])
+      newKeywordArgument(t[0], expr, t[0].loc))
 
 let kwargListSpec* = Spec[KeywordArgumentList](
   name: "keyword_argument_list",

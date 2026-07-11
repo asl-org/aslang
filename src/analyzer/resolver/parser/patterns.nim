@@ -1,4 +1,4 @@
-import strformat, tables, results
+import strformat, options, tables, results
 
 import ./tokenizer
 import ./combinators
@@ -25,10 +25,17 @@ proc loc*(field: UnionPatternField): Location = field.loc
 proc asl(field: UnionPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"
 
-# Variant pattern field: name ":" binding (both identifiers)
-let unionPatternFieldSpec* = separated(identifierSpec, colonWithSpacesSpec, identifierSpec).map(
-  "variant_pattern_field",
-  proc(t: (Identifier, Identifier)): UnionPatternField = newUnionPatternField(t[0], t[1], t[0].loc))
+# Variant pattern field: name [":" binding] — bare `name` is sugar for
+# `name: name`, mirroring the initializer kwarg shorthand. When the
+# binding suffix is absent the parser synthesizes a binding with the
+# same identifier (and the same source location).
+let unionPatternFieldSpec* = pair(
+    identifierSpec,
+    optional(prefixed(colonWithSpacesSpec, identifierSpec))
+  ).map("variant_pattern_field",
+    proc(t: (Identifier, Option[Identifier])): UnionPatternField =
+      let binding = if t[1].isSome: t[1].get else: t[0]
+      newUnionPatternField(t[0], binding, t[0].loc))
 
 # ============================================================
 # UnionPattern
