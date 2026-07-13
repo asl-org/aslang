@@ -660,6 +660,201 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
+  test "bare literal in struct kwarg adopts the field's concrete type":
+    # `Pair { a: 10, b: 20 }` — each kwarg value is analyzed with
+    # `expected = some(<field's declared type>)`. Bare literals adopt
+    # u8 directly (concrete-adopt branch in analyzeBareLiteral).
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  public func mk(): Pair
+    Pair { a: 10, b: 20 }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare literal in union kwarg adopts a concrete field type":
+    # Union variant field is concrete (`level: u8`). Bare literal in
+    # the initializer's kwarg value adopts u8 via the same concrete-
+    # adopt path as struct kwargs.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module Sig:
+  union:
+    Timeout { level: u8 }
+
+  public func mk(): Sig
+    Sig.Timeout { level: 3 }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare literal in struct kwarg with a generic field defaults to i32":
+    # Struct-side analog of the union generic-default test. A struct
+    # WITHOUT `requires` may declare a generic-typed field (the phantom-
+    # struct rule only fires when `requires` is present). Under
+    # Approach C, the bare `42` sees `expected = some(Any-generic)` and
+    # falls into `analyzeBareLiteral`'s default branch → i32. The kwarg
+    # accepts.
+    #
+    # Note: the struct's outer impls are NOT inferred to be [i32] on
+    # this path (see the `discard ?` at body.nim:673 — TODO to utilize
+    # the returned GenericImplMap on the struct side, unlike the union
+    # side which accumulates it). This test locks in the kwarg-level
+    # default behavior; the fuller impl-inference would need the TODO
+    # addressed first.
+    let (r, dir) = analyzeSingle("""
+public module u32:
+  literal: "u32"
+
+public module u64:
+  literal: "u64"
+
+public module i32:
+  literal: "i32"
+
+  public func byte_size(items: u32): u64
+    u64 0
+
+public generic Any:
+  func byte_size(items: u32): u64
+
+public module Holder:
+  struct:
+    value: Any
+
+public module M:
+  public func go(): u32
+    h = Holder { value: 42 }
+    u32 0
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare literal in union kwarg with a generic field defaults to i32":
+    # Union variant field is generic (`value: Any`). Under Approach C
+    # `expected = some(generic)` falls through to the default branch —
+    # bare 42 becomes i32, and i32 (which implements Any via byte_size)
+    # is bound to Any in the generic-impl map. Result: `Status[i32]`.
+    let (r, dir) = analyzeSingle("""
+public module u32:
+  literal: "u32"
+
+public module u64:
+  literal: "u64"
+
+public module i32:
+  literal: "i32"
+
+  public func byte_size(items: u32): u64
+    u64 0
+
+public generic Any:
+  func byte_size(items: u32): u64
+
+public module Status:
+  union:
+    Ok { value: Any }
+    Err { value: u32 }
+
+public module M:
+  public func mk(): Status[i32]
+    Status.Ok { value: 42 }
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare literal in setter RHS adopts the field's type":
+    # `p.a = 10` — the setter's RHS is threaded with the getter's
+    # field type as expected. Bare 10 adopts u8 via concrete-adopt.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  public func setA(p: Pair): Pair
+    p.a = 10
+    p
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare literal exceeding the concrete range is rejected":
+    # `u8.add(300, 0)` — 300 doesn't fit in u8 (0..255). The concrete-
+    # adopt branch adopts u8, then analyzeLiteral's range-check rejects.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+  public func add(a: u8, b: u8): u8
+    a
+
+public module M:
+  public func go(): u8
+    u8.add(300, 0)
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "u8")
+
+  test "bare literal errors clearly when the default type is not in scope":
+    # `x = 10` has no expected context, so analyzeBareLiteral falls into
+    # the default branch and looks up `i32`. This fixture omits `i32`
+    # entirely — the error must name the missing default type and
+    # hint at the scope.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+  public func add(a: u8, b: u8): u8
+    a
+
+public module M:
+  public func go(): u8
+    x = 10
+    u8.add(x, x)
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "i32")
+    check errorContains(r.error, "scope")
+
+  test "bare literal in a position expecting a struct is rejected":
+    # If a function arg expects a struct-typed module (`Pair`) and the
+    # caller passes a bare literal, analyzeBareLiteral's expected is
+    # some(module), the module's data def is rdkStruct — clear error.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  public func accept(p: Pair): u8
+    u8 0
+
+public module M:
+  public func go(): u8
+    Pair.accept(10)
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "struct")
+
 suite "analyzer — kwarg + pattern shorthand end-to-end":
   # Sugar at the parser layer: `Struct { x }` == `Struct { x: x }`;
   # `case Ok { value }` == `case Ok { value: value }`. Downstream sees
