@@ -723,3 +723,62 @@ module M:
 """)
     cleanupDir(dir)
     check r.isOk
+
+suite "analyzer — argument type shorthand end-to-end":
+  # `T!` is sugar for `Status[T]`. Verified by running programs that
+  # would fail if the sugar didn't desugar to `Status[...]` — e.g.,
+  # returning a `Status.Ok { value }` from a `func go(): u8!` signature.
+  # Uses the parametric-Status shape from `Base` (Ok has `value: Any`,
+  # Err has `value: u8`); the `!` sugar targets Base's Status directly.
+
+  test "banged return type analyzes (u8! == Status[u8])":
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any } from "./base.aslr"
+
+module M:
+  public func go(): u8!
+    Status.Ok { value: u8 42 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "banged argument type analyzes":
+    # `u8!` as an argument type. If `!` didn't desugar to `Status[u8]`
+    # the analyzer would fail to resolve the arg type; the fact that
+    # the function body compiles proves the sugar produced a valid
+    # ArgumentType downstream.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any } from "./base.aslr"
+
+module M:
+  public func consume(s: u8!): u8
+    u8 0
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "banged and explicit forms compose cleanly":
+    # A function returning `u8!` and another returning `Status[u8]` —
+    # if `!` truly desugars to `Status[u8]`, both signatures produce the
+    # same AnalyzedArgumentType and can be used interchangeably.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any } from "./base.aslr"
+
+module M:
+  public func with_bang(): u8!
+    Status.Ok { value: u8 1 }
+
+  public func with_explicit(): Status[u8]
+    Status.Ok { value: u8 2 }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk

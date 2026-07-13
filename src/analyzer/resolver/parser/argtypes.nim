@@ -38,15 +38,47 @@ proc asl*(argType: ArgumentType): string =
 # The ref is created first (parseFn: nil), then filled in below so the
 # closure can capture the already-existing ref for recursive calls.
 let argumentTypeSpec* = newSpec[ArgumentType]("argument_type")
+
+# Argument-type sugar: a trailing `!` on an argument type expands to
+# `Status[<argType>]`. Parsed uniformly here so every argument-type
+# position picks it up — function args, return types, kwarg field
+# types, and the initializer type prefix all route through this spec.
+#
+# Nesting binds tight: `!` attaches to the type it immediately follows.
+#   T!            -> Status[T]
+#   Array[u32]!   -> Status[Array[u32]]
+#   Array[u32!]   -> Array[Status[u32]]
+#   Status[u32]!  -> Status[Status[u32]]     (syntactically legal)
+#
+# The sugar collapses at parse time. Downstream (resolver, analyzer)
+# sees a plain `Status[...]` ArgumentType — no distinct AST variant,
+# no separate handling.
+#
+# When updating this sugar (different suffix, different wrapper type,
+# arity checks, additional post-fix operators, etc.), touch:
+#   - The `maybeBanged` block below.
+#   - grammar.md — the ArgumentType production.
+#   - validations.md — §4.8 (argument-type shorthand).
+#   - tests/test_grammar.nim — the "argument type shorthand" suite.
+#   - tests/test_analyzer.nim — end-to-end sugar tests.
 argumentTypeSpec.parseFn = proc(parser: Parser): Result[ArgumentType, ParserError] =
   let rootIdent = ? parser.run(identifierSpec)
   let typeParams = contained("type_params", "[", separatedBy(argumentTypeSpec,
       commaWithSpacesSpec), "]")
   let maybeImpls = ? parser.run(optional(typeParams))
-  if maybeImpls.isSome:
-    ok(newArgumentType(rootIdent, maybeImpls.get, rootIdent.loc))
+  let maybeBanged = ? parser.run(optional(bangSpec))
+
+  let argType =
+    if maybeImpls.isSome:
+      newArgumentType(rootIdent, maybeImpls.get, rootIdent.loc)
+    else:
+      newArgumentType(rootIdent, rootIdent.loc)
+
+  if maybeBanged.isSome:
+    let statusIdent = ? newIdentifier("Status", maybeBanged.get.loc)
+    ok(newArgumentType(statusIdent, @[argType], statusIdent.loc))
   else:
-    ok(newArgumentType(rootIdent, rootIdent.loc))
+    ok(argType)
 
 # ============================================================
 # ArgumentDef (name: ArgumentType)

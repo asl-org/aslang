@@ -1,5 +1,35 @@
 # Lessons Learned
 
+## 2026-07-13 — Argument-type shorthand `T!` = `Status[T]`
+
+Added a trailing-`!` sugar at the `argumentTypeSpec` layer. `T!`
+desugars to `Status[T]` at parse time; downstream sees a plain
+`Status[...]` ArgumentType. The change fits naturally next to the
+prior kwarg + union-pattern shorthand — same shape (parser-layer
+transform), same discipline (AST invariant preserved), same
+motivation (kill boilerplate at the syntactic layer without pushing
+new state into the resolver / analyzer).
+
+Two things worth remembering:
+
+- **Language-level sugar for the fundamental type.** ASL's `Status` is
+  a language primitive (per the earlier brainstorming session on the
+  `try` operator). Almost every function returns `Status[T]`. Giving
+  `Status[T]` a one-character alias — `T!` — is a payoff that shows up
+  across every function signature in a codebase. The lesson is less
+  about the specific sugar and more about willingness to add
+  syntactic conveniences for constructs that appear in every file.
+  A one-character alias for a rarely-used type is decoration; for the
+  return type of most functions, it's ergonomic infrastructure.
+
+- **Note-and-cross-reference at the mutation site.** The `!` handling
+  is 6 lines of parseFn code. But its ramifications span grammar.md,
+  validations.md, tests, and any future sugar interaction (subject-
+  position tries, generic-return `try` bindings, etc.). A prominent
+  comment block above the code names every downstream file that must
+  be touched when this sugar changes — so a future edit lands
+  coherently instead of drifting docs.
+
 ## 2026-07-11 — Sugar at the parser layer stays sugar: no AST changes downstream
 
 Added kwarg shorthand for struct/union initializers (`Struct { x }` = `Struct { x: x }`) and matching sugar for union case patterns (`case Ok { value }` = `case Ok { value: value }`). The mechanism is entirely a parser transformation: two specs change from `separated(id, ':', value)` to `pair(id, optional(':' value))`; when the optional suffix is absent, the `.map` callback synthesizes a `newExpression(id)` (initializer side) or reuses the identifier as its own binding (pattern side). The resolver and analyzer see the same `KeywordArgument` / `UnionPatternField` shape they've always processed.

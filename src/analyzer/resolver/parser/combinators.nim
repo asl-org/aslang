@@ -320,6 +320,7 @@ let underscoreSpec* = punctuationSpec("_")
 let hashSpec* = punctuationSpec("#")
 let backslashSpec* = punctuationSpec("\\")
 let doubleQuoteSpec* = punctuationSpec("\"")
+let bangSpec* = punctuationSpec("!")
 
 # ============================================================
 # Trivia specs — named compositions of the highest-frequency

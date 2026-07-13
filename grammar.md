@@ -138,10 +138,19 @@ VariablePattern: Identifier
 
 # ==== Type-shape and reference cluster. ====
 
-ArgumentType: ModuleArgumentType | GenericArgumentType
+ArgumentType: (ModuleArgumentType | GenericArgumentType) '!'?
 # Resolver-level split. The parser's flatter form is just
 # `Identifier ArgumentType*`; the resolver disambiguates by looking
 # up the head identifier in scope.
+#
+# Trailing `!` is sugar for wrapping in `Status[...]`. Binds tight
+# to the type it immediately follows:
+#   T!            -> Status[T]
+#   Array[u32]!   -> Status[Array[u32]]
+#   Array[u32!]   -> Array[Status[u32]]
+#   Status[u32]!  -> Status[Status[u32]]     (syntactically legal)
+# The sugar collapses at parse time; downstream (resolver, analyzer)
+# sees a plain `Status[...]` ArgumentType, no distinct AST variant.
 
 ModuleArgumentType: ModuleName ArgumentType*
 GenericArgumentType: GenericName

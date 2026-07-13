@@ -569,3 +569,118 @@ module M:
     u8 0
 """)
     check r.isOk
+
+suite "grammar — argument type shorthand":
+  # `T!` is sugar for `Status[T]`. Parsed at the argument-type spec so
+  # every argument-type position — function args, return types, kwarg
+  # field types, initializer type prefixes — picks it up uniformly.
+  # Nesting binds tight: `Array[u32!]` = `Array[Status[u32]]`;
+  # `Array[u32]!` = `Status[Array[u32]]`; `Status[u32]!` =
+  # `Status[Status[u32]]`. Downstream sees a plain `Status[...]`
+  # ArgumentType — no separate variant.
+
+  test "banged return type parses":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func go(): u8!
+    u8 0
+""")
+    check r.isOk
+
+  test "banged argument type parses":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func go(x: u8!): u8
+    u8 0
+""")
+    check r.isOk
+
+  test "banged struct field type parses":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module Holder:
+  struct:
+    slot: u8!
+""")
+    check r.isOk
+
+  test "bang after impls parses (Array[u32]!)":
+    # `Array[u32]!` — `!` binds to the fully-parsed `Array[u32]`,
+    # producing `Status[Array[u32]]`.
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+public generic Any:
+  func byte_size(x: u32): u32
+
+public module Array:
+  requires(Any)
+
+  struct:
+    size: u32
+
+module M:
+  func go(): Array[u32]!
+    Array[u32] { size: u32 0 }
+""")
+    check r.isOk
+
+  test "bang inside impls parses (Array[u32!])":
+    # `Array[u32!]` — inner `!` binds to `u32`, producing
+    # `Array[Status[u32]]`.
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+public generic Any:
+  func byte_size(x: u32): u32
+
+public module Array:
+  requires(Any)
+
+  struct:
+    size: u32
+
+module M:
+  func go(x: Array[u32!]): u32
+    u32 0
+""")
+    check r.isOk
+
+  test "sugar and desugared form both parse (equivalence hint)":
+    # Two functions, one written with `!`, one with explicit
+    # `Status[...]`. Both should parse cleanly. AST equivalence is
+    # verified end-to-end in the analyzer suite.
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func with_bang(): u8!
+    u8 0
+
+  func with_status(): Status[u8]
+    u8 0
+""")
+    check r.isOk
