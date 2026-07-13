@@ -462,7 +462,12 @@ Union:
   "data block is not a struct".
 - **A phantom struct cannot have any generic field** — if `requires(K)`
   is declared, the struct's fields cannot be typed as `K`. Error
-  contains "phantom struct cannot have generic fields".
+  contains "phantom struct cannot have generic fields". A struct
+  WITHOUT `requires` is unaffected by this rule and may declare
+  generic-typed fields freely (see also §8.3a on how the analyzer
+  handles their kwarg values). Use of such structs is constrained
+  separately by the impl-arity check (§7.3) when their implicit
+  generic parameter is exposed at a return position.
 
 ### 7.5 Generic-signature bounds
 
@@ -572,17 +577,36 @@ Concrete-position wiring:
   declared arg types are the `expected` for the corresponding call
   arg. First match wins; ambiguity fires the existing multi-match
   error.
-- **Struct kwargs** — the field's declared type is `expected`.
+- **Struct kwargs** — the field's declared type is `expected`. A
+  struct's outer generic parameters are **not** inferred from bare-
+  literal kwarg values on the bare init path: the `GenericImplMap`
+  returned by the field-vs-value check is currently discarded (see
+  the `discard ?` and TODO at `analyzer/body.nim:673`). The kwarg-
+  level generic-default still fires — `Holder { value: 42 }` where
+  `value: Any` picks up i32 for the kwarg — but the struct's result
+  type stays impl-less. Union kwargs (below) accumulate; struct
+  kwargs don't.
 - **Union kwargs** — the field's declared type, first concretized
   through the current `GenericImplMap`, is `expected`. Free-generic
   fields on the bare path fall through to the default rule and
-  contribute to the impl map.
+  contribute to the impl map. `Status.Ok { value: 42 }` with `value:
+  Any` produces `Status[i32]` — i32 is picked as the default AND
+  bound as the impl.
 - **Setter RHS** — the getter's field type is `expected`.
 
 Defaults are looked up in the file scope. Every `.asl` file gets `@std`
 auto-injection that brings `i32` / `f32` / `String` into scope; a bare
 literal in a file that skipped that injection surfaces a clear error
 naming the missing default type.
+
+**Coverage**: 12 tests in `test_analyzer.nim` under
+`analyzer — bare literal defaulting` — three defaulting cases
+(int/float/string in bare assignment), one concrete-adopt regression
+guard for function args, three concrete-adopt sites (struct kwarg,
+union kwarg, setter RHS), two generic-default sites (struct kwarg
+with generic field, union kwarg with generic field), and three
+error branches (fit-check range overflow, default type not in scope,
+bare literal where a struct is expected).
 
 ### 8.4 Case-pattern variant reference
 
