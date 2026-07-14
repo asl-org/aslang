@@ -19,6 +19,10 @@ proc newIdentifier*(value: string, loc: Location): Result[Identifier, ParserErro
   else:
     ok(Identifier(value: value, loc: loc))
 
+# NOTE: This function will be used for auto generated identifier names.
+proc newGeneratedIdentifier*(counter: int, loc: Location): Identifier =
+  Identifier(value: fmt"__asl_arg_{counter}", loc: loc)
+
 proc value*(id: Identifier): string = id.value
 proc loc*(id: Identifier): Location = id.loc
 

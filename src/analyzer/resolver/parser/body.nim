@@ -1,4 +1,4 @@
-import strformat, strutils, options, tables, results
+import strformat, strutils, options, tables, results, strformat
 
 import ./tokenizer
 import ./combinators
@@ -252,6 +252,16 @@ proc newKeywordArgumentList*(args: seq[KeywordArgument], loc: Location): Result[
       return err(newParserError(msg, arg.loc))
     argIndex[arg.name] = index
   ok(KeywordArgumentList(args: args, loc: loc))
+
+proc newGeneratedKeywordArgumentList(args: seq[KeywordArgument], loc: Location): KeywordArgumentList =
+  var argIndex: Table[Identifier, int]
+  for index, arg in args:
+    if arg.name in argIndex:
+      let prev = args[argIndex[arg.name]]
+      let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
+      assert(false, $(newParserError(msg, arg.loc)))
+    argIndex[arg.name] = index
+  KeywordArgumentList(args: args, loc: loc)
 
 proc asl(kwargList: KeywordArgumentList): string =
   result = "{ "
@@ -519,6 +529,155 @@ proc newStatementList*(statements: seq[Statement]): StatementList =
 
 proc statements*(sl: StatementList): seq[Statement] = sl.statements
 
+proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int)
+proc expand(statement: Statement, start: int): (seq[Statement], int)
+
+proc expand(fncall: FunctionCall, start: int): (seq[Statement], FunctionCall, int) =
+  var expandedStmts: seq[Statement]
+  var expandedArgs: seq[Expression]
+  var counter = start
+
+  for arg in fncall.argList.args:
+    let (updatedStmts, updatedArg, updatedCounter) = arg.expand(counter)
+    expandedStmts.add(updatedStmts)
+    expandedArgs.add(updatedArg)
+    counter = updatedCounter
+
+  let generatedArgList = newArgumentList(expandedArgs, fncall.argList.loc)
+  let generatedFunctionCall = newFunctionCall(fncall.root, fncall.name, generatedArgList)
+  (expandedStmts, generatedFunctionCall, counter)
+
+proc expand(structInit: StructInitializer, start: int): (seq[Statement], StructInitializer, int) =
+  var expandedStmts: seq[Statement]
+  var expandedkwargs: seq[KeywordArgument]
+  var counter = start
+  for kwarg in structInit.kwargs:
+    let (updatedStmts, updatedValue, updatedCounter) = kwarg.expression.expand(counter)
+    expandedStmts.add(updatedStmts)
+    expandedkwargs.add(newKeywordArgument(kwarg.name, updatedValue, kwarg.loc))
+    counter = updatedCounter
+
+  let generatedkwargList = newGeneratedKeywordArgumentList(expandedkwargs, structInit.kwargList.loc)
+  let generatedStructInit = newStructInitializer(structInit.structRef, generatedkwargList, structInit.loc)
+  (expandedStmts, generatedStructInit, counter)
+
+proc expand(unionInit: UnionInitializer, start: int): (seq[Statement], UnionInitializer, int) =
+  var expandedStmts: seq[Statement]
+  var expandedkwargs: seq[KeywordArgument]
+  var counter = start
+  for kwarg in unionInit.kwargs:
+    let (updatedStmts, updatedValue, updatedCounter) = kwarg.expression.expand(counter)
+    expandedStmts.add(updatedStmts)
+    expandedkwargs.add(newKeywordArgument(kwarg.name, updatedValue, kwarg.loc))
+    counter = updatedCounter
+
+  let generatedkwargList = newGeneratedKeywordArgumentList(expandedkwargs, unionInit.kwargList.loc)
+  let generatedUnionInit = newUnionInitializer(unionInit.unionRef, unionInit.variant, generatedkwargList, unionInit.loc)
+  (expandedStmts, generatedUnionInit, counter)
+
+proc expand(initializer: Initializer, start: int): (seq[Statement], Initializer, int) =
+  case initializer.kind:
+  of ikStruct:
+    let (expandedStmts, expandedStructInit, counter) = initializer.struct.expand(start)
+    return (expandedStmts, newInitializer(expandedStructInit), counter)
+  of ikLiteral:
+    return (newSeq[Statement](), initializer, start)
+  of ikUnion:
+    let (expandedStmts, expandedUnionInit, counter) = initializer.union.expand(start)
+    return (expandedStmts, newInitializer(expandedUnionInit), counter)
+
+proc expand(caseBlock: CaseBlock, start: int): (CaseBlock, int) =
+  var expanded: seq[Statement]
+  var counter = start
+  for statement in caseBlock.statements:
+    let (expandedStmts, updatedCounter) = statement.expand(counter)
+    expanded.add(expandedStmts)
+    counter = updatedCounter
+
+  let expandedCaseBlock = newCaseBlock(caseBlock.pattern, newStatementList(expanded), caseBlock.loc)
+  (expandedCaseBlock, counter)
+
+proc expand(match: MatchExpression, start: int): (seq[Statement], MatchExpression, int) =
+  var expandedStmts: seq[Statement]
+  var counter = start
+  let (expandedSubjectStmts, expandedSubjectExpr, updatedCounter) = match.subject.expand(counter)
+  expandedStmts.add(expandedSubjectStmts)
+  counter = updatedCounter
+
+  var expandedCases: seq[CaseBlock]
+  for caseBlock in match.cases:
+    let (expandedCase, updatedCounter) = caseBlock.expand(counter)
+    expandedCases.add(expandedCase)
+    counter = updatedCounter
+
+  let expandedMatchExpr = newMatchExpression(expandedSubjectExpr, expandedCases, match.loc)
+  (expandedStmts, expandedMatchExpr, counter)
+
+proc replace(expression: Expression, start: int): (Statement, Expression, int) =
+  let generatedTarget = newGeneratedIdentifier(start, expression.loc)
+  let generatedAssignment = newAssignment(generatedTarget, expression, expression.loc)
+  (newStatement(generatedAssignment), newExpression(generatedTarget), start + 1)
+
+proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int) =
+  case expression.kind:
+  of ekLiteral, ekVariable, ekGetter:
+    return (@[], expression, start)
+  of ekFnCall:
+    var (expandedStmts, expandedFncall, counter) = expression.fncall.expand(start)
+    if replace:
+      var (replacedStmt, replacedExpr, replacedCounter) = expandedFncall.newExpression.replace(counter)
+      expandedStmts.add(replacedStmt)
+      (expandedStmts, replacedExpr, replacedCounter)
+    else:
+      (expandedStmts, newExpression(expandedFncall), counter)
+  of ekInitializer:
+    var (expandedStmts, expandedInitializer, counter) = expression.initializer.expand(start)
+    if replace:
+      var (replacedStmt, replacedExpr, replacedCounter) = expandedInitializer.newExpression.replace(counter)
+      expandedStmts.add(replacedStmt)
+      (expandedStmts, replacedExpr, replacedCounter)
+    else:
+      (expandedStmts, newExpression(expandedInitializer), counter)
+  of ekMatch:
+    var (expandedStmts, expandedMatchExpr, counter) = expression.match.expand(start)
+    if replace:
+      var (replacedStmt, replacedExpr, replacedCounter) = expandedMatchExpr.newExpression.replace(counter)
+      expandedStmts.add(replacedStmt)
+      (expandedStmts, replacedExpr, replacedCounter)
+    else:
+      (expandedStmts, newExpression(expandedMatchExpr), counter)
+
+proc expand(assignment: Assignment, start: int): (seq[Statement], Assignment, int) =
+  let (expandedStmts, expandedExpr, counter) = assignment.expression.expand(start, false)
+  (expandedStmts, newAssignment(assignment.target, expandedExpr, assignment.loc), counter)
+
+proc expand(setter: Setter, start: int): (seq[Statement], Setter, int) =
+  let (expandedStmts, expandedExpr, counter) = setter.expression.expand(start, false)
+  (expandedStmts, newSetter(setter.target, expandedExpr, setter.loc), counter)
+
+proc expand(statement: Statement, start: int): (seq[Statement], int) =
+  case statement.kind:
+  of skAssignment:
+    var (expandedStmts, expandedAssignment, updatedCounter) = statement.assignment.expand(start)
+    expandedStmts.add(newStatement(expandedAssignment))
+    (expandedStmts, updatedCounter)
+  of skSetter:
+    var (expandedStmts, expandedSetter, updatedCounter) = statement.setter.expand(start)
+    expandedStmts.add(newStatement(expandedSetter))
+    (expandedStmts, updatedCounter)
+  of skExpr:
+    let (expandedStmts, _, updatedCounter) = statement.expression.expand(start)
+    (expandedStmts, updatedCounter)
+
+proc expand(sl: StatementList): StatementList =
+  var expanded: seq[Statement]
+  var counter: int = 0
+  for statement in sl.statements:
+    let (expandedStmts, updatedCounter) = statement.expand(counter)
+    expanded.add(expandedStmts)
+    counter = updatedCounter
+  newStatementList(expanded)
+
 # ============================================================
 # Specs for the body cluster
 # ============================================================
@@ -702,4 +861,4 @@ let statementLineSpec* = Spec[Statement](
 )
 
 statementListSpec.parseFn = atLeastOne(statementLineSpec).map("statement_list",
-  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts)).parseFn
+  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts).expand()).parseFn
