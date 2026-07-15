@@ -5,14 +5,11 @@
 ## resolvers of struct/union initializers, and parser types (Module,
 ## StructRef, UnionRef, Getter, ...) directly.
 
-import results, strformat, options, tables, hashes, sets
+import results, strformat, options, hashes, sets
 
 import ./parser
 import argtypes
-import funcdefs
-import data
 import patterns  # ResolvedCasePattern
-import literals  # ResolvedLiteralDef (unused here but consistent)
 
 type
   ResolvedGetter* = ref object

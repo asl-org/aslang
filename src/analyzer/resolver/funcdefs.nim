@@ -2,7 +2,7 @@
 ## ResolvedExternFunction and their resolve procs. Reads
 ## ResolvedArgumentType from argtypes.nim.
 
-import results, strformat, strutils, options, tables, hashes
+import results, strformat, strutils, hashes
 
 import ./parser
 import argtypes

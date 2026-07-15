@@ -1,7 +1,7 @@
 ## Function cluster — ResolvedUserFunction wraps a ResolvedFunctionDef
 ## + statements; ResolvedFunction is the tagged union over user/extern.
 
-import results, strformat, options, tables, sets
+import results, strformat, options, sets
 
 import ./parser
 import argtypes

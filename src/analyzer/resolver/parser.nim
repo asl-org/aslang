@@ -12,7 +12,6 @@ export location
 # parser through the AST types + `parse*` entry point below; the
 # combinator machinery has no callers outside the parser layer.
 # Parser tests that need it import `./parser/combinators` directly.
-import ./parser/combinators
 import ./parser/identifiers
 import ./parser/literals
 import ./parser/imports

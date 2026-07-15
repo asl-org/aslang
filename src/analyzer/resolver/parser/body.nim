@@ -1,4 +1,4 @@
-import strformat, strutils, options, tables, results, strformat
+import strformat, strutils, options, tables, results
 
 import ./tokenizer
 import ./combinators
@@ -620,8 +620,26 @@ proc replace(expression: Expression, start: int): (Statement, Expression, int) =
 
 proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int) =
   case expression.kind:
-  of ekLiteral, ekVariable, ekGetter:
+  of ekLiteral, ekVariable:
+    # Literals and variables are already terminal — no sub-expressions
+    # to lift and no useful transformation from binding them to a temp:
+    # a literal at a value position needs to reach `analyzeBareLiteral`
+    # with its expected context intact (Approach C's concrete-adopt);
+    # a variable is already a named binding, so wrapping in another
+    # temp would just add noise. Return as-is regardless of `replace`.
     return (@[], expression, start)
+  of ekGetter:
+    # A Getter has no sub-expressions to lift (source and property are
+    # both Identifiers), but at a value position we still want to bind
+    # its read result to a temp so the ANF invariant holds: every
+    # value-position expression downstream is a Variable or a Literal.
+    # The `replace = false` path (assignment / setter RHS) leaves it
+    # alone because the enclosing construct is already the binding.
+    if replace:
+      var (replacedStmt, replacedExpr, replacedCounter) = expression.replace(start)
+      (@[replacedStmt], replacedExpr, replacedCounter)
+    else:
+      (@[], expression, start)
   of ekFnCall:
     var (expandedStmts, expandedFncall, counter) = expression.fncall.expand(start)
     if replace:
@@ -648,11 +666,11 @@ proc expand(expression: Expression, start: int, replace: bool = true): (seq[Stat
       (expandedStmts, newExpression(expandedMatchExpr), counter)
 
 proc expand(assignment: Assignment, start: int): (seq[Statement], Assignment, int) =
-  let (expandedStmts, expandedExpr, counter) = assignment.expression.expand(start, false)
+  let (expandedStmts, expandedExpr, counter) = assignment.expression.expand(start, replace = false)
   (expandedStmts, newAssignment(assignment.target, expandedExpr, assignment.loc), counter)
 
 proc expand(setter: Setter, start: int): (seq[Statement], Setter, int) =
-  let (expandedStmts, expandedExpr, counter) = setter.expression.expand(start, false)
+  let (expandedStmts, expandedExpr, counter) = setter.expression.expand(start, replace = false)
   (expandedStmts, newSetter(setter.target, expandedExpr, setter.loc), counter)
 
 proc expand(statement: Statement, start: int): (seq[Statement], int) =
@@ -666,8 +684,46 @@ proc expand(statement: Statement, start: int): (seq[Statement], int) =
     expandedStmts.add(newStatement(expandedSetter))
     (expandedStmts, updatedCounter)
   of skExpr:
-    let (expandedStmts, _, updatedCounter) = statement.expression.expand(start)
-    (expandedStmts, updatedCounter)
+    # Every bare-expression statement is explicitly wrapped in a
+    # synthesized `__asl_arg_N = <expr>` assignment. Two steps:
+    #   1. `expression.expand(start, replace = false)` lifts nested
+    #      *subexpressions* (function args, kwarg values, match
+    #      subjects) into their own preceding temp assignments. The
+    #      outer expression is NOT wrapped at this step — that's what
+    #      `replace = false` signals, matching how `expand(assignment)`
+    #      and `expand(setter)` treat their RHS.
+    #   2. `.replace(counter)` on the resulting outer expression binds
+    #      it to a fresh temp, producing the final assignment.
+    #
+    # Note the asymmetry between expressions and statements: bare
+    # literal / variable EXPRESSIONS (as subexpressions) are never
+    # expanded — the `ekLiteral, ekVariable` arm of `expression.expand`
+    # returns them unchanged regardless of `replace`, because they're
+    # already terminal (a literal reaches `analyzeBareLiteral` with its
+    # expected context intact under Approach C; a variable is already
+    # a named binding). Getters ARE lifted at value positions
+    # (`replace = true`) but pass through unchanged at RHS positions
+    # (`replace = false`). But when any of these shapes — literal,
+    # variable, or getter — appear as the *outer* expression of a
+    # bare-expression STATEMENT, we still wrap them here at the
+    # statement level via the explicit `.replace(counter)` below.
+    # That keeps the invariant that every top-level statement in a
+    # function body is an Assignment or a Setter, never a raw
+    # bare-expression — downstream layers reason about a uniform
+    # ANF shape.
+    #
+    # Two failure modes without the wrap:
+    # - A bare `value` in a case body would vanish (empty case block
+    #   trips body.nim:326's non-empty-statements assertion) because
+    #   the top-level `expand(Expression)` returns the variable
+    #   unchanged and the skExpr arm has nothing to add.
+    # - The uniform ANF invariant would leak: a mix of assignments and
+    #   bare expressions in the same body forces downstream code to
+    #   handle two shapes per position.
+    var (expandedStmts, expandedExpr, counter) = statement.expression.expand(start, replace = false)
+    let (replacedStmt, _, replacedCounter) = expandedExpr.replace(counter)
+    expandedStmts.add(replacedStmt)
+    (expandedStmts, replacedCounter)
 
 proc expand(sl: StatementList): StatementList =
   var expanded: seq[Statement]

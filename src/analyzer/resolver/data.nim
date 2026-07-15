@@ -2,7 +2,7 @@
 ## ResolvedUnionDef, ResolvedData. Reads ResolvedArgumentDef +
 ## ResolvedGenericArgumentType from earlier layers.
 
-import results, strformat, tables, hashes, sequtils
+import results, strformat, tables, hashes
 
 import ./parser
 import argtypes

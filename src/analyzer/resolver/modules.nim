@@ -3,7 +3,7 @@
 ## layers; `ResolvedType` is the file-scope umbrella over module +
 ## generic.
 
-import results, strformat, strutils, options, tables, hashes, sequtils, sets
+import results, strformat, options, tables, hashes, sequtils, sets
 
 import ./parser
 import argtypes
