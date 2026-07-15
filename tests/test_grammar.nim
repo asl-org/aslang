@@ -460,6 +460,54 @@ module M:
 """)
     check r.isOk
 
+  test "special float literal: nan parses":
+    let r = parseStr("""
+module M:
+  func go(): f32
+    f32 nan
+""")
+    check r.isOk
+
+  test "special float literal: inf parses":
+    let r = parseStr("""
+module M:
+  func go(): f32
+    f32 inf
+""")
+    check r.isOk
+
+  test "special float literal: -inf parses":
+    let r = parseStr("""
+module M:
+  func go(): f32
+    f32 -inf
+""")
+    check r.isOk
+
+  test "special float literal: +inf parses":
+    let r = parseStr("""
+module M:
+  func go(): f32
+    f32 +inf
+""")
+    check r.isOk
+
+  test "special float literal: bare `nan` / `inf` / `-inf` parse in expression position":
+    # No type prefix — the parser recognizes the special-value forms
+    # inside `floatLiteralSpec` regardless of surrounding context, so
+    # bare assignments and bare-statement expressions work too.
+    # (Analyzer-side type resolution via Approach C is verified in
+    # test_analyzer.nim.)
+    let r = parseStr("""
+module M:
+  func go(): f32
+    x = nan
+    y = inf
+    z = -inf
+    x
+""")
+    check r.isOk
+
 suite "grammar — file-kind invariants":
 
   test ".aslr file with an import line is rejected":

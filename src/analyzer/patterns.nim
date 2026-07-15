@@ -147,15 +147,13 @@ proc isExactlyRepresentable*(text: string, mantissaBits: int): bool =
 # a warning for lossy literals, so this proc returns the closest
 # representable value in every finite case.
 #
-# TODO(float-special-values): Inf, -Inf, and NaN are deliberately
-# rejected today — there is no surface syntax to write them
-# (`f64 inf` doesn't parse, since the float-literal spec requires
-# digits) and the float modules in base.aslr expose no
-# is_finite / is_nan classifiers, so a producer-of-Inf could only
-# come from an arithmetic overflow that ASL already reroutes through
-# Status[T]. When the language grows special-value literals
-# (`f64.inf`, `f64.nan`) and classification predicates, this
-# unconditional reject should be relaxed.
+# Numeric float parse only. Special IEEE-754 values (`nan`, `inf`,
+# `+inf`, `-inf`) are handled upstream: the parser accepts them via
+# `specialFloatSpec` in `parser/literals.nim`, and the analyzer's
+# `analyzeFloatLiteral` short-circuits them before reaching this proc.
+# So the inf/nan rejection here catches ONLY the case a numeric input
+# overflows to infinity or produces NaN — which is a genuine
+# out-of-range error and stays rejected.
 proc parseFloat*[T: SomeFloat](s: string): Option[T] =
   var temp: float
   if parseutils.parseFloat(s, temp) == 0: return none(T)

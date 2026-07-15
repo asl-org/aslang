@@ -189,10 +189,47 @@ proc newFloatLiteral*(value: string, loc: Location): FloatLiteral =
 proc loc*(floatLit: FloatLiteral): Location = floatLit.loc
 proc asl*(floatLit: FloatLiteral): string = floatLit.value
 
+# Float-literal is a three-way `oneOf` over per-form specs, each with a
+# single responsibility:
+#   `nanFloatSpec`     — matches the bare token `nan` (no sign allowed).
+#   `infFloatSpec`     — matches `inf` with an optional `+` / `-` prefix.
+#   `numericFloatSpec` — matches the digit-starting numeric form.
+# Special-value forms run first because they start with identifier
+# tokens; the numeric form couldn't reach them anyway (it requires a
+# leading digit or sign+digit).
+
+# `nan` — IEEE-754 quiet NaN. Unsigned only: `+nan` / `-nan` are
+# rejected at parse time (the NaN sign bit exists in the hardware
+# representation but is rarely meaningful in source code).
+let nanFloatSpec = Spec[FloatLiteral](
+  name: "nan_float_literal",
+  parseFn: proc(parser: Parser): Result[FloatLiteral, ParserError] =
+  let ident = ? parser.run(identifierSpec)
+  if ident.value != "nan":
+    return err(newParserError(fmt"expected 'nan' but found `{ident.value}`", ident.loc))
+  ok(newFloatLiteral("nan", ident.loc))
+)
+
+# `inf` — IEEE-754 infinity. Optional `+` / `-` sign prefix; the sign
+# folds into the stored literal value so downstream `analyzeFloatLiteral`
+# can distinguish `+inf` from `-inf`.
+let infFloatSpec = Spec[FloatLiteral](
+  name: "inf_float_literal",
+  parseFn: proc(parser: Parser): Result[FloatLiteral, ParserError] =
+  let loc = parser.loc
+  let signSpec = oneOf("sign", [punctuationSpec("+"), punctuationSpec("-")])
+  let maybeSign = parser.run(signSpec)
+  let signStr = if maybeSign.isOk: maybeSign.get.value else: ""
+  let ident = ? parser.run(identifierSpec)
+  if ident.value != "inf":
+    return err(newParserError(fmt"expected 'inf' but found `{ident.value}`", ident.loc))
+  ok(newFloatLiteral(signStr & "inf", loc))
+)
+
 # (+|-)? digit+ ("." digit+)? ((e|E) (+|-)? digit+)?
 # Must have either decimal part or exponent to distinguish from integer
-let floatLiteralSpec* = Spec[FloatLiteral](
-  name: "float_literal",
+let numericFloatSpec = Spec[FloatLiteral](
+  name: "numeric_float_literal",
   parseFn: proc(parser: Parser): Result[FloatLiteral, ParserError] =
   let loc = parser.loc
   var value: string
@@ -228,6 +265,9 @@ let floatLiteralSpec* = Spec[FloatLiteral](
     return err(newParserError("expected '.' or 'e' for float literal", loc))
   ok(newFloatLiteral(value, loc))
 )
+
+let floatLiteralSpec* = oneOf("float_literal", [
+  nanFloatSpec, infFloatSpec, numericFloatSpec])
 
 # ============================================================
 # Literal (umbrella over string / integer / float)

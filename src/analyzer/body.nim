@@ -37,6 +37,13 @@ proc analyzeFloatLiteral[T: SomeFloat](literal: Literal, expected: string): Resu
   of lkInteger: err(fmt"{literal.loc} expected a valid {expected} but found integer")
   of lkString: err(fmt"{literal.loc} expected a valid {expected} but found string")
   of lkFloat:
+    # Special IEEE-754 values (`nan`, `inf`, `+inf`, `-inf`) are legal
+    # in every float type — no fit-check or exact-representability
+    # warning applies. The parser (`specialFloatSpec` in literals.nim)
+    # narrows the accepted forms; anything else that reached `lkFloat`
+    # is numeric.
+    if literal.asl in ["nan", "inf", "+inf", "-inf"]:
+      return ok()
     let maybeParsedFloat = parseFloat[T](literal.asl)
     if maybeParsedFloat.isNone:
       return err(fmt"{literal.loc} expected a valid {expected} but found `{literal.asl}`")

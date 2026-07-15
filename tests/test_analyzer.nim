@@ -423,6 +423,54 @@ public module M:
     check r.isErr
     check errorContains(r.error, "32-bit float")
 
+  test "f32 accepts nan":
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+public module M:
+  public func go(): f32
+    f32 nan
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "f32 accepts inf":
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+public module M:
+  public func go(): f32
+    f32 inf
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "f32 accepts -inf":
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+public module M:
+  public func go(): f32
+    f32 -inf
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "f64 accepts nan / inf / -inf":
+    let (r, dir) = analyzeSingle("""
+public module f64:
+  literal: "f64"
+
+public module M:
+  public func go(): f64
+    f64 nan
+""")
+    cleanupDir(dir)
+    check r.isOk
+
 suite "analyzer — analyze-shape corner cases":
 
   test "file with only a self-referential generic (no modules) analyzes":
@@ -618,6 +666,48 @@ public module M:
   public func go(): f32
     y = 1.0
     f32.add(y, y)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare special float literals (nan / inf / -inf) default to f32":
+    # `nan` / `inf` / `-inf` are floats of kind `lkFloat`, so the same
+    # Approach C defaulting rule that applies to `1.0` applies here —
+    # bare-assignment RHS with no expected context binds the target as
+    # f32. Then downstream f32.add(x, y) type-checks with both operands
+    # as f32.
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+  public func add(a: f32, b: f32): f32
+    a
+
+public module M:
+  public func go(): f32
+    x = nan
+    y = inf
+    z = -inf
+    f32.add(x, f32.add(y, z))
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "bare special float literal adopts concrete f32 in function arg":
+    # Concrete-adopt branch of analyzeBareLiteral: `expected = some(f32)`
+    # for the call argument, so bare `nan` binds as f32 directly rather
+    # than defaulting. Symmetric to the `u8.add(10, 20)` regression
+    # guard higher up in this suite.
+    let (r, dir) = analyzeSingle("""
+public module f32:
+  literal: "f32"
+
+  public func add(a: f32, b: f32): f32
+    a
+
+public module M:
+  public func go(): f32
+    f32.add(nan, inf)
 """)
     cleanupDir(dir)
     check r.isOk
