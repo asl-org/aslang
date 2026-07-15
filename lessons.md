@@ -1,5 +1,41 @@
 # Lessons Learned
 
+## 2026-07-15 — C-style special float literals (`nan`, `inf`, `+inf`, `-inf`)
+
+Extended `floatLiteralSpec` to accept the four IEEE-754 special-value
+forms as float literals. Split the spec into `specialFloatSpec`
+(matches identifier-shaped `nan` / `inf`, optionally sign-prefixed)
+and `numericFloatLiteralSpec` (the existing digit-starting form),
+combined via `oneOf` with the special form tried first. The special
+form is chosen at parse time because these tokens don't start with a
+digit — the numeric form can't reach them.
+
+`analyzeFloatLiteral` short-circuits when the literal's source string
+matches one of the special-value forms — no fit-check, no exact-
+representability warning. Every float type (`f32`, `f64`) supports
+these unconditionally. Numeric overflow that computes to inf/nan is
+still rejected as out-of-range; the short-circuit fires only when the
+user wrote the special-value token literally.
+
+Two things worth remembering:
+
+- **Written-token vs computed-value distinction matters.** The
+  analyzer's `parseFloat` in `patterns.nim` still rejects inf/nan
+  results from numeric input — that's the overflow detection for
+  `f32 1.0e40`. The special-value short-circuit at the analyzer
+  layer means these two behaviors don't conflict: written `f32 inf`
+  is legal; computed `f32 1.0e40` is not. Both flow through the
+  same `analyzeFloatLiteral`, but the branches don't cross.
+- **Special-value spec doesn't reserve identifier names.** Users can
+  still have module names like `Infinity` or field names like
+  `nan_handler` — `nan` and `inf` are recognized as float literals
+  only in value positions (where the parser tries `floatLiteralSpec`
+  first via `literalSpec`). In non-value positions (module names,
+  field types, import bindings), `nan` and `inf` remain ordinary
+  identifiers. This avoids over-reserving without introducing
+  ambiguity — value positions are the only place both interpretations
+  are plausible, and there the float-literal reading wins.
+
 ## 2026-07-14 — A-normal form expansion at parse time
 
 Landed a post-parse transformation that rewrites every `StatementList`

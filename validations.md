@@ -583,6 +583,16 @@ analyzer checks the value fits the target type:
 - **64-bit float** (`f64`) — overflow rejected; power-of-two fractions
   and integer-valued literals with exponent accepted exactly;
   decimals that would round into the mantissa accepted with a warning.
+- **Special IEEE-754 values** (`nan`, `inf`, `+inf`, `-inf`) — accepted
+  unconditionally for both `f32` and `f64`. The analyzer's fit-check
+  and exact-representability warning short-circuit for these forms
+  (`analyzer/body.nim:analyzeFloatLiteral`). Numeric literals that
+  overflow to infinity or produce NaN via computation are still
+  rejected as out-of-range — the special-value short-circuit only
+  fires when the source literal was written as the special-value
+  token, not as a numeric expression that computes to one. `nan`
+  cannot be sign-prefixed (`+nan` / `-nan` are rejected at parse
+  time); `inf` accepts optional `+` / `-` sign.
 
 ### 8.3 Non-numeric literals
 

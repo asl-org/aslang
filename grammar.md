@@ -113,6 +113,12 @@ LiteralInitializer: LiteralRef Literal
 LiteralRef: ModuleName
 ModuleName: Identifier
 Literal: IntegerLiteral | FloatLiteral | StringLiteral
+# FloatLiteral additionally accepts C-style special IEEE-754 values:
+# `nan`, `inf`, `+inf`, `-inf`. `nan` cannot be sign-prefixed. Any
+# float type (`f32`, `f64`) accepts these unconditionally; the
+# analyzer's fit-check / exact-representability warning is skipped
+# for the special forms. Numeric literals that overflow to infinity
+# or NaN are still rejected as out-of-range.
 
 StructInitializer: ArgumentType KeywordArgument+
 UnionInitializer: ArgumentType Variant KeywordArgument*
