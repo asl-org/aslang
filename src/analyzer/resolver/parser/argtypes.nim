@@ -1,4 +1,4 @@
-import strformat, options, tables, results
+import strformat, options, sequtils, strutils, tables, results
 
 import ./tokenizer
 import ./combinators
@@ -25,13 +25,12 @@ proc newArgumentType*(root: Identifier, impls: seq[ArgumentType],
   ArgumentType(root: root, loc: loc, impls: impls)
 
 proc asl*(argType: ArgumentType): string =
-  result = asl(argType.root)
+  var content: string
+  content.add(asl(argType.root))
   if argType.impls.len > 0:
-    result.add("[")
-    for i, impl in argType.impls:
-      if i > 0: result.add(", ")
-      result.add(asl(impl))
-    result.add("]")
+    let inner = argType.impls.mapIt(asl(it)).join(", ")
+    content.add(fmt"[{inner}]")
+  content
 
 # Forward-declared via newSpec because argumentTypeSpec is self-referential:
 # type params like Map[String, List[Int]] contain nested argument types.
@@ -131,11 +130,10 @@ proc arity*(argDefList: ArgumentDefList): int =
   argDefList.argDefs.len
 
 proc asl*(argDefList: ArgumentDefList): string =
-  result = "("
-  for i, argDef in argDefList.argDefs:
-    if i > 0: result.add(", ")
-    result.add(asl(argDef))
-  result.add(")")
+  var content: string
+  let inner = argDefList.argDefs.mapIt(asl(it)).join(", ")
+  content.add(fmt"({inner})")
+  content
 
 let argumentDefListSpec* = Spec[ArgumentDefList](
   name: "argument_definition_list",

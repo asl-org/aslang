@@ -1,4 +1,4 @@
-import strformat, options, tables, results
+import strformat, options, sequtils, strutils, tables, results
 
 import ./tokenizer
 import ./combinators
@@ -76,11 +76,10 @@ proc bindings*(vp: UnionPattern): seq[Identifier] = vp.bindings
 proc loc*(vp: UnionPattern): Location = vp.name.loc
 
 proc asl(vp: UnionPattern): string =
-  result = fmt"{asl(vp.variant)} " & "{"
-  for i, field in vp.fields:
-    if i > 0: result.add(", ")
-    result.add(asl(field))
-  result.add(" }")
+  var content: string
+  let inner = vp.fields.mapIt(asl(it)).join(", ")
+  content.add(fmt"{asl(vp.variant)} {{ {inner} }}")
+  content
 
 # Variant pattern: VariantName { field: binding, field: binding }
 let unionPatternSpec* = pair(identifierSpec,

@@ -1,4 +1,4 @@
-import strformat, strutils, options, tables, results
+import strformat, strutils, options, sequtils, tables, results
 
 import ./tokenizer
 import ./combinators
@@ -30,11 +30,14 @@ proc newStructDef*(fields: seq[ArgumentDef], loc: Location): Result[StructDef, P
     fieldIndex[field.name] = index
   ok(StructDef(fields: fields, fieldIndex: fieldIndex, loc: loc))
 
-proc asl(s: StructDef, indentWidth: uint32): seq[string] =
-  result.add("struct:")
-  let indent = " ".repeat(indentWidth)
+proc asl(s: StructDef, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  let inner = " ".repeat((level + 1) * indentWidth.int)
+  var lines: seq[string]
+  lines.add(fmt"{indent}struct:")
   for field in s.fields:
-    result.add(fmt"{indent}{asl(field)}")
+    lines.add(fmt"{inner}{asl(field)}")
+  lines
 
 proc findFieldId*(struct: StructDef, name: Identifier): Result[int, string] =
   if name notin struct.fieldIndex:
@@ -80,13 +83,12 @@ proc fields*(v: VariantDef): seq[ArgumentDef] = v.fields
 proc loc*(v: VariantDef): Location = v.loc
 
 proc asl(varDef: VariantDef): string =
-  result = asl(varDef.name)
+  var content: string
+  content.add(asl(varDef.name))
   if varDef.fields.len > 0:
-    result.add(" { ")
-    for i, field in varDef.fields:
-      if i > 0: result.add(", ")
-      result.add(asl(field))
-    result.add(" }")
+    let inner = varDef.fields.mapIt(asl(it)).join(", ")
+    content.add(fmt" {{ {inner} }}")
+  content
 
 proc findFieldId*(variant: VariantDef, name: Identifier): Result[int, string] =
   if name notin variant.fieldIndex:
@@ -134,11 +136,14 @@ proc newUnionDef*(variants: seq[VariantDef], loc: Location): Result[UnionDef, Pa
 proc variants*(u: UnionDef): seq[VariantDef] = u.variants
 proc loc*(u: UnionDef): Location = u.loc
 
-proc asl(u: UnionDef, indentWidth: uint32): seq[string] =
-  result.add("union:")
-  let indent = " ".repeat(indentWidth)
+proc asl(u: UnionDef, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  let inner = " ".repeat((level + 1) * indentWidth.int)
+  var lines: seq[string]
+  lines.add(fmt"{indent}union:")
   for variant in u.variants:
-    result.add(fmt"{indent}{asl(variant)}")
+    lines.add(fmt"{inner}{asl(variant)}")
+  lines
 
 proc findVariantId(union: UnionDef, variant: Identifier): Result[int, string] =
   if variant notin union.variantIndex:
@@ -200,11 +205,11 @@ proc loc*(db: DataDef): Location =
   of ddkStruct: db.struct.loc
   of ddkUnion: db.union.loc
 
-proc asl*(db: DataDef, indentWidth: uint32): seq[string] =
+proc asl*(db: DataDef, level: int, indentWidth: uint32): seq[string] =
   case db.kind:
-  of ddkLiteral: asl(db.literal)
-  of ddkStruct: asl(db.struct, indentWidth)
-  of ddkUnion: asl(db.union, indentWidth)
+  of ddkLiteral: asl(db.literal, level, indentWidth)
+  of ddkStruct: asl(db.struct, level, indentWidth)
+  of ddkUnion: asl(db.union, level, indentWidth)
 
 proc struct*(db: DataDef, module: Identifier): Result[StructDef, string] =
   case db.kind:

@@ -78,14 +78,16 @@ proc statements*(fn: UserFunction): seq[Statement] = fn.statementList.statements
 proc decorators*(fn: UserFunction): seq[Decorator] = fn.decorators
 proc arity*(fn: UserFunction): int = fn.def.arity
 
-proc asl(fn: UserFunction, indentWidth: uint32): seq[string] =
+proc asl(fn: UserFunction, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  var lines: seq[string]
   for d in fn.decorators:
-    result.add(asl(d))
-  result.add(asl(fn.def))
-  let indent = " ".repeat(indentWidth)
+    lines.add(fmt"{indent}{asl(d)}")
+  lines.add(fmt"{indent}{asl(fn.def)}")
   for stmt in fn.statementList.statements:
-    for line in aslBlock(stmt, indentWidth):
-      result.add(fmt"{indent}{line}")
+    for line in asl(stmt, level + 1, indentWidth):
+      lines.add(line)
+  lines
 
 let userFunctionSpec = decoratedBlockSpec("user_function", functionDefSpec,
   statementListSpec,
@@ -111,9 +113,12 @@ proc newExternFunction*(ffi: string, def: FunctionDef,
     loc: Location): ExternFunction =
   ExternFunction(ffi: ffi, def: def, loc: loc)
 
-proc asl(fn: ExternFunction, indentWidth: uint32): seq[string] =
-  result.add(fmt"@extern(""{fn.ffi}"")")
-  result.add(asl(fn.def))
+proc asl(fn: ExternFunction, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  var lines: seq[string]
+  lines.add(fmt"{indent}@extern(""{fn.ffi}"")")
+  lines.add(fmt"{indent}{asl(fn.def)}")
+  lines
 
 # @extern("symbol")
 # public func name(args): ReturnType
@@ -183,10 +188,10 @@ proc arity*(fn: Function): int =
   of fkUser: fn.user.arity
   of fkExtern: fn.extern.arity
 
-proc asl*(fn: Function, indentWidth: uint32): seq[string] =
+proc asl*(fn: Function, level: int, indentWidth: uint32): seq[string] =
   case fn.kind:
-  of fkUser: asl(fn.user, indentWidth)
-  of fkExtern: asl(fn.extern, indentWidth)
+  of fkUser: asl(fn.user, level, indentWidth)
+  of fkExtern: asl(fn.extern, level, indentWidth)
 
 # Each function block skips leading ignorable lines then parses a function.
 # any() backtracks the ignorable line consumption if no function follows.

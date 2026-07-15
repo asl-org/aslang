@@ -52,10 +52,10 @@ proc loc*(typ: Type): Location =
   of tkModule: typ.module.loc
   of tkGeneric: typ.generic.loc
 
-proc asl(typ: Type, indentWidth: uint32): seq[string] =
+proc asl(typ: Type, level: int, indentWidth: uint32): seq[string] =
   case typ.kind:
-  of tkModule: typ.module.asl(indentWidth)
-  of tkGeneric: typ.generic.asl(indentWidth)
+  of tkModule: typ.module.asl(level, indentWidth)
+  of tkGeneric: typ.generic.asl(level, indentWidth)
 
 proc findFunctionDefs*(typ: Type, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
   case typ.kind:
@@ -201,6 +201,11 @@ proc hash*(file: File): Hash = file.path.hash
 proc `==`*(a, b: File): bool = a.hash == b.hash
 
 proc asl*(file: File, indentWidth: uint32): string =
+  # Top-level entry point: walks the file at level=0, joins every
+  # produced line into a single string. Every child asl call takes
+  # (level, indentWidth) and returns seq[string] already properly
+  # indented — see Task 18 in tasks.md and the block-asl convention
+  # in individual parser files.
   var lines: seq[string]
   case file.kind:
   of fkAsl:
@@ -212,7 +217,7 @@ proc asl*(file: File, indentWidth: uint32): string =
     discard
   for i, dt in file.types:
     if i > 0: lines.add("")
-    lines.add(dt.asl(indentWidth))
+    lines.add(dt.asl(0, indentWidth))
   lines.join("\n") & "\n"
 
 proc findType*(file: File, name: Identifier): Result[Type, string] =

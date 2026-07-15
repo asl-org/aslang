@@ -1,4 +1,4 @@
-import strformat, strutils, tables, results, hashes
+import strformat, strutils, sequtils, tables, results, hashes
 
 import ./tokenizer
 import ./combinators
@@ -40,14 +40,17 @@ proc newGeneric*(decorators: seq[Decorator], public: bool, name: Identifier,
   ok(Generic(decorators: decorators, public: public, name: name, funcDefs: funcDefs,
       funcDefArityIndex: funcDefArityIndex, funcDefIndex: funcDefIndex, loc: loc))
 
-proc asl*(gen: Generic, indentWidth: uint32): seq[string] =
+proc asl*(gen: Generic, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  let inner = " ".repeat((level + 1) * indentWidth.int)
+  var lines: seq[string]
   for d in gen.decorators:
-    result.add(asl(d))
+    lines.add(fmt"{indent}{asl(d)}")
   let prefix = if gen.public: "public generic" else: "generic"
-  result.add(fmt"{prefix} {asl(gen.name)}:")
-  let indent = " ".repeat(indentWidth)
+  lines.add(fmt"{indent}{prefix} {asl(gen.name)}:")
   for funcDef in gen.funcDefs:
-    result.add(fmt"{indent}{asl(funcDef)}")
+    lines.add(fmt"{inner}{asl(funcDef)}")
+  lines
 
 proc findFunctionDefIds(generic: Generic, name: Identifier, arity: int): Result[seq[int], string] =
   if name notin generic.funcDefArityIndex:
@@ -99,11 +102,10 @@ proc newRequires*(generics: seq[Identifier], loc: Location): Requires =
   Requires(generics: generics, loc: loc)
 
 proc asl*(r: Requires): string =
-  result = "requires("
-  for i, g in r.generics:
-    if i > 0: result.add(", ")
-    result.add(asl(g))
-  result.add(")")
+  var content: string
+  let inner = r.generics.mapIt(asl(it)).join(", ")
+  content.add(fmt"requires({inner})")
+  content
 
 # requires(Generic, Generic, ...)
 let requiresSpec* = indentedLine(pair(keywordSpec("requires"),

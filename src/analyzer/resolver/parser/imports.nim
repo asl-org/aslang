@@ -1,4 +1,4 @@
-import strformat, strutils, options, tables, results, os
+import strformat, strutils, options, sequtils, tables, results, os
 
 import ./tokenizer
 import ./combinators
@@ -182,15 +182,14 @@ proc absPath*(imp: Import): string = imp.absPath
 proc loc*(imp: Import): Location = imp.loc
 
 proc asl*(imp: Import): string =
+  var content: string
   case imp.kind:
   of ikExplicit:
-    result = "import { "
-    for i, name in imp.names:
-      if i > 0: result.add(", ")
-      result.add(asl(name))
-    result.add(fmt" }} from ""{asl(imp.parsedPath)}""")
+    let inner = imp.names.mapIt(asl(it)).join(", ")
+    content.add(fmt"import {{ {inner} }} from ""{asl(imp.parsedPath)}""")
   of ikShorthand:
-    result = fmt"import ""{asl(imp.parsedPath)}"""
+    content.add(fmt"import ""{asl(imp.parsedPath)}""")
+  content
 
 proc resolveImportPath*(parsedPath: ImportPath, importingFile: string,
     vendorRoots: VendorRoots): Result[string, string] =

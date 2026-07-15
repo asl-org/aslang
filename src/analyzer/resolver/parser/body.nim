@@ -1,4 +1,4 @@
-import strformat, strutils, options, tables, results
+import strformat, strutils, options, sequtils, tables, results
 
 import ./tokenizer
 import ./combinators
@@ -81,10 +81,8 @@ proc asl*(s: StructRef): string =
   if s.impls.len == 0:
     asl(s.module)
   else:
-    var implStrs: seq[string]
-    for impl in s.impls:
-      implStrs.add(asl(impl))
-    fmt"{asl(s.module)}[{implStrs.join("", "")}]"
+    let inner = s.impls.mapIt(asl(it)).join(", ")
+    fmt"{asl(s.module)}[{inner}]"
 
 # ----------------- UnionRef -----------------
 # Mirror of StructRef: same one-shape module+impls layout.
@@ -104,10 +102,8 @@ proc asl*(u: UnionRef): string =
   if u.impls.len == 0:
     asl(u.module)
   else:
-    var implStrs: seq[string]
-    for impl in u.impls:
-      implStrs.add(asl(impl))
-    fmt"{asl(u.module)}[{implStrs.join("", "")}]"
+    let inner = u.impls.mapIt(asl(it)).join(", ")
+    fmt"{asl(u.module)}[{inner}]"
 
 
 # ============================================================
@@ -197,18 +193,17 @@ type
 # Forward declarations for mutually-recursive asl procs.
 proc asl(expr: Expression): string
 proc asl*(stmt: Statement): string
-proc aslBlock*(stmt: Statement, indentWidth: uint32): seq[string]
+proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string]
 
 # ----------------- ArgumentList -----------------
 proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
 
 proc asl(argList: ArgumentList): string =
-  result = "("
-  for i, arg in argList.args:
-    if i > 0: result.add(", ")
-    result.add(asl(arg))
-  result.add(")")
+  var content: string
+  let inner = argList.args.mapIt(asl(it)).join(", ")
+  content.add(fmt"({inner})")
+  content
 
 # ----------------- FunctionCall -----------------
 proc newFunctionCall*(root: Identifier, name: Identifier,
@@ -264,11 +259,10 @@ proc newGeneratedKeywordArgumentList(args: seq[KeywordArgument], loc: Location):
   KeywordArgumentList(args: args, loc: loc)
 
 proc asl(kwargList: KeywordArgumentList): string =
-  result = "{ "
-  for i, arg in kwargList.args:
-    if i > 0: result.add(", ")
-    result.add(asl(arg))
-  result.add(" }")
+  var content: string
+  let inner = kwargList.args.mapIt(asl(it)).join(", ")
+  content.add(fmt"{{ {inner} }}")
+  content
 
 # ----------------- StructInitializer -----------------
 proc newStructInitializer*(structRef: StructRef, kwargList: KeywordArgumentList, loc: Location): StructInitializer =
@@ -367,12 +361,14 @@ proc pattern*(caseBlock: CaseBlock): CasePattern = caseBlock.pattern
 proc statements*(caseBlock: CaseBlock): seq[Statement] = caseBlock.body.statements
 proc loc*(caseBlock: CaseBlock): Location = caseBlock.loc
 
-proc asl(caseBlock: CaseBlock, indentWidth: uint32): seq[string] =
-  result.add(fmt"case {asl(caseBlock.pattern)}:")
-  let indent = " ".repeat(indentWidth)
+proc asl(caseBlock: CaseBlock, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  var lines: seq[string]
+  lines.add(fmt"{indent}case {asl(caseBlock.pattern)}:")
   for s in caseBlock.body.statements:
-    for line in aslBlock(s, indentWidth):
-      result.add(fmt"{indent}{line}")
+    for line in asl(s, level + 1, indentWidth):
+      lines.add(line)
+  lines
 
 # ----------------- MatchExpression -----------------
 proc newMatchExpression*(subject: Expression, cases: seq[CaseBlock],
@@ -387,12 +383,14 @@ proc subject*(match: MatchExpression): Expression = match.subject
 proc cases*(match: MatchExpression): seq[CaseBlock] = match.cases
 proc loc*(match: MatchExpression): Location = match.loc
 
-proc asl(matchExpr: MatchExpression, indentWidth: uint32): seq[string] =
-  result.add(fmt"match {asl(matchExpr.subject)}:")
-  let indent = " ".repeat(indentWidth)
+proc asl(matchExpr: MatchExpression, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  var lines: seq[string]
+  lines.add(fmt"{indent}match {asl(matchExpr.subject)}:")
   for cb in matchExpr.cases:
-    for line in asl(cb, indentWidth):
-      result.add(fmt"{indent}{line}")
+    for line in asl(cb, level + 1, indentWidth):
+      lines.add(line)
+  lines
 
 # ----------------- Expression -----------------
 proc newExpression*(literal: Literal): Expression =
@@ -461,7 +459,7 @@ proc asl(expr: Expression): string =
   of ekGetter: asl(expr.getter)
   of ekInitializer: asl(expr.initializer)
   of ekVariable: asl(expr.variable)
-  of ekMatch: "" # match is a block expression, use aslBlock
+  of ekMatch: "" # match is a block expression, use asl(stmt, level, indentWidth)
 
 # ----------------- Statement -----------------
 proc newStatement*(assignment: Assignment): Statement =
@@ -509,19 +507,29 @@ proc asl*(stmt: Statement): string =
   of skSetter: asl(stmt.setter)
   of skExpr: asl(stmt.expression)
 
-proc aslBlock*(stmt: Statement, indentWidth: uint32): seq[string] =
+proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
   if not stmt.isBlockStatement:
-    return @[asl(stmt)]
+    return @[fmt"{indent}{asl(stmt)}"]
+  var lines: seq[string]
   case stmt.kind:
   of skExpr:
-    result = asl(stmt.expression.match, indentWidth)
+    lines = asl(stmt.expression.match, level, indentWidth)
   of skAssignment:
-    let matchLines = asl(stmt.assignment.expression.match, indentWidth)
-    result.add(fmt"{asl(stmt.assignment.target)} = {matchLines[0]}")
+    # RHS is a match expression spanning multiple lines. Render as:
+    #   <indent>x = match <subj>:
+    #   <indent+width>  case ...
+    # The match's asl returns lines already indented at `level`; the
+    # first line starts with `<indent>match <subj>:` — replace the
+    # leading indent + `match` with `<indent>x = match` to join.
+    let matchLines = asl(stmt.assignment.expression.match, level, indentWidth)
+    let firstAfterIndent = matchLines[0][indent.len..^1]
+    lines.add(fmt"{indent}{asl(stmt.assignment.target)} = {firstAfterIndent}")
     for i in 1..<matchLines.len:
-      result.add(matchLines[i])
+      lines.add(matchLines[i])
   of skSetter:
-    result = @[asl(stmt.setter)]
+    lines = @[fmt"{indent}{asl(stmt.setter)}"]
+  lines
 
 # ----------------- StatementList -----------------
 proc newStatementList*(statements: seq[Statement]): StatementList =

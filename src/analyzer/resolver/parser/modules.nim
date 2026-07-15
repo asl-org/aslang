@@ -57,23 +57,26 @@ proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier,
       requires: requires, data: data, funcList: funcList,
       functionIndex: functionIndex, loc: loc))
 
-proc asl*(module: Module, indentWidth: uint32): seq[string] =
+proc asl*(module: Module, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  let inner = " ".repeat((level + 1) * indentWidth.int)
+  var lines: seq[string]
   for d in module.decorators:
-    result.add(asl(d))
+    lines.add(fmt"{indent}{asl(d)}")
   let prefix = if module.public: "public module" else: "module"
-  result.add(fmt"{prefix} {asl(module.name)}:")
-  let indent = " ".repeat(indentWidth)
+  lines.add(fmt"{indent}{prefix} {asl(module.name)}:")
   if module.requires.isSome:
-    result.add(fmt"{indent}{asl(module.requires.get)}")
-    result.add("")
+    lines.add(fmt"{inner}{asl(module.requires.get)}")
+    lines.add("")
   if module.data.isSome:
-    for line in asl(module.data.get, indentWidth):
-      result.add(fmt"{indent}{line}")
-    result.add("")
+    for line in asl(module.data.get, level + 1, indentWidth):
+      lines.add(line)
+    lines.add("")
   for i, fn in module.funcList.functions:
-    if i > 0: result.add("")
-    for line in asl(fn, indentWidth):
-      result.add(fmt"{indent}{line}")
+    if i > 0: lines.add("")
+    for line in asl(fn, level + 1, indentWidth):
+      lines.add(line)
+  lines
 
 proc findFunctionDefIds(module: Module, name: Identifier, arity: int): Result[seq[int], string] =
   if name notin module.functionIndex:

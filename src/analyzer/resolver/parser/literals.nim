@@ -1,4 +1,4 @@
-import strformat, results
+import strformat, strutils, results
 
 import ./tokenizer
 import ./combinators
@@ -303,8 +303,9 @@ proc newLiteralDef*(value: StringLiteral, loc: Location): LiteralDef =
 proc content*(literalType: LiteralDef): string = literalType.value.content
 proc loc*(literalType: LiteralDef): Location = literalType.loc
 
-proc asl*(l: LiteralDef): seq[string] =
-  @[fmt"literal: {asl(l.value)}"]
+proc asl*(l: LiteralDef, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  @[fmt"{indent}literal: {asl(l.value)}"]
 
 let literalTypeSpec* = pair(prefixed(indentationSpec, keywordSpec("literal")),
     prefixed(colonWithSpacesSpec, stringLiteralSpec)).map(
