@@ -1,5 +1,57 @@
 # Lessons Learned
 
+## 2026-07-14 — A-normal form expansion at parse time
+
+Landed a post-parse transformation that rewrites every `StatementList`
+into A-normal form: every value-position expression becomes a
+`Variable` or `Literal`, every top-level statement becomes an
+`Assignment` or `Setter`. Nested subexpressions get lifted into
+preceding synthetic `__asl_arg_N = <expr>` bindings. Runs inline in
+`statementListSpec.parseFn` so the resolver and analyzer only ever
+see the normalized shape.
+
+This is a bigger structural transformation than the earlier sugars
+(kwarg shorthand, `T!` sugar, kwarg-pattern shorthand). Those were
+local: a single grammar production expands into an equivalent form
+one call away. ANF expansion is *whole-scope*: a bare `foo(bar(x))`
+turns into a two-statement sequence, and a bare-expression statement
+turns into an assignment. The scope's shape changes.
+
+Three lessons from landing it:
+
+- **Value-position vs statement-position asymmetry is real.** The
+  `replace` flag on `expression.expand` is the switch: `replace = true`
+  wraps the outer expression in a temp assignment (used from value
+  positions — function args, kwarg values, match subjects); `replace =
+  false` passes the outer expression through (used from RHS positions —
+  assignment / setter). Both call sites recurse the same way for sub-
+  expressions; they differ only in what happens to the *outer* form.
+  The bug that broke `sample.asl` was `skExpr` (bare-expression
+  statement) leaking the outer discard on `_` and losing the tail
+  expression. Fixing it meant recognizing that a bare-expression
+  statement is a *third* mode: not a value position (don't wrap the
+  outer) but not a preserving position either (do explicitly rewrap as
+  an assignment for uniform ANF at the statement level).
+
+- **Literals must stay unlifted.** Under strict ANF you'd lift `10` in
+  `foo(10)` to `t = 10; foo(t)`. But then `t = 10` runs with
+  `expected = none` and defaults to i32, and `foo(t)` with u8-expected
+  mismatches. Approach C's concrete-adopt only fires when the literal
+  reaches `analyzeBareLiteral` directly. So the ANF invariant is
+  *slightly relaxed*: value positions are `Variable` OR `Literal`, not
+  strictly `Variable`. That relaxation preserves the ergonomics
+  Approach C was designed for. Documented at `body.nim`'s expand-arm
+  comment.
+
+- **Getters lift at value positions, pass through at RHS positions.**
+  Same rule as function calls, initializers, and match expressions —
+  no reason to exempt them. Doing so restores the ANF invariant
+  cleanly: any read-of-field that appears as a function arg or kwarg
+  value now flows through a temp binding, downstream sees only
+  variables. The initial implementation grouped getters with
+  literals/variables in the no-op arm; splitting them out was a
+  one-arm change with immediate uniformity payoff.
+
 ## 2026-07-13 — Argument-type shorthand `T!` = `Status[T]`
 
 Added a trailing-`!` sugar at the `argumentTypeSpec` layer. `T!`

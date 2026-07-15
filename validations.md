@@ -285,6 +285,52 @@ name" idiom.
   (test_grammar.nim, 5 tests) and `analyzer — kwarg + pattern
   shorthand end-to-end` (test_analyzer.nim, 3 tests).
 
+### 4.10 A-normal form expansion (post-parse AST normalization)
+
+Not a validation — a *transformation* that runs after every
+`StatementList` parse (`statementListSpec.parseFn` in
+`resolver/parser/body.nim` invokes `.expand()` on its result).
+Downstream (resolver, analyzer) sees only the normalized AST.
+
+**Invariants the transformation establishes:**
+
+- **Every value-position expression is a `Variable` or `Literal`.**
+  Function-call arguments, keyword-argument values, and match subjects
+  can never carry a nested `FunctionCall` / `Initializer` / `Getter` /
+  `MatchExpression`. Those get lifted into preceding synthetic
+  assignments and replaced with `Variable(__asl_arg_N)`.
+- **Every top-level statement is an `Assignment` or `Setter`.** Bare-
+  expression statements are always wrapped in an assignment — `foo(x)`
+  as a statement becomes `__asl_arg_N = foo(x)`.
+- **Sub-expressions inside nested scopes recurse.** Case block bodies
+  are their own `StatementList` and receive their own expansion pass.
+
+**Lift rules by expression kind:**
+
+- `ekLiteral` — never lifted. A literal at a value position must reach
+  `analyzeBareLiteral` (§8.3a) with its expected context intact.
+- `ekVariable` — never lifted. Already a named binding; wrapping in
+  another temp would just add noise.
+- `ekGetter` — lifted at value positions (`p.a` in `foo(p.a)` becomes
+  `t = p.a; foo(t)`), passed through at assignment / setter RHS
+  positions (`x = p.a` stays `x = p.a`; the enclosing construct is
+  already the binding).
+- `ekFnCall`, `ekInitializer`, `ekMatch` — always recurse into sub-
+  expressions; the outer expression is lifted at value positions,
+  passed through at RHS positions.
+
+**Synthetic identifier naming.** Compiler-generated temps use the
+`__asl_arg_N` prefix (per-function counter). `newIdentifier` rejects
+this prefix for user code, so no collision is possible by
+construction; compiler-internal callers use `newGeneratedIdentifier`
+in `identifiers.nim` which bypasses the check.
+
+**Interaction with Approach C (§8.3a).** Literals stay unlifted
+precisely so `analyzeBareLiteral`'s concrete-adopt behavior keeps
+working — `foo(10)` where `foo(a: u8)` still adopts u8 for the bare
+`10`. If literals were lifted (`t = 10; foo(t)`), the assignment's
+`expected = none` would default t to i32 and the call would mismatch.
+
 ---
 
 ## 5. Loader / import-path validations

@@ -221,6 +221,48 @@ cycle detection. Parent-directory escape prevention
 graph algorithms live in `src/utils.nim` — `bfs[T, V]` is generic;
 `topoSort` is currently string-typed.
 
+**Post-parse A-normal form expansion** (`body.nim`, `expand(...)`
+procs): every `StatementList` runs through a normalization pass
+immediately after parsing (`statementListSpec.parseFn` invokes
+`.expand()` on its result). The pass rewrites the AST so that:
+
+- **Every value-position expression is a `Variable` or `Literal`**.
+  Function-call arguments, keyword-argument values, and match
+  subjects that would otherwise be nested `FunctionCall` /
+  `Initializer` / `Getter` / `MatchExpression` values get lifted
+  into preceding synthetic assignments `__asl_arg_N = <expr>`, and
+  the original position is replaced with `Variable(__asl_arg_N)`.
+- **Every top-level statement is an `Assignment` or `Setter`** —
+  never a bare-expression. A bare `foo(x)` statement becomes
+  `__asl_arg_N = foo(x)`. The tail statement of a function body
+  carries the return value via the assignment's RHS type (see the
+  analyzer's `analyzedStatements[^1].argType` check).
+- **Sub-expressions inside nested scopes recurse.** Case block
+  bodies are their own `StatementList`, so they get their own
+  expansion.
+
+Lift rules by expression kind:
+- `ekLiteral`, `ekVariable` — never lifted. Literals must reach
+  `analyzeBareLiteral` with their expected context intact for
+  Approach C's concrete-adopt behavior; variables are already
+  named bindings.
+- `ekGetter` — lifted at value positions (`p.a` in `foo(p.a)`
+  becomes `t = p.a; foo(t)`), passed through at assignment /
+  setter RHS positions (`x = p.a` stays `x = p.a`).
+- `ekFnCall`, `ekInitializer`, `ekMatch` — always recurse into
+  their sub-expressions; the outer expression is lifted at value
+  positions, passed through at RHS positions.
+
+Synthetic identifiers use the `__asl_arg_N` prefix, which
+`newIdentifier` reserves (rejects for user code). Compiler-internal
+construction goes through `newGeneratedIdentifier` in
+`identifiers.nim`, which bypasses the prefix check. A per-function
+counter provides uniqueness within the function scope.
+
+Downstream (resolver, analyzer) sees only the ANF-normalized AST —
+they never need to reason about nested value-position expressions,
+which simplifies type-flow analysis considerably.
+
 ### Phase 3: Parser-level indexing (absorbed)
 
 The parser itself performs the uniqueness / structural checks that
