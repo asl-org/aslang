@@ -1044,7 +1044,330 @@ public func fib(n: u32): Status[u32]
 
 ---
 
-## What's deferred (not in the core 1-6 or extensions 7-13)
+## Target-agnostic codegen preparation (Steps 14-16)
+
+Everything above (Steps 1-13) is analysis on the DAG. Steps 14-16 are
+optimization passes that decorate the DAG with codegen-ready metadata,
+usable by both the CPU backend (Step 17) and the FPGA backend
+(Steps 18-19). They run once and their output feeds every target.
+
+## Step 14 (extension) — Bit-width narrowing
+
+Value domain tracking (Step 7) already knows every variable's actual
+range. This step CONSUMES those domains and annotates each node with
+the narrowest storage type that fits.
+
+### Rule
+
+For every value `v` with domain `[lo..hi]`:
+- If `hi` fits in a `u8`, storage width = 8 bits.
+- Same for `u16` / `u32` / `u64`.
+- For signed types: cover both `lo` and `hi` in the two's-complement
+  range.
+- For floats: no narrowing (f32 and f64 have fixed widths per IEEE-754);
+  potentially f16 support later if the target has it.
+- Singleton domain `{k}` → constant, no storage at all. Codegen inlines
+  the literal wherever the value is referenced.
+
+### Consumers
+
+- **Step 15** — layout optimization uses narrowed widths to decide
+  struct field ordering and packing.
+- **Step 17** — CPU codegen emits bit-fields when packing saves memory.
+- **Step 19** — HDL emission uses narrowed widths as exact wire widths
+  (big FPGA area savings on custom logic).
+- **Step 9** — Frama-C `@requires` clauses gain tighter bounds.
+
+### Trade-off
+
+Bit-packed struct fields are slower to access than word-aligned on
+CPUs (require mask + shift). Codegen (Step 17) picks the trade-off:
+narrow-when-storage-dominates, word-align-when-access-dominates.
+Heuristic driven by Step 7's access-frequency data (from parallelism
+scheduling; hot fields stay word-aligned).
+
+---
+
+## Step 15 (extension) — Data layout optimization
+
+Access-pattern analysis on the DAG picks the memory layout for each
+composite type (struct, union, array-of-struct):
+
+### Sub-steps
+
+1. **For each struct type**, walk every DAG node that accesses one of
+   its fields. Build a co-access matrix: `M[i][j] = # of nodes that
+   read both field i and field j`.
+2. **Cluster co-accessed fields**: fields with high mutual co-access
+   go into the same cache line; fields never co-accessed can be split
+   into separate structs (**Struct-of-Arrays**) or pushed to a cold
+   area.
+3. **For arrays of struct**, decide **AoS vs SoA**:
+   - **AoS (Array of Struct)**: layout as `[s0, s1, s2, ...]` where
+     each `si` has all fields together. Good when all fields of one
+     element are read together.
+   - **SoA (Struct of Arrays)**: layout as `[f0_0, f0_1, ..., f1_0,
+     f1_1, ...]` where each field forms a contiguous array. Good when
+     one field is read across many elements (SIMD-friendly).
+   - Decision: SoA when any field is accessed in a hot loop
+     independently of the others (from parallelism candidates in
+     Step 12 + WCET hotness in Step 13); AoS otherwise.
+4. **Align hot fields to cache lines**. Cache line size is a target
+   parameter (64 bytes on x86, 128 on some ARM). Emit padding to
+   avoid false sharing between hot fields of different logical
+   objects.
+5. **Push cold fields to separate cache lines**. Fields never
+   co-accessed with the hot set live in their own memory region.
+
+### Consumers
+
+- **Step 17** — CPU codegen emits struct definitions with the chosen
+  layout, padding, and split (AoS-vs-SoA).
+- **Step 19** — HDL emission uses layout choices to allocate BRAM
+  banks and their access ports (SoA fields → separate BRAM banks
+  enabling parallel access).
+
+### Concrete example
+
+```
+type Particle:
+  struct:
+    x: u32          # accessed in every physics step
+    y: u32          # accessed in every physics step
+    color: u32      # accessed only during rendering
+```
+
+Access pattern shows `x` and `y` co-accessed constantly (hot); `color`
+accessed rarely (cold). Layout decision: `x` and `y` co-located
+(same cache line); `color` split into a parallel array
+(`particle_colors[]`) that only rendering touches. Cache footprint
+during physics loop halved.
+
+---
+
+## Step 16 (extension) — Instruction scheduling + register allocation
+
+Whole-program DAG lets us do register allocation and instruction
+scheduling BETTER than a per-function optimizer typically does,
+because we see all producer/consumer relationships including across
+inlined function boundaries.
+
+### Sub-steps
+
+1. **Live range analysis**. Already computed as refcount + escape
+   metadata (core Step 5). For each value: live from definition to
+   last use.
+2. **Register allocation** — graph coloring or linear scan on the
+   DAG's live ranges. Prefer registers for values with:
+   - Small live range (short-lived intermediates).
+   - Refcount == 1 (linear, no aliasing concerns).
+   - High access frequency (from Step 13's WCET path analysis).
+3. **Spill decisions** — when register pressure exceeds count,
+   pick which values spill to memory. Prefer to spill:
+   - Values with the longest remaining live range.
+   - Values in cold branches.
+   - Values whose consumers are far in the topological order.
+4. **Instruction scheduling** — topological order gives basic
+   correctness; latency-aware scheduling picks a schedule that
+   minimizes stalls:
+   - Reorder within same topological level based on producer latency.
+   - Software pipelining for loops: overlap iterations to keep
+     pipelines full.
+   - Loop unrolling driven by value-domain bounds (Step 7) + WCET
+     (Step 13) — unroll iff unrolled code fits in the target's
+     instruction cache.
+5. **SIMD grouping** — parallel candidates from Step 12 group into
+   vector ops when the group is uniform (same op on different
+   inputs). Emits SIMD intrinsics on CPUs; parallel hardware
+   pipelines on FPGA.
+
+### Consumers
+
+- **Step 17** — CPU codegen uses the register-allocated + scheduled
+  representation directly. Little further optimization needed at the
+  C level — the C code emitted encodes the schedule via variable
+  ordering and explicit `register` hints (though modern compilers
+  ignore `register`; we lean on LLVM's own scheduler as backup).
+- **Step 19** — HDL emitter uses the schedule as the pipeline stage
+  assignment: each topological level = one clock cycle; SIMD group
+  = parallel hardware.
+
+---
+
+## Level 1 — CPU codegen (target-first)
+
+## Step 17 (extension) — CPU C codegen backend
+
+Emit optimized C for each function using the analyses from Steps
+1-16. Target: hand-written-assembly quality without user intervention.
+
+### What's emitted per function
+
+1. **Function signature**: derived from analyzed type + calling
+   convention. For hot pure functions with few args, emit as
+   `static inline`; for cold or externally-visible, standard function.
+2. **Parameter passing**: use registers where possible (small values,
+   pointer to bump region for escapes).
+3. **Local variables**: emitted in the register-allocation order from
+   Step 16. Bit-packed struct fields per Step 14.
+4. **Struct definitions**: use the layout chosen in Step 15 (AoS vs
+   SoA, padding, cache alignment via `alignas`).
+5. **Loop code**: unrolled / tiled / software-pipelined per Step 16.
+6. **SIMD**: parallel groups from Step 12 emit as SIMD intrinsics
+   (`_mm256_add_epi32` on x86 AVX2, `vaddq_u32` on ARM NEON).
+   Compiler-target-portable via `<simde/simde.h>` or LLVM
+   intrinsics.
+7. **Branches**: reorder branch arms by execution frequency (from
+   Step 13 WCET). Emit `__builtin_expect` hints for cold arms.
+8. **Function calls**: only remain for opaque recursion nodes
+   (Step 10) and `@effect` externs. Everything else was inlined
+   away.
+
+### Frama-C ACSL comments
+
+Step 9's ACSL clauses are emitted as C comments in the same output.
+The `@requires` / `@ensures` / `@assigns` clauses derive from types
++ value domains + escape sets already computed. Frama-C's proof
+kernel can then verify the emitted C matches its contract.
+
+### Output shape
+
+For a function like `step(x, y)` from the earlier example, the C
+output would look like:
+
+```c
+/*@ requires x < 1000 && y < 1000;
+    ensures \result <= 2000;
+    assigns \nothing;
+    pure;
+    ensures ExecutionTime <= 2;
+*/
+static inline uint16_t step(uint16_t x, uint16_t y) {
+    return (uint16_t)(x + y + x);   // bit-narrowed from u32 → u16 (Step 14)
+}
+```
+
+Note the `uint16_t` instead of `uint32_t` (bit-narrowing), the
+`static inline` (Step 10's inlining decision), and the ACSL clauses
+including `ExecutionTime` (Step 13).
+
+### No abstraction penalty guarantee
+
+By the end of Step 17, generated code has:
+- Zero dynamic dispatch.
+- Zero runtime type checks.
+- Zero unnecessary allocations (bump only, with refcount-driven
+  reuse).
+- Zero call overhead for user functions (all inlined).
+- Zero branch overhead for match arms proved dead (Step 7's
+  post-analysis).
+- Zero bounds checks that Step 7 proved safe.
+
+This is the "if it compiles, it runs correctly AND fast" delivery.
+
+---
+
+## Level 2 — FPGA / HDL codegen (future target)
+
+## Step 18 (extension) — FPGA resource estimation
+
+Companion to WCET (Step 13) but measures HARDWARE AREA instead of
+execution TIME. Every operation costs some number of FPGA primitives
+(LUTs for logic, BRAMs for memory, DSPs for multiplication).
+
+### Cost model
+
+- **`@fpga_cost(luts: N, brams: M, dsps: K)`** on extern functions
+  (e.g., a hardware-multiplier op costs 1 DSP block; a u32 add costs
+  ~32 LUTs).
+- **Value-domain narrowed widths** (Step 14) directly reduce LUT
+  counts (a 7-bit add costs 7 LUTs, not 32).
+- **Data layout** (Step 15) determines BRAM organization: AoS uses
+  wide BRAM ports; SoA uses multiple parallel BRAM banks.
+
+### Bottom-up walk
+
+Mirror of WCET's structure:
+- Sequential nodes: sum resource costs.
+- Branch: max (worst arm dominates area, since both must exist in
+  hardware).
+- Parallel candidate group: sum (each parallel pipeline exists
+  physically).
+- Recursive nodes: cost of one iteration; hardware doesn't need
+  to physically replicate depth-times (loops share the same
+  pipeline stages, cycled multiple times).
+
+### Consumers
+
+- **Step 19** — HDL emitter uses total resource cost to fail fast
+  if the design won't fit the target FPGA.
+- **User warnings**: `"function 'foo' at <loc> requires <X> LUTs;
+  exceeds target FPGA's budget (<Y> LUTs)"`.
+- **Auto-serialization decisions**: if a parallel group blows the
+  LUT budget, serialize it instead (opposite of Step 12's parallel
+  candidate promotion; trade time for area).
+
+---
+
+## Step 19 (extension) — HDL emitter backend
+
+Emit synthesizable Verilog (or VHDL, or HLS-friendly C with pragmas)
+for each function. The DAG maps almost directly to a dataflow
+hardware description.
+
+### Emission model
+
+- **Each function → one module** with an input port per parameter
+  and an output port per return value.
+- **Each DAG node → a hardware block**:
+  - Extern call → instantiate the corresponding IP block or emit
+    inline logic.
+  - Pure computation → combinational logic (LUTs, DSPs).
+  - Branch → multiplexer selecting between arm outputs based on
+    the branch's condition wire.
+  - Opaque recursion → a state machine with one state per
+    condition arm; iterates by looping back with updated
+    register values.
+- **Edges → wires** connecting producer-block outputs to
+  consumer-block inputs.
+- **Value domain widths** (Step 14) → exact wire widths.
+- **Layout choices** (Step 15) → BRAM instantiation with the
+  chosen access ports.
+- **Parallelism candidates** (Step 12) → parallel hardware pipelines
+  in separate physical blocks.
+- **Instruction schedule** (Step 16) → pipeline stage assignments;
+  each topological level fits within one clock cycle where
+  possible, otherwise multi-cycle with intermediate registers.
+
+### Two emission targets
+
+Depending on how much control the user wants:
+- **Direct Verilog/VHDL**: full custom RTL. Maximum efficiency; users
+  must know FPGA internals for constraint files, timing analysis.
+- **HLS-friendly C with pragmas** (Xilinx Vitis, Intel oneAPI): the
+  vendor tool synthesizes HDL from the C. Higher-level; leverages
+  vendor tools' scheduling for us.
+
+Recommendation: start with **HLS-friendly C** — the analyses map
+naturally to HLS pragmas (`#pragma HLS PIPELINE`, `#pragma HLS
+UNROLL`, `#pragma HLS ARRAY_PARTITION`), and we get the vendor
+tools' schedulers for free. Direct HDL emission as a later
+refinement if there's a real reason to bypass HLS (some vendor tools
+inject overhead HLS doesn't skip).
+
+### Clock domain considerations
+
+- **Pure regions** run in a single clock domain (the fabric clock).
+- **`@effect` externs** may cross clock domains (I/O peripherals have
+  their own clocks). Emit clock-domain-crossing (CDC) synchronizers
+  where the DAG crosses from a pure region to an effect region.
+- **Multiple clock domains** for future performance tuning
+  (different pipeline stages at different clocks). Deferred until
+  there's a real target that demands it.
+
+---
+
+## What's deferred (not in the core 1-6, Level 1 CPU pipeline Steps 7-17, Level 2 FPGA pipeline Steps 18-19)
 
 - **Node origin** (`user` vs `uplifted` vs `expanded` vs `injected`).
   Add later for warning-quality attribution.
@@ -1100,6 +1423,24 @@ public func fib(n: u32): Status[u32]
   size cost of unrolling itself. Adding an `--unroll=N` flag as an
   opt-in optimization is straightforward once profiling shows hot
   recursion where full unroll would help — deferred until then.
+- **Multi-clock-domain HDL codegen**. Step 19's initial HDL emitter
+  targets a single fabric clock. Real designs may benefit from
+  running different pipeline stages at different clocks (e.g., I/O
+  slower than compute). Requires clock-domain crossing (CDC)
+  synchronizers and scheduling under multiple clock constraints.
+  Deferred until Level 2 is delivering on a single-clock target.
+- **Direct Verilog/VHDL emission** (bypassing HLS). Step 19 starts
+  with HLS-friendly C + pragmas to leverage vendor tools (Vitis,
+  oneAPI). Skipping HLS means emitting raw RTL, which requires
+  substantial extra work on timing constraints, physical placement
+  hints, and vendor-specific IP block instantiation. Only worth it
+  if HLS's schedule quality proves inadequate for hot kernels.
+- **Post-route timing feedback**. FPGA place-and-route may exceed
+  the design's target clock frequency. Feeding that back into the
+  compiler (retry with different scheduling, tighter pipelining,
+  or narrower widths) would close the loop. Non-trivial — requires
+  parsing vendor-tool output and re-running the affected passes.
+  Deferred to real user need.
 
 ---
 
@@ -1204,11 +1545,32 @@ allocator's memory model.
     primitives + bottom-up walk. Feeds Step 12's auto-scheduler,
     Frama-C ExecutionTime bounds (Step 9), and user-facing
     `@max_cost` violation warnings.
+14. Extension: bit-width narrowing (Step 14). Consumes Step 7's value
+    domains; decorates each node with narrowest storage width.
+15. Extension: data layout optimization (Step 15). Access-pattern
+    analysis picks AoS vs SoA per struct; hot/cold separation;
+    cache-line alignment.
+16. Extension: instruction scheduling + register allocation (Step 16).
+    DAG-aware live ranges, register coloring, SIMD grouping, loop
+    scheduling.
+17. **Level 1 target: CPU codegen (Step 17)**. Emits optimized C
+    using Steps 14-16 plus all prior analyses. First target — proves
+    the analysis foundation, ships to actual users on standard
+    hardware.
+18. Level 2 target: FPGA resource estimation (Step 18). Companion
+    to WCET but measures LUT / BRAM / DSP area.
+19. Level 2 target: HDL emitter (Step 19). HLS-friendly C with
+    pragmas first (leverage vendor tools' schedulers); direct
+    Verilog / VHDL emission as a later refinement.
 
 Core steps 3-6 can ship independently, each adding capability without
-breaking the prior stage. Extensions (Steps 7-13) run atop the core
-DAG and each can ship in phases as described above. The pipeline
-order at codegen time:
+breaking the prior stage. Extensions (Steps 7-19) run atop the core
+DAG and each can ship in phases as described above. **CPU (Level 1)
+is the first shipping target — Steps 14-17 are on the critical path.
+Level 2 (Steps 18-19, FPGA) is scoped and roadmapped but not
+prioritized until Level 1 proves the analyses in production.**
+
+The pipeline order at codegen time:
 
 ```
 Core Step 1-5:   Build → return → escape → DCE → refcount
@@ -1226,7 +1588,18 @@ Extension 13:    WCET analysis (bottom-up cost walk; uses Step 7's
                  propagation)
 Extension 12:    Parallelism identification (metadata output) +
                  auto-scheduling using Step 13's WCET data
-Core Step 6:     Codegen (informed by all metadata above)
+Extension 14:    Bit-width narrowing (consumes Step 7 domains)
+Extension 15:    Data layout optimization (AoS/SoA, hot/cold split)
+Extension 16:    Instruction scheduling + register allocation
+                 (uses live ranges from Steps 3+5, SIMD grouping
+                 from Step 12, latency data from Step 13)
+Level 1 target:
+Step 17:         CPU C codegen (target-first shipping backend)
 Extension 9:     Frama-C spec emission alongside codegen output
                  (includes WCET as @ensures ExecutionTime clauses)
+
+Level 2 target (future):
+Extension 18:    FPGA resource estimation (LUT/BRAM/DSP area)
+Step 19:         HDL emitter (HLS-friendly C with pragmas; direct
+                 Verilog / VHDL as later refinement)
 ```
