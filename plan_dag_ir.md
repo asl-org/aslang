@@ -249,7 +249,7 @@ integer / float types, boolean truth set for booleans, variant set
 for enums / unions. Enables constant folding, bounds check
 elimination, overflow detection, and richer Frama-C numeric contracts.
 
-### Sub-steps
+### Algorithm
 
 1. **Assign initial domains**:
    - Literal node → singleton domain (exactly the literal value).
@@ -330,7 +330,7 @@ Find self-recursive tail calls (convert to loops), sibling tail calls
 (emit as tail jumps), and warn on non-tail recursion so users know
 they'll grow the stack.
 
-### Sub-steps
+### Algorithm
 
 1. **Locate the return node R** (same as core step 2).
 2. **Classify R by kind**:
@@ -597,22 +597,44 @@ overflow; callers must handle. Note: the return type had to be
 ## Step 9 (extension) — Frama-C spec generation
 
 Once the DAG is built and analyzed, every function has known-at-compile-
-time properties that map directly onto ACSL annotations:
+time properties that map directly onto ACSL annotations. This step
+emits the ACSL alongside the generated C code.
 
-- **Argument types** → `@requires` type invariants on parameters.
-- **Return type** → `@ensures` postcondition on `\result`.
-- **Purity** (no observable side effects) → `@pure` annotation.
-- **Memory footprint** — for each node in the escape set: `@assigns`
-  clause naming the memory region it writes into (caller's frame vs
-  local bump).
-- **Bump-allocator invariants** — bump pointer never exceeds capacity;
-  watermark stack never underflows. These become module-level `@axiom`s
-  and `@invariant`s on the allocator struct.
-- **Escape set** → each escaping value's memory region is named in the
-  function's `@assigns` clause; non-escaping values are noted as
-  belonging to the scratch region that gets wiped on return.
-- **Dead-code paths** → not emitted at all (already eliminated in
-  step 4), so no ACSL noise from them.
+### Algorithm
+
+For each function `f` in the DAG:
+
+1. **Open an ACSL block** (`/*@ */`) immediately before the C function
+   definition.
+
+2. **Emit `@requires` clauses from parameter types**:
+   - For each pointer parameter `p`: emit `\valid(p)`.
+   - For each parameter with a value-domain-narrowed range `[lo..hi]`
+     from Step 7: emit `p >= lo && p <= hi`.
+
+3. **Emit `@ensures` clauses on the return**:
+   - Base type invariant (matches the declared return type).
+   - If Step 7 narrowed the return's value domain to `[lo..hi]`:
+     emit `\result >= lo && \result <= hi`.
+
+4. **Emit `@assigns` clause from the escape set** (core Step 3):
+   - For each escaping value, name the memory region it writes into
+     (caller's frame vs local bump vs a specific global).
+   - If no writes escape: emit `assigns \nothing;`.
+
+5. **Emit `@pure` if the function is pure** (Step 10's transitive
+   effect propagation says no `@effect` extern is reachable).
+
+6. **Emit `@ensures ExecutionTime <= N`** where N is the WCET from
+   Step 13.
+
+7. **Emit module-level `@axiom` and `@invariant` blocks for the bump
+   allocator** — once per compilation unit, not per function.
+   `bump_ptr <= capacity`, `watermark_stack.top >= 0`, etc.
+
+8. **Close the ACSL block** and emit the C function body from Step 17.
+
+### What the ACSL captures per source construct
 
 The spec-generation step runs AFTER the DAG has been analyzed but
 BEFORE C codegen — the DAG's structure directly informs the ACSL
@@ -651,7 +673,7 @@ reduces to a graph of extern calls (marked either `@effect` or default-
 pure) plus opaque recursion nodes at recursion boundaries. This shapes
 the DAG for the whole-program passes that follow (Steps 11-12).
 
-### Sub-steps
+### Algorithm
 
 1. **Effect annotation model**:
    - Extern functions may be marked `@effect` (has observable side
@@ -774,23 +796,40 @@ Once user functions are inlined (Step 10), whole-program-level
 optimizations become effective because every non-recursive sub-DAG is
 now visible.
 
-### Passes to run
+### Algorithm
 
-- **Cross-function CSE**: structurally identical pure sub-DAGs merge.
-  If `foo(1, 2)` appears in two places and `foo` is pure, both call
-  sites share the computed result.
-- **Cross-function constant folding**: fold chains that span multiple
-  inlined layers. `u32.add(u32.mul(u32.add(1, 2), 3), 4)` collapses
-  to `13` regardless of how many inlined layers of user helpers are
-  between the literals and the outer ops.
-- **Cross-function DCE**: pure computations whose result is never
-  consumed die. Includes results whose ONLY consumer got DCE'd
-  earlier in the pass — iterate until fixed point.
-- **Fusion**: pipeline chains on persistent data structures (`map →
-  filter → reduce`) collapse into a single walk of the input
-  structure. Requires knowing which functions preserve iteration
-  structure — likely encoded as `@fusible` annotations on library
-  functions initially.
+Run these passes to fixed point (re-run until no pass makes changes):
+
+1. **Cross-function CSE**. Walk the DAG bottom-up. For each pair of
+   pure nodes with identical function ref AND identical input edges,
+   merge into a single node whose out-edge set is the union of both
+   originals. Structurally identical pure sub-DAGs collapse to one.
+   Example: `foo(1, 2)` appearing in two places (with `foo` pure)
+   becomes one computed value shared by both call sites.
+
+2. **Cross-function constant folding**. For each pure node whose
+   every input is a constant (singleton domain from Step 7),
+   evaluate the function at compile time. Replace the node with a
+   constant node holding the result. Example:
+   `u32.add(u32.mul(u32.add(1, 2), 3), 4)` collapses to `13`
+   regardless of how many inlined layers separate the literals from
+   the outer ops.
+
+3. **Cross-function DCE**. For each node with zero outgoing edges,
+   not in the escape set, and not `@effect`-side-effecting: remove.
+   May cascade — removing a node reduces its inputs' out-degrees,
+   which may make them removable. Iterate until stable.
+
+4. **Fusion**. For each pipeline chain (`map → filter → reduce`
+   over a persistent structure), merge the operations into a single
+   walk of the input. Requires `@fusible` annotation on library
+   functions to participate. The pipeline chain must be pure end-to-
+   end; any `@effect` node in the middle is a fusion barrier.
+
+5. **Re-run core Steps 3-5** (escape → DCE → refcount) after each
+   optimization pass since edge counts and reachability may have
+   changed. Passes are idempotent — running them on an unchanged
+   graph produces no changes.
 
 ### What effect nodes constrain
 
@@ -803,13 +842,6 @@ Practical consequence: reading `println("A"); pure_computation();
 println("B")` — the `pure_computation` cannot move above `println("A")`
 or below `println("B")`, even if it's pure. Between them it's free.
 
-### Post-optimization: re-run core Steps 3-5
-
-Cross-function passes change edge counts, escape sets, and
-reachability. Re-run escape analysis, DCE, and refcount analysis
-after each optimization pass. They're idempotent — running on an
-unchanged graph produces no changes.
-
 ---
 
 ## Step 12 (extension) — Parallelism identification (metadata only, no auto-schedule)
@@ -820,7 +852,7 @@ candidates for concurrent execution. **Codegen keeps everything
 sequential-but-annotated** for now; a future scheduler / task
 runtime can consume the annotations once WCET analysis exists.
 
-### Sub-steps
+### Algorithm
 
 1. **Sequential barriers**: effect nodes and the opaque recursion
    nodes from Step 10 are barriers. Nothing can be reordered across
@@ -920,7 +952,7 @@ The compiler ships with cost annotations on base.aslr primitives
 (u32/u64/f32/f64 arithmetic ops all measured; memcpy / memset scaled
 by size). Users adding externs get to annotate their own.
 
-### Sub-steps
+### Algorithm
 
 1. **Bottom-up traversal** of the call graph. Each function's WCET
    is computed after all its callees' WCETs are known.
@@ -1044,12 +1076,288 @@ public func fib(n: u32): Status[u32]
 
 ---
 
+## Step 20 (extension) — Pure kernel extraction
+
+Every real computation is triggered by a side-effect input (a syscall
+return, an interrupt, a UART byte arriving, a timer tick) and ends in
+another side-effect output (a MMIO write, a syscall, a network send,
+an actuator command). Between those two effect boundaries lives
+**pure computation** — nodes with no observable interaction with the
+outside world.
+
+This step **cuts the DAG at effect nodes** and extracts each
+connected pure sub-DAG as a standalone function ("**pure kernel**").
+The whole program then reshapes into:
+
+```
+event loop:
+  for each triggering effect:
+    read the effect's output
+    run the downstream pure kernel
+    write the kernel's output to the next effect
+```
+
+Because every kernel is pure, its full storage footprint is derivable
+at compile time from Steps 5 (refcount), 7 (value domains), 14
+(bit-widths), and 15 (data layout). One kernel = one fixed
+scratch region. No dynamic allocation. No GC. No malloc. Ever.
+
+### Motivation
+
+The insight the user articulated: every computation has an effect
+boundary on both ends. Extracting the pure interior as its own
+function creates a tight, closed unit that the compiler can size,
+schedule, and place with full information. This mirrors the actor
+model, the Elm architecture, and ROS's callback-per-topic design —
+but applied structurally by the compiler, not manually by the
+programmer.
+
+Once kernels are the unit of codegen, the runtime becomes trivial:
+a dispatcher that maps effect events to kernels. Everything
+non-trivial happens inside pure functions with pre-computed
+resource envelopes.
+
+### Algorithm
+
+1. **Locate effect boundaries.** Walk the fully-inlined DAG (post
+   Step 10). Mark every `@effect` extern node as a **boundary**.
+   Boundaries have two roles: **effect input** (produces data,
+   consumed by pure nodes) and **effect output** (consumes data,
+   produced by pure nodes). A single boundary can play both roles
+   for adjacent kernels.
+2. **Partition into pure regions.** Remove every boundary node from
+   the DAG. What remains is a forest of connected pure sub-DAGs.
+   Each connected component is one **kernel candidate**.
+3. **Assign inputs/outputs per kernel.** For each candidate:
+   - Inputs = edges that crossed into the region from a removed
+     boundary (effect input's output).
+   - Outputs = edges that crossed out of the region into a removed
+     boundary (effect output's input).
+   - Kernel signature: `kernel_N(inputs...) -> outputs...`.
+4. **Compute the fixed memory footprint.** Walk each kernel's DAG:
+   - Sum every intermediate node's storage width (Step 14).
+   - Subtract savings from Step 5 reuse-in-place (values whose
+     lifetime ends before the kernel exits share storage with later
+     nodes).
+   - Add any Step 15 struct-layout padding.
+   - Round to Step 15's cache-line alignment.
+   - Result: one `KERNEL_N_SCRATCH_BYTES` constant per kernel.
+5. **Compute the fixed WCET.** Sum Step 13 per-node WCETs along
+   each kernel's critical path. Result: one `KERNEL_N_WCET_CYCLES`
+   constant per kernel.
+6. **Build the dispatch table.** Emit a static table:
+   `event_type → kernel_id`. Every boundary that acts as an
+   effect input becomes an entry; the kernel it triggers is the
+   downstream pure region.
+7. **Wire kernel outputs to next effects.** Each kernel's outputs
+   feed one or more downstream effect boundaries. Emit the direct
+   wiring — kernel returns a struct; dispatcher hands each field
+   to the right effect output.
+8. **Assemble the top-level runtime.** For CPU (Step 17): a loop
+   that reads events, looks up the kernel, invokes it against the
+   kernel's pre-allocated scratch, and dispatches outputs. For
+   FPGA (Steps 18-19): each kernel becomes a SystemVerilog module;
+   boundaries become I/O ports; wiring is direct hardware.
+
+### Concrete example
+
+Source:
+
+```
+func on_button_press():
+  raw    = read_button()          # effect input
+  scaled = u32.mul(raw, 100)      # pure
+  offset = u32.add(scaled, 42)    # pure
+  write_display(offset)           # effect output
+```
+
+DAG after inlining:
+
+```
+  [read_button]           # effect input boundary
+       │
+       ▼
+  ┌─────────────────────┐
+  │  scaled = mul(raw)  │ ← pure kernel A
+  │  offset = add(scld) │
+  └─────────────────────┘
+       │
+       ▼
+  [write_display]         # effect output boundary
+```
+
+Extracted:
+
+```
+kernel_A(raw: u10) -> u17:
+  scaled = raw * 100     # domain [0..99900] → 17 bits
+  offset = scaled + 42   # domain [0..99942] → 17 bits
+  return offset
+
+KERNEL_A_SCRATCH_BYTES = 4   # single u17 intermediate, byte-aligned
+KERNEL_A_WCET_CYCLES   = 2   # mul + add per Step 13
+
+dispatch_table:
+  BUTTON_PRESS → kernel_A → write_display
+```
+
+Runtime loop (CPU):
+
+```
+static uint8_t kernel_A_scratch[KERNEL_A_SCRATCH_BYTES];
+
+while (true) {
+    event = wait_for_event();
+    switch (event.type) {
+    case BUTTON_PRESS: {
+        u17 result = kernel_A(event.raw, kernel_A_scratch);
+        write_display(result);
+        break;
+    }
+    // ...
+    }
+}
+```
+
+FPGA (SystemVerilog): `kernel_A` becomes a module with `raw`/`clk`
+input ports and `offset` output port; `write_display` is a
+downstream module wired directly to `kernel_A.offset`; the
+dispatcher collapses into hardware event registers.
+
+### Consequences
+
+- **Zero dynamic allocation** inside pure kernels. The scratch is
+  a fixed static buffer per kernel.
+- **Deterministic per-event WCET.** Combined with Step 13, each
+  event's response latency is a compile-time constant.
+- **Deterministic memory profile.** Total RAM = sum of every
+  kernel's scratch + effect boundary buffers. Known at link time.
+- **Composable.** Kernels connect via effect boundaries; any
+  kernel can be swapped or re-targeted independently.
+- **Natural parallelism unit.** Two kernels triggered by
+  independent effects can run concurrently — on separate cores,
+  separate SIMD lanes, or separate hardware modules. Step 12's
+  parallelism analysis lifts to the kernel level for free.
+- **Cache-friendly.** Each kernel's scratch is sized to fit in
+  L1/L2. Since Step 14 has already narrowed widths, kernels
+  become surprisingly small (often a few dozen bytes).
+- **FPGA-friendly.** The kernel graph *is* the netlist.
+  Effect boundaries are I/O ports; kernels are combinational
+  modules; the whole thing synthesizes as-is.
+- **Real-time-friendly.** Bounded WCET per event = deterministic
+  latency. The scheduler needs no runtime analysis; every kernel's
+  worst case is stamped at compile time.
+
+### Kernel-level allocation (from the user's `examples/allocator.c`)
+
+The bump-allocator watermark pattern from `examples/allocator.c`
+becomes structurally trivial under kernel extraction:
+
+- Each kernel has one static scratch region sized to
+  `KERNEL_N_SCRATCH_BYTES`.
+- On kernel entry: `bump_ptr = 0` (implicit — the scratch is empty
+  because the previous invocation returned).
+- All intermediate values allocate from the scratch by bump —
+  literally `scratch + offset` where offset is the compile-time
+  layout position.
+- On kernel exit: no explicit release needed. The scratch is
+  logically empty again (nothing outlives the kernel — that's the
+  definition of "pure").
+- The watermark-based `stack_release` from the C prototype maps
+  to kernel exit: the entire scratch is "released" at once.
+
+Nested watermarks (Frame 1 / Frame 2 in the prototype) collapse
+into nested kernel invocations — one kernel calls another (via
+Step 10 inlining they usually flatten, but if a kernel is emitted
+as a helper the caller reserves the callee's scratch region
+inside its own).
+
+### Effect chains and boundary buffers
+
+Values crossing effect boundaries need somewhere to live between
+kernels. Options:
+
+- **Register-passed** — kernel N returns a small struct; the
+  dispatcher immediately passes it to boundary N+1 (no buffer
+  needed).
+- **Boundary buffer** — for wide payloads, a fixed-size static
+  buffer sits between the kernel and the effect output. Sized
+  from the kernel's output signature.
+- **FIFO / async channel** — if the boundary crosses a clock
+  domain or the effect produces asynchronously, a bounded FIFO
+  (whose depth is compile-time picked from arrival-rate
+  annotations, when available; otherwise a user-set default).
+
+Design: default to register-passed; upgrade to buffer or FIFO
+when kernel outputs exceed a threshold OR when the boundary is
+marked `@async`.
+
+### Kernels that are trivial
+
+- **Effect-to-effect with no pure computation.** `read_uart → write_led`
+  extracts an empty kernel; codegen collapses it to direct wiring.
+  No scratch. Zero WCET contribution.
+- **Kernels with a single node.** Common case. Scratch = one
+  storage width. Still worth extracting for uniformity.
+- **Effect fan-out.** One effect input feeds two independent pure
+  regions. Extract each as its own kernel; the dispatcher invokes
+  both (concurrently if independent — see Step 12).
+
+### Interaction with other steps
+
+- **Step 10 (whole-program inlining)** — MUST run first. Kernels
+  are extracted from the fully-inlined DAG so no user function
+  boundary blocks a pure region from being one connected
+  component.
+- **Step 11 (cross-function CSE / fusion)** — MUST run first.
+  Redundant nodes eliminated before extraction give tighter
+  kernel footprints and shorter WCET.
+- **Step 12 (parallelism)** — kernel boundaries become the
+  natural parallelism unit. Step 12's node-level metadata lifts
+  to kernel-level metadata: "kernels A and B triggered by
+  independent effects have no data dependency → run concurrently".
+- **Step 13 (WCET)** — per-node WCETs from Step 13 sum into
+  per-kernel WCET. Step 20 does not re-derive; it aggregates.
+- **Steps 14-16 (codegen prep)** — now operate **per-kernel**.
+  Bit-width narrowing is scoped inside each kernel's scratch.
+  AoS/SoA layout is per-kernel. Register allocation is per-kernel.
+  The unit of preparation shrinks from "one function" to "one
+  kernel", which is smaller and tighter — better register
+  pressure, better cache behavior.
+- **Step 17 (CPU codegen)** — emits one C function per kernel
+  plus one dispatch loop plus one static scratch buffer per
+  kernel. No malloc/free anywhere in generated code.
+- **Steps 18-19 (FPGA codegen)** — emits one SystemVerilog
+  module per kernel plus wiring for effect boundaries. Kernel
+  extraction *is* the RTL structure.
+
+### Limitations
+
+- **Requires `@effect` accuracy.** If the user omits `@effect` on
+  an extern that IS effectful, that node will be treated as pure
+  and get inlined into a kernel — subtle correctness bug. Step 10
+  already relies on the annotation; Step 20 inherits that
+  assumption.
+- **Kernels containing long-running loops** (bounded but large N)
+  can produce large WCET numbers. Not a correctness issue but the
+  scheduler may want to split them. Design decision to refine:
+  optional `@split_at(loop)` to force a kernel boundary in the
+  middle of a long computation.
+- **Effect fan-in coalescing.** If two effects want to trigger
+  the same kernel (e.g., either of two buttons updates the
+  display), the dispatcher gets N entries pointing at the same
+  kernel. Straightforward but worth noting for dispatch-table
+  size.
+
+---
+
 ## Target-agnostic codegen preparation (Steps 14-16)
 
-Everything above (Steps 1-13) is analysis on the DAG. Steps 14-16 are
-optimization passes that decorate the DAG with codegen-ready metadata,
-usable by both the CPU backend (Step 17) and the FPGA backend
-(Steps 18-19). They run once and their output feeds every target.
+Steps 1-13 are DAG-level analyses. Step 20 reshapes the DAG into
+kernels + dispatch. Steps 14-16 are optimization passes that
+decorate **each kernel** with codegen-ready metadata, usable by both
+the CPU backend (Step 17) and the FPGA backend (Steps 18-19). They
+run once per kernel and their output feeds every target.
 
 ## Step 14 (extension) — Bit-width narrowing
 
@@ -1057,25 +1365,37 @@ Value domain tracking (Step 7) already knows every variable's actual
 range. This step CONSUMES those domains and annotates each node with
 the narrowest storage type that fits.
 
-### Rule
+### Algorithm
 
-For every value `v` with domain `[lo..hi]`:
-- If `hi` fits in a `u8`, storage width = 8 bits.
-- Same for `u16` / `u32` / `u64`.
-- For signed types: cover both `lo` and `hi` in the two's-complement
-  range.
-- For floats: no narrowing (f32 and f64 have fixed widths per IEEE-754);
-  potentially f16 support later if the target has it.
-- Singleton domain `{k}` → constant, no storage at all. Codegen inlines
-  the literal wherever the value is referenced.
+For each node `N` in the DAG:
+
+1. **Read `N`'s value domain** from Step 7's tracking.
+
+2. **Compute minimum storage width** based on the domain:
+   - **Unsigned integer type**: find smallest `w ∈ {8, 16, 32, 64}`
+     such that `hi < 2^w`. Assign width `w` bits.
+   - **Signed integer type**: find smallest `w ∈ {8, 16, 32, 64}`
+     such that `-2^(w-1) ≤ lo` AND `hi < 2^(w-1)`. Assign width
+     `w` bits.
+   - **Float type** (`f32`, `f64`): no narrowing (IEEE-754 widths
+     are fixed). Preserve original type. Later: `f16` narrowing
+     for targets with hardware support.
+   - **Singleton domain `{k}`**: mark as **constant**, width = 0.
+     Codegen inlines the literal wherever the value is referenced;
+     no runtime storage.
+
+3. **Store `narrowed_width` and `is_constant` on `N`'s metadata**.
+
+Downstream steps consume this metadata when picking storage form.
 
 ### Consumers
 
 - **Step 15** — layout optimization uses narrowed widths to decide
   struct field ordering and packing.
 - **Step 17** — CPU codegen emits bit-fields when packing saves memory.
-- **Step 19** — HDL emission uses narrowed widths as exact wire widths
-  (big FPGA area savings on custom logic).
+- **Step 19** — SystemVerilog emission uses narrowed widths as exact
+  `logic [WIDTH-1:0]` wire widths (big FPGA area savings on custom
+  logic).
 - **Step 9** — Frama-C `@requires` clauses gain tighter bounds.
 
 ### Trade-off
@@ -1093,7 +1413,7 @@ scheduling; hot fields stay word-aligned).
 Access-pattern analysis on the DAG picks the memory layout for each
 composite type (struct, union, array-of-struct):
 
-### Sub-steps
+### Algorithm
 
 1. **For each struct type**, walk every DAG node that accesses one of
    its fields. Build a co-access matrix: `M[i][j] = # of nodes that
@@ -1123,9 +1443,9 @@ composite type (struct, union, array-of-struct):
 
 - **Step 17** — CPU codegen emits struct definitions with the chosen
   layout, padding, and split (AoS-vs-SoA).
-- **Step 19** — HDL emission uses layout choices to allocate BRAM
-  banks and their access ports (SoA fields → separate BRAM banks
-  enabling parallel access).
+- **Step 19** — SystemVerilog emission uses layout choices to
+  instantiate BRAM banks and their access ports (SoA fields →
+  separate BRAM banks enabling parallel access).
 
 ### Concrete example
 
@@ -1152,7 +1472,7 @@ scheduling BETTER than a per-function optimizer typically does,
 because we see all producer/consumer relationships including across
 inlined function boundaries.
 
-### Sub-steps
+### Algorithm
 
 1. **Live range analysis**. Already computed as refcount + escape
    metadata (core Step 5). For each value: live from definition to
@@ -1188,9 +1508,9 @@ inlined function boundaries.
   C level — the C code emitted encodes the schedule via variable
   ordering and explicit `register` hints (though modern compilers
   ignore `register`; we lean on LLVM's own scheduler as backup).
-- **Step 19** — HDL emitter uses the schedule as the pipeline stage
-  assignment: each topological level = one clock cycle; SIMD group
-  = parallel hardware.
+- **Step 19** — SystemVerilog emitter uses the schedule as the
+  pipeline stage assignment: each topological level = one clock
+  cycle; SIMD group = parallel hardware modules.
 
 ---
 
@@ -1201,7 +1521,10 @@ inlined function boundaries.
 Emit optimized C for each function using the analyses from Steps
 1-16. Target: hand-written-assembly quality without user intervention.
 
-### What's emitted per function
+### Algorithm
+
+For each function `f` in the flattened DAG, emit the following C
+constructs in order:
 
 1. **Function signature**: derived from analyzed type + calling
    convention. For hot pure functions with few args, emit as
@@ -1267,7 +1590,7 @@ This is the "if it compiles, it runs correctly AND fast" delivery.
 
 ---
 
-## Level 2 — FPGA / HDL codegen (future target)
+## Level 2 — FPGA / SystemVerilog codegen (future target)
 
 ## Step 18 (extension) — FPGA resource estimation
 
@@ -1285,22 +1608,48 @@ execution TIME. Every operation costs some number of FPGA primitives
 - **Data layout** (Step 15) determines BRAM organization: AoS uses
   wide BRAM ports; SoA uses multiple parallel BRAM banks.
 
-### Bottom-up walk
+### Algorithm
 
-Mirror of WCET's structure:
-- Sequential nodes: sum resource costs.
-- Branch: max (worst arm dominates area, since both must exist in
-  hardware).
-- Parallel candidate group: sum (each parallel pipeline exists
-  physically).
-- Recursive nodes: cost of one iteration; hardware doesn't need
-  to physically replicate depth-times (loops share the same
-  pipeline stages, cycled multiple times).
+Bottom-up traversal of the call graph, mirroring WCET (Step 13):
+
+1. **For each extern function**, look up its `@fpga_cost(luts, brams,
+   dsps)` annotation. Missing annotation → resource cost is opaque;
+   propagates up as opaque for any function transitively calling it.
+
+2. **For each user-defined function** (post-Step 10 inlining, only
+   opaque calls remain):
+
+   Compute resource cost per DAG node then combine:
+   - **Sequential nodes**: sum resource costs (LUTs + LUTs, BRAMs +
+     BRAMs, DSPs + DSPs component-wise).
+   - **Branch node**: max of arms' costs — both arms must exist in
+     hardware simultaneously; the branch is a mux selecting one.
+   - **Parallel candidate group** (Step 12): sum — each parallel
+     pipeline exists as physical hardware, not shared.
+   - **Opaque recursion** (Step 10's two-block split): cost of one
+     iteration. Hardware reuses the same pipeline stages across
+     iterations; depth doesn't multiply area.
+
+3. **Apply Step 14's bit-width narrowing** to reduce per-operation
+   LUT counts. A u8 add costs ~8 LUTs, not 32 like a u32 add.
+
+4. **Store `fpga_resource: Option[ResourceCost]` on each function's
+   metadata**, where `ResourceCost = (luts, brams, dsps)`.
+
+5. **Compare against target FPGA capacity** (a target-specific
+   configuration constant). For each function exceeding budget on
+   any resource dimension, emit a warning: `"function 'foo' at
+   <loc> requires <X> LUTs; exceeds target FPGA budget (<Y> LUTs)"`.
+
+6. **Auto-serialization decision**: if a parallel candidate group
+   from Step 12 would blow the LUT budget when parallelized,
+   demote it back to sequential codegen — trades time for area.
+   This is the inverse of Step 12's parallelization promotion.
 
 ### Consumers
 
-- **Step 19** — HDL emitter uses total resource cost to fail fast
-  if the design won't fit the target FPGA.
+- **Step 19** — SystemVerilog emitter uses total resource cost to
+  fail fast if the design won't fit the target FPGA.
 - **User warnings**: `"function 'foo' at <loc> requires <X> LUTs;
   exceeds target FPGA's budget (<Y> LUTs)"`.
 - **Auto-serialization decisions**: if a parallel group blows the
@@ -1309,61 +1658,153 @@ Mirror of WCET's structure:
 
 ---
 
-## Step 19 (extension) — HDL emitter backend
+## Step 19 (extension) — SystemVerilog emitter backend
 
-Emit synthesizable Verilog (or VHDL, or HLS-friendly C with pragmas)
-for each function. The DAG maps almost directly to a dataflow
-hardware description.
+Emit synthesizable SystemVerilog directly — bypassing HLS entirely.
+The DAG's structure (Steps 1-16) already carries the pipelining,
+resource, and scheduling decisions HLS would compute; going direct
+to SystemVerilog cuts a translation layer and its associated
+overhead (HLS-injected FIFOs, extra state registers, generic control
+logic that our analyses make unnecessary).
 
-### Emission model
+Chosen dialect: **SystemVerilog (IEEE 1800)** rather than Verilog
+2005 or VHDL. Reasons:
+- `logic` type + `always_ff` / `always_comb` blocks give unambiguous
+  register vs combinational intent (Verilog's `reg`/`wire` is a
+  common source of synthesis surprises).
+- Packed structs and arrays map directly onto Step 15's AoS layouts.
+- Interfaces / modports let us bundle bus signals cleanly for
+  effect-node peripherals.
+- Bit-width parameterization (`logic [WIDTH-1:0]`) accepts Step 14's
+  narrowed widths as generic parameters.
+- Supported by every major open-source and vendor toolchain
+  (Verilator, Yosys, Vivado, Quartus, IceStorm).
 
-- **Each function → one module** with an input port per parameter
-  and an output port per return value.
-- **Each DAG node → a hardware block**:
-  - Extern call → instantiate the corresponding IP block or emit
-    inline logic.
-  - Pure computation → combinational logic (LUTs, DSPs).
-  - Branch → multiplexer selecting between arm outputs based on
-    the branch's condition wire.
-  - Opaque recursion → a state machine with one state per
-    condition arm; iterates by looping back with updated
-    register values.
-- **Edges → wires** connecting producer-block outputs to
-  consumer-block inputs.
-- **Value domain widths** (Step 14) → exact wire widths.
-- **Layout choices** (Step 15) → BRAM instantiation with the
-  chosen access ports.
-- **Parallelism candidates** (Step 12) → parallel hardware pipelines
-  in separate physical blocks.
-- **Instruction schedule** (Step 16) → pipeline stage assignments;
-  each topological level fits within one clock cycle where
-  possible, otherwise multi-cycle with intermediate registers.
+### Algorithm
 
-### Two emission targets
+For each function in the flattened DAG (post-Step 10 inlining), emit
+a SystemVerilog module:
 
-Depending on how much control the user wants:
-- **Direct Verilog/VHDL**: full custom RTL. Maximum efficiency; users
-  must know FPGA internals for constraint files, timing analysis.
-- **HLS-friendly C with pragmas** (Xilinx Vitis, Intel oneAPI): the
-  vendor tool synthesizes HDL from the C. Higher-level; leverages
-  vendor tools' scheduling for us.
+1. **Module declaration**. `module <name> #(parameter WIDTH_...)
+   (input logic clk, input logic rst_n, ...ports)`. One `input`
+   port per parameter, one `output` port per return value. Widths
+   from Step 14 (`logic [6:0] p` for a u7 parameter, not
+   `logic [31:0]`).
 
-Recommendation: start with **HLS-friendly C** — the analyses map
-naturally to HLS pragmas (`#pragma HLS PIPELINE`, `#pragma HLS
-UNROLL`, `#pragma HLS ARRAY_PARTITION`), and we get the vendor
-tools' schedulers for free. Direct HDL emission as a later
-refinement if there's a real reason to bypass HLS (some vendor tools
-inject overhead HLS doesn't skip).
+2. **Declare intermediate signals**. For every DAG node, emit a
+   `logic [WIDTH-1:0] <node_name>;` declaration. Naming follows the
+   ANF `__asl_arg_N` scheme so names are traceable back to source
+   for waveform debugging.
+
+3. **For each DAG node in topological order**, emit its hardware:
+   - **Pure combinational op** (add, mul, and, comparisons):
+     `assign <out> = <op>(<in1>, <in2>);` — inferred as LUTs/DSPs
+     by the synthesis tool.
+   - **Extern call**: instantiate the pre-existing IP module by
+     name — `add32 u_add_0 (.a(x), .b(y), .out(z));`. Extern IPs
+     ship as SystemVerilog libraries in a companion `runtime.sv`.
+   - **Branch node**: ternary or `always_comb` mux —
+     `assign <out> = <cond> ? <arm_true> : <arm_false>;`.
+   - **Opaque recursion** (Step 10's two-block split): a
+     `typedef enum {S_COND, S_ARM_...} state_t;` state machine
+     with an `always_ff @(posedge clk)` block that transitions
+     between states and holds iteration-state registers.
+
+4. **Wire producer outputs to consumer inputs** following DAG edges.
+   Widths carry through Step 14's narrowed types end-to-end.
+
+5. **Instantiate BRAMs for large data structures** per Step 15's
+   layout decisions:
+   - **AoS layout** → single BRAM with wide data ports. Emit as
+     `bram_1p #(.WIDTH, .DEPTH) u_bram (...)` instantiation.
+   - **SoA layout** → one BRAM per field, enabling parallel access.
+     Each field's BRAM sized by that field's Step 14 width.
+
+6. **Assign pipeline stages from Step 16's schedule**. Each
+   topological level = one clock cycle where possible:
+   - Combinational-only levels: `assign` statements chained.
+   - Multi-cycle boundaries: insert `always_ff` register between
+     the levels — `pipe_reg_N <= pipe_reg_N_1;`.
+
+7. **Emit `always_ff` blocks for state**:
+   - Iteration counters for opaque recursion.
+   - Pipeline stage registers between clock-cycle boundaries.
+   - Any Step 12 parallel candidate group synchronization
+     (barrier registers at group boundaries).
+
+8. **Emit CDC synchronizers** where the DAG crosses a clock-domain
+   boundary. Two-flop synchronizer for single-bit signals; async
+   FIFO for multi-bit buses. Boundary is any edge from a pure-region
+   node to an `@effect` extern node whose peripheral runs on its
+   own clock.
+
+9. **Emit a testbench stub** — a `<module_name>_tb.sv` file with
+   the module instantiated + clock generator + reset sequence.
+   Not for shipping, but for local Verilator / iverilog runs
+   during development.
+
+10. **Verify total resource usage against Step 18's estimate**. If
+    Step 18 said the design won't fit, abort with a diagnostic
+    pointing at the highest-cost sub-graphs.
+
+### Example emission
+
+Given source:
+```
+public func step(x: u32, y: u32): u32
+  a = u32.add(x, y)
+  b = u32.add(a, x)
+  b
+```
+
+With Step 7 narrowing `x, y ∈ [0..999]` → u10 each:
+
+```systemverilog
+module step (
+    input  logic        clk,
+    input  logic        rst_n,
+    input  logic [9:0]  x,       // narrowed from u32 → u10 (Step 14)
+    input  logic [9:0]  y,
+    output logic [10:0] result   // narrowed: max value 2999 → 11 bits
+);
+    logic [10:0] a;              // x + y max = 1998 → 11 bits
+    logic [11:0] b_full;         // a + x max = 2997 → 12 bits
+    // Combinational pure ops (Step 16 scheduled to single cycle).
+    assign a      = x + y;
+    assign b_full = a + x;
+    assign result = b_full[10:0];
+endmodule
+```
+
+No pipeline registers because Step 16 fit both adds within one
+clock. Wider bus would need multi-cycle pipelining; `always_ff` gets
+inserted then.
 
 ### Clock domain considerations
 
 - **Pure regions** run in a single clock domain (the fabric clock).
 - **`@effect` externs** may cross clock domains (I/O peripherals have
-  their own clocks). Emit clock-domain-crossing (CDC) synchronizers
-  where the DAG crosses from a pure region to an effect region.
-- **Multiple clock domains** for future performance tuning
-  (different pipeline stages at different clocks). Deferred until
-  there's a real target that demands it.
+  their own clocks). Emit CDC synchronizers per step 8 above.
+- **Multi-clock optimization** — running different pipeline stages
+  at different clock rates — deferred until a real target demands
+  it.
+
+### Why bypass HLS
+
+- **Analyses replace HLS's pass**. Steps 7 / 12 / 13 / 14 / 15 / 16
+  already compute what HLS's scheduler would. Handing the same info
+  to HLS as pragmas and letting it re-derive the schedule is a
+  wasted pass.
+- **HLS injects overhead we don't need**. Vendor HLS tools add
+  bookkeeping (control FIFOs, generic AXI wrappers, dataflow FSMs)
+  that assume a wider input than we produce. Our DAG-derived
+  SystemVerilog is tighter by construction.
+- **Vendor lock-in**. Vitis HLS and Intel oneAPI produce different
+  output; our SystemVerilog is portable across every mainstream
+  synthesis flow.
+- **Toolchain reach**. Open-source flows (Yosys + nextpnr + Verilator
+  simulation) work with SystemVerilog; most HLS tools require the
+  proprietary vendor stack.
 
 ---
 
@@ -1423,18 +1864,16 @@ inject overhead HLS doesn't skip).
   size cost of unrolling itself. Adding an `--unroll=N` flag as an
   opt-in optimization is straightforward once profiling shows hot
   recursion where full unroll would help — deferred until then.
-- **Multi-clock-domain HDL codegen**. Step 19's initial HDL emitter
-  targets a single fabric clock. Real designs may benefit from
-  running different pipeline stages at different clocks (e.g., I/O
-  slower than compute). Requires clock-domain crossing (CDC)
-  synchronizers and scheduling under multiple clock constraints.
-  Deferred until Level 2 is delivering on a single-clock target.
-- **Direct Verilog/VHDL emission** (bypassing HLS). Step 19 starts
-  with HLS-friendly C + pragmas to leverage vendor tools (Vitis,
-  oneAPI). Skipping HLS means emitting raw RTL, which requires
-  substantial extra work on timing constraints, physical placement
-  hints, and vendor-specific IP block instantiation. Only worth it
-  if HLS's schedule quality proves inadequate for hot kernels.
+- **Multi-clock-domain SystemVerilog codegen**. Step 19's initial
+  emitter targets a single fabric clock. Real designs may benefit
+  from running different pipeline stages at different clocks (e.g.,
+  I/O slower than compute). Requires more CDC synchronizers and
+  scheduling under multiple clock constraints. Deferred until
+  Level 2 is delivering on a single-clock target.
+- **VHDL emission**. Step 19 emits SystemVerilog. VHDL is a viable
+  alternative (some fabs / vendors prefer it); the analyses are the
+  same, only the syntactic emission changes. Deferred unless a real
+  user constraint requires VHDL.
 - **Post-route timing feedback**. FPGA place-and-route may exceed
   the design's target clock frequency. Feeding that back into the
   compiler (retry with different scheduling, tighter pipelining,
@@ -1545,6 +1984,12 @@ allocator's memory model.
     primitives + bottom-up walk. Feeds Step 12's auto-scheduler,
     Frama-C ExecutionTime bounds (Step 9), and user-facing
     `@max_cost` violation warnings.
+13a. Extension: pure kernel extraction (Step 20). Cuts the flat DAG
+    at `@effect` boundaries; each connected pure sub-DAG becomes a
+    standalone kernel with a fixed scratch buffer, fixed WCET, and
+    fixed signature. Reshapes the whole program into "event loop +
+    kernels + dispatch table" — the shape both CPU and FPGA
+    codegen consume. Steps 14-16 now operate per-kernel.
 14. Extension: bit-width narrowing (Step 14). Consumes Step 7's value
     domains; decorates each node with narrowest storage width.
 15. Extension: data layout optimization (Step 15). Access-pattern
@@ -1559,9 +2004,13 @@ allocator's memory model.
     hardware.
 18. Level 2 target: FPGA resource estimation (Step 18). Companion
     to WCET but measures LUT / BRAM / DSP area.
-19. Level 2 target: HDL emitter (Step 19). HLS-friendly C with
-    pragmas first (leverage vendor tools' schedulers); direct
-    Verilog / VHDL emission as a later refinement.
+19. Level 2 target: SystemVerilog emitter (Step 19). Direct
+    synthesizable SystemVerilog — bypasses HLS entirely because
+    Steps 7 / 12 / 13 / 14 / 15 / 16 already compute the
+    scheduling / bit-width / layout info HLS would derive.
+    IEEE 1800 dialect for `logic` / `always_ff` / `always_comb`
+    clarity; portable across Vivado / Quartus / Yosys /
+    Verilator.
 
 Core steps 3-6 can ship independently, each adding capability without
 breaking the prior stage. Extensions (Steps 7-19) run atop the core
@@ -1588,11 +2037,18 @@ Extension 13:    WCET analysis (bottom-up cost walk; uses Step 7's
                  propagation)
 Extension 12:    Parallelism identification (metadata output) +
                  auto-scheduling using Step 13's WCET data
-Extension 14:    Bit-width narrowing (consumes Step 7 domains)
-Extension 15:    Data layout optimization (AoS/SoA, hot/cold split)
+Extension 20:    Pure kernel extraction (cut DAG at @effect
+                 boundaries; each pure sub-DAG becomes a kernel
+                 with fixed scratch + fixed WCET + fixed I/O
+                 signature; dispatch table maps effects to kernels)
+Extension 14:    Bit-width narrowing (per kernel; consumes Step 7
+                 domains)
+Extension 15:    Data layout optimization (per kernel; AoS/SoA,
+                 hot/cold split)
 Extension 16:    Instruction scheduling + register allocation
-                 (uses live ranges from Steps 3+5, SIMD grouping
-                 from Step 12, latency data from Step 13)
+                 (per kernel; uses live ranges from Steps 3+5,
+                 SIMD grouping from Step 12, latency data from
+                 Step 13)
 Level 1 target:
 Step 17:         CPU C codegen (target-first shipping backend)
 Extension 9:     Frama-C spec emission alongside codegen output
@@ -1600,6 +2056,7 @@ Extension 9:     Frama-C spec emission alongside codegen output
 
 Level 2 target (future):
 Extension 18:    FPGA resource estimation (LUT/BRAM/DSP area)
-Step 19:         HDL emitter (HLS-friendly C with pragmas; direct
-                 Verilog / VHDL as later refinement)
+Step 19:         SystemVerilog emitter (direct RTL, bypasses HLS;
+                 IEEE 1800 dialect for portability across major
+                 open-source and vendor toolchains)
 ```
