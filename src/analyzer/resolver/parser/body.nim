@@ -925,4 +925,7 @@ let statementLineSpec* = Spec[Statement](
 )
 
 statementListSpec.parseFn = atLeastOne(statementLineSpec).map("statement_list",
-  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts).expand()).parseFn
+  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts)).parseFn
+# TODO(post-analysis-expander): re-wire expansion after the analyzer once the
+# post-analysis expander lands (see plans/plan_post_analysis_expansion.md).
+# The expand* procs above (lines 540-748) are kept as reference for that move.
