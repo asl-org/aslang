@@ -121,7 +121,7 @@ public module B:
 
   test "import path with unrecognized extension: neither file nor .asl fallback exists":
     # Explicit-form import of `./bar.txt`. Neither `./bar.txt` nor
-    # `./bar.txt.asl` exists in the temp dir. `resolveImportPath`
+    # `./bar.txt.asl` exists in the temp dir. `toAbsPath`
     # tries the bare path first, then the `.asl` fallback, and
     # errors when both are missing. The specific error message is
     # currently masked by the parser's `any(importSpec)`
@@ -246,8 +246,8 @@ public module Helper:
     check r.get.files.len == 2
 
   test "unknown vendor import is rejected":
-    # `parseImportPath` accepts the `@`-prefix syntactically, but
-    # `resolveImportPath` rejects vendor names that aren't in the
+    # `toImportPath` accepts the `@`-prefix syntactically, but
+    # `toAbsPath` rejects vendor names that aren't in the
     # threaded `VendorRoots` table. Tests pass empty vendorRoots by
     # default, so any `@<name>` reference is "unknown vendor".
     let (r, dir) = parseFiles([
@@ -263,7 +263,7 @@ module M:
     check r.isErr
 
   test "parent-directory escape via ../ is rejected":
-    # The grammar's importLineSpec calls resolveImportPath; on rejection
+    # The grammar's importLineSpec calls toAbsPath; on rejection
     # the error is produced but currently swallowed by the parser's
     # `any(importSpec)` backtracking, so the surface error is the
     # generic "expected module" message. We assert only that the parse

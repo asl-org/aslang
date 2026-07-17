@@ -149,7 +149,7 @@ proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgu
 proc findType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Type, string] =
   let maybeLocal = file.findType(name)
   if maybeLocal.isOk: return maybeLocal
-  let maybeImported = file.findImportedName(name)
+  let maybeImported = file.findImportedType(name)
   if maybeImported.isOk:
     let importedType = maybeImported.get
     if importedType.binding notin fileScope:

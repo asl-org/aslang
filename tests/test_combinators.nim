@@ -6,7 +6,6 @@
 import unittest, options, results
 
 import analyzer/resolver/parser/tokenizer
-import analyzer/resolver/parser/combinators
 import analyzer
 import tutils
 

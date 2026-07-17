@@ -64,14 +64,11 @@ proc validateNoDuplicateBindings(resolvedImports: seq[ResolvedImport], file: par
 proc resolveFile*(app: App, id: int, file: parser.File): Result[ResolvedFile, string] =
   var resolvedImports: seq[ResolvedImport]
   var fileScope: FileScope
-  case file.kind:
-  of fkAsl:
-    for imp in file.imports:
-      let resolvedImport = ? resolveImport(app, file, imp)
-      resolvedImports.add(resolvedImport)
-      for impType in resolvedImport.importedTypes:
-        fileScope[impType.binding] = impType.typ
-  of fkAslr: discard
+  for imp in file.imports:
+    let resolvedImport = ? resolveImport(app, file, imp)
+    resolvedImports.add(resolvedImport)
+    for impType in resolvedImport.importedTypes:
+      fileScope[impType.binding] = impType.typ
 
   ? validateNoDuplicateBindings(resolvedImports, file)
 

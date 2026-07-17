@@ -1,13 +1,25 @@
 import strformat, strutils, sequtils, tables, results, hashes
 
 import ./tokenizer
-import ./combinators
+import ./error
+
 import ./identifiers
-import ./funcs
+import ./decorator
+import ./funcdef
 
 # ============================================================
 # Generic
 # ============================================================
+
+proc buildNameArityIndex(defs: seq[FunctionDef]): Table[Identifier, Table[int, seq[int]]] =
+  var nameArityIndex: Table[Identifier, Table[int, seq[int]]]
+  for index, def in defs:
+    if def.name notin nameArityIndex:
+      nameArityIndex[def.name] = initTable[int, seq[int]]()
+    if def.arity notin nameArityIndex[def.name]:
+      nameArityIndex[def.name][def.arity] = newSeq[int]()
+    nameArityIndex[def.name][def.arity].add(index)
+  return nameArityIndex
 
 type Generic* = ref object
   decorators: seq[Decorator]
@@ -15,8 +27,12 @@ type Generic* = ref object
   name: Identifier
   funcDefs: seq[FunctionDef]
   funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
-  funcDefIndex: Table[string, seq[int]]
   loc: Location
+
+proc newGeneric*(decorators: seq[Decorator], public: bool, name: Identifier,
+    funcDefs: seq[FunctionDef], loc: Location): Result[Generic, ParserError] =
+  let funcDefArityIndex = buildNameArityIndex(funcDefs)
+  ok(Generic(decorators: decorators, public: public, name: name, funcDefs: funcDefs, funcDefArityIndex: funcDefArityIndex, loc: loc))
 
 proc public*(g: Generic): bool = g.public
 proc name*(g: Generic): Identifier = g.name
@@ -26,90 +42,23 @@ proc loc*(g: Generic): Location = g.loc
 proc hash*(g: Generic): Hash = g.loc.hash
 proc `==`*(a, b: Generic): bool = a.hash == b.hash
 
-proc newGeneric*(decorators: seq[Decorator], public: bool, name: Identifier,
-    funcDefs: seq[FunctionDef], loc: Location): Result[Generic, ParserError] =
-  var funcDefArityIndex: Table[Identifier, Table[int, seq[int]]]
-  var funcDefIndex: Table[string, seq[int]]
-  for index, def in funcDefs:
-    if def.name notin funcDefArityIndex:
-      funcDefArityIndex[def.name] = initTable[int, seq[int]]()
-    if def.arity notin funcDefArityIndex[def.name]:
-      funcDefArityIndex[def.name][def.arity] = newSeq[int]()
-    funcDefArityIndex[def.name][def.arity].add(index)
-    funcDefIndex.mgetOrPut(def.name.value, @[]).add(index)
-  ok(Generic(decorators: decorators, public: public, name: name, funcDefs: funcDefs,
-      funcDefArityIndex: funcDefArityIndex, funcDefIndex: funcDefIndex, loc: loc))
-
 proc asl*(gen: Generic, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)
   let inner = " ".repeat((level + 1) * indentWidth.int)
-  var lines: seq[string]
-  for d in gen.decorators:
-    lines.add(fmt"{indent}{asl(d)}")
+  var lines = gen.decorators.mapIt(fmt"{indent}{it.asl}")
   let prefix = if gen.public: "public generic" else: "generic"
   lines.add(fmt"{indent}{prefix} {asl(gen.name)}:")
-  for funcDef in gen.funcDefs:
-    lines.add(fmt"{inner}{asl(funcDef)}")
-  lines
+  let funcDefs = gen.funcDefs.mapIt(fmt"{inner}{it.asl}")
+  lines.add(funcDefs)
+  return lines
 
-proc findFunctionDefIds(generic: Generic, name: Identifier, arity: int): Result[seq[int], string] =
+proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
   if name notin generic.funcDefArityIndex:
     err(fmt"{name.loc} function `{name.asl}` does not exist in generic")
   elif arity notin generic.funcDefArityIndex[name]:
     err(fmt"{name.loc} function `{name.asl}` with arity `{arity}` does not exist in generic")
   else:
-    ok(generic.funcDefArityIndex[name][arity])
+    let defIds = generic.funcDefArityIndex[name][arity]
+    ok(defIds.mapIt(generic.funcDefs[it]))
 
-proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
-  let funcIds = ? generic.findFunctionDefIds(name, arity)
-  var funcs: seq[FunctionDef]
-  for id in funcIds:
-    funcs.add(generic.funcDefs[id])
-  ok(funcs)
-
-type GenericHeader = tuple[public: bool, name: Identifier, loc: Location]
-
-let genericHeaderSpec = Spec[GenericHeader](
-  name: "generic_header",
-  parseFn: proc(parser: Parser): Result[GenericHeader, ParserError] =
-  let public = ? parser.run(presence(keywordSpec("public")))
-  if public: discard ? parser.run(ws1)
-  let loc = ? parser.run(keywordSpec("generic"))
-  discard ? parser.run(ws1)
-  let nameIdent = ? parser.run(identifierSpec)
-  discard parser.run(ws0)
-  discard ? parser.run(punctuationSpec(":"))
-  ok((public, nameIdent, loc))
-)
-
-let genericSpec* = blockSpec("generic", genericHeaderSpec,
-  functionDefListSpec,
-  proc(h: GenericHeader, b: seq[FunctionDef]): Result[Generic, ParserError] =
-  newGeneric(@[], h.public, h.name, b, h.loc))
-
-# ============================================================
-# Requires
-# ============================================================
-
-type Requires* = ref object
-  generics: seq[Identifier]
-  loc: Location
-
-proc generics*(r: Requires): seq[Identifier] = r.generics
-proc loc*(r: Requires): Location = r.loc
-
-proc newRequires*(generics: seq[Identifier], loc: Location): Requires =
-  Requires(generics: generics, loc: loc)
-
-proc asl*(r: Requires): string =
-  var content: string
-  let inner = r.generics.mapIt(asl(it)).join(", ")
-  content.add(fmt"requires({inner})")
-  content
-
-# requires(Generic, Generic, ...)
-let requiresSpec* = indentedLine(pair(keywordSpec("requires"),
-    prefixed(ws0, contained("requires_generics", "(",
-      separatedBy(identifierSpec, commaWithSpacesSpec), ")")))).map(
-  "requires",
-  proc(t: (Location, seq[Identifier])): Requires = newRequires(t[1], t[0]))
+type GenericHeader* = tuple[public: bool, name: Identifier, loc: Location]

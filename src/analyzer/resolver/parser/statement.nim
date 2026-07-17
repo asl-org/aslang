@@ -1,110 +1,15 @@
-import strformat, strutils, options, sequtils, tables, results
+import strformat, strutils, sequtils, tables, results
 
 import ./tokenizer
-import ./combinators
+import ./error
+
 import ./identifiers
 import ./literals
-import ./argtypes
 import ./patterns
-
-# ============================================================
-# Getter
-# ============================================================
-
-type Getter* = ref object
-  source: Identifier
-  property: Identifier
-  loc: Location
-
-proc newGetter*(source: Identifier, property: Identifier,
-    loc: Location): Getter =
-  Getter(source: source, property: property, loc: loc)
-
-proc source*(g: Getter): Identifier = g.source
-proc property*(g: Getter): Identifier = g.property
-proc loc*(g: Getter): Location = g.loc
-
-proc asl(getter: Getter): string =
-  fmt"{asl(getter.source)}.{asl(getter.property)}"
-
-let getterSpec* = separated(identifierSpec, punctuationSpec("."), identifierSpec).map(
-  "getter",
-  proc(t: (Identifier, Identifier)): Getter = newGetter(t[0], t[1], t[0].loc))
-
-# ============================================================
-# LiteralInitializer
-# ============================================================
-
-type LiteralInitializer* = ref object
-  argType: ArgumentType
-  value: Literal
-  loc: Location
-
-proc newLiteralInitializer*(argType: ArgumentType, value: Literal, loc: Location): LiteralInitializer =
-  LiteralInitializer(argType: argType, value: value, loc: loc)
-
-proc loc*(literalInit: LiteralInitializer): Location = literalInit.loc
-proc argType*(literalInit: LiteralInitializer): ArgumentType = literalInit.argType
-proc value*(literalInit: LiteralInitializer): Literal = literalInit.value
-
-proc asl(prim: LiteralInitializer): string =
-  fmt"{asl(prim.argType)} {asl(prim.value)}"
-
-# type literal
-let literalInitializerSpec* = separated(argumentTypeSpec, ws1, literalSpec).map(
-  "literal_initializer",
-  proc(t: (ArgumentType, Literal)): LiteralInitializer =
-    newLiteralInitializer(t[0], t[1], t[0].loc))
-
-
-
-# ----------------- StructRef -----------------
-# One shape: the receiver module identifier plus a (possibly empty)
-# impls list. Empty impls === the user wrote `Module { ... }`; non-empty
-# impls === the user wrote `Module[Impl, ...] { ... }`. The parser no
-# longer discriminates between the two surface forms — downstream layers
-# initialise their GenericImplMap from the impls seq directly (empty
-# seq → empty map, non-empty → pre-populated).
-type StructRef* = ref object
-  module: Identifier
-  impls: seq[ArgumentType]
-  loc: Location
-
-proc newStructRef*(module: Identifier, impls: seq[ArgumentType],
-    loc: Location): StructRef =
-  StructRef(module: module, impls: impls, loc: loc)
-
-proc module*(s: StructRef): Identifier = s.module
-proc impls*(s: StructRef): seq[ArgumentType] = s.impls
-proc loc*(s: StructRef): Location = s.loc
-proc asl*(s: StructRef): string =
-  if s.impls.len == 0:
-    asl(s.module)
-  else:
-    let inner = s.impls.mapIt(asl(it)).join(", ")
-    fmt"{asl(s.module)}[{inner}]"
-
-# ----------------- UnionRef -----------------
-# Mirror of StructRef: same one-shape module+impls layout.
-type UnionRef* = ref object
-  module: Identifier
-  impls: seq[ArgumentType]
-  loc: Location
-
-proc newUnionRef*(module: Identifier, impls: seq[ArgumentType],
-    loc: Location): UnionRef =
-  UnionRef(module: module, impls: impls, loc: loc)
-
-proc module*(u: UnionRef): Identifier = u.module
-proc impls*(u: UnionRef): seq[ArgumentType] = u.impls
-proc loc*(u: UnionRef): Location = u.loc
-proc asl*(u: UnionRef): string =
-  if u.impls.len == 0:
-    asl(u.module)
-  else:
-    let inner = u.impls.mapIt(asl(it)).join(", ")
-    fmt"{asl(u.module)}[{inner}]"
-
+import ./getter
+import ./literalinit
+import ./structref
+import ./unionref
 
 # ============================================================
 # Body cluster (mutually recursive)
@@ -231,6 +136,16 @@ proc loc*(kwarg: KeywordArgument): Location = kwarg.loc
 proc asl(kwarg: KeywordArgument): string =
   fmt"{asl(kwarg.name)}: {asl(kwarg.expression)}"
 
+proc validateKeyNameConflict(args: seq[KeywordArgument]): Result[void, ParserError] =
+  var argIndex: Table[Identifier, int]
+  for index, arg in args:
+    if arg.name in argIndex:
+      let prev = args[argIndex[arg.name]]
+      let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
+      return err(newParserError(msg, arg.loc))
+    argIndex[arg.name] = index
+  ok()
+
 # ----------------- KeywordArgumentList -----------------
 proc newKeywordArgumentList*(args: seq[KeywordArgument], loc: Location): Result[KeywordArgumentList, ParserError] =
   ## `KeywordArgumentList` carries the raw kwarg sequence + a duplicate
@@ -239,23 +154,12 @@ proc newKeywordArgumentList*(args: seq[KeywordArgument], loc: Location): Result[
   ## `newStructDef` (≥ 1 field guaranteed) combined with the resolver's
   ## `kwargs.len != fields.len` count check; `UnionInitializer` needs
   ## empty to be legal so `Variant {}` on a zero-field variant works.
-  var argIndex: Table[Identifier, int]
-  for index, arg in args:
-    if arg.name in argIndex:
-      let prev = args[argIndex[arg.name]]
-      let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
-      return err(newParserError(msg, arg.loc))
-    argIndex[arg.name] = index
+  ? validateKeyNameConflict(args)
   ok(KeywordArgumentList(args: args, loc: loc))
 
 proc newGeneratedKeywordArgumentList(args: seq[KeywordArgument], loc: Location): KeywordArgumentList =
-  var argIndex: Table[Identifier, int]
-  for index, arg in args:
-    if arg.name in argIndex:
-      let prev = args[argIndex[arg.name]]
-      let msg = fmt"duplicate field encountered, see previous assignment at {prev.loc}"
-      assert(false, $(newParserError(msg, arg.loc)))
-    argIndex[arg.name] = index
+  let maybeSuccess = validateKeyNameConflict(args)
+  assert(maybeSuccess.isOk, $(maybeSuccess.error))
   KeywordArgumentList(args: args, loc: loc)
 
 proc asl(kwargList: KeywordArgumentList): string =
@@ -741,191 +645,3 @@ proc expand(sl: StatementList): StatementList =
     expanded.add(expandedStmts)
     counter = updatedCounter
   newStatementList(expanded)
-
-# ============================================================
-# Specs for the body cluster
-# ============================================================
-
-# Forward-declared because expressions appear inside argument lists
-# of function calls, creating a mutual recursion:
-# expression -> functionCall -> argumentList -> expression
-let expressionSpec* = newSpec[Expression]("expression")
-
-# Forward declare statementListSpec for mutual recursion:
-# match -> caseBlock -> statementList -> statementLine -> statement -> match
-let statementListSpec* = newSpec[StatementList]("statement_list")
-
-let argumentListSpec* = Spec[ArgumentList](
-  name: "argument_list",
-  parseFn: proc(parser: Parser): Result[ArgumentList, ParserError] =
-  let loc = parser.loc
-  let args = ? parser.run(contained("argument_list", "(",
-    separatedBy(expressionSpec, commaWithSpacesSpec), ")"))
-  ok(newArgumentList(args, loc))
-)
-
-let functionCallSpec* = triple(
-    identifierSpec,
-    prefixed(punctuationSpec("."), identifierSpec),
-    prefixed(ws0, argumentListSpec)
-  ).map("function_call",
-    proc(t: (Identifier, Identifier, ArgumentList)): FunctionCall =
-      newFunctionCall(t[0], t[1], t[2]))
-
-let kwargSpec* = pair(
-    identifierSpec,
-    optional(prefixed(colonWithSpacesSpec, expressionSpec))
-  ).map("keyword_argument",
-    proc(t: (Identifier, Option[Expression])): KeywordArgument =
-      # Shorthand: `Struct { x }` is sugar for `Struct { x: x }`. When
-      # the `: expression` suffix is absent the value is synthesized as
-      # a bare Variable of the same name; the shorthand identifier's
-      # location carries through so diagnostics point at the source
-      # token the user actually wrote.
-      let expr = if t[1].isSome: t[1].get else: newExpression(t[0])
-      newKeywordArgument(t[0], expr, t[0].loc))
-
-let kwargListSpec* = Spec[KeywordArgumentList](
-  name: "keyword_argument_list",
-  parseFn: proc(parser: Parser): Result[KeywordArgumentList, ParserError] =
-  let loc = parser.loc
-  let args = ? parser.run(contained("keyword_argument_list", "{",
-    separatedBy(kwargSpec, commaWithSpacesSpec), "}"))
-  newKeywordArgumentList(args, loc)
-)
-
-# Type.Variant { fields } (bare — drives leave-as-is inference) or
-# Type[Impls].Variant { fields } (explicit-impls — escape hatch when
-# leave-as-is can't produce a fully-bound type). Both productions land
-# on the same UnionRef shape carrying an impls seq; empty means bare.
-let unionInitializerSpec* = triple(
-    argumentTypeSpec,
-    prefixed(punctuationSpec("."), identifierSpec),
-    prefixed(ws0, kwargListSpec)
-  ).map("union_initializer",
-    proc(t: (ArgumentType, Identifier, KeywordArgumentList)): UnionInitializer =
-      let unionRef = newUnionRef(t[0].root, t[0].impls, t[0].loc)
-      newUnionInitializer(unionRef, t[1], t[2], t[0].loc))
-
-# Either `Type { fields }` (bare) or `Type[Impls] { fields }` (explicit
-# impls, used for phantom-typed structs whose module declares a requires
-# block). Both productions land on the same StructRef shape carrying an
-# impls seq; empty means bare.
-let structInitializerSpec* = separated(argumentTypeSpec, ws0, kwargListSpec).map(
-  "struct_initializer",
-  proc(t: (ArgumentType, KeywordArgumentList)): StructInitializer =
-    let structRef = newStructRef(t[0].root, t[0].impls, t[0].loc)
-    newStructInitializer(structRef, t[1], t[0].loc))
-
-let initializerSpec* = oneOf("initializer", [
-  unionInitializerSpec.map("union",
-    proc(v: UnionInitializer): Initializer = newInitializer(v)),
-  structInitializerSpec.map("struct",
-    proc(v: StructInitializer): Initializer = newInitializer(v)),
-  literalInitializerSpec.map("literal",
-    proc(v: LiteralInitializer): Initializer = newInitializer(v)),
-])
-
-expressionSpec.parseFn = oneOf("expression", [
-  literalSpec.map("literal_expression",
-    proc(v: Literal): Expression = newExpression(v)),
-  initializerSpec.map("initializer_expression",
-    proc(v: Initializer): Expression = newExpression(v)),
-  functionCallSpec.map("fncall_expression",
-    proc(v: FunctionCall): Expression = newExpression(v)),
-  getterSpec.map("getter_expression",
-    proc(v: Getter): Expression = newExpression(v)),
-  identifierSpec.map("variable_expression",
-    proc(v: Identifier): Expression = newExpression(v)),
-]).parseFn
-
-let assignmentSpec* = separated(identifierSpec, equalsSeparatorSpec, expressionSpec).map(
-  "assignment",
-  proc(t: (Identifier, Expression)): Assignment = newAssignment(t[0], t[1], t[0].loc))
-
-let setterSpec* = separated(getterSpec, equalsSeparatorSpec, expressionSpec).map(
-  "setter",
-  proc(t: (Getter, Expression)): Setter = newSetter(t[0], t[1], t[0].loc))
-
-let inlineStatementSpec* = oneOf("inline_statement", [
-  setterSpec.map("mutation_statement",
-    proc(v: Setter): Statement = newStatement(v)),
-  assignmentSpec.map("assignment_statement",
-    proc(v: Assignment): Statement = newStatement(v)),
-  expressionSpec.map("expression_statement",
-    proc(v: Expression): Statement = newStatement(v)),
-])
-
-let caseLineSpec = prefixed(pair(keywordSpec("case"), ws1),
-  suffixed(casePatternSpec, pair(ws0, punctuationSpec(":"))))
-
-let caseSpec* = blockSpec("case", caseLineSpec, statementListSpec,
-  proc(h: CasePattern, b: StatementList): CaseBlock =
-  newCaseBlock(h, b, h.loc))
-
-# Match body: parses "match" keyword + subject + ":" + newline + caseBlocks
-# Does NOT consume indentation — caller handles that
-let matchSpec* = Spec[MatchExpression](
-  name: "match_body",
-  parseFn: proc(parser: Parser): Result[MatchExpression, ParserError] =
-  let loc = ? parser.run(keywordSpec("match"))
-  discard ? parser.run(ws1)
-  # Match expressions cannot be the subject of another match expression.
-  # expressionSpec intentionally excludes match (match is parsed separately
-  # in statementLineSpec). This check guards against future changes that
-  # might add match to expressionSpec.
-  let subject = ? parser.run(expressionSpec)
-  case subject.kind:
-  of ekMatch:
-    return err(newParserError(
-      "match expression cannot be the subject of another match", loc))
-  of ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable: discard
-  discard parser.run(ws0)
-  discard ? parser.run(punctuationSpec(":"))
-  discard ? parser.run(ignorableLineSpec)
-  parser.level += 1
-  let casesBody = atLeastOne(Spec[CaseBlock](
-    name: "case_block_line",
-    parseFn: proc(parser: Parser): Result[CaseBlock, ParserError] =
-    discard parser.run(blankLines)
-    let cb = ? parser.run(caseSpec)
-    ok(cb)
-  ))
-  let casesResult = casesBody.parseFn(parser)
-  parser.level -= 1
-  if casesResult.isErr:
-    casesResult.error.fatal = true
-    return err(casesResult.error)
-  ok(newMatchExpression(subject, casesResult.get, loc))
-)
-
-let statementLineSpec* = Spec[Statement](
-  name: "statement_line",
-  parseFn: proc(parser: Parser): Result[Statement, ParserError] =
-  discard parser.run(blankLines)
-  discard ? parser.run(indentationSpec)
-  # Try match assignment: identifier = match ...:
-  let maybeMatchAssign = parser.run(Spec[Statement](
-    name: "match_assignment",
-    parseFn: proc(parser: Parser): Result[Statement, ParserError] =
-    let target = ? parser.run(identifierSpec)
-    discard ? parser.run(equalsSeparatorSpec)
-    let matchExpr = ? parser.run(matchSpec)
-    ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
-  ))
-  if maybeMatchAssign.isOk: return ok(maybeMatchAssign.get)
-  # Try standalone match: match ...:
-  let maybeMatch = parser.run(matchSpec)
-  if maybeMatch.isOk:
-    return ok(newStatement(newExpression(maybeMatch.get)))
-  # Inline statements: statement + newline
-  let statement = ? parser.run(inlineStatementSpec)
-  discard ? parser.run(ignorableLineSpec)
-  ok(statement)
-)
-
-statementListSpec.parseFn = atLeastOne(statementLineSpec).map("statement_list",
-  proc(stmts: seq[Statement]): StatementList = newStatementList(stmts)).parseFn
-# TODO(post-analysis-expander): re-wire expansion after the analyzer once the
-# post-analysis expander lands (see plans/plan_post_analysis_expansion.md).
-# The expand* procs above (lines 540-748) are kept as reference for that move.

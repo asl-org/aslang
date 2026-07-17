@@ -18,10 +18,10 @@ proc id(s: string): Identifier =
   r.get
 
 proc argType(name: string): ArgumentType =
-  newArgumentType(id(name), newLocation())
+  newArgumentType(id(name))
 
 proc argDef(name, typeName: string): ArgumentDef =
-  newArgumentDef(id(name), argType(typeName), newLocation())
+  newArgumentDef(id(name), argType(typeName))
 
 suite "ast — Identifier":
 
@@ -399,7 +399,7 @@ public module Foo:
     # The imported name `Bar` exists on the file, but findType is
     # scoped to *locally-defined* types only. The imported binding
     # lives on `importedNameIndex` and is only surfaced via
-    # `findImportedName`.
+    # `findImportedType`.
     let f = parseStr("""
 import { Bar } from "./bar.asl"
 
@@ -411,7 +411,7 @@ module M:
     check r.isErr
     check errorContains(r.error, "not defined")
 
-  test "findImportedName returns the imported binding":
+  test "findImportedType returns the imported binding":
     let f = parseStr("""
 import { Bar } from "./bar.asl"
 
@@ -419,10 +419,10 @@ module M:
   func go(): u8
     u8 0
 """).get
-    let r = f.findImportedName(id("Bar"))
+    let r = f.findImportedType(id("Bar"))
     check r.isOk
 
-  test "findImportedName reports an unimported name":
+  test "findImportedType reports an unimported name":
     let f = parseStr("""
 import { Bar } from "./bar.asl"
 
@@ -430,17 +430,17 @@ module M:
   func go(): u8
     u8 0
 """).get
-    let r = f.findImportedName(id("NotImported"))
+    let r = f.findImportedType(id("NotImported"))
     check r.isErr
     check errorContains(r.error, "not imported")
 
-  test "findImportedName always errors on an .aslr file":
+  test "findImportedType always errors on an .aslr file":
     let f = parseStrAslr("""
 module M:
   func go(): u8
     u8 0
 """).get
-    let r = f.findImportedName(id("Anything"))
+    let r = f.findImportedType(id("Anything"))
     check r.isErr
     check errorContains(r.error, "aslr")
 

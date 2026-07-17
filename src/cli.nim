@@ -93,7 +93,7 @@ proc `$`*(cmd: AslCommand): string =
 
 proc isValidVendorIdent(name: string): bool =
   ## ASL identifier rules — same shape as the parser's vendor-name
-  ## validation in `parseImportPath`. Head: ASCII letter or
+  ## validation in `toImportPath`. Head: ASCII letter or
   ## underscore; tail: letter, digit, or underscore.
   if name.len == 0: return false
   if not (name[0].isAlphaAscii or name[0] == '_'): return false

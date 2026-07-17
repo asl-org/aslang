@@ -470,7 +470,7 @@ proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module:
   # validation stays in one place. Build a synthetic ArgumentType from
   # the parser StructRef's (module, impls, loc) and unwrap its
   # impls after the check.
-  let syntheticArgType = newArgumentType(structRef.module, structRef.impls, structRef.loc)
+  let syntheticArgType = newArgumentType(structRef.module, structRef.impls)
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, syntheticArgType)
   ok(newResolvedStructRef(structRef, structModule, resolvedArgType.module.impls))
 
@@ -501,7 +501,7 @@ proc resolveUnionRef(app: App, file: parser.File, fileScope: FileScope, module: 
   let unionModule = ? file.findModule(fileScope, unionRef.module)
   if unionRef.impls.len == 0:
     return ok(newResolvedUnionRef(unionRef, unionModule, @[]))
-  let syntheticArgType = newArgumentType(unionRef.module, unionRef.impls, unionRef.loc)
+  let syntheticArgType = newArgumentType(unionRef.module, unionRef.impls)
   let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, syntheticArgType)
   ok(newResolvedUnionRef(unionRef, unionModule, resolvedArgType.module.impls))
 

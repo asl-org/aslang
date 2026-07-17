@@ -1,7 +1,8 @@
-import strformat, options, sequtils, strutils, tables, results
+import strformat, sequtils, strutils, tables, results
 
 import ./tokenizer
-import ./combinators
+import ./error
+
 import ./identifiers
 import ./literals
 
@@ -25,21 +26,30 @@ proc loc*(field: UnionPatternField): Location = field.loc
 proc asl(field: UnionPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"
 
-# Variant pattern field: name [":" binding] — bare `name` is sugar for
-# `name: name`, mirroring the initializer kwarg shorthand. When the
-# binding suffix is absent the parser synthesizes a binding with the
-# same identifier (and the same source location).
-let unionPatternFieldSpec* = pair(
-    identifierSpec,
-    optional(prefixed(colonWithSpacesSpec, identifierSpec))
-  ).map("variant_pattern_field",
-    proc(t: (Identifier, Option[Identifier])): UnionPatternField =
-      let binding = if t[1].isSome: t[1].get else: t[0]
-      newUnionPatternField(t[0], binding, t[0].loc))
-
 # ============================================================
 # UnionPattern
 # ============================================================
+
+proc validateFieldNameConflict(fields: seq[UnionPatternField]): Result[void, ParserError] =
+  var nameIndex: Table[Identifier, int]
+  for index, field in fields:
+    if field.name in nameIndex:
+      let prev = fields[nameIndex[field.name]].name
+      let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, field.name.loc))
+    nameIndex[field.name] = index
+  ok()
+
+proc validateFieldBindingConflict(fields: seq[UnionPatternField]): Result[void, ParserError] =
+  var bindingIndex: Table[Identifier, int]
+  for index, field in fields:
+    if field.binding in bindingIndex:
+      let prev = fields[bindingIndex[field.binding]].binding
+      let msg = fmt"duplicate binding encountered, see previous binding at {prev.loc}"
+      return err(newParserError(msg, field.binding.loc))
+    else:
+      bindingIndex[field.binding] = index
+  ok()
 
 type UnionPattern* = ref object
   variant: Identifier
@@ -48,26 +58,9 @@ type UnionPattern* = ref object
   loc: Location
 
 proc newUnionPattern*(variant: Identifier, fields: seq[UnionPatternField]): Result[UnionPattern, ParserError] =
-  var nameIndex: Table[Identifier, int]
-  var bindingIndex: Table[Identifier, int]
-  var bindings: seq[Identifier]
-
-  for index, field in fields:
-    if field.name in nameIndex:
-      let prev = fields[nameIndex[field.name]].name
-      let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
-      return err(newParserError(msg, field.name.loc))
-    else:
-      nameIndex[field.name] = index
-
-    if field.binding in bindingIndex:
-      let prev = fields[bindingIndex[field.binding]].binding
-      let msg = fmt"duplicate binding encountered, see previous binding at {prev.loc}"
-      return err(newParserError(msg, field.binding.loc))
-    else:
-      bindings.add(field.binding)
-      bindingIndex[field.binding] = index
-
+  ? validateFieldNameConflict(fields)
+  ? validateFieldBindingConflict(fields)
+  let bindings = fields.mapIt(it.binding)
   ok(UnionPattern(variant: variant, fields: fields, bindings: bindings))
 
 proc name*(vp: UnionPattern): Identifier = vp.variant
@@ -80,14 +73,6 @@ proc asl(vp: UnionPattern): string =
   let inner = vp.fields.mapIt(asl(it)).join(", ")
   content.add(fmt"{asl(vp.variant)} {{ {inner} }}")
   content
-
-# Variant pattern: VariantName { field: binding, field: binding }
-let unionPatternSpec* = pair(identifierSpec,
-    prefixed(ws0, contained("variant_fields", "{",
-      separatedBy(unionPatternFieldSpec, commaWithSpacesSpec), "}"))).map(
-  "variant_pattern",
-  proc(t: (Identifier, seq[UnionPatternField])): Result[UnionPattern, ParserError] =
-    newUnionPattern(t[0], t[1]))
 
 # ============================================================
 # CasePattern
@@ -147,12 +132,3 @@ proc asl*(pattern: CasePattern): string =
   of cpkInteger: asl(pattern.intLit)
   of cpkVariable: asl(pattern.variable)
   of cpkUnion: asl(pattern.variant)
-
-let casePatternSpec* = oneOf("case_pattern", [
-  integerLiteralSpec.map("integer_pattern",
-    proc(v: IntegerLiteral): CasePattern = newCasePattern(v)),
-  unionPatternSpec.map("variant_pattern",
-    proc(v: UnionPattern): CasePattern = newCasePattern(v)),
-  identifierSpec.map("variable_pattern",
-    proc(v: Identifier): CasePattern = newCasePattern(v)),
-])

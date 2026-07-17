@@ -18,16 +18,16 @@ proc tokenizeStr*(source: string, filepath: string = "test.asl"):
 
 proc parseStr*(source: string, filepath: string = "",
     indentWidth: uint32 = 2,
-    vendorRoots: VendorRoots = emptyVendorRoots()): Result[decls.File, string] =
+    vendorRoots: VendorRoots = emptyVendorRoots()): Result[parser.File, string] =
   ## Tokenize + parse a single in-memory source. Skips the BFS loader.
   ## Default filepath has a directory component so import-path
   ## resolution (which rejects parent-directory escapes) does not
   ## reject a synthetic relative import.
   let path = if filepath.len == 0: getTempDir() / "asl_parseStr.asl" else: filepath
   let tokens = ? tokenizeStr(source, path)
-  decls.parse(path, indentWidth, tokens, vendorRoots)
+  newParser(path, indentWidth, tokens).parse(vendorRoots)
 
-proc parseStrAslr*(source: string, indentWidth: uint32 = 2): Result[decls.File, string] =
+proc parseStrAslr*(source: string, indentWidth: uint32 = 2): Result[parser.File, string] =
   ## Same as `parseStr` but uses a `.aslr` filepath, so the parser
   ## dispatches to `aslrFileSpec` / `newAslrFile`. Use for tests of
   ## grammar elements that are only legal in runtime-interface files
