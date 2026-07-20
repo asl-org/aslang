@@ -386,8 +386,8 @@ essentially the whole spec.
 
 ## Sequencing
 
-1. Ship the resolver rewrite in progress (see
-   `project_resolver_state` — snapshot 2026-04-30).
+1. Resolver rewrite complete (per-type file split + facade for actor
+   `resolve*` procs; see the Phase 4 section of `overview.md`).
 2. Ship the analyzer's remaining shape / typing work (post-milestone
    from the current commit `acc8997`).
 3. Land the post-analysis expander as its own peer layer under the
@@ -400,7 +400,7 @@ essentially the whole spec.
    variant that the resolver and analyzer both understand; the
    desugar-to-tag-dispatch happens in the expander per this
    document's § Call-site rewrites.
-6. Retire the old parser-time expander (`parser/body.nim`'s
+6. Retire the old parser-time expander (`parser/statement.nim`'s
    `expand*` procs) — its work is now covered by the post-analysis
    expander plus the DAG builder's natural ANF form.
 

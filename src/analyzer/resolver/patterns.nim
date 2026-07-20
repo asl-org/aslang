@@ -3,7 +3,7 @@
 ## Independent of the body cluster — pattern fields are parser AST
 ## types (IntegerLiteral / Identifier / UnionPattern).
 
-import results, strformat
+import strformat
 
 import ./parser
 
@@ -43,13 +43,3 @@ proc loc*(pattern: ResolvedCasePattern): Location =
   of rcpkInteger: pattern.integer.loc
   of rcpkVariable: pattern.variable.loc
   of rcpkUnion: pattern.variant.loc
-
-proc resolveCasePattern*(casePattern: CasePattern): Result[
-    ResolvedCasePattern, string] =
-  case casePattern.kind:
-  of cpkInteger:
-    ok(newResolvedCasePattern(casePattern.intLit))
-  of cpkVariable:
-    ok(newResolvedCasePattern(casePattern.variable))
-  of cpkUnion:
-    ok(newResolvedCasePattern(casePattern.variant))

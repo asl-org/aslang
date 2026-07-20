@@ -1,12 +1,12 @@
 ## Function cluster — ResolvedUserFunction wraps a ResolvedFunctionDef
 ## + statements; ResolvedFunction is the tagged union over user/extern.
 
-import results, strformat, options, sets
+import strformat
 
 import ./parser
-import argtypes
-import funcdefs
-import body
+import funcdef
+import externfunc
+import statement
 
 type
   ResolvedUserFunction* = ref object
@@ -37,27 +37,6 @@ proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.funcDe
 proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
 proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 
-proc resolveUserFunction*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
-    function: UserFunction): Result[ResolvedUserFunction, string] =
-  if function.decorators.len > 0:
-    return err(fmt"{function.loc} todo: resolve decorators in user function")
-
-  let resolvedFunctionDef = ? resolveFunctionDef(app, file, fileScope, module, function.def)
-
-  var scope: FunctionScope
-  for arg in resolvedFunctionDef.args:
-    scope.incl(arg.name)
-
-  var resolvedStatements: seq[ResolvedStatement]
-  for statement in function.statements:
-    let resolvedStatement = ? resolveStatement(app, file, fileScope, module,
-      scope, statement)
-    resolvedStatements.add(resolvedStatement)
-    if resolvedStatement.variable.isSome:
-      scope.incl(resolvedStatement.variable.get)
-
-  ok(newResolvedUserFunction(function, resolvedFunctionDef, resolvedStatements))
-
 # ---- ResolvedFunction (tagged union) ----
 
 proc newResolvedFunction*(extern: ResolvedExternFunction): ResolvedFunction =
@@ -84,16 +63,3 @@ proc loc*(function: ResolvedFunction): Location =
   case function.kind:
   of rfkExtern: function.extern.loc
   of rfkUser: function.user.loc
-
-proc resolveFunction*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
-    function: Function): Result[ResolvedFunction, string] =
-  case function.kind:
-  of fkUser:
-    let resolvedUserFunction = ? resolveUserFunction(app, file, fileScope,
-      module, function.user)
-    ok(newResolvedFunction(resolvedUserFunction))
-  of fkExtern:
-    let resolvedExternFunction = ? resolveExternFunction(app, file, fileScope,
-      module, function.extern)
-    ok(newResolvedFunction(resolvedExternFunction))
-

@@ -5,7 +5,7 @@
 ## along the way carries a parser Module back-ref so nothing depends
 ## on another file's resolved form existing yet.
 
-import results, tables, options
+import tables, options
 
 import ./parser
 import files
@@ -25,10 +25,3 @@ proc files*(app: ResolvedApp): seq[ResolvedFile] = app.files
 proc findFile*(app: ResolvedApp, file: parser.File): Option[ResolvedFile] =
   if file notin app.fileIndex: none(ResolvedFile)
   else: some(app.files[app.fileIndex[file]])
-
-proc resolve*(app: App): Result[ResolvedApp, string] =
-  var resolvedFiles: seq[ResolvedFile]
-  for id, file in app.files:
-    let resolvedFile = ? resolveFile(app, id, file)
-    resolvedFiles.add(resolvedFile)
-  ok(newResolvedApp(resolvedFiles))

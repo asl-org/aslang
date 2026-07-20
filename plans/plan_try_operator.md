@@ -655,12 +655,12 @@ Grouping may reduce to 6-7 if commits combine cleanly.
 | Concern | File |
 |---|---|
 | `try` keyword reservation | `src/analyzer/resolver/parser/tokenizer/*.nim` (wherever keywords live) |
-| `ekTry` AST variant | `src/analyzer/resolver/parser/body.nim` |
-| `tryPrefixSpec` | `src/analyzer/resolver/parser/body.nim` |
+| `ekTry` AST variant | `src/analyzer/resolver/parser/statement.nim` |
+| `tryPrefixSpec` | `src/analyzer/resolver/parser/statement.nim` |
 | `newSyntheticIdentifier` | `src/analyzer/resolver/parser/identifiers.nim` |
 | Uplifter | `src/analyzer/resolver/parser/uplift.nim` (new) |
 | Try expansion (validation + rewrite) | `src/analyzer/resolver/parser/try_expand.nim` (new) |
-| Wiring in function-body construction | `src/analyzer/resolver/parser/body.nim` or `funcs.nim` |
+| Wiring in function-body construction | `src/analyzer/resolver/parser/statement.nim` or `function.nim` |
 | Grammar doc | `grammar.md` |
 | Validation doc | `validations.md` |
 | Lesson entry | `lessons.md` |

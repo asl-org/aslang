@@ -693,8 +693,8 @@ This section records language changes as they land, newest first.
 
 - **2026-07 (later)** — Optional `.asl` / `.aslr` suffix on relative
   imports. Import sources like `import { Helper } from "./helper"`
-  (no extension) now resolve. `resolveImportPath` in
-  `src/resolver/parser/imports.nim` treats the extension as optional: if the
+  (no extension) now resolve. `toAbsPath` in
+  `src/analyzer/resolver/parser.nim` treats the extension as optional: if the
   source ends in `.asl` or `.aslr`, use as-is; otherwise try the
   resolved path first, then fall back to `<source>.asl`, then
   `<source>.aslr`. `.asl` is preferred because user code almost

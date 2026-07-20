@@ -252,8 +252,9 @@ contributors can find the *why* alongside the *what*.
 
 ## Relationship to the layer types
 
-Each pipeline phase's type module (`src/parser/*`, `src/resolver/*`,
-`src/analyzer/*`) is expected to trace back to this grammar. Renames
+Each pipeline phase's type module (`src/analyzer/resolver/parser/*`,
+`src/analyzer/resolver/*`, `src/analyzer/*`) is expected to trace
+back to this grammar. Renames
 land here first; then the code catches up. When a type appears in two
 layers (e.g. `Struct` at parser level, `ResolvedStruct` at resolver
 level), both are recognizable projections of the same grammar rule —
