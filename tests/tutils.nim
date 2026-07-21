@@ -25,7 +25,7 @@ proc parseStr*(source: string, filepath: string = "",
   ## reject a synthetic relative import.
   let path = if filepath.len == 0: getTempDir() / "asl_parseStr.asl" else: filepath
   let tokens = ? tokenizeStr(source, path)
-  newParser(path, indentWidth, tokens).parse(vendorRoots)
+  newParser(path, indentWidth, tokens).parseFile(vendorRoots)
 
 proc parseStrAslr*(source: string, indentWidth: uint32 = 2): Result[parser.File, string] =
   ## Same as `parseStr` but uses a `.aslr` filepath, so the parser
