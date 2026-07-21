@@ -86,7 +86,7 @@ proc findFunctionDefs*(module: ResolvedModule, name: Identifier, arity: int, pub
   ## Overload-lookup entry point — returns every function definition
   ## that matches `name` + `arity`, optionally filtered to `public` only
   ## (for external-call receivers). Uniqueness is left to the caller's
-  ## overload-selection step (see analyzer/body.nim's analyzeFunctionCall).
+  ## overload-selection step (see `analyzeFunctionCall` on the analyzer facade).
   if name notin module.funcNameArityIndex:
     err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}`")
   elif arity notin module.funcNameArityIndex[name]:

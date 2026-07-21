@@ -180,7 +180,7 @@ proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope,
 # hash. Signature-parity (e.g. impl provides `byte_size(items: u16)`
 # where the base generic mandates `byte_size(items: u32)`) is left to
 # the analyzer's value-vs-defType walk at use sites
-# (analyzer/body.nim's `analyzeValueTypeAgainstDefType`), which
+# (`analyzeValueTypeAgainstDefType` on the analyzer facade), which
 # already runs the strict hash-based check every time a value is
 # type-checked against a definition. The def-time check here catches
 # the "impl is missing the method entirely" case — the common
