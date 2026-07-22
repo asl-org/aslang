@@ -12,16 +12,15 @@ type
   ResolvedTypeKind* = enum
     rdtkModule, rdtkGeneric
   ResolvedType* = ref object
-    id: int
     case kind: ResolvedTypeKind
     of rdtkModule: module: ResolvedModule
     of rdtkGeneric: generic: ResolvedGeneric
 
-proc newResolvedType*(id: int, module: ResolvedModule): ResolvedType =
-  ResolvedType(id: id, kind: rdtkModule, module: module)
+proc newResolvedType*(module: ResolvedModule): ResolvedType =
+  ResolvedType(kind: rdtkModule, module: module)
 
-proc newResolvedType*(id: int, generic: ResolvedGeneric): ResolvedType =
-  ResolvedType(id: id, kind: rdtkGeneric, generic: generic)
+proc newResolvedType*(generic: ResolvedGeneric): ResolvedType =
+  ResolvedType(kind: rdtkGeneric, generic: generic)
 
 proc kind*(typ: ResolvedType): ResolvedTypeKind = typ.kind
 proc module*(typ: ResolvedType): ResolvedModule =

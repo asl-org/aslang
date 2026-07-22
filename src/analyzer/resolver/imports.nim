@@ -23,12 +23,11 @@ proc typ*(t: ResolvedImportedType): Type = t.typ
 # ResolvedImport
 type ResolvedImport* = ref object
   parsed: Import
-  file: int
   impFile: parser.File
   importedTypes: seq[ResolvedImportedType]
 
-proc newResolvedImport*(parsed: Import, file: int, impFile: parser.File, importedTypes: seq[ResolvedImportedType]): ResolvedImport =
-  ResolvedImport(parsed: parsed, file: file, impFile: impFile, importedTypes: importedTypes)
+proc newResolvedImport*(parsed: Import, impFile: parser.File, importedTypes: seq[ResolvedImportedType]): ResolvedImport =
+  ResolvedImport(parsed: parsed, impFile: impFile, importedTypes: importedTypes)
 
 proc parsed*(i: ResolvedImport): Import = i.parsed
 proc impFile*(i: ResolvedImport): parser.File = i.impFile

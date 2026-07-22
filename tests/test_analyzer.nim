@@ -787,18 +787,13 @@ public module Sig:
 
   test "bare literal in struct kwarg with a generic field defaults to i32":
     # Struct-side analog of the union generic-default test. A struct
-    # WITHOUT `requires` may declare a generic-typed field (the phantom-
-    # struct rule only fires when `requires` is present). Under
-    # Approach C, the bare `42` sees `expected = some(Any-generic)` and
-    # falls into `analyzeBareLiteral`'s default branch → i32. The kwarg
-    # accepts.
-    #
-    # Note: the struct's outer impls are NOT inferred to be [i32] on
-    # this path (see the `discard ?` at body.nim:673 — TODO to utilize
-    # the returned GenericImplMap on the struct side, unlike the union
-    # side which accumulates it). This test locks in the kwarg-level
-    # default behavior; the fuller impl-inference would need the TODO
-    # addressed first.
+    # with a bare `struct:` header may declare a generic-typed field
+    # (the rule against generic fields only fires when the explicit
+    # `struct(...)` header is present). Under Approach C, the bare
+    # `42` sees `expected = some(Any-generic)` and falls into
+    # `analyzeBareLiteral`'s default branch → i32. The kwarg accepts,
+    # and the struct's outer impls are inferred to be [i32] via the
+    # generic-context ddkStruct path in `resolveDataModuleArgumentType`.
     let (r, dir) = analyzeSingle("""
 public module u32:
   literal: "u32"

@@ -10,17 +10,17 @@ import imports
 
 # ResolvedFile
 type ResolvedFile* = ref object
-  id: int
   parsed: parser.File
   imports: seq[ResolvedImport]
   types: seq[ResolvedType]
   typeIndex: Table[Identifier, int]
 
-proc newResolvedFile*(id: int, parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType]): ResolvedFile =
+proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType]): ResolvedFile =
   var typeIndex: Table[Identifier, int]
   for id, typ in types:
+    assert typ.name notin typeIndex, "duplicate local type detected in the resolved file"
     typeIndex[typ.name] = id
-  ResolvedFile(id: id, parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
+  ResolvedFile(parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
 
 proc path*(file: ResolvedFile): string = file.parsed.path
 proc parsed*(file: ResolvedFile): parser.File = file.parsed
