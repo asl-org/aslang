@@ -56,9 +56,7 @@ public module Status:
     Err { error: Error }
 
 public module Array:
-  requires(Any)
-
-  struct:
+  struct(Any):
     size: u32
 
   public func init(size: u32): Array[Any]
@@ -90,7 +88,7 @@ module Pair:
     cleanupDir(dir)
     check r.isOk
 
-  test "explicit requires(...) generic module resolves":
+  test "explicit struct(...) header generic module resolves":
     # Base has extern functions, so it must be parsed as .aslr
     # (newAslFile rejects extern in `.asl` source).
     let (r, dir) = resolveSingleAslr(Base)
@@ -183,7 +181,7 @@ public module u8:
     check r.isOk
 
   test "module with implicit (inferred) generic field resolves":
-    # Status has no `requires(Any)` but uses Any as a variant field;
+    # Status has no `struct(Any):` header but uses Any as a variant field;
     # the resolver must infer Any as a type parameter so Status[u8]
     # is well-formed at use sites.
     let (r, dir) = resolveSingle("""
@@ -834,10 +832,10 @@ module M:
         break
     check hasLineCol
 
-suite "resolver — requires-block constraints":
+suite "resolver — struct header constraints":
   # Minimal prelude — a literal module + a one-func generic that can be
-  # referenced from a `requires(...)` block.
-  const RequiresPrelude = """
+  # referenced from a `struct(...)` header.
+  const StructHeaderPrelude = """
 public module u8:
   literal: "u8"
 
@@ -846,51 +844,28 @@ public generic K:
 
 """
 
-  test "duplicate generic in requires(...) is rejected":
-    let (r, dir) = resolveSingle(RequiresPrelude & """
+  test "duplicate generic in struct(...) header is rejected":
+    let (r, dir) = resolveSingle(StructHeaderPrelude & """
 public module Array:
-  requires(K, K)
-  struct:
+  struct(K, K):
     x: u8
 """)
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "duplicate generic")
 
-  test "requires without a data block is rejected":
-    let (r, dir) = resolveSingle(RequiresPrelude & """
+  test "explicit struct(...) header + generic field is rejected":
+    # Header requires and generic fields are the two orthogonal ways
+    # to declare a struct's generic parameter set. Mixing them is
+    # ambiguous — use one or the other, not both.
+    let (r, dir) = resolveSingle(StructHeaderPrelude & """
 public module Array:
-  requires(K)
-
-  public func init(): u8
-    u8 0
-""")
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "has no data block")
-
-  test "requires with a union data block is rejected":
-    let (r, dir) = resolveSingle(RequiresPrelude & """
-public module Array:
-  requires(K)
-  union:
-    A { }
-    B { }
-""")
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "data block is not a struct")
-
-  test "phantom struct cannot have generic field (post-resolution)":
-    let (r, dir) = resolveSingle(RequiresPrelude & """
-public module Array:
-  requires(K)
-  struct:
+  struct(K):
     x: K
 """)
     cleanupDir(dir)
     check r.isErr
-    check errorContains(r.error, "phantom struct cannot have generic fields")
+    check errorContains(r.error, "does not support generic fields")
 
 suite "resolver — union param list":
   # A union's param list is the position-ordered set of distinct

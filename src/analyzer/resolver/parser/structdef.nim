@@ -1,4 +1,4 @@
-import strformat, strutils, tables, results
+import strformat, strutils, sequtils, tables, results
 
 import ./tokenizer
 import ./error
@@ -20,28 +20,46 @@ proc buildNameIndex(fields: seq[ArgumentDef]): Result[Table[Identifier, int], Pa
     fieldIndex[field.name] = index
   ok(fieldIndex)
 
+proc validateRequiresNameConflict(requires: seq[Identifier]): Result[void, ParserError] =
+  var requiresIndex: Table[Identifier, int]
+  for index, required in requires:
+    if required in requiresIndex:
+      let prev = requires[requiresIndex[required]]
+      let msg = fmt"duplicate generic encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, required.loc))
+    requiresIndex[required] = index
+  ok()
+
 type StructDef* = ref object
+  requires: seq[Identifier]
   fields: seq[ArgumentDef]
   fieldIndex: Table[Identifier, int]
   loc: Location
 
-proc fields*(s: StructDef): seq[ArgumentDef] = s.fields
-proc loc*(s: StructDef): Location = s.loc
-
-proc newStructDef*(fields: seq[ArgumentDef], loc: Location): Result[StructDef, ParserError] =
+proc newStructDef*(requires: seq[Identifier], fields: seq[ArgumentDef], loc: Location): Result[StructDef, ParserError] =
   if fields.len == 0:
     err(newParserError("struct must have at least one field", loc))
   else:
+    ? validateRequiresNameConflict(requires)
     let fieldIndex = ? buildNameIndex(fields)
-    ok(StructDef(fields: fields, fieldIndex: fieldIndex, loc: loc))
+    ok(StructDef(requires: requires, fields: fields, fieldIndex: fieldIndex, loc: loc))
+
+proc requires*(s: StructDef): seq[Identifier] = s.requires
+proc fields*(s: StructDef): seq[ArgumentDef] = s.fields
+proc loc*(s: StructDef): Location = s.loc
 
 proc asl*(s: StructDef, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)
   let inner = " ".repeat((level + 1) * indentWidth.int)
   var lines: seq[string]
-  lines.add(fmt"{indent}struct:")
+  if s.requires.len > 0:
+    let impls = s.requires.mapIt(it.asl).join(", ")
+    lines.add(fmt"{indent}struct({impls}):")
+  else:
+    lines.add(fmt"{indent}struct:")
+
   for field in s.fields:
-    lines.add(fmt"{inner}{asl(field)}")
+    lines.add(fmt"{inner}{field.asl}")
   lines
 
 proc findFieldId*(struct: StructDef, name: Identifier): Result[int, string] =

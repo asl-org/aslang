@@ -6,7 +6,6 @@ import ./error
 import ./identifiers
 import ./decorator
 
-import ./requires
 import ./structdef
 import ./uniondef
 import ./datadef
@@ -32,22 +31,20 @@ type Module* = ref object
   decorators: seq[Decorator]
   public: bool
   name: Identifier
-  requires: Option[Requires]
   data: Option[DataDef]
   funcList: FunctionList
   functionIndex: Table[Identifier, Table[int, seq[int]]]
   loc: Location
 
-proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier, requires: Option[Requires], data: Option[DataDef], funcList: FunctionList, loc: Location): Result[Module, ParserError] =
+proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier, data: Option[DataDef], funcList: FunctionList, loc: Location): Result[Module, ParserError] =
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
     return err(newParserError(msg, loc))
   let functionIndex = buildNameArityIndex(funcList)
-  ok(Module(decorators: decorators, public: public, name: name, requires: requires, data: data, funcList: funcList, functionIndex: functionIndex, loc: loc))
+  ok(Module(decorators: decorators, public: public, name: name, data: data, funcList: funcList, functionIndex: functionIndex, loc: loc))
 
 proc public*(m: Module): bool = m.public
 proc name*(m: Module): Identifier = m.name
-proc requires*(m: Module): Option[Requires] = m.requires
 proc data*(m: Module): Option[DataDef] = m.data
 proc functions*(m: Module): seq[Function] = m.funcList.functions
 proc decorators*(m: Module): seq[Decorator] = m.decorators
@@ -77,9 +74,6 @@ proc asl*(module: Module, level: int, indentWidth: uint32): seq[string] =
   var lines = module.decorators.mapIt(fmt"{indent}{it.asl}")
   let prefix = if module.public: "public module" else: "module"
   lines.add(fmt"{indent}{prefix} {module.name.asl}:")
-  if module.requires.isSome:
-    lines.add(fmt"{inner}{asl(module.requires.get)}")
-    lines.add("")
   if module.data.isSome:
     let data = module.data.get.asl(level + 1, indentWidth)
     lines.add(data)
@@ -101,5 +95,4 @@ proc findFunctionDefs*(module: Module, name: Identifier, arity: int): Result[seq
 type ModuleHeader* = tuple[public: bool, name: Identifier, loc: Location]
 
 # Module body: optional requires + optional data block + function list
-type ModuleBody* = tuple[requires: Option[Requires], data: Option[DataDef],
-    funcList: FunctionList]
+type ModuleBody* = tuple[data: Option[DataDef], funcList: FunctionList]

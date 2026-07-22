@@ -307,9 +307,11 @@ Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
 which in turn holds resolved imports plus a `ResolvedType` for each
 module/generic. Body-level name resolution is complete (variables,
 getters, function calls, initializers, match/case patterns). The
-resolver also enforces the structural requires-block constraints
-(unique generics in requires, must pair with a struct, struct can't
-carry generic fields when requires is present), runs the arity +
+resolver also enforces the structural `struct(...)`-header
+constraints (unique generics in the header — enforced by
+`validateRequiresNameConflict` inside `newStructDef`; struct can't
+carry generic fields when the header is present — enforced in
+`resolveStructDef` around line 409), runs the arity +
 generic-constraint checks on every impl list (task 7 moved these here
 from the analyzer), and stores the parser Module identifier on
 `ResolvedStructRef` / `ResolvedUnionRef` (single-shape after task 8 —
@@ -350,10 +352,10 @@ populated for the bracketed form). Scope:
   populate two-pass has been retired.
 - **Impl-list validation** — `resolveModuleArgumentType` calls
   `checkImplSatisfiesGeneric` on every impl inference path (explicit
-  `requires(...)`, inferred struct fields, inferred union fields).
-  The check verifies `(name, arity)` at the parser level; downstream
-  `analyzeValueTypeAgainstDefinitionType` catches signature-parity
-  mismatches at use sites.
+  `struct(...)` header, inferred struct fields, inferred union
+  fields). The check verifies `(name, arity)` at the parser level;
+  downstream `analyzeValueTypeAgainstDefinitionType` catches
+  signature-parity mismatches at use sites.
 - **Generic param-list accumulation** — `accumulateGenericPosition`
   walks each field and assigns the next position to any generic
   seen for the first time; repeated occurrences keep the position
@@ -365,8 +367,8 @@ populated for the bracketed form). Scope:
   appearing in multiple fields is fine, since the analyzer's
   `GenericImplMap` binds one generic to one concrete type per
   construction and surfaces any mismatch as a `merge()` error at
-  the init site. Generic-uniqueness inside an explicit
-  `requires(...)` block is the one place that *is* checked.
+  the init site. Generic-uniqueness inside the explicit
+  `struct(...)` header is the one place that *is* checked.
 - **Generic signature rule** — inside a generic block, a fn
   argument/return type root may only resolve to the current generic
   itself (self-reference) or a module. Other generics are rejected
@@ -654,12 +656,14 @@ src/
                                    used by unionInitializerSpec to
                                    carry the impls seq through to the
                                    Initializer.
-      requires.nim                 Requires — `requires(Generic, …)`
-                                   header used by struct-carrying
-                                   modules to declare phantom-type
-                                   parameters.
-      structdef.nim                StructDef (fields + fieldIndex +
-                                   findField / findFieldId).
+      structdef.nim                StructDef (requires: seq[Identifier]
+                                   from the `struct(...)` header —
+                                   phantom-type parameters when
+                                   present; fields + fieldIndex +
+                                   findField / findFieldId). Parsed
+                                   inline by `parseStructHeader` /
+                                   `parseStructRequires` in
+                                   `parser.nim`.
       variantdef.nim               VariantDef (name + fields +
                                    fieldIndex + findField /
                                    findFieldId). Zero-field variants
@@ -708,9 +712,13 @@ src/
                                    Assignment / Setter.
       generics.nim                 Generic (funcDefs + funcDefIndex +
                                    findFunctionDefs).
-      modules.nim                  Module (requires? + data? +
-                                   functions + funcNameArityIndex +
-                                   findFunctionDefs).
+      modules.nim                  Module (data? + functions +
+                                   funcNameArityIndex +
+                                   findFunctionDefs). Generic
+                                   parameters live inside the data
+                                   block (`struct(...)` header or
+                                   inferred variant fields), not on
+                                   the Module itself.
       types.nim                    Type (tkModule / tkGeneric) —
                                    one-of over module and generic
                                    entries in a File's types list.

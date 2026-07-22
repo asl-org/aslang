@@ -300,16 +300,14 @@ parse but are not yet wired.
 
 ---
 
-## Generic modules — `requires`
+## Generic modules — struct header
 
-A module can be made generic over one or more types by declaring a
-`requires(...)` clause:
+A module can be made generic over one or more types by naming them in a
+parenthesised clause on the `struct` keyword itself:
 
 ```asl
 public module Array:
-  requires(Any)
-
-  struct:
+  struct(Any):
     size: u32
 
   @extern("array_get")
@@ -319,20 +317,35 @@ public module Array:
   public func set(arr: Array[Any], index: u32, item: Any): Status[Array[Any]]
 ```
 
-`requires(Any)` says: "to use this module you must supply something
+`struct(Any):` says: "to use this module you must supply something
 that implements `Any`." Use sites then parameterize:
 
 ```asl
 arr = Array[u32] { size: 100 }
 ```
 
-If a module's struct/union fields mention a generic that does not
-appear in `requires`, the generic is treated as an inferred type
-parameter — but the explicit `requires(...)` form is preferred for
-public APIs.
+A struct's generic parameters can be declared in one of two mutually
+exclusive ways:
 
-Within an explicit `requires(...)` block, every named generic must be
-distinct.
+- **Explicit header** (`struct(Any):`) — used for phantom-type
+  parameters that no field mentions, as with `Array` above. Required
+  for public APIs whose generics don't surface in field types.
+- **Inferred from fields** (`struct: item: T`) — a plain `struct:`
+  header with fields typed by a generic name; the generic parameters
+  are collected in first-seen order across the fields.
+
+The two modes cannot be combined: if a struct uses the explicit
+`struct(A):` header, none of its fields may be typed by a generic.
+Attempting both is rejected with "struct with explicit generic
+requirements does not support generic fields".
+
+Within the explicit header, every named generic must be distinct —
+`struct(K, K):` is rejected with "duplicate generic encountered".
+
+Unions do NOT have an equivalent explicit-header form. A union's
+generic parameters are always inferred from its variant field types,
+in first-seen order across variants (repeated names keep their
+original slot; new names take the next).
 
 ---
 
@@ -626,8 +639,9 @@ current design.
 - **`return` keyword.** A function's trailing expression is its return
   value.
 - **Closures / first-class functions.** Functions are not values.
-- **Traits / interfaces beyond generics.** The `generic` + `requires`
-  pair is the entire polymorphism mechanism.
+- **Traits / interfaces beyond generics.** The `generic` block plus
+  the `struct(...)` header (or field-inferred generics) is the entire
+  polymorphism mechanism.
 - **Inheritance / subtyping.** No `extends`, no implicit conversions
   between primitives. `u32.from(x: u8)` makes the widening explicit.
 - **Mutable globals.** Modules are pure type/function namespaces; no
@@ -637,7 +651,8 @@ current design.
 - **Block-comment syntax.** Line comments only.
 - **Generic functions (parametric polymorphism on a function alone).**
   Generics live at the module level — a generic function exists by
-  being a function on a module that `requires(...)` a generic.
+  being a function on a module whose `struct(A):` header (or inferred
+  field generics) declares a type parameter.
 - **Pipe / chain operators.** Nest calls explicitly or bind
   intermediate values.
 

@@ -85,15 +85,13 @@ module Signal:
 """)
     check r.isErr
 
-  test "module with requires(...) clause":
+  test "module with struct(...) header":
     let r = parseStr("""
 public generic Any:
   func byte_size(items: u32): u64
 
 module Box:
-  requires(Any)
-
-  struct:
+  struct(Any):
     payload: Any
 """)
     check r.isOk
@@ -120,9 +118,7 @@ suite "grammar — functions":
   test "function with multiple arguments and generic return":
     let r = parseStr("""
 public module Array:
-  requires(Any)
-
-  struct:
+  struct(Any):
     payload: Any
 
   func get(arr: Array[Any], idx: u32): Status[Any]
@@ -679,9 +675,7 @@ public generic Any:
   func byte_size(x: u32): u32
 
 public module Array:
-  requires(Any)
-
-  struct:
+  struct(Any):
     size: u32
 
 module M:
@@ -703,9 +697,7 @@ public generic Any:
   func byte_size(x: u32): u32
 
 public module Array:
-  requires(Any)
-
-  struct:
+  struct(Any):
     size: u32
 
 module M:

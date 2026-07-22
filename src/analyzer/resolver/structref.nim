@@ -7,17 +7,12 @@ import argtype
 
 type ResolvedStructRef* = ref object
   parsed: StructRef
-  module: Module
-  impls: seq[ResolvedArgumentType]
+  argType: ResolvedModuleArgumentType
 
-proc newResolvedStructRef*(parsed: StructRef, module: Module,
-    impls: seq[ResolvedArgumentType]): ResolvedStructRef =
-  ## One-shape constructor. `impls` is empty when the surface
-  ## form was `Module { ... }` and non-empty (arity + constraint checked)
-  ## when the surface form was `Module[Impl, ...] { ... }`.
-  ResolvedStructRef(parsed: parsed, module: module, impls: impls)
+proc newResolvedStructRef*(parsed: StructRef, argType: ResolvedModuleArgumentType): ResolvedStructRef =
+  ResolvedStructRef(parsed: parsed, argType: argType)
 
 proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
-proc module*(s: ResolvedStructRef): Module = s.module
-proc impls*(s: ResolvedStructRef): seq[ResolvedArgumentType] = s.impls
+proc module*(s: ResolvedStructRef): Module = s.argType.module
+proc impls*(s: ResolvedStructRef): seq[ResolvedArgumentType] = s.argType.impls
 proc loc*(s: ResolvedStructRef): Location = s.parsed.loc

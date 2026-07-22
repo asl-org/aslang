@@ -65,8 +65,12 @@ LiteralDef: StringLiteral
 # LiteralDef's StringLiteral names a C type; assume it is typedef'd
 # to one of u8 / i8 / f32 / string in the host runtime.
 
-StructDef: Requires? ArgumentDef+
-Requires: GenericName+
+StructDef: StructHeaderGenerics? ArgumentDef+
+StructHeaderGenerics: GenericName+
+# Surface syntax: `struct(A, B, C):` — a parenthesised comma-separated
+# identifier list on the `struct` keyword itself. Absent when the
+# header is a plain `struct:`; in that case any generic parameters are
+# inferred from the fields.
 GenericName: Identifier
 
 UnionDef: VariantDef+
@@ -219,8 +223,8 @@ contributors can find the *why* alongside the *what*.
 
 - **Cardinality (`+` vs `*`) is deliberate everywhere.** `App: File+`
   (there's always an entry file), `File: Import* Type+` (a file with
-  no types is meaningless), `StructDef: Requires? ArgumentDef+` (a
-  struct with zero fields is invalid), `VariantDef: Variant
+  no types is meaningless), `StructDef: StructHeaderGenerics? ArgumentDef+`
+  (a struct with zero fields is invalid), `VariantDef: Variant
   ArgumentDef*` (empty variants are structurally legal — surface
   syntax is a separate question), `UnionInitializer: … KeywordArgument*`
   (matches the empty-variant cardinality).

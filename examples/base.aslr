@@ -656,11 +656,7 @@ public module System:
   public func println(str: String): u64
 
 public module Array:
-  # if requires is present then it will take precedence
-  # meaning user will always have to use `Array[Any]`
-  requires(Any)
-
-  struct:
+  struct(Any):
     size: u32
 
   @extern("pointer_byte_size")

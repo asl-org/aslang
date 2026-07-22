@@ -111,6 +111,12 @@ proc findType*(file: parser.File, fileScope: FileScope, name: Identifier): Resul
   if name in fileScope: ok(fileScope[name])
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
+proc findGeneric*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Generic, string] =
+  let initType = ? file.findType(fileScope, name)
+  case initType.kind:
+  of tkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
+  of tkGeneric: ok(initType.generic)
+
 proc findModule*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Module, string] =
   let initType = ? file.findType(fileScope, name)
   case initType.kind:
@@ -136,7 +142,14 @@ proc findRequiredImplsForFields(file: parser.File, fileScope: FileScope, fields:
   ok(requiredImpls)
 
 proc findRequiredImplsForStruct(file: parser.File, fileScope: FileScope, struct: StructDef): Result[seq[Generic], string] =
-  findRequiredImplsForFields(file, fileScope, struct.fields)
+  if struct.requires.len > 0:
+    var requiredImpls: seq[Generic]
+    for generic in struct.requires:
+      let foundGeneric = ? file.findGeneric(fileScope, generic)
+      requiredImpls.add(foundGeneric)
+    ok(requiredImpls)
+  else:
+    findRequiredImplsForFields(file, fileScope, struct.fields)
 
 proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: UnionDef): Result[seq[Generic], string] =
   # Rust-style: a generic name shared across variants is one shared
@@ -150,16 +163,6 @@ proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: U
         seen.incl(generic)
         requiredUnionImpls.add(generic)
   ok(requiredUnionImpls)
-
-proc findGeneric*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Generic, string] =
-  ## Parser-level generic lookup — mirror of `findModule` for the
-  ## constraint-check helper. Used by resolveModuleArgumentType's
-  ## explicit-requires path to translate each `requires(...)` name into
-  ## its parser Generic so the check can walk its funcDefs.
-  let initType = ? file.findType(fileScope, name)
-  case initType.kind:
-  of tkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
-  of tkGeneric: ok(initType.generic)
 
 # resolveArgumentType (both context overloads) is called by the
 # module-context resolveModuleArgumentType helper for impls.
@@ -206,21 +209,6 @@ proc checkImplSatisfiesGeneric(resolvedImpl: ResolvedArgumentType, base: Generic
 proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope,
     module: Module, argType: ArgumentType,
     root: Module): Result[ResolvedModuleArgumentType, string] =
-    # NOTE: requires block will override the inferred impl list
-  if root.requires.isSome:
-    let requiredNames = root.requires.get.generics
-    if argType.impls.len != requiredNames.len:
-      return err(fmt"{argType.loc} type `{root.name.asl}` expects `{requiredNames.len}` impls but found `{argType.impls.len}`")
-
-    var impls: seq[ResolvedArgumentType]
-    for (requiredName, impl) in zip(requiredNames, argType.impls):
-      let requiredGeneric = ? file.findGeneric(fileScope, requiredName)
-      let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
-      ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-      impls.add(resolvedImpl)
-
-    return ok(newResolvedModuleArgumentType(root, impls, argType.loc))
-
   # NOTE: infer the impl list from struct/union block
   if root.data.isSome:
     let dataDef = root.data.get
@@ -266,8 +254,6 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
 proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType,
     root: Module): Result[ResolvedModuleArgumentType, string] =
-  if root.requires.isSome:
-    return err("todo: resolve requires block in argument type")
 
   if root.data.isSome:
     let dataDef = root.data.get
@@ -310,7 +296,7 @@ proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, arg
     err(fmt"{genericArgType.loc} generic `{genericArgType.name.asl}` is not allowed to have impls")
 
 # resolveArgumentType — both context overloads.
-proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
+proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, module: Module,
     argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let typ = ? file.findType(fileScope, argType.root)
   case typ.kind:
@@ -397,8 +383,9 @@ proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgume
   ## position — the analyzer's GenericImplMap binds one generic to
   ## one concrete type per construction, so duplicate occurrences
   ## are semantically benign (any conflict surfaces at the init site
-  ## via merge()). Generic-uniqueness inside an explicit requires()
-  ## block is still enforced by validateRequiresConstraints.
+  ## via merge()). Generic-uniqueness inside an explicit `struct(...)`
+  ## header is enforced at construction time by
+  ## `validateRequiresNameConflict` in `parser/structdef.nim`.
   case field.argType.kind:
   of ratkModule: discard
   of ratkGeneric:
@@ -413,7 +400,20 @@ proc resolveStructDef*(app: App, file: parser.File, fileScope: FileScope, module
     let resolvedField = ? resolveArgumentDef(app, file, fileScope, module, field)
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
-  ok(newResolvedStructDef(struct, resolvedFields, genericTypeIndex))
+
+  if struct.requires.len > 0 and genericTypeIndex.len > 0:
+    return err(fmt"{struct.loc} struct with explicit generic requirements does not support generic fields")
+
+  var resolvedRequires: seq[ResolvedGenericArgumentType]
+  for index, generic in struct.requires:
+    let typ = ? file.findType(fileScope, generic)
+    case typ.kind:
+    of tkModule:
+      return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
+    of tkGeneric:
+      let genericType = newResolvedGenericArgumentType(typ.generic, generic.loc)
+      resolvedRequires.add(genericType)
+  ok(newResolvedStructDef(struct, resolvedRequires, resolvedFields, genericTypeIndex))
 
 # NOTE: `genericTypeIndex` is the union's shared position table — mutated
 # in place as each variant's fields contribute new generics (in
@@ -533,19 +533,17 @@ proc resolveStructRef(app: App, file: parser.File, fileScope: FileScope, module:
   ## and delegates to resolveModuleArgumentType so the impls
   ## seq is arity- and constraint-checked at resolve time.
   let structModule = ? file.findModule(fileScope, structRef.module)
-  if structRef.impls.len == 0 and structModule.requires.isSome:
-    return err(fmt"{structRef.loc} module `{structModule.name.asl}` declares requires; initializer must specify impl types as `{structModule.name.asl}[...]`")
-  if structRef.impls.len > 0 and not structModule.requires.isSome:
-    return err(fmt"{structRef.loc} module `{structModule.name.asl}` has no requires block; initializer must not specify impl types")
-  if structRef.impls.len == 0:
-    return ok(newResolvedStructRef(structRef, structModule, @[]))
-  # Reuse the module-context argType resolver so arity + constraint
-  # validation stays in one place. Build a synthetic ArgumentType from
-  # the parser StructRef's (module, impls, loc) and unwrap its
-  # impls after the check.
-  let syntheticArgType = newArgumentType(structRef.module, structRef.impls)
-  let resolvedArgType = ? resolveArgumentType(app, file, fileScope, module, syntheticArgType)
-  ok(newResolvedStructRef(structRef, structModule, resolvedArgType.module.impls))
+  if structModule.data.isNone:
+    return err(fmt"{structRef.loc} module `{structModule.name.asl}` does not define a data block")
+  let moduleData = structModule.data.get
+  case moduleData.kind:
+  of ddkLiteral:
+    err(fmt"{structRef.loc} module `{structModule.name.asl}` is a literal type")
+  of ddkUnion:
+    err(fmt"{structRef.loc} module `{structModule.name.asl}` is a union type")
+  of ddkStruct:
+    let resolvedModuleArgType = ? resolveModuleArgumentType(app, file, fileScope, module, structRef.argType, structModule)
+    ok(newResolvedStructRef(structRef, resolvedModuleArgType))
 
 proc resolveStructInitializer(app: App, file: parser.File, fileScope: FileScope, module: Module, scope: FunctionScope,
     struct: StructInitializer): Result[ResolvedStructInitializer, string] =
@@ -744,32 +742,6 @@ proc resolveFunction*(app: App,     file: parser.File, fileScope: FileScope, mod
       module, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))
 
-proc validateRequiresConstraints(module: Module): Result[void, string] =
-  ## Enforces the two structural requires-block constraints:
-  ##   1. Generic names inside `requires(...)` must be unique.
-  ##   2. `requires` pairs with a `struct` data block — not literal, not union,
-  ##      not absent. The no-generic-fields constraint is enforced
-  ##      post-resolution.
-  ##
-  ## `requires` is an internal feature — undocumented and not promoted to
-  ## end users — but no name whitelist is enforced here: any module that
-  ## declares `requires` and satisfies these structural rules is accepted,
-  ## so future internal types (List, dynamic containers, etc.) can adopt
-  ## the same phantom-type machinery without editing this proc.
-  if module.requires.isNone: return ok()
-  let requires = module.requires.get
-  var seen: HashSet[Identifier]
-  for generic in requires.generics:
-    if generic in seen:
-      return err(fmt"{generic.loc} duplicate generic `{generic.asl}` in requires block")
-    seen.incl(generic)
-  if module.data.isNone:
-    return err(fmt"{requires.loc} module `{module.name.asl}` declares requires but has no data block; requires must pair with a struct")
-  case module.data.get.kind:
-  of ddkStruct: ok()
-  of ddkLiteral, ddkUnion:
-    err(fmt"{module.data.get.loc} module `{module.name.asl}` declares requires but data block is not a struct")
-
 proc resolveModule*(app: App, file: parser.File,
     fileScope: FileScope, module: Module): Result[ResolvedModule, string] =
   ## Resolve every part of the parser Module and construct the
@@ -779,36 +751,11 @@ proc resolveModule*(app: App, file: parser.File,
   if module.decorators.len > 0:
     return err("todo: resolve decorators")
 
-  ? validateRequiresConstraints(module)
-
-  var resolvedRequires: seq[ResolvedGenericArgumentType]
-  if module.requires.isSome:
-    for generic in module.requires.get.generics:
-      let typ = ? file.findType(fileScope, generic)
-      case typ.kind:
-      of tkModule:
-        return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
-      of tkGeneric:
-        resolvedRequires.add(newResolvedGenericArgumentType(typ.generic, generic.loc))
-
   var resolvedData: Option[ResolvedData]
   if module.data.isSome:
     let resolvedDataDef = ? resolveDataDef(app, file, fileScope, module,
       module.data.get)
     resolvedData = some(resolvedDataDef)
-
-  # NOTE: Infer requires list if not explicitly mentioned.
-  if module.requires.isNone and resolvedData.isSome:
-    resolvedRequires = resolvedData.get.requires
-
-  # Constraint 3b (post-resolution): when requires is declared, the struct
-  # block cannot have any generic fields — phantom types live in the
-  # signature, not the data.
-  if module.requires.isSome and resolvedData.isSome:
-    let structRequires = resolvedData.get.struct.requires
-    if structRequires.len > 0:
-      let firstGeneric = structRequires[0]
-      return err(fmt"{firstGeneric.loc} module `{module.name.asl}` declares requires but struct field is typed as a generic — phantom struct cannot have generic fields")
 
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:
@@ -816,8 +763,7 @@ proc resolveModule*(app: App, file: parser.File,
       function)
     resolvedFunctions.add(resolvedFunction)
 
-  ok(newResolvedModule(module, resolvedRequires, resolvedData,
-    resolvedFunctions))
+  ok(newResolvedModule(module, resolvedData, resolvedFunctions))
 
 proc resolveGeneric*(app: App, file: parser.File, fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
   if generic.decorators.len > 0:

@@ -154,13 +154,14 @@ proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 
 proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedArgumentType =
   ## Positional generic substitution. The `genericTypeIndex` maps each
-  ## generic that a struct/union/variant's field types touch to its
-  ## position in the impl list — this is a resolver-side table
-  ## (`ResolvedStructDef.genericTypeIndex`,
-  ## `ResolvedUnionDef.genericTypeIndex`), so the analyzer-side generic
+  ## generic that a union's variant field types touch to its position
+  ## in the impl list — this is a resolver-side table
+  ## (`ResolvedUnionDef.genericTypeIndex`), so the analyzer-side generic
   ## argType is translated back through its underlying parser Generic
   ## to hit the same table entry (both types hash by parser Generic
-  ## identity).
+  ## identity). Structs don't route through this proc — their impl
+  ## substitution goes through `ResolvedStructDef.requires`, which
+  ## already merges the explicit-header and inferred-from-fields cases.
   case argType.kind:
   of aatkModule:
     let moduleArgType = argType.module

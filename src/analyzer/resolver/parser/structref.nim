@@ -23,6 +23,7 @@ proc newStructRef*(module: Identifier, impls: seq[ArgumentType],
 
 proc module*(s: StructRef): Identifier = s.module
 proc impls*(s: StructRef): seq[ArgumentType] = s.impls
+proc argType*(s: StructRef): ArgumentType = newArgumentType(s.module, s.impls)
 proc loc*(s: StructRef): Location = s.loc
 proc asl*(s: StructRef): string =
   if s.impls.len == 0:

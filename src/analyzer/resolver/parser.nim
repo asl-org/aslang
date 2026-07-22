@@ -36,9 +36,6 @@ export structref
 import ./parser/unionref
 export unionref
 
-import ./parser/requires
-export requires
-
 import ./parser/structdef
 export structdef
 
@@ -541,8 +538,9 @@ proc keywordSpec*(keyword: string): Spec[Location] =
     parseFn: proc(parser: Parser): Result[Location, ParserError] =
       parser.parseKeyword(keyword))
 
-# Spec adapter — `identifierSpec` is still consumed by the `requires`
-# clause's `separatedBy(identifierSpec, ...)` combinator chain.
+# Spec adapter — `identifierSpec` is still consumed by
+# `parseStructRequires`'s `separatedBy(identifierSpec, ...)` combinator
+# chain (and by other `separatedBy(identifierSpec, ...)` sites).
 let identifierSpec* = Spec[Identifier](name: "identifier", parseFn: parseIdentifier)
 
 proc parseDecoratorLine*(parser: Parser): Result[Decorator, ParserError] =
@@ -1118,9 +1116,9 @@ proc parseUnionInitializer*(parser: Parser): Result[UnionInitializer, ParserErro
   ok(newUnionInitializer(unionRef, variant, fields, typeRef.loc))
 
 # Either `Type { fields }` (bare) or `Type[Impls] { fields }` (explicit
-# impls, used for phantom-typed structs whose module declares a requires
-# block). Both productions land on the same StructRef shape carrying an
-# impls seq; empty means bare.
+# impls, used for phantom-typed structs whose module declares a
+# `struct(A):` header). Both productions land on the same StructRef
+# shape carrying an impls seq; empty means bare.
 proc parseStructInitializer*(parser: Parser): Result[StructInitializer, ParserError] =
   let typeRef = ? parser.parseArgumentType()
   discard ? parser.run(ws0)
@@ -1368,13 +1366,22 @@ proc parseFunctionList*(parser: Parser): Result[FunctionList, ParserError] =
     funcs.add(maybeFn.get)
   newFunctionList(funcs)
 
+proc parseStructRequires*(parser: Parser): Result[seq[Identifier], ParserError] =
+  ## Parses the `(A, B, C)` clause of a `struct(A, B, C):` header —
+  ## a parenthesised comma-separated identifier list naming the
+  ## struct's required generic impls.
+  let generics = ? parser.run(contained("struct_requires_generics", "(",
+    separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
+  ok(generics)
 
 # struct: field+ (field is identifier ":" argumentType)
-proc parseStructHeader(parser: Parser): Result[Location, ParserError] =
+proc parseStructHeader(parser: Parser): Result[(seq[Identifier], Location), ParserError] =
   let loc = ? parser.parseKeyword("struct")
+  let maybeRequires = ? parser.runOptional(parseStructRequires)
   discard ? parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
-  ok(loc)
+  let requires = if maybeRequires.isSome: maybeRequires.get else: @[]
+  ok((requires, loc))
 
 # Each field line: (blank lines) + indentation + argumentDef + newline
 proc parseArgumentDefLine(parser: Parser): Result[ArgumentDef, ParserError] =
@@ -1398,7 +1405,7 @@ proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
 
 proc parseStruct*(parser: Parser): Result[StructDef, ParserError] =
   discard ? parser.parseIndentation()
-  let loc = ? parser.run(parseStructHeader)
+  let (requires, loc) = ? parser.run(parseStructHeader)
   discard ? parser.run(parseIgnorableLine)
   parser.level += 1
   let bodyResult = parseStructBody(parser)
@@ -1406,7 +1413,14 @@ proc parseStruct*(parser: Parser): Result[StructDef, ParserError] =
   if bodyResult.isErr:
     bodyResult.error.fatal = true
     return err(bodyResult.error)
-  newStructDef(bodyResult.get, loc)
+  # newStructDef validation errors (duplicate generic in header,
+  # duplicate field name) must also be fatal — we're past the header,
+  # so an outer runOptional shouldn't swallow the failure and treat
+  # the whole struct as absent.
+  let structResult = newStructDef(requires, bodyResult.get, loc)
+  if structResult.isErr:
+    structResult.error.fatal = true
+  structResult
 
 # union: variant+ (variant is identifier space* "{" (argDef, argDef)* "}")
 # Braces are required — empty variants must be written `Timeout { }`. This
@@ -1456,17 +1470,23 @@ proc parseUnion*(parser: Parser): Result[UnionDef, ParserError] =
 proc parseData*(parser: Parser): Result[DataDef, ParserError] =
   ## Parses a module's data block: literal, struct, or union. Tries
   ## each in order; returns the error from whichever candidate
-  ## reached farthest into the token stream.
+  ## reached farthest into the token stream. A fatal error from any
+  ## branch short-circuits — once a branch has committed past the
+  ## point of no-return, its error must propagate rather than being
+  ## swallowed by trying the next branch.
   var errors: seq[ParserError]
   let maybeLiteral = parser.run(parseLiteralType)
   if maybeLiteral.isOk: return ok(newDataDef(maybeLiteral.get))
-  else: errors.add(maybeLiteral.error)
+  if maybeLiteral.error.fatal: return err(maybeLiteral.error)
+  errors.add(maybeLiteral.error)
   let maybeStruct = parser.run(parseStruct)
   if maybeStruct.isOk: return ok(newDataDef(maybeStruct.get))
-  else: errors.add(maybeStruct.error)
+  if maybeStruct.error.fatal: return err(maybeStruct.error)
+  errors.add(maybeStruct.error)
   let maybeUnion = parser.run(parseUnion)
   if maybeUnion.isOk: return ok(newDataDef(maybeUnion.get))
-  else: errors.add(maybeUnion.error)
+  if maybeUnion.error.fatal: return err(maybeUnion.error)
+  errors.add(maybeUnion.error)
   err(max(errors))
 
 proc parseGenericHeader(parser: Parser): Result[GenericHeader, ParserError] =
@@ -1494,18 +1514,6 @@ proc parseGeneric*(parser: Parser): Result[Generic, ParserError] =
     return err(bodyResult.error)
   newGeneric(@[], h.public, h.name, bodyResult.get, h.loc)
 
-# requires(Generic, Generic, ...)
-proc parseRequires*(parser: Parser): Result[Requires, ParserError] =
-  ## Parses a `requires(A, B, C)` line: the `requires` keyword followed
-  ## by a parenthesised comma-separated identifier list.
-  discard ? parser.parseIndentation()
-  let loc = ? parser.parseKeyword("requires")
-  discard ? parser.run(ws0)
-  let names = ? parser.run(contained("requires_generics", "(",
-    separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
-  discard ? parser.run(parseIgnorableLine)
-  ok(newRequires(names, loc))
-
 
 proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =
   let public = ? parser.run(presence(keywordSpec("public")))
@@ -1521,11 +1529,9 @@ proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =
 
 proc parseModuleBody(parser: Parser): Result[ModuleBody, ParserError] =
   discard parser.run(parseBlankLines)
-  let requires = ? parser.runOptional(parseRequires)
-  discard parser.run(parseBlankLines)
   let data = ? parser.runOptional(parseData)
   let funcList = ? parser.parseFunctionList()
-  ok((requires, data, funcList))
+  ok((data, funcList))
 
 proc parseModule*(parser: Parser): Result[Module, ParserError] =
   ## Parses a `[public] module Name:` block with optional decorator
@@ -1542,7 +1548,7 @@ proc parseModule*(parser: Parser): Result[Module, ParserError] =
     bodyResult.error.fatal = true
     return err(bodyResult.error)
   let b = bodyResult.get
-  newModule(decorators, h.public, h.name, b.requires, b.data, b.funcList, h.loc)
+  newModule(decorators, h.public, h.name, b.data, b.funcList, h.loc)
 
 
 
@@ -1550,13 +1556,18 @@ proc parseType(parser: Parser): Result[Type, ParserError] =
   ## Parses either a module or a generic block and wraps it as `Type`.
   ## Tries module first; if that fails non-fatally, tries generic;
   ## returns whichever error carried further into the token stream.
+  ## Fatal errors short-circuit — once a branch has committed past
+  ## the point of no-return, its error must propagate rather than
+  ## being swallowed by trying the next branch.
   var errors: seq[ParserError]
   let maybeModule = parser.run(parseModule)
   if maybeModule.isOk: return ok(newType(maybeModule.get))
-  else: errors.add(maybeModule.error)
+  if maybeModule.error.fatal: return err(maybeModule.error)
+  errors.add(maybeModule.error)
   let maybeGeneric = parser.run(parseGeneric)
   if maybeGeneric.isOk: return ok(newType(maybeGeneric.get))
-  else: errors.add(maybeGeneric.error)
+  if maybeGeneric.error.fatal: return err(maybeGeneric.error)
+  errors.add(maybeGeneric.error)
   err(max(errors))
 
 proc parseDefinedType(parser: Parser): Result[Type, ParserError] =

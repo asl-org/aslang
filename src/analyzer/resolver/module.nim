@@ -12,7 +12,6 @@ import function
 
 type ResolvedModule* = ref object
   parsed: Module
-  requires: seq[ResolvedGenericArgumentType]
   data: Option[ResolvedData]
   funcDefIndex: Table[ResolvedFunctionDef, int]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
@@ -34,18 +33,15 @@ proc buildFuncNameArityIndex*(funcDefs: seq[ResolvedFunctionDef]): Table[Identif
 # ---- ResolvedModule constructor + accessors ----
 
 proc newResolvedModuleInternal(parsed: Module,
-    requires: seq[ResolvedGenericArgumentType],
     data: Option[ResolvedData],
     funcDefIndex: Table[ResolvedFunctionDef, int],
     funcNameArityIndex: Table[Identifier, Table[int, seq[int]]],
     functions: seq[ResolvedFunction]): ResolvedModule =
   ## Raw constructor used by the front-door `newResolvedModule`, which
   ## computes the two indices from the function list.
-  ResolvedModule(parsed: parsed, requires: requires, data: data,
-    funcDefIndex: funcDefIndex, funcNameArityIndex: funcNameArityIndex,
-    functions: functions)
+  ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: funcNameArityIndex, functions: functions)
 
-proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentType], data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
+proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
   ## Front-door: compute the funcDef/funcNameArity indices from the
   ## resolved functions and construct the ResolvedModule. Used by
   ## `resolveModule` and by tests that construct modules directly.
@@ -55,11 +51,9 @@ proc newResolvedModule*(parsed: Module, requires: seq[ResolvedGenericArgumentTyp
     assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
     funcDefIndex[function.def] = id
     funcDefs.add(function.def)
-  newResolvedModuleInternal(parsed, requires, data, funcDefIndex,
-    buildFuncNameArityIndex(funcDefs), functions)
+  newResolvedModuleInternal(parsed, data, funcDefIndex, buildFuncNameArityIndex(funcDefs), functions)
 
 proc parsed*(module: ResolvedModule): Module = module.parsed
-proc requires*(module: ResolvedModule): seq[ResolvedGenericArgumentType] = module.requires
 proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
 proc functions*(module: ResolvedModule): seq[ResolvedFunction] = module.functions
 proc funcDefIndex*(module: ResolvedModule): Table[ResolvedFunctionDef, int] = module.funcDefIndex
@@ -67,11 +61,13 @@ proc funcNameArityIndex*(module: ResolvedModule): Table[Identifier, Table[int, s
 proc name*(module: ResolvedModule): Identifier = module.parsed.name
 proc loc*(module: ResolvedModule): Location = module.parsed.loc
 proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
-  var impls: seq[ResolvedArgumentType]
-  for generic in module.requires:
-    let argType = newResolvedArgumentType(generic)
-    impls.add(argType)
-  newResolvedModuleArgumentType(module.parsed, impls, newLocation())
+  if module.data.isNone:
+    newResolvedModuleArgumentType(module.parsed, newLocation())
+  else:
+    var impls: seq[ResolvedArgumentType]
+    for generic in module.data.get.requires:
+      impls.add(newResolvedArgumentType(generic))
+    newResolvedModuleArgumentType(module.parsed, impls, newLocation())
 
 proc hash*(a: ResolvedModule): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedModule): bool = a.hash == b.hash

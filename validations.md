@@ -490,30 +490,34 @@ Union:
 - **Literal-backed type given type parameters** — `u8[K]` when `u8` is
   a literal-only module is rejected with "does not require impl
   types".
-- **Explicit-`requires` mismatch** — a module declaring
-  `requires(K, V)` invoked as `Array[u8]` (too few impls) is rejected
-  with "expects 2 impls".
+- **Explicit-header mismatch** — a module declaring `struct(K, V):`
+  invoked as `Array[u8]` (too few impls) is rejected with "expects 2
+  impls".
 - **Union arg type with too few impls** — same rule for union types
   with declared or inferred generics.
 
-### 7.4 `requires(...)` block rules
+### 7.4 Struct header (`struct(...)`) rules
 
-- **All named generics must be unique** — `requires(K, K)` is rejected
-  with "duplicate generic".
-- **`requires(...)` must be paired with a data block** — a module with
-  `requires(K)` but no `struct:` / `union:` / `literal:` is rejected
-  with "has no data block".
-- **`requires` with a union data block is rejected** — phantom
-  parameterization is only meaningful on structs. Error contains
-  "data block is not a struct".
-- **A phantom struct cannot have any generic field** — if `requires(K)`
-  is declared, the struct's fields cannot be typed as `K`. Error
-  contains "phantom struct cannot have generic fields". A struct
-  WITHOUT `requires` is unaffected by this rule and may declare
-  generic-typed fields freely (see also §8.3a on how the analyzer
-  handles their kwarg values). Use of such structs is constrained
-  separately by the impl-arity check (§7.3) when their implicit
-  generic parameter is exposed at a return position.
+- **All named generics must be unique** — `struct(K, K):` is rejected
+  with "duplicate generic encountered". Fires at struct-header parse
+  time via `validateRequiresNameConflict` inside `newStructDef`.
+- **Explicit header and generic fields are mutually exclusive** — if
+  a struct uses `struct(A):`, none of its fields may be typed by a
+  generic. Rejected with "struct with explicit generic requirements
+  does not support generic fields". Enforced in `resolveStructDef`.
+  A plain `struct:` header WITHOUT the parenthesised clause is
+  unaffected and may declare generic-typed fields freely (the
+  generics are collected in first-seen order across the fields; see
+  also §8.3a on how the analyzer handles their kwarg values). Use of
+  such structs is constrained separately by the impl-arity check
+  (§7.3) when their implicit generic parameter is exposed at a
+  return position.
+
+Unions have no equivalent explicit-header form. A union's generic
+parameters are always inferred from its variant field types (see §7.7
+for the ordering rule). This asymmetry is intentional: the phantom-type
+use case that motivates explicit `struct(A):` is only meaningful on
+structs.
 
 ### 7.5 Generic-signature bounds
 
@@ -535,7 +539,7 @@ to:
   `test_analyzer.nim` under "generic constraint satisfaction" —
   landed in the resolver via `checkImplSatisfiesGeneric`).
 - **Each concrete impl is checked independently** — a two-generic
-  requires block validates both slots.
+  `struct(K, V):` header validates both slots.
 
 ### 7.7 Union param-list ordering
 

@@ -73,17 +73,17 @@ suite "ast — Identifier":
 suite "ast — StructDef invariants":
 
   test "newStructDef rejects an empty field list":
-    let r = newStructDef(@[], newLocation())
+    let r = newStructDef(@[], @[], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "at least one field")
 
   test "newStructDef rejects duplicate field names":
-    let r = newStructDef(@[argDef("a", "u8"), argDef("a", "u16")], newLocation())
+    let r = newStructDef(@[], @[argDef("a", "u8"), argDef("a", "u16")], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate field")
 
   test "newStructDef accepts unique field names":
-    let r = newStructDef(@[argDef("a", "u8"), argDef("b", "u16")], newLocation())
+    let r = newStructDef(@[], @[argDef("a", "u8"), argDef("b", "u16")], newLocation())
     check r.isOk
     check r.get.fields.len == 2
 
@@ -295,14 +295,14 @@ public module Foo:
 suite "ast — StructDef field lookups":
 
   test "findFieldId returns the index of an existing field":
-    let s = newStructDef(@[argDef("a", "u8"), argDef("b", "u16")],
+    let s = newStructDef(@[], @[argDef("a", "u8"), argDef("b", "u16")],
       newLocation()).get
     let r = s.findFieldId(id("b"))
     check r.isOk
     check r.get == 1
 
   test "findFieldId reports missing field":
-    let s = newStructDef(@[argDef("a", "u8")], newLocation()).get
+    let s = newStructDef(@[], @[argDef("a", "u8")], newLocation()).get
     let r = s.findFieldId(id("missing"))
     check r.isErr
     check errorContains(r.error, "missing")
