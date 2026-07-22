@@ -170,23 +170,41 @@ proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope,
 proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, generic: Generic,
     argType: ArgumentType): Result[ResolvedArgumentType, string]
 
-# Constraint-satisfaction check: does `resolvedImpl` provide every
-# funcDef the required generic `base` mandates? Retired the analyzer's
+# Constraint-satisfaction check: does `impl` provide every funcDef
+# the required generic `base` mandates? Retired the analyzer's
 # equivalent def-time check and moved it here so
 # ResolvedModuleArgumentType.impls is a provably valid value by the
 # time it leaves the resolver.
 #
-# Semantics drift vs the retired analyzer check: verification is by
-# (name, arity) at the parser level, not by concretized-signature
-# hash. Signature-parity (e.g. impl provides `byte_size(items: u16)`
-# where the base generic mandates `byte_size(items: u32)`) is left to
-# the analyzer's value-vs-defType walk at use sites
+# Verification is deliberately SHALLOW — by `(name, arity)` at the
+# parser level, not by concretized-signature comparison. Signature-
+# parity (e.g. impl provides `byte_size(items: u16)` where the base
+# generic mandates `byte_size(items: u32)`) is left to the analyzer's
+# value-vs-defType walk at use sites
 # (`analyzeValueTypeAgainstDefType` on the analyzer facade), which
-# already runs the strict hash-based check every time a value is
-# type-checked against a definition. The def-time check here catches
-# the "impl is missing the method entirely" case — the common
-# regression path — using the parser-level `findFunctionDefs` API
-# directly, no resolver-side lookup needed.
+# already runs the strict check every time a value is type-checked
+# against a definition.
+#
+# Why shallow-here and deep-there: a deep signature check would need
+# BOTH the base generic's and the impl module's fully resolved
+# function signatures. ASL allows cyclic dependencies across modules
+# within a single file and has no forward-declaration mechanism, so
+# the resolver can't guarantee an impl module's signatures are
+# resolved when the check would fire (they may themselves depend on
+# the type currently being resolved). The analyzer runs after every
+# signature is fully resolved, so it can compare types without
+# hitting a mid-resolution shape. Attempting the deep check in the
+# resolver would require either topological ordering (impossible
+# with cycles) or a two-pass signatures-first / satisfaction-second
+# split (breaks the single pass B model).
+#
+# The def-time check here catches the "impl is missing the method
+# entirely" case — the common regression path — using the parser-
+# level `findFunctionDefs` API directly, no resolver-side lookup
+# needed. Signature-parity mismatches surface at the first call site
+# instead of the impl declaration; in practice both sites are usually
+# in the same file, and error location tracking still points at the
+# offending declaration.
 proc checkImplSatisfiesGeneric(impl: ResolvedArgumentType, base: Generic): Result[void, string] =
   case impl.kind:
   of ratkModule:
