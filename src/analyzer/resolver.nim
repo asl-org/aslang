@@ -98,18 +98,10 @@ export imports, files, app
 
 proc findType*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Type, string] =
   let maybeLocal = file.findType(name)
-  if maybeLocal.isOk: return maybeLocal
-  let maybeImported = file.findImportedType(name)
-  if maybeImported.isOk:
-    let importedType = maybeImported.get
-    if importedType.binding notin fileScope:
-      return err(fmt"{importedType.loc} type `{importedType.binding.asl}` does not exist in the file scope.")
-    return ok(fileScope[importedType.binding])
-  # Name isn't in the parser's local-def or imported-name indexes
-  # but the resolver may have populated fileScope with it via a
-  # shorthand `import "file.asl"` expansion in resolveImport.
-  if name in fileScope: ok(fileScope[name])
-  else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
+  if maybeLocal.isOk: maybeLocal
+  else:
+    if name in fileScope: ok(fileScope[name])
+    else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findGeneric*(file: parser.File, fileScope: FileScope, name: Identifier): Result[Generic, string] =
   let initType = ? file.findType(fileScope, name)
@@ -164,6 +156,12 @@ proc findRequiredImplsForUnion(file: parser.File, fileScope: FileScope, union: U
         requiredUnionImpls.add(generic)
   ok(requiredUnionImpls)
 
+proc findRequiredImplsForData(file: parser.File, fileScope: FileScope, dataDef: DataDef): Result[seq[Generic], string] =
+  case dataDef.kind:
+  of ddkLiteral: ok(newSeq[Generic]())
+  of ddkStruct: file.findRequiredImplsForStruct(fileScope, dataDef.struct)
+  of ddkUnion: file.findRequiredImplsForUnion(fileScope, dataDef.union)
+
 # resolveArgumentType (both context overloads) is called by the
 # module-context resolveModuleArgumentType helper for impls.
 proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
@@ -189,81 +187,51 @@ proc resolveArgumentType*(app: App,     file: parser.File, fileScope: FileScope,
 # the "impl is missing the method entirely" case — the common
 # regression path — using the parser-level `findFunctionDefs` API
 # directly, no resolver-side lookup needed.
-proc checkImplSatisfiesGeneric(resolvedImpl: ResolvedArgumentType, base: Generic): Result[void, string] =
-  case resolvedImpl.kind:
+proc checkImplSatisfiesGeneric(impl: ResolvedArgumentType, base: Generic): Result[void, string] =
+  case impl.kind:
   of ratkModule:
-    let implModule = resolvedImpl.module.module
+    let implModule = impl.module.module
     for funcDef in base.funcDefs:
       let maybeFuncDefs = implModule.findFunctionDefs(funcDef.name, funcDef.arity)
       if maybeFuncDefs.isErr:
-        return err(fmt"{resolvedImpl.module.loc} module `{implModule.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+        return err(fmt"{impl.module.loc} module `{implModule.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
   of ratkGeneric:
-    let implGeneric = resolvedImpl.generic.parsed
+    let implGeneric = impl.generic.parsed
     for funcDef in base.funcDefs:
       let maybeFuncDefs = implGeneric.findFunctionDefs(funcDef.name, funcDef.arity)
       if maybeFuncDefs.isErr:
-        return err(fmt"{resolvedImpl.generic.loc} generic `{implGeneric.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+        return err(fmt"{impl.generic.loc} generic `{implGeneric.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
   ok()
 
+proc resolveArgumentTypeImpls(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType, root: Module, requires: seq[Generic]): Result[ResolvedModuleArgumentType, string] =
+  var impls: seq[ResolvedArgumentType]
+  for (requiredGeneric, impl) in zip(requires, argType.impls):
+    let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
+    ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
+    impls.add(resolvedImpl)
+  ok(newResolvedModuleArgumentType(root, impls, argType.loc))
+
+proc resolveArgumentTypeImpls(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argType: ArgumentType, root: Module, requires: seq[Generic]): Result[ResolvedModuleArgumentType, string] =
+  var impls: seq[ResolvedArgumentType]
+  for (requiredGeneric, impl) in zip(requires, argType.impls):
+    let resolvedImpl = ? resolveArgumentType(app, file, fileScope, generic, impl)
+    ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
+    impls.add(resolvedImpl)
+  ok(newResolvedModuleArgumentType(root, impls, argType.loc))
+
 proc resolveDataModuleArgumentType(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType, root: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
-  case dataDef.kind:
-  of ddkLiteral:
-    if argType.impls.len == 0:
-      ok(newResolvedModuleArgumentType(root, argType.loc))
-    else:
-      err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
-  of ddkStruct:
-    let requires = ? file.findRequiredImplsForStruct(fileScope, dataDef.struct)
-    if argType.impls.len != requires.len:
-      err(fmt"{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
-    else:
-      var impls: seq[ResolvedArgumentType]
-      for (requiredGeneric, impl) in zip(requires, argType.impls):
-        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
-        ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-        impls.add(resolvedImpl)
-      ok(newResolvedModuleArgumentType(root, impls, argType.loc))
-  of ddkUnion:
-    let requires = ? file.findRequiredImplsForUnion(fileScope, dataDef.union)
-    if argType.impls.len != requires.len:
-      err(fmt"{argType.loc} union `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
-    else:
-      var impls: seq[ResolvedArgumentType]
-      for (requiredGeneric, impl) in zip(requires, argType.impls):
-        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, module, impl)
-        ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-        impls.add(resolvedImpl)
-      ok(newResolvedModuleArgumentType(root, impls, argType.loc))
+  let requires = ? file.findRequiredImplsForData(fileScope, dataDef)
+  if argType.impls.len != requires.len:
+    err(fmt"{argType.loc} type `{root.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
+  else:
+    resolveArgumentTypeImpls(app, file, fileScope, module, argType, root, requires)
 
 proc resolveDataModuleArgumentType(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argType: ArgumentType, root: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
-  case dataDef.kind:
-  of ddkStruct:
-    let requires = ? file.findRequiredImplsForStruct(fileScope, dataDef.struct)
-    if argType.impls.len != requires.len:
-      err(fmt"{argType.loc} struct `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
-    else:
-      var impls: seq[ResolvedArgumentType]
-      for (requiredGeneric, impl) in zip(requires, argType.impls):
-        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, generic, impl)
-        ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-        impls.add(resolvedImpl)
-      ok(newResolvedModuleArgumentType(root, impls, argType.loc))
-  of ddkLiteral:
-    if argType.impls.len == 0:
-      ok(newResolvedModuleArgumentType(root, argType.loc))
-    else:
-      err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
-  of ddkUnion:
-    var requires = ? findRequiredImplsForUnion(file, fileScope, dataDef.union)
-    if argType.impls.len != requires.len:
-      err(fmt"{argType.loc} type `{root.name.asl}` expects `{requires.len}` impls but found `{argType.impls.len}`")
-    else:
-      var impls: seq[ResolvedArgumentType]
-      for (requiredGeneric, impl) in zip(requires, argType.impls):
-        let resolvedImpl = ? resolveArgumentType(app, file, fileScope, generic, impl)
-        ? checkImplSatisfiesGeneric(resolvedImpl, requiredGeneric)
-        impls.add(resolvedImpl)
-      ok(newResolvedModuleArgumentType(root, impls, argType.loc))
+  let requires = ? file.findRequiredImplsForData(fileScope, dataDef)
+  if argType.impls.len != requires.len:
+    err(fmt"{argType.loc} type `{root.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
+  else:
+    resolveArgumentTypeImpls(app, file, fileScope, generic, argType, root, requires)
 
 # resolveModuleArgumentType — module context.
 proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope, module: Module, argType: ArgumentType, root: Module): Result[ResolvedModuleArgumentType, string] =
@@ -288,10 +256,13 @@ proc resolveModuleArgumentType(app: App, file: parser.File, fileScope: FileScope
       err(fmt"{argType.loc} type `{root.name.asl}` does not require impl types")
 
 proc resolveGenericArgumentType(app: App, file: parser.File, generic: Generic, argType: ArgumentType, genericArgType: Generic): Result[ResolvedGenericArgumentType, string] =
-  if genericArgType == generic:
-    ok(newResolvedGenericArgumentType(genericArgType, argType.loc))
+  if argType.impls.len == 0:
+    if genericArgType == generic:
+      ok(newResolvedGenericArgumentType(genericArgType, argType.loc))
+    else:
+      err(fmt"{argType.loc} type `{genericArgType.name.asl}` is a generic and can not be used within the generic block")
   else:
-    err(fmt"{argType.loc} type `{genericArgType.name.asl}` is a generic and can not be used within the generic block")
+    err(fmt"{argType.loc} type `{genericArgType.name.asl}` is a generic and does not support further impls")
 
 proc resolveGenericArgumentType(app: App, file: parser.File, module: Module, argType: ArgumentType, genericArgType: Generic): Result[ResolvedGenericArgumentType, string] =
   if argType.impls.len == 0:
@@ -326,40 +297,22 @@ proc resolveArgumentType*(app: App, file: parser.File, fileScope: FileScope, gen
 # pointing at an unsubstituted generic, which is acceptable).
 # Reads through the parser Module — set at parse time and always
 # available.
-proc resolveDataType*(file: parser.File, module: Module, arg: ArgumentType,
-    resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
-  case resolvedArgumentType.kind:
-  of ratkGeneric:
-    ok()
+proc resolveDataType*(argType: ArgumentType, resolvedArgType: ResolvedArgumentType): Result[void, string] =
+  case resolvedArgType.kind:
+  of ratkGeneric: ok()
   of ratkModule:
-    let parsedModule = resolvedArgumentType.module.parsed
-    if parsedModule.data.isSome:
-      ok()
-    else:
-      err(fmt"{arg.loc} module `{parsedModule.name.asl}` is not a literal/struct/union")
+    let parsedModule = resolvedArgType.module.parsed
+    if parsedModule.data.isSome: ok()
+    else: err(fmt"{argType.loc} module `{parsedModule.name.asl}` is not a literal/struct/union")
 
-proc resolveDataType*(file: parser.File, generic: Generic, arg: ArgumentType,
-    resolvedArgumentType: ResolvedArgumentType): Result[void, string] =
-  case resolvedArgumentType.kind:
-  of ratkGeneric:
-    ok()
-  of ratkModule:
-    let parsedModule = resolvedArgumentType.module.parsed
-    if parsedModule.data.isSome:
-      ok()
-    else:
-      err(fmt"{arg.loc} module `{parsedModule.name.asl}` is not a literal/struct/union")
-
-proc resolveArgumentDef*(app: App, file: parser.File, fileScope: FileScope, module: Module,
-    arg: ArgumentDef): Result[ResolvedArgumentDef, string] =
-  let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, module,
-    arg.argType)
-  ? resolveDataType(file, module, arg.argType, resolvedArgumentType)
-  ok(newResolvedArgumentDef(arg, resolvedArgumentType))
+proc resolveArgumentDef*(app: App, file: parser.File, fileScope: FileScope, module: Module, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
+  let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, module, argDef.argType)
+  ? resolveDataType(argDef.argType, resolvedArgumentType)
+  ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
 
 proc resolveArgumentDef*(app: App, file: parser.File, fileScope: FileScope, generic: Generic, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
   let resolvedArgumentType = ? resolveArgumentType(app, file, fileScope, generic, argDef.argType)
-  ? resolveDataType(file, generic, argDef.argType, resolvedArgumentType)
+  ? resolveDataType(argDef.argType, resolvedArgumentType)
   ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
 
 proc resolveLiteralDef*(file: parser.File, literal: LiteralDef): Result[ResolvedLiteralDef, string] =
@@ -450,33 +403,27 @@ proc resolveDataDef*(app: App, file: parser.File,
     let resolvedUnion = ? resolveUnionDef(app, file, fileScope, module, data.union)
     ok(newResolvedData(resolvedUnion))
 
-proc resolveFunctionDef*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
-    def: FunctionDef): Result[ResolvedFunctionDef, string] =
-  var resolvedArgs: seq[ResolvedArgumentDef]
-  for arg in def.args:
-    let resolvedArg = ? resolveArgumentDef(app, file, fileScope, module,
-      arg)
-    resolvedArgs.add(resolvedArg)
+proc resolveFunctionDef*(app: App,     file: parser.File, fileScope: FileScope, module: Module, def: FunctionDef): Result[ResolvedFunctionDef, string] =
+  var resolvedArgDefs: seq[ResolvedArgumentDef]
+  for argDef in def.args:
+    let resolvedArgDef = ? resolveArgumentDef(app, file, fileScope, module, argDef)
+    resolvedArgDefs.add(resolvedArgDef)
 
-  let resolvedReturnArgType = ? resolveArgumentType(app, file, fileScope, module,
-    def.returns)
-  ? resolveDataType(file, module, def.returns, resolvedReturnArgType)
+  let resolvedReturnType = ? resolveArgumentType(app, file, fileScope, module, def.returns)
+  ? resolveDataType(def.returns, resolvedReturnType)
 
-  ok(newResolvedFunctionDef(def, resolvedArgs,
-    resolvedReturnArgType))
+  ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
 
 proc resolveFunctionDef*(app: App, file: parser.File, fileScope: FileScope, generic: Generic, def: FunctionDef): Result[ResolvedFunctionDef, string] =
-  var resolvedArgs: seq[ResolvedArgumentDef]
-  for arg in def.args:
-    let resolvedArg = ? resolveArgumentDef(app, file, fileScope, generic, arg)
-    resolvedArgs.add(resolvedArg)
+  var resolvedArgDefs: seq[ResolvedArgumentDef]
+  for argDef in def.args:
+    let resolvedArgDef = ? resolveArgumentDef(app, file, fileScope, generic, argDef)
+    resolvedArgDefs.add(resolvedArgDef)
 
-  let resolvedReturnArgType = ? resolveArgumentType(app, file, fileScope, generic,
-    def.returns)
-  ? resolveDataType(file, generic, def.returns, resolvedReturnArgType)
+  let resolvedReturnType = ? resolveArgumentType(app, file, fileScope, generic, def.returns)
+  ? resolveDataType(def.returns, resolvedReturnType)
 
-  ok(newResolvedFunctionDef(def, resolvedArgs,
-    resolvedReturnArgType))
+  ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
 
 proc resolveExternFunction*(app: App,     file: parser.File, fileScope: FileScope, module: Module,
     function: ExternFunction): Result[ResolvedExternFunction, string] =

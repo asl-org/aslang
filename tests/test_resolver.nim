@@ -360,7 +360,7 @@ module M:
     ])
     cleanupDir(dir)
     check r.isErr
-    check errorContains(r.error, "does not require impl types")
+    check errorContains(r.error, "expects 0 impls but found")
 
   test "calling a non-existent function on a module is rejected":
     let (r, dir) = resolveFiles([
