@@ -3,6 +3,7 @@ import strformat, results
 import ./tokenizer
 
 import ./identifiers
+import ./decorator
 import ./funcdef
 import ./generics
 import ./modules
@@ -50,6 +51,11 @@ proc loc*(typ: Type): Location =
   case typ.kind:
   of tkModule: typ.module.loc
   of tkGeneric: typ.generic.loc
+
+proc decorators*(typ: Type): seq[Decorator] =
+  case typ.kind:
+  of tkModule: typ.module.decorators
+  of tkGeneric: typ.generic.decorators
 
 proc asl*(typ: Type, level: int, indentWidth: uint32): seq[string] =
   case typ.kind:

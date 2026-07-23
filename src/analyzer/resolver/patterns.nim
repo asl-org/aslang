@@ -43,3 +43,8 @@ proc loc*(pattern: ResolvedCasePattern): Location =
   of rcpkInteger: pattern.integer.loc
   of rcpkVariable: pattern.variable.loc
   of rcpkUnion: pattern.variant.loc
+proc bindings*(pattern: ResolvedCasePattern): seq[Identifier] =
+  case pattern.kind:
+  of rcpkInteger: @[]
+  of rcpkVariable: @[pattern.variable]
+  of rcpkUnion: pattern.variant.bindings

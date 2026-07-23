@@ -16,22 +16,12 @@ type ResolvedGeneric* = ref object
   funcDefIndex: Table[ResolvedFunctionDef, int]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
-proc newResolvedGenericInternal(parsed: Generic,
-    funcDefs: seq[ResolvedFunctionDef],
-    funcDefIndex: Table[ResolvedFunctionDef, int],
-    funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]): ResolvedGeneric =
-  ## Raw constructor used by the front-door `newResolvedGeneric`, which
-  ## computes the two indices from the funcDef list.
-  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs,
-    funcDefIndex: funcDefIndex, funcNameArityIndex: funcNameArityIndex)
-
 proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): ResolvedGeneric =
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   for id, funcDef in funcDefs:
     assert(funcDef notin funcDefIndex, "UNREACHABLE: generic resolution broke due to duplicated function definition")
     funcDefIndex[funcDef] = id
-  newResolvedGenericInternal(parsed, funcDefs, funcDefIndex,
-    buildFuncNameArityIndex(funcDefs))
+  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs))
 
 proc parsed*(generic: ResolvedGeneric): Generic = generic.parsed
 proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDef] = generic.funcDefs

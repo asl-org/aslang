@@ -384,10 +384,12 @@ populated for the bracketed form). Scope:
   bodies: each statement is dispatched, each expression is resolved,
   and every function call is matched against candidate function
   definitions by `(name, arity)` against the target type. A
-  `FunctionScope` (HashSet[Identifier]) tracks the names of
-  variables currently in scope; the type of each variable is the
-  Analyzer's concern. The resolver collects candidate overloads but
-  does not pick the unique one — that's the Analyzer.
+  `FunctionScope` (Table[Identifier, Location]) tracks the names of
+  variables currently in scope; the value stores the declaration site
+  so duplicate-declaration errors can point at the prior source
+  location. Variable types remain the Analyzer's concern. The
+  resolver collects candidate overloads but does not pick the unique
+  one — that's the Analyzer.
 - **Not the resolver's job**: overload selection (picking the unique
   candidate after matching concrete arg types) and body-level
   type-correctness checks. Those belong to the Analyzer phase.
@@ -509,7 +511,7 @@ src/
                                    type declaration, constructor, and
                                    accessors only; the cross-type
                                    `resolve*` procs live on the facade.
-    literaldef.nim                 ResolvedLiteralDef + resolveLiteralDef
+    literaldef.nim                 ResolvedLiteralDef + newResolvedLiteralDef
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
     imports.nim                    ResolvedImportedType / ResolvedImport
     filescope.nim                  FileScope (Identifier ->
@@ -517,10 +519,19 @@ src/
                                    resolveFile from imports + local
                                    defs; keyed by binding so aliased
                                    imports resolve correctly.
-    functionscope.nim              FunctionScope (HashSet[Identifier])
-                                   — names of variables currently in
-                                   scope; types are the analyzer's
-                                   concern.
+    functionscope.nim              FunctionScope
+                                   (Table[Identifier, Location]) —
+                                   names of variables currently in
+                                   scope, keyed by identifier with
+                                   the declaration Location as value
+                                   for duplicate-declaration error
+                                   pointers. Types are the analyzer's
+                                   concern. Constructor
+                                   newFunctionScope seeds from a
+                                   resolved function's args;
+                                   `update` extends with a
+                                   statement's introduced variable
+                                   or a case pattern's bindings.
     argtype.nim                    ResolvedArgumentType (flat tagged
                                    union over ratkModule / ratkGeneric).
     moduleargtype.nim              ResolvedModuleArgumentType — carries

@@ -8,7 +8,7 @@
 ## `genericargtype.nim` files re-export this module so downstream
 ## callers that only need one variant can import it by name.
 
-import strformat, strutils, hashes
+import results, strformat, strutils, hashes
 
 import ./parser
 
@@ -49,6 +49,12 @@ proc hash*(argType: ResolvedGenericArgumentType): Hash = argType.generic.hash
 proc `==`*(a, b: ResolvedGenericArgumentType): bool = a.hash == b.hash
 proc asl*(argType: ResolvedGenericArgumentType): string = argType.generic.name.asl
 
+proc satisfies*(argType: ResolvedGenericArgumentType, base: Generic): Result[void, string] =
+  for funcDef in base.funcDefs:
+    let maybeFuncDefs = argType.parsed.findFunctionDefs(funcDef.name, funcDef.arity)
+    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+  ok()
+
 # ---- ResolvedModuleArgumentType ----
 
 proc newResolvedModuleArgumentType*(module: Module, impls: seq[ResolvedArgumentType], loc: Location): ResolvedModuleArgumentType =
@@ -83,6 +89,12 @@ proc asl*(argType: ResolvedModuleArgumentType): string =
       impls.add(impl.asl)
     let implsJoined = impls.join(", ")
     fmt"{argType.parsed.name.asl}[{implsJoined}]"
+
+proc satisfies*(argType: ResolvedModuleArgumentType, base: Generic): Result[void, string] =
+  for funcDef in base.funcDefs:
+    let maybeFuncDefs = argType.module.findFunctionDefs(funcDef.name, funcDef.arity)
+    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+  ok()
 
 # ---- ResolvedArgumentType (outer tagged union) ----
 
@@ -134,3 +146,8 @@ proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgu
       argType
     else:
       concrete
+
+proc satisfies*(argType: ResolvedArgumentType, base: Generic): Result[void, string] =
+  case argType.kind:
+  of ratkModule: argType.module.satisfies(base)
+  of ratkGeneric: argType.generic.satisfies(base)

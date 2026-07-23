@@ -103,15 +103,6 @@ proc loc*(cp: CasePattern): Location =
   of cpkVariable: cp.variable.loc
   of cpkUnion: cp.variant.loc
 
-proc bindings*(cp: CasePattern): seq[Identifier] =
-  var bindings: seq[Identifier]
-  case cp.kind:
-  of cpkInteger: discard
-  of cpkVariable: bindings.add(cp.variable)
-  of cpkUnion: bindings.add(cp.variant.bindings)
-
-  return bindings
-
 proc intLit*(cp: CasePattern): IntegerLiteral =
   assert cp.kind == cpkInteger,
     fmt"CasePattern.intLit accessed but kind is {cp.kind}"

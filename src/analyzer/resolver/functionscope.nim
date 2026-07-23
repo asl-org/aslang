@@ -1,10 +1,42 @@
 ## FunctionScope — the set of variable names in scope at a body-level
-## site. Threaded through every statement/expression resolver so name
+## site, keyed by identifier with the declaration `Location` as value
+## so duplicate-declaration errors can point at the prior site.
+## Threaded through every statement/expression resolver so name
 ## lookups can distinguish a bound local from an unresolved reference.
-## Pure type alias; no procs of its own.
+##
+## Constructor `newFunctionScope` seeds the scope from a resolved
+## function's argument list (rejecting duplicates). `update`
+## overloads extend the scope with a statement's introduced variable
+## or a case pattern's bindings — used by the body walker as it
+## resolves statements sequentially.
 
-import sets
+import options, results, strformat, tables
 
 import ./parser
 
-type FunctionScope* = HashSet[Identifier]
+import ./argdef
+import ./funcdef
+import ./patterns
+import ./statement
+
+type FunctionScope* = Table[Identifier, Location]
+
+proc newFunctionScope*(def: ResolvedFunctionDef): Result[FunctionScope, string] =
+  var scope: FunctionScope
+  for argDef in def.args:
+    if argDef.name in scope:
+      let loc = scope[argDef.name]
+      return err(fmt"{argDef.loc} duplicate function argument declaration encountered, see previous declaration at {loc}")
+    scope[argDef.name] = argDef.loc
+  ok(scope)
+
+proc update*(scope: var FunctionScope, statement: ResolvedStatement): FunctionScope =
+  if statement.variable.isSome:
+    let variable = statement.variable.get
+    scope[variable] = variable.loc
+  return scope
+
+proc update*(scope: var FunctionScope, pattern: ResolvedCasePattern): FunctionScope =
+  for binding in pattern.bindings:
+    scope[binding] = binding.loc
+  return scope

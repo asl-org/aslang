@@ -30,17 +30,6 @@ proc buildFuncNameArityIndex*(funcDefs: seq[ResolvedFunctionDef]): Table[Identif
       result[funcDef.name][funcDef.arity] = newSeq[int]()
     result[funcDef.name][funcDef.arity].add(id)
 
-# ---- ResolvedModule constructor + accessors ----
-
-proc newResolvedModuleInternal(parsed: Module,
-    data: Option[ResolvedData],
-    funcDefIndex: Table[ResolvedFunctionDef, int],
-    funcNameArityIndex: Table[Identifier, Table[int, seq[int]]],
-    functions: seq[ResolvedFunction]): ResolvedModule =
-  ## Raw constructor used by the front-door `newResolvedModule`, which
-  ## computes the two indices from the function list.
-  ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: funcNameArityIndex, functions: functions)
-
 proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
   ## Front-door: compute the funcDef/funcNameArity indices from the
   ## resolved functions and construct the ResolvedModule. Used by
@@ -51,7 +40,7 @@ proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: s
     assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
     funcDefIndex[function.def] = id
     funcDefs.add(function.def)
-  newResolvedModuleInternal(parsed, data, funcDefIndex, buildFuncNameArityIndex(funcDefs), functions)
+  ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions)
 
 proc parsed*(module: ResolvedModule): Module = module.parsed
 proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
