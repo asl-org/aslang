@@ -23,7 +23,7 @@ proc update(fileScope: var ResolvedFileScope, name: Identifier, typ: ResolvedTyp
     fileScope[name] = typ
     ok(fileScope)
 
-proc newResolvedFileScope*(imports: seq[AnalyzedImportDef], types: seq[ResolvedType]): Result[ResolvedFileScope, string] =
+proc newResolvedFileScope*(imports: seq[AnalyzedImportDefinition], types: seq[ResolvedType]): Result[ResolvedFileScope, string] =
   var fileScope: ResolvedFileScope
   for imp in imports:
     for impType in imp.importedTypes:

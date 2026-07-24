@@ -62,6 +62,9 @@ export generic
 import ./analyzer/definedtype
 export definedtype
 
+import ./analyzer/filedef
+export filedef
+
 # ---- pattern cluster ----
 import ./analyzer/literalparse
 export literalparse
@@ -403,6 +406,41 @@ proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: Resolv
   of rdtkModule:
     let analyzedModule = ? analyzeModuleDefinition(app, file, fileScope, definedType.module)
     ok(newAnalyzedDefinedType(analyzedModule))
+
+# Forward-declare the two import analyzers so analyzeFileDefinition
+# can call them; their bodies live near the end of this file
+# alongside the top-level analyze* entry.
+proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedType, string]
+proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDefinition, string]
+
+# ============================================================
+# Phase-A file dispatcher (W6 of plan_analyzer_two_pass.md).
+# Ported from oldanalyzer.nim:951.
+#
+# Note: the fileScope built here contains IMPORTS ONLY, not the
+# file's local defined types. Local-type lookups during
+# analyzeArgumentType go through `file.findModule` (see
+# findArgTypeModule above) — the resolver's own per-file typeIndex
+# — so injecting local types into the fileScope would be
+# redundant. This matches old-analyzer behavior (:952-958) and
+# differs from the current phase-B `analyzeFile` which builds a
+# unified scope for its own use.
+# ============================================================
+
+proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
+  var fileScope: ResolvedFileScope
+  var analyzedImports: seq[AnalyzedImportDefinition]
+  for imp in file.imports:
+    let analyzedImport = ? analyzeImportDefinition(app, file, imp)
+    analyzedImports.add(analyzedImport)
+    for impType in analyzedImport.importedTypes:
+      fileScope[impType.binding] = impType.typ
+
+  var analyzedDefinedTypes: seq[AnalyzedDefinedType]
+  for aslType in file.types:
+    let analyzedDefinedType = ? analyzeDefinedType(app, file, fileScope, aslType)
+    analyzedDefinedTypes.add(analyzedDefinedType)
+  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, fileScope))
 
 proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   ## Look each user-supplied pattern field up on the resolved variant,
@@ -1028,7 +1066,7 @@ proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: Reso
   else:
     ok(newAnalyzedImportedType(impType, maybeImportedType.get))
 
-proc analyzeImportDef*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDef, string] =
+proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
   let maybeImportedFile = app.findFile(imp.impFile)
   if maybeImportedFile.isNone:
     err(fmt"{imp.loc} UNREACHABLE: file `{imp.impFile.path}` does not exist")
@@ -1038,15 +1076,15 @@ proc analyzeImportDef*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport
     for impType in imp.importedTypes:
       let analyzedImportedType = ? analyzeImportedType(app, analyzedImpFile, impType)
       importedTypes.add(analyzedImportedType)
-    ok(newAnalyzedImportDef(imp, importedTypes))
+    ok(newAnalyzedImportDefinition(imp, importedTypes))
 
 proc analyzeFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, string] =
   ## Build the fileScope from imports (name → resolved defined type in
   ## the imported file) + this file's own defined types, then drive
   ## per-module body analysis.
-  var analyzedImports: seq[AnalyzedImportDef]
+  var analyzedImports: seq[AnalyzedImportDefinition]
   for imp in file.imports:
-    let analyzedImport = ? analyzeImportDef(app, file, imp)
+    let analyzedImport = ? analyzeImportDefinition(app, file, imp)
     analyzedImports.add(analyzedImport)
 
   let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
