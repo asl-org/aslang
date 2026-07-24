@@ -1,5 +1,29 @@
 # Identity-based lookups — migrate scope tables from `Identifier` keys to `parser.Type` / `parser.Module` keys
 
+## Status (as of 2026-07-25) — COMPLETE
+
+W0-W2 landed on `main-recovery`. The migration turned out to be much
+smaller than the original plan estimated because the identity index
+naturally belonged at the `ResolvedApp` level (which every analyze*
+proc already has in scope), not per-file. W3-W6 collapsed.
+
+Landed:
+- W0 (3c9b183) — plan doc.
+- W1 (45f41c7) — introduced per-file `ResolvedTypeScope` alongside
+  `ResolvedFileScope`; both populated by `newResolvedFileScope`.
+- W2 (ff12032) — put `typeIndex: Table[parser.Type, ResolvedType]`
+  on `ResolvedApp` itself; `findArgTypeModule` uses `app.findType`
+  for direct O(1) identity lookup. The aliased-import fallback loop
+  from analyzer W8 is gone.
+- W3+W5+W6 (this commit) — retired W1's per-file `ResolvedTypeScope`
+  as dead code (superseded by W2's app-level index). Doc-comment on
+  `filescope.nim` updated. Plan doc marked complete.
+
+The bug that motivated the plan (aliased-import name mismatch in
+`findArgTypeModule`) is fixed at the design level: identity-based
+lookup takes precedence, name-based lookup is confined to the initial
+"user typed this name" query.
+
 ## Context
 
 `Identifier` in this codebase hashes by string value (`identifier.value`).

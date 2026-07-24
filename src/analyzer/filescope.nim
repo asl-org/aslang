@@ -1,23 +1,15 @@
-## Per-file scope tables. Two parallel indices — one for name lookups
-## (the initial "user typed this name" query), one for identity
-## lookups (post-resolution "given this parser.Type, find its
-## resolved counterpart"). See plans/plan_identity_based_lookups.md
-## for the rationale.
+## ResolvedFileScope — per-file name-keyed lookup (Identifier ->
+## ResolvedType). The initial entry point for name resolution —
+## used by callers that hold an Identifier from the parse tree
+## (`defaultLiteralArgType` looking up "i32", or the initial type
+## reference at the top of an argType).
 ##
-## `ResolvedFileScope` (name-keyed) is the entry point for name
-## resolution — used by callers that hold an `Identifier` from the
-## parse tree (like `defaultLiteralArgType` looking up "i32", or the
-## initial type reference at the top of an argType). Aliased imports
-## surface via their binding, not the underlying module name.
-##
-## `ResolvedTypeScope` (identity-keyed) is for callers that already
-## hold a `parser.Type` (from a `ResolvedModuleArgumentType.module`
-## etc.) and want the corresponding `ResolvedType`. Immune to the
-## aliased-import name mismatch that motivated
-## plan_identity_based_lookups.md.
-##
-## Both scopes are populated from the same source: imports +
-## file.types. `newResolvedFileScope` returns a tuple.
+## Identity-based lookups (given a `parser.Type` from a resolved
+## argType, find the ResolvedType) go through `app.findType` —
+## the app-level index on ResolvedApp — not through this scope.
+## An earlier iteration of plan_identity_based_lookups.md added a
+## per-file `ResolvedTypeScope` here; the app-level index proved
+## simpler and covers every case without threading.
 
 import results, strformat, tables
 
@@ -25,9 +17,7 @@ import ./resolver
 import ./importdef
 import ./importedtype
 
-type
-  ResolvedFileScope* = Table[Identifier, ResolvedType]
-  ResolvedTypeScope* = Table[parser.Type, ResolvedType]
+type ResolvedFileScope* = Table[Identifier, ResolvedType]
 
 proc update(fileScope: var ResolvedFileScope, name: Identifier, typ: ResolvedType): Result[ResolvedFileScope, string] =
   if name in fileScope:
@@ -37,22 +27,13 @@ proc update(fileScope: var ResolvedFileScope, name: Identifier, typ: ResolvedTyp
     fileScope[name] = typ
     ok(fileScope)
 
-proc newResolvedFileScope*(imports: seq[AnalyzedImportDefinition], types: seq[ResolvedType]): Result[(ResolvedFileScope, ResolvedTypeScope), string] =
-  ## Builds both the name-keyed and identity-keyed scopes in one
-  ## pass. Duplicate-name errors surface via the name-scope's
-  ## `update`; the identity scope tolerates duplicates silently
-  ## because the same parser.Type appearing twice is impossible
-  ## (each is loc-unique) — but if it did happen, the last write
-  ## wins.
-  var nameScope: ResolvedFileScope
-  var typeScope: ResolvedTypeScope
+proc newResolvedFileScope*(imports: seq[AnalyzedImportDefinition], types: seq[ResolvedType]): Result[ResolvedFileScope, string] =
+  var fileScope: ResolvedFileScope
   for imp in imports:
     for impType in imp.importedTypes:
-      nameScope = ? nameScope.update(impType.binding, impType.typ)
-      typeScope[impType.typ.parsed] = impType.typ
+      fileScope = ? fileScope.update(impType.binding, impType.typ)
 
   for typ in types:
-    nameScope = ? nameScope.update(typ.name, typ)
-    typeScope[typ.parsed] = typ
+    fileScope = ? fileScope.update(typ.name, typ)
 
-  ok((nameScope, typeScope))
+  ok(fileScope)
