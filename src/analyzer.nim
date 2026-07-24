@@ -65,6 +65,9 @@ export definedtype
 import ./analyzer/filedef
 export filedef
 
+import ./analyzer/appdef
+export appdef
+
 # ---- pattern cluster ----
 import ./analyzer/literalparse
 export literalparse
@@ -441,6 +444,20 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
     let analyzedDefinedType = ? analyzeDefinedType(app, file, fileScope, aslType)
     analyzedDefinedTypes.add(analyzedDefinedType)
   ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, fileScope))
+
+# ============================================================
+# Phase-A app dispatcher (W7 of plan_analyzer_two_pass.md).
+# Ported from oldanalyzer.nim:987. Walks every file, produces the
+# per-app definition bundle. Not yet consumed by the top-level
+# `analyze*` entry — that switches to two-pass orchestration at W8.
+# ============================================================
+
+proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedAppDefinition, string] =
+  var analyzedFileDefinitions: seq[AnalyzedFileDefinition]
+  for file in app.files:
+    let analyzedFileDefinition = ? analyzeFileDefinition(app, file)
+    analyzedFileDefinitions.add(analyzedFileDefinition)
+  ok(newAnalyzedAppDefinition(app, analyzedFileDefinitions))
 
 proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   ## Look each user-supplied pattern field up on the resolved variant,
