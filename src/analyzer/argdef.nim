@@ -15,27 +15,29 @@ import ./argtype
 import ./genericimplmap
 
 type AnalyzedArgumentDefinition* = ref object
+  resolved: ResolvedArgumentDef
   argType: AnalyzedArgumentType
-  name: Identifier
 
-proc newAnalyzedArgumentDefinition*(argType: AnalyzedArgumentType, name: Identifier): AnalyzedArgumentDefinition =
-  AnalyzedArgumentDefinition(argType: argType, name: name)
+proc newAnalyzedArgumentDefinition*(resolved: ResolvedArgumentDef, argType: AnalyzedArgumentType): AnalyzedArgumentDefinition =
+  AnalyzedArgumentDefinition(resolved: resolved, argType: argType)
 
+proc resolved*(d: AnalyzedArgumentDefinition): ResolvedArgumentDef = d.resolved
 proc argType*(d: AnalyzedArgumentDefinition): AnalyzedArgumentType = d.argType
-proc name*(d: AnalyzedArgumentDefinition): Identifier = d.name
-proc loc*(d: AnalyzedArgumentDefinition): Location = d.name.loc
+proc name*(d: AnalyzedArgumentDefinition): Identifier = d.resolved.name
+proc loc*(d: AnalyzedArgumentDefinition): Location = d.resolved.name.loc
 
 proc asl*(d: AnalyzedArgumentDefinition): string =
   d.name.asl & ": " & d.argType.asl
 
 proc concrete*(d: AnalyzedArgumentDefinition, implMap: GenericImplMap): AnalyzedArgumentDefinition =
-  ## Substitute generic slots via the implMap, preserving `name`.
-  newAnalyzedArgumentDefinition(d.argType.concrete(implMap), d.name)
+  ## Substitute generic slots via the implMap, preserving the resolver
+  ## back-ref (name is derived from `resolved.name`).
+  newAnalyzedArgumentDefinition(d.resolved, d.argType.concrete(implMap))
 
 proc concrete*(d: AnalyzedArgumentDefinition,
     impls: seq[AnalyzedArgumentType],
     genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedArgumentDefinition =
   ## Positional generic substitution via the (impls, genericTypeIndex)
-  ## pair. Preserves `name`. See argtype.nim:concrete for semantics.
+  ## pair. Preserves `resolved`. See argtype.nim:concrete for semantics.
   newAnalyzedArgumentDefinition(
-    d.argType.concrete(impls, genericTypeIndex), d.name)
+    d.resolved, d.argType.concrete(impls, genericTypeIndex))
