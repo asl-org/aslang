@@ -211,28 +211,24 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope
   else:
     err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` is neither defined nor imported")
 
-proc findArgTypeModule(app: ResolvedApp, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
-  ## Identity-based lookup — the argType already carries the parser
-  ## Module (`argType.module`), and ResolvedApp indexes every
-  ## defined type by parser.Type identity. One O(1) lookup, no
-  ## fallback loop, no aliased-import name mismatch.
-  ##
-  ## Prior implementation (see plan_identity_based_lookups.md) went
-  ## through file.findModule(name) + fileScope[name] + a
-  ## fallback iteration to compare parser.Module identities. The
-  ## name-based path missed aliased imports (`import { u8 as Byte }`
-  ## keyed fileScope by "Byte" but argType.name was "u8"); the
-  ## fallback patched the symptom. Now the primary lookup is
-  ## identity-based and the fallback disappears.
-  let maybe = app.findType(newType(argType.module))
+proc findModule*(app: ResolvedApp, parsed: parser.Module, loc: Location): Result[ResolvedModule, string] =
+  ## Identity-based module lookup — given a parser Module (hash-by-loc),
+  ## return the ResolvedModule that wraps it. Immune to aliased-import
+  ## name mismatch because parser.Module identity is stable regardless
+  ## of the import binding. `loc` is used only for error messages.
+  ## See plans/plan_alias_lookup_cleanup.md.
+  let maybe = app.findType(newType(parsed))
   if maybe.isNone:
-    err(fmt"{argType.loc} module `{argType.name.asl}` is neither defined nor imported")
+    err(fmt"{loc} module `{parsed.name.asl}` is neither defined nor imported")
   else:
     let entry = maybe.get
     case entry.kind:
     of rdtkModule: ok(entry.module)
     of rdtkGeneric:
-      err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.name.asl}` to be a module but found generic.")
+      err(fmt"{loc} [UNREACHABLE] expected `{parsed.name.asl}` to be a module but found generic.")
+
+proc findArgTypeModule(app: ResolvedApp, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
+  app.findModule(argType.module, argType.loc)
 
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
@@ -824,8 +820,9 @@ proc receiverArgType(receiver: ResolvedModule): AnalyzedArgumentType =
 proc analyzeUnionRef(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
   ## Walks the resolver's already-checked `impls` seq once and
   ## produces the analyzer-side equivalents. Empty in → empty out.
-  ## See `analyzeStructRef` for the parser-Module -> ResolvedModule lookup.
-  let resolvedModule = ? fileScope.findModuleDef(unionRef.module.name, unionRef.loc)
+  ## Parser-Module → ResolvedModule via identity lookup on app —
+  ## immune to aliased-import name mismatch.
+  let resolvedModule = ? app.findModule(unionRef.module, unionRef.loc)
   var analyzedImpls = newSeq[AnalyzedArgumentType](unionRef.impls.len)
   for i, resolvedImpl in unionRef.impls:
     analyzedImpls[i] = ? analyzeArgumentType(app, file, fileScope, module, resolvedImpl)
@@ -910,10 +907,10 @@ proc analyzeStructRef(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Res
   ## Walks the resolver's already-checked `impls` seq once and
   ## produces the analyzer-side equivalents. Empty in → empty out.
   ## The parser Module carried on `structRef.module` is looked up here
-  ## into a ResolvedModule via `fileScope.findModuleDef` — the resolver
-  ## keeps struct/union refs parser-level to break the ref cycle;
-  ## analyzer types can hold the resolved view freely.
-  let resolvedModule = ? fileScope.findModuleDef(structRef.module.name, structRef.loc)
+  ## into a ResolvedModule via `app.findModule` (identity-based) — the
+  ## resolver keeps struct/union refs parser-level to break the ref
+  ## cycle; analyzer types can hold the resolved view freely.
+  let resolvedModule = ? app.findModule(structRef.module, structRef.loc)
   var analyzedImpls = newSeq[AnalyzedArgumentType](structRef.impls.len)
   for i, resolvedImpl in structRef.impls:
     analyzedImpls[i] = ? analyzeArgumentType(app, file, fileScope, module, resolvedImpl)
