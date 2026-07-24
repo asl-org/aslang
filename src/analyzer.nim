@@ -31,6 +31,10 @@ export genericargtype
 import ./analyzer/genericimplmap
 export genericimplmap
 
+# ---- phase-A leaves (W1+ of plan_analyzer_two_pass.md) ----
+import ./analyzer/argdef
+export argdef
+
 # ---- pattern cluster ----
 import ./analyzer/literalparse
 export literalparse
