@@ -6,6 +6,34 @@ import ./error
 import ./identifiers
 import ./argdef
 
+proc validateRequiresNameConflict(requires: seq[Identifier]): Result[void, ParserError] =
+  var requiresIndex: Table[Identifier, int]
+  for index, required in requires:
+    if required in requiresIndex:
+      let prev = requires[requiresIndex[required]]
+      let msg = fmt"duplicate generic encountered, see previous declaration at {prev.loc}"
+      return err(newParserError(msg, required.loc))
+    requiresIndex[required] = index
+  ok()
+
+type
+  StructDefHeader* = ref object
+    loc: Location
+    requires: seq[Identifier]
+
+proc newStructDefHeader*(requires: seq[Identifier], loc: Location): Result[StructDefHeader, ParserError] =
+  ? validateRequiresNameConflict(requires)
+  ok(StructDefHeader(loc: loc, requires: requires))
+
+proc loc*(header: StructDefHeader): Location = header.loc
+proc requires*(header: StructDefHeader): seq[Identifier] = header.requires
+proc asl*(s: StructDefHeader): string =
+  if s.requires.len == 0:
+    "struct:"
+  else:
+    let impls = s.requires.mapIt(it.asl).join(", ")
+    fmt"struct({impls}):"
+
 # ============================================================
 # StructDef
 # ============================================================
@@ -20,43 +48,27 @@ proc buildNameIndex(fields: seq[ArgumentDef]): Result[Table[Identifier, int], Pa
     fieldIndex[field.name] = index
   ok(fieldIndex)
 
-proc validateRequiresNameConflict(requires: seq[Identifier]): Result[void, ParserError] =
-  var requiresIndex: Table[Identifier, int]
-  for index, required in requires:
-    if required in requiresIndex:
-      let prev = requires[requiresIndex[required]]
-      let msg = fmt"duplicate generic encountered, see previous declaration at {prev.loc}"
-      return err(newParserError(msg, required.loc))
-    requiresIndex[required] = index
-  ok()
-
 type StructDef* = ref object
-  requires: seq[Identifier]
+  header: StructDefHeader
   fields: seq[ArgumentDef]
   fieldIndex: Table[Identifier, int]
-  loc: Location
 
-proc newStructDef*(requires: seq[Identifier], fields: seq[ArgumentDef], loc: Location): Result[StructDef, ParserError] =
+proc newStructDef*(header: StructDefHeader, fields: seq[ArgumentDef]): Result[StructDef, ParserError] =
   if fields.len == 0:
-    err(newParserError("struct must have at least one field", loc))
+    err(newParserError("struct must have at least one field", header.loc))
   else:
-    ? validateRequiresNameConflict(requires)
     let fieldIndex = ? buildNameIndex(fields)
-    ok(StructDef(requires: requires, fields: fields, fieldIndex: fieldIndex, loc: loc))
+    ok(StructDef(header: header, fields: fields, fieldIndex: fieldIndex))
 
-proc requires*(s: StructDef): seq[Identifier] = s.requires
+proc loc*(s: StructDef): Location = s.header.loc
+proc header*(s: StructDef): StructDefHeader = s.header
 proc fields*(s: StructDef): seq[ArgumentDef] = s.fields
-proc loc*(s: StructDef): Location = s.loc
 
 proc asl*(s: StructDef, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)
   let inner = " ".repeat((level + 1) * indentWidth.int)
   var lines: seq[string]
-  if s.requires.len > 0:
-    let impls = s.requires.mapIt(it.asl).join(", ")
-    lines.add(fmt"{indent}struct({impls}):")
-  else:
-    lines.add(fmt"{indent}struct:")
+  lines.add(fmt"{indent}{s.header.asl}")
 
   for field in s.fields:
     lines.add(fmt"{inner}{field.asl}")

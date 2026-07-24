@@ -23,6 +23,13 @@ proc argType(name: string): ArgumentType =
 proc argDef(name, typeName: string): ArgumentDef =
   newArgumentDef(id(name), argType(typeName))
 
+proc bareStructHeader(): StructDefHeader =
+  ## Empty-requires struct header at a synthetic Location — used by
+  ## the field-list invariant tests, which don't exercise the header.
+  let r = newStructDefHeader(@[], newLocation())
+  doAssert r.isOk, "newStructDefHeader failed: " & r.error.msg
+  r.get
+
 suite "ast — Identifier":
 
   test "identifier of exactly 256 chars is accepted (boundary)":
@@ -73,17 +80,17 @@ suite "ast — Identifier":
 suite "ast — StructDef invariants":
 
   test "newStructDef rejects an empty field list":
-    let r = newStructDef(@[], @[], newLocation())
+    let r = newStructDef(bareStructHeader(), @[])
     check r.isErr
     check errorContains(r.error.msg, "at least one field")
 
   test "newStructDef rejects duplicate field names":
-    let r = newStructDef(@[], @[argDef("a", "u8"), argDef("a", "u16")], newLocation())
+    let r = newStructDef(bareStructHeader(), @[argDef("a", "u8"), argDef("a", "u16")])
     check r.isErr
     check errorContains(r.error.msg, "duplicate field")
 
   test "newStructDef accepts unique field names":
-    let r = newStructDef(@[], @[argDef("a", "u8"), argDef("b", "u16")], newLocation())
+    let r = newStructDef(bareStructHeader(), @[argDef("a", "u8"), argDef("b", "u16")])
     check r.isOk
     check r.get.fields.len == 2
 
@@ -295,14 +302,14 @@ public module Foo:
 suite "ast — StructDef field lookups":
 
   test "findFieldId returns the index of an existing field":
-    let s = newStructDef(@[], @[argDef("a", "u8"), argDef("b", "u16")],
-      newLocation()).get
+    let s = newStructDef(bareStructHeader(),
+      @[argDef("a", "u8"), argDef("b", "u16")]).get
     let r = s.findFieldId(id("b"))
     check r.isOk
     check r.get == 1
 
   test "findFieldId reports missing field":
-    let s = newStructDef(@[], @[argDef("a", "u8")], newLocation()).get
+    let s = newStructDef(bareStructHeader(), @[argDef("a", "u8")]).get
     let r = s.findFieldId(id("missing"))
     check r.isErr
     check errorContains(r.error, "missing")

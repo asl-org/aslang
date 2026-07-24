@@ -1375,13 +1375,19 @@ proc parseStructRequires*(parser: Parser): Result[seq[Identifier], ParserError] 
   ok(generics)
 
 # struct: field+ (field is identifier ":" argumentType)
-proc parseStructHeader(parser: Parser): Result[(seq[Identifier], Location), ParserError] =
+proc parseStructHeader(parser: Parser): Result[StructDefHeader, ParserError] =
   let loc = ? parser.parseKeyword("struct")
   let maybeRequires = ? parser.runOptional(parseStructRequires)
   discard ? parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   let requires = if maybeRequires.isSome: maybeRequires.get else: @[]
-  ok((requires, loc))
+  # newStructDefHeader validation errors (duplicate generic in header)
+  # must be fatal — we're past `struct(...)` so an outer runOptional
+  # shouldn't swallow the failure and treat the whole struct as absent.
+  let headerResult = newStructDefHeader(requires, loc)
+  if headerResult.isErr:
+    headerResult.error.fatal = true
+  headerResult
 
 # Each field line: (blank lines) + indentation + argumentDef + newline
 proc parseArgumentDefLine(parser: Parser): Result[ArgumentDef, ParserError] =
@@ -1405,7 +1411,7 @@ proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
 
 proc parseStruct*(parser: Parser): Result[StructDef, ParserError] =
   discard ? parser.parseIndentation()
-  let (requires, loc) = ? parser.run(parseStructHeader)
+  let header = ? parser.run(parseStructHeader)
   discard ? parser.run(parseIgnorableLine)
   parser.level += 1
   let bodyResult = parseStructBody(parser)
@@ -1417,7 +1423,7 @@ proc parseStruct*(parser: Parser): Result[StructDef, ParserError] =
   # duplicate field name) must also be fatal — we're past the header,
   # so an outer runOptional shouldn't swallow the failure and treat
   # the whole struct as absent.
-  let structResult = newStructDef(requires, bodyResult.get, loc)
+  let structResult = newStructDef(header, bodyResult.get)
   if structResult.isErr:
     structResult.error.fatal = true
   structResult

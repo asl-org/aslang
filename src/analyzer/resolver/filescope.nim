@@ -44,7 +44,7 @@ proc findGeneric*(fileScope: FileScope, name: Identifier): Result[Generic, strin
 
 proc requiredGenerics(fileScope: FileScope, struct: StructDef): Result[seq[Generic], string] =
   var requiredGenerics: seq[Generic]
-  for generic in struct.requires:
+  for generic in struct.header.requires:
     let foundGeneric = ? fileScope.findGeneric(generic)
     requiredGenerics.add(foundGeneric)
   ok(requiredGenerics)

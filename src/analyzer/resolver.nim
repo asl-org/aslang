@@ -275,11 +275,11 @@ proc resolveStructDef*(fileScope: FileScope, struct: StructDef): Result[Resolved
     genericTypeIndex.accumulateGenericPosition(resolvedField)
     resolvedFields.add(resolvedField)
 
-  if struct.requires.len > 0 and genericTypeIndex.len > 0:
+  if struct.header.requires.len > 0 and genericTypeIndex.len > 0:
     return err(fmt"{struct.loc} struct with explicit generic requirements does not support generic fields")
 
   var resolvedRequires: seq[ResolvedGenericArgumentType]
-  for index, generic in struct.requires:
+  for index, generic in struct.header.requires:
     let typ = ? fileScope.findType(generic)
     case typ.kind:
     of tkModule:

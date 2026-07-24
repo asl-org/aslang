@@ -500,7 +500,7 @@ Union:
 
 - **All named generics must be unique** — `struct(K, K):` is rejected
   with "duplicate generic encountered". Fires at struct-header parse
-  time via `validateRequiresNameConflict` inside `newStructDef`.
+  time via `validateRequiresNameConflict` inside `newStructDefHeader`.
 - **Explicit header and generic fields are mutually exclusive** — if
   a struct uses `struct(A):`, none of its fields may be typed by a
   generic. Rejected with "struct with explicit generic requirements

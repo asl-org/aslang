@@ -309,7 +309,7 @@ module/generic. Body-level name resolution is complete (variables,
 getters, function calls, initializers, match/case patterns). The
 resolver also enforces the structural `struct(...)`-header
 constraints (unique generics in the header — enforced by
-`validateRequiresNameConflict` inside `newStructDef`; struct can't
+`validateRequiresNameConflict` inside `newStructDefHeader`; struct can't
 carry generic fields when the header is present — enforced in
 `resolveStructDef` around line 409), runs the arity +
 generic-constraint checks on every impl list (task 7 moved these here
