@@ -1,4 +1,4 @@
-import strformat, results
+import hashes, strformat, results
 
 import ./tokenizer
 
@@ -51,6 +51,21 @@ proc loc*(typ: Type): Location =
   case typ.kind:
   of tkModule: typ.module.loc
   of tkGeneric: typ.generic.loc
+
+proc hash*(typ: Type): Hash =
+  ## Identity via the underlying parser.Module or parser.Generic hash
+  ## (each of which is loc-based). Enables `Table[parser.Type, T]`
+  ## for identity-based scope lookups downstream of name resolution.
+  case typ.kind:
+  of tkModule: typ.module.hash
+  of tkGeneric: typ.generic.hash
+
+proc `==`*(a, b: Type): bool =
+  if a.kind != b.kind: false
+  else:
+    case a.kind:
+    of tkModule: a.module == b.module
+    of tkGeneric: a.generic == b.generic
 
 proc decorators*(typ: Type): seq[Decorator] =
   case typ.kind:

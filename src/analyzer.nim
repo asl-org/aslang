@@ -461,7 +461,7 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
     let analyzedImport = ? analyzeImportDefinition(app, file, imp)
     analyzedImports.add(analyzedImport)
 
-  let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
+  let (fileScope, _) = ? newResolvedFileScope(analyzedImports, file.types)
 
   var analyzedDefinedTypes: seq[AnalyzedDefinedType]
   for aslType in file.types:
@@ -1125,7 +1125,7 @@ proc analyzeFile(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Resolved
     let analyzedImport = ? analyzeImportDefinition(app, file, imp)
     analyzedImports.add(analyzedImport)
 
-  let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
+  let (fileScope, _) = ? newResolvedFileScope(analyzedImports, file.types)
   var analyzedModules: seq[AnalyzedModule]
   for typ in file.types:
     case typ.kind:

@@ -42,6 +42,15 @@ proc loc*(typ: ResolvedType): Location =
   of rdtkModule: typ.module.loc
   of rdtkGeneric: typ.generic.loc
 
+proc parsed*(typ: ResolvedType): parser.Type =
+  ## Underlying parser Type for identity-keyed scope lookups. See
+  ## plans/plan_identity_based_lookups.md — scope tables downstream
+  ## of name resolution key on `parser.Type` (hash-by-loc), not on
+  ## `Identifier` (hash-by-string).
+  case typ.kind:
+  of rdtkModule: newType(typ.module.parsed)
+  of rdtkGeneric: newType(typ.generic.parsed)
+
 proc hash*(typ: ResolvedType): Hash =
   case typ.kind:
   of rdtkModule: typ.module.hash
