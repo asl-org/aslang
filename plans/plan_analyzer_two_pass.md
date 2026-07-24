@@ -1,5 +1,44 @@
 # Analyzer two-pass recovery — reintroduce phase A over the current DDD layout
 
+## Status (as of 2026-07-24, commit 42b8994)
+
+**W0-W8 landed on `main-recovery` branch.** Phase A fully reintroduced;
+two-pass orchestration wired; def-time validation guarantee restored.
+Every commit kept 327/327 unit + 33/35 integration + sample.asl green.
+
+Landed:
+- W0 (commit 6b52bfd) — baseline snapshot + plan doc + oldanalyzer.nim as reference.
+- W1 (b0835ea) — `AnalyzedArgumentDefinition` in argdef.nim.
+- W2 (4ef63d5) — `AnalyzedFunctionDefinition` + `analyzeArgumentDefinition*` + `analyzeFunctionDefinition*` on facade.
+- W3 (7ae527a) — `AnalyzedLiteralBlock` / `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` / `AnalyzedData` + facade procs. Re-added `ResolvedStructDef.genericTypeIndex*` accessor.
+- W4 (d7ae366) — `AnalyzedModuleDefinition` + `AnalyzedGeneric` + facade procs.
+- W5 (9fa398b) — `AnalyzedDefinedType` + `AnalyzedDefinedTypeScope` + facade proc.
+- W6 (8cb51da) — `AnalyzedFileDefinition` + `AnalyzedImportDef` → `AnalyzedImportDefinition` rename + facade proc.
+- W7 (465b47c) — `AnalyzedAppDefinition` + facade proc.
+- W8 (42b8994) — **Wire two-pass orchestration + fix alias-lookup bug in findArgTypeModule.**
+
+Not landed (deferred to future sessions):
+- W8b — thread `AnalyzedAppDefinition` into body walkers; switch
+  overload resolution (`analyzeArgumentList`) to read pre-analyzed
+  args from `AnalyzedFunctionDefinition` instead of re-analyzing per
+  candidate per arg. **Perf improvement, not correctness fix.** Two
+  re-analysis sites at analyzer.nim:649,667. Requires signature
+  ripple through 7 procs (analyzeFile → analyzeModule →
+  analyzeUserFunction → analyzeStatement → analyzeExpression →
+  analyzeFunctionCall → analyzeArgumentList).
+- W8c — retire the shallow lookup paths that W8b's migration
+  supersedes.
+- W9 — retire the `extractDataDef` / `extractStructFor` /
+  `extractUnionFor` / `findModuleDef` shim procs on the facade;
+  rewrite off `AnalyzedFileDefinition`.
+- W10 — delete `oldanalyzer.nim` from repo root once W8b/W8c/W9 done.
+- W11 — final docs sync.
+
+Alias-lookup fix landed as part of W8. `findArgTypeModule` now falls
+back to iterating fileScope values comparing `parser.Module` identity
+when the name-key lookup misses. See its doc-comment for the
+reasoning.
+
 ## Context
 
 An earlier refactor collapsed the analyzer's two-phase structure into
