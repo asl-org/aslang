@@ -1,5 +1,24 @@
 # Drop `fileScope` threading from analyze* signatures
 
+## Status (as of 2026-07-25) — COMPLETE
+
+- W0 (803b1fe) — plan.
+- W1+W2 combined (204c5fe) — dropped `fileScope` from every non-leaf
+  analyze* signature. The 2 leaves (`analyzeFunctionCall`,
+  `defaultLiteralArgType`) look up fileScope at entry via
+  `appDef.findFileDef(file.path).scope`. `analyzeFile` stopped
+  constructing a redundant per-call fileScope (the phase-A build on
+  `AnalyzedFileDefinition.scope` covers it). Doc-comments on
+  `analyzeModuleArgumentType` + phase-A file dispatcher banner
+  updated to describe the post-migration flow.
+
+Combined W1+W2 into a single commit because the sed-based
+transformation removes threading globally and the two work items
+had no natural intermediate state that compiled.
+
+Net: 143 lines gone, one commit, all gates green (327/327 unit,
+33/35 integration, `sample.asl` [SUCCESS]).
+
 ## Context
 
 Scrutinizing after `plan_alias_lookup_cleanup.md` completed: `fileScope:
