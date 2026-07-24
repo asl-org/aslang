@@ -864,17 +864,12 @@ proc analyzeFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, str
   ## Build the fileScope from imports (name → resolved defined type in
   ## the imported file) + this file's own defined types, then drive
   ## per-module body analysis.
-  var fileScope: ResolvedFileScope
   var analyzedImports: seq[AnalyzedImportDef]
   for imp in file.imports:
     let analyzedImport = ? analyzeImportDef(app, file, imp)
     analyzedImports.add(analyzedImport)
-    for impType in analyzedImport.importedTypes:
-      fileScope[impType.binding] = impType.typ
 
-  for typ in file.types:
-    fileScope[typ.name] = typ
-
+  let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
   var analyzedModules: seq[AnalyzedModule]
   for typ in file.types:
     case typ.kind:
