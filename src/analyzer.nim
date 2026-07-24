@@ -35,6 +35,9 @@ export genericimplmap
 import ./analyzer/argdef
 export argdef
 
+import ./analyzer/funcdef
+export funcdef
+
 # ---- pattern cluster ----
 import ./analyzer/literalparse
 export literalparse
@@ -227,6 +230,63 @@ proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: Resol
   of ratkModule:
     let analyzedArgType = ? analyzeModuleArgumentType(app, file, fileScope, generic, argType.module)
     ok(newAnalyzedArgumentType(analyzedArgType))
+
+# ============================================================
+# Phase-A argument / function def analyzers (W2 of
+# plans/plan_analyzer_two_pass.md). Ported from oldanalyzer.nim:479
+# (analyzeArgumentDefinition) and :522 (analyzeFunctionDefinition).
+#
+# ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
+#   UNIFICATION.
+#
+# The impl-satisfies-base signature check (currently done at
+# `analyzeValueTypeAgainstDefType` on the facade + `checkImplSatisfiesGeneric`
+# on the resolver) uses hash-based `==` for AnalyzedArgumentType
+# comparison. That works for fully-bound-vs-fully-bound comparisons
+# but not for cases where either side carries free generics
+# (post leave-as-is inference).
+#
+# What breaks: an impl providing `byte_size(items: Array[u8])` where
+# the base generic mandates `byte_size(items: Array[Any])` — hash
+# equality treats these as different types when a unification pass
+# would bind `Any → u8` and accept the impl. Dormant today because
+# every fixture in the test suite uses fully-bound impl types at the
+# base-generic satisfaction boundary; the bug lies waiting until
+# someone writes an impl whose funcDef references a partially-generic
+# argument type.
+#
+# The fix requires routing every assignability check through
+# `analyzeValueTypeAgainstDefType` + `merge` with eager chain-
+# collapsing in `merge` (so `Sample → K, K → u8` collapses to
+# `Sample → u8`). See `plans/plan_deferred_typing.md` §
+# "Equality vs unification for analyzed types" — that plan owns the
+# fix; this port preserves current behavior and does not introduce
+# any new use of `==`.
+# ============================================================
+
+proc analyzeArgumentDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
+  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, argDef.argType)
+  ok(newAnalyzedArgumentDefinition(analyzedArgType, argDef.name))
+
+proc analyzeArgumentDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
+  let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, generic, argDef.argType)
+  ok(newAnalyzedArgumentDefinition(analyzedArgType, argDef.name))
+
+proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
+  var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
+  for arg in funcDef.args:
+    let analyzedArgDef = ? analyzeArgumentDefinition(app, file, fileScope, module, arg)
+    analyzedArgDefs.add(analyzedArgDef)
+  let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, funcDef.returns)
+  ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
+
+proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
+  var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
+  for arg in funcDef.args:
+    let analyzedArgDef = ? analyzeArgumentDefinition(app, file, fileScope, generic, arg)
+    analyzedArgDefs.add(analyzedArgDef)
+  let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, generic, funcDef.returns)
+  ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
 proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   ## Look each user-supplied pattern field up on the resolved variant,
