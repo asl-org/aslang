@@ -59,6 +59,9 @@ export moduledef
 import ./analyzer/generic
 export generic
 
+import ./analyzer/definedtype
+export definedtype
+
 # ---- pattern cluster ----
 import ./analyzer/literalparse
 export literalparse
@@ -386,6 +389,20 @@ proc analyzeGeneric*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFi
     let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, fileScope, generic, funcDef)
     analyzedFuncDefs.add(analyzedFuncDef)
   ok(newAnalyzedGeneric(generic, analyzedFuncDefs))
+
+# ============================================================
+# Phase-A defined-type dispatcher (W5 of plan_analyzer_two_pass.md).
+# Ported from oldanalyzer.nim:847.
+# ============================================================
+
+proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedDefinedType, string] =
+  case definedType.kind:
+  of rdtkGeneric:
+    let analyzedGeneric = ? analyzeGeneric(app, file, fileScope, definedType.generic)
+    ok(newAnalyzedDefinedType(analyzedGeneric))
+  of rdtkModule:
+    let analyzedModule = ? analyzeModuleDefinition(app, file, fileScope, definedType.module)
+    ok(newAnalyzedDefinedType(analyzedModule))
 
 proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   ## Look each user-supplied pattern field up on the resolved variant,
