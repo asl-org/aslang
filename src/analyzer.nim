@@ -141,34 +141,42 @@ proc findModuleDef*(fileScope: ResolvedFileScope, name: Identifier, loc: Locatio
   of rdtkGeneric:
     err(fmt"{loc} UNREACHABLE: scope entry `{name.asl}` is a generic but caller expected module")
 
-proc findModuleDef*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedModule, string] =
+# The following four helpers used to take a `ResolvedFileScope` param
+# they never consumed — they simply projected fields off the passed
+# argType / module. W9 dropped the unused param so the call sites
+# don't have to thread fileScope through just to satisfy an interface.
+# The AnalyzedArgumentType already carries the underlying parser
+# Module (via .module.module on the aatkModule arm), so the module
+# lookup is a direct field access — no scope lookup needed.
+
+proc findModuleDef*(argType: AnalyzedArgumentType, loc: Location): Result[ResolvedModule, string] =
   case argType.kind:
   of aatkGeneric:
     err(fmt"{loc} todo: analyze case blocks for generic subject type")
   of aatkModule:
     ok(argType.module.module)
 
-proc extractDataDef*(fileScope: ResolvedFileScope, module: ResolvedModule, loc: Location): Result[ResolvedData, string] =
+proc extractDataDef*(module: ResolvedModule, loc: Location): Result[ResolvedData, string] =
   if module.data.isNone:
     err(fmt"{loc} UNREACHABLE: expression does not return a data type")
   else:
     ok(module.data.get)
 
-proc extractDataDef*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedData, string] =
-  let argModule = ? fileScope.findModuleDef(argType, loc)
-  fileScope.extractDataDef(argModule, loc)
+proc extractDataDef*(argType: AnalyzedArgumentType, loc: Location): Result[ResolvedData, string] =
+  let argModule = ? findModuleDef(argType, loc)
+  extractDataDef(argModule, loc)
 
-proc extractStructFor*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedStructDef, string] =
-  let argModule = ? fileScope.findModuleDef(argType, loc)
-  let dataDef = ? fileScope.extractDataDef(argModule, loc)
+proc extractStructFor*(argType: AnalyzedArgumentType, loc: Location): Result[ResolvedStructDef, string] =
+  let argModule = ? findModuleDef(argType, loc)
+  let dataDef = ? extractDataDef(argModule, loc)
   case dataDef.kind:
   of rdkStruct: ok(dataDef.struct)
   of rdkUnion: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found union")
   of rdkLiteral: err(fmt"{loc} expected module `{argModule.name.asl}` to have a struct block but found literal")
 
-proc extractUnionFor*(fileScope: ResolvedFileScope, argType: AnalyzedArgumentType, loc: Location): Result[ResolvedUnionDef, string] =
-  let argModule = ? fileScope.findModuleDef(argType, loc)
-  let dataDef = ? fileScope.extractDataDef(argModule, loc)
+proc extractUnionFor*(argType: AnalyzedArgumentType, loc: Location): Result[ResolvedUnionDef, string] =
+  let argModule = ? findModuleDef(argType, loc)
+  let dataDef = ? extractDataDef(argModule, loc)
   case dataDef.kind:
   of rdkUnion: ok(dataDef.union)
   of rdkStruct: err(fmt"{loc} expected module `{argModule.name.asl}` to have a union block but found struct")
@@ -573,7 +581,7 @@ proc analyzeGetter*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Resol
     err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
   else:
     let analyzedSourceArgType = funcScope[getter.source]
-    let struct = ? fileScope.extractStructFor(analyzedSourceArgType, getter.loc)
+    let struct = ? extractStructFor(analyzedSourceArgType, getter.loc)
     let resolvedProperty = ? struct.findField(getter.property)
     # TODO: coerce the property type from the generic to concrete
     let analyzedPropertyArgType = ? analyzeArgumentType(app, file, fileScope, module, resolvedProperty.argType)
@@ -581,8 +589,8 @@ proc analyzeGetter*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Resol
 
 proc analyzeLiteralInitializer*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
   let analyzedArgType = ? analyzeArgumentType(app, file, fileScope, module, init.argType)
-  let argDefModule = ? fileScope.findModuleDef(analyzedArgType, init.loc)
-  let argDefData = ? fileScope.extractDataDef(argDefModule, init.loc)
+  let argDefModule = ? findModuleDef(analyzedArgType, init.loc)
+  let argDefData = ? extractDataDef(argDefModule, init.loc)
   case argDefData.kind:
   of rdkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of rdkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
@@ -780,7 +788,7 @@ proc analyzeCases*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Resolv
 proc analyzeMatchExpression*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
   let analyzedSubjectExpr = ? analyzeExpression(appDef, app, file, fileScope, module, funcScope, match.subject, none(AnalyzedArgumentType))
   let subjectArgType = analyzedSubjectExpr.argType
-  let analyzedSubjectDataType = ? fileScope.extractDataDef(subjectArgType, analyzedSubjectExpr.loc)
+  let analyzedSubjectDataType = ? extractDataDef(subjectArgType, analyzedSubjectExpr.loc)
   case analyzedSubjectDataType.kind:
   of rdkStruct:
     err(fmt"{match.loc} match block only supports literal and union types but subject expression returns `{subjectArgType.name.asl}` a struct type")
@@ -997,8 +1005,8 @@ proc analyzeBareLiteral(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: R
       expected.get
     else:
       ? defaultLiteralArgType(fileScope, literal)
-  let argDefModule = ? fileScope.findModuleDef(concreteArgType, literal.loc)
-  let argDefData = ? fileScope.extractDataDef(argDefModule, literal.loc)
+  let argDefModule = ? findModuleDef(concreteArgType, literal.loc)
+  let argDefData = ? extractDataDef(argDefModule, literal.loc)
   case argDefData.kind:
   of rdkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
   of rdkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
