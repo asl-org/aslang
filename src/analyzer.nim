@@ -204,19 +204,32 @@ proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType
   ## Look up the ResolvedModule for a resolved argument type. The
   ## argType carries a parser Module identifier — resolver-side types
   ## intentionally do not back-ref ResolvedModule (would cycle). We
-  ## look up locally (file.findModule) first, then via fileScope for
-  ## imported bindings.
+  ## look up in order:
+  ##   1. Local file's typeIndex by name (fast path, most common).
+  ##   2. fileScope by name (imports keyed by binding — handles the
+  ##      non-aliased import case where argType.name matches the
+  ##      import's binding).
+  ##   3. fileScope by parser.Module identity (fallback for aliased
+  ##      imports: `import { u8 as Byte }` binds "Byte" but the
+  ##      argType's `.name` is the underlying "u8" — so the by-name
+  ##      lookup misses; we iterate values comparing parsed modules
+  ##      to find the entry).
   let maybeTypeModule = file.findModule(argType.name)
-  if maybeTypeModule.isErr:
-    if argType.name notin fileScope:
-      err(fmt"{argType.loc} module `{argType.name.asl}` is neither defined nor imported")
-    else:
-      let importedType = fileScope[argType.name]
-      case importedType.kind:
-      of rdtkGeneric: err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.name.asl}` to be a module but found generic.")
-      of rdtkModule: ok(importedType.module)
-  else:
-    ok(maybeTypeModule.value)
+  if maybeTypeModule.isOk:
+    return ok(maybeTypeModule.value)
+
+  if argType.name in fileScope:
+    let importedType = fileScope[argType.name]
+    case importedType.kind:
+    of rdtkGeneric: return err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.name.asl}` to be a module but found generic.")
+    of rdtkModule: return ok(importedType.module)
+
+  # Aliased-import fallback: match by parser.Module identity.
+  for _, importedType in fileScope:
+    if importedType.kind == rdtkModule and importedType.module.parsed == argType.module:
+      return ok(importedType.module)
+
+  err(fmt"{argType.loc} module `{argType.name.asl}` is neither defined nor imported")
 
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
@@ -1115,33 +1128,22 @@ proc analyzeFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, str
   ok(newAnalyzedFile(file, analyzedImports, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  ## TWO-PASS ORCHESTRATION STAGED BUT NOT WIRED — see W8a note in
-  ## plan_analyzer_two_pass.md and the "Blocker" note below.
+  ## Two-pass orchestration (W8a of plan_analyzer_two_pass.md).
   ##
-  ## Intended shape:
-  ##   discard ? analyzeAppDefinition(app)   # phase A: all defs
-  ##   for file in app.files:
-  ##     analyzedFiles.add(? analyzeFile(app, file))  # phase B: bodies
+  ## Pass 1 — `analyzeAppDefinition(app)` — walks every file, every
+  ##   module + generic, every struct/union/literal, every funcDef
+  ##   signature across the whole app. Any def-site error (malformed
+  ##   requires, bad signature, missing impl-satisfies-generic) fires
+  ##   here before any body walker touches the AST — the guarantee
+  ##   phase A always gave us. The AnalyzedAppDefinition result is
+  ##   discarded for now; W8b/W8c will thread it into phase B so
+  ##   body walkers read pre-analyzed funcDef signatures instead of
+  ##   re-analyzing at every call site.
   ##
-  ## Blocker: enabling phase A globally exposes a pre-existing bug in
-  ## `findArgTypeModule`. Aliased imports (`import { u8 as Byte }`)
-  ## produce a ResolvedModuleArgumentType whose `.name` is the
-  ## underlying module (`u8`), not the binding (`Byte`). The
-  ## fileScope is keyed by binding, so the lookup misses. Current
-  ## phase B never exercises this path for struct field types
-  ## (analyzeModule only walks functions; struct fields are only
-  ## analyzed at kwarg-init use sites, which do go through a
-  ## different resolver-side path that handles aliases). Phase A
-  ## DOES analyze struct fields via analyzeStruct → analyzeArgumentDef
-  ## → analyzeArgumentType → findArgTypeModule("u8"), and hits the
-  ## alias gap.
-  ##
-  ## Fix owed: `findArgTypeModule` should look up the underlying
-  ## module via app-level module identity (parser.Module hash), not
-  ## by name string. See the failing test at
-  ## test_analyzer.nim:130 ("import alias resolves to its target
-  ## type") for a reproducer. Once that lands, uncomment the
-  ## `analyzeAppDefinition` call above.
+  ## Pass 2 — the existing per-file `analyzeFile` walk — analyzes
+  ##   each function body. Signature re-analysis at call sites still
+  ##   happens (unchanged behavior).
+  discard ? analyzeAppDefinition(app)
   var analyzedFiles: seq[AnalyzedFile]
   for file in app.files:
     let analyzedFile = ? analyzeFile(app, file)
