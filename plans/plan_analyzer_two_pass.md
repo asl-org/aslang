@@ -1,43 +1,73 @@
 # Analyzer two-pass recovery — reintroduce phase A over the current DDD layout
 
-## Status (as of 2026-07-24, commit 42b8994)
+## Status (as of 2026-07-24) — RECOVERY COMPLETE
 
-**W0-W8 landed on `main-recovery` branch.** Phase A fully reintroduced;
-two-pass orchestration wired; def-time validation guarantee restored.
-Every commit kept 327/327 unit + 33/35 integration + sample.asl green.
+All 12 work items W0-W11 landed on `main-recovery` branch. Two-phase
+analyzer is fully recovered: phase A (definition analysis) runs first,
+phase B (body analysis) consumes phase A's output directly through the
+`AnalyzedAppDefinition` lookups. Every commit preserved 327/327 unit +
+33/35 integration + `sample.asl [SUCCESS]`.
 
 Landed:
-- W0 (commit 6b52bfd) — baseline snapshot + plan doc + oldanalyzer.nim as reference.
-- W1 (b0835ea) — `AnalyzedArgumentDefinition` in argdef.nim.
-- W2 (4ef63d5) — `AnalyzedFunctionDefinition` + `analyzeArgumentDefinition*` + `analyzeFunctionDefinition*` on facade.
-- W3 (7ae527a) — `AnalyzedLiteralBlock` / `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` / `AnalyzedData` + facade procs. Re-added `ResolvedStructDef.genericTypeIndex*` accessor.
-- W4 (d7ae366) — `AnalyzedModuleDefinition` + `AnalyzedGeneric` + facade procs.
-- W5 (9fa398b) — `AnalyzedDefinedType` + `AnalyzedDefinedTypeScope` + facade proc.
-- W6 (8cb51da) — `AnalyzedFileDefinition` + `AnalyzedImportDef` → `AnalyzedImportDefinition` rename + facade proc.
-- W7 (465b47c) — `AnalyzedAppDefinition` + facade proc.
-- W8 (42b8994) — **Wire two-pass orchestration + fix alias-lookup bug in findArgTypeModule.**
+- W0 (6b52bfd) — baseline snapshot + plan doc + oldanalyzer.nim as porting reference.
+- W1 (b0835ea) — `AnalyzedArgumentDefinition`.
+- W2 (4ef63d5) — `AnalyzedFunctionDefinition` + facade procs.
+- W3 (7ae527a) — `AnalyzedLiteralBlock` / `Struct` / `Variant` / `Union` / `Data`.
+- W4 (d7ae366) — `AnalyzedModuleDefinition` + `AnalyzedGeneric`.
+- W5 (9fa398b) — `AnalyzedDefinedType` + `AnalyzedDefinedTypeScope`.
+- W6 (8cb51da) — `AnalyzedFileDefinition` + rename `AnalyzedImportDef` → `AnalyzedImportDefinition`.
+- W7 (465b47c) — `AnalyzedAppDefinition`.
+- W8 (42b8994) — **Wire two-pass orchestration + fix alias-lookup bug in `findArgTypeModule`.**
+- W8b (03ada2a) — **Thread appDef through 24 phase-B body walkers; `analyzeArgumentList` reads pre-analyzed args via `appDef.findFunctionDef`.**
+- W8c (3687eac) — **Overload resolution end-to-end on AnalyzedFunctionDefinition: `analyzeFunctionCall` uses `appDef.findDefinedType(typ).findFunctionDefs(...)`; return type from `matchingFuncDef.returns` (no re-analysis); added `ResolvedType.hash/==` + `AnalyzedAppDefinition.definedTypeIndex`.**
+- W9 (641890b) — Retire unused `fileScope` param from 4 shim overloads (`findModuleDef(argType)`, `extractDataDef` × 2, `extractStructFor`, `extractUnionFor`). Signature honesty — the param was never consumed.
+- W10 (this commit) — Delete `oldanalyzer.nim` from repo root. Port complete; git history preserves it.
+- W11 (this commit) — Docs sync (overview.md analyzer phase description + this final status update).
 
-Not landed (deferred to future sessions):
-- W8b — thread `AnalyzedAppDefinition` into body walkers; switch
-  overload resolution (`analyzeArgumentList`) to read pre-analyzed
-  args from `AnalyzedFunctionDefinition` instead of re-analyzing per
-  candidate per arg. **Perf improvement, not correctness fix.** Two
-  re-analysis sites at analyzer.nim:649,667. Requires signature
-  ripple through 7 procs (analyzeFile → analyzeModule →
-  analyzeUserFunction → analyzeStatement → analyzeExpression →
-  analyzeFunctionCall → analyzeArgumentList).
-- W8c — retire the shallow lookup paths that W8b's migration
-  supersedes.
-- W9 — retire the `extractDataDef` / `extractStructFor` /
-  `extractUnionFor` / `findModuleDef` shim procs on the facade;
-  rewrite off `AnalyzedFileDefinition`.
-- W10 — delete `oldanalyzer.nim` from repo root once W8b/W8c/W9 done.
-- W11 — final docs sync.
-
-Alias-lookup fix landed as part of W8. `findArgTypeModule` now falls
+Alias-lookup fix landed as part of W8: `findArgTypeModule` falls
 back to iterating fileScope values comparing `parser.Module` identity
-when the name-key lookup misses. See its doc-comment for the
-reasoning.
+when the name-key lookup misses. Handles the `import { u8 as Byte }`
+case that phase A exposed on activation.
+
+## Deliverables
+
+**14 phase-A files** in `src/analyzer/`: argdef, funcdef, moduledef,
+generic, literaldef, structdef, variantdef, uniondef, datadef,
+definedtype, filedef, appdef (+ the pre-existing importdef with
+renamed type).
+
+**11 phase-A analyzer procs** on the facade (`src/analyzer.nim`):
+analyzeArgumentDefinition (2), analyzeFunctionDefinition (2),
+analyzeStruct, analyzeVariant, analyzeUnion, analyzeData,
+analyzeModuleDefinition, analyzeGeneric, analyzeDefinedType,
+analyzeFileDefinition, analyzeAppDefinition.
+
+**Phase-B body walker migration** — 24 body walkers thread
+`appDef: AnalyzedAppDefinition` as their first parameter and use it
+to consume phase-A output at the two overload-resolution sites and
+the return-type site.
+
+**Perf**: `analyzeArgumentList` no longer re-analyzes candidate
+funcDef arg types per call — reads from `appDef.findFunctionDef`.
+`analyzeFunctionCall` no longer re-analyzes the return type — reads
+from `matchingFuncDef.returns` (only substitutes via `.concrete`).
+
+## Follow-ups not part of this recovery
+
+- Migrate `extractStruct` / `extractUnion` / `extractDataDef` return
+  types from `ResolvedStructDef` / `ResolvedUnionDef` / `ResolvedData`
+  to their analyzer equivalents (`AnalyzedStruct` / `AnalyzedUnion` /
+  `AnalyzedData`) so consumers like `analyzeGetter` no longer
+  re-analyze property arg types. Requires downstream signature
+  changes (e.g. `newAnalyzedGetter.property` from `ResolvedArgumentDef`
+  → `AnalyzedArgumentDefinition`).
+- Equality-vs-unification for `AnalyzedArgumentType==` (owned by
+  `plans/plan_deferred_typing.md`).
+- Retire the `analyzeArgumentType` re-analysis in `analyzeGetter`,
+  `analyzeLiteralInitializer`, `analyzeBareLiteral` where callers
+  have `appDef` in scope.
+
+None of these block correctness — they're perf / cohesion cleanup.
 
 ## Context
 

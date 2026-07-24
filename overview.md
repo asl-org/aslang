@@ -104,19 +104,29 @@ Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              that need the resolved module do the lookup at
   │              their site via `ResolvedFile.findModule(name)`.
   ▼
-Analyzer ──── Walks bodies. Consumes the enriched Resolved* types
-  │              directly via accessors — there are no def-level
-  │              analyzer wrappers. Produces an AnalyzedApp
-  │              carrying a type-rich view of every value,
-  │              expression, and statement in each function body.
-  │              Overload selection at function-call sites is
-  │              wired (each candidate funcDef is unified against
-  │              the call's argument types via GenericImplMap +
-  │              merge; uniqueness picks the survivor); funcDef
-  │              return types and match-subject unions are
-  │              concretized via the inferred impls. Union
-  │              initializer parametric inference reads the
-  │              flattened StructRef / UnionRef `analyzedImpls`
+Analyzer ──── Two-pass over the resolved app.
+  │
+  │              Pass A (analyzeAppDefinition) — walks every file,
+  │              every module + generic, every struct/union/literal,
+  │              every funcDef across the whole app. Produces
+  │              AnalyzedAppDefinition bundling per-file
+  │              AnalyzedFileDefinition + per-module
+  │              AnalyzedModuleDefinition + per-def
+  │              AnalyzedFunctionDefinition (args + return type
+  │              fully analyzed). Any def-site error surfaces here
+  │              before any body walker runs — the guarantee that
+  │              phase A gives.
+  │
+  │              Pass B — walks function bodies. Consumes phase-A
+  │              results: analyzeFunctionCall looks up its overload
+  │              candidates via `appDef.findDefinedType(typ).
+  │              findFunctionDefs(name, arity, public)` returning
+  │              seq[AnalyzedFunctionDefinition] — no re-analysis
+  │              at the call site. Return types come pre-analyzed
+  │              from matchingFuncDef.returns; only the
+  │              generic-impl substitution (.concrete) runs per
+  │              call. Union initializer parametric inference reads
+  │              the flattened StructRef / UnionRef analyzedImpls
   │              seq — empty seq → accumulate from kwargs +
   │              leave-as-is uncovered positions; non-empty seq
   │              → substitute user-supplied impls into variant
@@ -141,11 +151,17 @@ let analyzedApp = ? analyze(resolvedApp)
 `analyze*` returns a structured `AnalyzedApp` — the `ResolvedApp`
 back-reference plus a `seq[AnalyzedFile]`, where each `AnalyzedFile`
 carries its `ResolvedFile` back-reference, analyzed import definitions,
-and the analyzed modules parsed out of it. There is no separate
-`AnalyzedAppDefinition` / `AnalyzedFileDefinition` layer today — after
-task 6c retired the 12 def-level wrappers, the analyzer's def-level
-view is just the enriched Resolved* types themselves. `AnalyzedApp` is
-the handle downstream codegen will thread through.
+and the analyzed modules parsed out of it.
+
+Phase-A output (`AnalyzedAppDefinition` + per-file
+`AnalyzedFileDefinition` + per-module `AnalyzedModuleDefinition` +
+`AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
+wrappers `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` /
+`AnalyzedLiteralBlock` / `AnalyzedData`) is threaded through the
+body walker chain so phase-B overload resolution reads pre-analyzed
+funcDef signatures via `appDef.findFunctionDef` / `appDef.findDefinedType`
+lookups — no re-analysis of arg types or return types at call sites.
+`AnalyzedApp` is the handle downstream codegen will thread through.
 
 There is no separate `Validator` phase. Every uniqueness / structural
 rule the validator used to enforce (duplicate names, empty blocks,
@@ -765,21 +781,33 @@ src/
                                    array + the tokenize loop's
                                    dispatcher.
 
-  analyzer/                        8 files, ~1900 lines. No def-level
-                                   wrappers — the 12 that used to live
-                                   here (AnalyzedStructDef,
-                                   AnalyzedUnionDef, AnalyzedVariant,
-                                   AnalyzedLiteralDef, AnalyzedData,
-                                   AnalyzedModuleDefinition,
-                                   AnalyzedGeneric,
-                                   AnalyzedDefinedType,
-                                   AnalyzedFileDefinition,
-                                   AnalyzedAppDefinition,
-                                   AnalyzedFunctionDefinition,
-                                   AnalyzedArgumentDefinition) were
-                                   retired in task 6c; the analyzer
-                                   reads the enriched Resolved* types
-                                   directly.
+  analyzer/                        Per-type files under
+                                   src/analyzer/. Two-pass structure
+                                   restored by the analyzer recovery
+                                   (see plans/plan_analyzer_two_pass.md):
+                                   phase-A def-level wrappers
+                                   (AnalyzedStruct / Variant / Union /
+                                   LiteralBlock / Data /
+                                   ModuleDefinition / Generic /
+                                   DefinedType / FileDefinition /
+                                   AppDefinition /
+                                   FunctionDefinition /
+                                   ArgumentDefinition) all live as
+                                   per-type files alongside the
+                                   pre-existing phase-B wrappers
+                                   (Variable, Getter, Statement,
+                                   Expression, FunctionCall,
+                                   MatchExpression, CaseBlock,
+                                   Assignment, Setter,
+                                   StructInitializer,
+                                   UnionInitializer, Initializer,
+                                   LiteralInitializer, Function,
+                                   UserFunction, ExternFunction,
+                                   Module, File, App, ImportDefinition,
+                                   ImportedType, etc.). `ls
+                                   src/analyzer/` for the authoritative
+                                   current list; individual entries
+                                   below may lag.
     analyzer.nim                   re-exports every component file
     imports.nim                    AnalyzedImportedType /
                                    AnalyzedImportDefinition +
