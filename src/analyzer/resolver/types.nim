@@ -2,7 +2,7 @@
 ## ResolvedGeneric. Tagged-union pair: the Kind enum and the type live
 ## in the same file per convention.
 
-import strformat
+import hashes, strformat
 
 import ./parser
 import module
@@ -41,3 +41,15 @@ proc loc*(typ: ResolvedType): Location =
   case typ.kind:
   of rdtkModule: typ.module.loc
   of rdtkGeneric: typ.generic.loc
+
+proc hash*(typ: ResolvedType): Hash =
+  case typ.kind:
+  of rdtkModule: typ.module.hash
+  of rdtkGeneric: typ.generic.hash
+
+proc `==`*(a, b: ResolvedType): bool =
+  if a.kind != b.kind: false
+  else:
+    case a.kind:
+    of rdtkModule: a.module == b.module
+    of rdtkGeneric: a.generic == b.generic

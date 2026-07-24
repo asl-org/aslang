@@ -637,39 +637,33 @@ proc analyzeValueTypeAgainstDefType(app: ResolvedApp, file: ResolvedFile, fileSc
   of aatkModule: analyzeValueTypeAgainstDefType(app, file, fileScope, defType.module, valType, loc)
   of aatkGeneric: analyzeValueTypeAgainstDefType(app, file, fileScope, defType.generic, valType, loc)
 
-proc analyzeArgumentList*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], funcDef: ResolvedFunctionDef): Result[GenericImplMap, string] =
-  # Reads pre-analyzed args from phase-A output via
-  # `appDef.findFunctionDef(funcDef)` — no re-analysis of arg types at
-  # call sites. Every analyzed expression carries a concrete argType
-  # post-Approach C; bare literals adopt the caller's expected type or
-  # default to i32/f32/String at the analyzeBareLiteral site. Per-
-  # candidate type context is threaded from `analyzeFunctionCall`.
-  assert(funcDef.args.len == argValues.len,
-    fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {funcDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
-  let analyzedFuncDef = ? appDef.findFunctionDef(funcDef)
+proc analyzeArgumentList*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDefinition): Result[GenericImplMap, string] =
+  # Reads pre-analyzed args directly from the AnalyzedFunctionDefinition
+  # — no lookup, no re-analysis. Every analyzed expression carries a
+  # concrete argType post-Approach C; bare literals adopt the caller's
+  # expected type or default to i32/f32/String at the
+  # analyzeBareLiteral site. Per-candidate type context is threaded
+  # from `analyzeFunctionCall`.
+  assert(analyzedFuncDef.args.len == argValues.len,
+    fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {analyzedFuncDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
   var genericImplMap: GenericImplMap
   for (analyzedArgDef, argValue) in zip(analyzedFuncDef.args, argValues):
     let argGenericImplMap = ? analyzeValueTypeAgainstDefType(app, file, fileScope, analyzedArgDef.argType, argValue.argType, argValue.loc)
     genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
-proc analyzeArgumentList(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[ResolvedFunctionDef]): Result[(ResolvedFunctionDef, seq[AnalyzedExpression], GenericImplMap), string] =
-  # Per-candidate analysis: for each funcDef, walk the call's raw
-  # arguments and analyze each with the candidate's declared arg type
-  # (pre-analyzed via phase-A appDef lookup) as the expected context.
-  # Bare literals adopt the declared type when concrete, or default to
-  # i32/f32/String otherwise (`analyzeBareLiteral`). First candidate
-  # whose args analyze + type-check wins; ambiguity fires the existing
-  # multi-match error path.
-  var matches: seq[(ResolvedFunctionDef, seq[AnalyzedExpression], GenericImplMap)]
+proc analyzeArgumentList(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[AnalyzedFunctionDefinition]): Result[(AnalyzedFunctionDefinition, seq[AnalyzedExpression], GenericImplMap), string] =
+  # Per-candidate analysis over pre-analyzed AnalyzedFunctionDefinition
+  # candidates: for each candidate, walk the call's raw arguments and
+  # analyze each with the candidate's declared arg type (pre-analyzed)
+  # as the expected context. Bare literals adopt the declared type when
+  # concrete, or default to i32/f32/String otherwise
+  # (`analyzeBareLiteral`). First candidate whose args analyze +
+  # type-check wins; ambiguity fires the existing multi-match error
+  # path.
+  var matches: seq[(AnalyzedFunctionDefinition, seq[AnalyzedExpression], GenericImplMap)]
   var errors: seq[string]
-  for index, funcDef in funcDefs:
-    let maybeAnalyzedFuncDef = appDef.findFunctionDef(funcDef)
-    if maybeAnalyzedFuncDef.isErr:
-      errors.add(fmt"[{index + 1}] - " & maybeAnalyzedFuncDef.error)
-      errors.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
-      continue
-    let analyzedFuncDef = maybeAnalyzedFuncDef.get
+  for index, analyzedFuncDef in funcDefs:
     var analyzedArgs: seq[AnalyzedExpression]
     var candidateErr = ""
     for i in 0..<fncall.args.len:
@@ -680,14 +674,14 @@ proc analyzeArgumentList(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: 
       analyzedArgs.add(maybeAnalyzed.get)
     if candidateErr.len > 0:
       errors.add(fmt"[{index + 1}] - {candidateErr}")
-      errors.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
+      errors.add("\t" & fmt"{analyzedFuncDef.loc}: {analyzedFuncDef.asl}")
       continue
-    let maybeGenericImplMap = analyzeArgumentList(appDef, app, file, fileScope, module, funcScope, analyzedArgs, funcDef)
+    let maybeGenericImplMap = analyzeArgumentList(appDef, app, file, fileScope, module, funcScope, analyzedArgs, analyzedFuncDef)
     if maybeGenericImplMap.isOk:
-      matches.add((funcDef, analyzedArgs, maybeGenericImplMap.get))
+      matches.add((analyzedFuncDef, analyzedArgs, maybeGenericImplMap.get))
     else:
       errors.add(fmt"[{index + 1}] - " & maybeGenericImplMap.error)
-      errors.add("\t" & fmt"{funcDef.loc}: {funcDef.asl}")
+      errors.add("\t" & fmt"{analyzedFuncDef.loc}: {analyzedFuncDef.asl}")
 
   if matches.len == 1:
     ok(matches[0])
@@ -706,16 +700,15 @@ proc analyzeFunctionCall*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file:
     case typ.kind:
     of rdtkModule: (module != typ.module)
     of rdtkGeneric: true # generic func defs are not required to be explicitly marked public
-  let funcDefs =
-    case typ.kind:
-    of rdtkModule: ? typ.module.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
-    of rdtkGeneric: ? typ.generic.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len)
+  let definedType = ? appDef.findDefinedType(typ)
+  let funcDefs = ? definedType.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
 
   let (matchingFuncDef, analyzedArgs, genericImpls) = ? analyzeArgumentList(appDef, app, file, fileScope, module, funcScope, fncall, funcDefs)
-  # NOTE: compute concrete return type from the inferred implementation types
-  let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, module, matchingFuncDef.returns)
-  let concreteReturns = analyzedReturns.concrete(genericImpls)
-  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, concreteReturns))
+  # Return type comes pre-analyzed from the AnalyzedFunctionDefinition;
+  # apply the caller's inferred generic-impl substitution to concretize
+  # any free generics the return type touches.
+  let concreteReturns = matchingFuncDef.returns.concrete(genericImpls)
+  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef.resolved, analyzedArgs, concreteReturns))
 
 proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCaseBlock, string] =
   let analyzedCasePattern = ? analyzeCasePattern(appDef, app, file, fileScope, module, funcScope, caseBlock.pattern, subjectType, union, subjectImpls)
