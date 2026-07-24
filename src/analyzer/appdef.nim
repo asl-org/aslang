@@ -1,14 +1,19 @@
 ## Phase-A `AnalyzedAppDefinition` — the top-level phase-A result.
 ## Bundles the resolved app + every file's AnalyzedFileDefinition,
-## indexed by absolute path for cross-file lookup during phase B
-## (specifically, the import walk in analyzeFile augments defScope
-## by looking up the source file's fileDef via findFileDef).
+## indexed by absolute path for cross-file `findFileDef` queries.
 ##
-## Also indexes every module's every funcDef so phase B can go from
-## `ResolvedFunctionDef` (what analyzeFunctionCall gets from
-## overload resolution) to `AnalyzedFunctionDefinition` (pre-analyzed
-## args + return type) in O(1). This avoids the current
-## re-analysis-per-call-site cost.
+## Two identity-keyed indices carry the phase-B lookup weight:
+##  - `funcDefIndex`: `ResolvedFunctionDef → AnalyzedFunctionDefinition`.
+##    Phase-B overload resolution hands back the resolver-side
+##    ResolvedFunctionDef; this index gets the pre-analyzed form
+##    (args + return type already lifted through analyzeArgumentType)
+##    in O(1), avoiding per-call-site re-analysis.
+##  - `definedTypeIndex`: `ResolvedType → AnalyzedDefinedType`.
+##    App-wide identity lookup used by `findDefinedType`. Every
+##    caller with a ResolvedType in hand (from `app.findType`, from
+##    an argType's carried module, etc.) reaches the analyzed
+##    module/generic without going through name-keyed per-file
+##    scopes. Immune to aliased-import name mismatch.
 
 import results, strformat, tables
 
