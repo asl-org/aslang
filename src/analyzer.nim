@@ -53,6 +53,12 @@ export uniondef
 import ./analyzer/datadef
 export datadef
 
+import ./analyzer/moduledef
+export moduledef
+
+import ./analyzer/generic
+export generic
+
 # ---- pattern cluster ----
 import ./analyzer/literalparse
 export literalparse
@@ -343,6 +349,43 @@ proc analyzeData*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileS
   of rdkUnion:
     let analyzedUnion = ? analyzeUnion(app, file, fileScope, module, data.union)
     ok(newAnalyzedData(analyzedUnion))
+
+# ============================================================
+# Phase-A module + generic analyzers (W4 of plan_analyzer_two_pass.md).
+# Ported from oldanalyzer.nim:763 (analyzeModuleDefinition) and :811
+# (analyzeGeneric).
+#
+# Note: `analyzeModuleDefinition`'s requires walk reads
+# `module.data.get.requires` (post the resolver's struct-header merge)
+# rather than the retired module-level `requires` clause. Modules
+# without a data block carry an empty requires seq.
+# ============================================================
+
+proc analyzeModuleDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
+  var requires: seq[AnalyzedGenericArgumentType]
+  if module.data.isSome:
+    for genericArgType in module.data.get.requires:
+      let analyzedArgType = ? analyzeGenericArgumentType(app, file, fileScope, module, genericArgType)
+      requires.add(analyzedArgType)
+
+  var maybeAnalyzedData: Option[AnalyzedData]
+  if module.data.isSome:
+    let analyzedData = ? analyzeData(app, file, fileScope, module, module.data.get)
+    maybeAnalyzedData = some(analyzedData)
+
+  var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
+  for function in module.functions:
+    let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, fileScope, module, function.def)
+    analyzedFuncDefs.add(analyzedFuncDef)
+
+  ok(newAnalyzedModuleDefinition(module, requires, maybeAnalyzedData, analyzedFuncDefs))
+
+proc analyzeGeneric*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
+  var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
+  for funcDef in generic.funcDefs:
+    let analyzedFuncDef = ? analyzeFunctionDefinition(app, file, fileScope, generic, funcDef)
+    analyzedFuncDefs.add(analyzedFuncDef)
+  ok(newAnalyzedGeneric(generic, analyzedFuncDefs))
 
 proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   ## Look each user-supplied pattern field up on the resolved variant,
