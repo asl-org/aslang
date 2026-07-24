@@ -194,22 +194,24 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: 
 
 proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   ## Resolves the generic by checking the current file's own generics
-  ## first, then falling back to the file scope for imported names.
-  ## A `ResolvedGenericArgumentType` whose `.parsed` refers to an
-  ## imported generic still needs its ResolvedGeneric surfaced so
-  ## downstream code can look up its constraint-carrying funcDefs.
+  ## first (better error messages — points at file scope), then falling
+  ## back to app-wide identity lookup for imported names. Identity-based
+  ## fallback is immune to aliased-import name mismatch —
+  ## `genericArgType.parsed` is a parser.Generic (loc-hashed), stable
+  ## regardless of the import binding. See
+  ## plans/plan_alias_lookup_cleanup.md.
   let maybeGenericArg = file.findGeneric(genericArgType.parsed.name)
   if maybeGenericArg.isOk:
-    ok(newAnalyzedGenericArgumentType(maybeGenericArg.get, genericArgType.loc))
-  elif genericArgType.parsed.name in fileScope:
-    let typ = fileScope[genericArgType.parsed.name]
-    case typ.kind:
-    of rdtkGeneric:
-      ok(newAnalyzedGenericArgumentType(typ.generic, genericArgType.loc))
-    of rdtkModule:
-      err(fmt"{genericArgType.loc} [UNREACHABLE] expected `{genericArgType.parsed.name.asl}` to be a generic but found module")
-  else:
-    err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` is neither defined nor imported")
+    return ok(newAnalyzedGenericArgumentType(maybeGenericArg.get, genericArgType.loc))
+  let maybe = app.findType(newType(genericArgType.parsed))
+  if maybe.isNone:
+    return err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` is neither defined nor imported")
+  let typ = maybe.get
+  case typ.kind:
+  of rdtkGeneric:
+    ok(newAnalyzedGenericArgumentType(typ.generic, genericArgType.loc))
+  of rdtkModule:
+    err(fmt"{genericArgType.loc} [UNREACHABLE] expected `{genericArgType.parsed.name.asl}` to be a generic but found module")
 
 proc findModule*(app: ResolvedApp, parsed: parser.Module, loc: Location): Result[ResolvedModule, string] =
   ## Identity-based module lookup — given a parser Module (hash-by-loc),
