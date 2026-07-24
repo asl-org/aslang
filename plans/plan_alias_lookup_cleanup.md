@@ -1,5 +1,34 @@
 # Alias-lookup cleanup — migrate remaining name-keyed sites to identity-based
 
+## Status (as of 2026-07-25) — COMPLETE
+
+All work items landed on `main-recovery`:
+- W0 (3602e42) — plan.
+- W1 (fb1d4b9) — analyzeUnionRef + analyzeStructRef migrated to
+  `app.findModule`; factored the canonical
+  `findModule(app, parser.Module, loc)` helper on the facade;
+  `findArgTypeModule` collapses to a one-liner delegation.
+- W2 (e7c22d7) — analyzeGenericArgumentType fallback migrated to
+  `app.findType(newType(genericArgType.parsed))`.
+- W3 (ce67a92) — deleted the dead `findModuleDef(fileScope, ...)`
+  helper; inlined the case-on-kind unpack at the literal-default
+  site. Surviving `findType(fileScope, ...)` docstringed to make
+  its legit initial-name-lookup role explicit.
+- W4 (90cdd7e) — deleted the `AnalyzedDefinedTypeScope` type alias
+  + its three unused helpers on `definedtype.nim`; inlined the
+  field type on `AnalyzedFileDefinition`; dropped the unused
+  `definedTypeIndex*` accessor. filedef.nim doc rewritten to
+  describe the actual per-file-name-only role.
+- W5 (2a0cceb) — refreshed the stale doc on `appdef.nim` to
+  describe the actual two-index design.
+
+The scrutiny that motivated this plan is fully resolved: every
+post-resolution module/generic lookup now goes through the
+app-level identity-keyed indices; name-keyed lookups are confined
+to legitimate initial-name-lookup paths (fncall roots, default
+literal type names) where the user typed a name and the compiler
+resolves it against import bindings + local declarations.
+
 ## Context
 
 `plan_identity_based_lookups.md` fixed the primary alias-lookup bug in
