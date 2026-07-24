@@ -420,24 +420,24 @@ proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: Resolve
 # Phase-A file dispatcher (W6 of plan_analyzer_two_pass.md).
 # Ported from oldanalyzer.nim:951.
 #
-# Note: the fileScope built here contains IMPORTS ONLY, not the
-# file's local defined types. Local-type lookups during
-# analyzeArgumentType go through `file.findModule` (see
-# findArgTypeModule above) — the resolver's own per-file typeIndex
-# — so injecting local types into the fileScope would be
-# redundant. This matches old-analyzer behavior (:952-958) and
-# differs from the current phase-B `analyzeFile` which builds a
-# unified scope for its own use.
+# The fileScope built here is unified — imports (keyed by binding)
+# PLUS the file's local defined types. This differs from
+# oldanalyzer.nim:952-958 which used imports only; the unified form
+# is required because `findArgTypeModule` looks up an argType's
+# underlying module by name (e.g. `Byte` aliased to `u8` produces a
+# ResolvedModuleArgumentType whose `.name` is `u8`, not `Byte`),
+# and imports-only would miss the underlying-name key. The unified
+# scope matches what phase-B `analyzeFile` already builds via
+# `newResolvedFileScope`.
 # ============================================================
 
 proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
-  var fileScope: ResolvedFileScope
   var analyzedImports: seq[AnalyzedImportDefinition]
   for imp in file.imports:
     let analyzedImport = ? analyzeImportDefinition(app, file, imp)
     analyzedImports.add(analyzedImport)
-    for impType in analyzedImport.importedTypes:
-      fileScope[impType.binding] = impType.typ
+
+  let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
 
   var analyzedDefinedTypes: seq[AnalyzedDefinedType]
   for aslType in file.types:
@@ -1115,6 +1115,33 @@ proc analyzeFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, str
   ok(newAnalyzedFile(file, analyzedImports, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
+  ## TWO-PASS ORCHESTRATION STAGED BUT NOT WIRED — see W8a note in
+  ## plan_analyzer_two_pass.md and the "Blocker" note below.
+  ##
+  ## Intended shape:
+  ##   discard ? analyzeAppDefinition(app)   # phase A: all defs
+  ##   for file in app.files:
+  ##     analyzedFiles.add(? analyzeFile(app, file))  # phase B: bodies
+  ##
+  ## Blocker: enabling phase A globally exposes a pre-existing bug in
+  ## `findArgTypeModule`. Aliased imports (`import { u8 as Byte }`)
+  ## produce a ResolvedModuleArgumentType whose `.name` is the
+  ## underlying module (`u8`), not the binding (`Byte`). The
+  ## fileScope is keyed by binding, so the lookup misses. Current
+  ## phase B never exercises this path for struct field types
+  ## (analyzeModule only walks functions; struct fields are only
+  ## analyzed at kwarg-init use sites, which do go through a
+  ## different resolver-side path that handles aliases). Phase A
+  ## DOES analyze struct fields via analyzeStruct → analyzeArgumentDef
+  ## → analyzeArgumentType → findArgTypeModule("u8"), and hits the
+  ## alias gap.
+  ##
+  ## Fix owed: `findArgTypeModule` should look up the underlying
+  ## module via app-level module identity (parser.Module hash), not
+  ## by name string. See the failing test at
+  ## test_analyzer.nim:130 ("import alias resolves to its target
+  ## type") for a reproducer. Once that lands, uncomment the
+  ## `analyzeAppDefinition` call above.
   var analyzedFiles: seq[AnalyzedFile]
   for file in app.files:
     let analyzedFile = ? analyzeFile(app, file)
