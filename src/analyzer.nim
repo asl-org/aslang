@@ -211,36 +211,28 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope
   else:
     err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` is neither defined nor imported")
 
-proc findArgTypeModule(file: ResolvedFile, fileScope: ResolvedFileScope, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
-  ## Look up the ResolvedModule for a resolved argument type. The
-  ## argType carries a parser Module identifier — resolver-side types
-  ## intentionally do not back-ref ResolvedModule (would cycle). We
-  ## look up in order:
-  ##   1. Local file's typeIndex by name (fast path, most common).
-  ##   2. fileScope by name (imports keyed by binding — handles the
-  ##      non-aliased import case where argType.name matches the
-  ##      import's binding).
-  ##   3. fileScope by parser.Module identity (fallback for aliased
-  ##      imports: `import { u8 as Byte }` binds "Byte" but the
-  ##      argType's `.name` is the underlying "u8" — so the by-name
-  ##      lookup misses; we iterate values comparing parsed modules
-  ##      to find the entry).
-  let maybeTypeModule = file.findModule(argType.name)
-  if maybeTypeModule.isOk:
-    return ok(maybeTypeModule.value)
-
-  if argType.name in fileScope:
-    let importedType = fileScope[argType.name]
-    case importedType.kind:
-    of rdtkGeneric: return err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.name.asl}` to be a module but found generic.")
-    of rdtkModule: return ok(importedType.module)
-
-  # Aliased-import fallback: match by parser.Module identity.
-  for _, importedType in fileScope:
-    if importedType.kind == rdtkModule and importedType.module.parsed == argType.module:
-      return ok(importedType.module)
-
-  err(fmt"{argType.loc} module `{argType.name.asl}` is neither defined nor imported")
+proc findArgTypeModule(app: ResolvedApp, argType: ResolvedModuleArgumentType): Result[ResolvedModule, string] =
+  ## Identity-based lookup — the argType already carries the parser
+  ## Module (`argType.module`), and ResolvedApp indexes every
+  ## defined type by parser.Type identity. One O(1) lookup, no
+  ## fallback loop, no aliased-import name mismatch.
+  ##
+  ## Prior implementation (see plan_identity_based_lookups.md) went
+  ## through file.findModule(name) + fileScope[name] + a
+  ## fallback iteration to compare parser.Module identities. The
+  ## name-based path missed aliased imports (`import { u8 as Byte }`
+  ## keyed fileScope by "Byte" but argType.name was "u8"); the
+  ## fallback patched the symptom. Now the primary lookup is
+  ## identity-based and the fallback disappears.
+  let maybe = app.findType(newType(argType.module))
+  if maybe.isNone:
+    err(fmt"{argType.loc} module `{argType.name.asl}` is neither defined nor imported")
+  else:
+    let entry = maybe.get
+    case entry.kind:
+    of rdtkModule: ok(entry.module)
+    of rdtkGeneric:
+      err(fmt"{argType.loc} [UNREACHABLE] expected `{argType.name.asl}` to be a module but found generic.")
 
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 proc analyzeArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
@@ -250,7 +242,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
   ## generic-constraint satisfaction on `argType.impls`. All we need is
   ## to look up the ResolvedModule via fileScope and lift each impl
   ## through analyzeArgumentType.
-  let typeModule = ? file.findArgTypeModule(fileScope, argType)
+  let typeModule = ? app.findArgTypeModule(argType)
   var analyzedImpls: seq[AnalyzedArgumentType]
   for impl in argType.impls:
     let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, module, impl)
@@ -260,7 +252,7 @@ proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope:
 proc analyzeModuleArgumentType*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   ## Generic-context twin of the module-context overload above; same
   ## post-task-7 shape (no arity check, no constraint walk).
-  let typeModule = ? file.findArgTypeModule(fileScope, argType)
+  let typeModule = ? app.findArgTypeModule(argType)
   var analyzedImpls: seq[AnalyzedArgumentType]
   for impl in argType.impls:
     let analyzedImpl = ? analyzeArgumentType(app, file, fileScope, generic, impl)
