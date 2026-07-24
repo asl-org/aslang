@@ -129,17 +129,14 @@ import ./analyzer/app
 export app
 
 proc findType*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedType, string] =
+  ## Initial name lookup — used by call sites where the user typed a
+  ## name (`fncall.parsed.root`) that resolves against the file's
+  ## import bindings + local declarations. Post-resolution identity
+  ## lookups go through `app.findType(parser.Type)` instead.
   if name notin fileScope:
     err(fmt"{loc} UNREACHABLE: type `{name.asl}` is not defined")
   else:
     ok(fileScope[name])
-
-proc findModuleDef*(fileScope: ResolvedFileScope, name: Identifier, loc: Location): Result[ResolvedModule, string] =
-  let entry = ? fileScope.findType(name, loc)
-  case entry.kind:
-  of rdtkModule: ok(entry.module)
-  of rdtkGeneric:
-    err(fmt"{loc} UNREACHABLE: scope entry `{name.asl}` is a generic but caller expected module")
 
 # Extract helpers — resolve an AnalyzedArgumentType to the analyzer-
 # side data block (or struct / union sub-view). Route through
@@ -980,8 +977,11 @@ proc defaultLiteralArgType(fileScope: ResolvedFileScope, literal: Literal): Resu
   let ident = identResult.get
   if ident notin fileScope:
     return err(fmt"{literal.loc} bare literal defaults to `{defaultName}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
-  let module = ? fileScope.findModuleDef(ident, literal.loc)
-  ok(receiverArgType(module))
+  let entry = fileScope[ident]
+  case entry.kind:
+  of rdtkModule: ok(receiverArgType(entry.module))
+  of rdtkGeneric:
+    err(fmt"{literal.loc} UNREACHABLE: default literal type `{defaultName}` resolved to a generic")
 
 proc analyzeBareLiteral(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, literal: Literal, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
   ## Approach C — pick a concrete type for the bare literal.
