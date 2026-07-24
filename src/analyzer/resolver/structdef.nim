@@ -24,6 +24,7 @@ proc newResolvedStructDef*(parsed: StructDef, requires: seq[ResolvedGenericArgum
 proc parsed*(struct: ResolvedStructDef): StructDef = struct.parsed
 proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDef] = struct.fields
 proc fieldIndex*(struct: ResolvedStructDef): Table[Identifier, int] = struct.fieldIndex
+proc genericTypeIndex*(struct: ResolvedStructDef): Table[ResolvedGenericArgumentType, int] = struct.genericTypeIndex
 proc loc*(struct: ResolvedStructDef): Location = struct.parsed.loc
 
 proc findField*(struct: ResolvedStructDef, name: Identifier): Result[ResolvedArgumentDef, string] =

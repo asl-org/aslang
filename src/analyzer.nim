@@ -38,6 +38,21 @@ export argdef
 import ./analyzer/funcdef
 export funcdef
 
+import ./analyzer/literaldef
+export literaldef
+
+import ./analyzer/structdef
+export structdef
+
+import ./analyzer/variantdef
+export variantdef
+
+import ./analyzer/uniondef
+export uniondef
+
+import ./analyzer/datadef
+export datadef
+
 # ---- pattern cluster ----
 import ./analyzer/literalparse
 export literalparse
@@ -287,6 +302,47 @@ proc analyzeFunctionDefinition*(app: ResolvedApp, file: ResolvedFile, fileScope:
     analyzedArgDefs.add(analyzedArgDef)
   let analyzedReturns = ? analyzeArgumentType(app, file, fileScope, generic, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
+
+# ============================================================
+# Phase-A data-block analyzers (W3 of plan_analyzer_two_pass.md).
+# Ported from oldanalyzer.nim:592 / :629 / :665 / :706. Each walks
+# its fields via analyzeArgumentDefinition, delegates the
+# genericTypeIndex to the resolver's already-computed table (no
+# re-accumulation on the analyzer side), and wraps into the
+# corresponding phase-A type.
+# ============================================================
+
+proc analyzeStruct*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStruct, string] =
+  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  for field in struct.fields:
+    let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
+    analyzedFields.add(analyzedField)
+  ok(newAnalyzedStruct(struct, analyzedFields))
+
+proc analyzeVariant*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
+  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  for field in variant.fields:
+    let analyzedField = ? analyzeArgumentDefinition(app, file, fileScope, module, field)
+    analyzedFields.add(analyzedField)
+  ok(newAnalyzedVariant(variant, analyzedFields))
+
+proc analyzeUnion*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnion, string] =
+  var analyzedVariants: seq[AnalyzedVariant]
+  for variant in union.variants:
+    let analyzedVariant = ? analyzeVariant(app, file, fileScope, module, variant)
+    analyzedVariants.add(analyzedVariant)
+  ok(newAnalyzedUnion(union, analyzedVariants))
+
+proc analyzeData*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
+  case data.kind:
+  of rdkLiteral:
+    ok(newAnalyzedData(newAnalyzedLiteralBlock(data.literal)))
+  of rdkStruct:
+    let analyzedStruct = ? analyzeStruct(app, file, fileScope, module, data.struct)
+    ok(newAnalyzedData(analyzedStruct))
+  of rdkUnion:
+    let analyzedUnion = ? analyzeUnion(app, file, fileScope, module, data.union)
+    ok(newAnalyzedData(analyzedUnion))
 
 proc analyzeUnionCasePattern*(app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   ## Look each user-supplied pattern field up on the resolved variant,
