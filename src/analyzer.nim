@@ -183,7 +183,7 @@ proc extractUnionFor*(appDef: AnalyzedAppDefinition, argType: AnalyzedArgumentTy
   of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found literal")
 
 proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
-  let genericArg = ? file.findGeneric(genericArgType.parsed.name)
+  let genericArg = ? file.findGeneric(genericArgType.parsed, genericArgType.loc)
   if genericArg != generic:
     err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` does not exist in the file `{file.path}` scope")
   else:
@@ -197,7 +197,7 @@ proc analyzeGenericArgumentType*(app: ResolvedApp, file: ResolvedFile, module: R
   ## `genericArgType.parsed` is a parser.Generic (loc-hashed), stable
   ## regardless of the import binding. See
   ## plans/plan_alias_lookup_cleanup.md.
-  let maybeGenericArg = file.findGeneric(genericArgType.parsed.name)
+  let maybeGenericArg = file.findGeneric(genericArgType.parsed, genericArgType.loc)
   if maybeGenericArg.isOk:
     return ok(newAnalyzedGenericArgumentType(maybeGenericArg.get, genericArgType.loc))
   let maybe = app.findType(newType(genericArgType.parsed))
@@ -412,7 +412,7 @@ proc analyzeGeneric*(app: ResolvedApp, file: ResolvedFile, generic: ResolvedGene
 # Ported from oldanalyzer.nim:847.
 # ============================================================
 
-proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, definedType: ResolvedType): Result[AnalyzedDefinedType, string] =
+proc analyzeType*(app: ResolvedApp, file: ResolvedFile, definedType: ResolvedType): Result[AnalyzedDefinedType, string] =
   case definedType.kind:
   of rdtkGeneric:
     let analyzedGeneric = ? analyzeGeneric(app, file, definedType.generic)
@@ -421,37 +421,34 @@ proc analyzeDefinedType*(app: ResolvedApp, file: ResolvedFile, definedType: Reso
     let analyzedModule = ? analyzeModuleDefinition(app, file, definedType.module)
     ok(newAnalyzedDefinedType(analyzedModule))
 
-# Forward-declare the two import analyzers so analyzeFileDefinition
-# can call them; their bodies live near the end of this file
-# alongside the top-level analyze* entry.
-proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedType, string]
-proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDefinition, string]
+proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedType, string] =
+  let maybeImportedType = impFile.findType(impType.typ, impType.loc)
+  if maybeImportedType.isErr:
+    err(fmt"{impType.loc} type `{impType.typ.name.asl}` is not defined in the file")
+  else:
+    ok(newAnalyzedImportedType(impType, maybeImportedType.get))
 
-# ============================================================
-# Phase-A file dispatcher (W6 of plan_analyzer_two_pass.md).
-# Ported from oldanalyzer.nim:951.
-#
-# The fileScope built here (imports keyed by binding + local defined
-# types) is stored on AnalyzedFileDefinition.scope so phase-B leaves
-# (analyzeFunctionCall, defaultLiteralArgType) can look it up via
-# appDef.findFileDef(file.path).scope. No downstream analyze* proc
-# threads it — post-identity-migration the only reads are the two
-# leaves that resolve user-typed names.
-# ============================================================
+proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
+  let impFile = ? app.findFile(imp.impFile)
+  var analyzedImpTypes: seq[AnalyzedImportedType]
+  for impType in imp.importedTypes:
+    let analyzedImportedType = ? analyzeImportedType(app, impFile, impType)
+    analyzedImpTypes.add(analyzedImportedType)
+  ok(newAnalyzedImportDefinition(imp, analyzedImpTypes))
 
 proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
   var analyzedImports: seq[AnalyzedImportDefinition]
   for imp in file.imports:
-    let analyzedImport = ? analyzeImportDefinition(app, file, imp)
+    let analyzedImport = ? analyzeImportDefinition(app, imp)
     analyzedImports.add(analyzedImport)
 
   let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
 
-  var analyzedDefinedTypes: seq[AnalyzedDefinedType]
+  var analyzedTypes: seq[AnalyzedDefinedType]
   for aslType in file.types:
-    let analyzedDefinedType = ? analyzeDefinedType(app, file, aslType)
-    analyzedDefinedTypes.add(analyzedDefinedType)
-  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedDefinedTypes, fileScope))
+    let analyzedType = ? analyzeType(app, file, aslType)
+    analyzedTypes.add(analyzedType)
+  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedTypes, fileScope))
 
 # ============================================================
 # Phase-A app dispatcher (W7 of plan_analyzer_two_pass.md).
@@ -1089,25 +1086,6 @@ proc analyzeModule*(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Resol
       analyzedFunctions.add(newAnalyzedFunction(analyzedUserFunction))
   ok(newAnalyzedModule(module, analyzedFunctions))
 
-proc analyzeImportedType*(app: ResolvedApp, impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedType, string] =
-  let maybeImportedType = impFile.findType(impType.typ.name)
-  if maybeImportedType.isErr:
-    err(fmt"{impType.loc} type `{impType.typ.name.asl}` is not defined in the file")
-  else:
-    ok(newAnalyzedImportedType(impType, maybeImportedType.get))
-
-proc analyzeImportDefinition*(app: ResolvedApp, file: ResolvedFile, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
-  let maybeImportedFile = app.findFile(imp.impFile)
-  if maybeImportedFile.isNone:
-    err(fmt"{imp.loc} UNREACHABLE: file `{imp.impFile.path}` does not exist")
-  else:
-    let analyzedImpFile = maybeImportedFile.get
-    var importedTypes: seq[AnalyzedImportedType]
-    for impType in imp.importedTypes:
-      let analyzedImportedType = ? analyzeImportedType(app, analyzedImpFile, impType)
-      importedTypes.add(analyzedImportedType)
-    ok(newAnalyzedImportDefinition(imp, importedTypes))
-
 proc analyzeFile(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFile, string] =
   ## Drive per-module body analysis. Imports are re-analyzed here (the
   ## phase-A pass built the definition-level bundle in appDef; this
@@ -1115,7 +1093,7 @@ proc analyzeFile(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Resolved
   ## appDef.findFileDef(file.path).scope — no per-file threading.
   var analyzedImports: seq[AnalyzedImportDefinition]
   for imp in file.imports:
-    let analyzedImport = ? analyzeImportDefinition(app, file, imp)
+    let analyzedImport = ? analyzeImportDefinition(app, imp)
     analyzedImports.add(analyzedImport)
 
   var analyzedModules: seq[AnalyzedModule]

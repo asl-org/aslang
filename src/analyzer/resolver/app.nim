@@ -5,7 +5,7 @@
 ## along the way carries a parser Module back-ref so nothing depends
 ## on another file's resolved form existing yet.
 
-import tables, options
+import options, results, strformat, tables
 
 import ./parser
 import files
@@ -27,9 +27,9 @@ proc newResolvedApp*(files: seq[ResolvedFile]): ResolvedApp =
   ResolvedApp(files: files, fileIndex: fileIndex, typeIndex: typeIndex)
 
 proc files*(app: ResolvedApp): seq[ResolvedFile] = app.files
-proc findFile*(app: ResolvedApp, file: parser.File): Option[ResolvedFile] =
-  if file notin app.fileIndex: none(ResolvedFile)
-  else: some(app.files[app.fileIndex[file]])
+proc findFile*(app: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
+  if file notin app.fileIndex: err(fmt"file `{file.path}` does not exist")
+  else: ok(app.files[app.fileIndex[file]])
 
 proc findType*(app: ResolvedApp, parsed: parser.Type): Option[ResolvedType] =
   ## Identity-based lookup: given a parser.Type (from a
