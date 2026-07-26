@@ -375,7 +375,7 @@ proc resolveFunctionCall(fileScope: FileScope, scope: FunctionScope, fncall: Fun
     for arg in fncall.args:
       let resolvedArg = ? resolveExpression(fileScope, scope, arg)
       resolvedArgs.add(resolvedArg)
-    ok(newResolvedFunctionCall(fncall, resolvedArgs))
+    ok(newResolvedFunctionCall(fncall, typ, resolvedArgs))
 
 proc resolveStructRef(fileScope: FileScope, structRef: StructRef): Result[ResolvedStructRef, string] =
   ## Resolves a StructRef into the one-shape (module + impls).
@@ -615,7 +615,7 @@ proc resolveFile*(app: App, file: parser.File): Result[ResolvedFile, string] =
     let resolvedType = ? resolveType(fileScope, typ)
     resolvedTypes.add(resolvedType)
 
-  ok(newResolvedFile(file, resolvedImports, resolvedTypes))
+  ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileScope))
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   var resolvedFiles: seq[ResolvedFile]

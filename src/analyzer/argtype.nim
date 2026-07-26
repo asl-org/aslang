@@ -67,6 +67,9 @@ proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module
 proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule): AnalyzedModuleArgumentType =
   newAnalyzedModuleArgumentType(resolved, module, @[])
 
+proc newAnalyzedModuleArgumentType*(module: ResolvedModule): AnalyzedModuleArgumentType =
+  newAnalyzedModuleArgumentType(module.self, module)
+
 proc resolved*(m: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = m.resolved
   ## Exposed so the sibling genericimplmap.nim can rebuild a
   ## ModuleArgumentType during generic substitution. Previously the
@@ -99,6 +102,10 @@ proc newAnalyzedArgumentType*(module: AnalyzedModuleArgumentType): AnalyzedArgum
 
 proc newAnalyzedArgumentType*(generic: AnalyzedGenericArgumentType): AnalyzedArgumentType =
   AnalyzedArgumentType(kind: aatkGeneric, generic: generic)
+
+proc newAnalyzedArgumentType*(module: ResolvedModule): AnalyzedArgumentType =
+  let moduleArgType = newAnalyzedModuleArgumentType(module)
+  newAnalyzedArgumentType(moduleArgType)
 
 proc kind*(a: AnalyzedArgumentType): AnalyzedArgumentTypeKind = a.kind
 
@@ -170,10 +177,10 @@ proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], 
       let concreteImpl = impl.concrete(impls, genericTypeIndex)
       concreteImpls.add(concreteImpl)
     let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
-    return newAnalyzedArgumentType(concreteModuleArgType)
+    newAnalyzedArgumentType(concreteModuleArgType)
   of aatkGeneric:
     let key = newResolvedGenericArgumentType(argType.generic.resolved.self, argType.generic.loc)
     if key in genericTypeIndex:
-      return impls[genericTypeIndex[key]]
+      impls[genericTypeIndex[key]]
     else:
-      return argType
+      argType

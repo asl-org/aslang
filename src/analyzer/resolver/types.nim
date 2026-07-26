@@ -10,37 +10,37 @@ import generic
 
 type
   ResolvedTypeKind* = enum
-    rdtkModule, rdtkGeneric
+    rtkModule, rtkGeneric
   ResolvedType* = ref object
     case kind: ResolvedTypeKind
-    of rdtkModule: module: ResolvedModule
-    of rdtkGeneric: generic: ResolvedGeneric
+    of rtkModule: module: ResolvedModule
+    of rtkGeneric: generic: ResolvedGeneric
 
 proc newResolvedType*(module: ResolvedModule): ResolvedType =
-  ResolvedType(kind: rdtkModule, module: module)
+  ResolvedType(kind: rtkModule, module: module)
 
 proc newResolvedType*(generic: ResolvedGeneric): ResolvedType =
-  ResolvedType(kind: rdtkGeneric, generic: generic)
+  ResolvedType(kind: rtkGeneric, generic: generic)
 
 proc kind*(typ: ResolvedType): ResolvedTypeKind = typ.kind
 proc module*(typ: ResolvedType): ResolvedModule =
-  assert typ.kind == rdtkModule,
+  assert typ.kind == rtkModule,
     fmt"ResolvedType.module accessed but kind is {typ.kind}"
   typ.module
 proc generic*(typ: ResolvedType): ResolvedGeneric =
-  assert typ.kind == rdtkGeneric,
+  assert typ.kind == rtkGeneric,
     fmt"ResolvedType.generic accessed but kind is {typ.kind}"
   typ.generic
 
 proc name*(typ: ResolvedType): Identifier =
   case typ.kind:
-  of rdtkModule: typ.module.name
-  of rdtkGeneric: typ.generic.name
+  of rtkModule: typ.module.name
+  of rtkGeneric: typ.generic.name
 
 proc loc*(typ: ResolvedType): Location =
   case typ.kind:
-  of rdtkModule: typ.module.loc
-  of rdtkGeneric: typ.generic.loc
+  of rtkModule: typ.module.loc
+  of rtkGeneric: typ.generic.loc
 
 proc parsed*(typ: ResolvedType): parser.Type =
   ## Underlying parser Type for identity-keyed scope lookups. See
@@ -48,17 +48,17 @@ proc parsed*(typ: ResolvedType): parser.Type =
   ## of name resolution key on `parser.Type` (hash-by-loc), not on
   ## `Identifier` (hash-by-string).
   case typ.kind:
-  of rdtkModule: newType(typ.module.parsed)
-  of rdtkGeneric: newType(typ.generic.parsed)
+  of rtkModule: newType(typ.module.parsed)
+  of rtkGeneric: newType(typ.generic.parsed)
 
 proc hash*(typ: ResolvedType): Hash =
   case typ.kind:
-  of rdtkModule: typ.module.hash
-  of rdtkGeneric: typ.generic.hash
+  of rtkModule: typ.module.hash
+  of rtkGeneric: typ.generic.hash
 
 proc `==`*(a, b: ResolvedType): bool =
   if a.kind != b.kind: false
   else:
     case a.kind:
-    of rdtkModule: a.module == b.module
-    of rdtkGeneric: a.generic == b.generic
+    of rtkModule: a.module == b.module
+    of rtkGeneric: a.generic == b.generic

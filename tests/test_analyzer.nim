@@ -472,7 +472,7 @@ public module M:
 suite "analyzer — analyze-shape corner cases":
 
   test "file with only a self-referential generic (no modules) analyzes":
-    # Exercises the `rdtkGeneric: discard` branch in analyzeFile —
+    # Exercises the `rtkGeneric: discard` branch in analyzeFile —
     # the returned AnalyzedFile has an empty `modules` seq. The
     # generic's function signatures only reference the generic
     # itself (per the generic-signature rule), so no imports are

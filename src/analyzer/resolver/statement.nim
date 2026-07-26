@@ -48,6 +48,7 @@ type
 
   ResolvedFunctionCall* = ref object
     parsed: FunctionCall
+    typ: parser.Type
     args: seq[ResolvedExpression]
     # Task 7: reserved for FunctionCall receivers that carry an
     # explicit impl list. The parser currently has no impl syntax for
@@ -192,10 +193,11 @@ proc loc*(init: ResolvedInitializer): Location =
 # ---- ResolvedFunctionCall ----
 
 proc newResolvedFunctionCall*(parsed: FunctionCall,
-    args: seq[ResolvedExpression]): ResolvedFunctionCall =
-  ResolvedFunctionCall(parsed: parsed, args: args)
+    typ: parser.Type, args: seq[ResolvedExpression]): ResolvedFunctionCall =
+  ResolvedFunctionCall(parsed: parsed, typ: typ, args: args)
 
 proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
+proc typ*(fncall: ResolvedFunctionCall): parser.Type = fncall.typ
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
 
