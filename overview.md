@@ -154,18 +154,20 @@ let analyzedApp = ? analyze(resolvedApp)
 
 `analyze*` returns a structured `AnalyzedApp` — the `ResolvedApp`
 back-reference plus a `seq[AnalyzedFile]`, where each `AnalyzedFile`
-carries its `ResolvedFile` back-reference, analyzed import definitions,
-and the analyzed modules parsed out of it.
+carries its `AnalyzedFileDefinition` back-reference (the phase-A
+output that produced it), analyzed import definitions, and the
+analyzed modules parsed out of it.
 
 Phase-A output (`AnalyzedAppDefinition` + per-file
 `AnalyzedFileDefinition` + per-module `AnalyzedModuleDefinition` +
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` /
 `AnalyzedLiteralBlock` / `AnalyzedData`) is threaded through the
-body walker chain so phase-B overload resolution reads pre-analyzed
-funcDef signatures via `appDef.findFunctionDef` / `appDef.findDefinedType`
-lookups — no re-analysis of arg types or return types at call sites.
-`AnalyzedApp` is the handle downstream codegen will thread through.
+body walker chain as `(appDef, fileDef)` so phase-B overload
+resolution reads pre-analyzed funcDef signatures via
+`appDef.findDefinedType(typ).findFunctionDefs(...)` — no re-analysis
+of arg types or return types at call sites. `AnalyzedApp` is the
+handle downstream codegen will thread through.
 
 There is no separate `Validator` phase. Every uniqueness / structural
 rule the validator used to enforce (duplicate names, empty blocks,
@@ -176,7 +178,7 @@ separate validation pass is needed.
 
 ### Phase 1: Tokenization
 
-`src/analyzer/resolver/parser/tokenizer.nim` (barrel) + `src/analyzer/resolver/parser/tokenizer/`
+`src/analyzer/defanalyzer/resolver/parser/tokenizer.nim` (barrel) + `src/analyzer/defanalyzer/resolver/parser/tokenizer/`
 
 Single-character classifier. Intentionally simple — no keywords, no
 multi-character tokens. All that complexity lives in the parser.
@@ -190,12 +192,12 @@ Source defense).
 
 ### Phase 2: Parsing
 
-`src/analyzer/resolver/parser.nim` (barrel — hosts the combinator layer
+`src/analyzer/defanalyzer/resolver/parser.nim` (barrel — hosts the combinator layer
 plus shared leaf specs and the multi-file `parse*` entry point) +
-`src/analyzer/resolver/parser/` (per-concept AST modules — see the
+`src/analyzer/defanalyzer/resolver/parser/` (per-concept AST modules — see the
 Project Structure table for the current listing) +
-`src/analyzer/resolver/parser/tokenizer.nim` +
-`src/analyzer/resolver/parser/tokenizer/` (nested tokenizer barrel +
+`src/analyzer/defanalyzer/resolver/parser/tokenizer.nim` +
+`src/analyzer/defanalyzer/resolver/parser/tokenizer/` (nested tokenizer barrel +
 subfolder).
 
 The parser is a private sub-tree of the resolver: analyzer, cli, and
@@ -317,10 +319,10 @@ the public API.
 
 ### Phase 4: Resolution
 
-`src/analyzer/resolver.nim` (facade — hosts the per-type `resolve*`
-procs and cross-cluster scope lookups) + `src/analyzer/resolver/`
+`src/analyzer/defanalyzer/resolver.nim` (facade — hosts the per-type `resolve*`
+procs and cross-cluster scope lookups) + `src/analyzer/defanalyzer/resolver/`
 (per-type files; see the Project Structure table for the current
-listing) + the nested `src/analyzer/resolver/parser/` subtree
+listing) + the nested `src/analyzer/defanalyzer/resolver/parser/` subtree
 (Phase 2).
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
@@ -342,7 +344,7 @@ populated for the bracketed form). Scope:
   facade.** The per-type files hold only the type declaration, its
   constructor, and its accessors. Every cross-type `resolve*` proc
   (plus the scope-lookup helpers that need to cross cluster
-  boundaries) lives on the facade `src/analyzer/resolver.nim`; per-type
+  boundaries) lives on the facade `src/analyzer/defanalyzer/resolver.nim`; per-type
   files never import each other transitively via the resolve chain.
   See the Project Structure table for the current file listing —
   `argdef` / `argtype` / `moduleargtype` / `genericargtype` /
@@ -353,8 +355,8 @@ populated for the bracketed form). Scope:
   (body cluster), `module` / `generic` / `types` (top-level cluster),
   `imports` / `files` / `apps` (file / import / app layer).
 
-  The facade `src/analyzer/resolver.nim` re-exports every per-type
-  file plus the nested parser layer (`src/analyzer/resolver/parser.nim`)
+  The facade `src/analyzer/defanalyzer/resolver.nim` re-exports every per-type
+  file plus the nested parser layer (`src/analyzer/defanalyzer/resolver/parser.nim`)
   so consumers say `import resolver` once. The facade owns every
   `resolve*` proc from `resolveArgumentType` through `resolveApp`
   plus the constraint-satisfaction check (`satisfies` — deliberately
@@ -436,12 +438,20 @@ populated for the bracketed form). Scope:
 
 ### Phase 5: Analysis
 
-`src/analyzer.nim` (facade — hosts every cross-type `analyze*` proc:
-the phase-A def-level analyzers, the phase-B body walkers, the
-extract/find helpers, and the public two-pass `analyze*` entry;
-~1100 lines) + `src/analyzer/` (one file per analyzed type — the
-type declaration, constructor, and accessors only; `ls src/analyzer/`
-for the authoritative list) + the nested resolver subtree (Phase 4).
+Two barrels split along the phase boundary, extending the nesting
+convention one level (parser ⊂ resolver ⊂ defanalyzer ⊂ analyzer):
+
+- `src/analyzer/defanalyzer.nim` — definition-analysis barrel.
+  Hosts the phase-A analyze* procs (analyzeGenericArgumentType →
+  analyzeAppDefinition) and re-exports the resolver layer + every
+  def-level type. `src/analyzer/defanalyzer/` holds the def-level
+  per-type files plus the nested resolver subtree (Phase 4).
+- `src/analyzer.nim` — body-analysis barrel and top of the stack.
+  Hosts the phase-B body walkers, the extract/find helpers, and the
+  public two-pass `analyze*` entry; exports defanalyzer so
+  `import analyzer` reaches everything. `src/analyzer/` holds the
+  body-level per-type files (type declaration, constructor, and
+  accessors only; `ls` the folders for the authoritative lists).
 
 Takes a `ResolvedApp` and returns an `AnalyzedApp` — a type-rich view
 of every value, expression, and statement in each function body.
@@ -455,18 +465,18 @@ imports + defined types + the name-keyed `ResolvedFileScope`),
 per-def `AnalyzedModuleDefinition` / `AnalyzedGeneric` carrying
 `AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
 the data-block wrappers (`AnalyzedStruct` / `AnalyzedVariant` /
-`AnalyzedUnion` / `AnalyzedLiteralBlock` / `AnalyzedData`), plus two
-app-level identity-keyed indices — `funcDefIndex`
-(`ResolvedFunctionDef → AnalyzedFunctionDefinition`) and
-`definedTypeIndex` (`ResolvedType → AnalyzedDefinedType`). Any
-def-site error fires here before any body walker touches the AST.
+`AnalyzedUnion` / `AnalyzedLiteralBlock` / `AnalyzedData`), plus one
+app-level identity-keyed index — `definedTypeIndex`
+(`ResolvedType → AnalyzedDefinedType`). Any def-site error fires
+here before any body walker touches the AST.
 
 **Pass B — bodies.** The per-file `analyzeFile` walk analyzes each
 function body, consuming phase-A output: call sites read pre-analyzed
-funcDef signatures via `appDef.findFunctionDef` /
-`appDef.findDefinedType` — no re-analysis of arg types or return
-types per call site. Body-level analyzed types mirror their resolver
-counterparts via `resolved: Resolved*` back-references. Scope:
+funcDef signatures via
+`appDef.findDefinedType(typ).findFunctionDefs(...)` — no re-analysis
+of arg types or return types per call site. Body-level analyzed types
+mirror their resolver counterparts via `resolved: Resolved*`
+back-references. Scope:
 
 - **Identity-based lookups only** — the analyzer never resolves a
   user-typed name. Every reference reaching it already carries its
@@ -476,27 +486,27 @@ counterparts via `resolved: Resolved*` back-references. Scope:
   Module/Generic. Every module/generic lookup goes through the
   identity-keyed per-file scope —
   `fileScope.findType/findModule/findGeneric(parser.*, loc)` — or
-  the app-level analyzed indices `appDef.findDefinedType(ResolvedType)`
-  / `appDef.findFunctionDef(ResolvedFunctionDef)`. Aliased imports
-  (`import { u8 as Byte }`) can never miss. The one name→identity
-  bridge left in the analyzer is `defaultLiteralArgType`, which
-  takes "i32"/"f32"/"String" through the resolver-built
-  `ResolvedFile.scope` (name → parser.Module) before the identity
-  lookup. See plans/plan_identity_based_lookups.md and
+  the app-level analyzed index `appDef.findDefinedType(ResolvedType)`.
+  Aliased imports (`import { u8 as Byte }`) can never miss. The one
+  name→identity bridge left in the analyzer is
+  `defaultLiteralArgType`, which takes "i32"/"f32"/"String" through
+  the resolver-built name scope (`fileDef.resolved.scope`,
+  name → parser.Module) before the identity lookup. See
+  plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
-- **fileScope threading, minimal params** — the identity-keyed
-  `ResolvedFileScope` is built once per file in pass A (imports +
-  local types, stored on `AnalyzedFileDefinition.scope`) and
-  threaded through every analyze* proc, mirroring the resolver's
-  `fileScope: FileScope` shape. Pass B feeds it from phase-A output
-  (`appDef.fileDefs` → `fileDef.scope`). With every type lookup on
-  fileScope, the wider contexts stay off the signatures:
-  `app: ResolvedApp` appears only where files are actually fetched
-  (`analyzeImportDefinition`'s `app.findFile`, the
+- **Per-file context = fileDef, minimal params** — phase A threads
+  the identity-keyed `ResolvedFileScope` it is building (imports +
+  local types), mirroring the resolver's `fileScope: FileScope`
+  shape, and stores it on `AnalyzedFileDefinition.scope`. Phase B
+  threads the finished `fileDef: AnalyzedFileDefinition` instead —
+  one param carrying the identity scope (`fileDef.scope`), the
+  resolver file (`fileDef.resolved`), and the per-file analyzed
+  defs. Phase-B shape: `(appDef, fileDef, module, funcScope, ...)`.
+  Wider contexts stay off the signatures: `app: ResolvedApp`
+  appears only where files are actually fetched
+  (`analyzeImportDefinition`'s `app.findFile` and the
   `analyzeAppDefinition` / `analyzeFileDefinition` / `analyzeFile` /
-  `analyze*` walkers), and `file: ResolvedFile` only where the file
-  itself is the subject (the two file walkers) or its resolver-built
-  name scope is needed (the `defaultLiteralArgType` chain).
+  `analyze*` walkers).
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
@@ -565,8 +575,8 @@ counterparts via `resolved: Resolved*` back-references. Scope:
 The remaining gaps are listed in **What's Next**. The headline ones
 are the equality-vs-unification trap for free-generic types and the
 substitution-chain handling in `concrete()` — both are flagged as
-`TODO(union-inference)` in `analyzer/argtype.nim` /
-`analyzer/genericimplmap.nim` and surface as case-arm uniformity
+`TODO(union-inference)` in `analyzer/defanalyzer/argtype.nim` /
+`analyzer/defanalyzer/genericimplmap.nim` and surface as case-arm uniformity
 check failures on fixtures that flow leave-as-is values through
 `verifyUniformReturnType` (the 2 known integration failures).
 
@@ -579,7 +589,7 @@ src/
   utils.nim                        generic bfs[T, V] + topoSort with
                                    cycle detection
   nim.cfg                          per-component module search paths
-  analyzer/resolver.nim            resolver facade — the public entry
+  analyzer/defanalyzer/resolver.nim            resolver facade — the public entry
                                    for the resolver layer. Re-exports
                                    every per-type file PLUS the nested
                                    parser (its AST types, `parse*`
@@ -596,7 +606,7 @@ src/
                                    everything they need to build,
                                    traverse, or diagnose ASL programs.
 
-  analyzer/resolver/               resolver internals — one file per
+  analyzer/defanalyzer/resolver/              resolver internals — one file per
                                    resolved type. Each file holds the
                                    type declaration, constructor, and
                                    accessors only; the cross-type
@@ -867,43 +877,30 @@ src/
                                    array + the tokenize loop's
                                    dispatcher.
 
-  analyzer.nim                     analyzer facade — re-exports every
-                                   per-type file under src/analyzer/
-                                   plus the nested resolver barrel,
-                                   and owns every cross-type
-                                   `analyze*` proc: the phase-A
-                                   def-level analyzers
-                                   (analyzeArgumentType →
-                                   analyzeAppDefinition), the phase-B
-                                   body walkers (analyzeExpression /
-                                   analyzeStatement /
-                                   analyzeFunctionCall /
-                                   analyzeMatchExpression / ...), the
-                                   extract helpers (findModuleDef,
-                                   extractDataDef, extractStructFor,
-                                   extractUnionFor), and the public
-                                   two-pass `analyze*` entry.
+  analyzer/defanalyzer.nim         definition-analysis barrel —
+                                   phase A. Hosts the def-level
+                                   analyze* procs
+                                   (analyzeGenericArgumentType →
+                                   analyzeAppDefinition) and
+                                   re-exports the resolver layer +
+                                   every def-level type below, so
+                                   the body layer imports
+                                   ./defanalyzer once.
 
-  analyzer/                        analyzer internals — one file per
-                                   analyzed type (declaration +
-                                   constructor + accessors only; all
-                                   cross-type analyze* procs live on
-                                   the facade). `ls src/analyzer/`
-                                   for the authoritative list.
+  analyzer/defanalyzer/            def-level per-type files
+                                   (declaration + constructor +
+                                   accessors only) + the nested
+                                   resolver subtree above. `ls` for
+                                   the authoritative list.
     filescope.nim                  ResolvedFileScope (parser.Type →
                                    ResolvedType, identity-keyed) —
                                    spans imports + local types;
                                    built per file in pass A, stored
-                                   on AnalyzedFileDefinition.scope,
-                                   threaded through every analyze*
-                                   proc. Owns identity-keyed
-                                   findType / findModule /
-                                   findGeneric. Same-identity
-                                   re-imports are idempotent.
-    funcscope.nim                  AnalyzedFunctionScope (Identifier →
-                                   AnalyzedArgumentType) —
-                                   per-function variable scope for
-                                   body analysis + clone.
+                                   on AnalyzedFileDefinition.scope.
+                                   Owns identity-keyed findType /
+                                   findModule / findGeneric.
+                                   Same-identity re-imports are
+                                   idempotent.
     argtype.nim                    AnalyzedArgumentType — flat tagged
                                    union (aatkModule / aatkGeneric)
                                    mirroring the resolver shape +
@@ -945,9 +942,38 @@ src/
                                    query).
     appdef.nim                     AnalyzedAppDefinition (fileDefs +
                                    fileDefIndex + identity-keyed
-                                   funcDefIndex / definedTypeIndex +
-                                   findFileDef / findFunctionDef /
+                                   definedTypeIndex + findFileDef /
                                    findDefinedType).
+    importedtype.nim               AnalyzedImportedType (binding →
+                                   resolved type).
+    importdef.nim                  AnalyzedImportDefinition (resolved
+                                   import + imported types).
+
+  analyzer.nim                     body-analysis barrel — phase B and
+                                   the top of the compiler stack.
+                                   Imports + exports defanalyzer
+                                   (transitively resolver → parser →
+                                   Location), and owns the phase-B
+                                   body walkers (analyzeExpression /
+                                   analyzeStatement /
+                                   analyzeFunctionCall /
+                                   analyzeMatchExpression / ...), the
+                                   extract helpers (findModuleDef,
+                                   extractDataDef, extractStructFor,
+                                   extractUnionFor), and the public
+                                   two-pass `analyze*` entry.
+
+  analyzer/                        body-level per-type files
+                                   (declaration + constructor +
+                                   accessors only; all cross-type
+                                   analyze* procs live on the
+                                   barrels). Each imports
+                                   ./defanalyzer once for def types
+                                   + resolver.
+    funcscope.nim                  AnalyzedFunctionScope (Identifier →
+                                   AnalyzedArgumentType) —
+                                   per-function variable scope for
+                                   body analysis + clone.
     literalparse.nim               parseInteger[T: SomeInteger] /
                                    float-parsing helpers (bounds
                                    checks, special-value forms).
@@ -992,12 +1018,9 @@ src/
                                    (user / extern).
     module.nim                     AnalyzedModule (def back-ref +
                                    analyzed functions).
-    importedtype.nim               AnalyzedImportedType (binding →
-                                   resolved type).
-    importdef.nim                  AnalyzedImportDefinition (resolved
-                                   import + imported types).
-    file.nim                       AnalyzedFile (resolved + imports +
-                                   modules).
+    file.nim                       AnalyzedFile (def:
+                                   AnalyzedFileDefinition back-ref +
+                                   imports + modules).
     app.nim                        AnalyzedApp (resolved + files) —
                                    the handle downstream codegen will
                                    thread through.
@@ -1021,7 +1044,7 @@ tests/
   test_combinators.nim             Spec / combinator unit tests
   test_ast.nim                     AST constructor invariants (covers
                                    the per-concept files in
-                                   src/analyzer/resolver/parser/)
+                                   src/analyzer/defanalyzer/resolver/parser/)
   test_grammar.nim                 single-file parse tests across all
                                    per-concept grammar specs
   test_loader.nim                  BFS / topo / parent-escape tests
@@ -1155,7 +1178,7 @@ What the analyzer does today (all wired):
 Focused TODOs still open:
 
 - **Equality vs unification for analyzed types**
-  (`analyzer/argtype.nim`, the `==` on `AnalyzedArgumentType` —
+  (`analyzer/defanalyzer/argtype.nim`, the `==` on `AnalyzedArgumentType` —
   flagged as `TODO(union-inference)`). Assignability against an
   expected type that carries free generics (post leave-as-is) needs
   unification, not hash equality. Surfaces as the case-arm
@@ -1167,7 +1190,7 @@ Focused TODOs still open:
   chain-collapsing in `merge`. Owned by
   plans/plan_deferred_typing.md.
 - **Substitution chains in `merge` / `concrete()`**
-  (`analyzer/genericimplmap.nim`) — `Sample → K, K → u8` should
+  (`analyzer/defanalyzer/genericimplmap.nim`) — `Sample → K, K → u8` should
   collapse to `Sample → u8`; today `concrete()` does a single
   `getOrDefault`. Pairs with the equality fix above.
 - **F32 / F64 / Pointer literal kinds** — Pointer literal positions
