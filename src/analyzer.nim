@@ -1,139 +1,44 @@
 import options, results, sequtils, strformat, strutils, tables
-## Package façade. Consumers say `import analyzer` to get the full
-## compiler stack: analyzer types and `analyze*`, plus the resolver
-## layer that analyzer builds on (which itself re-exports the parser
-## AST + `parse*` entry point + Location).
-##
-## Under the nesting convention, `src/asl.nim` only needs `import
-## cli, analyzer` to reach every construct in the compiler.
+
 
 import ./analyzer/resolver
 export resolver
 
-# ---- file-scope alias ----
 import ./analyzer/filescope
-export filescope
-
-# ---- function-scope alias ----
 import ./analyzer/funcscope
-export funcscope
-
-# ---- argument-type cluster (mutually-recursive tagged union) ----
 import ./analyzer/argtype
-export argtype
-
 import ./analyzer/moduleargtype
-export moduleargtype
-
 import ./analyzer/genericargtype
-export genericargtype
-
 import ./analyzer/genericimplmap
-export genericimplmap
-
-# ---- phase-A leaves (W1+ of plan_analyzer_two_pass.md) ----
 import ./analyzer/argdef
-export argdef
-
 import ./analyzer/funcdef
-export funcdef
-
 import ./analyzer/literaldef
-export literaldef
-
 import ./analyzer/structdef
-export structdef
-
-import ./analyzer/variantdef
-export variantdef
-
 import ./analyzer/uniondef
-export uniondef
-
 import ./analyzer/datadef
-export datadef
-
 import ./analyzer/moduledef
-export moduledef
-
-import ./analyzer/generic
-export generic
-
 import ./analyzer/definedtype
-export definedtype
-
 import ./analyzer/filedef
-export filedef
-
 import ./analyzer/appdef
-export appdef
-
-# ---- pattern cluster ----
 import ./analyzer/literalparse
-export literalparse
-
 import ./analyzer/unionpatternscope
-export unionpatternscope
-
 import ./analyzer/literalpatternscope
-export literalpatternscope
-
 import ./analyzer/binding
-export binding
-
 import ./analyzer/unionpattern
-export unionpattern
-
 import ./analyzer/casepattern
-export casepattern
-
-# ---- body cluster: leaf nodes ----
 import ./analyzer/variable
-export variable
-
 import ./analyzer/literalinit
-export literalinit
-
 import ./analyzer/getter
-export getter
-
-# ---- body cluster: mutually-recursive statement/expression web ----
 import ./analyzer/statement
-export statement
-
-# ---- function cluster ----
 import ./analyzer/userfunc
-export userfunc
-
 import ./analyzer/externfunc
-export externfunc
-
 import ./analyzer/function
-export function
-
 import ./analyzer/module
-export module
-
-# ---- import cluster ----
-import ./analyzer/importedtype
-export importedtype
-
 import ./analyzer/importdef
-export importdef
-
-# ---- app/file (top-level) ----
 import ./analyzer/file
-export file
-
 import ./analyzer/app
-export app
 
-# Extract helpers — resolve an AnalyzedArgumentType to the analyzer-
-# side data block (or struct / union sub-view). Route through
-# `appDef.findDefinedType` so the returned data is the phase-A
-# analyzed form (AnalyzedData / AnalyzedStruct / AnalyzedUnion) with
-# pre-analyzed field / variant argTypes. Callers that need the
-# underlying resolver types can reach `.resolved` on the fields.
+import defanalyzer
 
 proc findModuleDef*(appDef: AnalyzedAppDefinition, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedModuleDefinition, string] =
   case argType.kind:
@@ -172,256 +77,7 @@ proc extractUnionFor*(appDef: AnalyzedAppDefinition, argType: AnalyzedArgumentTy
   of adkStruct: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found struct")
   of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found literal")
 
-proc analyzeGenericArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
-  let genericArg = ? fileScope.findGeneric(genericArgType.parsed, genericArgType.loc)
-  if genericArg != generic:
-    err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` does not exist")
-  else:
-    ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
-
-proc analyzeGenericArgumentType*(fileScope: ResolvedFileScope, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
-  ## Module-context path — any generic reachable through the file's
-  ## identity-keyed scope (local or imported) is valid; no
-  ## self-reference restriction to enforce, so no context param.
-  let genericArg = ? fileScope.findGeneric(genericArgType.parsed, genericArgType.loc)
-  ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
-
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
-
-proc analyzeModuleArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  ## Post-task-7: the resolver already validated arity and
-  ## generic-constraint satisfaction on `argType.impls`. All we need is
-  ## to look up the ResolvedModule via the identity-keyed fileScope and
-  ## lift each impl through analyzeArgumentType.
-  let typeModule = ? fileScope.findModule(argType.module, argType.loc)
-  var analyzedImpls: seq[AnalyzedArgumentType]
-  for impl in argType.impls:
-    let analyzedImpl = ? analyzeArgumentType(fileScope, module, impl)
-    analyzedImpls.add(analyzedImpl)
-  ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
-
-proc analyzeModuleArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  ## Generic-context twin of the module-context overload above; same
-  ## post-task-7 shape (no arity check, no constraint walk).
-  let typeModule = ? fileScope.findModule(argType.module, argType.loc)
-  var analyzedImpls: seq[AnalyzedArgumentType]
-  for impl in argType.impls:
-    let analyzedImpl = ? analyzeArgumentType(fileScope, generic, impl)
-    analyzedImpls.add(analyzedImpl)
-  ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
-
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
-  case argType.kind:
-  of ratkGeneric:
-    let analyzedArgType = ? analyzeGenericArgumentType(fileScope, argType.generic)
-    ok(newAnalyzedArgumentType(analyzedArgType))
-  of ratkModule:
-    let analyzedArgType = ? analyzeModuleArgumentType(fileScope, module, argType.module)
-    ok(newAnalyzedArgumentType(analyzedArgType))
-
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
-  case argType.kind:
-  of ratkGeneric:
-    let analyzedArgType = ? analyzeGenericArgumentType(fileScope, generic, argType.generic)
-    ok(newAnalyzedArgumentType(analyzedArgType))
-  of ratkModule:
-    let analyzedArgType = ? analyzeModuleArgumentType(fileScope, generic, argType.module)
-    ok(newAnalyzedArgumentType(analyzedArgType))
-
-# ============================================================
-# Phase-A argument / function def analyzers (W2 of
-# plans/plan_analyzer_two_pass.md). Ported from oldanalyzer.nim:479
-# (analyzeArgumentDefinition) and :522 (analyzeFunctionDefinition).
-#
-# ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
-#   UNIFICATION.
-#
-# The impl-satisfies-base signature check (currently done at
-# `analyzeValueTypeAgainstDefType` on the facade + `checkImplSatisfiesGeneric`
-# on the resolver) uses hash-based `==` for AnalyzedArgumentType
-# comparison. That works for fully-bound-vs-fully-bound comparisons
-# but not for cases where either side carries free generics
-# (post leave-as-is inference).
-#
-# What breaks: an impl providing `byte_size(items: Array[u8])` where
-# the base generic mandates `byte_size(items: Array[Any])` — hash
-# equality treats these as different types when a unification pass
-# would bind `Any → u8` and accept the impl. Dormant today because
-# every fixture in the test suite uses fully-bound impl types at the
-# base-generic satisfaction boundary; the bug lies waiting until
-# someone writes an impl whose funcDef references a partially-generic
-# argument type.
-#
-# The fix requires routing every assignability check through
-# `analyzeValueTypeAgainstDefType` + `merge` with eager chain-
-# collapsing in `merge` (so `Sample → K, K → u8` collapses to
-# `Sample → u8`). See `plans/plan_deferred_typing.md` §
-# "Equality vs unification for analyzed types" — that plan owns the
-# fix; this port preserves current behavior and does not introduce
-# any new use of `==`.
-# ============================================================
-
-proc analyzeArgumentDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
-  let analyzedArgType = ? analyzeArgumentType(fileScope, module, argDef.argType)
-  ok(newAnalyzedArgumentDefinition(argDef, analyzedArgType))
-
-proc analyzeArgumentDefinition*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
-  let analyzedArgType = ? analyzeArgumentType(fileScope, generic, argDef.argType)
-  ok(newAnalyzedArgumentDefinition(argDef, analyzedArgType))
-
-proc analyzeFunctionDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
-  var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
-  for arg in funcDef.args:
-    let analyzedArgDef = ? analyzeArgumentDefinition(fileScope, module, arg)
-    analyzedArgDefs.add(analyzedArgDef)
-  let analyzedReturns = ? analyzeArgumentType(fileScope, module, funcDef.returns)
-  ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
-
-proc analyzeFunctionDefinition*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
-  var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
-  for arg in funcDef.args:
-    let analyzedArgDef = ? analyzeArgumentDefinition(fileScope, generic, arg)
-    analyzedArgDefs.add(analyzedArgDef)
-  let analyzedReturns = ? analyzeArgumentType(fileScope, generic, funcDef.returns)
-  ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
-
-# ============================================================
-# Phase-A data-block analyzers (W3 of plan_analyzer_two_pass.md).
-# Ported from oldanalyzer.nim:592 / :629 / :665 / :706. Each walks
-# its fields via analyzeArgumentDefinition, delegates the
-# genericTypeIndex to the resolver's already-computed table (no
-# re-accumulation on the analyzer side), and wraps into the
-# corresponding phase-A type.
-# ============================================================
-
-proc analyzeStruct*(fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStruct, string] =
-  var analyzedFields: seq[AnalyzedArgumentDefinition]
-  for field in struct.fields:
-    let analyzedField = ? analyzeArgumentDefinition(fileScope, module, field)
-    analyzedFields.add(analyzedField)
-  ok(newAnalyzedStruct(struct, analyzedFields))
-
-proc analyzeVariant*(fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
-  var analyzedFields: seq[AnalyzedArgumentDefinition]
-  for field in variant.fields:
-    let analyzedField = ? analyzeArgumentDefinition(fileScope, module, field)
-    analyzedFields.add(analyzedField)
-  ok(newAnalyzedVariant(variant, analyzedFields))
-
-proc analyzeUnion*(fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnion, string] =
-  var analyzedVariants: seq[AnalyzedVariant]
-  for variant in union.variants:
-    let analyzedVariant = ? analyzeVariant(fileScope, module, variant)
-    analyzedVariants.add(analyzedVariant)
-  ok(newAnalyzedUnion(union, analyzedVariants))
-
-proc analyzeData*(fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
-  case data.kind:
-  of rdkLiteral:
-    ok(newAnalyzedData(newAnalyzedLiteralBlock(data.literal)))
-  of rdkStruct:
-    let analyzedStruct = ? analyzeStruct(fileScope, module, data.struct)
-    ok(newAnalyzedData(analyzedStruct))
-  of rdkUnion:
-    let analyzedUnion = ? analyzeUnion(fileScope, module, data.union)
-    ok(newAnalyzedData(analyzedUnion))
-
-# ============================================================
-# Phase-A module + generic analyzers (W4 of plan_analyzer_two_pass.md).
-# Ported from oldanalyzer.nim:763 (analyzeModuleDefinition) and :811
-# (analyzeGeneric).
-#
-# Note: `analyzeModuleDefinition`'s requires walk reads
-# `module.data.get.requires` (post the resolver's struct-header merge)
-# rather than the retired module-level `requires` clause. Modules
-# without a data block carry an empty requires seq.
-# ============================================================
-
-proc analyzeModuleDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
-  var requires: seq[AnalyzedGenericArgumentType]
-  if module.data.isSome:
-    for genericArgType in module.data.get.requires:
-      let analyzedArgType = ? analyzeGenericArgumentType(fileScope, genericArgType)
-      requires.add(analyzedArgType)
-
-  var maybeAnalyzedData: Option[AnalyzedData]
-  if module.data.isSome:
-    let analyzedData = ? analyzeData(fileScope, module, module.data.get)
-    maybeAnalyzedData = some(analyzedData)
-
-  var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
-  for function in module.functions:
-    let analyzedFuncDef = ? analyzeFunctionDefinition(fileScope, module, function.def)
-    analyzedFuncDefs.add(analyzedFuncDef)
-
-  ok(newAnalyzedModuleDefinition(module, requires, maybeAnalyzedData, analyzedFuncDefs))
-
-proc analyzeGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
-  var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
-  for funcDef in generic.funcDefs:
-    let analyzedFuncDef = ? analyzeFunctionDefinition(fileScope, generic, funcDef)
-    analyzedFuncDefs.add(analyzedFuncDef)
-  ok(newAnalyzedGeneric(generic, analyzedFuncDefs))
-
-# ============================================================
-# Phase-A defined-type dispatcher (W5 of plan_analyzer_two_pass.md).
-# Ported from oldanalyzer.nim:847.
-# ============================================================
-
-proc analyzeType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedDefinedType, string] =
-  case definedType.kind:
-  of rtkGeneric:
-    let analyzedGeneric = ? analyzeGeneric(fileScope, definedType.generic)
-    ok(newAnalyzedDefinedType(analyzedGeneric))
-  of rtkModule:
-    let analyzedModule = ? analyzeModuleDefinition(fileScope, definedType.module)
-    ok(newAnalyzedDefinedType(analyzedModule))
-
-proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedType, string] =
-  let resolvedImpType = ? impFile.findType(impType.typ, impType.loc)
-  ok(newAnalyzedImportedType(impType, resolvedImpType))
-
-proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
-  let impFile = ? app.findFile(imp.impFile)
-  var analyzedImpTypes: seq[AnalyzedImportedType]
-  for impType in imp.importedTypes:
-    let analyzedImportedType = ? analyzeImportedType(impFile, impType)
-    analyzedImpTypes.add(analyzedImportedType)
-  ok(newAnalyzedImportDefinition(imp, analyzedImpTypes))
-
-proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
-  var analyzedImports: seq[AnalyzedImportDefinition]
-  for imp in file.imports:
-    let analyzedImport = ? analyzeImportDefinition(app, imp)
-    analyzedImports.add(analyzedImport)
-
-  let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
-  var analyzedTypes: seq[AnalyzedDefinedType]
-  for typ in file.types:
-    let analyzedType = ? analyzeType(fileScope, typ)
-    analyzedTypes.add(analyzedType)
-  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedTypes, fileScope))
-
-# ============================================================
-# Phase-A app dispatcher (W7 of plan_analyzer_two_pass.md).
-# Ported from oldanalyzer.nim:987. Walks every file, produces the
-# per-app definition bundle. Not yet consumed by the top-level
-# `analyze*` entry — that switches to two-pass orchestration at W8.
-# ============================================================
-
-proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedAppDefinition, string] =
-  var analyzedFileDefinitions: seq[AnalyzedFileDefinition]
-  for file in app.files:
-    let analyzedFileDefinition = ? analyzeFileDefinition(app, file)
-    analyzedFileDefinitions.add(analyzedFileDefinition)
-  ok(newAnalyzedAppDefinition(app, analyzedFileDefinitions))
-
 proc analyzeUnionCasePattern*(appDef: AnalyzedAppDefinition, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
-  ## Look each user-supplied pattern field up on the resolved variant,
-  ## convert its resolved argType to the analyzer-side value in the
-  ## calling module context, and substitute the subject's impls in for
-  ## any free generic positions the variant's field types touch.
   let variant = ? union.findVariant(variantPattern.name)
   var bindings: seq[AnalyzedBinding]
   for field in variantPattern.fields:
@@ -469,11 +125,6 @@ proc analyzeFloatLiteral[T: SomeFloat](literal: Literal, expected: string): Resu
   of lkInteger: err(fmt"{literal.loc} expected a valid {expected} but found integer")
   of lkString: err(fmt"{literal.loc} expected a valid {expected} but found string")
   of lkFloat:
-    # Special IEEE-754 values (`nan`, `inf`, `+inf`, `-inf`) are legal
-    # in every float type — no fit-check or exact-representability
-    # warning applies. The parser (`specialFloatSpec` in literals.nim)
-    # narrows the accepted forms; anything else that reached `lkFloat`
-    # is numeric.
     if literal.asl in ["nan", "inf", "+inf", "-inf"]:
       return ok()
     let maybeParsedFloat = parseFloat[T](literal.asl)
@@ -537,9 +188,7 @@ proc analyzeLiteralInitializer*(appDef: AnalyzedAppDefinition, fileScope: Resolv
 
 # Forward declarations for the analyzeX procs in the cluster.
 proc analyzeExpression*(appDef: AnalyzedAppDefinition, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
-
 proc analyzeStatement*(appDef: AnalyzedAppDefinition, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string]
-
 proc analyzeValueTypeAgainstDefType(defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
 
 proc analyzeValueTypeAgainstDefType(defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
@@ -643,7 +292,7 @@ proc analyzeFunctionCall*(appDef: AnalyzedAppDefinition, file: ResolvedFile, fil
   let public =
     case typ.kind:
     of rtkModule: (module != typ.module)
-    of rtkGeneric: true # generic func defs are not required to be explicitly marked public
+    of rtkGeneric: true
   let definedType = ? appDef.findDefinedType(typ)
   let funcDefs = ? definedType.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
 
@@ -995,9 +644,6 @@ proc analyzeStatement*(appDef: AnalyzedAppDefinition, file: ResolvedFile, fileSc
     ok(newAnalyzedStatement(analyzedMutation))
 
 proc analyzeUserFunction*(appDef: AnalyzedAppDefinition, file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
-  ## Seeds funcScope from the resolved arg definitions (converting each
-  ## resolved argType to the analyzer-side AnalyzedArgumentType in the
-  ## calling module context), then walks statements.
   var funcScope: AnalyzedFunctionScope
   for argDef in function.def.args:
     let analyzedArgType = ? analyzeArgumentType(fileScope, module, argDef.argType)
@@ -1032,10 +678,6 @@ proc analyzeModule*(appDef: AnalyzedAppDefinition, file: ResolvedFile, fileScope
   ok(newAnalyzedModule(module, analyzedFunctions))
 
 proc analyzeFile(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: ResolvedFile, fileScope: ResolvedFileScope): Result[AnalyzedFile, string] =
-  ## Drive per-module body analysis. Imports are re-analyzed here (the
-  ## phase-A pass built the definition-level bundle in appDef; this
-  ## pass shape-checks bodies). fileScope is the phase-A-built
-  ## identity-keyed scope (the caller passes fileDef.scope).
   var analyzedImports: seq[AnalyzedImportDefinition]
   for imp in file.imports:
     let analyzedImport = ? analyzeImportDefinition(app, imp)
@@ -1051,21 +693,6 @@ proc analyzeFile(appDef: AnalyzedAppDefinition, app: ResolvedApp, file: Resolved
   ok(newAnalyzedFile(file, analyzedImports, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  ## Two-pass orchestration (W8a/W8b of plan_analyzer_two_pass.md).
-  ##
-  ## Pass 1 — `analyzeAppDefinition(app)` — walks every file, every
-  ##   module + generic, every struct/union/literal, every funcDef
-  ##   signature across the whole app. Any def-site error (malformed
-  ##   requires, bad signature, missing impl-satisfies-generic) fires
-  ##   here before any body walker touches the AST — the guarantee
-  ##   phase A always gave us.
-  ##
-  ## Pass 2 — the existing per-file `analyzeFile` walk — analyzes
-  ##   each function body. As of W8b the AnalyzedAppDefinition from
-  ##   pass 1 is threaded through every body walker; call sites read
-  ##   pre-analyzed funcDef signatures via
-  ##   `appDef.findFunctionDef(funcDef)` inside `analyzeArgumentList`
-  ##   instead of re-analyzing per candidate.
   let appDef = ? analyzeAppDefinition(app)
   var analyzedFiles: seq[AnalyzedFile]
   for fileDef in appDef.fileDefs:

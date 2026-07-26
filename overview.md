@@ -704,9 +704,10 @@ src/
                                    name→parser.Type bridging.
     app.nim                        ResolvedApp — the top-level handle;
                                    identity-keyed fileIndex +
-                                   typeIndex with findFile /
-                                   findType. The actor `resolve*`
-                                   proc lives on the facade.
+                                   findFile. Type lookups live on
+                                   the per-file scopes, not the app.
+                                   The actor `resolve*` proc lives
+                                   on the facade.
 
     parser.nim                     parser layer — combinator machinery
                                    (Spec[T], Parser, oneOf / any /
