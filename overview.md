@@ -407,11 +407,16 @@ populated for the bracketed form). Scope:
   rebuilding a parallel def-level view.
 - **Body-level name resolution** — the resolver walks user-function
   bodies: each statement is dispatched, each expression is resolved,
-  and every function call is matched against candidate function
-  definitions by `(name, arity)` against the target type. A
-  `FunctionScope` (Table[Identifier, Location]) tracks the names of
-  variables currently in scope; the value stores the declaration site
-  so duplicate-declaration errors can point at the prior source
+  and every function call's root (the user-typed receiver name) is
+  resolved against the FileScope to a `parser.Type` carried on
+  `ResolvedFunctionCall.typ` — so the analyzer never resolves a
+  user-typed name; it does identity lookups on what the resolver
+  already bound. The per-file `FileScope` itself is stored on
+  `ResolvedFile.scope` for downstream name→parser.Type bridging
+  (e.g. the analyzer's bare-literal defaults). A `FunctionScope`
+  (Table[Identifier, Location]) tracks the names of variables
+  currently in scope; the value stores the declaration site so
+  duplicate-declaration errors can point at the prior source
   location. Variable types remain the Analyzer's concern. The
   resolver collects candidate overloads but does not pick the unique
   one — that's the Analyzer.
@@ -462,23 +467,28 @@ funcDef signatures via `appDef.findFunctionDef` /
 types per call site. Body-level analyzed types mirror their resolver
 counterparts via `resolved: Resolved*` back-references. Scope:
 
-- **Identity-based lookups** — post-resolution module/generic
-  lookups key on parser-level identity (hash-by-loc), never on name
-  strings: `app.findType(parser.Type)` / `findModule(app, module,
-  loc)` on the resolver side, `appDef.findDefinedType(ResolvedType)`
-  / `appDef.findFunctionDef(ResolvedFunctionDef)` on the analyzer
-  side. Aliased imports (`import { u8 as Byte }`) can never miss.
-  Name-keyed lookups are confined to genuine "user typed this name"
-  sites: function-call roots, bare-literal defaults (i32/f32/String),
-  and the per-file `findDefinedType(name)`. See
-  plans/plan_identity_based_lookups.md and
+- **Identity-based lookups only** — the analyzer never resolves a
+  user-typed name. Every reference reaching it already carries its
+  parser-level identity (hash-by-loc): function-call roots are
+  resolved to a `parser.Type` at resolve time and carried on
+  `ResolvedFunctionCall.typ`; argument types carry their parser
+  Module/Generic. Lookups go through the identity-keyed
+  `fileScope.findType/findModule/findGeneric(parser.*, loc)`,
+  `app.findType(parser.Type)` / `findModule(app, module, loc)`, and
+  `appDef.findDefinedType(ResolvedType)` /
+  `appDef.findFunctionDef(ResolvedFunctionDef)`. Aliased imports
+  (`import { u8 as Byte }`) can never miss. The one name→identity
+  bridge left in the analyzer is `defaultLiteralArgType`, which
+  takes "i32"/"f32"/"String" through the resolver-built
+  `ResolvedFile.scope` (name → parser.Module) before the identity
+  lookup. See plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
-- **No fileScope threading** — the per-file scope is built once in
-  pass A and stored on `AnalyzedFileDefinition.scope`; the two
-  phase-B leaves that need it (`analyzeFunctionCall`,
-  `defaultLiteralArgType`) fetch it via
-  `appDef.findFileDef(file.path).scope`. No other analyze* proc
-  takes it (plans/plan_filescope_threading.md).
+- **fileScope threading** — the identity-keyed `ResolvedFileScope`
+  is built once per file in pass A (imports + local types, stored
+  on `AnalyzedFileDefinition.scope`) and threaded through every
+  analyze* proc, mirroring the resolver's `fileScope: FileScope`
+  shape. Pass B feeds it from phase-A output (`appDef.fileDefs` →
+  `fileDef.scope`).
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
@@ -535,11 +545,14 @@ counterparts via `resolved: Resolved*` back-references. Scope:
   AnalyzedArgumentType]` — the body-level replacement for the
   retired def-level `AnalyzedArgumentDefinition` wrapper.
 - **Scope tables** — `ResolvedFileScope` (analyzer/filescope.nim,
-  `Identifier → ResolvedType`) is the name-keyed initial-lookup
-  table, built per file in pass A and stored on
-  `AnalyzedFileDefinition.scope`. `AnalyzedFunctionScope`
+  `parser.Type → ResolvedType`, identity-keyed) spans imports +
+  local defined types; the same type imported under two bindings
+  lands on one key, so construction only rejects a genuinely
+  different entry under an existing key. `AnalyzedFunctionScope`
   (analyzer/funcscope.nim, `Identifier → AnalyzedArgumentType`) is
-  the per-function variable scope threaded through the body walkers.
+  the per-function variable scope threaded through the body walkers
+  — variables have no identity beyond their name, so name keying is
+  correct there.
 
 The remaining gaps are listed in **What's Next**. The headline ones
 are the equality-vs-unification trap for free-generic types and the
@@ -650,7 +663,9 @@ src/
                                    types: ResolvedKeywordArgument /
                                    ResolvedStructInitializer /
                                    ResolvedUnionInitializer /
-                                   ResolvedFunctionCall /
+                                   ResolvedFunctionCall (carries
+                                   `typ: parser.Type` — the call
+                                   root resolved at resolve time) /
                                    ResolvedInitializer /
                                    ResolvedExpression / ResolvedMatch /
                                    ResolvedCaseBlock /
@@ -667,15 +682,18 @@ src/
                                    public)).
     generic.nim                    ResolvedGeneric (same funcDef
                                    accessors as ResolvedModule).
-    types.nim                      Tagged ResolvedType (rdtkModule /
-                                   rdtkGeneric) — one-of over module
+    types.nim                      Tagged ResolvedType (rtkModule /
+                                   rtkGeneric) — one-of over module
                                    and generic.
     files.nim                      ResolvedFile + identity-keyed
                                    typeIndex (parser.Type → int) +
                                    findType / findModule /
                                    findGeneric taking the parser-side
                                    Type / Module / Generic plus a loc
-                                   for error messages.
+                                   for error messages. Also stores
+                                   the resolve-time FileScope
+                                   (`scope` accessor) for downstream
+                                   name→parser.Type bridging.
     app.nim                        ResolvedApp — the top-level handle;
                                    identity-keyed fileIndex +
                                    typeIndex with findFile /
@@ -865,13 +883,16 @@ src/
                                    cross-type analyze* procs live on
                                    the facade). `ls src/analyzer/`
                                    for the authoritative list.
-    filescope.nim                  ResolvedFileScope (Identifier →
-                                   ResolvedType) — name-keyed
-                                   initial-lookup table; built per
-                                   file in pass A (imports keyed by
-                                   binding + local types), stored on
-                                   AnalyzedFileDefinition.scope.
-                                   Identity lookups bypass it.
+    filescope.nim                  ResolvedFileScope (parser.Type →
+                                   ResolvedType, identity-keyed) —
+                                   spans imports + local types;
+                                   built per file in pass A, stored
+                                   on AnalyzedFileDefinition.scope,
+                                   threaded through every analyze*
+                                   proc. Owns identity-keyed
+                                   findType / findModule /
+                                   findGeneric. Same-identity
+                                   re-imports are idempotent.
     funcscope.nim                  AnalyzedFunctionScope (Identifier →
                                    AnalyzedArgumentType) —
                                    per-function variable scope for
