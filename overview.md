@@ -102,10 +102,11 @@ Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              `Module` identifier (not a ResolvedModule back-ref),
   │              so no ref-object cycle forms. Downstream layers
   │              that need the resolved module do an identity-keyed
-  │              lookup at their site (`app.findType(parser.Type)`
-  │              or `ResolvedFile.findModule(module, loc)` — both
-  │              hash by source location, so aliased imports can
-  │              never miss).
+  │              lookup at their site (the analyzer's
+  │              `fileScope.findModule(module, loc)` or the
+  │              resolver's `ResolvedFile.findModule` — keys hash
+  │              by source location, so aliased imports can never
+  │              miss).
   ▼
 Analyzer ──── Two-pass over the resolved app.
   │
@@ -472,23 +473,30 @@ counterparts via `resolved: Resolved*` back-references. Scope:
   parser-level identity (hash-by-loc): function-call roots are
   resolved to a `parser.Type` at resolve time and carried on
   `ResolvedFunctionCall.typ`; argument types carry their parser
-  Module/Generic. Lookups go through the identity-keyed
-  `fileScope.findType/findModule/findGeneric(parser.*, loc)`,
-  `app.findType(parser.Type)` / `findModule(app, module, loc)`, and
-  `appDef.findDefinedType(ResolvedType)` /
-  `appDef.findFunctionDef(ResolvedFunctionDef)`. Aliased imports
+  Module/Generic. Every module/generic lookup goes through the
+  identity-keyed per-file scope —
+  `fileScope.findType/findModule/findGeneric(parser.*, loc)` — or
+  the app-level analyzed indices `appDef.findDefinedType(ResolvedType)`
+  / `appDef.findFunctionDef(ResolvedFunctionDef)`. Aliased imports
   (`import { u8 as Byte }`) can never miss. The one name→identity
   bridge left in the analyzer is `defaultLiteralArgType`, which
   takes "i32"/"f32"/"String" through the resolver-built
   `ResolvedFile.scope` (name → parser.Module) before the identity
   lookup. See plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
-- **fileScope threading** — the identity-keyed `ResolvedFileScope`
-  is built once per file in pass A (imports + local types, stored
-  on `AnalyzedFileDefinition.scope`) and threaded through every
-  analyze* proc, mirroring the resolver's `fileScope: FileScope`
-  shape. Pass B feeds it from phase-A output (`appDef.fileDefs` →
-  `fileDef.scope`).
+- **fileScope threading, minimal params** — the identity-keyed
+  `ResolvedFileScope` is built once per file in pass A (imports +
+  local types, stored on `AnalyzedFileDefinition.scope`) and
+  threaded through every analyze* proc, mirroring the resolver's
+  `fileScope: FileScope` shape. Pass B feeds it from phase-A output
+  (`appDef.fileDefs` → `fileDef.scope`). With every type lookup on
+  fileScope, the wider contexts stay off the signatures:
+  `app: ResolvedApp` appears only where files are actually fetched
+  (`analyzeImportDefinition`'s `app.findFile`, the
+  `analyzeAppDefinition` / `analyzeFileDefinition` / `analyzeFile` /
+  `analyze*` walkers), and `file: ResolvedFile` only where the file
+  itself is the subject (the two file walkers) or its resolver-built
+  name scope is needed (the `defaultLiteralArgType` chain).
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
@@ -870,12 +878,10 @@ src/
                                    analyzeStatement /
                                    analyzeFunctionCall /
                                    analyzeMatchExpression / ...), the
-                                   identity-lookup + extract helpers
-                                   (findModule(app, module, loc),
-                                   findModuleDef, extractDataDef,
-                                   extractStructFor, extractUnionFor),
-                                   and the public two-pass `analyze*`
-                                   entry.
+                                   extract helpers (findModuleDef,
+                                   extractDataDef, extractStructFor,
+                                   extractUnionFor), and the public
+                                   two-pass `analyze*` entry.
 
   analyzer/                        analyzer internals — one file per
                                    analyzed type (declaration +

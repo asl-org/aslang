@@ -10,7 +10,7 @@
 ##    in O(1), avoiding per-call-site re-analysis.
 ##  - `definedTypeIndex`: `ResolvedType → AnalyzedDefinedType`.
 ##    App-wide identity lookup used by `findDefinedType`. Every
-##    caller with a ResolvedType in hand (from `app.findType`, from
+##    caller with a ResolvedType in hand (from `fileScope.findType`,
 ##    an argType's carried module, etc.) reaches the analyzed
 ##    module/generic without going through name-keyed per-file
 ##    scopes. Immune to aliased-import name mismatch.
