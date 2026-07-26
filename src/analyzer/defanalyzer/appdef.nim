@@ -2,18 +2,14 @@
 ## Bundles the resolved app + every file's AnalyzedFileDefinition,
 ## indexed by absolute path for cross-file `findFileDef` queries.
 ##
-## Two identity-keyed indices carry the phase-B lookup weight:
-##  - `funcDefIndex`: `ResolvedFunctionDef → AnalyzedFunctionDefinition`.
-##    Phase-B overload resolution hands back the resolver-side
-##    ResolvedFunctionDef; this index gets the pre-analyzed form
-##    (args + return type already lifted through analyzeArgumentType)
-##    in O(1), avoiding per-call-site re-analysis.
-##  - `definedTypeIndex`: `ResolvedType → AnalyzedDefinedType`.
-##    App-wide identity lookup used by `findDefinedType`. Every
-##    caller with a ResolvedType in hand (from `fileScope.findType`,
-##    an argType's carried module, etc.) reaches the analyzed
-##    module/generic without going through name-keyed per-file
-##    scopes. Immune to aliased-import name mismatch.
+## One identity-keyed index carries the phase-B lookup weight:
+## `definedTypeIndex` (`ResolvedType → AnalyzedDefinedType`) —
+## app-wide identity lookup used by `findDefinedType`. Every caller
+## with a ResolvedType in hand (from `fileScope.findType`, an
+## argType's carried module, etc.) reaches the analyzed
+## module/generic without going through name-keyed per-file scopes;
+## pre-analyzed funcDef signatures are then read off the result via
+## `findFunctionDefs`. Immune to aliased-import name mismatch.
 
 import results, strformat, tables
 
@@ -22,28 +18,12 @@ import ./filedef
 import ./definedtype
 import ./moduledef
 import ./generic
-import ./funcdef
 
 type AnalyzedAppDefinition* = ref object
   resolved: ResolvedApp
   fileDefs: seq[AnalyzedFileDefinition]
   fileDefIndex: Table[string, int]
-  funcDefIndex: Table[ResolvedFunctionDef, AnalyzedFunctionDefinition]
   definedTypeIndex: Table[ResolvedType, AnalyzedDefinedType]
-
-proc buildFuncDefIndex(fileDefs: seq[AnalyzedFileDefinition]): Table[ResolvedFunctionDef, AnalyzedFunctionDefinition] =
-  ## Walk every file → every defined type → every module or generic →
-  ## every funcDef, indexing by the underlying ResolvedFunctionDef.
-  ## Used by `findFunctionDef` on the app-level lookup for phase B.
-  for fileDef in fileDefs:
-    for definedType in fileDef.types:
-      case definedType.kind:
-      of adtkModule:
-        for funcDef in definedType.module.funcDefs:
-          result[funcDef.resolved] = funcDef
-      of adtkGeneric:
-        for funcDef in definedType.generic.funcDefs:
-          result[funcDef.resolved] = funcDef
 
 proc buildDefinedTypeIndex(fileDefs: seq[AnalyzedFileDefinition]): Table[ResolvedType, AnalyzedDefinedType] =
   ## Walk every file → every defined type, indexing by the underlying
@@ -64,10 +44,8 @@ proc newAnalyzedAppDefinition*(resolved: ResolvedApp,
   var fileDefIndex: Table[string, int]
   for index, fileDef in fileDefs:
     fileDefIndex[fileDef.path] = index
-  AnalyzedAppDefinition(resolved: resolved, fileDefs: fileDefs,
-    fileDefIndex: fileDefIndex,
-    funcDefIndex: buildFuncDefIndex(fileDefs),
-    definedTypeIndex: buildDefinedTypeIndex(fileDefs))
+  let definedTypeIndex = buildDefinedTypeIndex(fileDefs)
+  AnalyzedAppDefinition(resolved: resolved, fileDefs: fileDefs, fileDefIndex: fileDefIndex, definedTypeIndex: definedTypeIndex)
 
 proc resolved*(a: AnalyzedAppDefinition): ResolvedApp = a.resolved
 proc fileDefs*(a: AnalyzedAppDefinition): seq[AnalyzedFileDefinition] = a.fileDefs
@@ -77,17 +55,6 @@ proc findFileDef*(appDef: AnalyzedAppDefinition, path: string): Result[AnalyzedF
     err(fmt"file `{path}` not found")
   else:
     ok(appDef.fileDefs[appDef.fileDefIndex[path]])
-
-proc findFunctionDef*(appDef: AnalyzedAppDefinition, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
-  ## Given a ResolvedFunctionDef (what overload resolution hands
-  ## back from ResolvedModule.findFunctionDefs), return the
-  ## pre-analyzed AnalyzedFunctionDefinition — no re-analysis of arg
-  ## types or return type. Used by analyzeArgumentList to consume
-  ## phase-A results.
-  if funcDef notin appDef.funcDefIndex:
-    err(fmt"{funcDef.loc} UNREACHABLE: funcDef `{funcDef.name.asl}` not indexed in phase-A output")
-  else:
-    ok(appDef.funcDefIndex[funcDef])
 
 proc findDefinedType*(appDef: AnalyzedAppDefinition, resolvedType: ResolvedType): Result[AnalyzedDefinedType, string] =
   ## Given a resolver-side ResolvedType (typically from
