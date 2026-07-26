@@ -6,7 +6,7 @@
 
 import results, sets, strformat, options
 
-import ./resolver
+import ./defanalyzer
 import literalparse
 
 type

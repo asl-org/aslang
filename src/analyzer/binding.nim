@@ -8,7 +8,6 @@
 ## referenced across the pattern cluster (union/case patterns) and
 ## the statement cluster (`arg` accessor on AnalyzedStatement).
 
-import ./resolver
-import argtype
+import ./defanalyzer
 
 type AnalyzedBinding* = tuple[name: Identifier, argType: AnalyzedArgumentType]

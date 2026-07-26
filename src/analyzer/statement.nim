@@ -18,8 +18,7 @@
 
 import strformat, options
 
-import ./resolver
-import argtype
+import ./defanalyzer
 import binding
 import casepattern
 import variable

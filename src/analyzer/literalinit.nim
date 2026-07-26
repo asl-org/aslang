@@ -3,8 +3,7 @@
 ## the bare-literal default in `analyzeBareLiteral`). Independent of
 ## the mutually-recursive expression/statement cluster.
 
-import ./resolver
-import argtype
+import ./defanalyzer
 
 type AnalyzedLiteralInitializer* = ref object
   literal: Literal

@@ -1,7 +1,7 @@
 ## AnalyzedModule — the per-module driver's result: the resolver
 ## ResolvedModule back-ref plus the analyzed function list.
 
-import ./resolver
+import ./defanalyzer
 import function
 
 type AnalyzedModule* = ref object

@@ -9,7 +9,7 @@
 ## analysis. Extern functions have no body to analyze — the walker
 ## skips them at the function layer.
 
-import ./resolver
+import ./defanalyzer
 import file
 
 type AnalyzedApp* = ref object

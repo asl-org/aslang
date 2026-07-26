@@ -1,8 +1,7 @@
 ## AnalyzedFile — per-file result of the analyzer pass. Bundles the
 ## file's imports and modules alongside the resolver-side back-ref.
 
-import ./resolver
-import importdef
+import ./defanalyzer
 import module
 
 type AnalyzedFile* = ref object

@@ -10,8 +10,7 @@
 
 import tables
 
-import ./resolver
-import argtype
+import ./defanalyzer
 
 type AnalyzedFunctionScope* = Table[Identifier, AnalyzedArgumentType]
 

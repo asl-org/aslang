@@ -4,8 +4,7 @@
 ## type (post-generic-substitution in the calling module context).
 ## Independent of the mutually-recursive expression/statement cluster.
 
-import ./resolver
-import argtype
+import ./defanalyzer
 
 type AnalyzedGetter* = ref object
   resolved: ResolvedGetter

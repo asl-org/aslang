@@ -1,24 +1,72 @@
+## Definition-analysis barrel — phase A of the two-pass analyzer.
+## Hosts the def-level analyze* procs (analyzeGenericArgumentType
+## through analyzeAppDefinition) and re-exports every def-level
+## analyzed type plus the resolver layer beneath, so the body layer
+## (src/analyzer.nim + src/analyzer/) says `import ./defanalyzer`
+## once. Nesting convention: parser ⊂ resolver ⊂ defanalyzer ⊂
+## analyzer.
+
 import options, results, strformat
 
-import ./analyzer/resolver
-import ./analyzer/filescope
-import ./analyzer/argtype
-import ./analyzer/moduleargtype
-import ./analyzer/genericargtype
-import ./analyzer/argdef
-import ./analyzer/funcdef
-import ./analyzer/literaldef
-import ./analyzer/structdef
-import ./analyzer/variantdef
-import ./analyzer/uniondef
-import ./analyzer/datadef
-import ./analyzer/moduledef
-import ./analyzer/generic
-import ./analyzer/definedtype
-import ./analyzer/filedef
-import ./analyzer/appdef
-import ./analyzer/importedtype
-import ./analyzer/importdef
+import ./defanalyzer/resolver
+export resolver
+
+import ./defanalyzer/filescope
+export filescope
+
+import ./defanalyzer/argtype
+export argtype
+
+import ./defanalyzer/moduleargtype
+export moduleargtype
+
+import ./defanalyzer/genericargtype
+export genericargtype
+
+import ./defanalyzer/genericimplmap
+export genericimplmap
+
+import ./defanalyzer/argdef
+export argdef
+
+import ./defanalyzer/funcdef
+export funcdef
+
+import ./defanalyzer/literaldef
+export literaldef
+
+import ./defanalyzer/structdef
+export structdef
+
+import ./defanalyzer/variantdef
+export variantdef
+
+import ./defanalyzer/uniondef
+export uniondef
+
+import ./defanalyzer/datadef
+export datadef
+
+import ./defanalyzer/moduledef
+export moduledef
+
+import ./defanalyzer/generic
+export generic
+
+import ./defanalyzer/definedtype
+export definedtype
+
+import ./defanalyzer/filedef
+export filedef
+
+import ./defanalyzer/appdef
+export appdef
+
+import ./defanalyzer/importedtype
+export importedtype
+
+import ./defanalyzer/importdef
+export importdef
 
 proc analyzeGenericArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   let genericArg = ? fileScope.findGeneric(genericArgType.parsed, genericArgType.loc)

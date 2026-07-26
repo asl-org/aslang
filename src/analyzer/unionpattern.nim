@@ -3,7 +3,7 @@
 ## the outer AnalyzedCasePattern union — a union pattern is one of the
 ## three shapes the case pattern can take.
 
-import ./resolver
+import ./defanalyzer
 import binding
 
 type AnalyzedUnionPattern* = ref object

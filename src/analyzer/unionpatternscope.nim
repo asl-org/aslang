@@ -6,7 +6,7 @@
 
 import results, sets, strformat
 
-import ./resolver
+import ./defanalyzer
 
 type AnalyzedUnionPatternScope* = ref object
   variablePatternFound: bool

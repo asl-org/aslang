@@ -2,7 +2,7 @@
 ## analyzed. Carries the resolver's back-ref, the function's arg/return
 ## def, and the analyzed statement list.
 
-import ./resolver
+import ./defanalyzer
 import statement
 
 type AnalyzedUserFunction* = ref object

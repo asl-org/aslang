@@ -2,8 +2,7 @@
 ## via the function scope. Independent of the mutually-recursive
 ## expression/statement cluster.
 
-import ./resolver
-import argtype
+import ./defanalyzer
 
 type AnalyzedVariable* = ref object
   name: Identifier

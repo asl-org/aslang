@@ -6,7 +6,7 @@
 
 import unittest, results, strutils
 
-import analyzer/resolver/parser/tokenizer
+import analyzer/defanalyzer/resolver/parser/tokenizer
 import tutils
 
 suite "tokenizer — happy paths":

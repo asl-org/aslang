@@ -3,7 +3,7 @@
 ## trailing variable-binding (wildcard). Enum + variant type live
 ## together — one file for the whole tagged pair.
 
-import ./resolver
+import ./defanalyzer
 import binding
 import unionpattern
 

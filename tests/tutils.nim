@@ -2,7 +2,7 @@
 
 import os, results, strutils, tables
 
-import analyzer/resolver/parser/tokenizer
+import analyzer/defanalyzer/resolver/parser/tokenizer
 import analyzer
 
 type FileSpec* = tuple[name: string, content: string]

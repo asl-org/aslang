@@ -1,25 +1,15 @@
+## Body-analysis barrel — phase B of the two-pass analyzer, and the
+## top of the compiler stack. Consumers say `import analyzer` to get
+## everything: the body walkers + public `analyze*` entry here, plus
+## the defanalyzer layer beneath (which transitively re-exports
+## resolver -> parser -> Location).
+
 import options, results, sequtils, strformat, strutils, tables
 
+import ./analyzer/defanalyzer
+export defanalyzer
 
-import ./analyzer/resolver
-export resolver
-
-import ./analyzer/filescope
 import ./analyzer/funcscope
-import ./analyzer/argtype
-import ./analyzer/moduleargtype
-import ./analyzer/genericargtype
-import ./analyzer/genericimplmap
-import ./analyzer/argdef
-import ./analyzer/funcdef
-import ./analyzer/literaldef
-import ./analyzer/structdef
-import ./analyzer/uniondef
-import ./analyzer/datadef
-import ./analyzer/moduledef
-import ./analyzer/definedtype
-import ./analyzer/filedef
-import ./analyzer/appdef
 import ./analyzer/literalparse
 import ./analyzer/unionpatternscope
 import ./analyzer/literalpatternscope
@@ -34,11 +24,8 @@ import ./analyzer/userfunc
 import ./analyzer/externfunc
 import ./analyzer/function
 import ./analyzer/module
-import ./analyzer/importdef
 import ./analyzer/file
 import ./analyzer/app
-
-import defanalyzer
 
 proc findModuleDef*(appDef: AnalyzedAppDefinition, argType: AnalyzedArgumentType, loc: Location): Result[AnalyzedModuleDefinition, string] =
   case argType.kind:
