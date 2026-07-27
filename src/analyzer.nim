@@ -664,25 +664,20 @@ proc analyzeModule*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefiniti
       analyzedFunctions.add(newAnalyzedFunction(analyzedUserFunction))
   ok(newAnalyzedModule(module, analyzedFunctions))
 
-proc analyzeFile(appDef: AnalyzedAppDefinition, app: ResolvedApp, fileDef: AnalyzedFileDefinition): Result[AnalyzedFile, string] =
-  var analyzedImports: seq[AnalyzedImportDefinition]
-  for imp in fileDef.resolved.imports:
-    let analyzedImport = ? analyzeImportDefinition(app, imp)
-    analyzedImports.add(analyzedImport)
-
+proc analyzeFile(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition): Result[AnalyzedFile, string] =
+  ## Imports come straight from the phase-A output (fileDef.imports)
+  ## — re-analyzing them here could only reproduce the same values,
+  ## since phase A already succeeded over the same inputs.
   var analyzedModules: seq[AnalyzedModule]
-  for typ in fileDef.resolved.types:
-    case typ.kind:
-    of rtkGeneric: discard # generics are already resolved since it is only a definition type
-    of rtkModule:
-      let analyzedModule = ? analyzeModule(appDef, fileDef, typ.module)
-      analyzedModules.add(analyzedModule)
-  ok(newAnalyzedFile(fileDef, analyzedImports, analyzedModules))
+  for module in fileDef.resolved.modules:
+    let analyzedModule = ? analyzeModule(appDef, fileDef, module)
+    analyzedModules.add(analyzedModule)
+  ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
   let appDef = ? analyzeAppDefinition(app)
   var analyzedFiles: seq[AnalyzedFile]
   for fileDef in appDef.fileDefs:
-    let analyzedFile = ? analyzeFile(appDef, app, fileDef)
+    let analyzedFile = ? analyzeFile(appDef, fileDef)
     analyzedFiles.add(analyzedFile)
   ok(newAnalyzedApp(app, analyzedFiles))

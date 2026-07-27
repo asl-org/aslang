@@ -1,6 +1,6 @@
 ## Type / File / App + the public resolve* entry point.
 
-import results, strformat, tables
+import results, sequtils, strformat, tables
 
 import ./parser
 import filescope
@@ -29,6 +29,8 @@ proc parsed*(file: ResolvedFile): parser.File = file.parsed
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 proc types*(file: ResolvedFile): seq[ResolvedType] = file.types
 proc scope*(file: ResolvedFile): FileScope = file.scope
+proc modules*(file: ResolvedFile): seq[ResolvedModule] =
+  file.types.filterIt(it.kind == rtkModule).mapIt(it.module)
 
 proc findType*(file: ResolvedFile, typ: parser.Type, loc: Location): Result[ResolvedType, string] =
   if typ notin file.typeIndex:

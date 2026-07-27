@@ -503,10 +503,11 @@ back-references. Scope:
   resolver file (`fileDef.resolved`), and the per-file analyzed
   defs. Phase-B shape: `(appDef, fileDef, module, funcScope, ...)`.
   Wider contexts stay off the signatures: `app: ResolvedApp`
-  appears only where files are actually fetched
-  (`analyzeImportDefinition`'s `app.findFile` and the
-  `analyzeAppDefinition` / `analyzeFileDefinition` / `analyzeFile` /
-  `analyze*` walkers).
+  appears only in phase A's file walk, where the app is the subject
+  (`analyze*` / `analyzeAppDefinition` / `analyzeFileDefinition` and
+  `analyzeImportDefinition`'s `app.findFile`). Phase B never sees it
+  — `analyzeFile` reuses the phase-A imports off `fileDef.imports`
+  instead of re-analyzing them.
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
