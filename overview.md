@@ -123,8 +123,9 @@ Analyzer ──── Two-pass over the resolved app.
   │
   │              Pass B — walks function bodies. Consumes phase-A
   │              results: analyzeFunctionCall looks up its overload
-  │              candidates via `appDef.findDefinedType(typ).
-  │              findFunctionDefs(name, arity, public)` returning
+  │              candidates via the per-file AnalyzedFileScope
+  │              (`fileScope.findType(typ).findFunctionDefs(name,
+  │              arity, public)`) returning
   │              seq[AnalyzedFunctionDefinition] — no re-analysis
   │              at the call site. Return types come pre-analyzed
   │              from matchingFuncDef.returns; only the
@@ -163,11 +164,12 @@ Phase-A output (`AnalyzedAppDefinition` + per-file
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` /
 `AnalyzedLiteralBlock` / `AnalyzedData`) is threaded through the
-body walker chain as `(appDef, fileDef)` so phase-B overload
-resolution reads pre-analyzed funcDef signatures via
-`appDef.findDefinedType(typ).findFunctionDefs(...)` — no re-analysis
-of arg types or return types at call sites. `AnalyzedApp` is the
-handle downstream codegen will thread through.
+body walker chain as `(appDef, fileDef, fileScope)` — the
+`AnalyzedFileScope` built at `analyzeFile` entry spans imports +
+local types, so phase-B overload resolution reads pre-analyzed
+funcDef signatures via `fileScope.findType(typ).findFunctionDefs(...)`
+— no re-analysis of arg types or return types at call sites.
+`AnalyzedApp` is the handle downstream codegen will thread through.
 
 There is no separate `Validator` phase. Every uniqueness / structural
 rule the validator used to enforce (duplicate names, empty blocks,
@@ -465,28 +467,36 @@ imports + defined types + the name-keyed `ResolvedFileScope`),
 per-def `AnalyzedModuleDefinition` / `AnalyzedGeneric` carrying
 `AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
 the data-block wrappers (`AnalyzedStruct` / `AnalyzedVariant` /
-`AnalyzedUnion` / `AnalyzedLiteralBlock` / `AnalyzedData`), plus one
-app-level identity-keyed index — `definedTypeIndex`
-(`ResolvedType → AnalyzedDefinedType`). Any def-site error fires
-here before any body walker touches the AST.
+`AnalyzedUnion` / `AnalyzedLiteralBlock` / `AnalyzedData`).
+`AnalyzedAppDefinition` itself is just the fileDefs + a path-keyed
+`fileDefIndex` behind `findFileDef` — all type lookup state lives on
+the per-file scopes. Any def-site error fires here before any body
+walker touches the AST.
 
-**Pass B — bodies.** The per-file `analyzeFile` walk analyzes each
-function body, consuming phase-A output: call sites read pre-analyzed
-funcDef signatures via
-`appDef.findDefinedType(typ).findFunctionDefs(...)` — no re-analysis
-of arg types or return types per call site. Body-level analyzed types
-mirror their resolver counterparts via `resolved: Resolved*`
-back-references. Scope:
+**Pass B — bodies.** The per-file `analyzeFile` walk first lifts
+each phase-A import def to its body form (`analyzeImport` — each
+imported type resolves to the source file's `AnalyzedDefinedType`
+via that file's fileDef), builds the per-file `AnalyzedFileScope`
+spanning imports + local types, and then analyzes each module's
+function bodies against it. Call sites read pre-analyzed funcDef
+signatures via `fileScope.findType(typ).findFunctionDefs(...)` — no
+re-analysis of arg types or return types per call site. Body-level
+analyzed types back-reference the phase-A defs that produced them
+(`AnalyzedFile.def` / `AnalyzedModule.def`; extern functions carry
+their `AnalyzedFunctionDefinition`). Scope:
 
 - **Identity-based lookups only** — the analyzer never resolves a
-  user-typed name. Every reference reaching it already carries its
-  parser-level identity (hash-by-loc): function-call roots are
-  resolved to a `parser.Type` at resolve time and carried on
-  `ResolvedFunctionCall.typ`; argument types carry their parser
-  Module/Generic. Every module/generic lookup goes through the
-  identity-keyed per-file scope —
-  `fileScope.findType/findModule/findGeneric(parser.*, loc)` — or
-  the app-level analyzed index `appDef.findDefinedType(ResolvedType)`.
+  user-typed name. Every reference reaching it already carries the
+  identity the layer below bound: function-call roots are resolved
+  to a `parser.Type` at resolve time (`ResolvedFunctionCall.typ`);
+  argument types carry their parser Module/Generic. Each layer's
+  per-file scope answers "given what the layer below handed me,
+  find my enrichment of it", all hash-by-loc:
+
+      resolver     FileScope           Identifier   → parser.Type
+      defanalyzer  ResolvedFileScope   parser.Type  → ResolvedType
+      analyzer     AnalyzedFileScope   ResolvedType → AnalyzedDefinedType
+
   Aliased imports (`import { u8 as Byte }`) can never miss. The one
   name→identity bridge left in the analyzer is
   `defaultLiteralArgType`, which takes "i32"/"f32"/"String" through
@@ -494,20 +504,22 @@ back-references. Scope:
   name → parser.Module) before the identity lookup. See
   plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
-- **Per-file context = fileDef, minimal params** — phase A threads
-  the identity-keyed `ResolvedFileScope` it is building (imports +
-  local types), mirroring the resolver's `fileScope: FileScope`
-  shape, and stores it on `AnalyzedFileDefinition.scope`. Phase B
-  threads the finished `fileDef: AnalyzedFileDefinition` instead —
-  one param carrying the identity scope (`fileDef.scope`), the
-  resolver file (`fileDef.resolved`), and the per-file analyzed
-  defs. Phase-B shape: `(appDef, fileDef, module, funcScope, ...)`.
-  Wider contexts stay off the signatures: `app: ResolvedApp`
-  appears only in phase A's file walk, where the app is the subject
-  (`analyze*` / `analyzeAppDefinition` / `analyzeFileDefinition` and
-  `analyzeImportDefinition`'s `app.findFile`). Phase B never sees it
-  — `analyzeFile` reuses the phase-A imports off `fileDef.imports`
-  instead of re-analyzing them.
+- **Per-file context = fileDef + fileScope, minimal params** —
+  phase A threads the `ResolvedFileScope` it is building and stores
+  it on `AnalyzedFileDefinition.scope`; phase B threads the
+  finished `fileDef: AnalyzedFileDefinition` (identity scope,
+  resolver file, analyzed defs) plus the body-level
+  `fileScope: AnalyzedFileScope` built at `analyzeFile` entry.
+  Phase-B shape: `(appDef, fileDef, fileScope, module, funcScope,
+  ...)`; the extract helpers (`extractDataDef` / `extractStructFor`
+  / `extractUnionFor`) dispatch off the AnalyzedFileScope. Wider
+  contexts stay off the signatures: `app: ResolvedApp` appears only
+  in phase A's file walk, where the app is the subject (`analyze*` /
+  `analyzeAppDefinition` / `analyzeFileDefinition` and
+  `analyzeImportDefinition`'s `app.findFile`). Phase B never sees
+  it. `fileDef.findType` stays local-only by design —
+  `analyzeImportedType` uses it to verify an imported name is
+  DEFINED in its source file, not merely visible there.
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
@@ -563,15 +575,15 @@ back-references. Scope:
   a seq of `AnalyzedBinding = tuple[name: Identifier, argType:
   AnalyzedArgumentType]` — the body-level replacement for the
   retired def-level `AnalyzedArgumentDefinition` wrapper.
-- **Scope tables** — `ResolvedFileScope` (analyzer/filescope.nim,
-  `parser.Type → ResolvedType`, identity-keyed) spans imports +
-  local defined types; the same type imported under two bindings
-  lands on one key, so construction only rejects a genuinely
-  different entry under an existing key. `AnalyzedFunctionScope`
-  (analyzer/funcscope.nim, `Identifier → AnalyzedArgumentType`) is
-  the per-function variable scope threaded through the body walkers
-  — variables have no identity beyond their name, so name keying is
-  correct there.
+- **Scope tables** — `ResolvedFileScope`
+  (defanalyzer/filescope.nim) and `AnalyzedFileScope`
+  (analyzer/filescope.nim) both span imports + local defined types;
+  the same type imported under two bindings lands on one key, so
+  construction only rejects a genuinely different entry under an
+  existing key. `AnalyzedFunctionScope` (analyzer/funcscope.nim,
+  `Identifier → AnalyzedArgumentType`) is the per-function variable
+  scope threaded through the body walkers — variables have no
+  identity beyond their name, so name keying is correct there.
 
 The remaining gaps are listed in **What's Next**. The headline ones
 are the equality-vs-unification trap for free-generic types and the
@@ -931,24 +943,28 @@ src/
     datadef.nim                    AnalyzedData (adkLiteral /
                                    adkStruct / adkUnion).
     moduledef.nim                  AnalyzedModuleDefinition (requires
-                                   + data + funcDefs).
+                                   + data + funcDefs +
+                                   findFunctionDef(s) overload
+                                   lookup).
     generic.nim                    AnalyzedGeneric (funcDefs).
     definedtype.nim                AnalyzedDefinedType (adtkModule /
                                    adtkGeneric) + findFunctionDefs
                                    uniform overload lookup.
     filedef.nim                    AnalyzedFileDefinition (resolved +
                                    imports + types + scope +
-                                   name-keyed definedTypeIndex for
-                                   the local findDefinedType(name)
-                                   query).
+                                   local-only identity-keyed
+                                   findType / findModule — used by
+                                   analyzeImportedType to verify an
+                                   imported name is DEFINED in its
+                                   source file).
     appdef.nim                     AnalyzedAppDefinition (fileDefs +
-                                   fileDefIndex + identity-keyed
-                                   definedTypeIndex + findFileDef /
-                                   findDefinedType).
-    importedtype.nim               AnalyzedImportedType (binding →
-                                   resolved type).
+                                   path-keyed fileDefIndex +
+                                   findFileDef).
+    importedtypedef.nim            AnalyzedImportedTypeDef (binding →
+                                   ResolvedType).
     importdef.nim                  AnalyzedImportDefinition (resolved
-                                   import + imported types).
+                                   import + imported type defs +
+                                   source-file path).
 
   analyzer.nim                     body-analysis barrel — phase B and
                                    the top of the compiler stack.
@@ -959,10 +975,11 @@ src/
                                    analyzeStatement /
                                    analyzeFunctionCall /
                                    analyzeMatchExpression / ...), the
-                                   extract helpers (findModuleDef,
-                                   extractDataDef, extractStructFor,
-                                   extractUnionFor), and the public
-                                   two-pass `analyze*` entry.
+                                   AnalyzedFileScope-keyed extract
+                                   helpers (extractDataDef,
+                                   extractStructFor, extractUnionFor),
+                                   and the public two-pass `analyze*`
+                                   entry.
 
   analyzer/                        body-level per-type files
                                    (declaration + constructor +
@@ -971,6 +988,20 @@ src/
                                    barrels). Each imports
                                    ./defanalyzer once for def types
                                    + resolver.
+    filescope.nim                  AnalyzedFileScope (ResolvedType →
+                                   AnalyzedDefinedType,
+                                   identity-keyed) — the third rung
+                                   of the scope ladder; spans
+                                   imports + local types, built per
+                                   file at analyzeFile entry and
+                                   threaded through the body
+                                   walkers. Owns findType /
+                                   findModule / findGeneric.
+    imports.nim                    AnalyzedImport — a phase-A import
+                                   def lifted to its body form.
+    importedtype.nim               AnalyzedImportedType (binding →
+                                   the source file's
+                                   AnalyzedDefinedType).
     funcscope.nim                  AnalyzedFunctionScope (Identifier →
                                    AnalyzedArgumentType) —
                                    per-function variable scope for
@@ -1014,11 +1045,14 @@ src/
                                    live on the facade.
     userfunc.nim                   AnalyzedUserFunction (resolved +
                                    def + statements).
-    externfunc.nim                 AnalyzedExternFunction.
+    externfunc.nim                 AnalyzedExternFunction (resolved +
+                                   its pre-analyzed
+                                   AnalyzedFunctionDefinition).
     function.nim                   AnalyzedFunction tagged union
                                    (user / extern).
-    module.nim                     AnalyzedModule (def back-ref +
-                                   analyzed functions).
+    module.nim                     AnalyzedModule (def:
+                                   AnalyzedModuleDefinition back-ref
+                                   + analyzed functions).
     file.nim                       AnalyzedFile (def:
                                    AnalyzedFileDefinition back-ref +
                                    imports + modules).
