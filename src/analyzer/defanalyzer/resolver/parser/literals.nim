@@ -1,6 +1,7 @@
-import strformat, strutils
+import results, strformat, strutils
 
 import ./tokenizer
+import ./identifiers
 
 # ============================================================
 # StringContent (internal — one character of a string literal)
@@ -162,6 +163,17 @@ proc asl*(literal: Literal): string =
   of lkString: asl(literal.strLit)
   of lkInteger: asl(literal.intLit)
   of lkFloat: asl(literal.floatLit)
+
+proc defaultType*(literal: Literal): Identifier =
+  let module =
+    case literal.kind:
+      of lkInteger: "i32"
+      of lkFloat: "f32"
+      of lkString: "String"
+  let maybeId = newIdentifier(module, literal.loc)
+  assert(maybeId.isOk, fmt"BUG: default literal type name `{module}` should always be a valid identifier")
+  return maybeId.get
+
 
 # ============================================================
 # LiteralDef (data block: `literal: "..."`)

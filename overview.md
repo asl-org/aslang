@@ -498,11 +498,11 @@ their `AnalyzedFunctionDefinition`). Scope:
       analyzer     AnalyzedFileScope   ResolvedType → AnalyzedDefinedType
 
   Aliased imports (`import { u8 as Byte }`) can never miss. The one
-  name→identity bridge left in the analyzer is
-  `defaultLiteralArgType`, which takes "i32"/"f32"/"String" through
-  the resolver-built name scope (`fileDef.resolved.scope`,
-  name → parser.Module) before the identity lookup. See
-  plans/plan_identity_based_lookups.md and
+  name→identity bridge left is `fileDef.defaultLiteralType(literal)`
+  for bare-literal defaults — `Literal.defaultType` (parser) names
+  "i32"/"f32"/"String", then the resolver-built name scope
+  (name → parser.Module) chains into the identity scope
+  (→ ResolvedModule). See plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
 - **Per-file context = fileDef + fileScope, minimal params** —
   phase A threads the `ResolvedFileScope` it is building and stores
@@ -511,7 +511,9 @@ their `AnalyzedFunctionDefinition`). Scope:
   resolver file, analyzed defs) plus the body-level
   `fileScope: AnalyzedFileScope` built at `analyzeFile` entry.
   Phase-B shape: `(appDef, fileDef, fileScope, module, funcScope,
-  ...)`; the extract helpers (`extractDataDef` / `extractStructFor`
+  ...)` where `module` is the enclosing `AnalyzedModuleDefinition`
+  (body walkers reach the resolver module via `module.resolved`);
+  the extract helpers (`extractDataDef` / `extractStructFor`
   / `extractUnionFor`) dispatch off the AnalyzedFileScope. Wider
   contexts stay off the signatures: `app: ResolvedApp` appears only
   in phase A's file walk, where the app is the subject (`analyze*` /
@@ -956,7 +958,11 @@ src/
                                    findType / findModule — used by
                                    analyzeImportedType to verify an
                                    imported name is DEFINED in its
-                                   source file).
+                                   source file). Also
+                                   defaultLiteralType(literal) — the
+                                   bare-literal default path,
+                                   chaining the resolver name scope
+                                   into the identity scope.
     appdef.nim                     AnalyzedAppDefinition (fileDefs +
                                    path-keyed fileDefIndex +
                                    findFileDef).
@@ -1004,8 +1010,15 @@ src/
                                    AnalyzedDefinedType).
     funcscope.nim                  AnalyzedFunctionScope (Identifier →
                                    AnalyzedArgumentType) —
-                                   per-function variable scope for
-                                   body analysis + clone.
+                                   per-function variable scope;
+                                   seeded from a pre-analyzed
+                                   AnalyzedFunctionDefinition's args
+                                   (newAnalyzedFunctionScope) and
+                                   extended via update overloads
+                                   (statement binding / case-pattern
+                                   bindings). Case blocks copy by
+                                   plain assignment for
+                                   sibling-isolated scopes.
     literalparse.nim               parseInteger[T: SomeInteger] /
                                    float-parsing helpers (bounds
                                    checks, special-value forms).
@@ -1238,7 +1251,9 @@ Focused TODOs still open:
   requires; the accumulation walk (`accumulateGenericPosition` on
   the resolver facade) doesn't descend into impls yet.
 - **Type-correctness checks across statements** — assignment
-  compatibility, match exhaustiveness, setter type equality.
+  compatibility and match exhaustiveness. (Setter type equality is
+  now enforced in `analyzeSetter`; its error message is still rough
+  — flagged with a TODO.)
 
 After the analyzer:
 - **IR generation** — lower the analyzed AST into an intermediate

@@ -12,6 +12,7 @@
 import results, strformat, tables
 
 import ./resolver
+import ./argtype
 import ./filescope
 import ./definedtype
 import ./importdef
@@ -51,6 +52,11 @@ proc findModule*(fileDef: AnalyzedFileDefinition, module: ResolvedModule, loc: L
   of adtkModule: ok(foundType.module)
   of adtkGeneric: err(fmt"{loc} expected `{foundType.name.asl}` to be a module but found generic")
 
-proc findModule*(fileDef: AnalyzedFileDefinition, name: Identifier): Result[ResolvedModule, string] =
-  let module = ? fileDef.resolved.scope.findModule(name)
-  fileDef.scope.findModule(module, name.loc)
+proc defaultLiteralType*(fileDef: AnalyzedFileDefinition, literal: Literal): Result[AnalyzedArgumentType, string] =
+  let literalType = literal.defaultType
+  let module = ? fileDef.resolved.scope.findModule(literalType)
+  let maybeResolvedLiteralModule = fileDef.scope.findModule(module, literal.loc)
+  if maybeResolvedLiteralModule.isErr:
+    err(fmt"{literal.loc} bare literal defaults to `{literalType.asl}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
+  else:
+    ok(newAnalyzedArgumentType(maybeResolvedLiteralModule.get))

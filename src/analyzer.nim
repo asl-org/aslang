@@ -56,17 +56,17 @@ proc extractUnionFor*(fileScope: AnalyzedFileScope, argType: AnalyzedModuleArgum
   of adkStruct: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found struct")
   of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found literal")
 
-proc analyzeUnionCasePattern*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: ResolvedModule, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
+proc analyzeUnionCasePattern*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, variantPattern: UnionPattern, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   let variant = ? union.findVariant(variantPattern.name)
   var bindings: seq[AnalyzedBinding]
   for field in variantPattern.fields:
     let resolvedField = ? variant.findField(field.name)
-    let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module, resolvedField.argType)
+    let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
     let concreteFieldArgType = analyzedFieldArgType.concrete(subjectImpls, union.genericTypeIndex)
     bindings.add((name: field.binding, argType: concreteFieldArgType))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
-proc analyzeCasePattern*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: ResolvedModule, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} UNREACHABLE: integer literals are not allowed in union case pattern")
   of rcpkVariable:
@@ -75,7 +75,7 @@ proc analyzeCasePattern*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDef
     let analyzedPattern = ? analyzeUnionCasePattern(appDef, fileDef, module, funcScope, pattern.variant, union, subjectImpls)
     ok(newAnalyzedCasePattern(analyzedPattern))
 
-proc analyzeCasePattern*(appDef: AnalyzedAppDefinition, module: ResolvedModule, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(appDef: AnalyzedAppDefinition, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkUnion:
     err(fmt"{pattern.loc} UNREACHABLE: union variants are not allowed in literal case pattern")
@@ -143,7 +143,7 @@ proc analyzeVariable*(scope: AnalyzedFunctionScope, variable: Identifier): Resul
   if variable in scope: ok(newAnalyzedVariable(variable, scope[variable]))
   else: err(fmt"{variable.loc} variable `{variable.asl}` does not exist in scope")
 
-proc analyzeGetter*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
+proc analyzeGetter*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
   if getter.source notin funcScope:
     err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
   else:
@@ -157,8 +157,8 @@ proc analyzeGetter*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefiniti
       # TODO: coerce the property type from the generic to concrete
       ok(newAnalyzedGetter(getter, analyzedSourceArgType, property.resolved, property.argType))
 
-proc analyzeLiteralInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
-  let analyzedArgType = ? analyzeArgumentType(fileDef.scope, module, init.argType)
+proc analyzeLiteralInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
+  let analyzedArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, init.argType)
   case analyzedArgType.kind:
   of aatkGeneric:
     err(fmt"{init.loc} expected `{analyzedArgType.module.name.asl}` to be a module found generic")
@@ -174,8 +174,8 @@ proc analyzeLiteralInitializer*(appDef: AnalyzedAppDefinition, fileDef: Analyzed
       else: err(maybeValidLiteral.error)
 
 # Forward declarations for the analyzeX procs in the cluster.
-proc analyzeExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
-proc analyzeStatement*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string]
+proc analyzeExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
+proc analyzeStatement*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string]
 proc analyzeValueTypeAgainstDefType(defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
 
 proc analyzeValueTypeAgainstDefType(defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
@@ -217,7 +217,7 @@ proc analyzeValueTypeAgainstDefType(defType: AnalyzedArgumentType, valType: Anal
   of aatkModule: analyzeValueTypeAgainstDefType(defType.module, valType, loc)
   of aatkGeneric: analyzeValueTypeAgainstDefType(defType.generic, valType, loc)
 
-proc analyzeArgumentList*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: ResolvedModule, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDefinition): Result[GenericImplMap, string] =
+proc analyzeArgumentList*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDefinition): Result[GenericImplMap, string] =
   # Reads pre-analyzed args directly from the AnalyzedFunctionDefinition
   # — no lookup, no re-analysis. Every analyzed expression carries a
   # concrete argType post-Approach C; bare literals adopt the caller's
@@ -232,7 +232,7 @@ proc analyzeArgumentList*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDe
     genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
-proc analyzeArgumentList(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[AnalyzedFunctionDefinition]): Result[(AnalyzedFunctionDefinition, seq[AnalyzedExpression], GenericImplMap), string] =
+proc analyzeArgumentList(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall, funcDefs: seq[AnalyzedFunctionDefinition]): Result[(AnalyzedFunctionDefinition, seq[AnalyzedExpression], GenericImplMap), string] =
   # Per-candidate analysis over pre-analyzed AnalyzedFunctionDefinition
   # candidates: for each candidate, walk the call's raw arguments and
   # analyze each with the candidate's declared arg type (pre-analyzed)
@@ -274,11 +274,11 @@ proc analyzeArgumentList(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDef
     message.add(errors)
     err(message.join("\n"))
 
-proc analyzeFunctionCall*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
+proc analyzeFunctionCall*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
   let typ = ? fileDef.scope.findType(fncall.typ, fncall.loc)
   let public =
     case typ.kind:
-    of rtkModule: (module != typ.module)
+    of rtkModule: (module.resolved != typ.module)
     of rtkGeneric: true
   let definedType = ? fileScope.findType(typ, fncall.loc)
   let funcDefs = ? definedType.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, public)
@@ -290,7 +290,7 @@ proc analyzeFunctionCall*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDe
   let concreteReturns = matchingFuncDef.returns.concrete(genericImpls)
   ok(newAnalyzedFunctionCall(fncall, matchingFuncDef.resolved, analyzedArgs, concreteReturns))
 
-proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCaseBlock, string] =
+proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCaseBlock, string] =
   var caseScope = funcScope
 
   let analyzedCasePattern = ? analyzeCasePattern(appDef, fileDef, module, funcScope, caseBlock.pattern, subjectType, union, subjectImpls)
@@ -303,7 +303,7 @@ proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefin
     caseScope = caseScope.update(analyzedStatement)
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
-proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType): Result[AnalyzedCaseBlock, string] =
+proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType): Result[AnalyzedCaseBlock, string] =
   var caseScope = funcScope
 
   let analyzedCasePattern = ? analyzeCasePattern(appDef, module, funcScope, caseBlock.pattern, subjectType)
@@ -323,7 +323,7 @@ proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string
       return err(fmt"{c.loc} todo: return an error message telling that the case block return types are not same")
   ok()
 
-proc analyzeCases*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType], loc: Location): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType], loc: Location): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = newAnalyzedUnionPatternScope(cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
@@ -339,7 +339,7 @@ proc analyzeCases*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinitio
   ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
-proc analyzeCases*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, literal: ResolvedLiteralDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, cases: seq[ResolvedCaseBlock], subjectType: AnalyzedArgumentType, literal: ResolvedLiteralDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = ? newAnalyzedLiteralPatternScope(literal, cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
@@ -355,7 +355,7 @@ proc analyzeCases*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinitio
   ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
-proc analyzeMatchExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
+proc analyzeMatchExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, match: ResolvedMatchExpression): Result[AnalyzedMatchExpression, string] =
   let analyzedSubjectExpr = ? analyzeExpression(appDef, fileDef, fileScope, module, funcScope, match.subject, none(AnalyzedArgumentType))
   let subjectArgType = analyzedSubjectExpr.argType
   case subjectArgType.kind:
@@ -384,7 +384,7 @@ proc analyzeMatchExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFil
           let analyzedCases = ? analyzeCases(appDef, fileDef, fileScope, module, funcScope, match.cases, subjectArgType, analyzedSubjectDataType.union.resolved, impls, match.loc)
           ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases, analyzedCases[0].argType))
 
-proc analyzeKeywordArgument*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: ResolvedArgumentDef, analyzedFieldArgType: AnalyzedArgumentType): Result[AnalyzedKeywordArgument, string] =
+proc analyzeKeywordArgument*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, kwarg: ResolvedKeywordArgument, analyzedField: ResolvedArgumentDef, analyzedFieldArgType: AnalyzedArgumentType): Result[AnalyzedKeywordArgument, string] =
   # Field's declared type is the expected context — bare literals in
   # kwarg values adapt when concrete, default when generic.
   let analyzedExpression = ? analyzeExpression(appDef, fileDef, fileScope, module, funcScope, kwarg.expression, some(analyzedFieldArgType))
@@ -392,7 +392,7 @@ proc analyzeKeywordArgument*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFil
   discard ? analyzeValueTypeAgainstDefType(analyzedFieldArgType, analyzedExpression.argType, analyzedExpression.loc)
   ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
-proc analyzeUnionRef(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: ResolvedModule, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
+proc analyzeUnionRef(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: AnalyzedModuleDefinition, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
   ## Walks the resolver's already-checked `impls` seq once and
   ## produces the analyzer-side equivalents. Empty in → empty out.
   ## Parser-Module → ResolvedModule via identity lookup on fileScope —
@@ -400,10 +400,10 @@ proc analyzeUnionRef(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinit
   let resolvedModule = ? fileDef.scope.findModule(unionRef.module, unionRef.loc)
   var analyzedImpls = newSeq[AnalyzedArgumentType](unionRef.impls.len)
   for i, resolvedImpl in unionRef.impls:
-    analyzedImpls[i] = ? analyzeArgumentType(fileDef.scope, module, resolvedImpl)
+    analyzedImpls[i] = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedImpl)
   ok(newAnalyzedUnionRef(unionRef, resolvedModule, analyzedImpls))
 
-proc analyzeUnionInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
+proc analyzeUnionInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
   ## Single code path over the union initializer:
   ## - If the surface form supplied explicit impls, the resolver has
   ##   already threaded them into `analyzedImpls`. We seed implMap
@@ -438,7 +438,7 @@ proc analyzeUnionInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFi
       # GenericImplMap keys on ResolvedGeneric. Translate through
       # analyzeArgumentType so the resolved generic is looked up via
       # the file scope.
-      let analyzedGeneric = ? analyzeArgumentType(fileDef.scope, module, newResolvedArgumentType(genericArgType))
+      let analyzedGeneric = ? analyzeArgumentType(fileDef.scope, module.resolved, newResolvedArgumentType(genericArgType))
       implMap[analyzedGeneric.generic.resolved] = analyzedImpls[position]
 
   # Walk kwargs. Substitute the variant's field type via implMap before
@@ -449,7 +449,7 @@ proc analyzeUnionInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFi
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
   for kwarg in init.kwargs:
     let resolvedField = ? resolvedVariant.findField(kwarg.name)
-    let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module, resolvedField.argType)
+    let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
     # Concretize the field type via the current implMap before analyzing
     # the value so bare-literal kwargs adopt the concrete instantiation
     # when known, and default (i32/f32/String) when the field is still
@@ -467,7 +467,7 @@ proc analyzeUnionInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFi
   # AnalyzedGenericArgumentType for downstream unification.
   var impls = newSeq[AnalyzedArgumentType](resolvedUnion.genericTypeIndex.len)
   for genericArgType, position in resolvedUnion.genericTypeIndex:
-    let analyzedGeneric = ? analyzeArgumentType(fileDef.scope, module, newResolvedArgumentType(genericArgType))
+    let analyzedGeneric = ? analyzeArgumentType(fileDef.scope, module.resolved, newResolvedArgumentType(genericArgType))
     if analyzedGeneric.generic.resolved in implMap:
       impls[position] = implMap[analyzedGeneric.generic.resolved]
     else:
@@ -478,7 +478,7 @@ proc analyzeUnionInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFi
 
   ok(newAnalyzedUnionInitializer(init, analyzedUnionRef, argType, resolvedVariant, analyzedKwargs))
 
-proc analyzeStructRef(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: ResolvedModule, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
+proc analyzeStructRef(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, module: AnalyzedModuleDefinition, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
   ## Walks the resolver's already-checked `impls` seq once and
   ## produces the analyzer-side equivalents. Empty in → empty out.
   ## The parser Module carried on `structRef.module` is looked up here
@@ -488,10 +488,10 @@ proc analyzeStructRef(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefini
   let resolvedModule = ? fileDef.scope.findModule(structRef.module, structRef.loc)
   var analyzedImpls = newSeq[AnalyzedArgumentType](structRef.impls.len)
   for i, resolvedImpl in structRef.impls:
-    analyzedImpls[i] = ? analyzeArgumentType(fileDef.scope, module, resolvedImpl)
+    analyzedImpls[i] = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedImpl)
   ok(newAnalyzedStructRef(structRef, resolvedModule, analyzedImpls))
 
-proc analyzeStructInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
+proc analyzeStructInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
   ## Single code path over the struct initializer. Receiver is the
   ## resolver's already-resolved module; result argType wraps the
   ## analyzedImpls seq (empty when the surface form was bare — matches
@@ -512,7 +512,7 @@ proc analyzeStructInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedF
     var analyzedKwargs: seq[AnalyzedKeywordArgument]
     for kwarg in init.kwargs:
       let resolvedField = ? dataDef.struct.findField(kwarg.name)
-      let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module, resolvedField.argType)
+      let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
       let analyzedKwarg = ? analyzeKeywordArgument(appDef, fileDef, fileScope, module, funcScope, kwarg, resolvedField, analyzedFieldArgType)
       analyzedKwargs.add(analyzedKwarg)
     let argType =
@@ -524,7 +524,7 @@ proc analyzeStructInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedF
         newAnalyzedArgumentType(analyzedModuleArg)
     ok(newAnalyzedStructInitializer(init, analyzedStructRef, argType, analyzedKwargs))
 
-proc analyzeInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
+proc analyzeInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, init: ResolvedInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of rikLiteral:
     let analyzedLiteralInit = ? analyzeLiteralInitializer(appDef, fileDef, fileScope, module, funcScope, init.literal)
@@ -536,29 +536,7 @@ proc analyzeInitializer*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDef
     let analyzedUnionInit = ? analyzeUnionInitializer(appDef, fileDef, fileScope, module, funcScope, init.union)
     ok(newAnalyzedInitializer(analyzedUnionInit))
 
-proc defaultLiteralArgType(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, literal: Literal): Result[AnalyzedArgumentType, string] =
-  ## Look up the default module for a bare-literal kind. Integer → i32,
-  ## Float → f32, String → String. The default must be reachable via the
-  ## file scope — `@std` auto-injection in .asl files puts these three
-  ## in scope; if the caller is analyzing a file that skipped that
-  ## injection (or a fixture that omits the type entirely), the lookup
-  ## fails with a user-facing error naming the missing default.
-  let literalModuleName =
-    case literal.kind:
-      of lkInteger: "i32"
-      of lkFloat: "f32"
-      of lkString: "String"
-
-  let maybeLiteralModuleIdent = newIdentifier(literalModuleName, literal.loc)
-  assert maybeLiteralModuleIdent.isOk, fmt"BUG: default literal type name `{literalModuleName}` should always satisfy newIdentifier"
-
-  let maybeResolvedLiteralModule = fileDef.findModule(maybeLiteralModuleIdent.get)
-  if maybeResolvedLiteralModule.isErr:
-    err(fmt"{literal.loc} bare literal defaults to `{literalModuleName}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
-  else:
-    ok(newAnalyzedArgumentType(maybeResolvedLiteralModule.get))
-
-proc analyzeBareLiteral(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, literal: Literal, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
+proc analyzeBareLiteral(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, literal: Literal, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
   ## Approach C — pick a concrete type for the bare literal.
   ##   - `expected = some(module)`  → adopt the module type. If the
   ##     module's data def is struct/union the caller wrote a literal
@@ -572,9 +550,9 @@ proc analyzeBareLiteral(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefi
     if expected.isSome:
       case expected.get.kind:
       of aatkModule: expected.get
-      of aatkGeneric: ? defaultLiteralArgType(appDef, fileDef, literal)
+      of aatkGeneric: ? fileDef.defaultLiteralType(literal)
     else:
-      ? defaultLiteralArgType(appDef, fileDef, literal)
+      ? fileDef.defaultLiteralType(literal)
 
   case concreteArgType.kind:
   of aatkGeneric:
@@ -589,7 +567,7 @@ proc analyzeBareLiteral(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefi
       ? analyzeLiteral(argDefData.literal.resolved, literal)
       ok(newAnalyzedLiteralInitializer(literal, concreteArgType))
 
-proc analyzeExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
+proc analyzeExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
   case expression.kind:
   of rekLiteral:
     let bareLit = ? analyzeBareLiteral(appDef, fileDef, fileScope, module, funcScope, expression.literal, expected)
@@ -610,11 +588,11 @@ proc analyzeExpression*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefi
     let analyzedMatchExpr = ? analyzeMatchExpression(appDef, fileDef, fileScope, module, funcScope, expression.match)
     ok(newAnalyzedExpression(analyzedMatchExpr))
 
-proc analyzeAssignment*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, assignment: ResolvedAssignment): Result[AnalyzedAssignment, string] =
+proc analyzeAssignment*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, assignment: ResolvedAssignment): Result[AnalyzedAssignment, string] =
   let analyzedExpr = ? analyzeExpression(appDef, fileDef, fileScope, module, funcScope, assignment.expression, none(AnalyzedArgumentType))
   ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
-proc analyzeSetter*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, setter: ResolvedSetter): Result[AnalyzedSetter, string] =
+proc analyzeSetter*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, setter: ResolvedSetter): Result[AnalyzedSetter, string] =
   let analyzedGetter = ? analyzeGetter(appDef, fileDef, fileScope, module, funcScope, setter.getter)
   let analyzedExpression = ? analyzeExpression(appDef, fileDef, fileScope, module, funcScope, setter.expression, some(analyzedGetter.argType))
   if analyzedGetter.argType != analyzedExpression.argType:
@@ -622,7 +600,7 @@ proc analyzeSetter*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefiniti
   else:
     ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
 
-proc analyzeStatement*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
+proc analyzeStatement*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
   of rskExpr:
     let analyzedExpr = ? analyzeExpression(appDef, fileDef, fileScope, module, funcScope, statement.expression, none(AnalyzedArgumentType))
@@ -641,14 +619,14 @@ proc analyzeUserFunction*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDe
 
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in function.statements:
-    let analyzedStatement = ? analyzeStatement(appDef, fileDef, fileScope, module.resolved, funcScope, statement)
+    let analyzedStatement = ? analyzeStatement(appDef, fileDef, fileScope, module, funcScope, statement)
     analyzedStatements.add(analyzedStatement)
     funcScope = funcScope.update(analyzedStatement)
 
   if analyzedStatements[^1].argType != analyzedFunctionDef.returns:
     err(fmt"{function.statements[^1].loc} function does not return the expected return type")
   else:
-    ok(newAnalyzedUserFunction(function, function.def, analyzedStatements))
+    ok(newAnalyzedUserFunction(function, analyzedFunctionDef, analyzedStatements))
 
 proc analyzeExternFunction(moduleDef: AnalyzedModuleDefinition, function: ResolvedExternFunction): Result[AnalyzedExternFunction, string] =
   let analyzedFunctionDef = ? moduleDef.findFunctionDef(function.def)

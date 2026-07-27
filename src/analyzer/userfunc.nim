@@ -7,12 +7,12 @@ import statement
 
 type AnalyzedUserFunction* = ref object
   resolved: ResolvedUserFunction
-  def: ResolvedFunctionDef
+  def: AnalyzedFunctionDefinition
   statements: seq[AnalyzedStatement]
 
-proc newAnalyzedUserFunction*(resolved: ResolvedUserFunction, def: ResolvedFunctionDef, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
+proc newAnalyzedUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDefinition, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
   AnalyzedUserFunction(resolved: resolved, def: def, statements: statements)
 
 proc resolved*(function: AnalyzedUserFunction): ResolvedUserFunction = function.resolved
-proc def*(function: AnalyzedUserFunction): ResolvedFunctionDef = function.def
+proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDefinition = function.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements
