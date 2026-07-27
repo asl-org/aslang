@@ -15,9 +15,6 @@ import results, strformat, tables
 
 import ./resolver
 import ./filedef
-import ./definedtype
-import ./moduledef
-import ./generic
 
 type AnalyzedAppDefinition* = ref object
   resolved: ResolvedApp

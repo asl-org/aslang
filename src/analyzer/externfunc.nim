@@ -5,10 +5,10 @@ import ./defanalyzer
 
 type AnalyzedExternFunction* = ref object
   resolved: ResolvedExternFunction
-  def: ResolvedFunctionDef
+  def: AnalyzedFunctionDefinition
 
-proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: ResolvedFunctionDef): AnalyzedExternFunction =
+proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDefinition): AnalyzedExternFunction =
   AnalyzedExternFunction(resolved: resolved, def: def)
 
 proc resolved*(function: AnalyzedExternFunction): ResolvedExternFunction = function.resolved
-proc def*(function: AnalyzedExternFunction): ResolvedFunctionDef = function.def
+proc def*(function: AnalyzedExternFunction): AnalyzedFunctionDefinition = function.def

@@ -18,9 +18,6 @@ import ./datadef
 # ---- shared name+arity indexer over analyzed funcDefs ----
 
 proc buildAnalyzedFuncNameArityIndex*(funcDefs: seq[AnalyzedFunctionDefinition]): Table[Identifier, Table[int, seq[int]]] =
-  ## Positions of AnalyzedFunctionDefinition entries indexed by name
-  ## then arity — drives overload lookup at call sites. Also used by
-  ## AnalyzedGeneric (see ./generic).
   for id, funcDef in funcDefs:
     if funcDef.name notin result:
       result[funcDef.name] = initTable[int, seq[int]]()
@@ -44,6 +41,7 @@ proc newAnalyzedModuleDefinition*(resolved: ResolvedModule,
     funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModuleDefinition =
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   for id, funcDef in funcDefs:
+    assert funcDef.resolved notin funcDefIndex, "[BUG] - Duplicated function definitions encountered"
     funcDefIndex[funcDef.resolved] = id
   AnalyzedModuleDefinition(resolved: resolved, requires: requires,
     data: data, funcDefs: funcDefs,

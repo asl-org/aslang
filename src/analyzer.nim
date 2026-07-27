@@ -661,15 +661,24 @@ proc analyzeUserFunction*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDe
     else:
       ok(newAnalyzedUserFunction(function, function.def, analyzedStatements))
 
-proc analyzeModule*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule): Result[AnalyzedModule, string] =
+proc analyzeExternFunction(moduleDef: AnalyzedModuleDefinition, function: ResolvedExternFunction): Result[AnalyzedExternFunction, string] =
+  let analyzedFunctionDef = ? moduleDef.findFunctionDef(function.def)
+  ok(newAnalyzedExternFunction(function, analyzedFunctionDef))
+
+proc analyzeFunction(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, function: ResolvedFunction): Result[AnalyzedFunction, string] =
+  case function.kind:
+  of rfkExtern:
+    let analyzedExternFunction = ? module.analyzeExternFunction(function.extern)
+    ok(newAnalyzedFunction(analyzedExternFunction))
+  of rfkUser:
+    let analyzedUserFunction = ? analyzeUserFunction(appDef, fileDef, fileScope, module.resolved, function.user)
+    ok(newAnalyzedFunction(analyzedUserFunction))
+
+proc analyzeModule*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition): Result[AnalyzedModule, string] =
   var analyzedFunctions: seq[AnalyzedFunction]
-  for function in module.functions:
-    case function.kind:
-    of rfkExtern:
-      analyzedFunctions.add(newAnalyzedFunction(newAnalyzedExternFunction(function.extern, function.def)))
-    of rfkUser:
-      let analyzedUserFunction = ? analyzeUserFunction(appDef, fileDef, fileScope, module, function.user)
-      analyzedFunctions.add(newAnalyzedFunction(analyzedUserFunction))
+  for function in module.resolved.functions:
+    let analyzedFunction = ? analyzeFunction(appDef, fileDef, fileScope, module, function)
+    analyzedFunctions.add(analyzedFunction)
   ok(newAnalyzedModule(module, analyzedFunctions))
 
 proc analyzeImportedType*(impFile: AnalyzedFileDefinition, impType: AnalyzedImportedTypeDef): Result[AnalyzedImportedType, string] =
@@ -685,21 +694,16 @@ proc analyzeImport*(appDef: AnalyzedAppDefinition, imp: AnalyzedImportDefinition
   ok(newAnalyzedImport(imp, analyzedImpTypes))
 
 proc analyzeFile(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition): Result[AnalyzedFile, string] =
-  ## Lift each phase-A import def to its analyzed form (the source
-  ## file's AnalyzedDefinedType, via that file's fileDef), then build
-  ## the per-file AnalyzedFileScope spanning imports + local types.
-  ## Every body-walker type lookup goes through that scope, so
-  ## imported types resolve exactly like local ones.
   var analyzedImports: seq[AnalyzedImport]
   for imp in fileDef.imports:
     let analyzedImport = ? analyzeImport(appDef, imp)
     analyzedImports.add(analyzedImport)
 
   let fileScope = ? newAnalyzedFileScope(analyzedImports, fileDef.types)
-
   var analyzedModules: seq[AnalyzedModule]
   for module in fileDef.resolved.modules:
-    let analyzedModule = ? analyzeModule(appDef, fileDef, fileScope, module)
+    let analyzedModuleDef = ? fileScope.findModule(module, module.loc)
+    let analyzedModule = ? analyzeModule(appDef, fileDef, fileScope, analyzedModuleDef)
     analyzedModules.add(analyzedModule)
   ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))
 

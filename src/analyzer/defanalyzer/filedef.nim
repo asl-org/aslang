@@ -1,13 +1,13 @@
 ## Phase-A `AnalyzedFileDefinition` — per-file bundle of the file's
-## analyzed imports + defined types, plus the per-file fileScope
-## (name-keyed, for initial name lookups) and a name-keyed
-## definedTypeIndex used only for the local `findDefinedType(name)`
-## path.
+## analyzed imports + defined types, the identity-keyed
+## ResolvedFileScope (`scope`), and a local-only definedTypeIndex
+## (`ResolvedType → AnalyzedDefinedType`) behind `findType` /
+## `findModule`.
 ##
-## Cross-file / identity-based lookups go through
-## `AnalyzedAppDefinition.findDefinedType(ResolvedType)` at the app
-## level — this per-file index only serves the "user typed this name
-## in *this* file" query.
+## The local index deliberately excludes imports — analyzeImportedType
+## uses it to verify an imported name is DEFINED in its source file,
+## not merely visible there. Phase-B lookups spanning imports go
+## through the body layer's `AnalyzedFileScope` instead.
 
 import results, strformat, tables
 

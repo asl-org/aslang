@@ -1,8 +1,8 @@
-## Phase-A `AnalyzedImport` — bundles the analyzed imported
-## types from one `import` statement together with the source-file
-## back-ref. Produced by `analyzeImportDefinition` on the facade and
-## consumed by both phase-B `AnalyzedFile` (for downstream lookup) and
-## phase-A `AnalyzedFileDefinition` (for building the fileScope).
+## Phase-B `AnalyzedImport` — one `import` statement's phase-A def
+## lifted to its body-level form: each imported type carries the
+## source file's AnalyzedDefinedType. Produced by `analyzeImport` on
+## the body barrel and consumed by `newAnalyzedFileScope` when
+## building the per-file AnalyzedFileScope.
 
 import ./defanalyzer
 import importedtype
