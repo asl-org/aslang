@@ -15,21 +15,22 @@ import ./resolver
 import ./filescope
 import ./definedtype
 import ./importdef
+import ./moduledef
 
 type AnalyzedFileDefinition* = ref object
   resolved: ResolvedFile
   imports: seq[AnalyzedImportDefinition]
   types: seq[AnalyzedDefinedType]
   scope: ResolvedFileScope
-  definedTypeIndex: Table[Identifier, AnalyzedDefinedType]
+  definedTypeIndex: Table[ResolvedType, AnalyzedDefinedType]
 
 proc newAnalyzedFileDefinition*(resolved: ResolvedFile,
     imports: seq[AnalyzedImportDefinition],
     types: seq[AnalyzedDefinedType],
     scope: ResolvedFileScope): AnalyzedFileDefinition =
-  var definedTypeIndex: Table[Identifier, AnalyzedDefinedType]
+  var definedTypeIndex: Table[ResolvedType, AnalyzedDefinedType]
   for definedType in types:
-    definedTypeIndex[definedType.name] = definedType
+    definedTypeIndex[definedType.resolved] = definedType
   AnalyzedFileDefinition(resolved: resolved, imports: imports,
     types: types, scope: scope, definedTypeIndex: definedTypeIndex)
 
@@ -39,8 +40,13 @@ proc imports*(f: AnalyzedFileDefinition): seq[AnalyzedImportDefinition] = f.impo
 proc types*(f: AnalyzedFileDefinition): seq[AnalyzedDefinedType] = f.types
 proc scope*(f: AnalyzedFileDefinition): ResolvedFileScope = f.scope
 
-proc findDefinedType*(fileDef: AnalyzedFileDefinition, name: Identifier): Result[AnalyzedDefinedType, string] =
-  if name notin fileDef.definedTypeIndex:
-    err(fmt"{name.loc} file `{fileDef.path}` does not define a type named `{name.asl}`")
-  else:
-    ok(fileDef.definedTypeIndex[name])
+proc findType*(fileDef: AnalyzedFileDefinition, typ: ResolvedType, loc: Location): Result[AnalyzedDefinedType, string] =
+  if typ in fileDef.definedTypeIndex: ok(fileDef.definedTypeIndex[typ])
+  else: err(fmt"{loc} type `{typ.name.asl}` does not exist")
+
+proc findModule*(fileDef: AnalyzedFileDefinition, module: ResolvedModule, loc: Location): Result[AnalyzedModuleDefinition, string] =
+  let typ = newResolvedType(module)
+  let foundType = ? fileDef.findType(typ, loc)
+  case foundType.kind:
+  of adtkModule: ok(foundType.module)
+  of adtkGeneric: err(fmt"{loc} expected `{foundType.name.asl}` to be a module but found generic")

@@ -62,8 +62,8 @@ export filedef
 import ./defanalyzer/appdef
 export appdef
 
-import ./defanalyzer/importedtype
-export importedtype
+import ./defanalyzer/importedtypedef
+export importedtypedef
 
 import ./defanalyzer/importdef
 export importdef
@@ -265,13 +265,13 @@ proc analyzeType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Resu
     let analyzedModule = ? analyzeModuleDefinition(fileScope, definedType.module)
     ok(newAnalyzedDefinedType(analyzedModule))
 
-proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedType, string] =
+proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedTypeDef, string] =
   let resolvedImpType = ? impFile.findType(impType.typ, impType.loc)
-  ok(newAnalyzedImportedType(impType, resolvedImpType))
+  ok(newAnalyzedImportedTypeDef(impType, resolvedImpType))
 
 proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
   let impFile = ? app.findFile(imp.impFile)
-  var analyzedImpTypes: seq[AnalyzedImportedType]
+  var analyzedImpTypes: seq[AnalyzedImportedTypeDef]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeImportedType(impFile, impType)
     analyzedImpTypes.add(analyzedImportedType)

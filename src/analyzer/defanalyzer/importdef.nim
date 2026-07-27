@@ -5,14 +5,14 @@
 ## phase-A `AnalyzedFileDefinition` (for building the fileScope).
 
 import ./resolver
-import importedtype
+import importedtypedef
 
 type AnalyzedImportDefinition* = ref object
   resolved: ResolvedImport
-  importedTypes: seq[AnalyzedImportedType]
+  importedTypes: seq[AnalyzedImportedTypeDef]
 
-proc newAnalyzedImportDefinition*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedType]): AnalyzedImportDefinition =
+proc newAnalyzedImportDefinition*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedTypeDef]): AnalyzedImportDefinition =
   AnalyzedImportDefinition(resolved: resolved, importedTypes: importedTypes)
 
-proc importedTypes*(imp: AnalyzedImportDefinition): seq[AnalyzedImportedType] = imp.importedTypes
+proc importedTypes*(imp: AnalyzedImportDefinition): seq[AnalyzedImportedTypeDef] = imp.importedTypes
 proc path*(imp: AnalyzedImportDefinition): string = imp.resolved.impFile.path

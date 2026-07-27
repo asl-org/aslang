@@ -38,6 +38,15 @@ proc name*(d: AnalyzedDefinedType): Identifier =
   case d.kind:
   of adtkModule: d.module.name
   of adtkGeneric: d.generic.name
+proc loc*(d: AnalyzedDefinedType): Location =
+  case d.kind:
+  of adtkModule: d.module.loc
+  of adtkGeneric: d.generic.loc
+
+proc resolved*(definedType: AnalyzedDefinedType): ResolvedType =
+  case definedType.kind:
+  of adtkModule: newResolvedType(definedType.module.resolved)
+  of adtkGeneric: newResolvedType(definedType.generic.resolved)
 
 proc findFunctionDefs*(definedType: AnalyzedDefinedType, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
   ## Uniform overload lookup regardless of definedType.kind. `public`

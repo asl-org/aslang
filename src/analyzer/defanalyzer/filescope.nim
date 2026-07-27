@@ -15,7 +15,7 @@ import results, strformat, tables
 
 import ./resolver
 import ./importdef
-import ./importedtype
+import ./importedtypedef
 
 type ResolvedFileScope* = Table[parser.Type, ResolvedType]
 
