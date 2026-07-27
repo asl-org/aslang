@@ -50,3 +50,7 @@ proc findModule*(fileDef: AnalyzedFileDefinition, module: ResolvedModule, loc: L
   case foundType.kind:
   of adtkModule: ok(foundType.module)
   of adtkGeneric: err(fmt"{loc} expected `{foundType.name.asl}` to be a module but found generic")
+
+proc findModule*(fileDef: AnalyzedFileDefinition, name: Identifier): Result[ResolvedModule, string] =
+  let module = ? fileDef.resolved.scope.findModule(name)
+  fileDef.scope.findModule(module, name.loc)

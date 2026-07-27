@@ -291,31 +291,29 @@ proc analyzeFunctionCall*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDe
   ok(newAnalyzedFunctionCall(fncall, matchingFuncDef.resolved, analyzedArgs, concreteReturns))
 
 proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType, union: ResolvedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCaseBlock, string] =
+  var caseScope = funcScope
+
   let analyzedCasePattern = ? analyzeCasePattern(appDef, fileDef, module, funcScope, caseBlock.pattern, subjectType, union, subjectImpls)
-  var caseScope = funcScope.clone()
-  for binding in analyzedCasePattern.bindings:
-    caseScope[binding.name] = binding.argType
+  caseScope = caseScope.update(analyzedCasePattern)
+
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(appDef, fileDef, fileScope, module, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
-    if analyzedStatement.arg.isSome:
-      let newArg = analyzedStatement.arg.get
-      caseScope[newArg.name] = newArg.argType
+    caseScope = caseScope.update(analyzedStatement)
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
 proc analyzeCaseBlock*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, caseBlock: ResolvedCaseBlock, subjectType: AnalyzedArgumentType): Result[AnalyzedCaseBlock, string] =
+  var caseScope = funcScope
+
   let analyzedCasePattern = ? analyzeCasePattern(appDef, module, funcScope, caseBlock.pattern, subjectType)
-  var caseScope = funcScope.clone()
-  for binding in analyzedCasePattern.bindings:
-    caseScope[binding.name] = binding.argType
+  caseScope = caseScope.update(analyzedCasePattern)
+
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in caseBlock.statements:
     let analyzedStatement = ? analyzeStatement(appDef, fileDef, fileScope, module, caseScope, statement)
     analyzedStatements.add(analyzedStatement)
-    if analyzedStatement.arg.isSome:
-      let newArg = analyzedStatement.arg.get
-      caseScope[newArg.name] = newArg.argType
+    caseScope = caseScope.update(analyzedStatement)
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
 proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string] =
@@ -554,10 +552,7 @@ proc defaultLiteralArgType(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileD
   let maybeLiteralModuleIdent = newIdentifier(literalModuleName, literal.loc)
   assert maybeLiteralModuleIdent.isOk, fmt"BUG: default literal type name `{literalModuleName}` should always satisfy newIdentifier"
 
-  # Find `parser.Module` by accessing fileScope built in file resolution phase
-  let literalModule = ? fileDef.resolved.scope.findModule(maybeLiteralModuleIdent.get)
-  # Use the `parser.Module` to lookup the `ResolvedModule`
-  let maybeResolvedLiteralModule = fileDef.scope.findModule(literalModule, literal.loc)
+  let maybeResolvedLiteralModule = fileDef.findModule(maybeLiteralModuleIdent.get)
   if maybeResolvedLiteralModule.isErr:
     err(fmt"{literal.loc} bare literal defaults to `{literalModuleName}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
   else:
@@ -621,10 +616,11 @@ proc analyzeAssignment*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefi
 
 proc analyzeSetter*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, setter: ResolvedSetter): Result[AnalyzedSetter, string] =
   let analyzedGetter = ? analyzeGetter(appDef, fileDef, fileScope, module, funcScope, setter.getter)
-  # RHS must match the getter's field type — thread that as expected.
   let analyzedExpression = ? analyzeExpression(appDef, fileDef, fileScope, module, funcScope, setter.expression, some(analyzedGetter.argType))
-  # TODO: Ensure that the getter field type and the expression type are same
-  ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
+  if analyzedGetter.argType != analyzedExpression.argType:
+    err(fmt"{setter.loc} argument type mismatch") # TODO: improve error message
+  else:
+    ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
 
 proc analyzeStatement*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, funcScope: AnalyzedFunctionScope, statement: ResolvedStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
@@ -638,28 +634,21 @@ proc analyzeStatement*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefin
     let analyzedMutation = ? analyzeSetter(appDef, fileDef, fileScope, module, funcScope, statement.setter)
     ok(newAnalyzedStatement(analyzedMutation))
 
-proc analyzeUserFunction*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
-  var funcScope: AnalyzedFunctionScope
-  for argDef in function.def.args:
-    let analyzedArgType = ? analyzeArgumentType(fileDef.scope, module, argDef.argType)
-    funcScope[argDef.name] = analyzedArgType
+proc analyzeUserFunction*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
+  let analyzedFunctionDef = ? module.findFunctionDef(function.def)
+  var funcScope = newAnalyzedFunctionScope(analyzedFunctionDef)
+  assert(function.statements.len > 0, fmt"{function.loc} [BUG] empty user function must have been caught by the resolver")
 
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in function.statements:
-    let analyzedStatement = ? analyzeStatement(appDef, fileDef, fileScope, module, funcScope, statement)
+    let analyzedStatement = ? analyzeStatement(appDef, fileDef, fileScope, module.resolved, funcScope, statement)
     analyzedStatements.add(analyzedStatement)
-    if analyzedStatement.arg.isSome:
-      let newArg = analyzedStatement.arg.get
-      funcScope[newArg.name] = newArg.argType
+    funcScope = funcScope.update(analyzedStatement)
 
-  if function.statements.len == 0:
-    err(fmt"{function.loc} UNREACHABLE: should have been caught by the resolver")
+  if analyzedStatements[^1].argType != analyzedFunctionDef.returns:
+    err(fmt"{function.statements[^1].loc} function does not return the expected return type")
   else:
-    let analyzedReturns = ? analyzeArgumentType(fileDef.scope, module, function.def.returns)
-    if analyzedStatements[^1].argType != analyzedReturns:
-      err(fmt"{function.statements[^1].loc} function does not return the expected return type")
-    else:
-      ok(newAnalyzedUserFunction(function, function.def, analyzedStatements))
+    ok(newAnalyzedUserFunction(function, function.def, analyzedStatements))
 
 proc analyzeExternFunction(moduleDef: AnalyzedModuleDefinition, function: ResolvedExternFunction): Result[AnalyzedExternFunction, string] =
   let analyzedFunctionDef = ? moduleDef.findFunctionDef(function.def)
@@ -671,7 +660,7 @@ proc analyzeFunction(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinit
     let analyzedExternFunction = ? module.analyzeExternFunction(function.extern)
     ok(newAnalyzedFunction(analyzedExternFunction))
   of rfkUser:
-    let analyzedUserFunction = ? analyzeUserFunction(appDef, fileDef, fileScope, module.resolved, function.user)
+    let analyzedUserFunction = ? analyzeUserFunction(appDef, fileDef, fileScope, module, function.user)
     ok(newAnalyzedFunction(analyzedUserFunction))
 
 proc analyzeModule*(appDef: AnalyzedAppDefinition, fileDef: AnalyzedFileDefinition, fileScope: AnalyzedFileScope, module: AnalyzedModuleDefinition): Result[AnalyzedModule, string] =
