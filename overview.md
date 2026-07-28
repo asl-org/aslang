@@ -115,7 +115,7 @@ Analyzer ──── Two-pass over the resolved app.
   │              every funcDef across the whole app. Produces
   │              AnalyzedDefApp bundling per-file
   │              AnalyzedDefFile + per-module
-  │              AnalyzedModuleDefinition + per-def
+  │              AnalyzedDefModule + per-def
   │              AnalyzedFunctionDefinition (args + return type
   │              fully analyzed). Any def-site error surfaces here
   │              before any body walker runs — the guarantee that
@@ -160,7 +160,7 @@ output that produced it), analyzed import definitions, and the
 analyzed modules parsed out of it.
 
 Phase-A output (`AnalyzedDefApp` + per-file
-`AnalyzedDefFile` + per-module `AnalyzedModuleDefinition` +
+`AnalyzedDefFile` + per-module `AnalyzedDefModule` +
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStructDef` / `AnalyzedVariant` / `AnalyzedUnion` /
 `AnalyzedLiteralDef` / `AnalyzedData`) is threaded through the
@@ -464,7 +464,7 @@ every module + generic → every struct/union/literal block → every
 funcDef signature across the whole app, producing an
 `AnalyzedDefApp`: per-file `AnalyzedDefFile` (analyzed
 imports + defined types + the name-keyed `ResolvedFileScope`),
-per-def `AnalyzedModuleDefinition` / `AnalyzedGeneric` carrying
+per-def `AnalyzedDefModule` / `AnalyzedGeneric` carrying
 `AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
 the data-block wrappers (`AnalyzedStructDef` / `AnalyzedVariant` /
 `AnalyzedUnion` / `AnalyzedLiteralDef` / `AnalyzedData`).
@@ -511,7 +511,7 @@ their `AnalyzedFunctionDefinition`). Scope:
   resolver file, analyzed defs) plus the body-level
   `fileScope: AnalyzedFileScope` built at `analyzeFile` entry.
   Phase-B shape: `(appDef, fileDef, fileScope, module, funcScope,
-  ...)` where `module` is the enclosing `AnalyzedModuleDefinition`
+  ...)` where `module` is the enclosing `AnalyzedDefModule`
   (body walkers reach the resolver module via `module.resolved`);
   the extract helpers (`extractDataDef` / `extractStructFor`
   / `extractUnionFor`) dispatch off the AnalyzedFileScope. Wider
@@ -944,7 +944,7 @@ src/
     uniondef.nim                   AnalyzedUnion (analyzed variants).
     datadef.nim                    AnalyzedData (adkLiteral /
                                    adkStruct / adkUnion).
-    moduledef.nim                  AnalyzedModuleDefinition (requires
+    moduledef.nim                  AnalyzedDefModule (requires
                                    + data + funcDefs +
                                    findFunctionDef(s) overload
                                    lookup).
@@ -1064,7 +1064,7 @@ src/
     function.nim                   AnalyzedFunction tagged union
                                    (user / extern).
     module.nim                     AnalyzedModule (def:
-                                   AnalyzedModuleDefinition back-ref
+                                   AnalyzedDefModule back-ref
                                    + analyzed functions).
     file.nim                       AnalyzedFile (def:
                                    AnalyzedDefFile back-ref +

@@ -1,6 +1,6 @@
 ## Phase-A `AnalyzedData` — tagged union over the three data-block
 ## kinds (literal / struct / union). Produced by `analyzeData` on
-## the facade; consumed by `AnalyzedModuleDefinition` as the
+## the facade; consumed by `AnalyzedDefModule` as the
 ## module's optional data field.
 
 import strformat

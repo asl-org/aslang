@@ -1,4 +1,4 @@
-## Phase-A `AnalyzedModuleDefinition` — a resolved module + its
+## Phase-A `AnalyzedDefModule` — a resolved module + its
 ## fully-analyzed requires clause, optional data block, and every
 ## function definition (signature only, no body). Phase B looks up
 ## call targets against `findFunctionDefs` / `findFunctionDef` on
@@ -25,9 +25,9 @@ proc buildAnalyzedFuncNameArityIndex*(funcDefs: seq[AnalyzedFunctionDefinition])
       result[funcDef.name][funcDef.arity] = newSeq[int]()
     result[funcDef.name][funcDef.arity].add(id)
 
-# ---- AnalyzedModuleDefinition ----
+# ---- AnalyzedDefModule ----
 
-type AnalyzedModuleDefinition* = ref object
+type AnalyzedDefModule* = ref object
   resolved: ResolvedModule
   requires: seq[AnalyzedGenericArgumentType]
   data: Option[AnalyzedData]
@@ -35,33 +35,33 @@ type AnalyzedModuleDefinition* = ref object
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[ResolvedFunctionDef, int]
 
-proc newAnalyzedModuleDefinition*(resolved: ResolvedModule,
+proc newAnalyzedDefModule*(resolved: ResolvedModule,
     requires: seq[AnalyzedGenericArgumentType],
     data: Option[AnalyzedData],
-    funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedModuleDefinition =
+    funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedDefModule =
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   for id, funcDef in funcDefs:
     assert funcDef.resolved notin funcDefIndex, "[BUG] - Duplicated function definitions encountered"
     funcDefIndex[funcDef.resolved] = id
-  AnalyzedModuleDefinition(resolved: resolved, requires: requires,
+  AnalyzedDefModule(resolved: resolved, requires: requires,
     data: data, funcDefs: funcDefs,
     funcNameArityIndex: buildAnalyzedFuncNameArityIndex(funcDefs),
     funcDefIndex: funcDefIndex)
 
-proc resolved*(m: AnalyzedModuleDefinition): ResolvedModule = m.resolved
-proc requires*(m: AnalyzedModuleDefinition): seq[AnalyzedGenericArgumentType] = m.requires
-proc data*(m: AnalyzedModuleDefinition): Option[AnalyzedData] = m.data
-proc funcDefs*(m: AnalyzedModuleDefinition): seq[AnalyzedFunctionDefinition] = m.funcDefs
-proc name*(m: AnalyzedModuleDefinition): Identifier = m.resolved.name
-proc loc*(m: AnalyzedModuleDefinition): Location = m.resolved.loc
+proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
+proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
+proc data*(m: AnalyzedDefModule): Option[AnalyzedData] = m.data
+proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDefinition] = m.funcDefs
+proc name*(m: AnalyzedDefModule): Identifier = m.resolved.name
+proc loc*(m: AnalyzedDefModule): Location = m.resolved.loc
 
-proc findFunctionDef*(module: AnalyzedModuleDefinition, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
+proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
   if funcDef notin module.funcDefIndex:
     err(fmt"{funcDef.loc} module `{module.name.asl}` does not have a function with name `{funcDef.name.asl}`")
   else:
     ok(module.funcDefs[module.funcDefIndex[funcDef]])
 
-proc findFunctionDefs*(module: AnalyzedModuleDefinition, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
+proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
   ## Overload-lookup entry point — returns every AnalyzedFunctionDefinition
   ## that matches `name` + `arity`, optionally filtered to `public` only
   ## (for external-call receivers). Uniqueness is left to the caller's

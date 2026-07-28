@@ -45,7 +45,7 @@ proc findType*(fileDef: AnalyzedDefFile, typ: ResolvedType, loc: Location): Resu
   if typ in fileDef.definedTypeIndex: ok(fileDef.definedTypeIndex[typ])
   else: err(fmt"{loc} type `{typ.name.asl}` does not exist")
 
-proc findModule*(fileDef: AnalyzedDefFile, module: ResolvedModule, loc: Location): Result[AnalyzedModuleDefinition, string] =
+proc findModule*(fileDef: AnalyzedDefFile, module: ResolvedModule, loc: Location): Result[AnalyzedDefModule, string] =
   let typ = newResolvedType(module)
   let foundType = ? fileDef.findType(typ, loc)
   case foundType.kind:

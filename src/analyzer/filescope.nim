@@ -47,7 +47,7 @@ proc findType*(fileScope: AnalyzedFileScope, resolved: ResolvedType, loc: Locati
   else:
     ok(fileScope[resolved])
 
-proc findModule*(fileScope: AnalyzedFileScope, module: ResolvedModule, loc: Location): Result[AnalyzedModuleDefinition, string] =
+proc findModule*(fileScope: AnalyzedFileScope, module: ResolvedModule, loc: Location): Result[AnalyzedDefModule, string] =
   let typ = ? fileScope.findType(newResolvedType(module), loc)
   case typ.kind:
   of atkGeneric: err(fmt"{module.loc} module `{module.name.asl}` does not exist in file")

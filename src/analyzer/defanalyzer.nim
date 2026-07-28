@@ -213,7 +213,7 @@ proc analyzeData*(fileScope: ResolvedFileScope, module: ResolvedModule, data: Re
 # without a data block carry an empty requires seq.
 # ============================================================
 
-proc analyzeModuleDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedModuleDefinition, string] =
+proc analyzeModuleDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedDefModule, string] =
   var requires: seq[AnalyzedGenericArgumentType]
   if module.data.isSome:
     for genericArgType in module.data.get.requires:
@@ -230,7 +230,7 @@ proc analyzeModuleDefinition*(fileScope: ResolvedFileScope, module: ResolvedModu
     let analyzedFuncDef = ? analyzeFunctionDefinition(fileScope, module, function.def)
     analyzedFuncDefs.add(analyzedFuncDef)
 
-  ok(newAnalyzedModuleDefinition(module, requires, maybeAnalyzedData, analyzedFuncDefs))
+  ok(newAnalyzedDefModule(module, requires, maybeAnalyzedData, analyzedFuncDefs))
 
 proc analyzeGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]

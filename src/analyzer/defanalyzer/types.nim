@@ -16,17 +16,17 @@ type
     atkModule, atkGeneric
   AnalyzedType* = ref object
     case kind: AnalyzedTypeKind
-    of atkModule: module: AnalyzedModuleDefinition
+    of atkModule: module: AnalyzedDefModule
     of atkGeneric: generic: AnalyzedGeneric
 
-proc newAnalyzedType*(module: AnalyzedModuleDefinition): AnalyzedType =
+proc newAnalyzedType*(module: AnalyzedDefModule): AnalyzedType =
   AnalyzedType(kind: atkModule, module: module)
 
 proc newAnalyzedType*(generic: AnalyzedGeneric): AnalyzedType =
   AnalyzedType(kind: atkGeneric, generic: generic)
 
 proc kind*(d: AnalyzedType): AnalyzedTypeKind = d.kind
-proc module*(d: AnalyzedType): AnalyzedModuleDefinition =
+proc module*(d: AnalyzedType): AnalyzedDefModule =
   assert d.kind == atkModule,
     fmt"AnalyzedType.module accessed but kind is {d.kind}"
   d.module
