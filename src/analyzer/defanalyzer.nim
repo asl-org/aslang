@@ -177,15 +177,15 @@ proc analyzeStruct*(fileScope: ResolvedFileScope, module: ResolvedModule, struct
     analyzedFields.add(analyzedField)
   ok(newAnalyzedStructDef(struct, analyzedFields))
 
-proc analyzeVariant*(fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
+proc analyzeVariant*(fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariantDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variant.fields:
     let analyzedField = ? analyzeArgumentDefinition(fileScope, module, field)
     analyzedFields.add(analyzedField)
-  ok(newAnalyzedVariant(variant, analyzedFields))
+  ok(newAnalyzedVariantDef(variant, analyzedFields))
 
 proc analyzeUnion*(fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnionDef, string] =
-  var analyzedVariants: seq[AnalyzedVariant]
+  var analyzedVariants: seq[AnalyzedVariantDef]
   for variant in union.variants:
     let analyzedVariant = ? analyzeVariant(fileScope, module, variant)
     analyzedVariants.add(analyzedVariant)

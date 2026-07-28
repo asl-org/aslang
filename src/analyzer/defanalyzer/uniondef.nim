@@ -12,11 +12,11 @@ import ./variantdef
 
 type AnalyzedUnionDef* = ref object
   resolved: ResolvedUnionDef
-  variants: seq[AnalyzedVariant]
+  variants: seq[AnalyzedVariantDef]
   variantIndex: Table[Identifier, int]
 
 proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef,
-    variants: seq[AnalyzedVariant]): AnalyzedUnionDef =
+    variants: seq[AnalyzedVariantDef]): AnalyzedUnionDef =
   var variantIndex: Table[Identifier, int]
   for id, variant in variants:
     assert(variant.name notin variantIndex,
@@ -25,17 +25,17 @@ proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef,
   AnalyzedUnionDef(resolved: resolved, variants: variants, variantIndex: variantIndex)
 
 proc resolved*(u: AnalyzedUnionDef): ResolvedUnionDef = u.resolved
-proc variants*(u: AnalyzedUnionDef): seq[AnalyzedVariant] = u.variants
+proc variants*(u: AnalyzedUnionDef): seq[AnalyzedVariantDef] = u.variants
 proc genericTypeIndex*(u: AnalyzedUnionDef): Table[ResolvedGenericArgumentType, int] =
   u.resolved.genericTypeIndex
 
-proc findVariant*(union: AnalyzedUnionDef, name: Identifier): Result[AnalyzedVariant, string] =
+proc findVariant*(union: AnalyzedUnionDef, name: Identifier): Result[AnalyzedVariantDef, string] =
   if name in union.variantIndex: ok(union.variants[union.variantIndex[name]])
   else: err(fmt"{name.loc} union does not contain variant `{name.asl}`")
 
 proc concrete*(union: AnalyzedUnionDef,
     impls: seq[AnalyzedArgumentType]): AnalyzedUnionDef =
-  var concreteVariants: seq[AnalyzedVariant]
+  var concreteVariants: seq[AnalyzedVariantDef]
   for variant in union.variants:
     concreteVariants.add(variant.concrete(impls, union.resolved.genericTypeIndex))
   newAnalyzedUnionDef(union.resolved, concreteVariants)
