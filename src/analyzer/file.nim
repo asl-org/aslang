@@ -5,14 +5,14 @@ import ./defanalyzer
 import module
 
 type AnalyzedFile* = ref object
-  def: AnalyzedFileDefinition
+  def: AnalyzedDefFile
   imports: seq[AnalyzedImportDefinition]
   modules: seq[AnalyzedModule]
 
-proc newAnalyzedFile*(def: AnalyzedFileDefinition, imports: seq[AnalyzedImportDefinition], modules: seq[AnalyzedModule]): AnalyzedFile =
+proc newAnalyzedFile*(def: AnalyzedDefFile, imports: seq[AnalyzedImportDefinition], modules: seq[AnalyzedModule]): AnalyzedFile =
   AnalyzedFile(def: def, imports: imports, modules: modules)
 
-proc def*(f: AnalyzedFile): AnalyzedFileDefinition = f.def
+proc def*(f: AnalyzedFile): AnalyzedDefFile = f.def
 proc path*(f: AnalyzedFile): string = f.def.path
 proc imports*(f: AnalyzedFile): seq[AnalyzedImportDefinition] = f.imports
 proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules

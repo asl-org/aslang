@@ -1,5 +1,5 @@
 ## Phase-A `AnalyzedDefApp` — the top-level phase-A result.
-## Bundles the resolved app + every file's AnalyzedFileDefinition,
+## Bundles the resolved app + every file's AnalyzedDefFile,
 ## indexed by absolute path for cross-file `findFileDef` queries.
 ##
 ## One identity-keyed index carries the phase-B lookup weight:
@@ -18,20 +18,20 @@ import ./filedef
 
 type AnalyzedDefApp* = ref object
   resolved: ResolvedApp
-  fileDefs: seq[AnalyzedFileDefinition]
+  fileDefs: seq[AnalyzedDefFile]
   fileDefIndex: Table[string, int]
 
 proc newAnalyzedDefApp*(resolved: ResolvedApp,
-    fileDefs: seq[AnalyzedFileDefinition]): AnalyzedDefApp =
+    fileDefs: seq[AnalyzedDefFile]): AnalyzedDefApp =
   var fileDefIndex: Table[string, int]
   for index, fileDef in fileDefs:
     fileDefIndex[fileDef.path] = index
   AnalyzedDefApp(resolved: resolved, fileDefs: fileDefs, fileDefIndex: fileDefIndex)
 
 proc resolved*(a: AnalyzedDefApp): ResolvedApp = a.resolved
-proc fileDefs*(a: AnalyzedDefApp): seq[AnalyzedFileDefinition] = a.fileDefs
+proc fileDefs*(a: AnalyzedDefApp): seq[AnalyzedDefFile] = a.fileDefs
 
-proc findFileDef*(appDef: AnalyzedDefApp, path: string): Result[AnalyzedFileDefinition, string] =
+proc findFileDef*(appDef: AnalyzedDefApp, path: string): Result[AnalyzedDefFile, string] =
   if path notin appDef.fileDefIndex:
     err(fmt"file `{path}` not found")
   else:

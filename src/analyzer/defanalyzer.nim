@@ -268,7 +268,7 @@ proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[Ana
     analyzedImpTypes.add(analyzedImportedType)
   ok(newAnalyzedImportDefinition(imp, analyzedImpTypes))
 
-proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedFileDefinition, string] =
+proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFile, string] =
   var analyzedImports: seq[AnalyzedImportDefinition]
   for imp in file.imports:
     let analyzedImport = ? analyzeImportDefinition(app, imp)
@@ -279,7 +279,7 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
   for typ in file.types:
     let analyzedType = ? analyzeType(fileScope, typ)
     analyzedTypes.add(analyzedType)
-  ok(newAnalyzedFileDefinition(file, analyzedImports, analyzedTypes, fileScope))
+  ok(newAnalyzedDefFile(file, analyzedImports, analyzedTypes, fileScope))
 
 # ============================================================
 # Phase-A app dispatcher (W7 of plan_analyzer_two_pass.md).
@@ -289,7 +289,7 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
 # ============================================================
 
 proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedDefApp, string] =
-  var analyzedFileDefinitions: seq[AnalyzedFileDefinition]
+  var analyzedFileDefinitions: seq[AnalyzedDefFile]
   for file in app.files:
     let analyzedFileDefinition = ? analyzeFileDefinition(app, file)
     analyzedFileDefinitions.add(analyzedFileDefinition)

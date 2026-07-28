@@ -114,7 +114,7 @@ Analyzer ──── Two-pass over the resolved app.
   │              every module + generic, every struct/union/literal,
   │              every funcDef across the whole app. Produces
   │              AnalyzedDefApp bundling per-file
-  │              AnalyzedFileDefinition + per-module
+  │              AnalyzedDefFile + per-module
   │              AnalyzedModuleDefinition + per-def
   │              AnalyzedFunctionDefinition (args + return type
   │              fully analyzed). Any def-site error surfaces here
@@ -155,12 +155,12 @@ let analyzedApp = ? analyze(resolvedApp)
 
 `analyze*` returns a structured `AnalyzedApp` — the `ResolvedApp`
 back-reference plus a `seq[AnalyzedFile]`, where each `AnalyzedFile`
-carries its `AnalyzedFileDefinition` back-reference (the phase-A
+carries its `AnalyzedDefFile` back-reference (the phase-A
 output that produced it), analyzed import definitions, and the
 analyzed modules parsed out of it.
 
 Phase-A output (`AnalyzedDefApp` + per-file
-`AnalyzedFileDefinition` + per-module `AnalyzedModuleDefinition` +
+`AnalyzedDefFile` + per-module `AnalyzedModuleDefinition` +
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` /
 `AnalyzedLiteralBlock` / `AnalyzedData`) is threaded through the
@@ -462,7 +462,7 @@ of every value, expression, and statement in each function body.
 **Pass A — definitions** (`analyzeAppDefinition`). Walks every file →
 every module + generic → every struct/union/literal block → every
 funcDef signature across the whole app, producing an
-`AnalyzedDefApp`: per-file `AnalyzedFileDefinition` (analyzed
+`AnalyzedDefApp`: per-file `AnalyzedDefFile` (analyzed
 imports + defined types + the name-keyed `ResolvedFileScope`),
 per-def `AnalyzedModuleDefinition` / `AnalyzedGeneric` carrying
 `AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
@@ -506,8 +506,8 @@ their `AnalyzedFunctionDefinition`). Scope:
   plans/plan_alias_lookup_cleanup.md.
 - **Per-file context = fileDef + fileScope, minimal params** —
   phase A threads the `ResolvedFileScope` it is building and stores
-  it on `AnalyzedFileDefinition.scope`; phase B threads the
-  finished `fileDef: AnalyzedFileDefinition` (identity scope,
+  it on `AnalyzedDefFile.scope`; phase B threads the
+  finished `fileDef: AnalyzedDefFile` (identity scope,
   resolver file, analyzed defs) plus the body-level
   `fileScope: AnalyzedFileScope` built at `analyzeFile` entry.
   Phase-B shape: `(appDef, fileDef, fileScope, module, funcScope,
@@ -911,7 +911,7 @@ src/
                                    ResolvedType, identity-keyed) —
                                    spans imports + local types;
                                    built per file in pass A, stored
-                                   on AnalyzedFileDefinition.scope.
+                                   on AnalyzedDefFile.scope.
                                    Owns identity-keyed findType /
                                    findModule / findGeneric.
                                    Same-identity re-imports are
@@ -952,7 +952,7 @@ src/
     types.nim                      AnalyzedType (atkModule /
                                    atkGeneric) + findFunctionDefs
                                    uniform overload lookup.
-    filedef.nim                    AnalyzedFileDefinition (resolved +
+    filedef.nim                    AnalyzedDefFile (resolved +
                                    imports + types + scope +
                                    local-only identity-keyed
                                    findType / findModule — used by
@@ -1067,7 +1067,7 @@ src/
                                    AnalyzedModuleDefinition back-ref
                                    + analyzed functions).
     file.nim                       AnalyzedFile (def:
-                                   AnalyzedFileDefinition back-ref +
+                                   AnalyzedDefFile back-ref +
                                    imports + modules).
     app.nim                        AnalyzedApp (resolved + files) —
                                    the handle downstream codegen will

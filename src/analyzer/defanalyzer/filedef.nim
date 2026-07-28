@@ -1,4 +1,4 @@
-## Phase-A `AnalyzedFileDefinition` — per-file bundle of the file's
+## Phase-A `AnalyzedDefFile` — per-file bundle of the file's
 ## analyzed imports + defined types, the identity-keyed
 ## ResolvedFileScope (`scope`), and a local-only definedTypeIndex
 ## (`ResolvedType → AnalyzedType`) behind `findType` /
@@ -18,41 +18,41 @@ import ./types
 import ./importdef
 import ./moduledef
 
-type AnalyzedFileDefinition* = ref object
+type AnalyzedDefFile* = ref object
   resolved: ResolvedFile
   imports: seq[AnalyzedImportDefinition]
   types: seq[AnalyzedType]
   scope: ResolvedFileScope
   definedTypeIndex: Table[ResolvedType, AnalyzedType]
 
-proc newAnalyzedFileDefinition*(resolved: ResolvedFile,
+proc newAnalyzedDefFile*(resolved: ResolvedFile,
     imports: seq[AnalyzedImportDefinition],
     types: seq[AnalyzedType],
-    scope: ResolvedFileScope): AnalyzedFileDefinition =
+    scope: ResolvedFileScope): AnalyzedDefFile =
   var definedTypeIndex: Table[ResolvedType, AnalyzedType]
   for definedType in types:
     definedTypeIndex[definedType.resolved] = definedType
-  AnalyzedFileDefinition(resolved: resolved, imports: imports,
+  AnalyzedDefFile(resolved: resolved, imports: imports,
     types: types, scope: scope, definedTypeIndex: definedTypeIndex)
 
-proc resolved*(f: AnalyzedFileDefinition): ResolvedFile = f.resolved
-proc path*(f: AnalyzedFileDefinition): string = f.resolved.path
-proc imports*(f: AnalyzedFileDefinition): seq[AnalyzedImportDefinition] = f.imports
-proc types*(f: AnalyzedFileDefinition): seq[AnalyzedType] = f.types
-proc scope*(f: AnalyzedFileDefinition): ResolvedFileScope = f.scope
+proc resolved*(f: AnalyzedDefFile): ResolvedFile = f.resolved
+proc path*(f: AnalyzedDefFile): string = f.resolved.path
+proc imports*(f: AnalyzedDefFile): seq[AnalyzedImportDefinition] = f.imports
+proc types*(f: AnalyzedDefFile): seq[AnalyzedType] = f.types
+proc scope*(f: AnalyzedDefFile): ResolvedFileScope = f.scope
 
-proc findType*(fileDef: AnalyzedFileDefinition, typ: ResolvedType, loc: Location): Result[AnalyzedType, string] =
+proc findType*(fileDef: AnalyzedDefFile, typ: ResolvedType, loc: Location): Result[AnalyzedType, string] =
   if typ in fileDef.definedTypeIndex: ok(fileDef.definedTypeIndex[typ])
   else: err(fmt"{loc} type `{typ.name.asl}` does not exist")
 
-proc findModule*(fileDef: AnalyzedFileDefinition, module: ResolvedModule, loc: Location): Result[AnalyzedModuleDefinition, string] =
+proc findModule*(fileDef: AnalyzedDefFile, module: ResolvedModule, loc: Location): Result[AnalyzedModuleDefinition, string] =
   let typ = newResolvedType(module)
   let foundType = ? fileDef.findType(typ, loc)
   case foundType.kind:
   of atkModule: ok(foundType.module)
   of atkGeneric: err(fmt"{loc} expected `{foundType.name.asl}` to be a module but found generic")
 
-proc defaultLiteralType*(fileDef: AnalyzedFileDefinition, literal: Literal): Result[AnalyzedArgumentType, string] =
+proc defaultLiteralType*(fileDef: AnalyzedDefFile, literal: Literal): Result[AnalyzedArgumentType, string] =
   let literalType = literal.defaultType
   let module = ? fileDef.resolved.scope.findModule(literalType)
   let maybeResolvedLiteralModule = fileDef.scope.findModule(module, literal.loc)
