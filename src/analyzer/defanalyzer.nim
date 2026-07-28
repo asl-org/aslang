@@ -184,12 +184,12 @@ proc analyzeVariant*(fileScope: ResolvedFileScope, module: ResolvedModule, varia
     analyzedFields.add(analyzedField)
   ok(newAnalyzedVariant(variant, analyzedFields))
 
-proc analyzeUnion*(fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnion, string] =
+proc analyzeUnion*(fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnionDef, string] =
   var analyzedVariants: seq[AnalyzedVariant]
   for variant in union.variants:
     let analyzedVariant = ? analyzeVariant(fileScope, module, variant)
     analyzedVariants.add(analyzedVariant)
-  ok(newAnalyzedUnion(union, analyzedVariants))
+  ok(newAnalyzedUnionDef(union, analyzedVariants))
 
 proc analyzeData*(fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:

@@ -48,7 +48,7 @@ proc extractStructFor*(fileScope: AnalyzedFileScope, argType: AnalyzedModuleArgu
     of adkUnion: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found union")
     of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found literal")
 
-proc extractUnionFor*(fileScope: AnalyzedFileScope, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedUnion, string] =
+proc extractUnionFor*(fileScope: AnalyzedFileScope, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedUnionDef, string] =
   let moduleDef = ? fileScope.findModule(argType.module, loc)
   if moduleDef.data.isNone:
     err(fmt"{loc} UNREACHABLE: expression does not return a data type")

@@ -16,7 +16,7 @@ type
     case kind: AnalyzedDataKind
     of adkLiteral: literal: AnalyzedLiteralDef
     of adkStruct: struct: AnalyzedStructDef
-    of adkUnion: union: AnalyzedUnion
+    of adkUnion: union: AnalyzedUnionDef
 
 proc newAnalyzedData*(literal: AnalyzedLiteralDef): AnalyzedData =
   AnalyzedData(kind: adkLiteral, literal: literal)
@@ -24,7 +24,7 @@ proc newAnalyzedData*(literal: AnalyzedLiteralDef): AnalyzedData =
 proc newAnalyzedData*(struct: AnalyzedStructDef): AnalyzedData =
   AnalyzedData(kind: adkStruct, struct: struct)
 
-proc newAnalyzedData*(union: AnalyzedUnion): AnalyzedData =
+proc newAnalyzedData*(union: AnalyzedUnionDef): AnalyzedData =
   AnalyzedData(kind: adkUnion, union: union)
 
 proc kind*(d: AnalyzedData): AnalyzedDataKind = d.kind
@@ -36,7 +36,7 @@ proc struct*(d: AnalyzedData): AnalyzedStructDef =
   assert d.kind == adkStruct,
     fmt"AnalyzedData.struct accessed but kind is {d.kind}"
   d.struct
-proc union*(d: AnalyzedData): AnalyzedUnion =
+proc union*(d: AnalyzedData): AnalyzedUnionDef =
   assert d.kind == adkUnion,
     fmt"AnalyzedData.union accessed but kind is {d.kind}"
   d.union
