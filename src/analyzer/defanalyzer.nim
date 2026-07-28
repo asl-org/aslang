@@ -197,7 +197,7 @@ proc analyzeUnion*(fileScope: ResolvedFileScope, module: ResolvedModule, union: 
 proc analyzeData*(fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
   of rdkLiteral:
-    ok(newAnalyzedData(newAnalyzedLiteralBlock(data.literal)))
+    ok(newAnalyzedData(newAnalyzedLiteralDef(data.literal)))
   of rdkStruct:
     let analyzedStruct = ? analyzeStruct(fileScope, module, data.struct)
     ok(newAnalyzedData(analyzedStruct))

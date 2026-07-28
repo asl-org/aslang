@@ -163,7 +163,7 @@ Phase-A output (`AnalyzedDefApp` + per-file
 `AnalyzedDefFile` + per-module `AnalyzedModuleDefinition` +
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` /
-`AnalyzedLiteralBlock` / `AnalyzedData`) is threaded through the
+`AnalyzedLiteralDef` / `AnalyzedData`) is threaded through the
 body walker chain as `(appDef, fileDef, fileScope)` — the
 `AnalyzedFileScope` built at `analyzeFile` entry spans imports +
 local types, so phase-B overload resolution reads pre-analyzed
@@ -467,7 +467,7 @@ imports + defined types + the name-keyed `ResolvedFileScope`),
 per-def `AnalyzedModuleDefinition` / `AnalyzedGeneric` carrying
 `AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
 the data-block wrappers (`AnalyzedStruct` / `AnalyzedVariant` /
-`AnalyzedUnion` / `AnalyzedLiteralBlock` / `AnalyzedData`).
+`AnalyzedUnion` / `AnalyzedLiteralDef` / `AnalyzedData`).
 `AnalyzedDefApp` itself is just the fileDefs + a path-keyed
 `fileDefIndex` behind `findFileDef` — all type lookup state lives on
 the per-file scopes. Any def-site error fires here before any body
@@ -938,7 +938,7 @@ src/
                                    + analyzed argType).
     funcdef.nim                    AnalyzedFunctionDefinition — args
                                    + return type fully analyzed.
-    literaldef.nim                 AnalyzedLiteralBlock.
+    literaldef.nim                 AnalyzedLiteralDef.
     structdef.nim                  AnalyzedStruct (analyzed fields).
     variantdef.nim                 AnalyzedVariant (analyzed fields).
     uniondef.nim                   AnalyzedUnion (analyzed variants).
