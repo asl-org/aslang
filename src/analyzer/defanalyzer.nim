@@ -50,6 +50,9 @@ export moduledef
 import ./defanalyzer/generic
 export generic
 
+import ./defanalyzer/function
+export function
+
 import ./defanalyzer/types
 export types
 
@@ -213,6 +216,23 @@ proc analyzeDefData*(fileScope: ResolvedFileScope, module: ResolvedModule, data:
 # without a data block carry an empty requires seq.
 # ============================================================
 
+proc analyzeDefExternFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedExternFunction): Result[AnalyzedDefExternFunction, string] =
+  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
+  ok(newAnalyzedDefExternFunction(function, analyzedFuncDef))
+
+proc analyzeDefUserFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
+  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
+  ok(newAnalyzedDefUserFunction(function, analyzedFuncDef))
+
+proc analyzeDefFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedFunction): Result[AnalyzedDefFunction, string] =
+  case function.kind:
+  of rfkExtern:
+    let analyzedExternFunction = ? analyzeDefExternFunction(fileScope, module, function.extern)
+    ok(newAnalyzedDefFunction(analyzedExternFunction))
+  of rfkUser:
+    let analyzedUserFunction = ? analyzeDefUserFunction(fileScope, module, function.user)
+    ok(newAnalyzedDefFunction(analyzedUserFunction))
+
 proc analyzeDefModule*(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedDefModule, string] =
   var requires: seq[AnalyzedGenericArgumentType]
   if module.data.isSome:
@@ -225,12 +245,12 @@ proc analyzeDefModule*(fileScope: ResolvedFileScope, module: ResolvedModule): Re
     let analyzedData = ? analyzeDefData(fileScope, module, module.data.get)
     maybeAnalyzedData = some(analyzedData)
 
-  var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
+  var analyzedDefFuncs: seq[AnalyzedDefFunction]
   for function in module.functions:
-    let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
-    analyzedFuncDefs.add(analyzedFuncDef)
+    let analyzedDefFunc = ? analyzeDefFunction(fileScope, module, function)
+    analyzedDefFuncs.add(analyzedDefFunc)
 
-  ok(newAnalyzedDefModule(module, requires, maybeAnalyzedData, analyzedFuncDefs))
+  ok(newAnalyzedDefModule(module, requires, maybeAnalyzedData, analyzedDefFuncs))
 
 proc analyzeDefGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]

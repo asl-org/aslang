@@ -14,6 +14,7 @@ import ./resolver
 import ./genericargtype
 import ./funcdef
 import ./datadef
+import ./function
 
 # ---- shared name+arity indexer over analyzed funcDefs ----
 
@@ -31,27 +32,25 @@ type AnalyzedDefModule* = ref object
   resolved: ResolvedModule
   requires: seq[AnalyzedGenericArgumentType]
   data: Option[AnalyzedData]
-  funcDefs: seq[AnalyzedFunctionDefinition]
+  functions: seq[AnalyzedDefFunction]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[ResolvedFunctionDef, int]
 
 proc newAnalyzedDefModule*(resolved: ResolvedModule,
     requires: seq[AnalyzedGenericArgumentType],
     data: Option[AnalyzedData],
-    funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedDefModule =
+    functions: seq[AnalyzedDefFunction]): AnalyzedDefModule =
   var funcDefIndex: Table[ResolvedFunctionDef, int]
-  for id, funcDef in funcDefs:
-    assert funcDef.resolved notin funcDefIndex, "[BUG] - Duplicated function definitions encountered"
-    funcDefIndex[funcDef.resolved] = id
-  AnalyzedDefModule(resolved: resolved, requires: requires,
-    data: data, funcDefs: funcDefs,
-    funcNameArityIndex: buildAnalyzedFuncNameArityIndex(funcDefs),
-    funcDefIndex: funcDefIndex)
+  for id, function in functions:
+    assert function.def.resolved notin funcDefIndex, "[BUG] - Duplicated function definitions encountered"
+    funcDefIndex[function.def.resolved] = id
+  let funcNameArityIndex = functions.mapIt(it.def).buildAnalyzedFuncNameArityIndex()
+  AnalyzedDefModule(resolved: resolved, requires: requires, data: data, functions: functions, funcNameArityIndex: funcNameArityIndex, funcDefIndex: funcDefIndex)
 
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
 proc data*(m: AnalyzedDefModule): Option[AnalyzedData] = m.data
-proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDefinition] = m.funcDefs
+proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDefinition] = m.functions.mapIt(it.def)
 proc name*(m: AnalyzedDefModule): Identifier = m.resolved.name
 proc loc*(m: AnalyzedDefModule): Location = m.resolved.loc
 
@@ -59,7 +58,7 @@ proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): 
   if funcDef notin module.funcDefIndex:
     err(fmt"{funcDef.loc} module `{module.name.asl}` does not have a function with name `{funcDef.name.asl}`")
   else:
-    ok(module.funcDefs[module.funcDefIndex[funcDef]])
+    ok(module.functions[module.funcDefIndex[funcDef]].def)
 
 proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
   ## Overload-lookup entry point — returns every AnalyzedFunctionDefinition

@@ -32,10 +32,12 @@ proc newResolvedUserFunction*(parsed: UserFunction,
     statements: seq[ResolvedStatement]): ResolvedUserFunction =
   ResolvedUserFunction(parsed: parsed, funcDef: funcDef, statements: statements)
 
+proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 proc parsed*(function: ResolvedUserFunction): UserFunction = function.parsed
+proc name*(function: ResolvedUserFunction): Identifier = function.funcDef.name
+proc arity*(function: ResolvedUserFunction): int = function.funcDef.arity
 proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.funcDef
 proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
-proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
 
 # ---- ResolvedFunction (tagged union) ----
 
