@@ -11,7 +11,9 @@
 import results, strformat, tables
 
 import ./resolver
-import argtype
+
+import ./genericargtype
+import ./argtype
 
 type GenericImplMap* = Table[ResolvedGeneric, AnalyzedArgumentType]
 

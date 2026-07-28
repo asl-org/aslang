@@ -16,23 +16,7 @@
 import strformat, strutils, tables, hashes
 
 import ./resolver
-
-# AnalyzedGenericArgumentType — wraps a ResolvedGeneric with the
-# use-site location so analyzer diagnostics can point precisely.
-type AnalyzedGenericArgumentType* = ref object
-  resolved: ResolvedGeneric
-  loc: Location
-
-proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): AnalyzedGenericArgumentType =
-  AnalyzedGenericArgumentType(resolved: resolved, loc: loc)
-
-proc resolved*(g: AnalyzedGenericArgumentType): ResolvedGeneric = g.resolved
-proc loc*(g: AnalyzedGenericArgumentType): Location = g.loc
-proc name*(g: AnalyzedGenericArgumentType): Identifier = g.resolved.name
-proc hash*(g: AnalyzedGenericArgumentType): Hash = g.resolved.hash
-proc `==`*(a, b: AnalyzedGenericArgumentType): bool = a.hash == b.hash
-proc asl*(argType: AnalyzedGenericArgumentType): string =
-  argType.resolved.name.asl
+import ./genericargtype
 
 # Mutually-recursive cluster: AnalyzedModuleArgumentType's impls
 # field references AnalyzedArgumentType, which case-dispatches back
