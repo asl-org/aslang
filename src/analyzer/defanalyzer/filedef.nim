@@ -20,13 +20,13 @@ import ./moduledef
 
 type AnalyzedDefFile* = ref object
   resolved: ResolvedFile
-  imports: seq[AnalyzedImportDefinition]
+  imports: seq[AnalyzedDefImport]
   types: seq[AnalyzedType]
   scope: ResolvedFileScope
   definedTypeIndex: Table[ResolvedType, AnalyzedType]
 
 proc newAnalyzedDefFile*(resolved: ResolvedFile,
-    imports: seq[AnalyzedImportDefinition],
+    imports: seq[AnalyzedDefImport],
     types: seq[AnalyzedType],
     scope: ResolvedFileScope): AnalyzedDefFile =
   var definedTypeIndex: Table[ResolvedType, AnalyzedType]
@@ -37,7 +37,7 @@ proc newAnalyzedDefFile*(resolved: ResolvedFile,
 
 proc resolved*(f: AnalyzedDefFile): ResolvedFile = f.resolved
 proc path*(f: AnalyzedDefFile): string = f.resolved.path
-proc imports*(f: AnalyzedDefFile): seq[AnalyzedImportDefinition] = f.imports
+proc imports*(f: AnalyzedDefFile): seq[AnalyzedDefImport] = f.imports
 proc types*(f: AnalyzedDefFile): seq[AnalyzedType] = f.types
 proc scope*(f: AnalyzedDefFile): ResolvedFileScope = f.scope
 

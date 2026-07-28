@@ -30,7 +30,7 @@ proc update(fileScope: var ResolvedFileScope, parsed: parser.Type, resolved: Res
   fileScope[parsed] = resolved
   ok(fileScope)
 
-proc newResolvedFileScope*(imports: seq[AnalyzedImportDefinition], types: seq[ResolvedType]): Result[ResolvedFileScope, string] =
+proc newResolvedFileScope*(imports: seq[AnalyzedDefImport], types: seq[ResolvedType]): Result[ResolvedFileScope, string] =
   var fileScope: ResolvedFileScope
   for imp in imports:
     for impType in imp.importedTypes:

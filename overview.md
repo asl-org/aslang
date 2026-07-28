@@ -968,7 +968,7 @@ src/
                                    findFileDef).
     importedtypedef.nim            AnalyzedImportedTypeDef (binding →
                                    ResolvedType).
-    importdef.nim                  AnalyzedImportDefinition (resolved
+    importdef.nim                  AnalyzedDefImport (resolved
                                    import + imported type defs +
                                    source-file path).
 

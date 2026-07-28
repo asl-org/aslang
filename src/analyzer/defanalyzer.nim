@@ -260,16 +260,16 @@ proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType):
   let resolvedImpType = ? impFile.findType(impType.typ, impType.loc)
   ok(newAnalyzedImportedTypeDef(impType, resolvedImpType))
 
-proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedImportDefinition, string] =
+proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
   let impFile = ? app.findFile(imp.impFile)
   var analyzedImpTypes: seq[AnalyzedImportedTypeDef]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeImportedType(impFile, impType)
     analyzedImpTypes.add(analyzedImportedType)
-  ok(newAnalyzedImportDefinition(imp, analyzedImpTypes))
+  ok(newAnalyzedDefImport(imp, analyzedImpTypes))
 
 proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFile, string] =
-  var analyzedImports: seq[AnalyzedImportDefinition]
+  var analyzedImports: seq[AnalyzedDefImport]
   for imp in file.imports:
     let analyzedImport = ? analyzeImportDefinition(app, imp)
     analyzedImports.add(analyzedImport)

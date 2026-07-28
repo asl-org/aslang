@@ -1,4 +1,4 @@
-## Phase-A `AnalyzedImportDefinition` — bundles the analyzed imported
+## Phase-A `AnalyzedDefImport` — bundles the analyzed imported
 ## types from one `import` statement together with the source-file
 ## back-ref. Produced by `analyzeImportDefinition` on the facade and
 ## consumed by both phase-B `AnalyzedFile` (for downstream lookup) and
@@ -7,12 +7,12 @@
 import ./resolver
 import importedtypedef
 
-type AnalyzedImportDefinition* = ref object
+type AnalyzedDefImport* = ref object
   resolved: ResolvedImport
   importedTypes: seq[AnalyzedImportedTypeDef]
 
-proc newAnalyzedImportDefinition*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedTypeDef]): AnalyzedImportDefinition =
-  AnalyzedImportDefinition(resolved: resolved, importedTypes: importedTypes)
+proc newAnalyzedDefImport*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedTypeDef]): AnalyzedDefImport =
+  AnalyzedDefImport(resolved: resolved, importedTypes: importedTypes)
 
-proc importedTypes*(imp: AnalyzedImportDefinition): seq[AnalyzedImportedTypeDef] = imp.importedTypes
-proc path*(imp: AnalyzedImportDefinition): string = imp.resolved.impFile.path
+proc importedTypes*(imp: AnalyzedDefImport): seq[AnalyzedImportedTypeDef] = imp.importedTypes
+proc path*(imp: AnalyzedDefImport): string = imp.resolved.impFile.path

@@ -8,10 +8,10 @@ import ./defanalyzer
 import importedtype
 
 type AnalyzedImport* = ref object
-  def: AnalyzedImportDefinition
+  def: AnalyzedDefImport
   importedTypes: seq[AnalyzedImportedType]
 
-proc newAnalyzedImport*(def: AnalyzedImportDefinition, importedTypes: seq[AnalyzedImportedType]): AnalyzedImport =
+proc newAnalyzedImport*(def: AnalyzedDefImport, importedTypes: seq[AnalyzedImportedType]): AnalyzedImport =
   AnalyzedImport(def: def, importedTypes: importedTypes)
 
 proc importedTypes*(imp: AnalyzedImport): seq[AnalyzedImportedType] = imp.importedTypes
