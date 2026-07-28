@@ -37,7 +37,7 @@ proc extractDataDef*(fileScope: AnalyzedFileScope, argType: AnalyzedModuleArgume
   else:
     ok(moduleDef.data.get)
 
-proc extractStructFor*(fileScope: AnalyzedFileScope, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedStruct, string] =
+proc extractStructFor*(fileScope: AnalyzedFileScope, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedStructDef, string] =
   let moduleDef = ? fileScope.findModule(argType.module, loc)
   if moduleDef.data.isNone:
     err(fmt"{loc} UNREACHABLE: expression does not return a data type")

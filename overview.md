@@ -162,7 +162,7 @@ analyzed modules parsed out of it.
 Phase-A output (`AnalyzedDefApp` + per-file
 `AnalyzedDefFile` + per-module `AnalyzedModuleDefinition` +
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
-wrappers `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` /
+wrappers `AnalyzedStructDef` / `AnalyzedVariant` / `AnalyzedUnion` /
 `AnalyzedLiteralDef` / `AnalyzedData`) is threaded through the
 body walker chain as `(appDef, fileDef, fileScope)` — the
 `AnalyzedFileScope` built at `analyzeFile` entry spans imports +
@@ -466,7 +466,7 @@ funcDef signature across the whole app, producing an
 imports + defined types + the name-keyed `ResolvedFileScope`),
 per-def `AnalyzedModuleDefinition` / `AnalyzedGeneric` carrying
 `AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
-the data-block wrappers (`AnalyzedStruct` / `AnalyzedVariant` /
+the data-block wrappers (`AnalyzedStructDef` / `AnalyzedVariant` /
 `AnalyzedUnion` / `AnalyzedLiteralDef` / `AnalyzedData`).
 `AnalyzedDefApp` itself is just the fileDefs + a path-keyed
 `fileDefIndex` behind `findFileDef` — all type lookup state lives on
@@ -939,7 +939,7 @@ src/
     funcdef.nim                    AnalyzedFunctionDefinition — args
                                    + return type fully analyzed.
     literaldef.nim                 AnalyzedLiteralDef.
-    structdef.nim                  AnalyzedStruct (analyzed fields).
+    structdef.nim                  AnalyzedStructDef (analyzed fields).
     variantdef.nim                 AnalyzedVariant (analyzed fields).
     uniondef.nim                   AnalyzedUnion (analyzed variants).
     datadef.nim                    AnalyzedData (adkLiteral /

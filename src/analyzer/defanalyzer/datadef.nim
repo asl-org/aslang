@@ -15,13 +15,13 @@ type
   AnalyzedData* = ref object
     case kind: AnalyzedDataKind
     of adkLiteral: literal: AnalyzedLiteralDef
-    of adkStruct: struct: AnalyzedStruct
+    of adkStruct: struct: AnalyzedStructDef
     of adkUnion: union: AnalyzedUnion
 
 proc newAnalyzedData*(literal: AnalyzedLiteralDef): AnalyzedData =
   AnalyzedData(kind: adkLiteral, literal: literal)
 
-proc newAnalyzedData*(struct: AnalyzedStruct): AnalyzedData =
+proc newAnalyzedData*(struct: AnalyzedStructDef): AnalyzedData =
   AnalyzedData(kind: adkStruct, struct: struct)
 
 proc newAnalyzedData*(union: AnalyzedUnion): AnalyzedData =
@@ -32,7 +32,7 @@ proc literal*(d: AnalyzedData): AnalyzedLiteralDef =
   assert d.kind == adkLiteral,
     fmt"AnalyzedData.literal accessed but kind is {d.kind}"
   d.literal
-proc struct*(d: AnalyzedData): AnalyzedStruct =
+proc struct*(d: AnalyzedData): AnalyzedStructDef =
   assert d.kind == adkStruct,
     fmt"AnalyzedData.struct accessed but kind is {d.kind}"
   d.struct

@@ -17,9 +17,6 @@ export filescope
 import ./defanalyzer/argtype
 export argtype
 
-import ./defanalyzer/moduleargtype
-export moduleargtype
-
 import ./defanalyzer/genericargtype
 export genericargtype
 
@@ -173,12 +170,12 @@ proc analyzeFunctionDefinition*(fileScope: ResolvedFileScope, generic: ResolvedG
   let analyzedReturns = ? analyzeArgumentType(fileScope, generic, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
-proc analyzeStruct*(fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStruct, string] =
+proc analyzeStruct*(fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStructDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     let analyzedField = ? analyzeArgumentDefinition(fileScope, module, field)
     analyzedFields.add(analyzedField)
-  ok(newAnalyzedStruct(struct, analyzedFields))
+  ok(newAnalyzedStructDef(struct, analyzedFields))
 
 proc analyzeVariant*(fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariant, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
