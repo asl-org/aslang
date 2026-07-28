@@ -1,6 +1,6 @@
 ## Definition-analysis barrel — phase A of the two-pass analyzer.
-## Hosts the def-level analyze* procs (analyzeGenericArgumentType
-## through analyzeAppDefinition) and re-exports every def-level
+## Hosts the def-level analyze* procs (analyzeDefGenericArgumentType
+## through analyzeDefApp) and re-exports every def-level
 ## analyzed type plus the resolver layer beneath, so the body layer
 ## (src/analyzer.nim + src/analyzer/) says `import ./defanalyzer`
 ## once. Nesting convention: parser ⊂ resolver ⊂ defanalyzer ⊂
@@ -65,52 +65,52 @@ export importedtypedef
 import ./defanalyzer/importdef
 export importdef
 
-proc analyzeGenericArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
+proc analyzeDefGenericArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   let genericArg = ? fileScope.findGeneric(genericArgType.parsed, genericArgType.loc)
   if genericArg != generic:
     err(fmt"{genericArgType.loc} generic `{genericArgType.parsed.name.asl}` does not exist")
   else:
     ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
 
-proc analyzeGenericArgumentType*(fileScope: ResolvedFileScope, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
+proc analyzeDefGenericArgumentType*(fileScope: ResolvedFileScope, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
   let genericArg = ? fileScope.findGeneric(genericArgType.parsed, genericArgType.loc)
   ok(newAnalyzedGenericArgumentType(genericArg, genericArgType.loc))
 
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
+proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
+proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
-proc analyzeModuleArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
+proc analyzeDefModuleArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   let typeModule = ? fileScope.findModule(argType.module, argType.loc)
   var analyzedImpls: seq[AnalyzedArgumentType]
   for impl in argType.impls:
-    let analyzedImpl = ? analyzeArgumentType(fileScope, module, impl)
+    let analyzedImpl = ? analyzeDefArgumentType(fileScope, module, impl)
     analyzedImpls.add(analyzedImpl)
   ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
-proc analyzeModuleArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
+proc analyzeDefModuleArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   let typeModule = ? fileScope.findModule(argType.module, argType.loc)
   var analyzedImpls: seq[AnalyzedArgumentType]
   for impl in argType.impls:
-    let analyzedImpl = ? analyzeArgumentType(fileScope, generic, impl)
+    let analyzedImpl = ? analyzeDefArgumentType(fileScope, generic, impl)
     analyzedImpls.add(analyzedImpl)
   ok(newAnalyzedModuleArgumentType(argType, typeModule, analyzedImpls))
 
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
+proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, module: ResolvedModule, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
   of ratkGeneric:
-    let analyzedArgType = ? analyzeGenericArgumentType(fileScope, argType.generic)
+    let analyzedArgType = ? analyzeDefGenericArgumentType(fileScope, argType.generic)
     ok(newAnalyzedArgumentType(analyzedArgType))
   of ratkModule:
-    let analyzedArgType = ? analyzeModuleArgumentType(fileScope, module, argType.module)
+    let analyzedArgType = ? analyzeDefModuleArgumentType(fileScope, module, argType.module)
     ok(newAnalyzedArgumentType(analyzedArgType))
 
-proc analyzeArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
+proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
   of ratkGeneric:
-    let analyzedArgType = ? analyzeGenericArgumentType(fileScope, generic, argType.generic)
+    let analyzedArgType = ? analyzeDefGenericArgumentType(fileScope, generic, argType.generic)
     ok(newAnalyzedArgumentType(analyzedArgType))
   of ratkModule:
-    let analyzedArgType = ? analyzeModuleArgumentType(fileScope, generic, argType.module)
+    let analyzedArgType = ? analyzeDefModuleArgumentType(fileScope, generic, argType.module)
     ok(newAnalyzedArgumentType(analyzedArgType))
 
 # ============================================================
@@ -146,96 +146,96 @@ proc analyzeArgumentType*(fileScope: ResolvedFileScope, generic: ResolvedGeneric
 # any new use of `==`.
 # ============================================================
 
-proc analyzeArgumentDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
-  let analyzedArgType = ? analyzeArgumentType(fileScope, module, argDef.argType)
+proc analyzeDefArgumentDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
+  let analyzedArgType = ? analyzeDefArgumentType(fileScope, module, argDef.argType)
   ok(newAnalyzedArgumentDefinition(argDef, analyzedArgType))
 
-proc analyzeArgumentDefinition*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
-  let analyzedArgType = ? analyzeArgumentType(fileScope, generic, argDef.argType)
+proc analyzeDefArgumentDefinition*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
+  let analyzedArgType = ? analyzeDefArgumentType(fileScope, generic, argDef.argType)
   ok(newAnalyzedArgumentDefinition(argDef, analyzedArgType))
 
-proc analyzeFunctionDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
+proc analyzeDefFunctionDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
   var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
   for arg in funcDef.args:
-    let analyzedArgDef = ? analyzeArgumentDefinition(fileScope, module, arg)
+    let analyzedArgDef = ? analyzeDefArgumentDefinition(fileScope, module, arg)
     analyzedArgDefs.add(analyzedArgDef)
-  let analyzedReturns = ? analyzeArgumentType(fileScope, module, funcDef.returns)
+  let analyzedReturns = ? analyzeDefArgumentType(fileScope, module, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
-proc analyzeFunctionDefinition*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
+proc analyzeDefFunctionDefinition*(fileScope: ResolvedFileScope, generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
   var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
   for arg in funcDef.args:
-    let analyzedArgDef = ? analyzeArgumentDefinition(fileScope, generic, arg)
+    let analyzedArgDef = ? analyzeDefArgumentDefinition(fileScope, generic, arg)
     analyzedArgDefs.add(analyzedArgDef)
-  let analyzedReturns = ? analyzeArgumentType(fileScope, generic, funcDef.returns)
+  let analyzedReturns = ? analyzeDefArgumentType(fileScope, generic, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
-proc analyzeStruct*(fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStructDef, string] =
+proc analyzeDefStruct*(fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStructDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
-    let analyzedField = ? analyzeArgumentDefinition(fileScope, module, field)
+    let analyzedField = ? analyzeDefArgumentDefinition(fileScope, module, field)
     analyzedFields.add(analyzedField)
   ok(newAnalyzedStructDef(struct, analyzedFields))
 
-proc analyzeVariant*(fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariantDef, string] =
+proc analyzeDefVariant*(fileScope: ResolvedFileScope, module: ResolvedModule, variant: ResolvedVariant): Result[AnalyzedVariantDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variant.fields:
-    let analyzedField = ? analyzeArgumentDefinition(fileScope, module, field)
+    let analyzedField = ? analyzeDefArgumentDefinition(fileScope, module, field)
     analyzedFields.add(analyzedField)
   ok(newAnalyzedVariantDef(variant, analyzedFields))
 
-proc analyzeUnion*(fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnionDef, string] =
+proc analyzeDefUnion*(fileScope: ResolvedFileScope, module: ResolvedModule, union: ResolvedUnionDef): Result[AnalyzedUnionDef, string] =
   var analyzedVariants: seq[AnalyzedVariantDef]
   for variant in union.variants:
-    let analyzedVariant = ? analyzeVariant(fileScope, module, variant)
+    let analyzedVariant = ? analyzeDefVariant(fileScope, module, variant)
     analyzedVariants.add(analyzedVariant)
   ok(newAnalyzedUnionDef(union, analyzedVariants))
 
-proc analyzeData*(fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
+proc analyzeDefData*(fileScope: ResolvedFileScope, module: ResolvedModule, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
   of rdkLiteral:
     ok(newAnalyzedData(newAnalyzedLiteralDef(data.literal)))
   of rdkStruct:
-    let analyzedStruct = ? analyzeStruct(fileScope, module, data.struct)
+    let analyzedStruct = ? analyzeDefStruct(fileScope, module, data.struct)
     ok(newAnalyzedData(analyzedStruct))
   of rdkUnion:
-    let analyzedUnion = ? analyzeUnion(fileScope, module, data.union)
+    let analyzedUnion = ? analyzeDefUnion(fileScope, module, data.union)
     ok(newAnalyzedData(analyzedUnion))
 
 # ============================================================
 # Phase-A module + generic analyzers (W4 of plan_analyzer_two_pass.md).
-# Ported from oldanalyzer.nim:763 (analyzeModuleDefinition) and :811
+# Ported from oldanalyzer.nim:763 (analyzeDefModule) and :811
 # (analyzeGeneric).
 #
-# Note: `analyzeModuleDefinition`'s requires walk reads
+# Note: `analyzeDefModule`'s requires walk reads
 # `module.data.get.requires` (post the resolver's struct-header merge)
 # rather than the retired module-level `requires` clause. Modules
 # without a data block carry an empty requires seq.
 # ============================================================
 
-proc analyzeModuleDefinition*(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedDefModule, string] =
+proc analyzeDefModule*(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedDefModule, string] =
   var requires: seq[AnalyzedGenericArgumentType]
   if module.data.isSome:
     for genericArgType in module.data.get.requires:
-      let analyzedArgType = ? analyzeGenericArgumentType(fileScope, genericArgType)
+      let analyzedArgType = ? analyzeDefGenericArgumentType(fileScope, genericArgType)
       requires.add(analyzedArgType)
 
   var maybeAnalyzedData: Option[AnalyzedData]
   if module.data.isSome:
-    let analyzedData = ? analyzeData(fileScope, module, module.data.get)
+    let analyzedData = ? analyzeDefData(fileScope, module, module.data.get)
     maybeAnalyzedData = some(analyzedData)
 
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
   for function in module.functions:
-    let analyzedFuncDef = ? analyzeFunctionDefinition(fileScope, module, function.def)
+    let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
     analyzedFuncDefs.add(analyzedFuncDef)
 
   ok(newAnalyzedDefModule(module, requires, maybeAnalyzedData, analyzedFuncDefs))
 
-proc analyzeGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
+proc analyzeDefGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
   for funcDef in generic.funcDefs:
-    let analyzedFuncDef = ? analyzeFunctionDefinition(fileScope, generic, funcDef)
+    let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, generic, funcDef)
     analyzedFuncDefs.add(analyzedFuncDef)
   ok(newAnalyzedGeneric(generic, analyzedFuncDefs))
 
@@ -244,37 +244,37 @@ proc analyzeGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Re
 # Ported from oldanalyzer.nim:847.
 # ============================================================
 
-proc analyzeType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedType, string] =
+proc analyzeDefType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedType, string] =
   case definedType.kind:
   of rtkGeneric:
-    let analyzedGeneric = ? analyzeGeneric(fileScope, definedType.generic)
+    let analyzedGeneric = ? analyzeDefGeneric(fileScope, definedType.generic)
     ok(newAnalyzedType(analyzedGeneric))
   of rtkModule:
-    let analyzedModule = ? analyzeModuleDefinition(fileScope, definedType.module)
+    let analyzedModule = ? analyzeDefModule(fileScope, definedType.module)
     ok(newAnalyzedType(analyzedModule))
 
-proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
+proc analyzeDefImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
   let resolvedImpType = ? impFile.findType(impType.typ, impType.loc)
   ok(newAnalyzedDefImportedType(impType, resolvedImpType))
 
-proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
+proc analyzeDefImport*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
   let impFile = ? app.findFile(imp.impFile)
   var analyzedImpTypes: seq[AnalyzedDefImportedType]
   for impType in imp.importedTypes:
-    let analyzedImportedType = ? analyzeImportedType(impFile, impType)
+    let analyzedImportedType = ? analyzeDefImportedType(impFile, impType)
     analyzedImpTypes.add(analyzedImportedType)
   ok(newAnalyzedDefImport(imp, analyzedImpTypes))
 
-proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFile, string] =
+proc analyzeDefFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFile, string] =
   var analyzedImports: seq[AnalyzedDefImport]
   for imp in file.imports:
-    let analyzedImport = ? analyzeImportDefinition(app, imp)
+    let analyzedImport = ? analyzeDefImport(app, imp)
     analyzedImports.add(analyzedImport)
 
   let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
   var analyzedTypes: seq[AnalyzedType]
   for typ in file.types:
-    let analyzedType = ? analyzeType(fileScope, typ)
+    let analyzedType = ? analyzeDefType(fileScope, typ)
     analyzedTypes.add(analyzedType)
   ok(newAnalyzedDefFile(file, analyzedImports, analyzedTypes, fileScope))
 
@@ -285,9 +285,9 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
 # `analyze*` entry — that switches to two-pass orchestration at W8.
 # ============================================================
 
-proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedDefApp, string] =
+proc analyzeDefApp*(app: ResolvedApp): Result[AnalyzedDefApp, string] =
   var analyzedFileDefinitions: seq[AnalyzedDefFile]
   for file in app.files:
-    let analyzedFileDefinition = ? analyzeFileDefinition(app, file)
+    let analyzedFileDefinition = ? analyzeDefFile(app, file)
     analyzedFileDefinitions.add(analyzedFileDefinition)
   ok(newAnalyzedDefApp(app, analyzedFileDefinitions))

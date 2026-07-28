@@ -110,7 +110,7 @@ Resolver ──── Walks the parsed App and produces a ResolvedApp:
   ▼
 Analyzer ──── Two-pass over the resolved app.
   │
-  │              Pass A (analyzeAppDefinition) — walks every file,
+  │              Pass A (analyzeDefApp) — walks every file,
   │              every module + generic, every struct/union/literal,
   │              every funcDef across the whole app. Produces
   │              AnalyzedDefApp bundling per-file
@@ -444,8 +444,8 @@ Two barrels split along the phase boundary, extending the nesting
 convention one level (parser ⊂ resolver ⊂ defanalyzer ⊂ analyzer):
 
 - `src/analyzer/defanalyzer.nim` — definition-analysis barrel.
-  Hosts the phase-A analyze* procs (analyzeGenericArgumentType →
-  analyzeAppDefinition) and re-exports the resolver layer + every
+  Hosts the phase-A analyze* procs (analyzeDefGenericArgumentType →
+  analyzeDefApp) and re-exports the resolver layer + every
   def-level type. `src/analyzer/defanalyzer/` holds the def-level
   per-type files plus the nested resolver subtree (Phase 4).
 - `src/analyzer.nim` — body-analysis barrel and top of the stack.
@@ -459,7 +459,7 @@ Takes a `ResolvedApp` and returns an `AnalyzedApp` — a type-rich view
 of every value, expression, and statement in each function body.
 **Two passes** (see plans/plan_analyzer_two_pass.md):
 
-**Pass A — definitions** (`analyzeAppDefinition`). Walks every file →
+**Pass A — definitions** (`analyzeDefApp`). Walks every file →
 every module + generic → every struct/union/literal block → every
 funcDef signature across the whole app, producing an
 `AnalyzedDefApp`: per-file `AnalyzedDefFile` (analyzed
@@ -517,8 +517,8 @@ their `AnalyzedFunctionDefinition`). Scope:
   / `extractUnionFor`) dispatch off the AnalyzedFileScope. Wider
   contexts stay off the signatures: `app: ResolvedApp` appears only
   in phase A's file walk, where the app is the subject (`analyze*` /
-  `analyzeAppDefinition` / `analyzeFileDefinition` and
-  `analyzeImportDefinition`'s `app.findFile`). Phase B never sees
+  `analyzeDefApp` / `analyzeDefFile` and
+  `analyzeDefImport`'s `app.findFile`). Phase B never sees
   it. `fileDef.findType` stays local-only by design —
   `analyzeImportedType` uses it to verify an imported name is
   DEFINED in its source file, not merely visible there.
@@ -895,8 +895,8 @@ src/
   analyzer/defanalyzer.nim         definition-analysis barrel —
                                    phase A. Hosts the def-level
                                    analyze* procs
-                                   (analyzeGenericArgumentType →
-                                   analyzeAppDefinition) and
+                                   (analyzeDefGenericArgumentType →
+                                   analyzeDefApp) and
                                    re-exports the resolver layer +
                                    every def-level type below, so
                                    the body layer imports

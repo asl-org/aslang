@@ -64,7 +64,7 @@ proc analyzeUnionCasePattern*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, 
   var bindings: seq[AnalyzedBinding]
   for field in variantPattern.fields:
     let resolvedField = ? variant.findField(field.name)
-    let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
+    let analyzedFieldArgType = ? analyzeDefArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
     let concreteFieldArgType = analyzedFieldArgType.concrete(subjectImpls, union.genericTypeIndex)
     bindings.add((name: field.binding, argType: concreteFieldArgType))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
@@ -161,7 +161,7 @@ proc analyzeGetter*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope:
       ok(newAnalyzedGetter(getter, analyzedSourceArgType, property.resolved, property.argType))
 
 proc analyzeLiteralInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope: AnalyzedFileScope, module: AnalyzedDefModule, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
-  let analyzedArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, init.argType)
+  let analyzedArgType = ? analyzeDefArgumentType(fileDef.scope, module.resolved, init.argType)
   case analyzedArgType.kind:
   of aatkGeneric:
     err(fmt"{init.loc} expected `{analyzedArgType.module.name.asl}` to be a module found generic")
@@ -406,7 +406,7 @@ proc analyzeUnionRef(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: A
   let resolvedModule = ? fileDef.scope.findModule(unionRef.module, unionRef.loc)
   var analyzedImpls = newSeq[AnalyzedArgumentType](unionRef.impls.len)
   for i, resolvedImpl in unionRef.impls:
-    analyzedImpls[i] = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedImpl)
+    analyzedImpls[i] = ? analyzeDefArgumentType(fileDef.scope, module.resolved, resolvedImpl)
   ok(newAnalyzedUnionRef(unionRef, resolvedModule, analyzedImpls))
 
 proc analyzeUnionInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope: AnalyzedFileScope, module: AnalyzedDefModule, funcScope: AnalyzedFunctionScope, init: ResolvedUnionInitializer): Result[AnalyzedUnionInitializer, string] =
@@ -444,7 +444,7 @@ proc analyzeUnionInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, 
       # GenericImplMap keys on ResolvedGeneric. Translate through
       # analyzeArgumentType so the resolved generic is looked up via
       # the file scope.
-      let analyzedGeneric = ? analyzeArgumentType(fileDef.scope, module.resolved, newResolvedArgumentType(genericArgType))
+      let analyzedGeneric = ? analyzeDefArgumentType(fileDef.scope, module.resolved, newResolvedArgumentType(genericArgType))
       implMap[analyzedGeneric.generic.resolved] = analyzedImpls[position]
 
   # Walk kwargs. Substitute the variant's field type via implMap before
@@ -455,7 +455,7 @@ proc analyzeUnionInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, 
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
   for kwarg in init.kwargs:
     let resolvedField = ? resolvedVariant.findField(kwarg.name)
-    let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
+    let analyzedFieldArgType = ? analyzeDefArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
     # Concretize the field type via the current implMap before analyzing
     # the value so bare-literal kwargs adopt the concrete instantiation
     # when known, and default (i32/f32/String) when the field is still
@@ -473,7 +473,7 @@ proc analyzeUnionInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, 
   # AnalyzedGenericArgumentType for downstream unification.
   var impls = newSeq[AnalyzedArgumentType](resolvedUnion.genericTypeIndex.len)
   for genericArgType, position in resolvedUnion.genericTypeIndex:
-    let analyzedGeneric = ? analyzeArgumentType(fileDef.scope, module.resolved, newResolvedArgumentType(genericArgType))
+    let analyzedGeneric = ? analyzeDefArgumentType(fileDef.scope, module.resolved, newResolvedArgumentType(genericArgType))
     if analyzedGeneric.generic.resolved in implMap:
       impls[position] = implMap[analyzedGeneric.generic.resolved]
     else:
@@ -494,7 +494,7 @@ proc analyzeStructRef(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: 
   let resolvedModule = ? fileDef.scope.findModule(structRef.module, structRef.loc)
   var analyzedImpls = newSeq[AnalyzedArgumentType](structRef.impls.len)
   for i, resolvedImpl in structRef.impls:
-    analyzedImpls[i] = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedImpl)
+    analyzedImpls[i] = ? analyzeDefArgumentType(fileDef.scope, module.resolved, resolvedImpl)
   ok(newAnalyzedStructRef(structRef, resolvedModule, analyzedImpls))
 
 proc analyzeStructInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope: AnalyzedFileScope, module: AnalyzedDefModule, funcScope: AnalyzedFunctionScope, init: ResolvedStructInitializer): Result[AnalyzedStructInitializer, string] =
@@ -518,7 +518,7 @@ proc analyzeStructInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile,
     var analyzedKwargs: seq[AnalyzedKeywordArgument]
     for kwarg in init.kwargs:
       let resolvedField = ? dataDef.struct.findField(kwarg.name)
-      let analyzedFieldArgType = ? analyzeArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
+      let analyzedFieldArgType = ? analyzeDefArgumentType(fileDef.scope, module.resolved, resolvedField.argType)
       let analyzedKwarg = ? analyzeKeywordArgument(appDef, fileDef, fileScope, module, funcScope, kwarg, resolvedField, analyzedFieldArgType)
       analyzedKwargs.add(analyzedKwarg)
     let argType =
@@ -684,7 +684,7 @@ proc analyzeFile(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile): Result[Analy
   ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  let appDef = ? analyzeAppDefinition(app)
+  let appDef = ? analyzeDefApp(app)
   var analyzedFiles: seq[AnalyzedFile]
   for fileDef in appDef.fileDefs:
     let analyzedFile = ? analyzeFile(appDef, fileDef)
