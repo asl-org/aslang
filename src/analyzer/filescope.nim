@@ -1,5 +1,5 @@
 ## AnalyzedFileScope — per-file identity-keyed lookup (ResolvedType
-## -> AnalyzedDefinedType), spanning imports + local defined types. Keys
+## -> AnalyzedType), spanning imports + local defined types. Keys
 ## hash by source location, so the same type imported under two
 ## bindings (`import { Solver as First }` + `{ Solver as Second }`)
 ## lands on one key and aliased imports can never miss.
@@ -17,12 +17,12 @@ import ./defanalyzer
 import ./importedtype
 import ./imports
 
-type AnalyzedFileScope* = Table[ResolvedType, AnalyzedDefinedType]
+type AnalyzedFileScope* = Table[ResolvedType, AnalyzedType]
 
-proc update(fileScope: var AnalyzedFileScope, resolved: ResolvedType, analyzed: AnalyzedDefinedType, loc: Location): Result[AnalyzedFileScope, string] =
+proc update(fileScope: var AnalyzedFileScope, resolved: ResolvedType, analyzed: AnalyzedType, loc: Location): Result[AnalyzedFileScope, string] =
   ## Same-identity re-insert (the same type imported under a second
   ## binding) is idempotent — keys hash by source location, so both
-  ## bindings land here with an equal AnalyzedDefinedType. Only a genuinely
+  ## bindings land here with an equal AnalyzedType. Only a genuinely
   ## different entry under an existing key is a conflict.
   if resolved in fileScope and fileScope[resolved] != analyzed:
     let prevDefLoc = fileScope[resolved].loc
@@ -30,7 +30,7 @@ proc update(fileScope: var AnalyzedFileScope, resolved: ResolvedType, analyzed: 
   fileScope[resolved] = analyzed
   ok(fileScope)
 
-proc newAnalyzedFileScope*(imports: seq[AnalyzedImport], types: seq[AnalyzedDefinedType]): Result[AnalyzedFileScope, string] =
+proc newAnalyzedFileScope*(imports: seq[AnalyzedImport], types: seq[AnalyzedType]): Result[AnalyzedFileScope, string] =
   var fileScope: AnalyzedFileScope
   for imp in imports:
     for impType in imp.importedTypes:
@@ -41,7 +41,7 @@ proc newAnalyzedFileScope*(imports: seq[AnalyzedImport], types: seq[AnalyzedDefi
 
   ok(fileScope)
 
-proc findType*(fileScope: AnalyzedFileScope, resolved: ResolvedType, loc: Location): Result[AnalyzedDefinedType, string] =
+proc findType*(fileScope: AnalyzedFileScope, resolved: ResolvedType, loc: Location): Result[AnalyzedType, string] =
   if resolved notin fileScope:
     err(fmt"{loc} type `{resolved.name.asl}` does not exist in file")
   else:
@@ -50,11 +50,11 @@ proc findType*(fileScope: AnalyzedFileScope, resolved: ResolvedType, loc: Locati
 proc findModule*(fileScope: AnalyzedFileScope, module: ResolvedModule, loc: Location): Result[AnalyzedModuleDefinition, string] =
   let typ = ? fileScope.findType(newResolvedType(module), loc)
   case typ.kind:
-  of adtkGeneric: err(fmt"{module.loc} module `{module.name.asl}` does not exist in file")
-  of adtkModule: ok(typ.module)
+  of atkGeneric: err(fmt"{module.loc} module `{module.name.asl}` does not exist in file")
+  of atkModule: ok(typ.module)
 
 proc findGeneric*(fileScope: AnalyzedFileScope, generic: ResolvedGeneric, loc: Location): Result[AnalyzedGeneric, string] =
   let typ = ? fileScope.findType(newResolvedType(generic), loc)
   case typ.kind:
-  of adtkGeneric: ok(typ.generic)
-  of adtkModule: err(fmt"{generic.loc} generic `{generic.name.asl}` does not exist in file")
+  of atkGeneric: ok(typ.generic)
+  of atkModule: err(fmt"{generic.loc} generic `{generic.name.asl}` does not exist in file")

@@ -53,8 +53,8 @@ export moduledef
 import ./defanalyzer/generic
 export generic
 
-import ./defanalyzer/definedtype
-export definedtype
+import ./defanalyzer/types
+export types
 
 import ./defanalyzer/filedef
 export filedef
@@ -247,14 +247,14 @@ proc analyzeGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Re
 # Ported from oldanalyzer.nim:847.
 # ============================================================
 
-proc analyzeType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedDefinedType, string] =
+proc analyzeType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedType, string] =
   case definedType.kind:
   of rtkGeneric:
     let analyzedGeneric = ? analyzeGeneric(fileScope, definedType.generic)
-    ok(newAnalyzedDefinedType(analyzedGeneric))
+    ok(newAnalyzedType(analyzedGeneric))
   of rtkModule:
     let analyzedModule = ? analyzeModuleDefinition(fileScope, definedType.module)
-    ok(newAnalyzedDefinedType(analyzedModule))
+    ok(newAnalyzedType(analyzedModule))
 
 proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedTypeDef, string] =
   let resolvedImpType = ? impFile.findType(impType.typ, impType.loc)
@@ -275,7 +275,7 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
     analyzedImports.add(analyzedImport)
 
   let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
-  var analyzedTypes: seq[AnalyzedDefinedType]
+  var analyzedTypes: seq[AnalyzedType]
   for typ in file.types:
     let analyzedType = ? analyzeType(fileScope, typ)
     analyzedTypes.add(analyzedType)

@@ -475,7 +475,7 @@ walker touches the AST.
 
 **Pass B — bodies.** The per-file `analyzeFile` walk first lifts
 each phase-A import def to its body form (`analyzeImport` — each
-imported type resolves to the source file's `AnalyzedDefinedType`
+imported type resolves to the source file's `AnalyzedType`
 via that file's fileDef), builds the per-file `AnalyzedFileScope`
 spanning imports + local types, and then analyzes each module's
 function bodies against it. Call sites read pre-analyzed funcDef
@@ -495,7 +495,7 @@ their `AnalyzedFunctionDefinition`). Scope:
 
       resolver     FileScope           Identifier   → parser.Type
       defanalyzer  ResolvedFileScope   parser.Type  → ResolvedType
-      analyzer     AnalyzedFileScope   ResolvedType → AnalyzedDefinedType
+      analyzer     AnalyzedFileScope   ResolvedType → AnalyzedType
 
   Aliased imports (`import { u8 as Byte }`) can never miss. The one
   name→identity bridge left is `fileDef.defaultLiteralType(literal)`
@@ -949,8 +949,8 @@ src/
                                    findFunctionDef(s) overload
                                    lookup).
     generic.nim                    AnalyzedGeneric (funcDefs).
-    definedtype.nim                AnalyzedDefinedType (adtkModule /
-                                   adtkGeneric) + findFunctionDefs
+    types.nim                      AnalyzedType (atkModule /
+                                   atkGeneric) + findFunctionDefs
                                    uniform overload lookup.
     filedef.nim                    AnalyzedFileDefinition (resolved +
                                    imports + types + scope +
@@ -995,7 +995,7 @@ src/
                                    ./defanalyzer once for def types
                                    + resolver.
     filescope.nim                  AnalyzedFileScope (ResolvedType →
-                                   AnalyzedDefinedType,
+                                   AnalyzedType,
                                    identity-keyed) — the third rung
                                    of the scope ladder; spans
                                    imports + local types, built per
@@ -1007,7 +1007,7 @@ src/
                                    def lifted to its body form.
     importedtype.nim               AnalyzedImportedType (binding →
                                    the source file's
-                                   AnalyzedDefinedType).
+                                   AnalyzedType).
     funcscope.nim                  AnalyzedFunctionScope (Identifier →
                                    AnalyzedArgumentType) —
                                    per-function variable scope;
