@@ -173,15 +173,6 @@ proc analyzeFunctionDefinition*(fileScope: ResolvedFileScope, generic: ResolvedG
   let analyzedReturns = ? analyzeArgumentType(fileScope, generic, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
-# ============================================================
-# Phase-A data-block analyzers (W3 of plan_analyzer_two_pass.md).
-# Ported from oldanalyzer.nim:592 / :629 / :665 / :706. Each walks
-# its fields via analyzeArgumentDefinition, delegates the
-# genericTypeIndex to the resolver's already-computed table (no
-# re-accumulation on the analyzer side), and wraps into the
-# corresponding phase-A type.
-# ============================================================
-
 proc analyzeStruct*(fileScope: ResolvedFileScope, module: ResolvedModule, struct: ResolvedStructDef): Result[AnalyzedStruct, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
@@ -297,9 +288,9 @@ proc analyzeFileDefinition*(app: ResolvedApp, file: ResolvedFile): Result[Analyz
 # `analyze*` entry — that switches to two-pass orchestration at W8.
 # ============================================================
 
-proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedAppDefinition, string] =
+proc analyzeAppDefinition*(app: ResolvedApp): Result[AnalyzedDefApp, string] =
   var analyzedFileDefinitions: seq[AnalyzedFileDefinition]
   for file in app.files:
     let analyzedFileDefinition = ? analyzeFileDefinition(app, file)
     analyzedFileDefinitions.add(analyzedFileDefinition)
-  ok(newAnalyzedAppDefinition(app, analyzedFileDefinitions))
+  ok(newAnalyzedDefApp(app, analyzedFileDefinitions))

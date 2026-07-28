@@ -1,4 +1,4 @@
-## Phase-A `AnalyzedAppDefinition` — the top-level phase-A result.
+## Phase-A `AnalyzedDefApp` — the top-level phase-A result.
 ## Bundles the resolved app + every file's AnalyzedFileDefinition,
 ## indexed by absolute path for cross-file `findFileDef` queries.
 ##
@@ -16,22 +16,22 @@ import results, strformat, tables
 import ./resolver
 import ./filedef
 
-type AnalyzedAppDefinition* = ref object
+type AnalyzedDefApp* = ref object
   resolved: ResolvedApp
   fileDefs: seq[AnalyzedFileDefinition]
   fileDefIndex: Table[string, int]
 
-proc newAnalyzedAppDefinition*(resolved: ResolvedApp,
-    fileDefs: seq[AnalyzedFileDefinition]): AnalyzedAppDefinition =
+proc newAnalyzedDefApp*(resolved: ResolvedApp,
+    fileDefs: seq[AnalyzedFileDefinition]): AnalyzedDefApp =
   var fileDefIndex: Table[string, int]
   for index, fileDef in fileDefs:
     fileDefIndex[fileDef.path] = index
-  AnalyzedAppDefinition(resolved: resolved, fileDefs: fileDefs, fileDefIndex: fileDefIndex)
+  AnalyzedDefApp(resolved: resolved, fileDefs: fileDefs, fileDefIndex: fileDefIndex)
 
-proc resolved*(a: AnalyzedAppDefinition): ResolvedApp = a.resolved
-proc fileDefs*(a: AnalyzedAppDefinition): seq[AnalyzedFileDefinition] = a.fileDefs
+proc resolved*(a: AnalyzedDefApp): ResolvedApp = a.resolved
+proc fileDefs*(a: AnalyzedDefApp): seq[AnalyzedFileDefinition] = a.fileDefs
 
-proc findFileDef*(appDef: AnalyzedAppDefinition, path: string): Result[AnalyzedFileDefinition, string] =
+proc findFileDef*(appDef: AnalyzedDefApp, path: string): Result[AnalyzedFileDefinition, string] =
   if path notin appDef.fileDefIndex:
     err(fmt"file `{path}` not found")
   else:

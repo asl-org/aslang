@@ -1,6 +1,6 @@
 ## Phase-A `AnalyzedDefinedType` — tagged union over the two defined-
 ## type kinds (module / generic). Phase-B module/generic lookups go
-## through `AnalyzedAppDefinition.findDefinedType(ResolvedType)`
+## through `AnalyzedDefApp.findDefinedType(ResolvedType)`
 ## (app-level, identity-keyed); this file just owns the variant
 ## itself + the per-defined-type function-overload accessor.
 

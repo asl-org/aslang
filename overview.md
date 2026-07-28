@@ -113,7 +113,7 @@ Analyzer ──── Two-pass over the resolved app.
   │              Pass A (analyzeAppDefinition) — walks every file,
   │              every module + generic, every struct/union/literal,
   │              every funcDef across the whole app. Produces
-  │              AnalyzedAppDefinition bundling per-file
+  │              AnalyzedDefApp bundling per-file
   │              AnalyzedFileDefinition + per-module
   │              AnalyzedModuleDefinition + per-def
   │              AnalyzedFunctionDefinition (args + return type
@@ -159,7 +159,7 @@ carries its `AnalyzedFileDefinition` back-reference (the phase-A
 output that produced it), analyzed import definitions, and the
 analyzed modules parsed out of it.
 
-Phase-A output (`AnalyzedAppDefinition` + per-file
+Phase-A output (`AnalyzedDefApp` + per-file
 `AnalyzedFileDefinition` + per-module `AnalyzedModuleDefinition` +
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStruct` / `AnalyzedVariant` / `AnalyzedUnion` /
@@ -462,13 +462,13 @@ of every value, expression, and statement in each function body.
 **Pass A — definitions** (`analyzeAppDefinition`). Walks every file →
 every module + generic → every struct/union/literal block → every
 funcDef signature across the whole app, producing an
-`AnalyzedAppDefinition`: per-file `AnalyzedFileDefinition` (analyzed
+`AnalyzedDefApp`: per-file `AnalyzedFileDefinition` (analyzed
 imports + defined types + the name-keyed `ResolvedFileScope`),
 per-def `AnalyzedModuleDefinition` / `AnalyzedGeneric` carrying
 `AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
 the data-block wrappers (`AnalyzedStruct` / `AnalyzedVariant` /
 `AnalyzedUnion` / `AnalyzedLiteralBlock` / `AnalyzedData`).
-`AnalyzedAppDefinition` itself is just the fileDefs + a path-keyed
+`AnalyzedDefApp` itself is just the fileDefs + a path-keyed
 `fileDefIndex` behind `findFileDef` — all type lookup state lives on
 the per-file scopes. Any def-site error fires here before any body
 walker touches the AST.
@@ -963,7 +963,7 @@ src/
                                    bare-literal default path,
                                    chaining the resolver name scope
                                    into the identity scope.
-    appdef.nim                     AnalyzedAppDefinition (fileDefs +
+    appdef.nim                     AnalyzedDefApp (fileDefs +
                                    path-keyed fileDefIndex +
                                    findFileDef).
     importedtypedef.nim            AnalyzedImportedTypeDef (binding →
