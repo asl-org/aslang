@@ -966,7 +966,7 @@ src/
     appdef.nim                     AnalyzedDefApp (fileDefs +
                                    path-keyed fileDefIndex +
                                    findFileDef).
-    importedtypedef.nim            AnalyzedImportedTypeDef (binding →
+    importedtypedef.nim            AnalyzedDefImportedType (binding →
                                    ResolvedType).
     importdef.nim                  AnalyzedDefImport (resolved
                                    import + imported type defs +

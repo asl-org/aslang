@@ -657,7 +657,7 @@ proc analyzeModule*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope:
     analyzedFunctions.add(analyzedFunction)
   ok(newAnalyzedModule(module, analyzedFunctions))
 
-proc analyzeImportedType*(impFile: AnalyzedDefFile, impType: AnalyzedImportedTypeDef): Result[AnalyzedImportedType, string] =
+proc analyzeImportedType*(impFile: AnalyzedDefFile, impType: AnalyzedDefImportedType): Result[AnalyzedImportedType, string] =
   let analyzedImpType = ? impFile.findType(impType.typ, impType.loc)
   ok(newAnalyzedImportedType(impType, analyzedImpType))
 

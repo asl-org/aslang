@@ -256,13 +256,13 @@ proc analyzeType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Resu
     let analyzedModule = ? analyzeModuleDefinition(fileScope, definedType.module)
     ok(newAnalyzedType(analyzedModule))
 
-proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedImportedTypeDef, string] =
+proc analyzeImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
   let resolvedImpType = ? impFile.findType(impType.typ, impType.loc)
-  ok(newAnalyzedImportedTypeDef(impType, resolvedImpType))
+  ok(newAnalyzedDefImportedType(impType, resolvedImpType))
 
 proc analyzeImportDefinition*(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
   let impFile = ? app.findFile(imp.impFile)
-  var analyzedImpTypes: seq[AnalyzedImportedTypeDef]
+  var analyzedImpTypes: seq[AnalyzedDefImportedType]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeImportedType(impFile, impType)
     analyzedImpTypes.add(analyzedImportedType)

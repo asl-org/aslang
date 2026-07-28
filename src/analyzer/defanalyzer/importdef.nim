@@ -9,10 +9,10 @@ import importedtypedef
 
 type AnalyzedDefImport* = ref object
   resolved: ResolvedImport
-  importedTypes: seq[AnalyzedImportedTypeDef]
+  importedTypes: seq[AnalyzedDefImportedType]
 
-proc newAnalyzedDefImport*(resolved: ResolvedImport, importedTypes: seq[AnalyzedImportedTypeDef]): AnalyzedDefImport =
+proc newAnalyzedDefImport*(resolved: ResolvedImport, importedTypes: seq[AnalyzedDefImportedType]): AnalyzedDefImport =
   AnalyzedDefImport(resolved: resolved, importedTypes: importedTypes)
 
-proc importedTypes*(imp: AnalyzedDefImport): seq[AnalyzedImportedTypeDef] = imp.importedTypes
+proc importedTypes*(imp: AnalyzedDefImport): seq[AnalyzedDefImportedType] = imp.importedTypes
 proc path*(imp: AnalyzedDefImport): string = imp.resolved.impFile.path

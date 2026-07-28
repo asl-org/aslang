@@ -1,15 +1,15 @@
-## AnalyzedImportedTypeDef — verifies an individual imported name resolved
+## AnalyzedDefImportedType — verifies an individual imported name resolved
 ## to a defined type in its source file.
 
 import ./resolver
 
-type AnalyzedImportedTypeDef* = ref object
+type AnalyzedDefImportedType* = ref object
   resolved: ResolvedImportedType
   typ: ResolvedType
 
-proc newAnalyzedImportedTypeDef*(resolved: ResolvedImportedType, typ: ResolvedType): AnalyzedImportedTypeDef =
-  AnalyzedImportedTypeDef(resolved: resolved, typ: typ)
+proc newAnalyzedDefImportedType*(resolved: ResolvedImportedType, typ: ResolvedType): AnalyzedDefImportedType =
+  AnalyzedDefImportedType(resolved: resolved, typ: typ)
 
-proc loc*(impType: AnalyzedImportedTypeDef): Location = impType.resolved.loc
-proc binding*(impType: AnalyzedImportedTypeDef): Identifier = impType.resolved.binding
-proc typ*(impType: AnalyzedImportedTypeDef): ResolvedType = impType.typ
+proc loc*(impType: AnalyzedDefImportedType): Location = impType.resolved.loc
+proc binding*(impType: AnalyzedDefImportedType): Identifier = impType.resolved.binding
+proc typ*(impType: AnalyzedDefImportedType): ResolvedType = impType.typ
