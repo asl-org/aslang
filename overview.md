@@ -464,10 +464,13 @@ every module + generic → every struct/union/literal block → every
 funcDef signature across the whole app, producing an
 `AnalyzedDefApp`: per-file `AnalyzedDefFile` (analyzed
 imports + defined types + the name-keyed `ResolvedFileScope`),
-per-def `AnalyzedDefModule` / `AnalyzedGeneric` carrying
-`AnalyzedFunctionDefinition`s (args + return type fully analyzed) and
-the data-block wrappers (`AnalyzedStructDef` / `AnalyzedVariantDef` /
-`AnalyzedUnionDef` / `AnalyzedLiteralDef` / `AnalyzedData`).
+per-def `AnalyzedDefModule` (whose `functions` are tagged
+`AnalyzedDefFunction`s — extern/user, each pairing the resolver
+function with its pre-analyzed `AnalyzedFunctionDefinition`) /
+`AnalyzedGeneric` (bare `AnalyzedFunctionDefinition`s — generics
+have no extern/user split) and the data-block wrappers
+(`AnalyzedStructDef` / `AnalyzedVariantDef` / `AnalyzedUnionDef` /
+`AnalyzedLiteralDef` / `AnalyzedData`).
 `AnalyzedDefApp` itself is just the fileDefs + a path-keyed
 `fileDefIndex` behind `findFileDef` — all type lookup state lives on
 the per-file scopes. Any def-site error fires here before any body
@@ -944,10 +947,17 @@ src/
     uniondef.nim                   AnalyzedUnionDef (analyzed variants).
     datadef.nim                    AnalyzedData (adkLiteral /
                                    adkStruct / adkUnion).
-    moduledef.nim                  AnalyzedDefModule (requires
-                                   + data + funcDefs +
+    moduledef.nim                  AnalyzedDefModule (requires +
+                                   data + functions:
+                                   seq[AnalyzedDefFunction] +
                                    findFunctionDef(s) overload
-                                   lookup).
+                                   lookup; funcDefs projection
+                                   accessor).
+    function.nim                   AnalyzedDefExternFunction /
+                                   AnalyzedDefUserFunction + tagged
+                                   AnalyzedDefFunction (adfkExtern /
+                                   adfkUser) with uniform def / name
+                                   / arity accessors.
     generic.nim                    AnalyzedGeneric (funcDefs).
     types.nim                      AnalyzedType (atkModule /
                                    atkGeneric) + findFunctionDefs
