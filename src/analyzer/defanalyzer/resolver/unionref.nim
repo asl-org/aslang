@@ -21,3 +21,4 @@ proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
 proc module*(u: ResolvedUnionRef): Module = u.module
 proc impls*(u: ResolvedUnionRef): seq[ResolvedArgumentType] = u.impls
 proc loc*(u: ResolvedUnionRef): Location = u.parsed.loc
+proc argType*(u: ResolvedUnionRef): ResolvedModuleArgumentType = newResolvedModuleArgumentType(u.module, u.impls, u.loc)

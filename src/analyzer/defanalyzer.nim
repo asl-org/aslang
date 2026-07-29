@@ -50,6 +50,9 @@ export moduledef
 import ./defanalyzer/generic
 export generic
 
+import ./defanalyzer/statement
+export statement
+
 import ./defanalyzer/function
 export function
 
@@ -205,6 +208,103 @@ proc analyzeDefData*(fileScope: ResolvedFileScope, module: ResolvedModule, data:
     let analyzedUnion = ? analyzeDefUnion(fileScope, module, data.union)
     ok(newAnalyzedData(analyzedUnion))
 
+proc analyzeDefStatement(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, statement: ResolvedStatement): Result[void, string]
+proc analyzeDefExpression(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, expression: ResolvedExpression): Result[void, string]
+
+proc analyzeDefBareLiteral(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, literal: ResolvedLiteral): Result[void, string] =
+  let defaultLiteralResolvedModule = ? fileScope.findModule(literal.default, literal.loc)
+  ok()
+
+proc analyzeDefCasePattern(fileScope: ResolvedFileScope, module: ResolvedModule, pattern: ResolvedCasePattern): Result[void, string] =
+  ok()
+
+proc analyzeDefCase(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, caseBlock: ResolvedCaseBlock): Result[void, string] =
+  ? analyzeDefCasePattern(fileScope, module, caseBlock.pattern)
+  for statement in caseBlock.statements:
+    ? analyzeDefStatement(file, fileScope, module, statement)
+  ok()
+
+proc analyzeDefMatch(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, match: ResolvedMatchExpression): Result[void, string] =
+  ? analyzeDefExpression(file, fileScope, module, match.subject)
+  for caseBlock in match.cases:
+    ? analyzeDefCase(file, fileScope, module, caseBlock)
+  ok()
+
+proc analyzeDefFunctionCall(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, fncall: ResolvedFunctionCall): Result[void, string] =
+  let resolvedType = ? fileScope.findType(fncall.typ, fncall.loc)
+  for arg in fncall.args:
+    ? analyzeDefExpression(file, fileScope, module, arg)
+  ok()
+
+proc analyzeDefUnionRef(fileScope: ResolvedFileScope, module: ResolvedModule, unionRef: ResolvedUnionRef): Result[AnalyzedDefUnionRef, string] =
+  let unionModule = ? fileScope.findModule(unionRef.module, unionRef.loc)
+  if unionModule.data.isNone:
+    err(fmt"{unionRef.loc} module `{unionModule.name.asl}` is not a data module")
+  else:
+    let dataDef = unionModule.data.get
+    case dataDef.kind:
+    of rdkLiteral:
+      err(fmt"{unionRef.loc} expected module `{unionModule.name.asl}` to be a union module but found literal")
+    of rdkStruct:
+      err(fmt"{unionRef.loc} expected module `{unionModule.name.asl}` to be a union module but found struct")
+    of rdkUnion:
+      let analyzedArgType = ? analyzeDefModuleArgumentType(fileScope, module, unionRef.argType)
+      ok(newAnalyzedDefUnionRef(unionRef, analyzedArgType, dataDef.union))
+
+proc analyzeDefUnionKeywordArgument(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, kwarg: ResolvedKeywordArgument, variant: ResolvedVariant): Result[void, string] =
+  let resolvedField = ? variant.findField(kwarg.name)
+  let analyzedArgType = ? analyzeDefArgumentType(fileScope, module, resolvedField.argType)
+  ? analyzeDefExpression(file, fileScope, module, kwarg.expression)
+  err(fmt"{kwarg.loc} todo: def analyze union initializer keyword argument")
+
+proc analyzeDefUnionInitializer(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, init: ResolvedUnionInitializer): Result[void, string] =
+  let analyzedDefUnionRef = ? analyzeDefUnionRef(fileScope, module, init.unionRef)
+  let analyzedVariant = ? analyzedDefUnionRef.union.findVariant(init.variant)
+  for kwarg in init.kwargs:
+    ? analyzeDefUnionKeywordArgument(file, fileScope, module, kwarg, analyzedVariant)
+  err(fmt"{init.loc} todo: def analyze union initializer")
+
+proc analyzeDefInitializer(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, init: ResolvedInitializer): Result[void, string] =
+  case init.kind:
+  of rikLiteral: err(fmt"{init.loc} todo: def analyze literal initializer")
+  of rikStruct: err(fmt"{init.loc} todo: def analyze struct initializer")
+  of rikUnion: analyzeDefUnionInitializer(file, fileScope, module, init.union)
+
+proc analyzeDefExpression(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, expression: ResolvedExpression): Result[void, string] =
+  case expression.kind:
+  of rekVariable: ok()
+  of rekLiteral: analyzeDefBareLiteral(file, fileScope, module, expression.literal)
+  of rekGetter: err(fmt"{expression.loc} todo: def analyze expression getter")
+  of rekFunctionCall: analyzeDefFunctionCall(file, fileScope, module, expression.fncall)
+  of rekInitializer: analyzeDefInitializer(file, fileScope, module, expression.init)
+  of rekMatchExpr: analyzeDefMatch(file, fileScope, module, expression.match)
+
+proc analyzeDefStatement(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, statement: ResolvedStatement): Result[void, string] =
+  case statement.kind:
+  of rskAssignment: err(fmt"{statement.loc} todo: def analyze statement assignment")
+  of rskExpr: analyzeDefExpression(file, fileScope, module, statement.expression)
+  of rskSetter: err(fmt"{statement.loc} todo: def analyze statement setter")
+
+proc analyzeDefUserFunction(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
+  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
+  for statement in function.statements:
+    ? analyzeDefStatement(file, fileScope, module, statement)
+  ok(newAnalyzedDefUserFunction(function, analyzedFuncDef))
+
+proc analyzeDefExternFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedExternFunction): Result[AnalyzedDefExternFunction, string] =
+  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
+  ok(newAnalyzedDefExternFunction(function, analyzedFuncDef))
+
+proc analyzeDefFunction(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedFunction): Result[AnalyzedDefFunction, string] =
+  case function.kind:
+  of rfkExtern:
+    let analyzedExternFunction = ? analyzeDefExternFunction(fileScope, module, function.extern)
+    ok(newAnalyzedDefFunction(analyzedExternFunction))
+  of rfkUser:
+    let analyzedUserFunction = ? analyzeDefUserFunction(file, fileScope, module, function.user)
+    ok(newAnalyzedDefFunction(analyzedUserFunction))
+
+
 # ============================================================
 # Phase-A module + generic analyzers (W4 of plan_analyzer_two_pass.md).
 # Ported from oldanalyzer.nim:763 (analyzeDefModule) and :811
@@ -216,24 +316,7 @@ proc analyzeDefData*(fileScope: ResolvedFileScope, module: ResolvedModule, data:
 # without a data block carry an empty requires seq.
 # ============================================================
 
-proc analyzeDefExternFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedExternFunction): Result[AnalyzedDefExternFunction, string] =
-  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
-  ok(newAnalyzedDefExternFunction(function, analyzedFuncDef))
-
-proc analyzeDefUserFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
-  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
-  ok(newAnalyzedDefUserFunction(function, analyzedFuncDef))
-
-proc analyzeDefFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedFunction): Result[AnalyzedDefFunction, string] =
-  case function.kind:
-  of rfkExtern:
-    let analyzedExternFunction = ? analyzeDefExternFunction(fileScope, module, function.extern)
-    ok(newAnalyzedDefFunction(analyzedExternFunction))
-  of rfkUser:
-    let analyzedUserFunction = ? analyzeDefUserFunction(fileScope, module, function.user)
-    ok(newAnalyzedDefFunction(analyzedUserFunction))
-
-proc analyzeDefModule*(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedDefModule, string] =
+proc analyzeDefModule*(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedDefModule, string] =
   var requires: seq[AnalyzedGenericArgumentType]
   if module.data.isSome:
     for genericArgType in module.data.get.requires:
@@ -247,7 +330,7 @@ proc analyzeDefModule*(fileScope: ResolvedFileScope, module: ResolvedModule): Re
 
   var analyzedDefFuncs: seq[AnalyzedDefFunction]
   for function in module.functions:
-    let analyzedDefFunc = ? analyzeDefFunction(fileScope, module, function)
+    let analyzedDefFunc = ? analyzeDefFunction(file, fileScope, module, function)
     analyzedDefFuncs.add(analyzedDefFunc)
 
   ok(newAnalyzedDefModule(module, requires, maybeAnalyzedData, analyzedDefFuncs))
@@ -264,13 +347,13 @@ proc analyzeDefGeneric*(fileScope: ResolvedFileScope, generic: ResolvedGeneric):
 # Ported from oldanalyzer.nim:847.
 # ============================================================
 
-proc analyzeDefType*(fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedType, string] =
+proc analyzeDefType*(file: ResolvedFile, fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedType, string] =
   case definedType.kind:
   of rtkGeneric:
     let analyzedGeneric = ? analyzeDefGeneric(fileScope, definedType.generic)
     ok(newAnalyzedType(analyzedGeneric))
   of rtkModule:
-    let analyzedModule = ? analyzeDefModule(fileScope, definedType.module)
+    let analyzedModule = ? analyzeDefModule(file, fileScope, definedType.module)
     ok(newAnalyzedType(analyzedModule))
 
 proc analyzeDefImportedType*(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
@@ -294,7 +377,7 @@ proc analyzeDefFile*(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFi
   let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
   var analyzedTypes: seq[AnalyzedType]
   for typ in file.types:
-    let analyzedType = ? analyzeDefType(fileScope, typ)
+    let analyzedType = ? analyzeDefType(file, fileScope, typ)
     analyzedTypes.add(analyzedType)
   ok(newAnalyzedDefFile(file, analyzedImports, analyzedTypes, fileScope))
 

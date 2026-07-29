@@ -23,6 +23,19 @@ import literalinit
 import structref
 import unionref
 
+type ResolvedLiteral* = ref object
+  parsed: Literal
+  default: Module
+
+proc newResolvedLiteral*(parsed: Literal, module: Module): ResolvedLiteral =
+  ResolvedLiteral(parsed: parsed, default: module)
+
+proc loc*(literal: ResolvedLiteral): Location = literal.parsed.loc
+proc parsed*(literal: ResolvedLiteral): Literal = literal.parsed
+proc default*(literal: ResolvedLiteral): Module = literal.default
+proc kind*(literal: ResolvedLiteral): LiteralKind = literal.parsed.kind
+proc asl*(literal: ResolvedLiteral): string = literal.parsed.asl
+
 type
   ResolvedKeywordArgument* = ref object
     parsed: KeywordArgument
@@ -50,13 +63,6 @@ type
     parsed: FunctionCall
     typ: parser.Type
     args: seq[ResolvedExpression]
-    # Task 7: reserved for FunctionCall receivers that carry an
-    # explicit impl list. The parser currently has no impl syntax for
-    # function calls (FunctionCall.root is a bare Identifier, not an
-    # ArgumentType), so this stays empty for now. When impl syntax is
-    # added, the arity+constraint check for these impls will run in
-    # resolveFunctionCall — never in the analyzer.
-    impls: seq[ResolvedArgumentType]
 
   ResolvedAssignment* = ref object
     parsed: Assignment
@@ -84,7 +90,7 @@ type
     case kind: ResolvedExpressionKind
     of rekFunctionCall: fncall: ResolvedFunctionCall
     of rekVariable: variable: Identifier
-    of rekLiteral: literal: Literal
+    of rekLiteral: literal: ResolvedLiteral
     of rekInitializer: initializer: ResolvedInitializer
     of rekGetter: getter: ResolvedGetter
     of rekMatchExpr: match: ResolvedMatchExpression
@@ -268,7 +274,7 @@ proc newResolvedExpression*(initializer: ResolvedInitializer): ResolvedExpressio
 proc newResolvedExpression*(variable: Identifier): ResolvedExpression =
   ResolvedExpression(kind: rekVariable, variable: variable)
 
-proc newResolvedExpression*(literal: Literal): ResolvedExpression =
+proc newResolvedExpression*(literal: ResolvedLiteral): ResolvedExpression =
   ResolvedExpression(kind: rekLiteral, literal: literal)
 
 proc newResolvedExpression*(getter: ResolvedGetter): ResolvedExpression =
@@ -286,7 +292,7 @@ proc variable*(expression: ResolvedExpression): Identifier =
   assert expression.kind == rekVariable,
     fmt"ResolvedExpression.variable accessed but kind is {expression.kind}"
   expression.variable
-proc literal*(expression: ResolvedExpression): Literal =
+proc literal*(expression: ResolvedExpression): ResolvedLiteral =
   assert expression.kind == rekLiteral,
     fmt"ResolvedExpression.literal accessed but kind is {expression.kind}"
   expression.literal

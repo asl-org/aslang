@@ -346,6 +346,10 @@ proc resolveExternFunction*(fileScope: FileScope, function: ExternFunction): Res
   let resolvedFunctionDef = ? resolveFunctionDef(fileScope, function.def)
   ok(newResolvedExternFunction(function, resolvedFunctionDef))
 
+proc resolveLiteral(fileScope: FileScope, literal: Literal): Result[ResolvedLiteral, string] =
+  let literalModule = ? fileScope.findModule(literal.defaultType)
+  ok(newResolvedLiteral(literal, literalModule))
+
 proc resolveVariable*(scope: FunctionScope, variable: Identifier): Result[Identifier, string] =
   if variable notin scope:
     err(fmt"{variable.loc} variable `{variable.asl}` is not present in scope")
@@ -362,8 +366,7 @@ proc resolveLiteralInitializer(fileScope: FileScope, literalInit: LiteralInitial
 
 # resolveExpression / resolveStatement form the body-cluster cycle.
 proc resolveExpression*(fileScope: FileScope, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
-
-proc resolveStatement*(fileScope: FileScope, scope: FunctionScope, statement: Statement): Result[ResolvedStatement, string]
+proc resolveStatement*(fileScope: FileScope, funcScope: FunctionScope, statement: Statement): Result[ResolvedStatement, string]
 
 proc resolveFunctionCall(fileScope: FileScope, scope: FunctionScope, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let typ = ? fileScope.findType(fncall.root)
@@ -480,7 +483,8 @@ proc resolveMatchExpression(fileScope: FileScope, scope: FunctionScope, match: M
 proc resolveExpression*(fileScope: FileScope, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of ekLiteral:
-    ok(newResolvedExpression(expression.literal))
+    let resolvedLiteral = ? resolveLiteral(fileScope, expression.literal)
+    ok(newResolvedExpression(resolvedLiteral))
   of ekGetter:
     let resolvedGetter = ? resolveGetter(scope, expression.getter)
     ok(newResolvedExpression(resolvedGetter))
@@ -501,37 +505,35 @@ proc resolveAssignment(fileScope: FileScope, scope: FunctionScope, assignment: A
   let resolvedExpression = ? resolveExpression(fileScope, scope, assignment.expression)
   ok(newResolvedAssignment(assignment, resolvedExpression))
 
-proc resolveSetter(fileScope: FileScope, scope: FunctionScope, setter: Setter): Result[ResolvedSetter, string] =
-  let resolvedGetter = ? resolveGetter(scope, setter.target)
-  let resolvedExpression = ? resolveExpression(fileScope, scope, setter.expression)
+proc resolveSetter(fileScope: FileScope, funcScope: FunctionScope, setter: Setter): Result[ResolvedSetter, string] =
+  let resolvedGetter = ? resolveGetter(funcScope, setter.target)
+  let resolvedExpression = ? resolveExpression(fileScope, funcScope, setter.expression)
   ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
-proc resolveStatement*(fileScope: FileScope, scope: FunctionScope, statement: Statement): Result[ResolvedStatement, string] =
+proc resolveStatement*(fileScope: FileScope, funcScope: FunctionScope, statement: Statement): Result[ResolvedStatement, string] =
   case statement.kind:
   of skExpr:
-    let resolvedExpression = ? resolveExpression(fileScope, scope, statement.expression)
+    let resolvedExpression = ? resolveExpression(fileScope, funcScope, statement.expression)
     ok(newResolvedStatement(resolvedExpression))
   of skAssignment:
-    let resolvedAssignment = ? resolveAssignment(fileScope, scope, statement.assignment)
+    let resolvedAssignment = ? resolveAssignment(fileScope, funcScope, statement.assignment)
     ok(newResolvedStatement(resolvedAssignment))
   of skSetter:
-    let resolvedMutation = ? resolveSetter(fileScope, scope, statement.setter)
+    let resolvedMutation = ? resolveSetter(fileScope, funcScope, statement.setter)
     ok(newResolvedStatement(resolvedMutation))
 
 proc resolveUserFunction*(fileScope: FileScope, function: UserFunction): Result[ResolvedUserFunction, string] =
-  if function.decorators.len > 0:
-    return err(fmt"{function.loc} todo: resolve decorators in user function")
+  assert(function.decorators.len == 0, fmt"{function.loc} todo: resolve decorators in user function")
+  let resolvedFuncDef = ? resolveFunctionDef(fileScope, function.def)
 
-  let resolvedFunctionDef = ? resolveFunctionDef(fileScope, function.def)
-
-  var scope = ? newFunctionScope(resolvedFunctionDef)
-  var resolvedStatements: seq[ResolvedStatement]
+  var funcScope = ? newFunctionScope(resolvedFuncDef)
+  var resolvedStmts: seq[ResolvedStatement]
   for statement in function.statements:
-    let resolvedStatement = ? resolveStatement(fileScope, scope, statement)
-    resolvedStatements.add(resolvedStatement)
-    scope = scope.update(resolvedStatement)
+    let resolvedStatement = ? resolveStatement(fileScope, funcScope, statement)
+    resolvedStmts.add(resolvedStatement)
+    funcScope = funcScope.update(resolvedStatement)
 
-  ok(newResolvedUserFunction(function, resolvedFunctionDef, resolvedStatements))
+  ok(newResolvedUserFunction(function, resolvedFuncDef, resolvedStmts))
 
 proc resolveFunction*(fileScope: FileScope, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
@@ -558,12 +560,12 @@ proc resolveModule*(fileScope: FileScope, module: Module): Result[ResolvedModule
   ok(newResolvedModule(module, resolvedData, resolvedFunctions))
 
 proc resolveGeneric*(fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
-  var resolvedFunctionDefs: seq[ResolvedFunctionDef]
-  for funcDef in generic.funcDefs:
-    let resolvedFunctionDef = ? resolveFunctionDef(fileScope, generic, funcDef)
-    resolvedFunctionDefs.add(resolvedFunctionDef)
+  var resolvedFuncDefs: seq[ResolvedFunctionDef]
+  for def in generic.defs:
+    let resolvedFuncDef = ? resolveFunctionDef(fileScope, generic, def)
+    resolvedFuncDefs.add(resolvedFuncDef)
 
-  ok(newResolvedGeneric(generic, resolvedFunctionDefs))
+  ok(newResolvedGeneric(generic, resolvedFuncDefs))
 
 proc resolveType*(fileScope: FileScope, typ: Type): Result[ResolvedType, string] =
   assert(typ.decorators.len == 0, fmt"{typ.loc} types do not support decorators")
@@ -578,16 +580,15 @@ proc resolveType*(fileScope: FileScope, typ: Type): Result[ResolvedType, string]
 proc resolveExplicitImport*(imp: Import, impFile: parser.File): Result[seq[ResolvedImportedType], string] =
   var resolvedImpTypes: seq[ResolvedImportedType]
   for impType in imp.names:
-    let resolvedType = ? impFile.findExportedType(impType.name)
-    let resolvedImpType = newResolvedImportedType(impType, resolvedType)
+    let exportedType = ? impFile.findExportedType(impType.name)
+    let resolvedImpType = newResolvedImportedType(impType, exportedType)
     resolvedImpTypes.add(resolvedImpType)
   ok(resolvedImpTypes)
 
 proc resolveShorthandImport*(imp: Import, impFile: parser.File): Result[seq[ResolvedImportedType], string] =
   var resolvedImpTypes: seq[ResolvedImportedType]
   for typ in impFile.publicTypes:
-    let impType = newImportedType(typ.name, none(Identifier), imp.loc)
-    let resolvedImpType = newResolvedImportedType(impType, typ)
+    let resolvedImpType = newResolvedImportedType(typ)
     resolvedImpTypes.add(resolvedImpType)
   ok(resolvedImpTypes)
 

@@ -542,7 +542,7 @@ proc analyzeInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileS
     let analyzedUnionInit = ? analyzeUnionInitializer(appDef, fileDef, fileScope, module, funcScope, init.union)
     ok(newAnalyzedInitializer(analyzedUnionInit))
 
-proc analyzeBareLiteral(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope: AnalyzedFileScope, module: AnalyzedDefModule, funcScope: AnalyzedFunctionScope, literal: Literal, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
+proc analyzeBareLiteral(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope: AnalyzedFileScope, module: AnalyzedDefModule, funcScope: AnalyzedFunctionScope, literal: ResolvedLiteral, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
   ## Approach C — pick a concrete type for the bare literal.
   ##   - `expected = some(module)`  → adopt the module type. If the
   ##     module's data def is struct/union the caller wrote a literal
@@ -573,8 +573,8 @@ proc analyzeBareLiteral(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileSc
       of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
       of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
       of adkLiteral:
-        ? analyzeLiteral(argDefData.literal.resolved, literal)
-        ok(newAnalyzedLiteralInitializer(literal, concreteArgType))
+        ? analyzeLiteral(argDefData.literal.resolved, literal.parsed)
+        ok(newAnalyzedLiteralInitializer(literal.parsed, concreteArgType))
 
 proc analyzeExpression*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope: AnalyzedFileScope, module: AnalyzedDefModule, funcScope: AnalyzedFunctionScope, expression: ResolvedExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
   case expression.kind:

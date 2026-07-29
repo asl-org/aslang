@@ -37,13 +37,11 @@ type
   StructInitializer* = ref object
     structRef: StructRef
     kwargList: KeywordArgumentList
-    loc: Location
 
   UnionInitializer* = ref object
     unionRef: UnionRef
     variantName: Identifier
     kwargList: KeywordArgumentList
-    loc: Location
 
   InitializerKind* = enum
     ikLiteral, ikStruct, ikUnion
@@ -169,23 +167,23 @@ proc asl(kwargList: KeywordArgumentList): string =
   content
 
 # ----------------- StructInitializer -----------------
-proc newStructInitializer*(structRef: StructRef, kwargList: KeywordArgumentList, loc: Location): StructInitializer =
-  StructInitializer(structRef: structRef, kwargList: kwargList, loc: loc)
+proc newStructInitializer*(structRef: StructRef, kwargList: KeywordArgumentList): StructInitializer =
+  StructInitializer(structRef: structRef, kwargList: kwargList)
 
 proc structRef*(struct: StructInitializer): StructRef = struct.structRef
 proc kwargs*(struct: StructInitializer): seq[KeywordArgument] = struct.kwargList.args
-proc loc*(struct: StructInitializer): Location = struct.loc
+proc loc*(struct: StructInitializer): Location = struct.structRef.loc
 
 proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.structRef)} {asl(nonPrim.kwargList)}"
 
 # ----------------- UnionInitializer -----------------
 proc newUnionInitializer*(unionRef: UnionRef, variantName: Identifier,
-    kwargList: KeywordArgumentList, loc: Location): UnionInitializer =
+    kwargList: KeywordArgumentList): UnionInitializer =
   UnionInitializer(unionRef: unionRef, variantName: variantName,
-    kwargList: kwargList, loc: loc)
+    kwargList: kwargList)
 
-proc loc*(unionInit: UnionInitializer): Location = unionInit.loc
+proc loc*(unionInit: UnionInitializer): Location = unionInit.unionRef.loc
 proc unionRef*(unionInit: UnionInitializer): UnionRef = unionInit.unionRef
 proc variant*(unionInit: UnionInitializer): Identifier = unionInit.variantName
 proc kwargs*(unionInit: UnionInitializer): seq[KeywordArgument] = unionInit.kwargList.args
@@ -470,7 +468,7 @@ proc expand(structInit: StructInitializer, start: int): (seq[Statement], StructI
     counter = updatedCounter
 
   let generatedkwargList = newGeneratedKeywordArgumentList(expandedkwargs, structInit.kwargList.loc)
-  let generatedStructInit = newStructInitializer(structInit.structRef, generatedkwargList, structInit.loc)
+  let generatedStructInit = newStructInitializer(structInit.structRef, generatedkwargList)
   (expandedStmts, generatedStructInit, counter)
 
 proc expand(unionInit: UnionInitializer, start: int): (seq[Statement], UnionInitializer, int) =
@@ -484,7 +482,7 @@ proc expand(unionInit: UnionInitializer, start: int): (seq[Statement], UnionInit
     counter = updatedCounter
 
   let generatedkwargList = newGeneratedKeywordArgumentList(expandedkwargs, unionInit.kwargList.loc)
-  let generatedUnionInit = newUnionInitializer(unionInit.unionRef, unionInit.variant, generatedkwargList, unionInit.loc)
+  let generatedUnionInit = newUnionInitializer(unionInit.unionRef, unionInit.variant, generatedkwargList)
   (expandedStmts, generatedUnionInit, counter)
 
 proc expand(initializer: Initializer, start: int): (seq[Statement], Initializer, int) =

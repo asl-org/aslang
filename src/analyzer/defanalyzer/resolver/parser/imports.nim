@@ -69,15 +69,16 @@ type VendorRoots* = Table[string, string]
 type ImportedType* = ref object
   name: Identifier
   alias: Option[Identifier]
-  loc: Location
 
-proc newImportedType*(name: Identifier, alias: Option[Identifier],
-    loc: Location): ImportedType =
-  ImportedType(name: name, alias: alias, loc: loc)
+proc newImportedType*(name: Identifier, alias: Identifier): ImportedType =
+  ImportedType(name: name, alias: some(alias))
+
+proc newImportedType*(name: Identifier): ImportedType =
+  ImportedType(name: name, alias: none(Identifier))
 
 proc name*(n: ImportedType): Identifier = n.name
 proc alias*(n: ImportedType): Option[Identifier] = n.alias
-proc loc*(n: ImportedType): Location = n.loc
+proc loc*(n: ImportedType): Location = n.name.loc
 proc binding*(n: ImportedType): Identifier =
   if n.alias.isSome: n.alias.get else: n.name
 

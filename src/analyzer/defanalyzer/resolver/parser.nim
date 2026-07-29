@@ -872,14 +872,16 @@ proc parseCasePattern*(parser: Parser): Result[CasePattern, ParserError] =
 proc parseImportedType*(parser: Parser): Result[ImportedType, ParserError] =
   let name = ? parser.parseIdentifier()
   let maybeAs = parser.run(ws1)
-  if maybeAs.isErr:
-    return ok(newImportedType(name, none(Identifier), name.loc))
-  let maybeAsKeyword = parser.run(keywordSpec("as"))
-  if maybeAsKeyword.isErr:
-    return ok(newImportedType(name, none(Identifier), name.loc))
-  discard ? parser.run(ws1)
-  let alias = ? parser.parseIdentifier()
-  ok(newImportedType(name, some(alias), name.loc))
+  if maybeAs.isOk:
+    let maybeAsKeyword = parser.run(keywordSpec("as"))
+    if maybeAsKeyword.isOk:
+      discard ? parser.run(ws1)
+      let alias = ? parser.parseIdentifier()
+      ok(newImportedType(name, alias))
+    else:
+      ok(newImportedType(name))
+  else:
+    ok(newImportedType(name))
 
 # Spec adapter.
 let importedTypeSpec* = Spec[ImportedType](name: "import_name", parseFn: parseImportedType)
@@ -1102,29 +1104,32 @@ proc parseKwargList*(parser: Parser): Result[KeywordArgumentList, ParserError] =
     separatedBy(kwargSpec, commaWithSpacesSpec), "}"))
   newKeywordArgumentList(args, loc)
 
+proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
+  let typeRef = ? parser.parseArgumentType()
+  ok(newUnionRef(typeRef.root, typeRef.impls, typeRef.loc))
+
 # Type.Variant { fields } (bare — drives leave-as-is inference) or
 # Type[Impls].Variant { fields } (explicit-impls — escape hatch when
 # leave-as-is can't produce a fully-bound type). Both productions land
 # on the same UnionRef shape carrying an impls seq; empty means bare.
 proc parseUnionInitializer*(parser: Parser): Result[UnionInitializer, ParserError] =
-  let typeRef = ? parser.parseArgumentType()
+  let unionRef = ? parser.parseUnionRef()
   discard ? parser.run(punctuationSpec("."))
   let variant = ? parser.parseIdentifier()
   discard ? parser.run(ws0)
   let fields = ? parser.parseKwargList()
-  let unionRef = newUnionRef(typeRef.root, typeRef.impls, typeRef.loc)
-  ok(newUnionInitializer(unionRef, variant, fields, typeRef.loc))
+  ok(newUnionInitializer(unionRef, variant, fields))
 
 # Either `Type { fields }` (bare) or `Type[Impls] { fields }` (explicit
 # impls, used for phantom-typed structs whose module declares a
 # `struct(A):` header). Both productions land on the same StructRef
 # shape carrying an impls seq; empty means bare.
 proc parseStructInitializer*(parser: Parser): Result[StructInitializer, ParserError] =
-  let typeRef = ? parser.parseArgumentType()
+  let argType = ? parser.parseArgumentType()
   discard ? parser.run(ws0)
   let fields = ? parser.parseKwargList()
-  let structRef = newStructRef(typeRef.root, typeRef.impls, typeRef.loc)
-  ok(newStructInitializer(structRef, fields, typeRef.loc))
+  let structRef = newStructRef(argType)
+  ok(newStructInitializer(structRef, fields))
 
 proc parseInitializer*(parser: Parser): Result[Initializer, ParserError] =
   var errors: seq[ParserError]
@@ -1518,7 +1523,7 @@ proc parseGeneric*(parser: Parser): Result[Generic, ParserError] =
   if bodyResult.isErr:
     bodyResult.error.fatal = true
     return err(bodyResult.error)
-  newGeneric(@[], h.public, h.name, bodyResult.get, h.loc)
+  ok(newGeneric(@[], h.public, h.name, bodyResult.get, h.loc))
 
 
 proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =

@@ -11,35 +11,28 @@ import statement
 type
   ResolvedUserFunction* = ref object
     parsed: UserFunction
-    funcDef: ResolvedFunctionDef
+    def: ResolvedFunctionDef
     statements: seq[ResolvedStatement]
 
+proc newResolvedUserFunction*(parsed: UserFunction,
+    def: ResolvedFunctionDef,
+    statements: seq[ResolvedStatement]): ResolvedUserFunction =
+  ResolvedUserFunction(parsed: parsed, def: def, statements: statements)
+
+proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
+proc parsed*(function: ResolvedUserFunction): UserFunction = function.parsed
+proc name*(function: ResolvedUserFunction): Identifier = function.def.name
+proc arity*(function: ResolvedUserFunction): int = function.def.arity
+proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.def
+proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
+
+type
   ResolvedFunctionKind* = enum
     rfkExtern, rfkUser
   ResolvedFunction* = ref object
     case kind: ResolvedFunctionKind
     of rfkExtern: extern: ResolvedExternFunction
     of rfkUser: user: ResolvedUserFunction
-
-# =====================================================================
-# Functions (UserFunction, tagged Function)
-# =====================================================================
-
-# ---- ResolvedUserFunction ----
-
-proc newResolvedUserFunction*(parsed: UserFunction,
-    funcDef: ResolvedFunctionDef,
-    statements: seq[ResolvedStatement]): ResolvedUserFunction =
-  ResolvedUserFunction(parsed: parsed, funcDef: funcDef, statements: statements)
-
-proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
-proc parsed*(function: ResolvedUserFunction): UserFunction = function.parsed
-proc name*(function: ResolvedUserFunction): Identifier = function.funcDef.name
-proc arity*(function: ResolvedUserFunction): int = function.funcDef.arity
-proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.funcDef
-proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
-
-# ---- ResolvedFunction (tagged union) ----
 
 proc newResolvedFunction*(extern: ResolvedExternFunction): ResolvedFunction =
   ResolvedFunction(kind: rfkExtern, extern: extern)

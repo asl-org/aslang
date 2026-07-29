@@ -52,11 +52,9 @@ proc findModule*(fileDef: AnalyzedDefFile, module: ResolvedModule, loc: Location
   of atkModule: ok(foundType.module)
   of atkGeneric: err(fmt"{loc} expected `{foundType.name.asl}` to be a module but found generic")
 
-proc defaultLiteralType*(fileDef: AnalyzedDefFile, literal: Literal): Result[AnalyzedArgumentType, string] =
-  let literalType = literal.defaultType
-  let module = ? fileDef.resolved.scope.findModule(literalType)
-  let maybeResolvedLiteralModule = fileDef.scope.findModule(module, literal.loc)
+proc defaultLiteralType*(fileDef: AnalyzedDefFile, literal: ResolvedLiteral): Result[AnalyzedArgumentType, string] =
+  let maybeResolvedLiteralModule = fileDef.scope.findModule(literal.default, literal.loc)
   if maybeResolvedLiteralModule.isErr:
-    err(fmt"{literal.loc} bare literal defaults to `{literalType.asl}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
+    err(fmt"{literal.loc} bare literal defaults to `{literal.default.name.asl}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
   else:
     ok(newAnalyzedArgumentType(maybeResolvedLiteralModule.get))

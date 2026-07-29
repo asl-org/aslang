@@ -14,6 +14,11 @@ type ResolvedImportedType* = ref object
 proc newResolvedImportedType*(parsed: ImportedType, typ: Type): ResolvedImportedType =
   ResolvedImportedType(parsed: parsed, typ: typ)
 
+# TODO: Fix the location mess up for error reporting
+proc newResolvedImportedType*(typ: Type): ResolvedImportedType =
+  let parsed = newImportedType(typ.name)
+  ResolvedImportedType(parsed: parsed, typ: typ)
+
 proc parsed*(t: ResolvedImportedType): ImportedType = t.parsed
 proc name*(t: ResolvedImportedType): Identifier = t.parsed.name
 proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding

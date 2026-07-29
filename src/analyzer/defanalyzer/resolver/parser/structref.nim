@@ -13,18 +13,15 @@ import ./argtype
 # initialise their GenericImplMap from the impls seq directly (empty
 # seq → empty map, non-empty → pre-populated).
 type StructRef* = ref object
-  module: Identifier
-  impls: seq[ArgumentType]
-  loc: Location
+  argType: ArgumentType
 
-proc newStructRef*(module: Identifier, impls: seq[ArgumentType],
-    loc: Location): StructRef =
-  StructRef(module: module, impls: impls, loc: loc)
+proc newStructRef*(argType: ArgumentType): StructRef =
+  StructRef(argType: argType)
 
-proc module*(s: StructRef): Identifier = s.module
-proc impls*(s: StructRef): seq[ArgumentType] = s.impls
-proc argType*(s: StructRef): ArgumentType = newArgumentType(s.module, s.impls)
-proc loc*(s: StructRef): Location = s.loc
+proc module*(s: StructRef): Identifier = s.argType.root
+proc impls*(s: StructRef): seq[ArgumentType] = s.argType.impls
+proc argType*(s: StructRef): ArgumentType = s.argType
+proc loc*(s: StructRef): Location = s.argType.loc
 proc asl*(s: StructRef): string =
   if s.impls.len == 0:
     asl(s.module)

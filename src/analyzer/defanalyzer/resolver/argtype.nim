@@ -50,9 +50,9 @@ proc `==`*(a, b: ResolvedGenericArgumentType): bool = a.hash == b.hash
 proc asl*(argType: ResolvedGenericArgumentType): string = argType.generic.name.asl
 
 proc satisfies*(argType: ResolvedGenericArgumentType, base: Generic): Result[void, string] =
-  for funcDef in base.funcDefs:
-    let maybeFuncDefs = argType.parsed.findFunctionDefs(funcDef.name, funcDef.arity)
-    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+  for def in base.defs:
+    let maybeFuncDefs = argType.parsed.findFunctionDefs(def.name, def.arity)
+    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
 # ---- ResolvedModuleArgumentType ----
@@ -91,9 +91,9 @@ proc asl*(argType: ResolvedModuleArgumentType): string =
     fmt"{argType.parsed.name.asl}[{implsJoined}]"
 
 proc satisfies*(argType: ResolvedModuleArgumentType, base: Generic): Result[void, string] =
-  for funcDef in base.funcDefs:
-    let maybeFuncDefs = argType.module.findFunctionDefs(funcDef.name, funcDef.arity)
-    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{base.name.asl}`")
+  for def in base.defs:
+    let maybeFuncDefs = argType.module.findFunctionDefs(def.name, def.arity)
+    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
 # ---- ResolvedArgumentType (outer tagged union) ----
@@ -142,10 +142,8 @@ proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgu
   case argType.kind:
   of ratkModule: argType
   of ratkGeneric:
-    if argType.generic.parsed != generic:
-      argType
-    else:
-      concrete
+    if argType.generic.parsed != generic: argType
+    else: concrete
 
 proc satisfies*(argType: ResolvedArgumentType, base: Generic): Result[void, string] =
   case argType.kind:

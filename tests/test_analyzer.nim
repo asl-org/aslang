@@ -741,6 +741,9 @@ public module u8:
   public func add(a: u8, b: u8): u8
     a
 
+public module i32:
+  literal: "i32"
+
 public module M:
   public func go(): u8
     u8.add(10, 20)
@@ -755,6 +758,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module u8:
   literal: "u8"
+
+public module i32:
+  literal: "i32"
 
 public module Pair:
   struct:
@@ -774,6 +780,9 @@ public module Pair:
     let (r, dir) = analyzeSingle("""
 public module u8:
   literal: "u8"
+
+public module i32:
+  literal: "i32"
 
 public module Sig:
   union:
@@ -862,6 +871,9 @@ public module M:
 public module u8:
   literal: "u8"
 
+public module i32:
+  literal: "i32"
+
 public module Pair:
   struct:
     a: u8
@@ -883,6 +895,9 @@ public module u8:
 
   public func add(a: u8, b: u8): u8
     a
+
+public module i32:
+  literal: "i32"
 
 public module M:
   public func go(): u8
@@ -921,6 +936,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module u8:
   literal: "u8"
+
+public module i32:
+  literal: "i32"
 
 public module Pair:
   struct:
