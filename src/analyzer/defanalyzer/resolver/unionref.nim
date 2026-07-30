@@ -7,18 +7,21 @@ import argtype
 
 type ResolvedUnionRef* = ref object
   parsed: UnionRef
-  module: Module
-  impls: seq[ResolvedArgumentType]
+  argType: ResolvedModuleArgumentType
+  union: UnionDef
+  variant: VariantDef
 
-proc newResolvedUnionRef*(parsed: UnionRef, module: Module,
-    impls: seq[ResolvedArgumentType]): ResolvedUnionRef =
-  ## One-shape constructor. `impls` is empty when the surface
-  ## form was `Module.Variant { ... }` and non-empty (arity + constraint
-  ## checked) when the surface form was `Module[Impl, ...].Variant { ... }`.
-  ResolvedUnionRef(parsed: parsed, module: module, impls: impls)
+proc newResolvedUnionRef*(parsed: UnionRef, argType: ResolvedModuleArgumentType, union: UnionDef, variant: VariantDef): ResolvedUnionRef =
+  ResolvedUnionRef(parsed: parsed, argType: argType, union: union, variant: variant)
 
-proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
-proc module*(u: ResolvedUnionRef): Module = u.module
-proc impls*(u: ResolvedUnionRef): seq[ResolvedArgumentType] = u.impls
+proc newResolvedUnionRef*(parsed: UnionRef, module: Module, union: UnionDef, variant: VariantDef): ResolvedUnionRef =
+  let moduleArgType = newResolvedModuleArgumentType(module, parsed.loc)
+  newResolvedUnionRef(parsed, moduleArgType, union, variant)
+
 proc loc*(u: ResolvedUnionRef): Location = u.parsed.loc
-proc argType*(u: ResolvedUnionRef): ResolvedModuleArgumentType = newResolvedModuleArgumentType(u.module, u.impls, u.loc)
+proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
+proc module*(u: ResolvedUnionRef): Module = u.argType.module
+proc impls*(u: ResolvedUnionRef): seq[ResolvedArgumentType] = u.argType.impls
+proc argType*(u: ResolvedUnionRef): ResolvedModuleArgumentType = u.argType
+proc union*(u: ResolvedUnionRef): UnionDef = u.union
+proc variant*(u: ResolvedUnionRef): VariantDef = u.variant

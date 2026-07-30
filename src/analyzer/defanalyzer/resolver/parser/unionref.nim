@@ -8,20 +8,20 @@ import ./argtype
 # ----------------- UnionRef -----------------
 # Mirror of StructRef: same one-shape module+impls layout.
 type UnionRef* = ref object
-  module: Identifier
-  impls: seq[ArgumentType]
-  loc: Location
+  argType: ArgumentType
+  variant: Identifier
 
-proc newUnionRef*(module: Identifier, impls: seq[ArgumentType],
-    loc: Location): UnionRef =
-  UnionRef(module: module, impls: impls, loc: loc)
+proc newUnionRef*(argType: ArgumentType, variant: Identifier): UnionRef =
+  UnionRef(argType: argType, variant: variant)
 
-proc module*(u: UnionRef): Identifier = u.module
-proc impls*(u: UnionRef): seq[ArgumentType] = u.impls
-proc loc*(u: UnionRef): Location = u.loc
+proc module*(u: UnionRef): Identifier = u.argType.root
+proc impls*(u: UnionRef): seq[ArgumentType] = u.argType.impls
+proc loc*(u: UnionRef): Location = u.argType.loc
+proc argType*(u: UnionRef): ArgumentType = u.argType
+proc variant*(u: UnionRef): Identifier = u.variant
 proc asl*(u: UnionRef): string =
   if u.impls.len == 0:
-    asl(u.module)
+    fmt"{asl(u.module)}.{u.variant.asl}"
   else:
     let inner = u.impls.mapIt(asl(it)).join(", ")
-    fmt"{asl(u.module)}[{inner}]"
+    fmt"{asl(u.module)}[{inner}].{u.variant.asl}"

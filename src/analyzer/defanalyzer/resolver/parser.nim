@@ -1106,7 +1106,9 @@ proc parseKwargList*(parser: Parser): Result[KeywordArgumentList, ParserError] =
 
 proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
   let typeRef = ? parser.parseArgumentType()
-  ok(newUnionRef(typeRef.root, typeRef.impls, typeRef.loc))
+  discard ? parser.run(punctuationSpec("."))
+  let variant = ? parser.parseIdentifier()
+  ok(newUnionRef(typeRef, variant))
 
 # Type.Variant { fields } (bare — drives leave-as-is inference) or
 # Type[Impls].Variant { fields } (explicit-impls — escape hatch when
@@ -1114,21 +1116,23 @@ proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
 # on the same UnionRef shape carrying an impls seq; empty means bare.
 proc parseUnionInitializer*(parser: Parser): Result[UnionInitializer, ParserError] =
   let unionRef = ? parser.parseUnionRef()
-  discard ? parser.run(punctuationSpec("."))
-  let variant = ? parser.parseIdentifier()
   discard ? parser.run(ws0)
   let fields = ? parser.parseKwargList()
-  ok(newUnionInitializer(unionRef, variant, fields))
+  ok(newUnionInitializer(unionRef, fields))
+
 
 # Either `Type { fields }` (bare) or `Type[Impls] { fields }` (explicit
 # impls, used for phantom-typed structs whose module declares a
 # `struct(A):` header). Both productions land on the same StructRef
 # shape carrying an impls seq; empty means bare.
-proc parseStructInitializer*(parser: Parser): Result[StructInitializer, ParserError] =
+proc parseStructRef*(parser: Parser): Result[StructRef, ParserError] =
   let argType = ? parser.parseArgumentType()
+  ok(newStructRef(argType))
+
+proc parseStructInitializer*(parser: Parser): Result[StructInitializer, ParserError] =
+  let structRef = ? parser.parseStructRef()
   discard ? parser.run(ws0)
   let fields = ? parser.parseKwargList()
-  let structRef = newStructRef(argType)
   ok(newStructInitializer(structRef, fields))
 
 proc parseInitializer*(parser: Parser): Result[Initializer, ParserError] =

@@ -419,24 +419,43 @@ proc resolveUnionRef(fileScope: FileScope, unionRef: UnionRef): Result[ResolvedU
   ## resolveModuleArgumentType so the analyzer can seed its
   ## GenericImplMap from the seq directly.
   let unionModule = ? fileScope.findModule(unionRef.module)
-  if unionRef.impls.len == 0:
-    return ok(newResolvedUnionRef(unionRef, unionModule, @[]))
-  let syntheticArgType = newArgumentType(unionRef.module, unionRef.impls)
-  let resolvedArgType = ? resolveArgumentType(fileScope, syntheticArgType)
-  ok(newResolvedUnionRef(unionRef, unionModule, resolvedArgType.module.impls))
+  if unionModule.data.isNone:
+    err(fmt"{unionRef.loc} expected module `{unionRef.module.asl}` to be union but found none")
+  else:
+    let moduleData = unionModule.data.get
+    case moduleData.kind:
+    of ddkLiteral: err(fmt"{unionRef.loc} expected module `{unionRef.module.asl}` to be union but found literal")
+    of ddkStruct: err(fmt"{unionRef.loc} expected module `{unionRef.module.asl}` to be union but found struct")
+    of ddkUnion:
+      let union = moduleData.union
+      let variant = ? union.findVariant(unionRef.variant)
+      if unionRef.impls.len == 0:
+        ok(newResolvedUnionRef(unionRef, unionModule, union, variant))
+      else:
+        let resolvedArgType = ? resolveModuleArgumentType(fileScope, unionRef.argType, unionModule)
+        ok(newResolvedUnionRef(unionRef, resolvedArgType, union, variant))
+
+proc resolveKeywordArguments(fileScope: FileScope, scope: FunctionScope, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
+  var resolvedKwargs = newSeq[ResolvedKeywordArgument](variant.fields.len)
+  var fieldMap: Table[int, Location]
+  for kwarg in kwargList.items:
+    let fieldId = ? variant.findFieldId(kwarg.name)
+    if fieldId in fieldMap:
+      let loc = fieldMap[fieldId]
+      return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {loc}")
+    else:
+      let resolvedExpression = ? resolveExpression(fileScope, scope, kwarg.expression)
+      resolvedKwargs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
+      fieldMap[fieldId] = kwarg.loc
+
+  if fieldMap.len != variant.fields.len:
+    err(fmt"{kwargList.loc} expected `{variant.fields.len}` fields but `{fieldMap.len}` were given")
+  else:
+    ok(resolvedKwargs)
 
 proc resolveUnionInitializer(fileScope: FileScope, scope: FunctionScope, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
   let resolvedUnionRef = ? resolveUnionRef(fileScope, unionInit.unionRef)
-  let initModule = module(resolvedUnionRef)
-  let union = ? initModule.union(unionInit.loc)
-  let variant = ? union.findVariant(unionInit.variant)
-  if unionInit.kwargs.len != variant.fields.len:
-    return err(fmt"{unionInit.loc} union `{initModule.name.asl}` expects `{variant.fields.len}` but `{unionInit.kwargs.len}` were given")
-  var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](variant.fields.len)
-  for kwarg in unionInit.kwargs:
-    let fieldId = ? variant.findFieldId(kwarg.name)
-    let resolvedExpression = ? resolveExpression(fileScope, scope, kwarg.expression)
-    resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
+  let resolvedKeywordArgs = ? resolveKeywordArguments(fileScope, scope, resolvedUnionRef.variant, unionInit.kwargList)
   ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
 
 proc resolveInitializer(fileScope: FileScope, scope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =

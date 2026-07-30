@@ -450,7 +450,9 @@ public module M:
     check r.isOk
 
   test "union initializer with extra fields is rejected":
-    # `Status.Ok` has 1 field (`value: Any`). Passing 2 kwargs must fail.
+    # `Status.Ok` has 1 field (`value: Any`). The extra kwarg is
+    # rejected per-field — `extra` is not a field of `Ok`, so the
+    # kwarg walk's findFieldId fires before any count check.
     let (r, dir) = resolveFiles([
       ("entry.asl", """
 import { u8, Status, Any, Error } from "./base.aslr"
@@ -463,7 +465,7 @@ public module M:
     ])
     cleanupDir(dir)
     check r.isErr
-    check errorContains(r.error, "expects")
+    check errorContains(r.error, "does not exist")
 
   test "union initializer with missing fields is rejected":
     # `Status.Ok` has 1 field. Passing 0 kwargs (`{}`) must fail.

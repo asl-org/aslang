@@ -56,10 +56,6 @@ proc struct*(m: Module, loc: Location): Result[StructDef, string] =
   if m.data.isSome: m.data.get.struct(m.name)
   else: err(fmt"{loc} module `{m.name.asl}` is not a struct")
 
-proc union*(m: Module, loc: Location): Result[UnionDef, string] =
-  if m.data.isSome: m.data.get.union(m.name)
-  else: err(fmt"{loc} module `{m.name.asl}` is not a union")
-
 proc externFunctions*(m: Module): seq[ExternFunction] =
   var externFuncs: seq[ExternFunction]
   for fn in m.functions:

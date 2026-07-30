@@ -168,7 +168,6 @@ proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: 
 proc resolved*(init: AnalyzedUnionInitializer): ResolvedUnionInitializer = init.resolved
 proc loc*(init: AnalyzedUnionInitializer): Location = init.resolved.loc
 proc unionRef*(init: AnalyzedUnionInitializer): AnalyzedUnionRef = init.unionRef
-proc module*(init: AnalyzedUnionInitializer): Module = init.resolved.module
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedArgumentType = init.argType
 proc variant*(init: AnalyzedUnionInitializer): ResolvedVariant = init.variant
 proc kwargs*(init: AnalyzedUnionInitializer): seq[AnalyzedKeywordArgument] = init.kwargs

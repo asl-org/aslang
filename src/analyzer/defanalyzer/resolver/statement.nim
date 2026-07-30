@@ -133,16 +133,6 @@ proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.s
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 
-proc impls*(struct: ResolvedStructInitializer): seq[ResolvedArgumentType] =
-  ## Delegates to the underlying structRef. Empty === bare initializer,
-  ## non-empty === explicit-impls initializer.
-  ##
-  ## Invariant: every entry is arity- and constraint-validated at
-  ## resolve time by resolveModuleArgumentType (see the module-context
-  ## overload above). Downstream consumers can treat this seq as a
-  ## provably valid value — no need to re-check.
-  struct.structRef.impls
-
 # ---- ResolvedUnionInitializer ----
 
 proc newResolvedUnionInitializer*(parsed: UnionInitializer,
@@ -154,17 +144,7 @@ proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
 proc unionRef*(init: ResolvedUnionInitializer): ResolvedUnionRef = init.unionRef
 proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
 proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
-proc module*(init: ResolvedUnionInitializer): Module = module(init.unionRef)
 proc variant*(init: ResolvedUnionInitializer): Identifier = init.parsed.variant
-
-proc impls*(init: ResolvedUnionInitializer): seq[ResolvedArgumentType] =
-  ## Delegates to the underlying unionRef. Empty === bare initializer,
-  ## non-empty === explicit-impls initializer.
-  ##
-  ## Invariant: every entry is arity- and constraint-validated at
-  ## resolve time by resolveModuleArgumentType. Downstream consumers
-  ## can treat this seq as a provably valid value — no need to re-check.
-  init.unionRef.impls
 
 # ---- ResolvedInitializer ----
 

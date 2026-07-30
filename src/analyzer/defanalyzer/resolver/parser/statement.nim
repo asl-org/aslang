@@ -40,7 +40,6 @@ type
 
   UnionInitializer* = ref object
     unionRef: UnionRef
-    variantName: Identifier
     kwargList: KeywordArgumentList
 
   InitializerKind* = enum
@@ -160,9 +159,12 @@ proc newGeneratedKeywordArgumentList(args: seq[KeywordArgument], loc: Location):
   assert(maybeSuccess.isOk, $(maybeSuccess.error))
   KeywordArgumentList(args: args, loc: loc)
 
+proc items*(kwargList: KeywordArgumentList): seq[KeywordArgument] = kwargList.args
+proc loc*(kwargList: KeywordArgumentList): Location = kwargList.loc
+
 proc asl(kwargList: KeywordArgumentList): string =
   var content: string
-  let inner = kwargList.args.mapIt(asl(it)).join(", ")
+  let inner = kwargList.items.mapIt(asl(it)).join(", ")
   content.add(fmt"{{ {inner} }}")
   content
 
@@ -178,18 +180,17 @@ proc asl(nonPrim: StructInitializer): string =
   fmt"{asl(nonPrim.structRef)} {asl(nonPrim.kwargList)}"
 
 # ----------------- UnionInitializer -----------------
-proc newUnionInitializer*(unionRef: UnionRef, variantName: Identifier,
-    kwargList: KeywordArgumentList): UnionInitializer =
-  UnionInitializer(unionRef: unionRef, variantName: variantName,
-    kwargList: kwargList)
+proc newUnionInitializer*(unionRef: UnionRef, kwargList: KeywordArgumentList): UnionInitializer =
+  UnionInitializer(unionRef: unionRef, kwargList: kwargList)
 
 proc loc*(unionInit: UnionInitializer): Location = unionInit.unionRef.loc
+proc variant*(unionInit: UnionInitializer): Identifier = unionInit.unionRef.variant
 proc unionRef*(unionInit: UnionInitializer): UnionRef = unionInit.unionRef
-proc variant*(unionInit: UnionInitializer): Identifier = unionInit.variantName
+proc kwargList*(unionInit: UnionInitializer): KeywordArgumentList = unionInit.kwargList
 proc kwargs*(unionInit: UnionInitializer): seq[KeywordArgument] = unionInit.kwargList.args
 
 proc asl(unionInit: UnionInitializer): string =
-  fmt"{asl(unionInit.unionRef)}.{asl(unionInit.variantName)} {asl(unionInit.kwargList)}"
+  fmt"{asl(unionInit.unionRef)} {asl(unionInit.kwargList)}"
 
 # ----------------- Initializer -----------------
 proc newInitializer*(literal: LiteralInitializer): Initializer =
@@ -482,7 +483,7 @@ proc expand(unionInit: UnionInitializer, start: int): (seq[Statement], UnionInit
     counter = updatedCounter
 
   let generatedkwargList = newGeneratedKeywordArgumentList(expandedkwargs, unionInit.kwargList.loc)
-  let generatedUnionInit = newUnionInitializer(unionInit.unionRef, unionInit.variant, generatedkwargList)
+  let generatedUnionInit = newUnionInitializer(unionInit.unionRef, generatedkwargList)
   (expandedStmts, generatedUnionInit, counter)
 
 proc expand(initializer: Initializer, start: int): (seq[Statement], Initializer, int) =

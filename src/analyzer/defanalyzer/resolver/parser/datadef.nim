@@ -57,9 +57,3 @@ proc struct*(db: DataDef, module: Identifier): Result[StructDef, string] =
   of ddkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
   of ddkUnion: err(fmt"{db.loc} module `{module.asl}` is a union")
   of ddkStruct: ok(db.struct)
-
-proc union*(db: DataDef, module: Identifier): Result[UnionDef, string] =
-  case db.kind:
-  of ddkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
-  of ddkStruct: err(fmt"{db.loc} module `{module.asl}` is a struct")
-  of ddkUnion: ok(db.union)
