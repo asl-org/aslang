@@ -6,8 +6,6 @@ import ./error
 import ./identifiers
 import ./decorator
 
-import ./structdef
-import ./uniondef
 import ./datadef
 import ./funcdef
 import ./externfunc
@@ -51,10 +49,6 @@ proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
 proc hash*(m: Module): Hash = m.loc.hash
 proc `==`*(a, b: Module): bool = a.hash == b.hash
-
-proc struct*(m: Module, loc: Location): Result[StructDef, string] =
-  if m.data.isSome: m.data.get.struct(m.name)
-  else: err(fmt"{loc} module `{m.name.asl}` is not a struct")
 
 proc externFunctions*(m: Module): seq[ExternFunction] =
   var externFuncs: seq[ExternFunction]

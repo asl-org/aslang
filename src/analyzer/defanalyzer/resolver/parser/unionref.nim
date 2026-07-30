@@ -6,7 +6,10 @@ import ./identifiers
 import ./argtype
 
 # ----------------- UnionRef -----------------
-# Mirror of StructRef: same one-shape module+impls layout.
+# The receiver arg-type (module root + possibly-empty impls) plus the
+# variant name — the `Type[.Impls].Variant` production. Empty impls
+# === the bare surface form; downstream layers initialise their
+# GenericImplMap from the impls seq directly.
 type UnionRef* = ref object
   argType: ArgumentType
   variant: Identifier

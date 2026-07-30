@@ -825,7 +825,7 @@ public module Holder:
 
 public module M:
   public func go(): u32
-    h = Holder[i32] { value: 42 }
+    h = Holder { value: 42 }
     u32 0
 """)
     cleanupDir(dir)

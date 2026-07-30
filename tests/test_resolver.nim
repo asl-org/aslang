@@ -405,7 +405,7 @@ public module M:
     ])
     cleanupDir(dir)
     check r.isErr
-    check errorContains(r.error, "expects")
+    check errorContains(r.error, "expected")
 
 suite "resolver — struct/union initializer field mapping":
   # Domain invariant (from grammar.md): a struct/union initializer's
@@ -413,12 +413,15 @@ suite "resolver — struct/union initializer field mapping":
   # No extras, no missing, no duplicates. This suite pins the four cells
   # per initializer × per case so the invariant stays visible to future
   # readers. Some tests fail at parse time (parser AST constructors —
-  # `newKeywordArgumentList` catches empty + duplicate kwargs); the rest
-  # fail at the resolver's count-equality check. Either way the domain
-  # rule holds.
+  # `newKeywordArgumentList` catches empty + duplicate kwargs). Extras
+  # are rejected per-field by the kwarg walk's findFieldId; undersupply
+  # falls to the count check ("expected N fields but M were given").
+  # Either way the domain rule holds.
 
   test "struct initializer with extra fields is rejected":
-    # `Error` has 2 fields (code, message). Passing 3 kwargs must fail.
+    # `Error` has 2 fields (code, message). The extra kwarg is
+    # rejected per-field — `extra` is not a field of `Error`, so
+    # findFieldId fires before any count check.
     let (r, dir) = resolveFiles([
       ("entry.asl", """
 import { u8, u32, Error, String } from "./base.aslr"
@@ -431,7 +434,7 @@ public module M:
     ])
     cleanupDir(dir)
     check r.isErr
-    check errorContains(r.error, "expects")
+    check errorContains(r.error, "is not present")
 
   test "union initializer with exact fields resolves":
     # `Status.Ok` has 1 field (`value: Any`). Passing 1 kwarg with
@@ -552,7 +555,7 @@ public module M:
     ])
     cleanupDir(dir)
     check r.isErr
-    check errorContains(r.error, "expects")
+    check errorContains(r.error, "expected")
 
   test "struct initializer with a wrong field name is rejected":
     # Right count but wrong name. `Error` has (code, message);

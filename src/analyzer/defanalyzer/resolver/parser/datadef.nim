@@ -51,9 +51,3 @@ proc asl*(db: DataDef, level: int, indentWidth: uint32): seq[string] =
   of ddkLiteral: db.literal.asl(level, indentWidth)
   of ddkStruct: db.struct.asl(level, indentWidth)
   of ddkUnion: db.union.asl(level, indentWidth)
-
-proc struct*(db: DataDef, module: Identifier): Result[StructDef, string] =
-  case db.kind:
-  of ddkLiteral: err(fmt"{db.loc} module `{module.asl}` is a literal")
-  of ddkUnion: err(fmt"{db.loc} module `{module.asl}` is a union")
-  of ddkStruct: ok(db.struct)

@@ -101,6 +101,8 @@ proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string]
 proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
 
+proc arity(argList: ArgumentList): int = argList.args.len
+
 proc asl(argList: ArgumentList): string =
   var content: string
   let inner = argList.args.mapIt(asl(it)).join(", ")
@@ -117,6 +119,7 @@ proc loc*(fncall: FunctionCall): Location = fncall.root.loc
 proc root*(fncall: FunctionCall): Identifier = fncall.root
 proc name*(fncall: FunctionCall): Identifier = fncall.name
 proc args*(fncall: FunctionCall): seq[Expression] = fncall.argList.args
+proc arity*(fncall: FunctionCall): int = fncall.argList.arity
 
 proc asl(fncall: FunctionCall): string =
   fmt"{asl(fncall.root)}.{asl(fncall.name)}{asl(fncall.argList)}"
@@ -174,6 +177,7 @@ proc newStructInitializer*(structRef: StructRef, kwargList: KeywordArgumentList)
 
 proc structRef*(struct: StructInitializer): StructRef = struct.structRef
 proc kwargs*(struct: StructInitializer): seq[KeywordArgument] = struct.kwargList.args
+proc kwargList*(struct: StructInitializer): KeywordArgumentList = struct.kwargList
 proc loc*(struct: StructInitializer): Location = struct.structRef.loc
 
 proc asl(nonPrim: StructInitializer): string =

@@ -365,59 +365,65 @@ proc resolveLiteralInitializer(fileScope: FileScope, literalInit: LiteralInitial
   ok(newResolvedLiteralInitializer(literalInit, resolvedArgType))
 
 # resolveExpression / resolveStatement form the body-cluster cycle.
-proc resolveExpression*(fileScope: FileScope, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
+proc resolveExpression*(fileScope: FileScope, funcScope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
 proc resolveStatement*(fileScope: FileScope, funcScope: FunctionScope, statement: Statement): Result[ResolvedStatement, string]
 
-proc resolveFunctionCall(fileScope: FileScope, scope: FunctionScope, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
+proc resolveFunctionCall(fileScope: FileScope, funcScope: FunctionScope, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let typ = ? fileScope.findType(fncall.root)
-  let funcDefs = ? typ.findFunctionDefs(fncall.name, fncall.args.len)
-  if funcDefs.len == 0:
+  let defs = ? typ.findFunctionDefs(fncall.name, fncall.arity)
+  if defs.len == 0:
     err(fmt"{fncall.loc} generic `{typ.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
   else:
     var resolvedArgs: seq[ResolvedExpression]
     for arg in fncall.args:
-      let resolvedArg = ? resolveExpression(fileScope, scope, arg)
+      let resolvedArg = ? resolveExpression(fileScope, funcScope, arg)
       resolvedArgs.add(resolvedArg)
     ok(newResolvedFunctionCall(fncall, typ, resolvedArgs))
 
 proc resolveStructRef(fileScope: FileScope, structRef: StructRef): Result[ResolvedStructRef, string] =
-  ## Resolves a StructRef into the one-shape (module + impls).
-  ## Validates the "receiver-declares-requires ↔ impls-provided" match
-  ## and delegates to resolveModuleArgumentType so the impls
-  ## seq is arity- and constraint-checked at resolve time.
   let structModule = ? fileScope.findModule(structRef.module)
   if structModule.data.isNone:
-    return err(fmt"{structRef.loc} module `{structModule.name.asl}` does not define a data block")
-  let moduleData = structModule.data.get
-  case moduleData.kind:
-  of ddkLiteral:
-    err(fmt"{structRef.loc} module `{structModule.name.asl}` is a literal type")
-  of ddkUnion:
-    err(fmt"{structRef.loc} module `{structModule.name.asl}` is a union type")
-  of ddkStruct:
-    let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, structRef.argType, structModule)
-    ok(newResolvedStructRef(structRef, resolvedModuleArgType))
-
-proc resolveStructInitializer(fileScope: FileScope, scope: FunctionScope, struct: StructInitializer): Result[ResolvedStructInitializer, string] =
-  let resolvedStructRef = ? resolveStructRef(fileScope, struct.structRef)
-  let structModule = module(resolvedStructRef)
-  var structBlock = ? structModule.struct(struct.loc)
-  if struct.kwargs.len != structBlock.fields.len:
-    err(fmt"{struct.loc} struct `{structModule.name.asl}` expects `{structBlock.fields.len}` but `{struct.kwargs.len}` were given")
+    err(fmt"{structRef.loc} module `{structModule.name.asl}` does not define a data block")
   else:
-    var resolvedKeywordArgs = newSeq[ResolvedKeywordArgument](structBlock.fields.len)
-    for kwarg in struct.kwargs:
-      let fieldId = ? structBlock.findFieldId(kwarg.name)
-      let resolvedExpression = ? resolveExpression(fileScope, scope, kwarg.expression)
-      resolvedKeywordArgs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
-    ok(newResolvedStructInitializer(struct, resolvedStructRef, resolvedKeywordArgs))
+    let moduleData = structModule.data.get
+    case moduleData.kind:
+    of ddkLiteral: err(fmt"{structRef.loc} expected module `{structRef.module.asl}` to be struct but found literal")
+    of ddkUnion: err(fmt"{structRef.loc} expected module `{structRef.module.asl}` to be struct but found union")
+    of ddkStruct:
+      let struct = moduleData.struct
+      if structRef.impls.len == 0:
+        if struct.header.requires.len == 0:
+          ok(newResolvedStructRef(structRef, structModule, struct))
+        else:
+          err(fmt"{structRef.loc} module `{structRef.module.asl}` expects {struct.header.requires.len} impls")
+      else:
+        let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, structRef.argType, structModule)
+        ok(newResolvedStructRef(structRef, resolvedModuleArgType, struct))
+
+proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, struct: StructDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
+  var resolvedKwargs = newSeq[ResolvedKeywordArgument](struct.fields.len)
+  var fieldMap: Table[int, Location]
+  for kwarg in kwargList.items:
+    let fieldId = ? struct.findFieldId(kwarg.name)
+    if fieldId in fieldMap:
+      let loc = fieldMap[fieldId]
+      return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {loc}")
+    else:
+      let resolvedExpression = ? resolveExpression(fileScope, funcScope, kwarg.expression)
+      resolvedKwargs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
+      fieldMap[fieldId] = kwarg.loc
+
+  if fieldMap.len != struct.fields.len:
+    err(fmt"{kwargList.loc} expected `{struct.fields.len}` fields but `{fieldMap.len}` were given")
+  else:
+    ok(resolvedKwargs)
+
+proc resolveStructInitializer(fileScope: FileScope, funcScope: FunctionScope, init: StructInitializer): Result[ResolvedStructInitializer, string] =
+  let resolvedStructRef = ? resolveStructRef(fileScope, init.structRef)
+  let resolvedKeywordArgs = ? resolveKeywordArguments(fileScope, funcScope, resolvedStructRef.struct, init.kwargList)
+  ok(newResolvedStructInitializer(init, resolvedStructRef, resolvedKeywordArgs))
 
 proc resolveUnionRef(fileScope: FileScope, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
-  ## Resolves a UnionRef into the one-shape (module + impls).
-  ## Empty impls drive leave-as-is inference at the analyzer; non-empty
-  ## impls are arity- and constraint-checked here via
-  ## resolveModuleArgumentType so the analyzer can seed its
-  ## GenericImplMap from the seq directly.
   let unionModule = ? fileScope.findModule(unionRef.module)
   if unionModule.data.isNone:
     err(fmt"{unionRef.loc} expected module `{unionRef.module.asl}` to be union but found none")
@@ -435,7 +441,7 @@ proc resolveUnionRef(fileScope: FileScope, unionRef: UnionRef): Result[ResolvedU
         let resolvedArgType = ? resolveModuleArgumentType(fileScope, unionRef.argType, unionModule)
         ok(newResolvedUnionRef(unionRef, resolvedArgType, union, variant))
 
-proc resolveKeywordArguments(fileScope: FileScope, scope: FunctionScope, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
+proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
   var resolvedKwargs = newSeq[ResolvedKeywordArgument](variant.fields.len)
   var fieldMap: Table[int, Location]
   for kwarg in kwargList.items:
@@ -444,7 +450,7 @@ proc resolveKeywordArguments(fileScope: FileScope, scope: FunctionScope, variant
       let loc = fieldMap[fieldId]
       return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {loc}")
     else:
-      let resolvedExpression = ? resolveExpression(fileScope, scope, kwarg.expression)
+      let resolvedExpression = ? resolveExpression(fileScope, funcScope, kwarg.expression)
       resolvedKwargs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
       fieldMap[fieldId] = kwarg.loc
 
@@ -453,21 +459,21 @@ proc resolveKeywordArguments(fileScope: FileScope, scope: FunctionScope, variant
   else:
     ok(resolvedKwargs)
 
-proc resolveUnionInitializer(fileScope: FileScope, scope: FunctionScope, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
+proc resolveUnionInitializer(fileScope: FileScope, funcScope: FunctionScope, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
   let resolvedUnionRef = ? resolveUnionRef(fileScope, unionInit.unionRef)
-  let resolvedKeywordArgs = ? resolveKeywordArguments(fileScope, scope, resolvedUnionRef.variant, unionInit.kwargList)
+  let resolvedKeywordArgs = ? resolveKeywordArguments(fileScope, funcScope, resolvedUnionRef.variant, unionInit.kwargList)
   ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
 
-proc resolveInitializer(fileScope: FileScope, scope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
+proc resolveInitializer(fileScope: FileScope, funcScope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:
   of ikLiteral:
     let resolvedLiteralInit = ? resolveLiteralInitializer(fileScope, initializer.literal)
     ok(newResolvedInitializer(resolvedLiteralInit))
   of ikStruct:
-    let resolvedStructInit = ? resolveStructInitializer(fileScope, scope, initializer.struct)
+    let resolvedStructInit = ? resolveStructInitializer(fileScope, funcScope, initializer.struct)
     ok(newResolvedInitializer(resolvedStructInit))
   of ikUnion:
-    let resolvedUnionInit = ? resolveUnionInitializer(fileScope, scope, initializer.union)
+    let resolvedUnionInit = ? resolveUnionInitializer(fileScope, funcScope, initializer.union)
     ok(newResolvedInitializer(resolvedUnionInit))
 
 proc resolveCasePattern*(casePattern: CasePattern): Result[ResolvedCasePattern, string] =
@@ -491,37 +497,37 @@ proc resolveCaseBlock(fileScope: FileScope, funcScope: FunctionScope, caseBlock:
     caseScope = caseScope.update(resolvedStatement)
   ok(newResolvedCaseBlock(caseBlock, resolvedCasePattern, resolvedStatements))
 
-proc resolveMatchExpression(fileScope: FileScope, scope: FunctionScope, match: MatchExpression): Result[ResolvedMatchExpression, string] =
-  let resolvedSubject = ? resolveExpression(fileScope, scope, match.subject)
+proc resolveMatchExpression(fileScope: FileScope, funcScope: FunctionScope, match: MatchExpression): Result[ResolvedMatchExpression, string] =
+  let resolvedSubject = ? resolveExpression(fileScope, funcScope, match.subject)
   var resolvedCaseBlocks: seq[ResolvedCaseBlock]
   for caseBlock in match.cases:
-    let resolvedCaseBlock = ? resolveCaseBlock(fileScope, scope, caseBlock)
+    let resolvedCaseBlock = ? resolveCaseBlock(fileScope, funcScope, caseBlock)
     resolvedCaseBlocks.add(resolvedCaseBlock)
   ok(newResolvedMatchExpression(match, resolvedSubject, resolvedCaseBlocks))
 
-proc resolveExpression*(fileScope: FileScope, scope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
+proc resolveExpression*(fileScope: FileScope, funcScope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of ekLiteral:
     let resolvedLiteral = ? resolveLiteral(fileScope, expression.literal)
     ok(newResolvedExpression(resolvedLiteral))
   of ekGetter:
-    let resolvedGetter = ? resolveGetter(scope, expression.getter)
+    let resolvedGetter = ? resolveGetter(funcScope, expression.getter)
     ok(newResolvedExpression(resolvedGetter))
   of ekVariable:
-    let resolvedVariable = ? resolveVariable(scope, expression.variable)
+    let resolvedVariable = ? resolveVariable(funcScope, expression.variable)
     ok(newResolvedExpression(resolvedVariable))
   of ekFnCall:
-    let resolvedFunctionCall = ? resolveFunctionCall(fileScope, scope, expression.fncall)
+    let resolvedFunctionCall = ? resolveFunctionCall(fileScope, funcScope, expression.fncall)
     ok(newResolvedExpression(resolvedFunctionCall))
   of ekInitializer:
-    let resolvedInitializer = ? resolveInitializer(fileScope, scope, expression.initializer)
+    let resolvedInitializer = ? resolveInitializer(fileScope, funcScope, expression.initializer)
     ok(newResolvedExpression(resolvedInitializer))
   of ekMatch:
-    let resolvedMatchExpr = ? resolveMatchExpression(fileScope, scope, expression.match)
+    let resolvedMatchExpr = ? resolveMatchExpression(fileScope, funcScope, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))
 
-proc resolveAssignment(fileScope: FileScope, scope: FunctionScope, assignment: Assignment): Result[ResolvedAssignment, string] =
-  let resolvedExpression = ? resolveExpression(fileScope, scope, assignment.expression)
+proc resolveAssignment(fileScope: FileScope, funcScope: FunctionScope, assignment: Assignment): Result[ResolvedAssignment, string] =
+  let resolvedExpression = ? resolveExpression(fileScope, funcScope, assignment.expression)
   ok(newResolvedAssignment(assignment, resolvedExpression))
 
 proc resolveSetter(fileScope: FileScope, funcScope: FunctionScope, setter: Setter): Result[ResolvedSetter, string] =

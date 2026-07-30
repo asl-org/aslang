@@ -287,8 +287,8 @@ proc analyzeDefStatement(file: ResolvedFile, fileScope: ResolvedFileScope, modul
 
 proc analyzeDefUserFunction(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
   let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
-  for statement in function.statements:
-    ? analyzeDefStatement(file, fileScope, module, statement)
+  # for statement in function.statements:
+  #   ? analyzeDefStatement(file, fileScope, module, statement)
   ok(newAnalyzedDefUserFunction(function, analyzedFuncDef))
 
 proc analyzeDefExternFunction(fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedExternFunction): Result[AnalyzedDefExternFunction, string] =

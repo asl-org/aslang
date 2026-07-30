@@ -6,7 +6,7 @@ import ./identifiers
 import ./argtype
 
 # ----------------- StructRef -----------------
-# One shape: the receiver module identifier plus a (possibly empty)
+# Wraps the receiver arg-type: module root plus a (possibly empty)
 # impls list. Empty impls === the user wrote `Module { ... }`; non-empty
 # impls === the user wrote `Module[Impl, ...] { ... }`. The parser no
 # longer discriminates between the two surface forms — downstream layers

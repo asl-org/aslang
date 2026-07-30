@@ -1,6 +1,9 @@
-## ResolvedUnionRef — a parser UnionRef with its (arity- and
-## constraint-validated) impl list. Leaf node in the body cluster.
-## Reused by ResolvedUnionInitializer.
+## ResolvedUnionRef — a parser UnionRef resolved into the receiver's
+## ResolvedModuleArgumentType (impls arity- and constraint-validated)
+## plus its UnionDef and the referenced VariantDef. Wrong-kind
+## receivers and unknown variants are rejected at ref-resolve time,
+## so downstream consumers hold a provably valid union reference.
+## Leaf node in the body cluster; reused by ResolvedUnionInitializer.
 
 import ./parser
 import argtype

@@ -337,10 +337,16 @@ constraints (unique generics in the header — enforced by
 carry generic fields when the header is present — enforced in
 `resolveStructDef` around line 409), runs the arity +
 generic-constraint checks on every impl list (task 7 moved these here
-from the analyzer), and stores the parser Module identifier on
-`ResolvedStructRef` / `ResolvedUnionRef` (single-shape after task 8 —
-`impls: seq[ResolvedArgumentType]`, empty for the bare surface form,
-populated for the bracketed form). Scope:
+from the analyzer), resolves struct/union refs into provably valid
+shapes at ref-resolve time (`ResolvedStructRef` carries the
+receiver's `ResolvedModuleArgumentType` + its `StructDef`;
+`ResolvedUnionRef` additionally its `UnionDef` + the referenced
+`VariantDef` — wrong-kind receivers and unknown variants rejected on
+the spot), field-maps initializer kwargs via
+`resolveKeywordArguments` (unknown and duplicate fields rejected
+per-field, undersupply by count), and binds every bare literal's
+default module against the FileScope (`ResolvedLiteral.default` —
+same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 
 - **File layout — one file per resolved type, actor procs on the
   facade.** The per-type files hold only the type declaration, its
@@ -500,12 +506,13 @@ their `AnalyzedFunctionDefinition`). Scope:
       defanalyzer  ResolvedFileScope   parser.Type  → ResolvedType
       analyzer     AnalyzedFileScope   ResolvedType → AnalyzedType
 
-  Aliased imports (`import { u8 as Byte }`) can never miss. The one
-  name→identity bridge left is `fileDef.defaultLiteralType(literal)`
-  for bare-literal defaults — `Literal.defaultType` (parser) names
-  "i32"/"f32"/"String", then the resolver-built name scope
-  (name → parser.Module) chains into the identity scope
-  (→ ResolvedModule). See plans/plan_identity_based_lookups.md and
+  Aliased imports (`import { u8 as Byte }`) can never miss.
+  Bare-literal defaults are bound at resolve time too
+  (`resolveLiteral` looks up `Literal.defaultType` — "i32"/"f32"/
+  "String" — against the FileScope and stores the parser.Module on
+  `ResolvedLiteral.default`), so `fileDef.defaultLiteralType` is a
+  pure identity lookup on the pre-bound module. See
+  plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
 - **Per-file context = fileDef + fileScope, minimal params** —
   phase A threads the `ResolvedFileScope` it is building and stores
@@ -687,16 +694,23 @@ src/
     getter.nim                     ResolvedGetter.
     literalinit.nim                ResolvedLiteralInitializer.
     structref.nim                  ResolvedStructRef — parser
-                                   StructRef back-ref + resolved
-                                   receiver Module + impls seq (empty
-                                   for the bare surface form,
-                                   populated for the bracketed form).
+                                   StructRef back-ref + receiver
+                                   ResolvedModuleArgumentType
+                                   (validated impls) + its StructDef;
+                                   wrong-kind receivers rejected at
+                                   ref-resolve time.
     unionref.nim                   ResolvedUnionRef — parser UnionRef
-                                   back-ref + resolved receiver Module
-                                   + impls seq (same shape as
-                                   structref).
+                                   back-ref + receiver
+                                   ResolvedModuleArgumentType + its
+                                   UnionDef + the referenced
+                                   VariantDef; wrong-kind receivers
+                                   and unknown variants rejected at
+                                   ref-resolve time.
     statement.nim                  Body-cluster mutually-recursive
-                                   types: ResolvedKeywordArgument /
+                                   types: ResolvedLiteral (parsed
+                                   Literal + its default Module,
+                                   bound at resolve time) /
+                                   ResolvedKeywordArgument /
                                    ResolvedStructInitializer /
                                    ResolvedUnionInitializer /
                                    ResolvedFunctionCall (carries
@@ -789,14 +803,15 @@ src/
                                    collapsed at parse time).
       argdef.nim                   ArgumentDef / ArgumentDefList
                                    (identifier ":" argumentType).
-      structref.nim                StructRef — module Identifier +
-                                   impls: seq[ArgumentType] (empty =
-                                   bare surface form; populated =
-                                   explicit-impls).
-      unionref.nim                 UnionRef — same shape as StructRef,
-                                   used by unionInitializerSpec to
-                                   carry the impls seq through to the
-                                   Initializer.
+      structref.nim                StructRef — wraps the receiver
+                                   ArgumentType (module root + impls;
+                                   empty = bare surface form,
+                                   populated = explicit-impls).
+      unionref.nim                 UnionRef — the receiver
+                                   ArgumentType plus the variant
+                                   Identifier (the
+                                   `Type[.Impls].Variant`
+                                   production).
       structdef.nim                StructDef (requires: seq[Identifier]
                                    from the `struct(...)` header —
                                    phantom-type parameters when
@@ -851,7 +866,7 @@ src/
                                    UnionInitializer / Initializer /
                                    Statement / StatementList /
                                    Assignment / Setter.
-      generics.nim                 Generic (funcDefs + funcDefIndex +
+      generics.nim                 Generic (defs + funcDefArityIndex +
                                    findFunctionDefs).
       modules.nim                  Module (data? + functions +
                                    funcNameArityIndex +

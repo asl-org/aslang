@@ -1,3 +1,7 @@
+## Phase-A `AnalyzedDefUnionRef` — a ResolvedUnionRef with its
+## receiver arg-type lifted to the analyzed form. Produced by
+## `analyzeDefUnionRef` during the phase-A body pre-walk.
+
 import resolver
 import argtype
 
