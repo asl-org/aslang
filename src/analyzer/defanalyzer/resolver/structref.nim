@@ -25,3 +25,4 @@ proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
 proc module*(s: ResolvedStructRef): Module = s.argType.module
 proc impls*(s: ResolvedStructRef): seq[ResolvedArgumentType] = s.argType.impls
 proc struct*(s: ResolvedStructRef): StructDef = s.struct
+proc argType*(s: ResolvedStructRef): ResolvedModuleArgumentType = s.argType

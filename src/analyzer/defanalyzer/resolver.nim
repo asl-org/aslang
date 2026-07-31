@@ -388,10 +388,10 @@ proc resolveUnionRef(fileScope: FileScope, unionRef: UnionRef): Result[ResolvedU
       let union = moduleData.union
       let variant = ? union.findVariant(unionRef.variant)
       if unionRef.impls.len == 0:
-        ok(newResolvedUnionRef(unionRef, unionModule, union, variant))
+        ok(newResolvedUnionRef(unionRef, unionModule, variant))
       else:
         let resolvedArgType = ? resolveModuleArgumentType(fileScope, unionRef.argType, unionModule, moduleData)
-        ok(newResolvedUnionRef(unionRef, resolvedArgType, union, variant))
+        ok(newResolvedUnionRef(unionRef, resolvedArgType, variant))
 
 proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
   var resolvedKwargs = newSeq[ResolvedKeywordArgument](variant.fields.len)

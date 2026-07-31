@@ -41,12 +41,8 @@ proc asl*(u: UnionDef, level: int, indentWidth: uint32): seq[string] =
     lines.add(fmt"{inner}{asl(variant)}")
   lines
 
-proc findVariantId(union: UnionDef, variant: Identifier): Result[int, string] =
+proc findVariant*(union: UnionDef, variant: Identifier): Result[VariantDef, string] =
   if variant notin union.variantIndex:
     err(fmt"{variant.loc} variant `{variant.asl}` does not exist in union")
   else:
-    ok(union.variantIndex[variant])
-
-proc findVariant*(union: UnionDef, variant: Identifier): Result[VariantDef, string] =
-  let variantId = ? union.findVariantId(variant)
-  ok(union.variants[variantId])
+    ok(union.variants[union.variantIndex[variant]])

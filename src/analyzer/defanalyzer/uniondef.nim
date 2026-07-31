@@ -15,8 +15,7 @@ type AnalyzedUnionDef* = ref object
   variants: seq[AnalyzedVariantDef]
   variantIndex: Table[Identifier, int]
 
-proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef,
-    variants: seq[AnalyzedVariantDef]): AnalyzedUnionDef =
+proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef, variants: seq[AnalyzedVariantDef]): AnalyzedUnionDef =
   var variantIndex: Table[Identifier, int]
   for id, variant in variants:
     assert(variant.name notin variantIndex,
