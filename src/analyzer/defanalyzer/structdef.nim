@@ -26,15 +26,13 @@ proc newAnalyzedStructDef*(resolved: ResolvedStructDef,
 proc resolved*(s: AnalyzedStructDef): ResolvedStructDef = s.resolved
 proc loc*(s: AnalyzedStructDef): Location = s.resolved.loc
 proc fields*(s: AnalyzedStructDef): seq[AnalyzedArgumentDefinition] = s.fields
-proc genericTypeIndex*(s: AnalyzedStructDef): Table[ResolvedGenericArgumentType, int] =
-  s.resolved.genericTypeIndex
+proc genericTypeIndex(s: AnalyzedStructDef): Table[ResolvedGenericArgumentType, int] = s.resolved.genericTypeIndex
 
 proc findField*(s: AnalyzedStructDef, name: Identifier): Result[AnalyzedArgumentDefinition, string] =
   if name in s.fieldIndex: ok(s.fields[s.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
-proc concrete*(struct: AnalyzedStructDef,
-    impls: seq[AnalyzedArgumentType]): AnalyzedStructDef =
+proc concrete*(struct: AnalyzedStructDef, impls: seq[AnalyzedArgumentType]): AnalyzedStructDef =
   var concreteFields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
     concreteFields.add(field.concrete(impls, struct.resolved.genericTypeIndex))

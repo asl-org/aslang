@@ -1037,7 +1037,7 @@ proc parseLiteralInitializer*(parser: Parser): Result[LiteralInitializer, Parser
   let argType = ? parser.parseArgumentType()
   discard ? parser.run(ws1)
   let lit = ? parser.parseLiteral()
-  ok(newLiteralInitializer(argType, lit, argType.loc))
+  ok(newLiteralInitializer(argType, lit))
 
 # ============================================================
 # Body cluster — mutually recursive

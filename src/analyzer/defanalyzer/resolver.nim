@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, options
+import results, sequtils, sets, strformat, tables, options
 
 ## Package façade. Consumers say `import resolver` to get every
 ## resolved-side type PLUS the parser layer that resolver builds on
@@ -251,62 +251,56 @@ proc resolveArgumentDef*(fileScope: FileScope, generic: Generic, argDef: Argumen
   ? resolveDataType(resolvedArgumentType, argDef.argType)
   ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
 
-proc accumulateGenericPosition(genericTypeIndex: var Table[ResolvedGenericArgumentType, int], field: ResolvedArgumentDef) =
-  ## Assigns the next position to each new generic encountered in
-  ## field types. Same name across multiple fields keeps its first
-  ## position — the analyzer's GenericImplMap binds one generic to
-  ## one concrete type per construction, so duplicate occurrences
-  ## are semantically benign (any conflict surfaces at the init site
-  ## via merge()). Generic-uniqueness inside an explicit `struct(...)`
-  ## header is enforced at construction time by
-  ## `validateRequiresNameConflict` in `parser/structdef.nim`.
-  case field.argType.kind:
-  of ratkModule: discard
-  of ratkGeneric:
-    let genericType = field.argType.generic
-    if genericType notin genericTypeIndex:
-      genericTypeIndex[genericType] = genericTypeIndex.len
+proc resolveStructDefHeader(fileScope: FileScope, header: StructDefHeader): Result[seq[ResolvedGenericArgumentType], string] =
+  var resolvedRequires: seq[ResolvedGenericArgumentType]
+  for index, impl in header.requires:
+    let generic = ? fileScope.findGeneric(impl)
+    let genericType = newResolvedGenericArgumentType(generic, impl.loc)
+    resolvedRequires.add(genericType)
+  ok(resolvedRequires)
+
+proc resolveFields(fileScope: FileScope, fields: seq[ArgumentDef]): Result[seq[ResolvedArgumentDef], string] =
+  var resolvedFields: seq[ResolvedArgumentDef]
+  for field in fields:
+    let resolvedField = ? resolveArgumentDef(fileScope, field)
+    resolvedFields.add(resolvedField)
+  ok(resolvedFields)
 
 proc resolveStructDef*(fileScope: FileScope, struct: StructDef): Result[ResolvedStructDef, string] =
-  var resolvedFields: seq[ResolvedArgumentDef]
-  var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
-  for field in struct.fields:
-    let resolvedField = ? resolveArgumentDef(fileScope, field)
-    genericTypeIndex.accumulateGenericPosition(resolvedField)
-    resolvedFields.add(resolvedField)
+  let resolvedRequires = ? resolveStructDefHeader(fileScope, struct.header)
+  let resolvedFields = ? resolveFields(fileScope, struct.fields)
 
-  if struct.header.requires.len > 0 and genericTypeIndex.len > 0:
-    return err(fmt"{struct.loc} struct with explicit generic requirements does not support generic fields")
+  var genericFields: seq[ResolvedGenericArgumentType]
+  var genericFieldSet: Hashset[ResolvedGenericArgumentType]
+  for field in resolvedFields:
+    case field.argType.kind:
+    of ratkModule: discard
+    of ratkGeneric:
+      if field.argType.generic notin genericFieldSet:
+        genericFields.add(field.argType.generic)
+        genericFieldSet.incl(field.argType.generic)
 
-  var resolvedRequires: seq[ResolvedGenericArgumentType]
-  for index, generic in struct.header.requires:
-    let typ = ? fileScope.findType(generic)
-    case typ.kind:
-    of tkModule:
-      return err(fmt"{generic.loc} type `{generic.asl}` is a module but expected generic")
-    of tkGeneric:
-      let genericType = newResolvedGenericArgumentType(typ.generic, generic.loc)
-      resolvedRequires.add(genericType)
-  ok(newResolvedStructDef(struct, resolvedRequires, resolvedFields, genericTypeIndex))
+  if resolvedRequires.len > 0:
+    if genericFields.len > 0:
+      err(fmt"{struct.loc} struct with explicit generic requirements does not support generic fields")
+    else:
+      ok(newResolvedExplicitStructDef(struct, resolvedRequires, resolvedFields))
+  else:
+    ok(newResolvedInferredStructDef(struct, genericFields, resolvedFields))
 
 # NOTE: `genericTypeIndex` is the union's shared position table — mutated
 # in place as each variant's fields contribute new generics (in
 # declaration order); not returned because the union accumulates it.
-proc resolveVariant(fileScope: FileScope, variant: VariantDef, genericTypeIndex: var Table[ResolvedGenericArgumentType, int]): Result[ResolvedVariant, string] =
-  var resolvedFields: seq[ResolvedArgumentDef]
-  for field in variant.fields:
-    let resolvedField = ? resolveArgumentDef(fileScope, field)
-    genericTypeIndex.accumulateGenericPosition(resolvedField)
-    resolvedFields.add(resolvedField)
-  ok(newResolvedVariant(variant, resolvedFields))
+proc resolveVariantDef(fileScope: FileScope, variant: VariantDef): Result[ResolvedVariant, string] =
+  let resolvedFields = ? resolveFields(fileScope, variant.fields)
+  ok(newResolvedVariantDef(variant, resolvedFields))
 
 proc resolveUnionDef*(fileScope: FileScope, union: UnionDef): Result[ResolvedUnionDef, string] =
   var resolvedVariants: seq[ResolvedVariant]
-  var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for variant in union.variants:
-    let resolvedVariant = ? resolveVariant(fileScope, variant, genericTypeIndex)
+    let resolvedVariant = ? resolveVariantDef(fileScope, variant)
     resolvedVariants.add(resolvedVariant)
-  ok(newResolvedUnionDef(union, resolvedVariants, genericTypeIndex))
+  ok(newResolvedUnionDef(union, resolvedVariants))
 
 proc resolveDataDef*(fileScope: FileScope, data: DataDef): Result[ResolvedData, string] =
   case data.kind:
@@ -347,8 +341,15 @@ proc resolveExternFunction*(fileScope: FileScope, function: ExternFunction): Res
   ok(newResolvedExternFunction(function, resolvedFunctionDef))
 
 proc resolveLiteral(fileScope: FileScope, literal: Literal): Result[ResolvedLiteral, string] =
-  let literalModule = ? fileScope.findModule(literal.defaultType)
-  ok(newResolvedLiteral(literal, literalModule))
+  let module = ? fileScope.findModule(literal.defaultType)
+  if module.data.isNone:
+    err(fmt"{literal.loc} expected module `{literal.defaultType.asl}` to be a literal but found none")
+  else:
+    let moduleData = module.data.get
+    case moduleData.kind:
+    of ddkStruct: err(fmt"{literal.loc} expected module `{literal.defaultType.asl}` to be literal but found struct")
+    of ddkUnion: err(fmt"{literal.loc} expected module `{literal.defaultType.asl}` to be literal but found union")
+    of ddkLiteral: ok(newResolvedLiteral(literal, module, moduleData.literal))
 
 proc resolveVariable*(scope: FunctionScope, variable: Identifier): Result[Identifier, string] =
   if variable notin scope:
@@ -359,10 +360,6 @@ proc resolveVariable*(scope: FunctionScope, variable: Identifier): Result[Identi
 proc resolveGetter*(scope: FunctionScope, getter: Getter): Result[ResolvedGetter, string] =
   discard ? resolveVariable(scope, getter.source)
   ok(newResolvedGetter(getter))
-
-proc resolveLiteralInitializer(fileScope: FileScope, literalInit: LiteralInitializer): Result[ResolvedLiteralInitializer, string] =
-  let resolvedArgType = ? resolveArgumentType(fileScope, literalInit.argType)
-  ok(newResolvedLiteralInitializer(literalInit, resolvedArgType))
 
 # resolveExpression / resolveStatement form the body-cluster cycle.
 proc resolveExpression*(fileScope: FileScope, funcScope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
@@ -463,6 +460,19 @@ proc resolveUnionInitializer(fileScope: FileScope, funcScope: FunctionScope, uni
   let resolvedUnionRef = ? resolveUnionRef(fileScope, unionInit.unionRef)
   let resolvedKeywordArgs = ? resolveKeywordArguments(fileScope, funcScope, resolvedUnionRef.variant, unionInit.kwargList)
   ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
+
+proc resolveLiteralInitializer(fileScope: FileScope, init: LiteralInitializer): Result[ResolvedLiteralInitializer, string] =
+  let module = ? fileScope.findModule(init.module)
+  if module.data.isNone:
+    err(fmt"{init.loc} expected module `{init.module.asl}` to be a literal but found none")
+  else:
+    let moduleData = module.data.get
+    case moduleData.kind:
+    of ddkStruct: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found struct")
+    of ddkUnion: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found union")
+    of ddkLiteral:
+      let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, init.argType, module)
+      ok(newResolvedLiteralInitializer(init, resolvedModuleArgType, moduleData.literal))
 
 proc resolveInitializer(fileScope: FileScope, funcScope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:

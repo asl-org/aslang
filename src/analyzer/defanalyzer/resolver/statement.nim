@@ -26,14 +26,16 @@ import unionref
 type ResolvedLiteral* = ref object
   parsed: Literal
   default: Module
+  def: LiteralDef
 
-proc newResolvedLiteral*(parsed: Literal, module: Module): ResolvedLiteral =
-  ResolvedLiteral(parsed: parsed, default: module)
+proc newResolvedLiteral*(parsed: Literal, module: Module, def: LiteralDef): ResolvedLiteral =
+  ResolvedLiteral(parsed: parsed, default: module, def: def)
 
 proc loc*(literal: ResolvedLiteral): Location = literal.parsed.loc
 proc parsed*(literal: ResolvedLiteral): Literal = literal.parsed
 proc default*(literal: ResolvedLiteral): Module = literal.default
 proc kind*(literal: ResolvedLiteral): LiteralKind = literal.parsed.kind
+proc def*(literal: ResolvedLiteral): LiteralDef = literal.def
 proc asl*(literal: ResolvedLiteral): string = literal.parsed.asl
 
 type

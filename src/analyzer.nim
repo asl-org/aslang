@@ -161,7 +161,8 @@ proc analyzeGetter*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope:
       ok(newAnalyzedGetter(getter, analyzedSourceArgType, property.resolved, property.argType))
 
 proc analyzeLiteralInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileScope: AnalyzedFileScope, module: AnalyzedDefModule, funcScope: AnalyzedFunctionScope, init: ResolvedLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
-  let analyzedArgType = ? analyzeDefArgumentType(fileDef.scope, module.resolved, init.argType)
+  let syntheticArgType = newResolvedArgumentType(init.argType)
+  let analyzedArgType = ? analyzeDefArgumentType(fileDef.scope, module.resolved, syntheticArgType)
   case analyzedArgType.kind:
   of aatkGeneric:
     err(fmt"{init.loc} expected `{analyzedArgType.module.name.asl}` to be a module found generic")

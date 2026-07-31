@@ -287,6 +287,7 @@ proc analyzeDefStatement(file: ResolvedFile, fileScope: ResolvedFileScope, modul
 
 proc analyzeDefUserFunction(file: ResolvedFile, fileScope: ResolvedFileScope, module: ResolvedModule, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
   let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, module, function.def)
+  # TODO: Uncomment this when done with resolver
   # for statement in function.statements:
   #   ? analyzeDefStatement(file, fileScope, module, statement)
   ok(newAnalyzedDefUserFunction(function, analyzedFuncDef))

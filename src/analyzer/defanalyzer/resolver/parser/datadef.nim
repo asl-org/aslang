@@ -1,8 +1,7 @@
-import strformat, results
+import strformat
 
 import ./tokenizer
 
-import ./identifiers
 import ./literals
 import ./structdef
 import ./uniondef

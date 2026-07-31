@@ -6,14 +6,15 @@ import argtype
 
 type ResolvedLiteralInitializer* = ref object
   parsed: LiteralInitializer
-  argType: ResolvedArgumentType
+  argType: ResolvedModuleArgumentType
+  def: LiteralDef
 
-proc newResolvedLiteralInitializer*(parsed: LiteralInitializer,
-    argType: ResolvedArgumentType): ResolvedLiteralInitializer =
-  ResolvedLiteralInitializer(parsed: parsed, argType: argType)
+proc newResolvedLiteralInitializer*(parsed: LiteralInitializer, argType: ResolvedModuleArgumentType, def: LiteralDef): ResolvedLiteralInitializer =
+  ResolvedLiteralInitializer(parsed: parsed, argType: argType, def: def)
 
-proc parsed*(init: ResolvedLiteralInitializer): LiteralInitializer = init.parsed
-proc argType*(init: ResolvedLiteralInitializer): ResolvedArgumentType = init.argType
 proc value*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
 proc loc*(init: ResolvedLiteralInitializer): Location = init.parsed.loc
 proc literal*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
+proc parsed*(init: ResolvedLiteralInitializer): LiteralInitializer = init.parsed
+proc argType*(init: ResolvedLiteralInitializer): ResolvedModuleArgumentType = init.argType
+proc def*(init: ResolvedLiteralInitializer): LiteralDef = init.def
