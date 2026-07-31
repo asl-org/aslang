@@ -105,13 +105,6 @@ type
     of rskExpr: expression: ResolvedExpression
     of rskSetter: setter: ResolvedSetter
 
-# =====================================================================
-# Every resolveX proc threads the parser-module -> ResolvedModule table
-# allocated by apps.nim during the declare pass down to
-# `resolveArgumentType`, which uses it to attach a stable ResolvedModule
-# reference to every ResolvedModuleArgumentType.
-# =====================================================================
-
 # ---- ResolvedKeywordArgument ----
 
 proc newResolvedKeywordArgument*(parsed: KeywordArgument,

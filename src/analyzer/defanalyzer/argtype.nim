@@ -1,16 +1,13 @@
-## Analyzed argument-type cluster.
+## Analyzed argument-type cluster — `AnalyzedModuleArgumentType` and
+## the outer `AnalyzedArgumentType` tagged union share this file
+## because Nim requires mutually-referencing `ref object` types in one
+## `type` block (`impls: seq[AnalyzedArgumentType]` on the module
+## variant references the outer union). The generic variant has no
+## back-reference and lives in ./genericargtype. The analyzeDef*
+## procs (both context overloads) live on the defanalyzer barrel.
 ##
-## `AnalyzedGenericArgumentType`, `AnalyzedModuleArgumentType`, and the
-## outer `AnalyzedArgumentType` tagged union all live in this single
-## file because Nim requires mutually-referencing `ref object` types to
-## share one `type` block (`impls: seq[AnalyzedArgumentType]` on the
-## module variant references the outer union). Both context overloads
-## of the `analyze*` procs (module ctx with ResolvedFileScope, generic
-## ctx) live on the analyzer facade.
-##
-## Post-task-7: `analyzeModuleArgumentType` on the facade no longer
-## performs arity or generic-constraint validation — that's the
-## resolver's job. Each ResolvedModuleArgumentType's `impls` seq is a
+## The resolver already validated arity + generic-constraint
+## satisfaction — each ResolvedModuleArgumentType's `impls` seq is a
 ## provably valid value by the time the analyzer sees it.
 
 import strformat, strutils, tables, hashes

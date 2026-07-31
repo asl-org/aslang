@@ -139,57 +139,29 @@ proc resolveArgumentType*(fileScope: FileScope, generic: Generic, argType: Argum
 # in the same file, and error location tracking still points at the
 # offending declaration.
 
-proc resolveArgumentTypeImpls(fileScope: FileScope, argType: ArgumentType, argModule: Module, bases: seq[Generic]): Result[ResolvedModuleArgumentType, string] =
-  var impls: seq[ResolvedArgumentType]
-  for (base, impl) in zip(bases, argType.impls):
-    let resolvedImpl = ? resolveArgumentType(fileScope, impl)
-    ? satisfies(resolvedImpl, base)
-    impls.add(resolvedImpl)
-  ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
-
-proc resolveArgumentTypeImpls(fileScope: FileScope, generic: Generic, argType: ArgumentType, argModule: Module, bases: seq[Generic]): Result[ResolvedModuleArgumentType, string] =
-  var impls: seq[ResolvedArgumentType]
-  for (base, impl) in zip(bases, argType.impls):
-    let resolvedImpl = ? resolveArgumentType(fileScope, generic, impl)
-    ? satisfies(resolvedImpl, base)
-    impls.add(resolvedImpl)
-  ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
-
-proc resolveDataModuleArgumentType(fileScope: FileScope, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
+proc resolveModuleArgumentType(fileScope: FileScope, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
   let requires = ? fileScope.inferGenerics(dataDef)
   if argType.impls.len != requires.len:
     err(fmt"{argType.loc} type `{argModule.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
   else:
-    resolveArgumentTypeImpls(fileScope, argType, argModule, requires)
+    var impls: seq[ResolvedArgumentType]
+    for (base, impl) in zip(requires, argType.impls):
+      let resolvedImpl = ? resolveArgumentType(fileScope, impl)
+      ? satisfies(resolvedImpl, base)
+      impls.add(resolvedImpl)
+    ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
 
-proc resolveDataModuleArgumentType(fileScope: FileScope, generic: Generic, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
+proc resolveModuleArgumentType(fileScope: FileScope, generic: Generic, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
   let requires = ? fileScope.inferGenerics(dataDef)
   if argType.impls.len != requires.len:
     err(fmt"{argType.loc} type `{argModule.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
   else:
-    resolveArgumentTypeImpls(fileScope, generic, argType, argModule, requires)
-
-proc resolveModuleArgumentType(fileScope: FileScope, argType: ArgumentType, argModule: Module): Result[ResolvedModuleArgumentType, string] =
-  if argModule.data.isSome:
-    resolveDataModuleArgumentType(fileScope, argType, argModule, argModule.data.get)
-  else:
-    if argType.impls.len == 0:
-      ok(newResolvedModuleArgumentType(argModule, argType.loc))
-    else:
-      err(fmt"{argType.loc} type `{argModule.name.asl}` does not require impl types")
-
-# resolveModuleArgumentType — generic context. Mirrors module-context;
-# the impl-list validation delegates to the same
-# `resolveDataModuleArgumentType` helper. The self-only rule for
-# generic references lives on `resolveGenericArgumentType`, not here.
-proc resolveModuleArgumentType(fileScope: FileScope, generic: Generic, argType: ArgumentType, argModule: Module): Result[ResolvedModuleArgumentType, string] =
-  if argModule.data.isSome:
-    resolveDataModuleArgumentType(fileScope, generic, argType, argModule, argModule.data.get)
-  else:
-    if argType.impls.len == 0:
-      ok(newResolvedModuleArgumentType(argModule, argType.loc))
-    else:
-      err(fmt"{argType.loc} type `{argModule.name.asl}` does not require impl types")
+    var impls: seq[ResolvedArgumentType]
+    for (base, impl) in zip(requires, argType.impls):
+      let resolvedImpl = ? resolveArgumentType(fileScope, generic, impl)
+      ? satisfies(resolvedImpl, base)
+      impls.add(resolvedImpl)
+    ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
 
 proc resolveGenericArgumentType(generic: Generic, argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
   if argType.impls.len == 0:
@@ -214,8 +186,11 @@ proc resolveArgumentType*(fileScope: FileScope, argType: ArgumentType): Result[R
     let resolvedGenericType = ? resolveGenericArgumentType(argType, typ.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of tkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(fileScope, argType, typ.module)
-    ok(newResolvedArgumentType(resolvedModuleType))
+    if typ.module.data.isNone:
+      err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
+    else:
+      let resolvedModuleType = ? resolveModuleArgumentType(fileScope, argType, typ.module, typ.module.data.get)
+      ok(newResolvedArgumentType(resolvedModuleType))
 
 proc resolveArgumentType*(fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let typ = ? fileScope.findType(argType.root)
@@ -224,31 +199,18 @@ proc resolveArgumentType*(fileScope: FileScope, generic: Generic, argType: Argum
     let resolvedGenericType = ? resolveGenericArgumentType(generic, argType, typ.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of tkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(fileScope, generic, argType, typ.module)
-    ok(newResolvedArgumentType(resolvedModuleType))
-
-# resolveDataType — post-resolution guard. Confirms the resolved
-# argument's underlying module has a data block (or that we're
-# pointing at an unsubstituted generic, which is acceptable). Reads
-# the parser Module through `resolvedArgType.module.parsed`; no
-# context parameter is needed because every ResolvedModuleArgumentType
-# carries its parser back-ref.
-proc resolveDataType*(resolvedArgType: ResolvedArgumentType, argType: ArgumentType): Result[void, string] =
-  case resolvedArgType.kind:
-  of ratkGeneric: ok()
-  of ratkModule:
-    let parsedModule = resolvedArgType.module.parsed
-    if parsedModule.data.isSome: ok()
-    else: err(fmt"{argType.loc} module `{parsedModule.name.asl}` is not a literal/struct/union")
+    if typ.module.data.isNone:
+      err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
+    else:
+      let resolvedModuleType = ? resolveModuleArgumentType(fileScope, generic, argType, typ.module, typ.module.data.get)
+      ok(newResolvedArgumentType(resolvedModuleType))
 
 proc resolveArgumentDef*(fileScope: FileScope, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
   let resolvedArgumentType = ? resolveArgumentType(fileScope, argDef.argType)
-  ? resolveDataType(resolvedArgumentType, argDef.argType)
   ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
 
 proc resolveArgumentDef*(fileScope: FileScope, generic: Generic, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
   let resolvedArgumentType = ? resolveArgumentType(fileScope, generic, argDef.argType)
-  ? resolveDataType(resolvedArgumentType, argDef.argType)
   ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
 
 proc resolveStructDefHeader(fileScope: FileScope, header: StructDefHeader): Result[seq[ResolvedGenericArgumentType], string] =
@@ -288,9 +250,6 @@ proc resolveStructDef*(fileScope: FileScope, struct: StructDef): Result[Resolved
   else:
     ok(newResolvedInferredStructDef(struct, genericFields, resolvedFields))
 
-# NOTE: `genericTypeIndex` is the union's shared position table — mutated
-# in place as each variant's fields contribute new generics (in
-# declaration order); not returned because the union accumulates it.
 proc resolveVariantDef(fileScope: FileScope, variant: VariantDef): Result[ResolvedVariant, string] =
   let resolvedFields = ? resolveFields(fileScope, variant.fields)
   ok(newResolvedVariantDef(variant, resolvedFields))
@@ -321,8 +280,6 @@ proc resolveFunctionDef*(fileScope: FileScope, def: FunctionDef): Result[Resolve
     resolvedArgDefs.add(resolvedArgDef)
 
   let resolvedReturnType = ? resolveArgumentType(fileScope, def.returns)
-  ? resolveDataType(resolvedReturnType, def.returns)
-
   ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
 
 proc resolveFunctionDef*(fileScope: FileScope, generic: Generic, def: FunctionDef): Result[ResolvedFunctionDef, string] =
@@ -332,8 +289,6 @@ proc resolveFunctionDef*(fileScope: FileScope, generic: Generic, def: FunctionDe
     resolvedArgDefs.add(resolvedArgDef)
 
   let resolvedReturnType = ? resolveArgumentType(fileScope, generic, def.returns)
-  ? resolveDataType(resolvedReturnType, def.returns)
-
   ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
 
 proc resolveExternFunction*(fileScope: FileScope, function: ExternFunction): Result[ResolvedExternFunction, string] =
@@ -369,7 +324,7 @@ proc resolveFunctionCall(fileScope: FileScope, funcScope: FunctionScope, fncall:
   let typ = ? fileScope.findType(fncall.root)
   let defs = ? typ.findFunctionDefs(fncall.name, fncall.arity)
   if defs.len == 0:
-    err(fmt"{fncall.loc} generic `{typ.generic.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
+    err(fmt"{fncall.loc} generic `{typ.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
   else:
     var resolvedArgs: seq[ResolvedExpression]
     for arg in fncall.args:
@@ -394,7 +349,7 @@ proc resolveStructRef(fileScope: FileScope, structRef: StructRef): Result[Resolv
         else:
           err(fmt"{structRef.loc} module `{structRef.module.asl}` expects {struct.header.requires.len} impls")
       else:
-        let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, structRef.argType, structModule)
+        let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, structRef.argType, structModule, moduleData)
         ok(newResolvedStructRef(structRef, resolvedModuleArgType, struct))
 
 proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, struct: StructDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
@@ -435,7 +390,7 @@ proc resolveUnionRef(fileScope: FileScope, unionRef: UnionRef): Result[ResolvedU
       if unionRef.impls.len == 0:
         ok(newResolvedUnionRef(unionRef, unionModule, union, variant))
       else:
-        let resolvedArgType = ? resolveModuleArgumentType(fileScope, unionRef.argType, unionModule)
+        let resolvedArgType = ? resolveModuleArgumentType(fileScope, unionRef.argType, unionModule, moduleData)
         ok(newResolvedUnionRef(unionRef, resolvedArgType, union, variant))
 
 proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
@@ -471,7 +426,7 @@ proc resolveLiteralInitializer(fileScope: FileScope, init: LiteralInitializer): 
     of ddkStruct: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found struct")
     of ddkUnion: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found union")
     of ddkLiteral:
-      let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, init.argType, module)
+      let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, init.argType, module, moduleData)
       ok(newResolvedLiteralInitializer(init, resolvedModuleArgType, moduleData.literal))
 
 proc resolveInitializer(fileScope: FileScope, funcScope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =

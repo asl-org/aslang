@@ -17,7 +17,7 @@ public module App:
     name: String
     age: u32
 
-  public func start(sys: System): u8
+  public func start(): u8
     user = User { name: "Alice", age: 30 }
     result = match user.age:
       case 0:
@@ -54,7 +54,10 @@ public module App:
 Fixed-width integers: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`,
 `u32`, `u64`. Floats: `f32`, `f64`. Text: `String`. Containers:
 `Array`, `Bitset`. Fallibility: `Status[T]` + `Error`. System
-interface: `System`.
+namespace: `System` — a function-only module. Modules without a
+data block are pure namespaces: their functions are callable
+(`System.println(...)`) but the module itself is not a value and
+cannot appear as an argument or return type.
 
 ## Domain grammar (source of truth)
 
@@ -369,7 +372,7 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   `resolve*` proc from `resolveArgumentType` through `resolveApp`
   plus the constraint-satisfaction check (`satisfies` — deliberately
   shallow `(name, arity)` verification; see the comment block above
-  `resolveArgumentTypeImpls` for why the deep signature check lives
+  `resolveModuleArgumentType` for why the deep signature check lives
   in the analyzer). Scope lookups live with their owning type:
   name-keyed `findType` / `findModule` / `findGeneric` on `FileScope`
   (filescope.nim, the name→parser-Type bridge), identity-keyed
@@ -386,19 +389,23 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   every `ResolvedModuleArgumentType` is well-formed at construction
   without any forward-reference dance. The historical shell /
   populate two-pass has been retired.
-- **Impl-list validation** — `resolveArgumentTypeImpls` calls
+- **Impl-list validation** — `resolveModuleArgumentType` calls
   `satisfies` on every impl inference path (explicit
   `struct(...)` header, inferred struct fields, inferred union
   fields). The check verifies `(name, arity)` at the parser level;
   downstream `analyzeValueTypeAgainstDefType` catches
   signature-parity mismatches at use sites.
-- **Generic param-list accumulation** — `accumulateGenericPosition`
-  walks each field and assigns the next position to any generic
-  seen for the first time; repeated occurrences keep the position
-  they already have. The result lives as `genericTypeIndex:
-  Table[ResolvedGenericArgumentType, int]` on `ResolvedStructDef` /
-  `ResolvedUnionDef` and drives the position-preserving `requires*`
-  accessor plus the analyzer's substitution walk. No uniqueness
+- **Generic param-list ownership** — each data-block type derives
+  its own order-preserving `generics` seq at construction:
+  `ResolvedVariant` from its generic-typed fields,
+  `ResolvedUnionDef` by merging variant requires (first-seen order
+  across variants — one union scope, Rust-style shared params),
+  `ResolvedStructDef` from its explicit `struct(...)` header
+  (`rsdkExplicit`) or its inferred generic fields (`rsdkInfer`).
+  `genericTypeIndex` is an on-demand projection of that seq; the
+  `requires*` accessors read it directly. Use-sites that can't
+  touch a mid-resolution module derive the same list from the
+  parser side via `fileScope.inferGenerics`. No uniqueness
   rule is enforced at resolution time — the same generic name
   appearing in multiple fields is fine, since the analyzer's
   `GenericImplMap` binds one generic to one concrete type per
@@ -679,18 +686,20 @@ src/
                                    FunctionDef.
     externfunc.nim                 ResolvedExternFunction — extern
                                    symbol + its ResolvedFunctionDef.
-    structdef.nim                  ResolvedStructDef (fieldIndex +
-                                   findField + genericTypeIndex +
-                                   requires accessor).
+    structdef.nim                  ResolvedStructDef (rsdkExplicit /
+                                   rsdkInfer kind + owned generics
+                                   seq + fieldIndex + findField;
+                                   genericTypeIndex is an on-demand
+                                   projection).
     variantdef.nim                 ResolvedVariant (fieldIndex +
-                                   findField).
+                                   findField + generics derived from
+                                   its generic-typed fields).
     uniondef.nim                   ResolvedUnionDef (variantIndex +
-                                   findVariant + genericTypeIndex +
-                                   requires accessor).
+                                   findVariant + generics merged
+                                   from variant requires, first-seen
+                                   order).
     datadef.nim                    ResolvedData (ddkLiteral / ddkStruct
-                                   / ddkUnion) + accumulateGenericPosition
-                                   helper for the shared generic-position
-                                   table.
+                                   / ddkUnion).
     getter.nim                     ResolvedGetter.
     literalinit.nim                ResolvedLiteralInitializer.
     structref.nim                  ResolvedStructRef — parser
@@ -1219,7 +1228,7 @@ What the analyzer does today (all wired):
   is unified against the call's argument types via `GenericImplMap`
   + `merge`, and uniqueness picks the survivor (ambiguity rejected).
 - Impl-list arity + generic constraint satisfaction — checked at
-  resolve time in `resolveArgumentTypeImpls` via `satisfies`
+  resolve time in `resolveModuleArgumentType` via `satisfies`
   (deliberately shallow `(name, arity)` verification); the analyzer
   trusts the resolver's result and only runs use-site
   signature-parity checks via `analyzeValueTypeAgainstDefType`.
@@ -1273,8 +1282,10 @@ Focused TODOs still open:
   inferable type), the resulting binding isn't yet recorded.
 - **Nested-impl generic accumulation** — a field typed
   `Box[u8, Sample]` should contribute `Sample` to the parent's
-  requires; the accumulation walk (`accumulateGenericPosition` on
-  the resolver facade) doesn't descend into impls yet.
+  requires; none of the generic-collection walks
+  (`fileScope.inferGenerics` and the per-type builds in
+  structdef / variantdef / uniondef) descend into impls yet — when
+  this lands, all of them need the same descent.
 - **Type-correctness checks across statements** — assignment
   compatibility and match exhaustiveness. (Setter type equality is
   now enforced in `analyzeSetter`; its error message is still rough

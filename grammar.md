@@ -197,6 +197,27 @@ Identifier: [_a-zA-Z][_a-zA-Z0-9]*
 Notes that surfaced while iterating this grammar — kept here so future
 contributors can find the *why* alongside the *what*.
 
+- **Modules without a data block are namespaces, not values.** A
+  function-only module (like `System`) can be called
+  (`System.println(...)`) but cannot appear as an argument or
+  return type — the resolver rejects it at argument-type resolution
+  ("is not a data module"). An earlier design had `System` as a
+  struct threaded through `start(sys: System)`; that was ditched —
+  runtime capabilities are reached through the namespace, not
+  passed as a value.
+
+- **Only structs support the explicit `struct(...)` generic header.**
+  The escape hatch exists for runtime containers like `Array` and
+  `Map`: they store pointers to their element data, which is not
+  representable in the language, so their type parameters cannot be
+  inferred from fields and must be declared as phantom params.
+  Consequences: a struct with an explicit header rejects generic
+  fields and rejects bare (impl-less) refs ("expects N impls"),
+  while inferred-generic structs and generic unions accept bare
+  refs (leave-as-is inference fills the positions). Unions never
+  take a header — their params are always inferred from variant
+  fields.
+
 - **Decorators are not first-class in the domain today.** `@extern` is
   handled inline on `ExternFunction`. If a second decorator (e.g.
   `@deprecated`) is added, look at the resolution/analysis pattern

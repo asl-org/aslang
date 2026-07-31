@@ -217,7 +217,9 @@ files may use this shape — application code reuses the primitives the
 runtime exposes.
 
 A module may have **at most one** data block. A module with no data
-block is a namespace for functions (like `System` in `base.aslr`).
+block is a namespace for functions (like `System` in `base.aslr`) —
+its functions are callable, but the module itself is not a value:
+it cannot be used as an argument type, return type, or field type.
 
 ---
 
