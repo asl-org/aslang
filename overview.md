@@ -115,14 +115,17 @@ Analyzer ──── Two-pass over the resolved app.
   │
   │              Pass A (analyzeDefApp) — walks every file,
   │              every module + generic, every struct/union/literal,
-  │              every funcDef across the whole app. Produces
-  │              AnalyzedDefApp bundling per-file
-  │              AnalyzedDefFile + per-module
+  │              every funcDef AND every user-function statement
+  │              across the whole app. Produces AnalyzedDefApp
+  │              bundling per-file AnalyzedDefFile + per-module
   │              AnalyzedDefModule + per-def
   │              AnalyzedFunctionDefinition (args + return type
-  │              fully analyzed). Any def-site error surfaces here
-  │              before any body walker runs — the guarantee that
-  │              phase A gives.
+  │              fully analyzed) + per-function AnalyzedDefStatement
+  │              trees (every def-level fact in a body — literal
+  │              defaults, call receivers, struct/union refs —
+  │              re-bound to its resolved def). Any def-site error
+  │              surfaces here before any body walker runs — the
+  │              guarantee that phase A gives.
   │
   │              Pass B — walks function bodies. Consumes phase-A
   │              results: analyzeFunctionCall looks up its overload
@@ -474,20 +477,46 @@ of every value, expression, and statement in each function body.
 
 **Pass A — definitions** (`analyzeDefApp`). Walks every file →
 every module + generic → every struct/union/literal block → every
-funcDef signature across the whole app, producing an
-`AnalyzedDefApp`: per-file `AnalyzedDefFile` (analyzed
-imports + defined types + the name-keyed `ResolvedFileScope`),
-per-def `AnalyzedDefModule` (whose `functions` are tagged
-`AnalyzedDefFunction`s — extern/user, each pairing the resolver
-function with its pre-analyzed `AnalyzedFunctionDefinition`) /
-`AnalyzedGeneric` (bare `AnalyzedFunctionDefinition`s — generics
-have no extern/user split) and the data-block wrappers
-(`AnalyzedStructDef` / `AnalyzedVariantDef` / `AnalyzedUnionDef` /
-`AnalyzedLiteralDef` / `AnalyzedData`).
+funcDef signature → every user-function statement across the whole
+app, producing an `AnalyzedDefApp`: per-file `AnalyzedDefFile`
+(analyzed imports + defined types + the name-keyed
+`ResolvedFileScope`), per-def `AnalyzedDefModule` (whose `functions`
+are tagged `AnalyzedDefFunction`s — extern/user, each pairing the
+resolver function with its pre-analyzed
+`AnalyzedFunctionDefinition`; user functions additionally carry
+their `AnalyzedDefStatement` tree) / `AnalyzedGeneric` (bare
+`AnalyzedFunctionDefinition`s — generics have no extern/user split)
+and the data-block wrappers (`AnalyzedStructDef` /
+`AnalyzedVariantDef` / `AnalyzedUnionDef` / `AnalyzedLiteralDef` /
+`AnalyzedData`). The statement walk mirrors the resolver's statement
+cluster 1:1 (`AnalyzedDefLiteral` → kwargs → fncalls → initializers
+→ match → expression → statement, hosted in
+`defanalyzer/statement.nim` with the ref wrappers in
+`defanalyzer/structref.nim` / `unionref.nim`), re-binding each
+def-level fact (literal default module + LiteralDef, call receiver
+`ResolvedType`, struct/union defs behind refs) from the file scope.
 `AnalyzedDefApp` itself is just the fileDefs + a path-keyed
 `fileDefIndex` behind `findFileDef` — all type lookup state lives on
 the per-file scopes. Any def-site error fires here before any body
 walker touches the AST.
+
+Two phase-A invariants worth naming:
+
+- **Context-free walkers.** No phase-A proc takes a
+  module/generic context parameter — the resolver already enforced
+  every context-sensitive rule at resolve time (a generic block may
+  only reference its own type parameter, module argument types are
+  scope-checked when resolved), so re-deriving an analyzed binding
+  needs only the `ResolvedFileScope`. The former module/generic
+  context twins collapsed into single context-free procs once this
+  was established.
+- **Lookups assert, never err.** Every name phase A looks up was
+  bound and validated by the resolver, so a failed lookup is a
+  compiler bug, not a user error — the walkers unwrap lookups behind
+  `assert "[BUG] - ..."` instead of propagating `err`. The exported
+  surface is deliberately narrow: `analyzeDefApp` (the pass entry)
+  and `analyzeDefArgumentType` (reused by phase B for synthetic
+  argument types); every other walker is private to the barrel.
 
 **Pass B — bodies.** The per-file `analyzeFile` walk first lifts
 each phase-A import def to its body form (`analyzeImport` — each

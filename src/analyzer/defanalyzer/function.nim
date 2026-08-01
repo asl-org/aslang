@@ -8,6 +8,7 @@
 import resolver
 
 import funcdef
+import statement
 
 type AnalyzedDefExternFunction* = ref object
   resolved: ResolvedExternFunction
@@ -22,12 +23,14 @@ proc arity*(function: AnalyzedDefExternFunction): int = function.resolved.arity
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction
   def: AnalyzedFunctionDefinition
+  statements: seq[AnalyzedDefStatement]
 
-proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDefinition): AnalyzedDefUserFunction =
-  AnalyzedDefUserFunction(resolved: resolved, def: def)
+proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDefinition, statements: seq[AnalyzedDefStatement]): AnalyzedDefUserFunction =
+  AnalyzedDefUserFunction(resolved: resolved, def: def, statements: statements)
 
 proc name*(function: AnalyzedDefUserFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefUserFunction): int = function.resolved.arity
+proc statements*(function: AnalyzedDefUserFunction): seq[AnalyzedDefStatement] = function.statements
 
 type
   AnalyzedDefFunctionKind* = enum
