@@ -1139,11 +1139,12 @@ module M:
     check errorContains(r.error, "does not implement")
     check errorContains(r.error, "compare(a: u8, b: u8): i32")
 
-  test "parameterized impl satisfies through positional slot substitution":
-    # Pair requires Comparable; the impl is Array[u8]. Array's own
-    # compare is declared over its slot generic — the check must
-    # substitute both sides (Comparable → Array[u8] on the base,
-    # Comparable → u8 on the impl) before comparing.
+  test "parameterized impl satisfies at definition level":
+    # Pair requires Comparable; the impl is Array[u8]. The check
+    # compares at definition level: Comparable's self-references
+    # become Array's SELF SHAPE (Array[Comparable]), matching Array's
+    # compare as declared — the site binding u8 plays no part here
+    # (it is validated by the recursive argtype walk instead).
     let (r, dir) = analyzeSingle("""
 public module i32:
   literal: "i32"

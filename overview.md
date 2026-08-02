@@ -530,10 +530,13 @@ Three phase-A invariants worth naming:
   where a module type is expected never matches (the expectation is
   already concrete); an EXPECTED generic is a contract — the actual
   type (module or generic) must provide every funcDef the generic
-  mandates, with the generic substituted by the actual's fully
-  qualified type (`A[B, C]` for a module with slots, via
-  `substitute`) and the actual's own require slots substituted by
-  its bound impls — recursively, since contract positions nest. This
+  mandates, compared at DEFINITION level: the generic's
+  self-references substituted (via `substitute`) by the actual's
+  self shape (`A[B, C]` built from its own require slots — not the
+  site-bound impls, which the recursive argtype walk validates
+  separately), candidates as declared. Satisfaction is therefore a
+  binding-independent property of the module, and contract positions
+  nest recursively. This
   fires def-time — an impl with a mismatched signature is rejected
   at its declaration even if the function is never called.
 - **Lookups assert, never err.** Every name phase A looks up was

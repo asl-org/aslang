@@ -6,7 +6,7 @@
 ## once. Nesting convention: parser ⊂ resolver ⊂ defanalyzer ⊂
 ## analyzer.
 
-import options, results, sequtils, strformat, strutils, tables
+import options, results, sequtils, strformat, strutils
 
 import ./defanalyzer/resolver
 export resolver
@@ -107,91 +107,69 @@ proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedType
 #   module  vs generic — never matches;
 #   generic vs module  — the expected generic is a CONTRACT: the
 #   generic vs generic   actual type must provide every funcDef the
-#                        generic mandates, with the generic
-#                        substituted by the actual's fully qualified
-#                        type (`A[B, C]` for a module with slots) and
-#                        the actual's own slots substituted by the
-#                        impls bound at the site — recursively, since
-#                        contract positions can nest.
+#                        generic mandates, compared at DEFINITION
+#                        level — the generic substituted by the
+#                        actual's self shape (`Map[Key, Any]`, not the
+#                        site-bound `Map[String, ...]`), candidates as
+#                        declared. Satisfaction is a property of the
+#                        module, uniform over bindings; the site's
+#                        bound impls are validated separately by the
+#                        recursive analyzeDefArgumentType walk, so
+#                        specializing here would only re-check them.
 # ============================================================
 
 proc argTypeMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expected: ResolvedArgumentType, actual: ResolvedArgumentType): SignatureParity
 
-proc implBindings(fileCtx: ResolvedFileContext, impl: ResolvedArgumentType): Table[Generic, ResolvedArgumentType] =
-  ## Positional bindings of a module impl's own require slots to the
-  ## impls bound at this site (`Array[u8]` → {A → u8}). A generic
-  ## impl has no slots and binds nothing — its self-references
-  ## compare by generic identity.
-  case impl.kind:
-  of ratkGeneric: discard
-  of ratkModule:
-    let maybeModule = fileCtx.findModule(impl.module.parsed, impl.loc)
-    assert(maybeModule.isOk, "[BUG] - Resolver ensures that the impl module exists")
-    assert(maybeModule.get.data.isSome, "[BUG] - Resolver ensures that an impl module is a data module")
-    for (require, bound) in zip(maybeModule.get.data.get.requires, impl.module.impls):
-      result[require.generic] = bound
-
-proc findImplCandidates(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, actual: ResolvedArgumentType, name: Identifier, arity: int): Result[seq[ResolvedFunctionDef], string] =
-  ## The actual type's overload candidates for a required
-  ## (name, arity), filtered by what the context may see. A miss is a
-  ## legitimate contract failure here — nested contract positions are
-  ## NOT covered by the resolver's shallow satisfies (only require
-  ## slots are), so this returns err instead of asserting.
-  case actual.kind:
-  of ratkModule:
-    let maybeModule = fileCtx.findModule(actual.module.parsed, actual.loc)
-    assert(maybeModule.isOk, "[BUG] - Resolver ensures that modules appearing in signatures exist")
-    maybeModule.get.findFunctionDefs(name, arity, typeCtx.access(maybeModule.get))
-  of ratkGeneric:
-    let maybeGeneric = fileCtx.findGeneric(actual.generic.generic, actual.loc)
-    assert(maybeGeneric.isOk, "[BUG] - Resolver ensures that generics appearing in signatures exist")
-    maybeGeneric.get.findFunctionDefs(name, arity)
-
-proc candidateSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requiredDef: ResolvedFunctionDef, candidate: ResolvedFunctionDef, baseBindings: Table[Generic, ResolvedArgumentType], implBindings: Table[Generic, ResolvedArgumentType]): SignatureParity =
-  ## Fold of per-position matching across args + returns: any
+proc signatureMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, base: Generic, self: ResolvedArgumentType, requiredDef: ResolvedFunctionDef, candidate: ResolvedFunctionDef): SignatureParity =
+  ## Positional fold across args + returns: `candidate` (as declared)
+  ## against `requiredDef` with `base` standing for `self`. Any
   ## spUnequal position fails the candidate.
   for i in 0 ..< requiredDef.args.len:
-    let expected = requiredDef.args[i].argType.substitute(baseBindings)
-    let actual = candidate.args[i].argType.substitute(implBindings)
-    case argTypeMatches(fileCtx, typeCtx, expected, actual):
+    let expected = requiredDef.args[i].argType.substitute(base, self)
+    case argTypeMatches(fileCtx, typeCtx, expected, candidate.args[i].argType):
     of spUnequal: return spUnequal
     of spEqual: discard
-  let expectedReturns = requiredDef.returns.substitute(baseBindings)
-  let actualReturns = candidate.returns.substitute(implBindings)
-  argTypeMatches(fileCtx, typeCtx, expectedReturns, actualReturns)
+  argTypeMatches(fileCtx, typeCtx, requiredDef.returns.substitute(base, self), candidate.returns)
 
-proc anyCandidateSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requiredDef: ResolvedFunctionDef, candidates: seq[ResolvedFunctionDef], baseBindings: Table[Generic, ResolvedArgumentType], implBindings: Table[Generic, ResolvedArgumentType]): SignatureParity =
-  for candidate in candidates:
-    case candidateSatisfies(fileCtx, typeCtx, requiredDef, candidate, baseBindings, implBindings):
+proc implementsDef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, base: Generic, self: ResolvedArgumentType, actual: AnalyzedArgumentType, requiredDef: ResolvedFunctionDef): SignatureParity =
+  ## Does `actual` expose an accessible overload matching
+  ## `requiredDef`? The analyzed type already carries its resolved
+  ## module/generic — no scope lookups. A missing name/arity or one
+  ## hidden by visibility folds to spUnequal — absence and mismatch
+  ## are the same contract failure (nested contract positions are not
+  ## covered by the resolver's shallow satisfies, only require slots
+  ## are).
+  let maybeCandidates =
+    case actual.kind:
+    of aatkModule:
+      actual.module.module.findFunctionDefs(requiredDef.name, requiredDef.arity, typeCtx.access(actual.module.module))
+    of aatkGeneric:
+      actual.generic.resolved.findFunctionDefs(requiredDef.name, requiredDef.arity)
+  if maybeCandidates.isErr: return spUnequal
+  for candidate in maybeCandidates.get:
+    case signatureMatches(fileCtx, typeCtx, base, self, requiredDef, candidate):
     of spEqual: return spEqual
     of spUnequal: discard
   spUnequal
 
-proc renderRequiredSig(requiredDef: ResolvedFunctionDef, baseBindings: Table[Generic, ResolvedArgumentType]): string =
+proc renderRequiredSig(base: Generic, self: ResolvedArgumentType, requiredDef: ResolvedFunctionDef): string =
   var args: seq[string]
   for argDef in requiredDef.args:
-    args.add(fmt"{argDef.name.asl}: {argDef.argType.substitute(baseBindings).asl}")
+    args.add(fmt"{argDef.name.asl}: {argDef.argType.substitute(base, self).asl}")
   let argList = args.join(", ")
-  fmt"{requiredDef.name.asl}({argList}): {requiredDef.returns.substitute(baseBindings).asl}"
+  fmt"{requiredDef.name.asl}({argList}): {requiredDef.returns.substitute(base, self).asl}"
 
-proc genericSatisfiedBy(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, required: ResolvedGeneric, actual: ResolvedArgumentType): Result[void, string] =
-  ## The contract core (matching cases 3 and 4): every funcDef of
-  ## `required` must be provided by `actual` — the required generic
-  ## substituted by the actual's fully qualified type on the expected
-  ## side, the actual's own require slots substituted by its bound
-  ## impls on the candidate side.
-  var baseBindings: Table[Generic, ResolvedArgumentType]
-  baseBindings[required.parsed] = actual
-  let bindings = implBindings(fileCtx, actual)
-
+proc genericSatisfiedBy(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, required: ResolvedGeneric, actual: AnalyzedArgumentType): Result[void, string] =
+  ## The contract core (matching cases 3 and 4): `actual` provides
+  ## every funcDef `required` mandates, the contract's self-references
+  ## standing for the actual's definition-form self — a module's fully
+  ## qualified self shape (`Map[Key, Any]`), a generic as itself.
+  let self = actual.self
   for requiredDef in required.funcDefs:
-    let maybeCandidates = findImplCandidates(fileCtx, typeCtx, actual, requiredDef.name, requiredDef.arity)
-    if maybeCandidates.isErr:
-      return err(fmt"{actual.loc} type `{actual.asl}` does not implement `{renderRequiredSig(requiredDef, baseBindings)}` to support `{required.name.asl}`")
-    case anyCandidateSatisfies(fileCtx, typeCtx, requiredDef, maybeCandidates.get, baseBindings, bindings):
+    case implementsDef(fileCtx, typeCtx, required.parsed, self, actual, requiredDef):
     of spEqual: discard
     of spUnequal:
-      return err(fmt"{actual.loc} type `{actual.asl}` does not implement `{renderRequiredSig(requiredDef, baseBindings)}` to support `{required.name.asl}`")
+      return err(fmt"{actual.loc} type `{actual.asl}` does not implement `{renderRequiredSig(required.parsed, self, requiredDef)}` to support `{required.name.asl}`")
   ok()
 
 proc argTypeMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expected: ResolvedArgumentType, actual: ResolvedArgumentType): SignatureParity =
@@ -203,14 +181,20 @@ proc argTypeMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, 
     # different module type or a bare generic, nothing reconciles an
     # already-concrete expectation (cases 1 and 2).
     of ratkModule: spUnequal
-    # Expected generic = contract (cases 3 and 4).
+    # Expected generic = contract (cases 3 and 4). The nested actual
+    # is a signature position (resolved only) — lift it to its
+    # analyzed twin so the contract check has direct module/generic
+    # access; a failed lift means the position's own constraints
+    # don't hold, which is a mismatch here.
     of ratkGeneric:
       let maybeRequired = fileCtx.findGeneric(expected.generic.generic, expected.loc)
       assert(maybeRequired.isOk, "[BUG] - Resolver ensures that generics appearing in signatures are in the file scope")
-      let satisfied = genericSatisfiedBy(fileCtx, typeCtx, maybeRequired.get, actual)
-      if satisfied.isOk: spEqual else: spUnequal
+      let maybeActual = analyzeDefArgumentType(fileCtx, typeCtx, actual)
+      if maybeActual.isErr: spUnequal
+      elif genericSatisfiedBy(fileCtx, typeCtx, maybeRequired.get, maybeActual.get).isOk: spEqual
+      else: spUnequal
 
-proc checkImplSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requirement: ResolvedGenericArgumentType, impl: ResolvedArgumentType): Result[void, string] =
+proc checkImplSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requirement: ResolvedGenericArgumentType, impl: AnalyzedArgumentType): Result[void, string] =
   # The require-slot generic resolves through THIS file's scope — the
   # resolver already found it here by name (inferGenerics), so the
   # identity lookup cannot miss.
@@ -224,15 +208,14 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
   let module = maybeModule.get
   assert(module.data.isSome, "[BUG] - Resolver ensures that argument type modules are data modules")
 
-  var analyzedImpls: seq[AnalyzedArgumentType]
-  for impl in argType.impls:
-    let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
-    analyzedImpls.add(analyzedImpl)
-
   let requires = module.data.get.requires
   assert(requires.len == argType.impls.len, "[BUG] - Resolver ensures impls match the module's require slots")
+
+  var analyzedImpls: seq[AnalyzedArgumentType]
   for (requirement, impl) in zip(requires, argType.impls):
-    ? checkImplSatisfies(fileCtx, typeCtx, requirement, impl)
+    let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
+    analyzedImpls.add(analyzedImpl)
+    ? checkImplSatisfies(fileCtx, typeCtx, requirement, analyzedImpl)
 
   ok(newAnalyzedModuleArgumentType(argType, module, analyzedImpls))
 

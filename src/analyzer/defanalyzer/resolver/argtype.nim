@@ -8,7 +8,7 @@
 ## `genericargtype.nim` files re-export this module so downstream
 ## callers that only need one variant can import it by name.
 
-import results, strformat, strutils, hashes, tables
+import results, strformat, strutils, hashes
 
 import ./parser
 import ./typecontext
@@ -35,7 +35,7 @@ type
 
 proc newResolvedArgumentType*(module: ResolvedModuleArgumentType): ResolvedArgumentType
 proc newResolvedArgumentType*(generic: ResolvedGenericArgumentType): ResolvedArgumentType
-proc substitute*(argType: ResolvedArgumentType, bindings: Table[Generic, ResolvedArgumentType]): ResolvedArgumentType
+proc substitute*(argType: ResolvedArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType
 proc hash*(argType: ResolvedArgumentType): Hash
 proc asl*(argType: ResolvedArgumentType): string
 
@@ -59,9 +59,9 @@ proc satisfies*(argType: ResolvedGenericArgumentType, base: Generic): Result[voi
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc substitute*(argType: ResolvedGenericArgumentType, bindings: Table[Generic, ResolvedArgumentType]): ResolvedArgumentType =
-  if argType.generic notin bindings: newResolvedArgumentType(argType)
-  else: bindings[argType.generic]
+proc substitute*(argType: ResolvedGenericArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
+  if argType.generic == generic: replacement
+  else: newResolvedArgumentType(argType)
 
 # ---- ResolvedModuleArgumentType ----
 
@@ -108,10 +108,10 @@ proc satisfies*(argType: ResolvedModuleArgumentType, base: Generic, typeCtx: Typ
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc substitute*(argType: ResolvedModuleArgumentType, bindings: Table[Generic, ResolvedArgumentType]): ResolvedArgumentType =
+proc substitute*(argType: ResolvedModuleArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
   var impls: seq[ResolvedArgumentType]
   for impl in argType.impls:
-    impls.add(impl.substitute(bindings))
+    impls.add(impl.substitute(generic, replacement))
   let moduleArgType = newResolvedModuleArgumentType(argType.module, impls, argType.loc)
   newResolvedArgumentType(moduleArgType)
 
@@ -169,14 +169,14 @@ proc satisfies*(argType: ResolvedArgumentType, base: Generic, typeCtx: TypeConte
   of ratkModule: argType.module.satisfies(base, typeCtx)
   of ratkGeneric: argType.generic.satisfies(base)
 
-proc substitute*(argType: ResolvedArgumentType, bindings: Table[Generic, ResolvedArgumentType]): ResolvedArgumentType =
-  ## Recursive generic substitution — unlike `concreteArgumentType`
-  ## (single generic, top level only) this rewrites bound generics at
-  ## any depth of the impl tree (`Array[Eq]` under {Eq → u8} becomes
-  ## `Array[u8]`). Unbound generics stay as-is.
+proc substitute*(argType: ResolvedArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
+  ## Recursive single-generic substitution — unlike
+  ## `concreteArgumentType` (top level only) this rewrites the bound
+  ## generic at any depth of the impl tree (`Array[Eq]` under Eq → u8
+  ## becomes `Array[u8]`). Other generics stay as-is.
   case argType.kind:
-  of ratkGeneric: argType.generic.substitute(bindings)
-  of ratkModule: argType.module.substitute(bindings)
+  of ratkGeneric: argType.generic.substitute(generic, replacement)
+  of ratkModule: argType.module.substitute(generic, replacement)
 
 type SignatureParity* = enum
   ## Verdict of the four-case argument-type matching relation
