@@ -46,7 +46,10 @@ public module App:
 - **Imports**: cross-file module/generic imports with aliasing
   (`import { User as U } from "./user.asl"`)
 - **Visibility**: `public` keyword on modules and functions to
-  mark them as exported
+  mark them as exported. A non-public function is module-internal:
+  callable and able to satisfy a generic constraint only from inside
+  the module that defines it; every other context (another module,
+  any generic block) sees public functions only
 - **Comments**: line comments starting with `#`
 
 ### Built-in Types
@@ -106,7 +109,7 @@ Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              so no ref-object cycle forms. Downstream layers
   │              that need the resolved module do an identity-keyed
   │              lookup at their site (the analyzer's
-  │              `fileScope.findModule(module, loc)` or the
+  │              `fileCtx.findModule(module, loc)` or the
   │              resolver's `ResolvedFile.findModule` — keys hash
   │              by source location, so aliased imports can never
   │              miss).
@@ -129,8 +132,8 @@ Analyzer ──── Two-pass over the resolved app.
   │
   │              Pass B — walks function bodies. Consumes phase-A
   │              results: analyzeFunctionCall looks up its overload
-  │              candidates via the per-file AnalyzedFileScope
-  │              (`fileScope.findType(typ).findFunctionDefs(name,
+  │              candidates via the per-file AnalyzedFileContext
+  │              (`fileCtx.findType(typ).findFunctionDefs(name,
   │              arity, public)`) returning
   │              seq[AnalyzedFunctionDefinition] — no re-analysis
   │              at the call site. Return types come pre-analyzed
@@ -170,10 +173,10 @@ Phase-A output (`AnalyzedDefApp` + per-file
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStructDef` / `AnalyzedVariantDef` / `AnalyzedUnionDef` /
 `AnalyzedLiteralDef` / `AnalyzedData`) is threaded through the
-body walker chain as `(appDef, fileDef, fileScope)` — the
-`AnalyzedFileScope` built at `analyzeFile` entry spans imports +
+body walker chain as `(appDef, fileDef, fileCtx)` — the
+`AnalyzedFileContext` built at `analyzeFile` entry spans imports +
 local types, so phase-B overload resolution reads pre-analyzed
-funcDef signatures via `fileScope.findType(typ).findFunctionDefs(...)`
+funcDef signatures via `fileCtx.findType(typ).findFunctionDefs(...)`
 — no re-analysis of arg types or return types at call sites.
 `AnalyzedApp` is the handle downstream codegen will thread through.
 
@@ -351,7 +354,7 @@ receiver's `ResolvedModuleArgumentType` + its `StructDef`;
 the spot), field-maps initializer kwargs via
 `resolveKeywordArguments` (unknown and duplicate fields rejected
 per-field, undersupply by count), and binds every bare literal's
-default module against the FileScope (`ResolvedLiteral.default` —
+default module against the FileContext (`ResolvedLiteral.default` —
 same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 
 - **File layout — one file per resolved type, actor procs on the
@@ -374,18 +377,23 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   so consumers say `import resolver` once. The facade owns every
   `resolve*` proc from `resolveArgumentType` through `resolveApp`
   plus the constraint-satisfaction check (`satisfies` — deliberately
-  shallow `(name, arity)` verification; see the comment block above
-  `resolveModuleArgumentType` for why the deep signature check lives
-  in the analyzer). Scope lookups live with their owning type:
-  name-keyed `findType` / `findModule` / `findGeneric` on `FileScope`
-  (filescope.nim, the name→parser-Type bridge), identity-keyed
+  shallow `(name, arity, accessibility)` verification; see the
+  comment block above `resolveModuleArgumentType` for why the deep
+  signature check lives one phase up, in the def analyzer's
+  `checkImplSatisfies`). Every resolution site carries a
+  `TypeContext` (enclosing module | enclosing generic, typecontext.nim)
+  from which `FunctionAccess` is derived: `faAll` inside the
+  defining module, `faPublic` everywhere else — `findFunctionDefs`
+  filters by it at every layer. Scope lookups live with their owning type:
+  name-keyed `findType` / `findModule` / `findGeneric` on `FileContext`
+  (filecontext.nim, the name→parser-Type bridge), identity-keyed
   `findType` / `findModule` / `findGeneric` on `ResolvedFile`
   (files.nim), and identity-keyed `findFile` / `findType` on
   `ResolvedApp` (app.nim).
 - **Single-pass walk per app** (files come topo-sorted leaves-first
   from the parser's multi-file `parse*` entry, so imports are always
   resolved before use). For
-  each file: build the `FileScope` (locally-defined names +
+  each file: build the `FileContext` (locally-defined names +
   imported bindings). Then for each defined type resolve requires
   (if any), the data block, and each function signature/body.
   Argument types along the way carry parser Module identifiers, so
@@ -395,20 +403,23 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 - **Impl-list validation** — `resolveModuleArgumentType` calls
   `satisfies` on every impl inference path (explicit
   `struct(...)` header, inferred struct fields, inferred union
-  fields). The check verifies `(name, arity)` at the parser level;
-  downstream `analyzeValueTypeAgainstDefType` catches
-  signature-parity mismatches at use sites.
+  fields). The check verifies `(name, arity)` plus accessibility at
+  the parser level; signature parity is checked at def time by the
+  def analyzer's `checkImplSatisfies`, and
+  `analyzeValueTypeAgainstDefType` still guards use sites.
 - **Generic param-list ownership** — each data-block type derives
   its own order-preserving `generics` seq at construction:
   `ResolvedVariant` from its generic-typed fields,
   `ResolvedUnionDef` by merging variant requires (first-seen order
   across variants — one union scope, Rust-style shared params),
-  `ResolvedStructDef` from its explicit `struct(...)` header
-  (`rsdkExplicit`) or its inferred generic fields (`rsdkInfer`).
+  `ResolvedStructDef` from its explicit `struct(...)` header or its
+  inferred generic fields (the split is decided inside
+  `resolveStructDef`; the constructed def carries no kind — nothing
+  downstream needs to know which path produced it).
   `genericTypeIndex` is an on-demand projection of that seq; the
   `requires*` accessors read it directly. Use-sites that can't
   touch a mid-resolution module derive the same list from the
-  parser side via `fileScope.inferGenerics`. No uniqueness
+  parser side via `fileCtx.inferGenerics`. No uniqueness
   rule is enforced at resolution time — the same generic name
   appearing in multiple fields is fine, since the analyzer's
   `GenericImplMap` binds one generic to one concrete type per
@@ -429,12 +440,12 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 - **Body-level name resolution** — the resolver walks user-function
   bodies: each statement is dispatched, each expression is resolved,
   and every function call's root (the user-typed receiver name) is
-  resolved against the FileScope to a `parser.Type` carried on
+  resolved against the FileContext to a `parser.Type` carried on
   `ResolvedFunctionCall.typ` — so the analyzer never resolves a
   user-typed name; it does identity lookups on what the resolver
-  already bound. The per-file `FileScope` itself is stored on
+  already bound. The per-file `FileContext` itself is stored on
   `ResolvedFile.scope` for downstream name→parser.Type bridging
-  (e.g. the analyzer's bare-literal defaults). A `FunctionScope`
+  (e.g. the analyzer's bare-literal defaults). A `FunctionContext`
   (Table[Identifier, Location]) tracks the names of variables
   currently in scope; the value stores the declaration site so
   duplicate-declaration errors can point at the prior source
@@ -480,7 +491,7 @@ every module + generic → every struct/union/literal block → every
 funcDef signature → every user-function statement across the whole
 app, producing an `AnalyzedDefApp`: per-file `AnalyzedDefFile`
 (analyzed imports + defined types + the name-keyed
-`ResolvedFileScope`), per-def `AnalyzedDefModule` (whose `functions`
+`ResolvedFileContext`), per-def `AnalyzedDefModule` (whose `functions`
 are tagged `AnalyzedDefFunction`s — extern/user, each pairing the
 resolver function with its pre-analyzed
 `AnalyzedFunctionDefinition`; user functions additionally carry
@@ -500,31 +511,48 @@ def-level fact (literal default module + LiteralDef, call receiver
 the per-file scopes. Any def-site error fires here before any body
 walker touches the AST.
 
-Two phase-A invariants worth naming:
+Three phase-A invariants worth naming:
 
-- **Context-free walkers.** No phase-A proc takes a
-  module/generic context parameter — the resolver already enforced
-  every context-sensitive rule at resolve time (a generic block may
-  only reference its own type parameter, module argument types are
-  scope-checked when resolved), so re-deriving an analyzed binding
-  needs only the `ResolvedFileScope`. The former module/generic
-  context twins collapsed into single context-free procs once this
-  was established.
+- **One context value, no twins.** Phase-A walkers carry a single
+  `ResolvedTypeContext` (enclosing resolved module | resolved
+  generic, defanalyzer/typecontext.nim — the identity-ladder twin of
+  the resolver's `TypeContext`), consumed for exactly one decision:
+  function visibility during constraint satisfaction. Everything
+  else context-sensitive (the generic self-reference rule, name/
+  arity/accessibility presence) was already enforced at resolve
+  time, so there are no module/generic proc twins — one context
+  value, one proc.
+- **Deep constraint satisfaction** (`checkImplSatisfies`). For every
+  parameterized module argument type, each impl↔require pair is
+  checked through the four-case matching relation
+  (`argTypeMatches`, verdicts = `SignatureParity`):
+  module-vs-module is identity (loc-based hash); a generic offered
+  where a module type is expected never matches (the expectation is
+  already concrete); an EXPECTED generic is a contract — the actual
+  type (module or generic) must provide every funcDef the generic
+  mandates, with the generic substituted by the actual's fully
+  qualified type (`A[B, C]` for a module with slots, via
+  `substitute`) and the actual's own require slots substituted by
+  its bound impls — recursively, since contract positions nest. This
+  fires def-time — an impl with a mismatched signature is rejected
+  at its declaration even if the function is never called.
 - **Lookups assert, never err.** Every name phase A looks up was
   bound and validated by the resolver, so a failed lookup is a
   compiler bug, not a user error — the walkers unwrap lookups behind
-  `assert "[BUG] - ..."` instead of propagating `err`. The exported
-  surface is deliberately narrow: `analyzeDefApp` (the pass entry)
-  and `analyzeDefArgumentType` (reused by phase B for synthetic
-  argument types); every other walker is private to the barrel.
+  `assert "[BUG] - ..."` instead of propagating `err` (the deep
+  check's parity failures are the deliberate exception: new
+  validation, real user errors). The exported surface is
+  deliberately narrow: `analyzeDefApp` (the pass entry) and
+  `analyzeDefArgumentType` (reused by phase B for synthetic argument
+  types); every other walker is private to the barrel.
 
 **Pass B — bodies.** The per-file `analyzeFile` walk first lifts
 each phase-A import def to its body form (`analyzeImport` — each
 imported type resolves to the source file's `AnalyzedType`
-via that file's fileDef), builds the per-file `AnalyzedFileScope`
+via that file's fileDef), builds the per-file `AnalyzedFileContext`
 spanning imports + local types, and then analyzes each module's
 function bodies against it. Call sites read pre-analyzed funcDef
-signatures via `fileScope.findType(typ).findFunctionDefs(...)` — no
+signatures via `fileCtx.findType(typ).findFunctionDefs(...)` — no
 re-analysis of arg types or return types per call site. Body-level
 analyzed types back-reference the phase-A defs that produced them
 (`AnalyzedFile.def` / `AnalyzedModule.def`; extern functions carry
@@ -538,29 +566,29 @@ their `AnalyzedFunctionDefinition`). Scope:
   per-file scope answers "given what the layer below handed me,
   find my enrichment of it", all hash-by-loc:
 
-      resolver     FileScope           Identifier   → parser.Type
-      defanalyzer  ResolvedFileScope   parser.Type  → ResolvedType
-      analyzer     AnalyzedFileScope   ResolvedType → AnalyzedType
+      resolver     FileContext           Identifier   → parser.Type
+      defanalyzer  ResolvedFileContext   parser.Type  → ResolvedType
+      analyzer     AnalyzedFileContext   ResolvedType → AnalyzedType
 
   Aliased imports (`import { u8 as Byte }`) can never miss.
   Bare-literal defaults are bound at resolve time too
   (`resolveLiteral` looks up `Literal.defaultType` — "i32"/"f32"/
-  "String" — against the FileScope and stores the parser.Module on
+  "String" — against the FileContext and stores the parser.Module on
   `ResolvedLiteral.default`), so `fileDef.defaultLiteralType` is a
   pure identity lookup on the pre-bound module. See
   plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
-- **Per-file context = fileDef + fileScope, minimal params** —
-  phase A threads the `ResolvedFileScope` it is building and stores
+- **Per-file context = fileDef + fileCtx, minimal params** —
+  phase A threads the `ResolvedFileContext` it is building and stores
   it on `AnalyzedDefFile.scope`; phase B threads the
   finished `fileDef: AnalyzedDefFile` (identity scope,
   resolver file, analyzed defs) plus the body-level
-  `fileScope: AnalyzedFileScope` built at `analyzeFile` entry.
-  Phase-B shape: `(appDef, fileDef, fileScope, module, funcScope,
+  `fileCtx: AnalyzedFileContext` built at `analyzeFile` entry.
+  Phase-B shape: `(appDef, fileDef, fileCtx, module, funcCtx,
   ...)` where `module` is the enclosing `AnalyzedDefModule`
   (body walkers reach the resolver module via `module.resolved`);
   the extract helpers (`extractDataDef` / `extractStructFor`
-  / `extractUnionFor`) dispatch off the AnalyzedFileScope. Wider
+  / `extractUnionFor`) dispatch off the AnalyzedFileContext. Wider
   contexts stay off the signatures: `app: ResolvedApp` appears only
   in phase A's file walk, where the app is the subject (`analyze*` /
   `analyzeDefApp` / `analyzeDefFile` and
@@ -623,12 +651,12 @@ their `AnalyzedFunctionDefinition`). Scope:
   a seq of `AnalyzedBinding = tuple[name: Identifier, argType:
   AnalyzedArgumentType]` — the body-level replacement for the
   retired def-level `AnalyzedArgumentDefinition` wrapper.
-- **Scope tables** — `ResolvedFileScope`
-  (defanalyzer/filescope.nim) and `AnalyzedFileScope`
-  (analyzer/filescope.nim) both span imports + local defined types;
+- **Scope tables** — `ResolvedFileContext`
+  (defanalyzer/filecontext.nim) and `AnalyzedFileContext`
+  (analyzer/filecontext.nim) both span imports + local defined types;
   the same type imported under two bindings lands on one key, so
   construction only rejects a genuinely different entry under an
-  existing key. `AnalyzedFunctionScope` (analyzer/funcscope.nim,
+  existing key. `AnalyzedFunctionContext` (analyzer/funccontext.nim,
   `Identifier → AnalyzedArgumentType`) is the per-function variable
   scope threaded through the body walkers — variables have no
   identity beyond their name, so name keying is correct there.
@@ -661,7 +689,7 @@ src/
                                    shallow by design; deep signature
                                    parity is the analyzer's job).
                                    Scope lookups live with their
-                                   owning types (filescope.nim /
+                                   owning types (filecontext.nim /
                                    files.nim / app.nim below).
                                    `import resolver` gives consumers
                                    everything they need to build,
@@ -675,14 +703,14 @@ src/
     literaldef.nim                 ResolvedLiteralDef + newResolvedLiteralDef
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
     imports.nim                    ResolvedImportedType / ResolvedImport
-    filescope.nim                  FileScope (Identifier → parser
+    filecontext.nim                  FileContext (Identifier → parser
                                    Type) — the name→identity bridge,
                                    populated from imports + local
                                    defs; keyed by binding so aliased
                                    imports resolve correctly. Owns
                                    the name-keyed findType /
                                    findModule / findGeneric.
-    functionscope.nim              FunctionScope
+    functioncontext.nim              FunctionContext
                                    (Table[Identifier, Location]) —
                                    names of variables currently in
                                    scope, keyed by identifier with
@@ -690,7 +718,7 @@ src/
                                    for duplicate-declaration error
                                    pointers. Types are the analyzer's
                                    concern. Constructor
-                                   newFunctionScope seeds from a
+                                   newFunctionContext seeds from a
                                    resolved function's args;
                                    `update` extends with a
                                    statement's introduced variable
@@ -715,8 +743,7 @@ src/
                                    FunctionDef.
     externfunc.nim                 ResolvedExternFunction — extern
                                    symbol + its ResolvedFunctionDef.
-    structdef.nim                  ResolvedStructDef (rsdkExplicit /
-                                   rsdkInfer kind + owned generics
+    structdef.nim                  ResolvedStructDef (owned generics
                                    seq + fieldIndex + findField;
                                    genericTypeIndex is an on-demand
                                    projection).
@@ -779,7 +806,7 @@ src/
                                    findGeneric taking the parser-side
                                    Type / Module / Generic plus a loc
                                    for error messages. Also stores
-                                   the resolve-time FileScope
+                                   the resolve-time FileContext
                                    (`scope` accessor) for downstream
                                    name→parser.Type bridging.
     app.nim                        ResolvedApp — the top-level handle;
@@ -963,7 +990,7 @@ src/
                                    accessors only) + the nested
                                    resolver subtree above. `ls` for
                                    the authoritative list.
-    filescope.nim                  ResolvedFileScope (parser.Type →
+    filecontext.nim                  ResolvedFileContext (parser.Type →
                                    ResolvedType, identity-keyed) —
                                    spans imports + local types;
                                    built per file in pass A, stored
@@ -1044,7 +1071,7 @@ src/
                                    analyzeStatement /
                                    analyzeFunctionCall /
                                    analyzeMatchExpression / ...), the
-                                   AnalyzedFileScope-keyed extract
+                                   AnalyzedFileContext-keyed extract
                                    helpers (extractDataDef,
                                    extractStructFor, extractUnionFor),
                                    and the public two-pass `analyze*`
@@ -1057,7 +1084,7 @@ src/
                                    barrels). Each imports
                                    ./defanalyzer once for def types
                                    + resolver.
-    filescope.nim                  AnalyzedFileScope (ResolvedType →
+    filecontext.nim                  AnalyzedFileContext (ResolvedType →
                                    AnalyzedType,
                                    identity-keyed) — the third rung
                                    of the scope ladder; spans
@@ -1071,12 +1098,12 @@ src/
     importedtype.nim               AnalyzedImportedType (binding →
                                    the source file's
                                    AnalyzedType).
-    funcscope.nim                  AnalyzedFunctionScope (Identifier →
+    funccontext.nim                  AnalyzedFunctionContext (Identifier →
                                    AnalyzedArgumentType) —
                                    per-function variable scope;
                                    seeded from a pre-analyzed
                                    AnalyzedFunctionDefinition's args
-                                   (newAnalyzedFunctionScope) and
+                                   (newAnalyzedFunctionContext) and
                                    extended via update overloads
                                    (statement binding / case-pattern
                                    bindings). Case blocks copy by
@@ -1247,7 +1274,7 @@ analyzer recovery (plans/plan_analyzer_two_pass.md), the
 identity-based lookup migration
 (plans/plan_identity_based_lookups.md +
 plans/plan_alias_lookup_cleanup.md — post-resolution lookups key on
-parser-level identity, immune to aliased imports), and the fileScope
+parser-level identity, immune to aliased imports), and the fileCtx
 threading removal (plans/plan_filescope_threading.md). See tasks.md
 for the DDD-refactor trail that preceded them.
 
@@ -1256,11 +1283,11 @@ What the analyzer does today (all wired):
 - Overload selection at function-call sites — each candidate funcDef
   is unified against the call's argument types via `GenericImplMap`
   + `merge`, and uniqueness picks the survivor (ambiguity rejected).
-- Impl-list arity + generic constraint satisfaction — checked at
-  resolve time in `resolveModuleArgumentType` via `satisfies`
-  (deliberately shallow `(name, arity)` verification); the analyzer
-  trusts the resolver's result and only runs use-site
-  signature-parity checks via `analyzeValueTypeAgainstDefType`.
+- Impl-list arity + generic constraint satisfaction — presence and
+  accessibility checked at resolve time in
+  `resolveModuleArgumentType` via `satisfies`; signature parity
+  checked def-time by the def analyzer's `checkImplSatisfies`;
+  `analyzeValueTypeAgainstDefType` still runs use-site checks.
 - Concretization — the matched funcDef's return type and the
   match-subject's union are rewritten through `concrete()` with the
   inferred impls so downstream sites see substituted types.
@@ -1312,7 +1339,7 @@ Focused TODOs still open:
 - **Nested-impl generic accumulation** — a field typed
   `Box[u8, Sample]` should contribute `Sample` to the parent's
   requires; none of the generic-collection walks
-  (`fileScope.inferGenerics` and the per-type builds in
+  (`fileCtx.inferGenerics` and the per-type builds in
   structdef / variantdef / uniondef) descend into impls yet — when
   this lands, all of them need the same descent.
 - **Type-correctness checks across statements** — assignment

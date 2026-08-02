@@ -1,19 +1,19 @@
 ## Phase-A `AnalyzedDefFile` — per-file bundle of the file's
 ## analyzed imports + defined types, the identity-keyed
-## ResolvedFileScope (`scope`), and a local-only definedTypeIndex
+## ResolvedFileContext (`scope`), and a local-only definedTypeIndex
 ## (`ResolvedType → AnalyzedType`) behind `findType` /
 ## `findModule`.
 ##
 ## The local index deliberately excludes imports — analyzeImportedType
 ## uses it to verify an imported name is DEFINED in its source file,
 ## not merely visible there. Phase-B lookups spanning imports go
-## through the body layer's `AnalyzedFileScope` instead.
+## through the body layer's `AnalyzedFileContext` instead.
 
 import results, strformat, tables
 
 import ./resolver
 import ./argtype
-import ./filescope
+import ./filecontext
 import ./types
 import ./importdef
 import ./moduledef
@@ -22,13 +22,13 @@ type AnalyzedDefFile* = ref object
   resolved: ResolvedFile
   imports: seq[AnalyzedDefImport]
   types: seq[AnalyzedType]
-  scope: ResolvedFileScope
+  scope: ResolvedFileContext
   definedTypeIndex: Table[ResolvedType, AnalyzedType]
 
 proc newAnalyzedDefFile*(resolved: ResolvedFile,
     imports: seq[AnalyzedDefImport],
     types: seq[AnalyzedType],
-    scope: ResolvedFileScope): AnalyzedDefFile =
+    scope: ResolvedFileContext): AnalyzedDefFile =
   var definedTypeIndex: Table[ResolvedType, AnalyzedType]
   for definedType in types:
     definedTypeIndex[definedType.resolved] = definedType
@@ -39,7 +39,7 @@ proc resolved*(f: AnalyzedDefFile): ResolvedFile = f.resolved
 proc path*(f: AnalyzedDefFile): string = f.resolved.path
 proc imports*(f: AnalyzedDefFile): seq[AnalyzedDefImport] = f.imports
 proc types*(f: AnalyzedDefFile): seq[AnalyzedType] = f.types
-proc scope*(f: AnalyzedDefFile): ResolvedFileScope = f.scope
+proc scope*(f: AnalyzedDefFile): ResolvedFileContext = f.scope
 
 proc findType*(fileDef: AnalyzedDefFile, typ: ResolvedType, loc: Location): Result[AnalyzedType, string] =
   if typ in fileDef.definedTypeIndex: ok(fileDef.definedTypeIndex[typ])

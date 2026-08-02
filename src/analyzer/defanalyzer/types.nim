@@ -48,11 +48,11 @@ proc resolved*(definedType: AnalyzedType): ResolvedType =
   of atkModule: newResolvedType(definedType.module.resolved)
   of atkGeneric: newResolvedType(definedType.generic.resolved)
 
-proc findFunctionDefs*(definedType: AnalyzedType, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
-  ## Uniform overload lookup regardless of definedType.kind. `public`
+proc findFunctionDefs*(definedType: AnalyzedType, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDefinition], string] =
+  ## Uniform overload lookup regardless of definedType.kind. `access`
   ## is honored by modules and ignored by generics (their funcDefs
   ## are implicitly public — a generic block is an interface
   ## declaration).
   case definedType.kind:
-  of atkModule: definedType.module.findFunctionDefs(name, arity, public)
+  of atkModule: definedType.module.findFunctionDefs(name, arity, access)
   of atkGeneric: definedType.generic.findFunctionDefs(name, arity)

@@ -10,7 +10,7 @@
 ## as-is to the concrete def; see the same caveat noted on
 ## `AnalyzedArgumentDefinition.concrete`.
 
-import strutils
+import strutils, sequtils
 
 import ./resolver
 import ./argtype
@@ -40,6 +40,11 @@ proc asl*(f: AnalyzedFunctionDefinition): string =
   for arg in f.args:
     args.add(arg.asl)
   "func " & f.name.asl & "(" & args.join(", ") & "): " & f.returns.asl
+
+proc filter*(defs: seq[AnalyzedFunctionDefinition], access: FunctionAccess): seq[AnalyzedFunctionDefinition] =
+  case access:
+  of faAll: defs
+  of faPublic: defs.filterIt(it.public)
 
 proc concrete*(f: AnalyzedFunctionDefinition,
     implMap: GenericImplMap): AnalyzedFunctionDefinition =

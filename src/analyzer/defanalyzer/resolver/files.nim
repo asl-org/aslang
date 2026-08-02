@@ -3,7 +3,7 @@
 import results, sequtils, strformat, tables
 
 import ./parser
-import filescope
+import filecontext
 import module
 import generic
 import types
@@ -15,9 +15,9 @@ type ResolvedFile* = ref object
   imports: seq[ResolvedImport]
   types: seq[ResolvedType]
   typeIndex: Table[parser.Type, int]
-  scope: FileScope
+  scope: FileContext
 
-proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType], scope: FileScope): ResolvedFile =
+proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType], scope: FileContext): ResolvedFile =
   var typeIndex: Table[parser.Type, int]
   for id, typ in types:
     assert typ.parsed notin typeIndex, "duplicate local type detected in the resolved file"
@@ -28,7 +28,7 @@ proc path*(file: ResolvedFile): string = file.parsed.path
 proc parsed*(file: ResolvedFile): parser.File = file.parsed
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 proc types*(file: ResolvedFile): seq[ResolvedType] = file.types
-proc scope*(file: ResolvedFile): FileScope = file.scope
+proc scope*(file: ResolvedFile): FileContext = file.scope
 proc modules*(file: ResolvedFile): seq[ResolvedModule] =
   file.types.filterIt(it.kind == rtkModule).mapIt(it.module)
 

@@ -1078,3 +1078,254 @@ module M:
     ])
     cleanupDir(dir)
     check r.isOk
+
+suite "analyzer — deep constraint satisfaction":
+
+  test "impl with matching signature satisfies the required generic":
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+public module u8:
+  literal: "u8"
+
+  public func compare(a: u8, b: u8): i32
+    i32 0
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+module Pair:
+  struct:
+    value: Comparable
+
+module M:
+  struct:
+    p: Pair[u8]
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "impl with wrong return type is rejected at def time, never called":
+    # u8.compare returns u64 where Comparable demands i32. Nothing
+    # ever calls compare — the deep check still rejects at the
+    # Pair[u8] declaration.
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+public module u64:
+  literal: "u64"
+
+public module u8:
+  literal: "u8"
+
+  public func compare(a: u8, b: u8): u64
+    u64 0
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+module Pair:
+  struct:
+    value: Comparable
+
+module M:
+  struct:
+    p: Pair[u8]
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "does not implement")
+    check errorContains(r.error, "compare(a: u8, b: u8): i32")
+
+  test "parameterized impl satisfies through positional slot substitution":
+    # Pair requires Comparable; the impl is Array[u8]. Array's own
+    # compare is declared over its slot generic — the check must
+    # substitute both sides (Comparable → Array[u8] on the base,
+    # Comparable → u8 on the impl) before comparing.
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+public module u32:
+  literal: "u32"
+
+public module u8:
+  literal: "u8"
+
+  public func compare(a: u8, b: u8): i32
+    i32 0
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+public module Array:
+  struct(Comparable):
+    size: u32
+
+  public func compare(a: Array[Comparable], b: Array[Comparable]): i32
+    i32 0
+
+module Pair:
+  struct:
+    value: Comparable
+
+module M:
+  struct:
+    p: Pair[Array[u8]]
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "free generic as impl satisfies by identity":
+    # Inside Wrapper's own definition the impl IS the free generic
+    # Comparable — expected and candidate signatures both carry the
+    # same generic identity, so equality decides without grounding.
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+public module u32:
+  literal: "u32"
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+public module Array:
+  struct(Comparable):
+    size: u32
+
+  public func compare(a: Array[Comparable], b: Array[Comparable]): i32
+    i32 0
+
+module Wrapper:
+  struct:
+    items: Array[Comparable]
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "one matching overload among several satisfies":
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+public module u32:
+  literal: "u32"
+
+public module u8:
+  literal: "u8"
+
+  public func compare(a: u32, b: u32): i32
+    i32 0
+
+  public func compare(a: u8, b: u8): i32
+    i32 0
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+module Pair:
+  struct:
+    value: Comparable
+
+module M:
+  struct:
+    p: Pair[u8]
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "generic offered where a module type is expected is rejected":
+    # Comparable demands weight(a: u8, factor: u32): i32. u8 provides
+    # weight over a free generic K in the factor position — a bare
+    # generic can never stand where a concrete module type is
+    # demanded, so this is a definite def-time failure, not a
+    # deferral to the call site.
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+public module u32:
+  literal: "u32"
+
+public generic K:
+  func foo(): u32
+
+public module u8:
+  literal: "u8"
+
+  public func weight(a: u8, factor: K): i32
+    i32 0
+
+public generic Comparable:
+  func weight(a: Comparable, factor: u32): i32
+
+module Pair:
+  struct:
+    value: Comparable
+
+module M:
+  struct:
+    p: Pair[u8]
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "does not implement")
+    check errorContains(r.error, "weight(a: u8, factor: u32): i32")
+
+  test "a richer generic satisfies a contract generic structurally":
+    # Box requires Eq; the impl is the generic Ord — a DIFFERENT
+    # generic that declares Eq's funcDef with matching signature
+    # (self-positions substituted: Eq → Ord). Case 4 of the matching
+    # relation — subsumption, not identity.
+    let (r, dir) = analyzeSingle("""
+public module u32:
+  literal: "u32"
+
+public generic Eq:
+  func eq(a: Eq, b: Eq): u32
+
+public generic Ord:
+  func eq(a: Ord, b: Ord): u32
+  func lt(a: Ord, b: Ord): u32
+
+public module Box:
+  struct(Eq):
+    size: u32
+
+module Wrapper:
+  struct:
+    items: Box[Ord]
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "a generic whose signature diverges from the contract is rejected":
+    # Ord declares eq(a: Ord, b: u32) where Eq demands eq over two
+    # self-positions. The second position pits expected Ord (generic
+    # contract) against actual u32 (module) — nested case 3: u32 has
+    # no functions, cannot satisfy Ord, so the candidate fails.
+    let (r, dir) = analyzeSingle("""
+public module u32:
+  literal: "u32"
+
+public generic Eq:
+  func eq(a: Eq, b: Eq): u32
+
+public generic Ord:
+  func eq(a: Ord, b: u32): u32
+
+public module Box:
+  struct(Eq):
+    size: u32
+
+module Wrapper:
+  struct:
+    items: Box[Ord]
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "does not implement")
+    check errorContains(r.error, "to support `Eq`")

@@ -21,27 +21,20 @@ proc buildGenericTypeIndex(generics: seq[ResolvedGenericArgumentType]): Table[Re
     genericTypeIndex[generic] = id
   return genericTypeIndex
 
-type
-  ResolvedStructDefKind* = enum
-    rsdkInfer, rsdkExplicit
-  ResolvedStructDef* = ref object
-    kind: ResolvedStructDefKind
-    parsed: StructDef
-    generics: seq[ResolvedGenericArgumentType]
-    fields: seq[ResolvedArgumentDef]
-    fieldIndex: Table[Identifier, int]
+type ResolvedStructDef* = ref object
+  parsed: StructDef
+  generics: seq[ResolvedGenericArgumentType]
+  fields: seq[ResolvedArgumentDef]
+  fieldIndex: Table[Identifier, int]
 
-proc newResolvedStructDef(kind: ResolvedStructDefKind, parsed: StructDef, generics: seq[ResolvedGenericArgumentType], fields: seq[ResolvedArgumentDef]): ResolvedStructDef =
+proc newResolvedStructDef*(parsed: StructDef, generics: seq[ResolvedGenericArgumentType], fields: seq[ResolvedArgumentDef]): ResolvedStructDef =
+  ## One constructor for both the explicit-header and inferred-from-
+  ## fields paths — the split is fully decided by resolveStructDef
+  ## before construction, and nothing downstream ever needed to know
+  ## which path produced the def.
   let fieldIndex = buildFieldIndex(fields)
-  ResolvedStructDef(kind: kind, parsed: parsed, generics: generics, fields: fields, fieldIndex: fieldIndex)
+  ResolvedStructDef(parsed: parsed, generics: generics, fields: fields, fieldIndex: fieldIndex)
 
-proc newResolvedExplicitStructDef*(parsed: StructDef, generics: seq[ResolvedGenericArgumentType], fields: seq[ResolvedArgumentDef]): ResolvedStructDef =
-  newResolvedStructDef(rsdkExplicit, parsed, generics, fields)
-
-proc newResolvedInferredStructDef*(parsed: StructDef, generics: seq[ResolvedGenericArgumentType], fields: seq[ResolvedArgumentDef]): ResolvedStructDef =
-  newResolvedStructDef(rsdkInfer, parsed, generics, fields)
-
-proc kind*(struct: ResolvedStructDef): ResolvedStructDefKind = struct.kind
 proc loc*(struct: ResolvedStructDef): Location = struct.parsed.loc
 proc parsed*(struct: ResolvedStructDef): StructDef = struct.parsed
 proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDef] = struct.fields

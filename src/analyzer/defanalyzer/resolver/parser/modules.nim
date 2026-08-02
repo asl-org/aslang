@@ -74,13 +74,15 @@ proc asl*(module: Module, level: int, indentWidth: uint32): seq[string] =
     lines.add(function)
   return lines
 
-proc findFunctionDefs*(module: Module, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
+proc findFunctionDefs*(module: Module, name: Identifier, arity: int, access: FunctionAccess): Result[seq[FunctionDef], string] =
   if name notin module.functionIndex:
     err(fmt"{name.loc} module `{module.name.asl}` does not have function `{name.asl}`")
   elif arity notin module.functionIndex[name]:
     err(fmt"{name.loc} module `{module.name.asl}` does not have function `{name.asl}` with arity `{arity}`")
   else:
-    ok(module.functionIndex[name][arity].mapIt(module.functions[it].def))
+    let defs = module.functionIndex[name][arity].mapIt(module.functions[it].def).filter(access)
+    if defs.len > 0: ok(defs)
+    else: err(fmt"{name.loc} function `{name.asl}` of module `{module.name.asl}` is not public")
 
 type ModuleHeader* = tuple[public: bool, name: Identifier, loc: Location]
 

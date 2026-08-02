@@ -5,7 +5,7 @@
 ## One identity-keyed index carries the phase-B lookup weight:
 ## `definedTypeIndex` (`ResolvedType → AnalyzedType`) —
 ## app-wide identity lookup used by `findDefinedType`. Every caller
-## with a ResolvedType in hand (from `fileScope.findType`, an
+## with a ResolvedType in hand (from `fileCtx.findType`, an
 ## argType's carried module, etc.) reaches the analyzed
 ## module/generic without going through name-keyed per-file scopes;
 ## pre-analyzed funcDef signatures are then read off the result via

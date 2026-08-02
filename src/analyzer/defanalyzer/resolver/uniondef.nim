@@ -1,7 +1,7 @@
 ## ResolvedUnionDef — a union definition, indexed by variant name and
 ## by required impl set.
 
-import results, sets, strformat, tables
+import results, sequtils, sets, strformat, tables
 
 import ./parser
 import argtype  # ResolvedGenericArgumentType lives here
@@ -21,14 +21,11 @@ proc buildVariantIndex(variants: seq[ResolvedVariant]): Table[Identifier, int] =
   return variantIndex
 
 proc buildGenerics(variants: seq[ResolvedVariant]): seq[ResolvedGenericArgumentType] =
-  var genericSet: HashSet[ResolvedGenericArgumentType]
-  var generics: seq[ResolvedGenericArgumentType]
+  var generics: OrderedSet[ResolvedGenericArgumentType]
   for variant in variants:
     for generic in variant.requires:
-      if generic notin genericSet:
-        generics.add(generic)
-        genericSet.incl(generic)
-  return generics
+      generics.incl(generic)
+  return generics.toSeq
 
 type ResolvedUnionDef* = ref object
   parsed: UnionDef

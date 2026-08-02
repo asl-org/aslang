@@ -248,8 +248,14 @@ effects.
 ### Public functions
 
 `public func` exports the function across module/file boundaries.
-Without `public`, the function is only callable from inside its own
-module.
+Without `public`, the function is module-internal: it is only
+callable from inside its own module, and it only counts toward
+satisfying a generic constraint there. Writing `Pair[u8]` outside
+module `u8` requires every function the constraint demands to be
+`public` on `u8` — a private implementation satisfies the
+constraint only within `u8` itself. Generic blocks are not modules:
+from inside a generic, every module's public functions (and only
+those) are visible.
 
 ### Extern functions (`.aslr` only)
 

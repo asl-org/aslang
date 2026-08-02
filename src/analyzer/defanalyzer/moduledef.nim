@@ -60,15 +60,17 @@ proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): 
   else:
     ok(module.functions[module.funcDefIndex[funcDef]].def)
 
-proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, public: bool): Result[seq[AnalyzedFunctionDefinition], string] =
+proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDefinition], string] =
   ## Overload-lookup entry point — returns every AnalyzedFunctionDefinition
-  ## that matches `name` + `arity`, optionally filtered to `public` only
-  ## (for external-call receivers). Uniqueness is left to the caller's
-  ## overload-selection step.
+  ## that matches `name` + `arity`, filtered to what `access` may see
+  ## (`faPublic` for external-call receivers). Uniqueness is left to
+  ## the caller's overload-selection step.
   if name notin module.funcNameArityIndex:
     err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}`")
   elif arity notin module.funcNameArityIndex[name]:
     err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}` with arity `{arity}`")
   else:
-    let funcDefs = module.funcNameArityIndex[name][arity].mapIt(module.funcDefs[it])
-    ok(if public: funcDefs.filterIt(it.public) else: funcDefs)
+    let defs = module.funcNameArityIndex[name][arity].mapIt(module.funcDefs[it]).filter(access)
+    if defs.len > 0: ok(defs)
+    else: err(fmt"{name.loc} function `{name.asl}` of module `{module.name.asl}` is not public")
+

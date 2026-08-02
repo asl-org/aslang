@@ -473,8 +473,8 @@ module M:
     x
 """).get
     let m = f.findType(id("M")).get.module
-    let zero = m.findFunctionDefs(id("go"), 0)
-    let one = m.findFunctionDefs(id("go"), 1)
+    let zero = m.findFunctionDefs(id("go"), 0, faAll)
+    let one = m.findFunctionDefs(id("go"), 1, faAll)
     check zero.isOk
     check zero.get.len == 1
     check one.isOk
@@ -487,7 +487,7 @@ module M:
     u8 0
 """).get
     let m = f.findType(id("M")).get.module
-    let r = m.findFunctionDefs(id("missing"), 0)
+    let r = m.findFunctionDefs(id("missing"), 0, faAll)
     check r.isErr
     check errorContains(r.error, "missing")
 
@@ -498,7 +498,7 @@ module M:
     u8 0
 """).get
     let m = f.findType(id("M")).get.module
-    let r = m.findFunctionDefs(id("go"), 2)
+    let r = m.findFunctionDefs(id("go"), 2, faAll)
     check r.isErr
     check errorContains(r.error, "arity")
 

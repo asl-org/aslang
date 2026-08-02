@@ -19,7 +19,7 @@ import ./genericargtype
 # field references AnalyzedArgumentType, which case-dispatches back
 # into AnalyzedModuleArgumentType. One `type:` block. Flat
 # two-variant tagged union mirrors the resolver-side flatten —
-# imported types resolve through fileScope and surface as ordinary
+# imported types resolve through fileCtx and surface as ordinary
 # `aatkModule`/`aatkGeneric` values just like local types.
 type
   AnalyzedModuleArgumentType* = ref object

@@ -230,6 +230,17 @@ contributors can find the *why* alongside the *what*.
   Every function def inside a `Generic` is implicitly public (see
   the `Generic` rule's comment).
 
+- **Function visibility is decided by the definition context, not
+  the call syntax.** Every type reference resolves inside a
+  `TypeContext` (the enclosing module or generic block); a
+  non-public function is visible only when that context IS the
+  defining module (`FunctionAccess`: `faAll` vs `faPublic`). The
+  rule is enforced at both checkpoints that look functions up: call
+  sites (`resolveFunctionCall`) and generic-constraint satisfaction
+  (`satisfies` at resolve time, `checkImplSatisfies` at def time) —
+  so a private function can neither be called from another module
+  nor make its module satisfy a constraint written elsewhere.
+
 - **`ArgumentType` splits at the resolver level, not the parser
   level.** From the parse text alone, `Foo` could be a module or a
   generic — the resolver disambiguates by looking up `Foo` in scope.

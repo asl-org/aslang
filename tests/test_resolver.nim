@@ -184,11 +184,13 @@ public module u8:
     # Status has no `struct(Any):` header but uses Any as a variant field;
     # the resolver must infer Any as a type parameter so Status[u8]
     # is well-formed at use sites.
+    # byte_size must be public: Status[u8] is written in module M, so
+    # u8 satisfies Any only through functions M can access.
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
 
-  func byte_size(items: u32): u64
+  public func byte_size(items: u32): u64
     u64 1
 
 public module u32:
@@ -242,6 +244,32 @@ public module Pair:
   struct:
     first: K
     second: K
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "repeated generic fields claim one require slot at use sites":
+    # first/second share K, so Pair takes ONE impl — the parser-level
+    # inferGenerics dedups first-seen, matching the resolved side
+    # (ResolvedStructDef.generics).
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+  public func foo(): u8
+    u8 0
+
+public generic K:
+  func foo(): u8
+
+public module Pair:
+  struct:
+    first: K
+    second: K
+
+module M:
+  struct:
+    p: Pair[u8]
 """)
     cleanupDir(dir)
     check r.isOk
@@ -769,8 +797,7 @@ suite "resolver — generic signature rule":
 
   test "self-reference inside generic signature is allowed":
     # All types referenced from inside the generic must be locally
-    # defined (the generic-context resolveArgumentType still has a
-    # tkImported stub today). We define u8 in the same file.
+    # defined. We define u8 in the same file.
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
@@ -923,3 +950,89 @@ public module Use:
     check r.isErr
     check errorContains(r.error, "expects")
     check errorContains(r.error, "2")
+
+suite "resolver — function visibility":
+
+  test "private function satisfies a constraint inside its own module":
+    # Pair[u8] is written inside module u8 itself — the context has
+    # internal access, so the private compare counts.
+    let (r, dir) = resolveSingle("""
+public module i32:
+  literal: "i32"
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+module Pair:
+  struct:
+    value: Comparable
+
+public module u8:
+  literal: "u8"
+
+  func compare(a: u8, b: u8): i32
+    i32 0
+
+  func pack(p: Pair[u8]): u8
+    p.value
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "private function does not satisfy a constraint from another module":
+    let (r, dir) = resolveSingle("""
+public module i32:
+  literal: "i32"
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+public module u8:
+  literal: "u8"
+
+  func compare(a: u8, b: u8): i32
+    i32 0
+
+module Pair:
+  struct:
+    value: Comparable
+
+module M:
+  struct:
+    p: Pair[u8]
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "does not implement function `compare` to support `Comparable`")
+
+  test "cross-module call to a private function is rejected":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+module A:
+  func go(x: u8): u8
+    x
+
+module B:
+  func run(x: u8): u8
+    A.go(x)
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "function `go` of module `A` is not public")
+
+  test "same-module call to a private function resolves":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+module A:
+  func go(x: u8): u8
+    x
+
+  func run(x: u8): u8
+    A.go(x)
+""")
+    cleanupDir(dir)
+    check r.isOk

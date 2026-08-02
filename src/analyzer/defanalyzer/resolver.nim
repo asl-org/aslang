@@ -21,11 +21,14 @@ import ./resolver/patterns
 export patterns
 
 # ---- argument-type cluster (mutually-recursive tagged union) ----
-import ./resolver/filescope
-export filescope
+import ./resolver/typecontext
+export typecontext
 
-import ./resolver/functionscope
-export functionscope
+import ./resolver/filecontext
+export filecontext
+
+import ./resolver/functioncontext
+export functioncontext
 
 import ./resolver/argtype
 export argtype
@@ -95,13 +98,11 @@ import ./resolver/app
 export imports, files, app
 
 
-# resolveArgumentType (both context overloads — module context is the
-# no-Generic form; generic context takes an enclosing `generic`) is
-# called by `resolveArgumentTypeImpls` when walking a use-site's impl
-# list.
-proc resolveArgumentType(fileScope: FileScope, argType: ArgumentType): Result[ResolvedArgumentType, string]
-
-proc resolveArgumentType(fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string]
+# resolveArgumentType — single proc for both definition contexts; the
+# `TypeContext` (enclosing module | enclosing generic) rides along so
+# visibility and the generic self-reference rule are decided where
+# they apply.
+proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
 # Constraint-satisfaction check: does `impl` provide every funcDef
 # the required generic `base` mandates? Retired the analyzer's
@@ -109,8 +110,10 @@ proc resolveArgumentType(fileScope: FileScope, generic: Generic, argType: Argume
 # ResolvedModuleArgumentType.impls is a provably valid value by the
 # time it leaves the resolver.
 #
-# Verification is deliberately SHALLOW — by `(name, arity)` at the
-# parser level, not by concretized-signature comparison. Signature-
+# Verification is deliberately SHALLOW — by `(name, arity)` plus
+# accessibility (a private function only satisfies a constraint from
+# inside its own module; see TypeContext.access) at the parser
+# level, not by concretized-signature comparison. Signature-
 # parity (e.g. impl provides `byte_size(items: u16)` where the base
 # generic mandates `byte_size(items: u32)`) is left to the analyzer's
 # value-vs-defType walk at use sites
@@ -134,169 +137,127 @@ proc resolveArgumentType(fileScope: FileScope, generic: Generic, argType: Argume
 # The def-time check here catches the "impl is missing the method
 # entirely" case — the common regression path — using the parser-
 # level `findFunctionDefs` API directly, no resolver-side lookup
-# needed. Signature-parity mismatches surface at the first call site
-# instead of the impl declaration; in practice both sites are usually
-# in the same file, and error location tracking still points at the
-# offending declaration.
+# needed. Signature parity is checked one phase later by the def
+# analyzer's deep constraint-satisfaction check
+# (`checkImplSatisfies` on the defanalyzer barrel), which runs after
+# every signature is resolved.
 
-proc resolveModuleArgumentType(fileScope: FileScope, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
-  let requires = ? fileScope.inferGenerics(dataDef)
+proc resolveModuleArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
+  let requires = ? fileCtx.inferGenerics(dataDef)
   if argType.impls.len != requires.len:
     err(fmt"{argType.loc} type `{argModule.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
   else:
     var impls: seq[ResolvedArgumentType]
     for (base, impl) in zip(requires, argType.impls):
-      let resolvedImpl = ? resolveArgumentType(fileScope, impl)
-      ? satisfies(resolvedImpl, base)
+      let resolvedImpl = ? resolveArgumentType(fileCtx, typeCtx, impl)
+      ? resolvedImpl.satisfies(base, typeCtx)
       impls.add(resolvedImpl)
     ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
 
-proc resolveModuleArgumentType(fileScope: FileScope, generic: Generic, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
-  let requires = ? fileScope.inferGenerics(dataDef)
-  if argType.impls.len != requires.len:
-    err(fmt"{argType.loc} type `{argModule.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
-  else:
-    var impls: seq[ResolvedArgumentType]
-    for (base, impl) in zip(requires, argType.impls):
-      let resolvedImpl = ? resolveArgumentType(fileScope, generic, impl)
-      ? satisfies(resolvedImpl, base)
-      impls.add(resolvedImpl)
-    ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
-
-proc resolveGenericArgumentType(generic: Generic, argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
-  if argType.impls.len == 0:
-    if argGeneric == generic:
+proc resolveGenericArgumentType(typeCtx: TypeContext, argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
+  case typeCtx.kind:
+  of tckModule:
+    if argType.impls.len == 0:
       ok(newResolvedGenericArgumentType(argGeneric, argType.loc))
     else:
-      err(fmt"{argType.loc} type `{argGeneric.name.asl}` is a generic and can not be used within the generic block")
-  else:
-    err(fmt"{argType.loc} type `{argGeneric.name.asl}` is a generic and does not support further impls")
+      err(fmt"{argGeneric.loc} generic `{argGeneric.name.asl}` is not allowed to have impls")
+  of tckGeneric:
+    if argType.impls.len == 0:
+      if argGeneric == typeCtx.generic:
+        ok(newResolvedGenericArgumentType(argGeneric, argType.loc))
+      else:
+        err(fmt"{argType.loc} type `{argGeneric.name.asl}` is a generic and can not be used within the generic block")
+    else:
+      err(fmt"{argType.loc} type `{argGeneric.name.asl}` is a generic and does not support further impls")
 
-proc resolveGenericArgumentType(argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
-  if argType.impls.len == 0:
-    ok(newResolvedGenericArgumentType(argGeneric, argGeneric.loc))
-  else:
-    err(fmt"{argGeneric.loc} generic `{argGeneric.name.asl}` is not allowed to have impls")
-
-# resolveArgumentType — both context overloads.
-proc resolveArgumentType(fileScope: FileScope, argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let typ = ? fileScope.findType(argType.root)
+proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedArgumentType, string] =
+  let typ = ? fileCtx.findType(argType.root)
   case typ.kind:
   of tkGeneric:
-    let resolvedGenericType = ? resolveGenericArgumentType(argType, typ.generic)
+    let resolvedGenericType = ? resolveGenericArgumentType(typeCtx, argType, typ.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of tkModule:
     if typ.module.data.isNone:
       err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
     else:
-      let resolvedModuleType = ? resolveModuleArgumentType(fileScope, argType, typ.module, typ.module.data.get)
+      let resolvedModuleType = ? resolveModuleArgumentType(fileCtx, typeCtx, argType, typ.module, typ.module.data.get)
       ok(newResolvedArgumentType(resolvedModuleType))
 
-proc resolveArgumentType(fileScope: FileScope, generic: Generic, argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let typ = ? fileScope.findType(argType.root)
-  case typ.kind:
-  of tkGeneric:
-    let resolvedGenericType = ? resolveGenericArgumentType(generic, argType, typ.generic)
-    ok(newResolvedArgumentType(resolvedGenericType))
-  of tkModule:
-    if typ.module.data.isNone:
-      err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
-    else:
-      let resolvedModuleType = ? resolveModuleArgumentType(fileScope, generic, argType, typ.module, typ.module.data.get)
-      ok(newResolvedArgumentType(resolvedModuleType))
-
-proc resolveArgumentDef(fileScope: FileScope, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
-  let resolvedArgumentType = ? resolveArgumentType(fileScope, argDef.argType)
+proc resolveArgumentDef(fileCtx: FileContext, typeCtx: TypeContext, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
+  let resolvedArgumentType = ? resolveArgumentType(fileCtx, typeCtx, argDef.argType)
   ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
 
-proc resolveArgumentDef(fileScope: FileScope, generic: Generic, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
-  let resolvedArgumentType = ? resolveArgumentType(fileScope, generic, argDef.argType)
-  ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
-
-proc resolveStructDefHeader(fileScope: FileScope, header: StructDefHeader): Result[seq[ResolvedGenericArgumentType], string] =
+proc resolveStructDefHeader(fileCtx: FileContext, header: StructDefHeader): Result[seq[ResolvedGenericArgumentType], string] =
   var resolvedRequires: seq[ResolvedGenericArgumentType]
   for index, impl in header.requires:
-    let generic = ? fileScope.findGeneric(impl)
+    let generic = ? fileCtx.findGeneric(impl)
     let genericType = newResolvedGenericArgumentType(generic, impl.loc)
     resolvedRequires.add(genericType)
   ok(resolvedRequires)
 
-proc resolveFields(fileScope: FileScope, fields: seq[ArgumentDef]): Result[seq[ResolvedArgumentDef], string] =
+proc resolveFields(fileCtx: FileContext, typeCtx: TypeContext, fields: seq[ArgumentDef]): Result[seq[ResolvedArgumentDef], string] =
   var resolvedFields: seq[ResolvedArgumentDef]
   for field in fields:
-    let resolvedField = ? resolveArgumentDef(fileScope, field)
+    let resolvedField = ? resolveArgumentDef(fileCtx, typeCtx, field)
     resolvedFields.add(resolvedField)
   ok(resolvedFields)
 
-proc resolveStructDef(fileScope: FileScope, struct: StructDef): Result[ResolvedStructDef, string] =
-  let resolvedRequires = ? resolveStructDefHeader(fileScope, struct.header)
-  let resolvedFields = ? resolveFields(fileScope, struct.fields)
+proc resolveStructDef(fileCtx: FileContext, typeCtx: TypeContext, struct: StructDef): Result[ResolvedStructDef, string] =
+  let resolvedRequires = ? resolveStructDefHeader(fileCtx, struct.header)
+  let resolvedFields = ? resolveFields(fileCtx, typeCtx, struct.fields)
 
-  var genericFields: seq[ResolvedGenericArgumentType]
-  var genericFieldSet: Hashset[ResolvedGenericArgumentType]
+  var genericFields: OrderedSet[ResolvedGenericArgumentType]
   for field in resolvedFields:
     case field.argType.kind:
     of ratkModule: discard
-    of ratkGeneric:
-      if field.argType.generic notin genericFieldSet:
-        genericFields.add(field.argType.generic)
-        genericFieldSet.incl(field.argType.generic)
+    of ratkGeneric: genericFields.incl(field.argType.generic)
 
   if resolvedRequires.len > 0:
     if genericFields.len > 0:
       err(fmt"{struct.loc} struct with explicit generic requirements does not support generic fields")
     else:
-      ok(newResolvedExplicitStructDef(struct, resolvedRequires, resolvedFields))
+      ok(newResolvedStructDef(struct, resolvedRequires, resolvedFields))
   else:
-    ok(newResolvedInferredStructDef(struct, genericFields, resolvedFields))
+    ok(newResolvedStructDef(struct, genericFields.toSeq, resolvedFields))
 
-proc resolveVariantDef(fileScope: FileScope, variant: VariantDef): Result[ResolvedVariant, string] =
-  let resolvedFields = ? resolveFields(fileScope, variant.fields)
+proc resolveVariantDef(fileCtx: FileContext, typeCtx: TypeContext, variant: VariantDef): Result[ResolvedVariant, string] =
+  let resolvedFields = ? resolveFields(fileCtx, typeCtx, variant.fields)
   ok(newResolvedVariantDef(variant, resolvedFields))
 
-proc resolveUnionDef(fileScope: FileScope, union: UnionDef): Result[ResolvedUnionDef, string] =
+proc resolveUnionDef(fileCtx: FileContext, typeCtx: TypeContext, union: UnionDef): Result[ResolvedUnionDef, string] =
   var resolvedVariants: seq[ResolvedVariant]
   for variant in union.variants:
-    let resolvedVariant = ? resolveVariantDef(fileScope, variant)
+    let resolvedVariant = ? resolveVariantDef(fileCtx, typeCtx, variant)
     resolvedVariants.add(resolvedVariant)
   ok(newResolvedUnionDef(union, resolvedVariants))
 
-proc resolveDataDef(fileScope: FileScope, data: DataDef): Result[ResolvedData, string] =
+proc resolveDataDef(fileCtx: FileContext, typeCtx: TypeContext, data: DataDef): Result[ResolvedData, string] =
   case data.kind:
   of ddkLiteral:
     let resolvedLiteralDef = ? newResolvedLiteralDef(data.literal)
     ok(newResolvedData(resolvedLiteralDef))
   of ddkStruct:
-    let resolvedStructDef = ? resolveStructDef(fileScope, data.struct)
+    let resolvedStructDef = ? resolveStructDef(fileCtx, typeCtx, data.struct)
     ok(newResolvedData(resolvedStructDef))
   of ddkUnion:
-    let resolvedUnionDef = ? resolveUnionDef(fileScope, data.union)
+    let resolvedUnionDef = ? resolveUnionDef(fileCtx, typeCtx, data.union)
     ok(newResolvedData(resolvedUnionDef))
 
-proc resolveFunctionDef(fileScope: FileScope, def: FunctionDef): Result[ResolvedFunctionDef, string] =
+proc resolveFunctionDef(fileCtx: FileContext, typeCtx: TypeContext, def: FunctionDef): Result[ResolvedFunctionDef, string] =
   var resolvedArgDefs: seq[ResolvedArgumentDef]
   for argDef in def.args:
-    let resolvedArgDef = ? resolveArgumentDef(fileScope, argDef)
+    let resolvedArgDef = ? resolveArgumentDef(fileCtx, typeCtx, argDef)
     resolvedArgDefs.add(resolvedArgDef)
 
-  let resolvedReturnType = ? resolveArgumentType(fileScope, def.returns)
+  let resolvedReturnType = ? resolveArgumentType(fileCtx, typeCtx, def.returns)
   ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
 
-proc resolveFunctionDef(fileScope: FileScope, generic: Generic, def: FunctionDef): Result[ResolvedFunctionDef, string] =
-  var resolvedArgDefs: seq[ResolvedArgumentDef]
-  for argDef in def.args:
-    let resolvedArgDef = ? resolveArgumentDef(fileScope, generic, argDef)
-    resolvedArgDefs.add(resolvedArgDef)
-
-  let resolvedReturnType = ? resolveArgumentType(fileScope, generic, def.returns)
-  ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
-
-proc resolveExternFunction(fileScope: FileScope, function: ExternFunction): Result[ResolvedExternFunction, string] =
-  let resolvedFunctionDef = ? resolveFunctionDef(fileScope, function.def)
+proc resolveExternFunction(fileCtx: FileContext, typeCtx: TypeContext, function: ExternFunction): Result[ResolvedExternFunction, string] =
+  let resolvedFunctionDef = ? resolveFunctionDef(fileCtx, typeCtx, function.def)
   ok(newResolvedExternFunction(function, resolvedFunctionDef))
 
-proc resolveLiteral(fileScope: FileScope, literal: Literal): Result[ResolvedLiteral, string] =
-  let module = ? fileScope.findModule(literal.defaultType)
+proc resolveLiteral(fileCtx: FileContext, literal: Literal): Result[ResolvedLiteral, string] =
+  let module = ? fileCtx.findModule(literal.defaultType)
   if module.data.isNone:
     err(fmt"{literal.loc} expected module `{literal.defaultType.asl}` to be a literal but found none")
   else:
@@ -306,34 +267,37 @@ proc resolveLiteral(fileScope: FileScope, literal: Literal): Result[ResolvedLite
     of ddkUnion: err(fmt"{literal.loc} expected module `{literal.defaultType.asl}` to be literal but found union")
     of ddkLiteral: ok(newResolvedLiteral(literal, module, moduleData.literal))
 
-proc resolveVariable(scope: FunctionScope, variable: Identifier): Result[Identifier, string] =
+proc resolveVariable(scope: FunctionContext, variable: Identifier): Result[Identifier, string] =
   if variable notin scope:
     err(fmt"{variable.loc} variable `{variable.asl}` is not present in scope")
   else:
     ok(variable)
 
-proc resolveGetter(scope: FunctionScope, getter: Getter): Result[ResolvedGetter, string] =
+proc resolveGetter(scope: FunctionContext, getter: Getter): Result[ResolvedGetter, string] =
   discard ? resolveVariable(scope, getter.source)
   ok(newResolvedGetter(getter))
 
 # resolveExpression / resolveStatement form the body-cluster cycle.
-proc resolveExpression(fileScope: FileScope, funcScope: FunctionScope, expression: Expression): Result[ResolvedExpression, string]
-proc resolveStatement(fileScope: FileScope, funcScope: FunctionScope, statement: Statement): Result[ResolvedStatement, string]
+proc resolveExpression(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string]
+proc resolveStatement(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string]
 
-proc resolveFunctionCall(fileScope: FileScope, funcScope: FunctionScope, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let typ = ? fileScope.findType(fncall.root)
-  let defs = ? typ.findFunctionDefs(fncall.name, fncall.arity)
-  if defs.len == 0:
-    err(fmt"{fncall.loc} generic `{typ.name.asl}` does not have any function named `{fncall.name.asl}` with arity `{fncall.args.len}`")
-  else:
-    var resolvedArgs: seq[ResolvedExpression]
-    for arg in fncall.args:
-      let resolvedArg = ? resolveExpression(fileScope, funcScope, arg)
-      resolvedArgs.add(resolvedArg)
-    ok(newResolvedFunctionCall(fncall, typ, resolvedArgs))
+proc resolveFunctionCall(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
+  let typ = ? fileCtx.findType(fncall.root)
+  let access =
+    case typ.kind:
+    of tkModule: typeCtx.access(typ.module)
+    # Generic funcDefs are implicitly public — access is vacuous.
+    of tkGeneric: faPublic
+  let defs = ? typ.findFunctionDefs(fncall.name, fncall.arity, access)
+  assert(defs.len > 0, "[BUG] - findFunctionDefs never returns an empty overload list")
+  var resolvedArgs: seq[ResolvedExpression]
+  for arg in fncall.args:
+    let resolvedArg = ? resolveExpression(fileCtx, typeCtx, funcCtx, arg)
+    resolvedArgs.add(resolvedArg)
+  ok(newResolvedFunctionCall(fncall, typ, resolvedArgs))
 
-proc resolveStructRef(fileScope: FileScope, structRef: StructRef): Result[ResolvedStructRef, string] =
-  let structModule = ? fileScope.findModule(structRef.module)
+proc resolveStructRef(fileCtx: FileContext, typeCtx: TypeContext, structRef: StructRef): Result[ResolvedStructRef, string] =
+  let structModule = ? fileCtx.findModule(structRef.module)
   if structModule.data.isNone:
     err(fmt"{structRef.loc} module `{structModule.name.asl}` does not define a data block")
   else:
@@ -349,10 +313,10 @@ proc resolveStructRef(fileScope: FileScope, structRef: StructRef): Result[Resolv
         else:
           err(fmt"{structRef.loc} module `{structRef.module.asl}` expects {struct.header.requires.len} impls")
       else:
-        let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, structRef.argType, structModule, moduleData)
+        let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, structRef.argType, structModule, moduleData)
         ok(newResolvedStructRef(structRef, resolvedModuleArgType, struct))
 
-proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, struct: StructDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
+proc resolveKeywordArguments(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, struct: StructDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
   var resolvedKwargs = newSeq[ResolvedKeywordArgument](struct.fields.len)
   var fieldMap: Table[int, Location]
   for kwarg in kwargList.items:
@@ -361,7 +325,7 @@ proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, str
       let loc = fieldMap[fieldId]
       return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {loc}")
     else:
-      let resolvedExpression = ? resolveExpression(fileScope, funcScope, kwarg.expression)
+      let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, kwarg.expression)
       resolvedKwargs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
       fieldMap[fieldId] = kwarg.loc
 
@@ -370,13 +334,13 @@ proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, str
   else:
     ok(resolvedKwargs)
 
-proc resolveStructInitializer(fileScope: FileScope, funcScope: FunctionScope, init: StructInitializer): Result[ResolvedStructInitializer, string] =
-  let resolvedStructRef = ? resolveStructRef(fileScope, init.structRef)
-  let resolvedKeywordArgs = ? resolveKeywordArguments(fileScope, funcScope, resolvedStructRef.struct, init.kwargList)
+proc resolveStructInitializer(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, init: StructInitializer): Result[ResolvedStructInitializer, string] =
+  let resolvedStructRef = ? resolveStructRef(fileCtx, typeCtx, init.structRef)
+  let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, resolvedStructRef.struct, init.kwargList)
   ok(newResolvedStructInitializer(init, resolvedStructRef, resolvedKeywordArgs))
 
-proc resolveUnionRef(fileScope: FileScope, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
-  let unionModule = ? fileScope.findModule(unionRef.module)
+proc resolveUnionRef(fileCtx: FileContext, typeCtx: TypeContext, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
+  let unionModule = ? fileCtx.findModule(unionRef.module)
   if unionModule.data.isNone:
     err(fmt"{unionRef.loc} expected module `{unionRef.module.asl}` to be union but found none")
   else:
@@ -390,10 +354,10 @@ proc resolveUnionRef(fileScope: FileScope, unionRef: UnionRef): Result[ResolvedU
       if unionRef.impls.len == 0:
         ok(newResolvedUnionRef(unionRef, unionModule, variant))
       else:
-        let resolvedArgType = ? resolveModuleArgumentType(fileScope, unionRef.argType, unionModule, moduleData)
+        let resolvedArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, unionRef.argType, unionModule, moduleData)
         ok(newResolvedUnionRef(unionRef, resolvedArgType, variant))
 
-proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
+proc resolveKeywordArguments(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
   var resolvedKwargs = newSeq[ResolvedKeywordArgument](variant.fields.len)
   var fieldMap: Table[int, Location]
   for kwarg in kwargList.items:
@@ -402,7 +366,7 @@ proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, var
       let loc = fieldMap[fieldId]
       return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {loc}")
     else:
-      let resolvedExpression = ? resolveExpression(fileScope, funcScope, kwarg.expression)
+      let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, kwarg.expression)
       resolvedKwargs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
       fieldMap[fieldId] = kwarg.loc
 
@@ -411,13 +375,13 @@ proc resolveKeywordArguments(fileScope: FileScope, funcScope: FunctionScope, var
   else:
     ok(resolvedKwargs)
 
-proc resolveUnionInitializer(fileScope: FileScope, funcScope: FunctionScope, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
-  let resolvedUnionRef = ? resolveUnionRef(fileScope, unionInit.unionRef)
-  let resolvedKeywordArgs = ? resolveKeywordArguments(fileScope, funcScope, resolvedUnionRef.variant, unionInit.kwargList)
+proc resolveUnionInitializer(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
+  let resolvedUnionRef = ? resolveUnionRef(fileCtx, typeCtx, unionInit.unionRef)
+  let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, resolvedUnionRef.variant, unionInit.kwargList)
   ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
 
-proc resolveLiteralInitializer(fileScope: FileScope, init: LiteralInitializer): Result[ResolvedLiteralInitializer, string] =
-  let module = ? fileScope.findModule(init.module)
+proc resolveLiteralInitializer(fileCtx: FileContext, typeCtx: TypeContext, init: LiteralInitializer): Result[ResolvedLiteralInitializer, string] =
+  let module = ? fileCtx.findModule(init.module)
   if module.data.isNone:
     err(fmt"{init.loc} expected module `{init.module.asl}` to be a literal but found none")
   else:
@@ -426,19 +390,19 @@ proc resolveLiteralInitializer(fileScope: FileScope, init: LiteralInitializer): 
     of ddkStruct: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found struct")
     of ddkUnion: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found union")
     of ddkLiteral:
-      let resolvedModuleArgType = ? resolveModuleArgumentType(fileScope, init.argType, module, moduleData)
+      let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, init.argType, module, moduleData)
       ok(newResolvedLiteralInitializer(init, resolvedModuleArgType, moduleData.literal))
 
-proc resolveInitializer(fileScope: FileScope, funcScope: FunctionScope, initializer: Initializer): Result[ResolvedInitializer, string] =
+proc resolveInitializer(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:
   of ikLiteral:
-    let resolvedLiteralInit = ? resolveLiteralInitializer(fileScope, initializer.literal)
+    let resolvedLiteralInit = ? resolveLiteralInitializer(fileCtx, typeCtx, initializer.literal)
     ok(newResolvedInitializer(resolvedLiteralInit))
   of ikStruct:
-    let resolvedStructInit = ? resolveStructInitializer(fileScope, funcScope, initializer.struct)
+    let resolvedStructInit = ? resolveStructInitializer(fileCtx, typeCtx, funcCtx, initializer.struct)
     ok(newResolvedInitializer(resolvedStructInit))
   of ikUnion:
-    let resolvedUnionInit = ? resolveUnionInitializer(fileScope, funcScope, initializer.union)
+    let resolvedUnionInit = ? resolveUnionInitializer(fileCtx, typeCtx, funcCtx, initializer.union)
     ok(newResolvedInitializer(resolvedUnionInit))
 
 proc resolveCasePattern(casePattern: CasePattern): Result[ResolvedCasePattern, string] =
@@ -450,121 +414,123 @@ proc resolveCasePattern(casePattern: CasePattern): Result[ResolvedCasePattern, s
   of cpkUnion:
     ok(newResolvedCasePattern(casePattern.variant))
 
-proc resolveCaseBlock(fileScope: FileScope, funcScope: FunctionScope, caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
-  var caseScope = funcScope
+proc resolveCaseBlock(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
+  var caseCtx = funcCtx
   let resolvedCasePattern = ? resolveCasePattern(caseBlock.pattern)
-  caseScope = caseScope.update(resolvedCasePattern)
+  caseCtx = caseCtx.update(resolvedCasePattern)
 
   var resolvedStatements: seq[ResolvedStatement]
   for statement in caseBlock.statements:
-    let resolvedStatement = ? resolveStatement(fileScope, caseScope, statement)
+    let resolvedStatement = ? resolveStatement(fileCtx, typeCtx, caseCtx, statement)
     resolvedStatements.add(resolvedStatement)
-    caseScope = caseScope.update(resolvedStatement)
+    caseCtx = caseCtx.update(resolvedStatement)
   ok(newResolvedCaseBlock(caseBlock, resolvedCasePattern, resolvedStatements))
 
-proc resolveMatchExpression(fileScope: FileScope, funcScope: FunctionScope, match: MatchExpression): Result[ResolvedMatchExpression, string] =
-  let resolvedSubject = ? resolveExpression(fileScope, funcScope, match.subject)
+proc resolveMatchExpression(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, match: MatchExpression): Result[ResolvedMatchExpression, string] =
+  let resolvedSubject = ? resolveExpression(fileCtx, typeCtx, funcCtx, match.subject)
   var resolvedCaseBlocks: seq[ResolvedCaseBlock]
   for caseBlock in match.cases:
-    let resolvedCaseBlock = ? resolveCaseBlock(fileScope, funcScope, caseBlock)
+    let resolvedCaseBlock = ? resolveCaseBlock(fileCtx, typeCtx, funcCtx, caseBlock)
     resolvedCaseBlocks.add(resolvedCaseBlock)
   ok(newResolvedMatchExpression(match, resolvedSubject, resolvedCaseBlocks))
 
-proc resolveExpression(fileScope: FileScope, funcScope: FunctionScope, expression: Expression): Result[ResolvedExpression, string] =
+proc resolveExpression(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of ekLiteral:
-    let resolvedLiteral = ? resolveLiteral(fileScope, expression.literal)
+    let resolvedLiteral = ? resolveLiteral(fileCtx, expression.literal)
     ok(newResolvedExpression(resolvedLiteral))
   of ekGetter:
-    let resolvedGetter = ? resolveGetter(funcScope, expression.getter)
+    let resolvedGetter = ? resolveGetter(funcCtx, expression.getter)
     ok(newResolvedExpression(resolvedGetter))
   of ekVariable:
-    let resolvedVariable = ? resolveVariable(funcScope, expression.variable)
+    let resolvedVariable = ? resolveVariable(funcCtx, expression.variable)
     ok(newResolvedExpression(resolvedVariable))
   of ekFnCall:
-    let resolvedFunctionCall = ? resolveFunctionCall(fileScope, funcScope, expression.fncall)
+    let resolvedFunctionCall = ? resolveFunctionCall(fileCtx, typeCtx, funcCtx, expression.fncall)
     ok(newResolvedExpression(resolvedFunctionCall))
   of ekInitializer:
-    let resolvedInitializer = ? resolveInitializer(fileScope, funcScope, expression.initializer)
+    let resolvedInitializer = ? resolveInitializer(fileCtx, typeCtx, funcCtx, expression.initializer)
     ok(newResolvedExpression(resolvedInitializer))
   of ekMatch:
-    let resolvedMatchExpr = ? resolveMatchExpression(fileScope, funcScope, expression.match)
+    let resolvedMatchExpr = ? resolveMatchExpression(fileCtx, typeCtx, funcCtx, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))
 
-proc resolveAssignment(fileScope: FileScope, funcScope: FunctionScope, assignment: Assignment): Result[ResolvedAssignment, string] =
-  let resolvedExpression = ? resolveExpression(fileScope, funcScope, assignment.expression)
+proc resolveAssignment(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, assignment: Assignment): Result[ResolvedAssignment, string] =
+  let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, assignment.expression)
   ok(newResolvedAssignment(assignment, resolvedExpression))
 
-proc resolveSetter(fileScope: FileScope, funcScope: FunctionScope, setter: Setter): Result[ResolvedSetter, string] =
-  let resolvedGetter = ? resolveGetter(funcScope, setter.target)
-  let resolvedExpression = ? resolveExpression(fileScope, funcScope, setter.expression)
+proc resolveSetter(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, setter: Setter): Result[ResolvedSetter, string] =
+  let resolvedGetter = ? resolveGetter(funcCtx, setter.target)
+  let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, setter.expression)
   ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
-proc resolveStatement(fileScope: FileScope, funcScope: FunctionScope, statement: Statement): Result[ResolvedStatement, string] =
+proc resolveStatement(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string] =
   case statement.kind:
   of skExpr:
-    let resolvedExpression = ? resolveExpression(fileScope, funcScope, statement.expression)
+    let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, statement.expression)
     ok(newResolvedStatement(resolvedExpression))
   of skAssignment:
-    let resolvedAssignment = ? resolveAssignment(fileScope, funcScope, statement.assignment)
+    let resolvedAssignment = ? resolveAssignment(fileCtx, typeCtx, funcCtx, statement.assignment)
     ok(newResolvedStatement(resolvedAssignment))
   of skSetter:
-    let resolvedMutation = ? resolveSetter(fileScope, funcScope, statement.setter)
+    let resolvedMutation = ? resolveSetter(fileCtx, typeCtx, funcCtx, statement.setter)
     ok(newResolvedStatement(resolvedMutation))
 
-proc resolveUserFunction(fileScope: FileScope, function: UserFunction): Result[ResolvedUserFunction, string] =
+proc resolveUserFunction(fileCtx: FileContext, typeCtx: TypeContext, function: UserFunction): Result[ResolvedUserFunction, string] =
   assert(function.decorators.len == 0, fmt"{function.loc} todo: resolve decorators in user function")
-  let resolvedFuncDef = ? resolveFunctionDef(fileScope, function.def)
+  let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeCtx, function.def)
 
-  var funcScope = ? newFunctionScope(resolvedFuncDef)
+  var funcCtx = ? newFunctionContext(resolvedFuncDef)
   var resolvedStmts: seq[ResolvedStatement]
   for statement in function.statements:
-    let resolvedStatement = ? resolveStatement(fileScope, funcScope, statement)
+    let resolvedStatement = ? resolveStatement(fileCtx, typeCtx, funcCtx, statement)
     resolvedStmts.add(resolvedStatement)
-    funcScope = funcScope.update(resolvedStatement)
+    funcCtx = funcCtx.update(resolvedStatement)
 
   ok(newResolvedUserFunction(function, resolvedFuncDef, resolvedStmts))
 
-proc resolveFunction(fileScope: FileScope, function: Function): Result[ResolvedFunction, string] =
+proc resolveFunction(fileCtx: FileContext, typeCtx: TypeContext, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
-    let resolvedUserFunction = ? resolveUserFunction(fileScope, function.user)
+    let resolvedUserFunction = ? resolveUserFunction(fileCtx, typeCtx, function.user)
     ok(newResolvedFunction(resolvedUserFunction))
   of fkExtern:
-    let resolvedExternFunction = ? resolveExternFunction(fileScope, function.extern)
+    let resolvedExternFunction = ? resolveExternFunction(fileCtx, typeCtx, function.extern)
     ok(newResolvedFunction(resolvedExternFunction))
 
-proc resolveModule(fileScope: FileScope, module: Module): Result[ResolvedModule, string] =
+proc resolveModule(fileCtx: FileContext, module: Module): Result[ResolvedModule, string] =
+  let typeCtx = newTypeContext(module)
   let resolvedData =
     if module.data.isSome:
-      let resolvedDataDef = ? resolveDataDef(fileScope, module.data.get)
+      let resolvedDataDef = ? resolveDataDef(fileCtx, typeCtx, module.data.get)
       some(resolvedDataDef)
     else:
       none(ResolvedData)
 
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:
-    let resolvedFunction = ? resolveFunction(fileScope, function)
+    let resolvedFunction = ? resolveFunction(fileCtx, typeCtx, function)
     resolvedFunctions.add(resolvedFunction)
 
   ok(newResolvedModule(module, resolvedData, resolvedFunctions))
 
-proc resolveGeneric(fileScope: FileScope, generic: Generic): Result[ResolvedGeneric, string] =
+proc resolveGeneric(fileCtx: FileContext, generic: Generic): Result[ResolvedGeneric, string] =
+  let typeCtx = newTypeContext(generic)
   var resolvedFuncDefs: seq[ResolvedFunctionDef]
   for def in generic.defs:
-    let resolvedFuncDef = ? resolveFunctionDef(fileScope, generic, def)
+    let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeCtx, def)
     resolvedFuncDefs.add(resolvedFuncDef)
 
   ok(newResolvedGeneric(generic, resolvedFuncDefs))
 
-proc resolveType(fileScope: FileScope, typ: Type): Result[ResolvedType, string] =
+proc resolveType(fileCtx: FileContext, typ: Type): Result[ResolvedType, string] =
   assert(typ.decorators.len == 0, fmt"{typ.loc} types do not support decorators")
   case typ.kind:
   of tkGeneric:
-    let resolvedGeneric = ? resolveGeneric(fileScope, typ.generic)
+    let resolvedGeneric = ? resolveGeneric(fileCtx, typ.generic)
     ok(newResolvedType(resolvedGeneric))
   of tkModule:
-    let resolvedModule = ? resolveModule(fileScope, typ.module)
+    let resolvedModule = ? resolveModule(fileCtx, typ.module)
     ok(newResolvedType(resolvedModule))
 
 proc resolveExplicitImport(imp: Import, impFile: parser.File): Result[seq[ResolvedImportedType], string] =
@@ -599,14 +565,14 @@ proc resolveImports(app: App, imports: seq[Import]): Result[seq[ResolvedImport],
 
 proc resolveFile(app: App, file: parser.File): Result[ResolvedFile, string] =
   let resolvedImports = ? resolveImports(app, file.imports)
-  var fileScope = ? newFileScope(resolvedImports, file.types)
+  var fileCtx = ? newFileContext(resolvedImports, file.types)
 
   var resolvedTypes: seq[ResolvedType]
   for typ in file.types:
-    let resolvedType = ? resolveType(fileScope, typ)
+    let resolvedType = ? resolveType(fileCtx, typ)
     resolvedTypes.add(resolvedType)
 
-  ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileScope))
+  ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileCtx))
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   var resolvedFiles: seq[ResolvedFile]

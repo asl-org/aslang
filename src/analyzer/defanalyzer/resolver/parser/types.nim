@@ -77,7 +77,9 @@ proc asl*(typ: Type, level: int, indentWidth: uint32): seq[string] =
   of tkModule: typ.module.asl(level, indentWidth)
   of tkGeneric: typ.generic.asl(level, indentWidth)
 
-proc findFunctionDefs*(typ: Type, name: Identifier, arity: int): Result[seq[FunctionDef], string] =
+proc findFunctionDefs*(typ: Type, name: Identifier, arity: int, access: FunctionAccess): Result[seq[FunctionDef], string] =
   case typ.kind:
-  of tkModule: typ.module.findFunctionDefs(name, arity)
+  of tkModule: typ.module.findFunctionDefs(name, arity, access)
+  # Generic funcDefs are implicitly public per the grammar — no
+  # access filter to apply.
   of tkGeneric: typ.generic.findFunctionDefs(name, arity)

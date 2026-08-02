@@ -6,13 +6,16 @@
 ## once. Nesting convention: parser ⊂ resolver ⊂ defanalyzer ⊂
 ## analyzer.
 
-import options, results, strformat
+import options, results, sequtils, strformat, strutils, tables
 
 import ./defanalyzer/resolver
 export resolver
 
-import ./defanalyzer/filescope
-export filescope
+import ./defanalyzer/filecontext
+export filecontext
+
+import ./defanalyzer/typecontext
+export typecontext
 
 import ./defanalyzer/argtype
 export argtype
@@ -77,38 +80,169 @@ export importedtypedef
 import ./defanalyzer/importdef
 export importdef
 
-# The whole argtype cluster is context-free on purpose — no
-# module/generic context parameters and no context twins. The resolver
-# already enforces every context-sensitive rule at resolve time: a
-# generic block may only reference its own type parameter
-# (resolveGenericArgumentType errs on any other generic), and module
-# argument types are validated against the file scope when resolved.
-# So by the time phase A walks a def, every reference is known-valid —
-# re-deriving the analyzed binding needs only the file scope, and a
-# failed lookup is a compiler bug, never a user error.
-proc analyzeDefGenericArgumentType(fileScope: ResolvedFileScope, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
-  let maybeGeneric = fileScope.findGeneric(genericArgType.parsed, genericArgType.loc)
+# The argtype cluster carries a ResolvedTypeContext for exactly one
+# decision: function visibility during the deep constraint-
+# satisfaction check (which functions of an impl module the context
+# may see). Everything else stays resolver-guaranteed: the generic
+# self-reference rule and name/arity/accessibility presence are
+# enforced at resolve time (TypeContext there), so a failed lookup
+# here is a compiler bug, never a user error — and there are no
+# module/generic context twins; one context value, one proc.
+proc analyzeDefGenericArgumentType(fileCtx: ResolvedFileContext, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
+  let maybeGeneric = fileCtx.findGeneric(genericArgType.generic, genericArgType.loc)
   assert(maybeGeneric.isOk, "[BUG] - Resolver ensures that the generic referenced by an argument type exists")
   ok(newAnalyzedGenericArgumentType(maybeGeneric.get, genericArgType.loc))
 
-proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
+proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
-proc analyzeDefModuleArgumentType(fileScope: ResolvedFileScope, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  let maybeModule = fileScope.findModule(argType.module, argType.loc)
+# ============================================================
+# Deep constraint-satisfaction check.
+#
+# The resolver's shallow `satisfies` (name + arity + accessibility)
+# already ran at every module-argtype site; by phase A every
+# signature in the app is fully resolved, so each impl↔require pair
+# is additionally checked for SIGNATURE parity via the four-case
+# matching relation (`argTypeMatches`):
+#   module  vs module  — identity (loc-based hash equality);
+#   module  vs generic — never matches;
+#   generic vs module  — the expected generic is a CONTRACT: the
+#   generic vs generic   actual type must provide every funcDef the
+#                        generic mandates, with the generic
+#                        substituted by the actual's fully qualified
+#                        type (`A[B, C]` for a module with slots) and
+#                        the actual's own slots substituted by the
+#                        impls bound at the site — recursively, since
+#                        contract positions can nest.
+# ============================================================
+
+proc argTypeMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expected: ResolvedArgumentType, actual: ResolvedArgumentType): SignatureParity
+
+proc implBindings(fileCtx: ResolvedFileContext, impl: ResolvedArgumentType): Table[Generic, ResolvedArgumentType] =
+  ## Positional bindings of a module impl's own require slots to the
+  ## impls bound at this site (`Array[u8]` → {A → u8}). A generic
+  ## impl has no slots and binds nothing — its self-references
+  ## compare by generic identity.
+  case impl.kind:
+  of ratkGeneric: discard
+  of ratkModule:
+    let maybeModule = fileCtx.findModule(impl.module.parsed, impl.loc)
+    assert(maybeModule.isOk, "[BUG] - Resolver ensures that the impl module exists")
+    assert(maybeModule.get.data.isSome, "[BUG] - Resolver ensures that an impl module is a data module")
+    for (require, bound) in zip(maybeModule.get.data.get.requires, impl.module.impls):
+      result[require.generic] = bound
+
+proc findImplCandidates(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, actual: ResolvedArgumentType, name: Identifier, arity: int): Result[seq[ResolvedFunctionDef], string] =
+  ## The actual type's overload candidates for a required
+  ## (name, arity), filtered by what the context may see. A miss is a
+  ## legitimate contract failure here — nested contract positions are
+  ## NOT covered by the resolver's shallow satisfies (only require
+  ## slots are), so this returns err instead of asserting.
+  case actual.kind:
+  of ratkModule:
+    let maybeModule = fileCtx.findModule(actual.module.parsed, actual.loc)
+    assert(maybeModule.isOk, "[BUG] - Resolver ensures that modules appearing in signatures exist")
+    maybeModule.get.findFunctionDefs(name, arity, typeCtx.access(maybeModule.get))
+  of ratkGeneric:
+    let maybeGeneric = fileCtx.findGeneric(actual.generic.generic, actual.loc)
+    assert(maybeGeneric.isOk, "[BUG] - Resolver ensures that generics appearing in signatures exist")
+    maybeGeneric.get.findFunctionDefs(name, arity)
+
+proc candidateSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requiredDef: ResolvedFunctionDef, candidate: ResolvedFunctionDef, baseBindings: Table[Generic, ResolvedArgumentType], implBindings: Table[Generic, ResolvedArgumentType]): SignatureParity =
+  ## Fold of per-position matching across args + returns: any
+  ## spUnequal position fails the candidate.
+  for i in 0 ..< requiredDef.args.len:
+    let expected = requiredDef.args[i].argType.substitute(baseBindings)
+    let actual = candidate.args[i].argType.substitute(implBindings)
+    case argTypeMatches(fileCtx, typeCtx, expected, actual):
+    of spUnequal: return spUnequal
+    of spEqual: discard
+  let expectedReturns = requiredDef.returns.substitute(baseBindings)
+  let actualReturns = candidate.returns.substitute(implBindings)
+  argTypeMatches(fileCtx, typeCtx, expectedReturns, actualReturns)
+
+proc anyCandidateSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requiredDef: ResolvedFunctionDef, candidates: seq[ResolvedFunctionDef], baseBindings: Table[Generic, ResolvedArgumentType], implBindings: Table[Generic, ResolvedArgumentType]): SignatureParity =
+  for candidate in candidates:
+    case candidateSatisfies(fileCtx, typeCtx, requiredDef, candidate, baseBindings, implBindings):
+    of spEqual: return spEqual
+    of spUnequal: discard
+  spUnequal
+
+proc renderRequiredSig(requiredDef: ResolvedFunctionDef, baseBindings: Table[Generic, ResolvedArgumentType]): string =
+  var args: seq[string]
+  for argDef in requiredDef.args:
+    args.add(fmt"{argDef.name.asl}: {argDef.argType.substitute(baseBindings).asl}")
+  let argList = args.join(", ")
+  fmt"{requiredDef.name.asl}({argList}): {requiredDef.returns.substitute(baseBindings).asl}"
+
+proc genericSatisfiedBy(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, required: ResolvedGeneric, actual: ResolvedArgumentType): Result[void, string] =
+  ## The contract core (matching cases 3 and 4): every funcDef of
+  ## `required` must be provided by `actual` — the required generic
+  ## substituted by the actual's fully qualified type on the expected
+  ## side, the actual's own require slots substituted by its bound
+  ## impls on the candidate side.
+  var baseBindings: Table[Generic, ResolvedArgumentType]
+  baseBindings[required.parsed] = actual
+  let bindings = implBindings(fileCtx, actual)
+
+  for requiredDef in required.funcDefs:
+    let maybeCandidates = findImplCandidates(fileCtx, typeCtx, actual, requiredDef.name, requiredDef.arity)
+    if maybeCandidates.isErr:
+      return err(fmt"{actual.loc} type `{actual.asl}` does not implement `{renderRequiredSig(requiredDef, baseBindings)}` to support `{required.name.asl}`")
+    case anyCandidateSatisfies(fileCtx, typeCtx, requiredDef, maybeCandidates.get, baseBindings, bindings):
+    of spEqual: discard
+    of spUnequal:
+      return err(fmt"{actual.loc} type `{actual.asl}` does not implement `{renderRequiredSig(requiredDef, baseBindings)}` to support `{required.name.asl}`")
+  ok()
+
+proc argTypeMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expected: ResolvedArgumentType, actual: ResolvedArgumentType): SignatureParity =
+  if expected == actual:
+    spEqual
+  else:
+    case expected.kind:
+    # Expected module + differing hash: whether the actual is a
+    # different module type or a bare generic, nothing reconciles an
+    # already-concrete expectation (cases 1 and 2).
+    of ratkModule: spUnequal
+    # Expected generic = contract (cases 3 and 4).
+    of ratkGeneric:
+      let maybeRequired = fileCtx.findGeneric(expected.generic.generic, expected.loc)
+      assert(maybeRequired.isOk, "[BUG] - Resolver ensures that generics appearing in signatures are in the file scope")
+      let satisfied = genericSatisfiedBy(fileCtx, typeCtx, maybeRequired.get, actual)
+      if satisfied.isOk: spEqual else: spUnequal
+
+proc checkImplSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requirement: ResolvedGenericArgumentType, impl: ResolvedArgumentType): Result[void, string] =
+  # The require-slot generic resolves through THIS file's scope — the
+  # resolver already found it here by name (inferGenerics), so the
+  # identity lookup cannot miss.
+  let maybeRequired = fileCtx.findGeneric(requirement.generic, requirement.loc)
+  assert(maybeRequired.isOk, "[BUG] - Resolver ensures that the require-slot generic is in the file scope")
+  genericSatisfiedBy(fileCtx, typeCtx, maybeRequired.get, impl)
+
+proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
+  let maybeModule = fileCtx.findModule(argType.module, argType.loc)
   assert(maybeModule.isOk, "[BUG] - Resolver ensures that the argument type module exists")
+  let module = maybeModule.get
+  assert(module.data.isSome, "[BUG] - Resolver ensures that argument type modules are data modules")
+
   var analyzedImpls: seq[AnalyzedArgumentType]
   for impl in argType.impls:
-    let analyzedImpl = ? analyzeDefArgumentType(fileScope, impl)
+    let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
     analyzedImpls.add(analyzedImpl)
-  ok(newAnalyzedModuleArgumentType(argType, maybeModule.get, analyzedImpls))
 
-proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
+  let requires = module.data.get.requires
+  assert(requires.len == argType.impls.len, "[BUG] - Resolver ensures impls match the module's require slots")
+  for (requirement, impl) in zip(requires, argType.impls):
+    ? checkImplSatisfies(fileCtx, typeCtx, requirement, impl)
+
+  ok(newAnalyzedModuleArgumentType(argType, module, analyzedImpls))
+
+proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string] =
   case argType.kind:
   of ratkGeneric:
-    let analyzedArgType = ? analyzeDefGenericArgumentType(fileScope, argType.generic)
+    let analyzedArgType = ? analyzeDefGenericArgumentType(fileCtx, argType.generic)
     ok(newAnalyzedArgumentType(analyzedArgType))
   of ratkModule:
-    let analyzedArgType = ? analyzeDefModuleArgumentType(fileScope, argType.module)
+    let analyzedArgType = ? analyzeDefModuleArgumentType(fileCtx, typeCtx, argType.module)
     ok(newAnalyzedArgumentType(analyzedArgType))
 
 # ============================================================
@@ -119,12 +253,14 @@ proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, argType: ResolvedArgu
 # ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
 #   UNIFICATION.
 #
-# The impl-satisfies-base signature check (currently done at
-# `analyzeValueTypeAgainstDefType` on the facade + `checkImplSatisfiesGeneric`
-# on the resolver) uses hash-based `==` for AnalyzedArgumentType
-# comparison. That works for fully-bound-vs-fully-bound comparisons
-# but not for cases where either side carries free generics
-# (post leave-as-is inference).
+# The impl-satisfies-base signature check (done at
+# `analyzeValueTypeAgainstDefType` on the facade + the def-time
+# `checkImplSatisfies` above) uses hash-based `==` for
+# argument-type comparison at module positions. The def-time
+# matching relation treats an EXPECTED generic as a contract
+# (structural check), but the phase-B value-vs-defType walk still
+# compares by hash — free generics there remain unification
+# territory.
 #
 # What breaks: an impl providing `byte_size(items: Array[u8])` where
 # the base generic mandates `byte_size(items: Array[Any])` — hash
@@ -144,52 +280,52 @@ proc analyzeDefArgumentType*(fileScope: ResolvedFileScope, argType: ResolvedArgu
 # any new use of `==`.
 # ============================================================
 
-proc analyzeDefArgumentDefinition(fileScope: ResolvedFileScope, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
-  let analyzedArgType = ? analyzeDefArgumentType(fileScope, argDef.argType)
+proc analyzeDefArgumentDefinition(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
+  let analyzedArgType = ? analyzeDefArgumentType(fileCtx, typeCtx, argDef.argType)
   ok(newAnalyzedArgumentDefinition(argDef, analyzedArgType))
 
-proc analyzeDefFunctionDefinition(fileScope: ResolvedFileScope, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
+proc analyzeDefFunctionDefinition(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
   var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
   for arg in funcDef.args:
-    let analyzedArgDef = ? analyzeDefArgumentDefinition(fileScope, arg)
+    let analyzedArgDef = ? analyzeDefArgumentDefinition(fileCtx, typeCtx, arg)
     analyzedArgDefs.add(analyzedArgDef)
-  let analyzedReturns = ? analyzeDefArgumentType(fileScope, funcDef.returns)
+  let analyzedReturns = ? analyzeDefArgumentType(fileCtx, typeCtx, funcDef.returns)
   ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
 
-proc analyzeDefStruct(fileScope: ResolvedFileScope, struct: ResolvedStructDef): Result[AnalyzedStructDef, string] =
+proc analyzeDefStruct(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, struct: ResolvedStructDef): Result[AnalyzedStructDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in struct.fields:
-    let analyzedField = ? analyzeDefArgumentDefinition(fileScope, field)
+    let analyzedField = ? analyzeDefArgumentDefinition(fileCtx, typeCtx, field)
     analyzedFields.add(analyzedField)
   ok(newAnalyzedStructDef(struct, analyzedFields))
 
-proc analyzeDefVariant(fileScope: ResolvedFileScope, variant: ResolvedVariant): Result[AnalyzedVariantDef, string] =
+proc analyzeDefVariant(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, variant: ResolvedVariant): Result[AnalyzedVariantDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variant.fields:
-    let analyzedField = ? analyzeDefArgumentDefinition(fileScope, field)
+    let analyzedField = ? analyzeDefArgumentDefinition(fileCtx, typeCtx, field)
     analyzedFields.add(analyzedField)
   ok(newAnalyzedVariantDef(variant, analyzedFields))
 
-proc analyzeDefUnion(fileScope: ResolvedFileScope, union: ResolvedUnionDef): Result[AnalyzedUnionDef, string] =
+proc analyzeDefUnion(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, union: ResolvedUnionDef): Result[AnalyzedUnionDef, string] =
   var analyzedVariants: seq[AnalyzedVariantDef]
   for variant in union.variants:
-    let analyzedVariant = ? analyzeDefVariant(fileScope, variant)
+    let analyzedVariant = ? analyzeDefVariant(fileCtx, typeCtx, variant)
     analyzedVariants.add(analyzedVariant)
   ok(newAnalyzedUnionDef(union, analyzedVariants))
 
-proc analyzeDefData(fileScope: ResolvedFileScope, data: ResolvedData): Result[AnalyzedData, string] =
+proc analyzeDefData(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, data: ResolvedData): Result[AnalyzedData, string] =
   case data.kind:
   of rdkLiteral:
     ok(newAnalyzedData(newAnalyzedLiteralDef(data.literal)))
   of rdkStruct:
-    let analyzedStruct = ? analyzeDefStruct(fileScope, data.struct)
+    let analyzedStruct = ? analyzeDefStruct(fileCtx, typeCtx, data.struct)
     ok(newAnalyzedData(analyzedStruct))
   of rdkUnion:
-    let analyzedUnion = ? analyzeDefUnion(fileScope, data.union)
+    let analyzedUnion = ? analyzeDefUnion(fileCtx, typeCtx, data.union)
     ok(newAnalyzedData(analyzedUnion))
 
-proc analyzeDefUnionRef(fileScope: ResolvedFileScope, unionRef: ResolvedUnionRef): Result[AnalyzedDefUnionRef, string] =
-  let maybeUnionModule = fileScope.findModule(unionRef.module, unionRef.loc)
+proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, unionRef: ResolvedUnionRef): Result[AnalyzedDefUnionRef, string] =
+  let maybeUnionModule = fileCtx.findModule(unionRef.module, unionRef.loc)
   assert(maybeUnionModule.isOk, "[BUG] - Resolver ensures that the union ref module exists")
   let unionModule = maybeUnionModule.get
   assert(unionModule.data.isSome, "[BUG] - Resolver ensures that union ref module has a data block")
@@ -203,11 +339,11 @@ proc analyzeDefUnionRef(fileScope: ResolvedFileScope, unionRef: ResolvedUnionRef
   if unionRef.argType.impls.len == 0:
     ok(newAnalyzedDefUnionRef(unionRef, unionModule, union, variant))
   else:
-    let analyzedArgType = ? analyzeDefModuleArgumentType(fileScope, unionRef.argType)
+    let analyzedArgType = ? analyzeDefModuleArgumentType(fileCtx, typeCtx, unionRef.argType)
     ok(newAnalyzedDefUnionRef(unionRef, analyzedArgType, union, variant))
 
-proc analyzeDefStructRef(fileScope: ResolvedFileScope, structRef: ResolvedStructRef): Result[AnalyzedDefStructRef, string] =
-  let maybeStructModule = fileScope.findModule(structRef.module, structRef.loc)
+proc analyzeDefStructRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, structRef: ResolvedStructRef): Result[AnalyzedDefStructRef, string] =
+  let maybeStructModule = fileCtx.findModule(structRef.module, structRef.loc)
   assert(maybeStructModule.isOk, "[BUG] - Resolver ensures that the struct ref module exists")
   let structModule = maybeStructModule.get
   assert(structModule.data.isSome, "[BUG] - Resolver ensures that struct ref module has a data block")
@@ -216,83 +352,83 @@ proc analyzeDefStructRef(fileScope: ResolvedFileScope, structRef: ResolvedStruct
   if structRef.argType.impls.len == 0:
     ok(newAnalyzedDefStructRef(structRef, structModule, struct))
   else:
-    let analyzedArgType = ? analyzeDefModuleArgumentType(fileScope, structRef.argType)
+    let analyzedArgType = ? analyzeDefModuleArgumentType(fileCtx, typeCtx, structRef.argType)
     ok(newAnalyzedDefStructRef(structRef, analyzedArgType, struct))
 
-proc analyzeDefStatement(fileScope: ResolvedFileScope, statement: ResolvedStatement): Result[AnalyzedDefStatement, string]
-proc analyzeDefExpression(fileScope: ResolvedFileScope, expression: ResolvedExpression): Result[AnalyzedDefExpression, string]
+proc analyzeDefStatement(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, statement: ResolvedStatement): Result[AnalyzedDefStatement, string]
+proc analyzeDefExpression(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expression: ResolvedExpression): Result[AnalyzedDefExpression, string]
 
-proc analyzeDefBareLiteral(fileScope: ResolvedFileScope, literal: ResolvedLiteral): Result[AnalyzedDefLiteral, string] =
-  let maybeLiteralModule = fileScope.findModule(literal.default, literal.loc)
+proc analyzeDefBareLiteral(fileCtx: ResolvedFileContext, literal: ResolvedLiteral): Result[AnalyzedDefLiteral, string] =
+  let maybeLiteralModule = fileCtx.findModule(literal.default, literal.loc)
   assert(maybeLiteralModule.isOk, "[BUG] - Resolver ensures that the literal default module exists")
   let literalModule = maybeLiteralModule.get
   assert(literalModule.data.isSome, "[BUG] - Resolver ensures that literal module has a data block")
   assert(literalModule.data.get.kind == rdkLiteral, "[BUG] - Resolver ensures that literal module has a literal block")
   ok(newAnalyzedDefLiteral(literal, literalModule, literalModule.data.get.literal))
 
-proc analyzeDefCase(fileScope: ResolvedFileScope, caseBlock: ResolvedCaseBlock): Result[AnalyzedDefCase, string] =
+proc analyzeDefCase(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, caseBlock: ResolvedCaseBlock): Result[AnalyzedDefCase, string] =
   var statements: seq[AnalyzedDefStatement]
   for statement in caseBlock.statements:
-    let analyzedDefStatement = ? analyzeDefStatement(fileScope, statement)
+    let analyzedDefStatement = ? analyzeDefStatement(fileCtx, typeCtx, statement)
     statements.add(analyzedDefStatement)
   ok(newAnalyzedDefCase(caseBlock, statements))
 
-proc analyzeDefMatch(fileScope: ResolvedFileScope, match: ResolvedMatchExpression): Result[AnalyzedDefMatch, string] =
-  let subject = ? analyzeDefExpression(fileScope, match.subject)
+proc analyzeDefMatch(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, match: ResolvedMatchExpression): Result[AnalyzedDefMatch, string] =
+  let subject = ? analyzeDefExpression(fileCtx, typeCtx, match.subject)
 
   var cases: seq[AnalyzedDefCase]
   for caseBlock in match.cases:
-    let analyzedDefCase = ? analyzeDefCase(fileScope, caseBlock)
+    let analyzedDefCase = ? analyzeDefCase(fileCtx, typeCtx, caseBlock)
     cases.add(analyzedDefCase)
   ok(newAnalyzedDefMatch(match, subject, cases))
 
-proc analyzeDefFunctionCall(fileScope: ResolvedFileScope, fncall: ResolvedFunctionCall): Result[AnalyzedDefFunctionCall, string] =
-  let maybeType = fileScope.findType(fncall.typ, fncall.loc)
+proc analyzeDefFunctionCall(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, fncall: ResolvedFunctionCall): Result[AnalyzedDefFunctionCall, string] =
+  let maybeType = fileCtx.findType(fncall.typ, fncall.loc)
   assert(maybeType.isOk, "[BUG] - Resolver ensures that the function call receiver type exists")
   let resolvedType = maybeType.get
   var args: seq[AnalyzedDefExpression]
   for arg in fncall.args:
-    let analyzedDefArg = ? analyzeDefExpression(fileScope, arg)
+    let analyzedDefArg = ? analyzeDefExpression(fileCtx, typeCtx, arg)
     args.add(analyzedDefArg)
   ok(newAnalyzedDefFunctionCall(fncall, resolvedType, args))
 
-proc analyzeDefUnionInitializer(fileScope: ResolvedFileScope, init: ResolvedUnionInitializer): Result[AnalyzedDefUnionInitializer, string] =
-  let unionRef = ? analyzeDefUnionRef(fileScope, init.unionRef)
+proc analyzeDefUnionInitializer(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, init: ResolvedUnionInitializer): Result[AnalyzedDefUnionInitializer, string] =
+  let unionRef = ? analyzeDefUnionRef(fileCtx, typeCtx, init.unionRef)
   var kwargs: seq[AnalyzedDefKeywordArgument]
   for kwarg in init.kwargs:
-    let analyzedDefExpr = ? analyzeDefExpression(fileScope, kwarg.expression)
+    let analyzedDefExpr = ? analyzeDefExpression(fileCtx, typeCtx, kwarg.expression)
     let analyzedDefKwarg = newAnalyzedDefKeywordArgument(kwarg, analyzedDefExpr)
     kwargs.add(analyzedDefKwarg)
   ok(newAnalyzedDefUnionInitializer(init, unionRef, kwargs))
 
-proc analyzeDefStructInitializer(fileScope: ResolvedFileScope, init: ResolvedStructInitializer): Result[AnalyzedDefStructInitializer, string] =
-  let structRef = ? analyzeDefStructRef(fileScope, init.structRef)
+proc analyzeDefStructInitializer(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, init: ResolvedStructInitializer): Result[AnalyzedDefStructInitializer, string] =
+  let structRef = ? analyzeDefStructRef(fileCtx, typeCtx, init.structRef)
   var kwargs: seq[AnalyzedDefKeywordArgument]
   for kwarg in init.kwargs:
-    let analyzedDefExpr = ? analyzeDefExpression(fileScope, kwarg.expression)
+    let analyzedDefExpr = ? analyzeDefExpression(fileCtx, typeCtx, kwarg.expression)
     let analyzedDefKwarg = newAnalyzedDefKeywordArgument(kwarg, analyzedDefExpr)
     kwargs.add(analyzedDefKwarg)
   ok(newAnalyzedDefStructInitializer(init, structRef, kwargs))
 
-proc analyzeDefLiteralInitializer(fileScope: ResolvedFileScope, init: ResolvedLiteralInitializer): Result[AnalyzedDefLiteralInitializer, string] =
-  let argType = ? analyzeDefModuleArgumentType(fileScope, init.argType)
+proc analyzeDefLiteralInitializer(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, init: ResolvedLiteralInitializer): Result[AnalyzedDefLiteralInitializer, string] =
+  let argType = ? analyzeDefModuleArgumentType(fileCtx, typeCtx, init.argType)
   assert(argType.module.data.isSome, "[BUG] - Resolver ensures that literal module has a data block")
   assert(argType.module.data.get.kind == rdkLiteral, "[BUG] - Resolver ensures that literal module has a literal block")
   ok(newAnalyzedDefLiteralInitializer(init, argType, argType.module.data.get.literal))
 
-proc analyzeDefInitializer(fileScope: ResolvedFileScope, init: ResolvedInitializer): Result[AnalyzedDefInitializer, string] =
+proc analyzeDefInitializer(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, init: ResolvedInitializer): Result[AnalyzedDefInitializer, string] =
   case init.kind:
   of rikLiteral:
-    let literalInit = ? analyzeDefLiteralInitializer(fileScope, init.literal)
+    let literalInit = ? analyzeDefLiteralInitializer(fileCtx, typeCtx, init.literal)
     ok(newAnalyzedDefInitializer(literalInit))
   of rikStruct:
-    let structInit = ? analyzeDefStructInitializer(fileScope, init.struct)
+    let structInit = ? analyzeDefStructInitializer(fileCtx, typeCtx, init.struct)
     ok(newAnalyzedDefInitializer(structInit))
   of rikUnion:
-    let unionInit = ? analyzeDefUnionInitializer(fileScope, init.union)
+    let unionInit = ? analyzeDefUnionInitializer(fileCtx, typeCtx, init.union)
     ok(newAnalyzedDefInitializer(unionInit))
 
-proc analyzeDefExpression(fileScope: ResolvedFileScope, expression: ResolvedExpression): Result[AnalyzedDefExpression, string] =
+proc analyzeDefExpression(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expression: ResolvedExpression): Result[AnalyzedDefExpression, string] =
   case expression.kind:
   # Variables and getters touch only function-scope names and struct
   # fields — nothing def-level to analyze, so they wrap as-is; phase B
@@ -302,59 +438,59 @@ proc analyzeDefExpression(fileScope: ResolvedFileScope, expression: ResolvedExpr
   of rekGetter:
     ok(newAnalyzedDefExpression(expression.getter))
   of rekLiteral:
-    let literal = ? analyzeDefBareLiteral(fileScope, expression.literal)
+    let literal = ? analyzeDefBareLiteral(fileCtx, expression.literal)
     ok(newAnalyzedDefExpression(literal))
   of rekFunctionCall:
-    let fncall = ? analyzeDefFunctionCall(fileScope, expression.fncall)
+    let fncall = ? analyzeDefFunctionCall(fileCtx, typeCtx, expression.fncall)
     ok(newAnalyzedDefExpression(fncall))
   of rekInitializer:
-    let init = ? analyzeDefInitializer(fileScope, expression.init)
+    let init = ? analyzeDefInitializer(fileCtx, typeCtx, expression.init)
     ok(newAnalyzedDefExpression(init))
   of rekMatchExpr:
-    let match = ? analyzeDefMatch(fileScope, expression.match)
+    let match = ? analyzeDefMatch(fileCtx, typeCtx, expression.match)
     ok(newAnalyzedDefExpression(match))
 
-proc analyzeDefAssignment(fileScope: ResolvedFileScope, assignment: ResolvedAssignment): Result[AnalyzedDefAssignment, string] =
-  let expression = ? analyzeDefExpression(fileScope, assignment.expression)
+proc analyzeDefAssignment(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, assignment: ResolvedAssignment): Result[AnalyzedDefAssignment, string] =
+  let expression = ? analyzeDefExpression(fileCtx, typeCtx, assignment.expression)
   ok(newAnalyzedDefAssignment(assignment, expression))
 
-proc analyzeDefSetter(fileScope: ResolvedFileScope, setter: ResolvedSetter): Result[AnalyzedDefSetter, string] =
+proc analyzeDefSetter(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, setter: ResolvedSetter): Result[AnalyzedDefSetter, string] =
   # The getter side is skipped on purpose — same rationale as the
   # rekGetter arm in analyzeDefExpression.
-  let expression = ? analyzeDefExpression(fileScope, setter.expression)
+  let expression = ? analyzeDefExpression(fileCtx, typeCtx, setter.expression)
   ok(newAnalyzedDefSetter(setter, expression))
 
-proc analyzeDefStatement(fileScope: ResolvedFileScope, statement: ResolvedStatement): Result[AnalyzedDefStatement, string] =
+proc analyzeDefStatement(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, statement: ResolvedStatement): Result[AnalyzedDefStatement, string] =
   case statement.kind:
   of rskAssignment:
-    let assignment = ? analyzeDefAssignment(fileScope, statement.assignment)
+    let assignment = ? analyzeDefAssignment(fileCtx, typeCtx, statement.assignment)
     ok(newAnalyzedDefStatement(assignment))
   of rskExpr:
-    let expression = ? analyzeDefExpression(fileScope, statement.expression)
+    let expression = ? analyzeDefExpression(fileCtx, typeCtx, statement.expression)
     ok(newAnalyzedDefStatement(expression))
   of rskSetter:
-    let setter = ? analyzeDefSetter(fileScope, statement.setter)
+    let setter = ? analyzeDefSetter(fileCtx, typeCtx, statement.setter)
     ok(newAnalyzedDefStatement(setter))
 
-proc analyzeDefUserFunction(fileScope: ResolvedFileScope, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
-  let funcDef = ? analyzeDefFunctionDefinition(fileScope, function.def)
+proc analyzeDefUserFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
+  let funcDef = ? analyzeDefFunctionDefinition(fileCtx, typeCtx, function.def)
   var statements: seq[AnalyzedDefStatement]
   for statement in function.statements:
-    let analyzedDefStatement = ? analyzeDefStatement(fileScope, statement)
+    let analyzedDefStatement = ? analyzeDefStatement(fileCtx, typeCtx, statement)
     statements.add(analyzedDefStatement)
   ok(newAnalyzedDefUserFunction(function, funcDef, statements))
 
-proc analyzeDefExternFunction(fileScope: ResolvedFileScope, function: ResolvedExternFunction): Result[AnalyzedDefExternFunction, string] =
-  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, function.def)
+proc analyzeDefExternFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedExternFunction): Result[AnalyzedDefExternFunction, string] =
+  let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileCtx, typeCtx, function.def)
   ok(newAnalyzedDefExternFunction(function, analyzedFuncDef))
 
-proc analyzeDefFunction(fileScope: ResolvedFileScope, function: ResolvedFunction): Result[AnalyzedDefFunction, string] =
+proc analyzeDefFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedFunction): Result[AnalyzedDefFunction, string] =
   case function.kind:
   of rfkExtern:
-    let analyzedExternFunction = ? analyzeDefExternFunction(fileScope, function.extern)
+    let analyzedExternFunction = ? analyzeDefExternFunction(fileCtx, typeCtx, function.extern)
     ok(newAnalyzedDefFunction(analyzedExternFunction))
   of rfkUser:
-    let analyzedUserFunction = ? analyzeDefUserFunction(fileScope, function.user)
+    let analyzedUserFunction = ? analyzeDefUserFunction(fileCtx, typeCtx, function.user)
     ok(newAnalyzedDefFunction(analyzedUserFunction))
 
 
@@ -368,29 +504,31 @@ proc analyzeDefFunction(fileScope: ResolvedFileScope, function: ResolvedFunction
 # without a data block carry an empty requires seq.
 # ============================================================
 
-proc analyzeDefModule(fileScope: ResolvedFileScope, module: ResolvedModule): Result[AnalyzedDefModule, string] =
+proc analyzeDefModule(fileCtx: ResolvedFileContext, module: ResolvedModule): Result[AnalyzedDefModule, string] =
+  let typeCtx = newResolvedTypeContext(module)
   var requires: seq[AnalyzedGenericArgumentType]
   if module.data.isSome:
     for genericArgType in module.data.get.requires:
-      let analyzedArgType = ? analyzeDefGenericArgumentType(fileScope, genericArgType)
+      let analyzedArgType = ? analyzeDefGenericArgumentType(fileCtx, genericArgType)
       requires.add(analyzedArgType)
 
   var maybeAnalyzedData: Option[AnalyzedData]
   if module.data.isSome:
-    let analyzedData = ? analyzeDefData(fileScope, module.data.get)
+    let analyzedData = ? analyzeDefData(fileCtx, typeCtx, module.data.get)
     maybeAnalyzedData = some(analyzedData)
 
   var analyzedDefFuncs: seq[AnalyzedDefFunction]
   for function in module.functions:
-    let analyzedDefFunc = ? analyzeDefFunction(fileScope, function)
+    let analyzedDefFunc = ? analyzeDefFunction(fileCtx, typeCtx, function)
     analyzedDefFuncs.add(analyzedDefFunc)
 
   ok(newAnalyzedDefModule(module, requires, maybeAnalyzedData, analyzedDefFuncs))
 
-proc analyzeDefGeneric(fileScope: ResolvedFileScope, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
+proc analyzeDefGeneric(fileCtx: ResolvedFileContext, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
+  let typeCtx = newResolvedTypeContext(generic)
   var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
   for funcDef in generic.funcDefs:
-    let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileScope, funcDef)
+    let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileCtx, typeCtx, funcDef)
     analyzedFuncDefs.add(analyzedFuncDef)
   ok(newAnalyzedGeneric(generic, analyzedFuncDefs))
 
@@ -398,13 +536,13 @@ proc analyzeDefGeneric(fileScope: ResolvedFileScope, generic: ResolvedGeneric): 
 # Phase-A defined-type dispatcher (W5 of plan_analyzer_two_pass.md).
 # ============================================================
 
-proc analyzeDefType(fileScope: ResolvedFileScope, definedType: ResolvedType): Result[AnalyzedType, string] =
-  case definedType.kind:
+proc analyzeDefType(fileCtx: ResolvedFileContext, typ: ResolvedType): Result[AnalyzedType, string] =
+  case typ.kind:
   of rtkGeneric:
-    let analyzedGeneric = ? analyzeDefGeneric(fileScope, definedType.generic)
+    let analyzedGeneric = ? analyzeDefGeneric(fileCtx, typ.generic)
     ok(newAnalyzedType(analyzedGeneric))
   of rtkModule:
-    let analyzedModule = ? analyzeDefModule(fileScope, definedType.module)
+    let analyzedModule = ? analyzeDefModule(fileCtx, typ.module)
     ok(newAnalyzedType(analyzedModule))
 
 proc analyzeDefImportedType(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
@@ -428,12 +566,14 @@ proc analyzeDefFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFil
     let analyzedImport = ? analyzeDefImport(app, imp)
     analyzedImports.add(analyzedImport)
 
-  let fileScope = ? newResolvedFileScope(analyzedImports, file.types)
+  let maybeFileCtx = newResolvedFileContext(analyzedImports, file.types)
+  assert(maybeFileCtx.isOk, "[BUG] - Resolver ensures per-file type bindings are conflict-free")
+  let fileCtx = maybeFileCtx.get
   var analyzedTypes: seq[AnalyzedType]
   for typ in file.types:
-    let analyzedType = ? analyzeDefType(fileScope, typ)
+    let analyzedType = ? analyzeDefType(fileCtx, typ)
     analyzedTypes.add(analyzedType)
-  ok(newAnalyzedDefFile(file, analyzedImports, analyzedTypes, fileScope))
+  ok(newAnalyzedDefFile(file, analyzedImports, analyzedTypes, fileCtx))
 
 # ============================================================
 # Phase-A app dispatcher (W7 of plan_analyzer_two_pass.md).
