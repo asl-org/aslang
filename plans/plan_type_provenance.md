@@ -194,8 +194,9 @@ they are NOT part of this plan.
 
 P1: one commit, tagged mechanical. P2: one commit, structural /
 behavior-neutral (neutrality evidenced by untouched test
-expectations). P3: exactly one behavioral commit (P3-flip);
-mechanical/structural work splits into pre-decision
-(P3-pre-1), post-decision (P3-pre-2, P3-swap), and post-flip
-(P3-post) neutral commits. Never mix classes in one commit; never
-mix rungs of this ladder with unrelated work.
+expectations). P3: every subtask is its OWN commit — P3-pre-1,
+P3-pre-2, P3-swap, P3-flip, P3-post land as five separate commits
+(P3a is a decision, not a commit). Exactly one of them (P3-flip) is
+behavioral; the rest are neutral. Never merge two subtasks into one
+commit even when both are neutral; never mix classes in one commit;
+never mix rungs of this ladder with unrelated work.
