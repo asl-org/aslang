@@ -206,20 +206,9 @@ proc resolveFields(fileCtx: FileContext, typeCtx: TypeContext, fields: seq[Argum
 proc resolveStructDef(fileCtx: FileContext, typeCtx: TypeContext, struct: StructDef): Result[ResolvedStructDef, string] =
   let resolvedRequires = ? resolveStructDefHeader(fileCtx, struct.header)
   let resolvedFields = ? resolveFields(fileCtx, typeCtx, struct.fields)
-
-  var genericFields: OrderedSet[ResolvedGenericArgumentType]
-  for field in resolvedFields:
-    case field.argType.kind:
-    of ratkModule: discard
-    of ratkGeneric: genericFields.incl(field.argType.generic)
-
-  if resolvedRequires.len > 0:
-    if genericFields.len > 0:
-      err(fmt"{struct.loc} struct with explicit generic requirements does not support generic fields")
-    else:
-      ok(newResolvedStructDef(struct, resolvedRequires, resolvedFields))
-  else:
-    ok(newResolvedStructDef(struct, genericFields.toSeq, resolvedFields))
+  # Explicit-vs-inferred decision + header/field conflict live on the
+  # constructor.
+  newResolvedStructDef(struct, resolvedRequires, resolvedFields)
 
 proc resolveVariantDef(fileCtx: FileContext, typeCtx: TypeContext, variant: VariantDef): Result[ResolvedVariant, string] =
   let resolvedFields = ? resolveFields(fileCtx, typeCtx, variant.fields)
@@ -309,36 +298,27 @@ proc resolveStructRef(fileCtx: FileContext, typeCtx: TypeContext, structRef: Str
     of ddkStruct:
       let struct = moduleData.struct
       if structRef.impls.len == 0:
-        if struct.header.requires.len == 0:
-          ok(newResolvedStructRef(structRef, structModule, struct))
-        else:
-          err(fmt"{structRef.loc} module `{structRef.module.asl}` expects {struct.header.requires.len} impls")
+        # Bare-ref legality (no explicit-header phantom params) lives
+        # on the constructor.
+        newResolvedStructRef(structRef, structModule, struct)
       else:
         let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, structRef.argType, structModule, moduleData)
         ok(newResolvedStructRef(structRef, resolvedModuleArgType, struct))
 
-proc resolveKeywordArguments(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, struct: StructDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
-  var resolvedKwargs = newSeq[ResolvedKeywordArgument](struct.fields.len)
-  var fieldMap: Table[int, Location]
+proc resolveKeywordArguments(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
+  ## Resolves each kwarg's expression, in source order. Field-name
+  ## validation, duplicate detection, and canonical ordering live on
+  ## the initializer constructors (one shape serves struct + union).
+  var resolvedKwargs: seq[ResolvedKeywordArgument]
   for kwarg in kwargList.items:
-    let fieldId = ? struct.findFieldId(kwarg.name)
-    if fieldId in fieldMap:
-      let loc = fieldMap[fieldId]
-      return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {loc}")
-    else:
-      let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, kwarg.expression)
-      resolvedKwargs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
-      fieldMap[fieldId] = kwarg.loc
-
-  if fieldMap.len != struct.fields.len:
-    err(fmt"{kwargList.loc} expected `{struct.fields.len}` fields but `{fieldMap.len}` were given")
-  else:
-    ok(resolvedKwargs)
+    let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, kwarg.expression)
+    resolvedKwargs.add(newResolvedKeywordArgument(kwarg, resolvedExpression))
+  ok(resolvedKwargs)
 
 proc resolveStructInitializer(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, init: StructInitializer): Result[ResolvedStructInitializer, string] =
   let resolvedStructRef = ? resolveStructRef(fileCtx, typeCtx, init.structRef)
-  let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, resolvedStructRef.struct, init.kwargList)
-  ok(newResolvedStructInitializer(init, resolvedStructRef, resolvedKeywordArgs))
+  let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, init.kwargList)
+  newResolvedStructInitializer(init, resolvedStructRef, resolvedKeywordArgs)
 
 proc resolveUnionRef(fileCtx: FileContext, typeCtx: TypeContext, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
   let unionModule = ? fileCtx.findModule(unionRef.module)
@@ -358,28 +338,10 @@ proc resolveUnionRef(fileCtx: FileContext, typeCtx: TypeContext, unionRef: Union
         let resolvedArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, unionRef.argType, unionModule, moduleData)
         ok(newResolvedUnionRef(unionRef, resolvedArgType, variant))
 
-proc resolveKeywordArguments(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, variant: VariantDef, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
-  var resolvedKwargs = newSeq[ResolvedKeywordArgument](variant.fields.len)
-  var fieldMap: Table[int, Location]
-  for kwarg in kwargList.items:
-    let fieldId = ? variant.findFieldId(kwarg.name)
-    if fieldId in fieldMap:
-      let loc = fieldMap[fieldId]
-      return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {loc}")
-    else:
-      let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, kwarg.expression)
-      resolvedKwargs[fieldId] = newResolvedKeywordArgument(kwarg, resolvedExpression)
-      fieldMap[fieldId] = kwarg.loc
-
-  if fieldMap.len != variant.fields.len:
-    err(fmt"{kwargList.loc} expected `{variant.fields.len}` fields but `{fieldMap.len}` were given")
-  else:
-    ok(resolvedKwargs)
-
 proc resolveUnionInitializer(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
   let resolvedUnionRef = ? resolveUnionRef(fileCtx, typeCtx, unionInit.unionRef)
-  let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, resolvedUnionRef.variant, unionInit.kwargList)
-  ok(newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs))
+  let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, unionInit.kwargList)
+  newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs)
 
 proc resolveLiteralInitializer(fileCtx: FileContext, typeCtx: TypeContext, init: LiteralInitializer): Result[ResolvedLiteralInitializer, string] =
   let module = ? fileCtx.findModule(init.module)
@@ -478,7 +440,6 @@ proc resolveStatement(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: Funct
     ok(newResolvedStatement(resolvedMutation))
 
 proc resolveUserFunction(fileCtx: FileContext, typeCtx: TypeContext, function: UserFunction): Result[ResolvedUserFunction, string] =
-  assert(function.decorators.len == 0, fmt"{function.loc} todo: resolve decorators in user function")
   let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeCtx, function.def)
 
   var funcCtx = ? newFunctionContext(resolvedFuncDef)
@@ -508,36 +469,24 @@ proc resolveModule(fileCtx: FileContext, module: Module): Result[ResolvedModule,
     else:
       none(ResolvedData)
 
-  # Input-signature uniqueness: two functions may not share a name +
-  # input types (the return type does not distinguish them — call
-  # sites could never disambiguate). ResolvedFunctionDef hashes by
-  # exactly that signature, so the seen-table catches violations.
-  var seenDefs: Table[ResolvedFunctionDef, Location]
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:
     let resolvedFunction = ? resolveFunction(fileCtx, typeCtx, function)
-    if resolvedFunction.def in seenDefs:
-      let prevLoc = seenDefs[resolvedFunction.def]
-      return err(fmt"{resolvedFunction.def.loc} duplicate function `{resolvedFunction.def.name.asl}` with the same input signature encountered, see previous declaration at {prevLoc}")
-    seenDefs[resolvedFunction.def] = resolvedFunction.def.loc
     resolvedFunctions.add(resolvedFunction)
 
-  ok(newResolvedModule(module, resolvedData, resolvedFunctions))
+  # Construction invariants (input-signature uniqueness, public
+  # modules require public generics) live on the constructor.
+  newResolvedModule(module, resolvedData, resolvedFunctions)
 
 proc resolveGeneric(fileCtx: FileContext, generic: Generic): Result[ResolvedGeneric, string] =
   let typeCtx = newTypeContext(generic)
-  # Same input-signature uniqueness rule as resolveModule.
-  var seenDefs: Table[ResolvedFunctionDef, Location]
   var resolvedFuncDefs: seq[ResolvedFunctionDef]
   for def in generic.defs:
     let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeCtx, def)
-    if resolvedFuncDef in seenDefs:
-      let prevLoc = seenDefs[resolvedFuncDef]
-      return err(fmt"{resolvedFuncDef.loc} duplicate function `{resolvedFuncDef.name.asl}` with the same input signature encountered, see previous declaration at {prevLoc}")
-    seenDefs[resolvedFuncDef] = resolvedFuncDef.loc
     resolvedFuncDefs.add(resolvedFuncDef)
 
-  ok(newResolvedGeneric(generic, resolvedFuncDefs))
+  # Input-signature uniqueness lives on the constructor.
+  newResolvedGeneric(generic, resolvedFuncDefs)
 
 proc resolveType(fileCtx: FileContext, typ: Type): Result[ResolvedType, string] =
   assert(typ.decorators.len == 0, fmt"{typ.loc} types do not support decorators")

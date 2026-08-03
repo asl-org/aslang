@@ -17,6 +17,7 @@ type
 proc newResolvedUserFunction*(parsed: UserFunction,
     def: ResolvedFunctionDef,
     statements: seq[ResolvedStatement]): ResolvedUserFunction =
+  assert(parsed.decorators.len == 0, fmt"{parsed.loc} todo: resolve decorators in user function")
   ResolvedUserFunction(parsed: parsed, def: def, statements: statements)
 
 proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc

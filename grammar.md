@@ -242,7 +242,12 @@ contributors can find the *why* alongside the *what*.
   (`satisfies` at resolve time; the def analyzer's identity-probe
   check via `findImplDef` at def time) — so a private function can
   neither be called from another module nor make its module satisfy
-  a constraint written elsewhere.
+  a constraint written elsewhere. The same principle applies one
+  level up at definition sites: a public module's require slots may
+  only name public generics (`validatePublicRequires`, owned by
+  `newResolvedModule`) — a private generic in a public interface would
+  be broken-by-construction for every importer, so it is rejected
+  where it is written, not discovered by each consumer.
 
 - **`ArgumentType` splits at the resolver level, not the parser
   level.** From the parse text alone, `Foo` could be a module or a

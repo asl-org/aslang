@@ -1088,3 +1088,67 @@ public generic Eq:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "duplicate function `eq` with the same input signature")
+
+suite "resolver — public modules require public generics":
+
+  test "public module with an explicit-header private generic is rejected":
+    let (r, dir) = resolveSingle("""
+public module u32:
+  literal: "u32"
+
+generic Any:
+  func byte_size(items: u32): u32
+
+public module Array:
+  struct(Any):
+    size: u32
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "public module `Array` requires non-public generic `Any`")
+
+  test "public module with an inferred private generic field is rejected":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+generic K:
+  func foo(): u8
+
+public module Box:
+  struct:
+    value: K
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "public module `Box` requires non-public generic `K`")
+
+  test "private module may use a private generic":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+generic K:
+  func foo(): u8
+
+module Box:
+  struct:
+    value: K
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "public module with a public generic is fine":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public generic K:
+  func foo(): u8
+
+public module Box:
+  struct:
+    value: K
+""")
+    cleanupDir(dir)
+    check r.isOk

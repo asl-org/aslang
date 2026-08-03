@@ -388,6 +388,18 @@ is analyzed:
 Satisfaction is a property of the type itself, independent of what
 the slots happen to be bound to at any particular site.
 
+### Public modules require public generics
+
+A `public module`'s type parameters are part of its public
+interface. If a require slot names a non-public generic — whether
+via an explicit `struct(G):` header or inferred from a field typed
+`G` — the module is unusable by every importer (they would need the
+constraint generic in scope and cannot import a private one). The
+resolver rejects this at the defining module: "public module `M`
+requires non-public generic `G` — a generic named in a public
+module's type parameters must be public". Private modules may use
+private generics freely.
+
 ### Constraint generics must be in scope at use sites
 
 Resolving `Container[T]` reads Container's require slots by name in

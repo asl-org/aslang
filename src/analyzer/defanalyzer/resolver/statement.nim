@@ -13,7 +13,7 @@
 ## (ResolvedGetter, ResolvedLiteralInitializer, ResolvedStructRef,
 ## ResolvedUnionRef) live in their own files and are imported here.
 
-import strformat, options
+import results, strformat, options, tables
 
 import ./parser
 import argtype
@@ -118,10 +118,32 @@ proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
 
 # ---- ResolvedStructInitializer ----
 
+proc orderedKwargs(kwargs: seq[ResolvedKeywordArgument], findFieldId: proc (name: Identifier): Result[int, string], fieldCount: int, listLoc: Location): Result[seq[ResolvedKeywordArgument], string] =
+  ## Shared kwarg validation for struct + union initializers: every
+  ## kwarg must name an existing field, no field twice, every field
+  ## supplied. Returns the kwargs reordered into canonical field
+  ## order.
+  var ordered = newSeq[ResolvedKeywordArgument](fieldCount)
+  var fieldMap: Table[int, Location]
+  for kwarg in kwargs:
+    let fieldId = ? findFieldId(kwarg.name)
+    if fieldId in fieldMap:
+      let prevLoc = fieldMap[fieldId]
+      return err(fmt"{kwarg.loc} duplicate field `{kwarg.name.asl}` encountered, see previous instance at {prevLoc}")
+    ordered[fieldId] = kwarg
+    fieldMap[fieldId] = kwarg.loc
+  if fieldMap.len != fieldCount:
+    return err(fmt"{listLoc} expected `{fieldCount}` fields but `{fieldMap.len}` were given")
+  ok(ordered)
+
 proc newResolvedStructInitializer*(parsed: StructInitializer,
     structRef: ResolvedStructRef,
-    kwargs: seq[ResolvedKeywordArgument]): ResolvedStructInitializer =
-  ResolvedStructInitializer(parsed: parsed, structRef: structRef, kwargs: kwargs)
+    kwargs: seq[ResolvedKeywordArgument]): Result[ResolvedStructInitializer, string] =
+  ## Front-door: owns the kwarg-set validation against the struct's
+  ## fields; stores kwargs in canonical field order.
+  let struct = structRef.struct
+  let ordered = ? orderedKwargs(kwargs, proc (name: Identifier): Result[int, string] = struct.findFieldId(name), struct.fields.len, parsed.kwargList.loc)
+  ok(ResolvedStructInitializer(parsed: parsed, structRef: structRef, kwargs: ordered))
 
 proc parsed*(struct: ResolvedStructInitializer): StructInitializer = struct.parsed
 proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.structRef
@@ -132,8 +154,12 @@ proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
 
 proc newResolvedUnionInitializer*(parsed: UnionInitializer,
     unionRef: ResolvedUnionRef,
-    kwargs: seq[ResolvedKeywordArgument]): ResolvedUnionInitializer =
-  ResolvedUnionInitializer(parsed: parsed, unionRef: unionRef, kwargs: kwargs)
+    kwargs: seq[ResolvedKeywordArgument]): Result[ResolvedUnionInitializer, string] =
+  ## Front-door: owns the kwarg-set validation against the variant's
+  ## fields; stores kwargs in canonical field order.
+  let variant = unionRef.variant
+  let ordered = ? orderedKwargs(kwargs, proc (name: Identifier): Result[int, string] = variant.findFieldId(name), variant.fields.len, parsed.kwargList.loc)
+  ok(ResolvedUnionInitializer(parsed: parsed, unionRef: unionRef, kwargs: ordered))
 
 proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
 proc unionRef*(init: ResolvedUnionInitializer): ResolvedUnionRef = init.unionRef

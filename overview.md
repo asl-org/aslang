@@ -356,9 +356,11 @@ shapes at ref-resolve time (`ResolvedStructRef` carries the
 receiver's `ResolvedModuleArgumentType` + its `StructDef`;
 `ResolvedUnionRef` additionally its `UnionDef` + the referenced
 `VariantDef` — wrong-kind receivers and unknown variants rejected on
-the spot), field-maps initializer kwargs via
-`resolveKeywordArguments` (unknown and duplicate fields rejected
-per-field, undersupply by count), and binds every bare literal's
+the spot), field-maps initializer kwargs
+(`resolveKeywordArguments` resolves the expressions in source order;
+unknown/duplicate fields, undersupply, and canonical field ordering
+are owned by the initializer constructors — one shared shape for
+struct and union), and binds every bare literal's
 default module against the FileContext (`ResolvedLiteral.default` —
 same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 

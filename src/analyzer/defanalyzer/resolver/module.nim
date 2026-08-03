@@ -33,17 +33,38 @@ proc buildFuncNameArityIndex*(funcDefs: seq[ResolvedFunctionDef]): Table[Identif
       result[funcDef.name][funcDef.arity] = newSeq[int]()
     result[funcDef.name][funcDef.arity].add(id)
 
-proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: seq[ResolvedFunction]): ResolvedModule =
-  ## Front-door: compute the funcDef/funcNameArity indices from the
-  ## resolved functions and construct the ResolvedModule. Used by
-  ## `resolveModule` and by tests that construct modules directly.
+proc validatePublicRequires(parsed: Module, data: ResolvedData): Result[void, string] =
+  ## A public module's require slots are part of its public
+  ## interface. A non-public generic there is broken-by-construction
+  ## for every importer — the importing file must have the constraint
+  ## generic in scope to use the module, and a private generic cannot
+  ## be imported. Rejected here, at the definition, instead of
+  ## surfacing as a missing-type mystery in every consumer.
+  for requirement in data.requires:
+    if not requirement.generic.public:
+      return err(fmt"{requirement.loc} public module `{parsed.name.asl}` requires non-public generic `{requirement.generic.name.asl}` — a generic named in a public module's type parameters must be public")
+  ok()
+
+proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: seq[ResolvedFunction]): Result[ResolvedModule, string] =
+  ## Front-door: owns the module's construction invariants —
+  ## input-signature uniqueness (two functions may not share name +
+  ## input types; ResolvedFunctionDef hashes by exactly that, returns
+  ## deliberately excluded since call sites could never disambiguate)
+  ## and the public-interface rule (validatePublicRequires) — then
+  ## computes the funcDef/funcNameArity indices.
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   var funcDefs: seq[ResolvedFunctionDef]
   for id, function in functions:
-    assert(function.def notin funcDefIndex, fmt"[BUG] - Resolver rejects duplicate input signatures ({function.def.asl})")
+    if function.def in funcDefIndex:
+      let prevLoc = funcDefs[funcDefIndex[function.def]].loc
+      return err(fmt"{function.def.loc} duplicate function `{function.def.name.asl}` with the same input signature encountered, see previous declaration at {prevLoc}")
     funcDefIndex[function.def] = id
     funcDefs.add(function.def)
-  ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions)
+
+  if parsed.public and data.isSome:
+    ? validatePublicRequires(parsed, data.get)
+
+  ok(ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions))
 
 proc parsed*(module: ResolvedModule): Module = module.parsed
 proc data*(module: ResolvedModule): Option[ResolvedData] = module.data

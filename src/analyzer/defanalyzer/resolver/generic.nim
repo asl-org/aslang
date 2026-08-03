@@ -16,12 +16,17 @@ type ResolvedGeneric* = ref object
   funcDefIndex: Table[ResolvedFunctionDef, int]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
-proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): ResolvedGeneric =
+proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): Result[ResolvedGeneric, string] =
+  ## Front-door: owns input-signature uniqueness for the generic's
+  ## funcDefs (same rule as newResolvedModule), then computes the
+  ## lookup indices.
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   for id, funcDef in funcDefs:
-    assert(funcDef notin funcDefIndex, fmt"[BUG] - Resolver rejects duplicate input signatures ({funcDef.asl})")
+    if funcDef in funcDefIndex:
+      let prevLoc = funcDefs[funcDefIndex[funcDef]].loc
+      return err(fmt"{funcDef.loc} duplicate function `{funcDef.name.asl}` with the same input signature encountered, see previous declaration at {prevLoc}")
     funcDefIndex[funcDef] = id
-  ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs))
+  ok(ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs)))
 
 proc parsed*(generic: ResolvedGeneric): Generic = generic.parsed
 proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDef] = generic.funcDefs
