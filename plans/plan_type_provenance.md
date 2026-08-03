@@ -128,29 +128,60 @@ Whether it ever needs one depends on the P3 fork.
 Gates: identical counts, zero expectation edits — that is the
 neutrality proof.
 
-### P3 — provenance consumers [BEHAVIORAL — programs newly compile]
+### P3 — provenance consumers
 
-Sub-phases, each its own commit; P3a is the decision gate:
+Discipline: exactly ONE behavioral commit. All machinery peels into
+neutral commits before and after it. Ordering is also a correctness
+requirement: the defanalyzer's route swap MUST land before the
+resolver flip — otherwise newly-legal programs crash on the phase-A
+using-scope assert in the gap.
 
-- P3a [DECISION]: rung-2 enrichment route for the transitive case —
-  (i) chain: entries capture source capability; rung-2 context build
-  threads the fileDef accumulator (file-philosophy pure, more
-  machinery), vs (ii) app-wide identity index
-  (Table[parser.LocalType, ResolvedLocalType] built once in
-  analyzeDefApp — identity is app-unique by construction; less
-  machinery, app-flavored). UNDECIDED — user call.
-- P3b [BEHAVIORAL]: inferGenerics + shallow satisfies derive requires
-  against the DEFINING file (via the Imported entry's source
-  capability at rung 1; needs resolve() to thread accumulated
-  ResolvedFiles OR capture source FileContext at link time). The
-  constraint-generic import rule DIES here. Flagship test:
-  `Container[u8]` without importing Comparable compiles.
-  nested_generics.asl expected to flip (test.sh baseline → 34/35?).
-  documentation.md "Constraint generics must be in scope at use
-  sites" section deleted.
-- P3c [BEHAVIORAL]: defanalyzer contract lookup follows provenance
-  (per P3a route); the phase-A findGeneric-on-using-scope disappears.
-- P3d [MECHANICAL]: docs sweep + test migrations + memory.
+- **P3-pre-1 [STRUCTURAL-neutral, pre-decision]** — rung-1 source
+  capture, fork-INDEPENDENT (the P3a fork concerns rung 2 only):
+  `resolve()` threads its accumulated ResolvedFiles into
+  resolveFile → resolveImports → resolveImport (topo order
+  guarantees presence); the import binding captures the source's
+  FileContext (or ResolvedFile) at link time. Nothing consumes the
+  captured data yet → zero behavior change, zero expectation edits.
+  Note: parser-level hops dead-end transitively (File.importedNameIndex
+  has bindings, not targets), which is WHY the resolver-rung capture
+  is needed.
+
+- **P3a [DECISION — no commit]** — rung-2 enrichment route for the
+  transitive case: (i) chain — rung-2 entries capture source
+  capability, rung-2 context construction threads the fileDef
+  accumulator (file-philosophy pure, more machinery); vs (ii)
+  app-wide identity index (Table[parser.LocalType,
+  ResolvedLocalType] built once in analyzeDefApp — identity is
+  app-unique by construction; less machinery, app-flavored).
+  UNDECIDED — user call.
+
+- **P3-pre-2 [STRUCTURAL-neutral, post-decision]** — build the chosen
+  rung-2 route (index or chain capture + threading). Additive,
+  unconsumed → neutral.
+
+- **P3-swap [STRUCTURAL-neutral]** — the defanalyzer contract lookup
+  switches from `fileCtx.findGeneric(requirement.generic)` (using
+  scope) to the new route. Neutral by construction: for every
+  currently-legal program both routes return the same
+  ResolvedGeneric (the resolver's import rule still guarantees the
+  old route works); expectations untouched prove it.
+
+- **P3-flip [BEHAVIORAL — the only one]** — inferGenerics + shallow
+  satisfies derive requires against the DEFINING file via the
+  captured source scope; the constraint-generic import rule DIES.
+  Contains exactly: the derivation switch, the flagship test
+  (`Container[u8]` without importing Comparable compiles), test
+  expectation updates forced by the behavior change, and the doc
+  edits that DESCRIBE the changed behavior (documentation.md
+  "Constraint generics must be in scope at use sites" section
+  deleted, overview Phase-4 bullet). nested_generics.asl expected to
+  flip — test.sh baseline may become 34/35. Commit message names the
+  newly-accepted program classes.
+
+- **P3-post [MECHANICAL, post-decision]** — dead-code sweep orphaned
+  by the flip (any unused using-scope derivation remnants), comment/
+  doc mentions not tied to the behavior change, memory update.
 
 Interaction notes: the publicity rule (public modules require public
 generics, newResolvedModule) guarantees every contract P3 carries
@@ -163,6 +194,8 @@ they are NOT part of this plan.
 
 P1: one commit, tagged mechanical. P2: one commit, structural /
 behavior-neutral (neutrality evidenced by untouched test
-expectations). P3b/P3c: separate behavioral commits, each with the
-newly-accepted/rejected program classes named in the message. Never
-mix rungs of this ladder in one commit with unrelated work.
+expectations). P3: exactly one behavioral commit (P3-flip);
+mechanical/structural work splits into pre-decision
+(P3-pre-1), post-decision (P3-pre-2, P3-swap), and post-flip
+(P3-post) neutral commits. Never mix classes in one commit; never
+mix rungs of this ladder with unrelated work.
