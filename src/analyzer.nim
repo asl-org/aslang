@@ -292,9 +292,9 @@ proc analyzeFunctionCall*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, file
   let typ = fileDef.scope.findType(fncall.typ)
   let access =
     case typ.kind:
-    of rtkModule:
+    of rltkModule:
       if module.resolved == typ.module: faAll else: faPublic
-    of rtkGeneric: faPublic
+    of rltkGeneric: faPublic
   let definedType = fileCtx.findType(typ)
   let maybeFuncDefs = definedType.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, access)
   assert(maybeFuncDefs.isOk, "[BUG] - Resolver validates every call target (name, arity, access) at resolve time")

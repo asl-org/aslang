@@ -1,4 +1,4 @@
-## Type / File / App + the public resolve* entry point.
+## LocalType / File / App + the public resolve* entry point.
 
 import sequtils, strformat, tables
 
@@ -13,12 +13,12 @@ import imports
 type ResolvedFile* = ref object
   parsed: parser.File
   imports: seq[ResolvedImport]
-  types: seq[ResolvedType]
-  typeIndex: Table[parser.Type, int]
+  types: seq[ResolvedLocalType]
+  typeIndex: Table[parser.LocalType, int]
   scope: FileContext
 
-proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType], scope: FileContext): ResolvedFile =
-  var typeIndex: Table[parser.Type, int]
+proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedLocalType], scope: FileContext): ResolvedFile =
+  var typeIndex: Table[parser.LocalType, int]
   for id, typ in types:
     assert(typ.parsed notin typeIndex, fmt"[BUG] - {typ.loc} duplicate local type `{typ.name.asl}` in the resolved file")
     typeIndex[typ.parsed] = id
@@ -27,24 +27,24 @@ proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: 
 proc path*(file: ResolvedFile): string = file.parsed.path
 proc parsed*(file: ResolvedFile): parser.File = file.parsed
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
-proc types*(file: ResolvedFile): seq[ResolvedType] = file.types
+proc types*(file: ResolvedFile): seq[ResolvedLocalType] = file.types
 proc scope*(file: ResolvedFile): FileContext = file.scope
 proc modules*(file: ResolvedFile): seq[ResolvedModule] =
-  file.types.filterIt(it.kind == rtkModule).mapIt(it.module)
+  file.types.filterIt(it.kind == rltkModule).mapIt(it.module)
 
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is
 # a compiler bug, never a user error.
-proc findType*(file: ResolvedFile, typ: parser.Type): ResolvedType =
+proc findType*(file: ResolvedFile, typ: parser.LocalType): ResolvedLocalType =
   assert(typ in file.typeIndex, fmt"[BUG] - {typ.loc} type `{typ.name.asl}` missing from the resolved file")
   file.types[file.typeIndex[typ]]
 
 proc findModule*(file: ResolvedFile, typ: Module): ResolvedModule =
-  let resolvedType = file.findType(newType(typ))
-  assert(resolvedType.kind == rtkModule, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a module by the resolver")
+  let resolvedType = file.findType(newLocalType(typ))
+  assert(resolvedType.kind == rltkModule, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a module by the resolver")
   resolvedType.module
 
 proc findGeneric*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
-  let resolvedType = file.findType(newType(typ))
-  assert(resolvedType.kind == rtkGeneric, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a generic by the resolver")
+  let resolvedType = file.findType(newLocalType(typ))
+  assert(resolvedType.kind == rltkGeneric, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a generic by the resolver")
   resolvedType.generic

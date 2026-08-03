@@ -121,7 +121,7 @@ module N:
 
   test "import alias resolves to its target type":
     # Post-6c the analyzer no longer walks defined types in a separate
-    # phase — file-scope entries carry ResolvedType values
+    # phase — file-scope entries carry ResolvedLocalType values
     # keyed by binding, so an alias `u8 as Byte` puts `Byte` in the
     # scope and any argType named `Byte` looks it up directly. This
     # test was previously flagged as a "known limitation" that
@@ -472,7 +472,7 @@ public module M:
 suite "analyzer — analyze-shape corner cases":
 
   test "file with only a self-referential generic (no modules) analyzes":
-    # Exercises the `rtkGeneric: discard` branch in analyzeFile —
+    # Exercises the `rltkGeneric: discard` branch in analyzeFile —
     # the returned AnalyzedFile has an empty `modules` seq. The
     # generic's function signatures only reference the generic
     # itself (per the generic-signature rule), so no imports are

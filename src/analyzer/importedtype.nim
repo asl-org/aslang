@@ -5,11 +5,11 @@ import ./defanalyzer
 
 type AnalyzedImportedType* = ref object
   def: AnalyzedDefImportedType
-  typ: AnalyzedType
+  typ: AnalyzedLocalType
 
-proc newAnalyzedImportedType*(def: AnalyzedDefImportedType, typ: AnalyzedType): AnalyzedImportedType =
+proc newAnalyzedImportedType*(def: AnalyzedDefImportedType, typ: AnalyzedLocalType): AnalyzedImportedType =
   AnalyzedImportedType(def: def, typ: typ)
 
 proc loc*(impType: AnalyzedImportedType): Location = impType.def.loc
 proc binding*(impType: AnalyzedImportedType): Identifier = impType.def.binding
-proc typ*(impType: AnalyzedImportedType): AnalyzedType = impType.typ
+proc typ*(impType: AnalyzedImportedType): AnalyzedLocalType = impType.typ

@@ -1,4 +1,4 @@
-## FileContext — the imported-name -> imported Type table populated by
+## FileContext — the imported-name -> imported LocalType table populated by
 ## resolver/imports.nim and threaded through every scope-consuming
 ## `resolve*` proc downstream. Pure type alias; no procs of its own.
 
@@ -7,9 +7,9 @@ import results, sequtils, sets, strformat, tables
 import ./parser
 import ./imports
 
-type FileContext* = Table[Identifier, Type]
+type FileContext* = Table[Identifier, LocalType]
 
-proc insert(fileCtx: var FileContext, name: Identifier, typ: Type): Result[FileContext, string] =
+proc insert(fileCtx: var FileContext, name: Identifier, typ: LocalType): Result[FileContext, string] =
   if name in fileCtx:
     let loc = fileCtx[name].loc
     err(fmt"{name.loc} duplicate type declaration encountered, see previous declaration at {loc}")
@@ -17,7 +17,7 @@ proc insert(fileCtx: var FileContext, name: Identifier, typ: Type): Result[FileC
     fileCtx[name] = typ
     ok(fileCtx)
 
-proc newFileContext*(imports: seq[ResolvedImport], types: seq[Type]): Result[FileContext, string] =
+proc newFileContext*(imports: seq[ResolvedImport], types: seq[LocalType]): Result[FileContext, string] =
   var fileCtx: FileContext
   for imp in imports:
     for impType in imp.importedTypes:
@@ -26,21 +26,21 @@ proc newFileContext*(imports: seq[ResolvedImport], types: seq[Type]): Result[Fil
     fileCtx = ? fileCtx.insert(typ.name, typ)
   ok(fileCtx)
 
-proc findType*(fileCtx: FileContext, name: Identifier): Result[Type, string] =
+proc findType*(fileCtx: FileContext, name: Identifier): Result[LocalType, string] =
   if name in fileCtx: ok(fileCtx[name])
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findModule*(fileCtx: FileContext, name: Identifier): Result[Module, string] =
   let initType = ? fileCtx.findType(name)
   case initType.kind:
-  of tkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
-  of tkModule: ok(initType.module)
+  of ltkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
+  of ltkModule: ok(initType.module)
 
 proc findGeneric*(fileCtx: FileContext, name: Identifier): Result[Generic, string] =
   let initType = ? fileCtx.findType(name)
   case initType.kind:
-  of tkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
-  of tkGeneric: ok(initType.generic)
+  of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
+  of ltkGeneric: ok(initType.generic)
 
 proc requiredGenerics(fileCtx: FileContext, struct: StructDef): Result[seq[Generic], string] =
   var requiredGenerics: seq[Generic]
@@ -58,8 +58,8 @@ proc inferGenerics(fileCtx: FileContext, fields: seq[ArgumentDef]): Result[seq[G
   for field in fields:
     let definedFieldType = ? fileCtx.findType(field.argType.root)
     case definedFieldType.kind:
-    of tkModule: discard
-    of tkGeneric: generics.incl(definedFieldType.generic)
+    of ltkModule: discard
+    of ltkGeneric: generics.incl(definedFieldType.generic)
   ok(generics.toSeq)
 
 proc inferGenerics(fileCtx: FileContext, struct: StructDef): Result[seq[Generic], string] =

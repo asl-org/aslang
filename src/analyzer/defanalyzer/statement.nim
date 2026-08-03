@@ -23,11 +23,11 @@ type
 
   AnalyzedDefFunctionCall* = ref object
     resolved: ResolvedFunctionCall
-    # typ stays ResolvedType, not AnalyzedType: the analyzed
+    # typ stays ResolvedLocalType, not AnalyzedLocalType: the analyzed
     # module/generic bundles contain functions, which contain
-    # statements, which contain calls — an AnalyzedType receiver
+    # statements, which contain calls — an AnalyzedLocalType receiver
     # would close that cycle and force every type into a single file.
-    typ: ResolvedType
+    typ: ResolvedLocalType
     args: seq[AnalyzedDefExpression]
 
   AnalyzedDefLiteralInitializer* = ref object
@@ -120,7 +120,7 @@ proc newAnalyzedDefInitializer*(union: AnalyzedDefUnionInitializer): AnalyzedDef
   AnalyzedDefInitializer(kind: adikUnion, union: union)
 
 # AnalyzedDefFunctionCall
-proc newAnalyzedDefFunctionCall*(resolved: ResolvedFunctionCall, typ: ResolvedType, args: seq[AnalyzedDefExpression]): AnalyzedDefFunctionCall =
+proc newAnalyzedDefFunctionCall*(resolved: ResolvedFunctionCall, typ: ResolvedLocalType, args: seq[AnalyzedDefExpression]): AnalyzedDefFunctionCall =
   AnalyzedDefFunctionCall(resolved: resolved, typ: typ, args: args)
 
 # AnalyzedDefCase

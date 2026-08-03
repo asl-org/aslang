@@ -1110,8 +1110,8 @@ proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
   let variant = ? parser.parseIdentifier()
   ok(newUnionRef(typeRef, variant))
 
-# Type.Variant { fields } (bare — drives leave-as-is inference) or
-# Type[Impls].Variant { fields } (explicit-impls — escape hatch when
+# LocalType.Variant { fields } (bare — drives leave-as-is inference) or
+# LocalType[Impls].Variant { fields } (explicit-impls — escape hatch when
 # leave-as-is can't produce a fully-bound type). Both productions land
 # on the same UnionRef shape carrying an impls seq; empty means bare.
 proc parseUnionInitializer(parser: Parser): Result[UnionInitializer, ParserError] =
@@ -1121,7 +1121,7 @@ proc parseUnionInitializer(parser: Parser): Result[UnionInitializer, ParserError
   ok(newUnionInitializer(unionRef, fields))
 
 
-# Either `Type { fields }` (bare) or `Type[Impls] { fields }` (explicit
+# Either `LocalType { fields }` (bare) or `LocalType[Impls] { fields }` (explicit
 # impls, used for phantom-typed structs whose module declares a
 # `struct(A):` header). Both productions land on the same StructRef
 # shape carrying an impls seq; empty means bare.
@@ -1567,8 +1567,8 @@ proc parseModule(parser: Parser): Result[Module, ParserError] =
 
 
 
-proc parseType(parser: Parser): Result[Type, ParserError] =
-  ## Parses either a module or a generic block and wraps it as `Type`.
+proc parseType(parser: Parser): Result[LocalType, ParserError] =
+  ## Parses either a module or a generic block and wraps it as `LocalType`.
   ## Tries module first; if that fails non-fatally, tries generic;
   ## returns whichever error carried further into the token stream.
   ## Fatal errors short-circuit — once a branch has committed past
@@ -1576,26 +1576,26 @@ proc parseType(parser: Parser): Result[Type, ParserError] =
   ## being swallowed by trying the next branch.
   var errors: seq[ParserError]
   let maybeModule = parser.run(parseModule)
-  if maybeModule.isOk: return ok(newType(maybeModule.get))
+  if maybeModule.isOk: return ok(newLocalType(maybeModule.get))
   if maybeModule.error.fatal: return err(maybeModule.error)
   errors.add(maybeModule.error)
   let maybeGeneric = parser.run(parseGeneric)
-  if maybeGeneric.isOk: return ok(newType(maybeGeneric.get))
+  if maybeGeneric.isOk: return ok(newLocalType(maybeGeneric.get))
   if maybeGeneric.error.fatal: return err(maybeGeneric.error)
   errors.add(maybeGeneric.error)
   err(max(errors))
 
-proc parseDefinedType(parser: Parser): Result[Type, ParserError] =
+proc parseDefinedType(parser: Parser): Result[LocalType, ParserError] =
   ## Skips leading blank / comment lines, then parses a module or
   ## generic block. Used at file level between top-level type blocks.
   discard ? parser.run(parseBlankLines)
   parser.parseType()
 
-proc parseDefinedTypes(parser: Parser): Result[seq[Type], ParserError] =
-  ## Parses one-or-more top-level `Type` blocks (module / generic),
+proc parseDefinedTypes(parser: Parser): Result[seq[LocalType], ParserError] =
+  ## Parses one-or-more top-level `LocalType` blocks (module / generic),
   ## skipping blank lines between them. Fails if the first attempt
   ## does not yield a type.
-  var items: seq[Type]
+  var items: seq[LocalType]
   let first = ? parser.run(parseDefinedType)
   items.add(first)
   while true:

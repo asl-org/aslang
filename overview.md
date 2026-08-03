@@ -315,7 +315,7 @@ insertion fails on duplicate key).
 
 Indices on AST nodes:
 - `File.typeIndex` — `Identifier -> int` into `File.types` (locally-
-  defined `Type` = module or generic).
+  defined `LocalType` = module or generic).
 - `File.importedNameIndex` — `Identifier -> ImportedType` covering
   every explicit-import binding on `fkAsl` files. Duplicate detection
   at parse time checks both indexes so an imported name and a local
@@ -327,7 +327,7 @@ Indices on AST nodes:
 - `App.fileIndex` — absolute path → file index.
 
 The parser exposes two focused lookups instead of a union:
-`findType(name): Type` (local defs only) and
+`findType(name): LocalType` (local defs only) and
 `findImportedName(name): ImportedType`. The historical `Type` umbrella
 (`tkImported | tkDefined`) was retired — every downstream caller
 already unwrapped it, so the union was ceremony that leaked through
@@ -342,7 +342,7 @@ listing) + the nested `src/analyzer/defanalyzer/resolver/parser/` subtree
 (Phase 2).
 
 Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
-which in turn holds resolved imports plus a `ResolvedType` for each
+which in turn holds resolved imports plus a `ResolvedLocalType` for each
 module/generic. Body-level name resolution is complete (variables,
 getters, function calls, initializers, match/case patterns). The
 resolver also enforces the structural `struct(...)`-header
@@ -449,11 +449,11 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 - **Body-level name resolution** — the resolver walks user-function
   bodies: each statement is dispatched, each expression is resolved,
   and every function call's root (the user-typed receiver name) is
-  resolved against the FileContext to a `parser.Type` carried on
+  resolved against the FileContext to a `parser.LocalType` carried on
   `ResolvedFunctionCall.typ` — so the analyzer never resolves a
   user-typed name; it does identity lookups on what the resolver
   already bound. The per-file `FileContext` itself is stored on
-  `ResolvedFile.scope` for downstream name→parser.Type bridging
+  `ResolvedFile.scope` for downstream name→parser.LocalType bridging
   (e.g. the analyzer's bare-literal defaults). A `FunctionContext`
   (Table[Identifier, Location]) tracks the names of variables
   currently in scope; the value stores the declaration site so
@@ -514,7 +514,7 @@ cluster 1:1 (`AnalyzedDefLiteral` → kwargs → fncalls → initializers
 `defanalyzer/statement.nim` with the ref wrappers in
 `defanalyzer/structref.nim` / `unionref.nim`), re-binding each
 def-level fact (literal default module + LiteralDef, call receiver
-`ResolvedType`, struct/union defs behind refs) from the file scope.
+`ResolvedLocalType`, struct/union defs behind refs) from the file scope.
 `AnalyzedDefApp` itself is just the fileDefs + a path-keyed
 `fileDefIndex` behind `findFileDef` — all type lookup state lives on
 the per-file scopes. Any def-site error fires here before any body
@@ -564,7 +564,7 @@ Three phase-A invariants worth naming:
 
 **Pass B — bodies.** The per-file `analyzeFile` walk first lifts
 each phase-A import def to its body form (`analyzeImport` — each
-imported type resolves to the source file's `AnalyzedType`
+imported type resolves to the source file's `AnalyzedLocalType`
 via that file's fileDef), builds the per-file `AnalyzedFileContext`
 spanning imports + local types, and then analyzes each module's
 function bodies against it. Call sites read pre-analyzed funcDef
@@ -577,14 +577,14 @@ their `AnalyzedFunctionDefinition`). Scope:
 - **Identity-based lookups only** — the analyzer never resolves a
   user-typed name. Every reference reaching it already carries the
   identity the layer below bound: function-call roots are resolved
-  to a `parser.Type` at resolve time (`ResolvedFunctionCall.typ`);
+  to a `parser.LocalType` at resolve time (`ResolvedFunctionCall.typ`);
   argument types carry their parser Module/Generic. Each layer's
   per-file scope answers "given what the layer below handed me,
   find my enrichment of it", all hash-by-loc:
 
-      resolver     FileContext           Identifier   → parser.Type
-      defanalyzer  ResolvedFileContext   parser.Type  → ResolvedType
-      analyzer     AnalyzedFileContext   ResolvedType → AnalyzedType
+      resolver     FileContext           Identifier   → parser.LocalType
+      defanalyzer  ResolvedFileContext   parser.LocalType  → ResolvedLocalType
+      analyzer     AnalyzedFileContext   ResolvedLocalType → AnalyzedLocalType
 
   Aliased imports (`import { u8 as Byte }`) can never miss.
   Bare-literal defaults are bound at resolve time too
@@ -795,7 +795,7 @@ src/
                                    ResolvedStructInitializer /
                                    ResolvedUnionInitializer /
                                    ResolvedFunctionCall (carries
-                                   `typ: parser.Type` — the call
+                                   `typ: parser.LocalType` — the call
                                    root resolved at resolve time) /
                                    ResolvedInitializer /
                                    ResolvedExpression / ResolvedMatch /
@@ -813,18 +813,18 @@ src/
                                    public)).
     generic.nim                    ResolvedGeneric (same funcDef
                                    accessors as ResolvedModule).
-    types.nim                      Tagged ResolvedType (rtkModule /
-                                   rtkGeneric) — one-of over module
+    types.nim                      Tagged ResolvedLocalType (rltkModule /
+                                   rltkGeneric) — one-of over module
                                    and generic.
     files.nim                      ResolvedFile + identity-keyed
-                                   typeIndex (parser.Type → int) +
+                                   typeIndex (parser.LocalType → int) +
                                    findType / findModule /
                                    findGeneric taking the parser-side
                                    Type / Module / Generic plus a loc
                                    for error messages. Also stores
                                    the resolve-time FileContext
                                    (`scope` accessor) for downstream
-                                   name→parser.Type bridging.
+                                   name→parser.LocalType bridging.
     app.nim                        ResolvedApp — the top-level handle;
                                    identity-keyed fileIndex +
                                    findFile. Type lookups live on
@@ -1006,8 +1006,8 @@ src/
                                    accessors only) + the nested
                                    resolver subtree above. `ls` for
                                    the authoritative list.
-    filecontext.nim                  ResolvedFileContext (parser.Type →
-                                   ResolvedType, identity-keyed) —
+    filecontext.nim                  ResolvedFileContext (parser.LocalType →
+                                   ResolvedLocalType, identity-keyed) —
                                    spans imports + local types;
                                    built per file in pass A, stored
                                    on AnalyzedDefFile.scope.
@@ -1055,8 +1055,8 @@ src/
                                    adfkUser) with uniform def / name
                                    / arity accessors.
     generic.nim                    AnalyzedGeneric (funcDefs).
-    types.nim                      AnalyzedType (atkModule /
-                                   atkGeneric) + findFunctionDefs
+    types.nim                      AnalyzedLocalType (altkModule /
+                                   altkGeneric) + findFunctionDefs
                                    uniform overload lookup.
     filedef.nim                    AnalyzedDefFile (resolved +
                                    imports + types + scope +
@@ -1073,7 +1073,7 @@ src/
                                    path-keyed fileDefIndex +
                                    findFileDef).
     importedtypedef.nim            AnalyzedDefImportedType (binding →
-                                   ResolvedType).
+                                   ResolvedLocalType).
     importdef.nim                  AnalyzedDefImport (resolved
                                    import + imported type defs +
                                    source-file path).
@@ -1100,8 +1100,8 @@ src/
                                    barrels). Each imports
                                    ./defanalyzer once for def types
                                    + resolver.
-    filecontext.nim                  AnalyzedFileContext (ResolvedType →
-                                   AnalyzedType,
+    filecontext.nim                  AnalyzedFileContext (ResolvedLocalType →
+                                   AnalyzedLocalType,
                                    identity-keyed) — the third rung
                                    of the scope ladder; spans
                                    imports + local types, built per
@@ -1113,7 +1113,7 @@ src/
                                    def lifted to its body form.
     importedtype.nim               AnalyzedImportedType (binding →
                                    the source file's
-                                   AnalyzedType).
+                                   AnalyzedLocalType).
     funccontext.nim                  AnalyzedFunctionContext (Identifier →
                                    AnalyzedArgumentType) —
                                    per-function variable scope;

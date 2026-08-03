@@ -9,77 +9,77 @@ import ./generics
 import ./modules
 
 # ============================================================
-# Type
+# LocalType
 # ============================================================
 
 type
-  TypeKind* = enum
-    tkModule, tkGeneric
-  Type* = ref object
-    case kind: TypeKind
-    of tkModule: module: Module
-    of tkGeneric: generic: Generic
+  LocalTypeKind* = enum
+    ltkModule, ltkGeneric
+  LocalType* = ref object
+    case kind: LocalTypeKind
+    of ltkModule: module: Module
+    of ltkGeneric: generic: Generic
 
-proc newType*(module: Module): Type =
-  Type(kind: tkModule, module: module)
+proc newLocalType*(module: Module): LocalType =
+  LocalType(kind: ltkModule, module: module)
 
-proc newType*(generic: Generic): Type =
-  Type(kind: tkGeneric, generic: generic)
+proc newLocalType*(generic: Generic): LocalType =
+  LocalType(kind: ltkGeneric, generic: generic)
 
-proc kind*(dt: Type): TypeKind = dt.kind
-proc public*(dt: Type): bool =
+proc kind*(dt: LocalType): LocalTypeKind = dt.kind
+proc public*(dt: LocalType): bool =
   case dt.kind:
-  of tkModule: dt.module.public
-  of tkGeneric: dt.generic.public
+  of ltkModule: dt.module.public
+  of ltkGeneric: dt.generic.public
 
-proc module*(dt: Type): Module =
-  assert dt.kind == tkModule,
-    fmt"Type.module accessed but kind is {dt.kind}"
+proc module*(dt: LocalType): Module =
+  assert dt.kind == ltkModule,
+    fmt"LocalType.module accessed but kind is {dt.kind}"
   dt.module
 
-proc generic*(dt: Type): Generic =
-  assert dt.kind == tkGeneric,
-    fmt"Type.generic accessed but kind is {dt.kind}"
+proc generic*(dt: LocalType): Generic =
+  assert dt.kind == ltkGeneric,
+    fmt"LocalType.generic accessed but kind is {dt.kind}"
   dt.generic
 
-proc name*(typ: Type): Identifier =
+proc name*(typ: LocalType): Identifier =
   case typ.kind:
-  of tkModule: typ.module.name
-  of tkGeneric: typ.generic.name
+  of ltkModule: typ.module.name
+  of ltkGeneric: typ.generic.name
 
-proc loc*(typ: Type): Location =
+proc loc*(typ: LocalType): Location =
   case typ.kind:
-  of tkModule: typ.module.loc
-  of tkGeneric: typ.generic.loc
+  of ltkModule: typ.module.loc
+  of ltkGeneric: typ.generic.loc
 
-proc hash*(typ: Type): Hash =
+proc hash*(typ: LocalType): Hash =
   ## Identity via the underlying parser.Module or parser.Generic hash
-  ## (each of which is loc-based). Enables `Table[parser.Type, T]`
+  ## (each of which is loc-based). Enables `Table[parser.LocalType, T]`
   ## for identity-based scope lookups downstream of name resolution.
   case typ.kind:
-  of tkModule: typ.module.hash
-  of tkGeneric: typ.generic.hash
+  of ltkModule: typ.module.hash
+  of ltkGeneric: typ.generic.hash
 
-proc `==`*(a, b: Type): bool =
+proc `==`*(a, b: LocalType): bool =
   if a.kind != b.kind: false
   else:
     case a.kind:
-    of tkModule: a.module == b.module
-    of tkGeneric: a.generic == b.generic
+    of ltkModule: a.module == b.module
+    of ltkGeneric: a.generic == b.generic
 
-proc decorators*(typ: Type): seq[Decorator] =
+proc decorators*(typ: LocalType): seq[Decorator] =
   case typ.kind:
-  of tkModule: typ.module.decorators
-  of tkGeneric: typ.generic.decorators
+  of ltkModule: typ.module.decorators
+  of ltkGeneric: typ.generic.decorators
 
-proc asl*(typ: Type, level: int, indentWidth: uint32): seq[string] =
+proc asl*(typ: LocalType, level: int, indentWidth: uint32): seq[string] =
   case typ.kind:
-  of tkModule: typ.module.asl(level, indentWidth)
-  of tkGeneric: typ.generic.asl(level, indentWidth)
+  of ltkModule: typ.module.asl(level, indentWidth)
+  of ltkGeneric: typ.generic.asl(level, indentWidth)
 
-proc findFunctionDefs*(typ: Type, name: Identifier, arity: int, access: FunctionAccess): Result[seq[FunctionDef], string] =
+proc findFunctionDefs*(typ: LocalType, name: Identifier, arity: int, access: FunctionAccess): Result[seq[FunctionDef], string] =
   case typ.kind:
-  of tkModule: typ.module.findFunctionDefs(name, arity, access)
+  of ltkModule: typ.module.findFunctionDefs(name, arity, access)
   # Generic funcDefs are implicitly public per the grammar — no
   # access filter to apply.
-  of tkGeneric: typ.generic.findFunctionDefs(name, arity)
+  of ltkGeneric: typ.generic.findFunctionDefs(name, arity)

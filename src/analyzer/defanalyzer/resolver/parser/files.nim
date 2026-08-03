@@ -13,15 +13,15 @@ import ./types
 # File
 # ============================================================
 
-proc validateNoExternFunctions(types: seq[Type]): Result[void, ParserError] =
+proc validateNoExternFunctions(types: seq[LocalType]): Result[void, ParserError] =
   ## Walks every module's function list; rejects the first extern
   ## found with the extern's own loc so the diagnostic points at
   ## the offending decoration. Asl files cannot host extern
   ## functions — those belong in .aslr files.
   for typ in types:
     case typ.kind:
-    of tkGeneric: discard
-    of tkModule:
+    of ltkGeneric: discard
+    of ltkModule:
       let externFuncs = typ.module.externFunctions
       if externFuncs.len > 0:
         let msg = fmt"asl files cannot contain extern functions; extern functions belong in .aslr files (the runtime interface)"
@@ -70,7 +70,7 @@ proc buildImportedTypeNameIndex(imports: seq[Import]): Result[Table[Identifier, 
         index[impType.binding] = impType
   ok(index)
 
-proc buildTypeNameIndex(types: seq[Type]): Result[Table[Identifier, int], ParserError] =
+proc buildTypeNameIndex(types: seq[LocalType]): Result[Table[Identifier, int], ParserError] =
   var index: Table[Identifier, int]
   for i, typ in types:
     if typ.name in index:
@@ -99,7 +99,7 @@ type
     fkAsl, fkAslr
   File* = ref object
     path: string
-    types: seq[Type]
+    types: seq[LocalType]
     typeIndex: Table[Identifier, int]
     case kind: FileKind
     of fkAslr: discard
@@ -107,7 +107,7 @@ type
       imports: seq[Import]
       importedNameIndex: Table[Identifier, ImportedType]
 
-proc newAslFile*(path: string, imports: seq[Import], types: seq[Type],
+proc newAslFile*(path: string, imports: seq[Import], types: seq[LocalType],
     vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, ParserError] =
   ## Builds an `fkAsl` File: source files written by users, may carry
@@ -126,7 +126,7 @@ proc newAslFile*(path: string, imports: seq[Import], types: seq[Type],
   ? validateTypeNameConflict(importedNameIndex, typeNameIndex)
   ok(File(kind: fkAsl, path: path, imports: allImports, types: types, typeIndex: typeNameIndex, importedNameIndex: importedNameIndex))
 
-proc newAslrFile*(path: string, types: seq[Type], imports: seq[Import]): Result[File, ParserError] =
+proc newAslrFile*(path: string, types: seq[LocalType], imports: seq[Import]): Result[File, ParserError] =
   ## Builds an `fkAslr` File: the runtime interface — no imports
   ## (structurally — the variant has no imports field), modules may
   ## host extern functions freely.
@@ -134,7 +134,7 @@ proc newAslrFile*(path: string, types: seq[Type], imports: seq[Import]): Result[
   var typeIndex = ? buildTypeNameIndex(types)
   ok(File(kind: fkAslr, path: path, types: types, typeIndex: typeIndex))
 
-proc newFile*(path: string, imports: seq[Import], types: seq[Type]): Result[File, ParserError] =
+proc newFile*(path: string, imports: seq[Import], types: seq[LocalType]): Result[File, ParserError] =
   ## Unified entry point — dispatches on the file's extension to the
   ## appropriate kind constructor. `.aslr` paths with non-empty
   ## imports are rejected here (the user wrote an import in a
@@ -151,7 +151,7 @@ proc newFile*(path: string, imports: seq[Import], types: seq[Type]): Result[File
 
 proc kind*(file: File): FileKind = file.kind
 proc path*(file: File): string = file.path
-proc types*(file: File): seq[Type] = file.types
+proc types*(file: File): seq[LocalType] = file.types
 proc imports*(file: File): seq[Import] =
   case file.kind:
   of fkAsl: file.imports
@@ -180,7 +180,7 @@ proc asl*(file: File, indentWidth: uint32): string =
   lines.add("") # add an extra new line at the end of file
   lines.join("\n")
 
-proc findType*(file: File, name: Identifier): Result[Type, string] =
+proc findType*(file: File, name: Identifier): Result[LocalType, string] =
   ## Locally-defined type lookup. Errors if the name refers to an
   ## imported binding (use `findImportedType` for that) or is unknown.
   if name in file.typeIndex: ok(file.types[file.typeIndex[name]])
@@ -197,10 +197,10 @@ proc findImportedType*(file: File, name: Identifier): Result[ImportedType, strin
   of fkAslr:
     err(fmt"{name.loc} aslr files have no imports")
 
-proc findExportedType*(file: File, name: Identifier): Result[Type, string] =
+proc findExportedType*(file: File, name: Identifier): Result[LocalType, string] =
   let typ = ? file.findType(name)
   if typ.public: ok(typ)
   else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
 
-proc publicTypes*(file: File): seq[Type] =
+proc publicTypes*(file: File): seq[LocalType] =
   file.types.filterIt(it.public)

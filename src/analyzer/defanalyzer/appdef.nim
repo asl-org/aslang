@@ -3,9 +3,9 @@
 ## indexed by absolute path for cross-file `findFileDef` queries.
 ##
 ## One identity-keyed index carries the phase-B lookup weight:
-## `definedTypeIndex` (`ResolvedType → AnalyzedType`) —
+## `definedTypeIndex` (`ResolvedLocalType → AnalyzedLocalType`) —
 ## app-wide identity lookup used by `findDefinedType`. Every caller
-## with a ResolvedType in hand (from `fileCtx.findType`, an
+## with a ResolvedLocalType in hand (from `fileCtx.findType`, an
 ## argType's carried module, etc.) reaches the analyzed
 ## module/generic without going through name-keyed per-file scopes;
 ## pre-analyzed funcDef signatures are then read off the result via

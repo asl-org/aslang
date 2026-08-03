@@ -39,7 +39,7 @@ rule says so.
 ```
 App: File+
 
-File: Import* Type+
+File: Import* LocalType+
 
 Import: ImportShortHand | ImportExplicit
 
@@ -54,7 +54,19 @@ ImportedRelativePath: Path
 Path: RawString
 VendorName: RawString
 
-Type: Module | Generic
+LocalType: Module | Generic
+# A type DECLARED in this file. Declaration lists are local by
+# definition: `File: Import* LocalType+`.
+
+Type: LocalType | ImportedType
+# A SCOPE ENTRY — what a name resolves to in a file's context. The
+# `ImportedType` member here is the LINKED binding (established at
+# import-link time, carrying the source file's LocalType), not the
+# parse-time declaration below. The union hashes and compares by its
+# underlying LocalType so aliased imports land on one identity key.
+# `localType` unwraps: Local → itself; Imported → its bound
+# underlying. Mirrored one rung up as
+# ResolvedType: ResolvedLocalType | ImportedType-binding.
 
 Module: Public? ModuleName (DataModule | FunctionalModule)
 DataModule: Data Function*
@@ -262,7 +274,7 @@ contributors can find the *why* alongside the *what*.
   the analyzer infers the variable's type.
 
 - **Cardinality (`+` vs `*`) is deliberate everywhere.** `App: File+`
-  (there's always an entry file), `File: Import* Type+` (a file with
+  (there's always an entry file), `File: Import* LocalType+` (a file with
   no types is meaningless), `StructDef: StructHeaderGenerics? ArgumentDef+`
   (a struct with zero fields is invalid), `VariantDef: Variant
   ArgumentDef*` (empty variants are structurally legal — surface

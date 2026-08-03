@@ -63,7 +63,7 @@ type
 
   ResolvedFunctionCall* = ref object
     parsed: FunctionCall
-    typ: parser.Type
+    typ: parser.LocalType
     args: seq[ResolvedExpression]
 
   ResolvedAssignment* = ref object
@@ -200,11 +200,11 @@ proc loc*(init: ResolvedInitializer): Location =
 # ---- ResolvedFunctionCall ----
 
 proc newResolvedFunctionCall*(parsed: FunctionCall,
-    typ: parser.Type, args: seq[ResolvedExpression]): ResolvedFunctionCall =
+    typ: parser.LocalType, args: seq[ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(parsed: parsed, typ: typ, args: args)
 
 proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
-proc typ*(fncall: ResolvedFunctionCall): parser.Type = fncall.typ
+proc typ*(fncall: ResolvedFunctionCall): parser.LocalType = fncall.typ
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
 

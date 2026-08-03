@@ -357,7 +357,7 @@ module M:
 """).get
     let r = f.findType(id("M"))
     check r.isOk
-    check r.get.kind == tkModule
+    check r.get.kind == ltkModule
 
   test "findType reports a missing name":
     let f = parseStr("""

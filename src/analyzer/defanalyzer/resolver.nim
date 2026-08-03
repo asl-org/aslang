@@ -174,10 +174,10 @@ proc resolveGenericArgumentType(typeCtx: TypeContext, argType: ArgumentType, arg
 proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let typ = ? fileCtx.findType(argType.root)
   case typ.kind:
-  of tkGeneric:
+  of ltkGeneric:
     let resolvedGenericType = ? resolveGenericArgumentType(typeCtx, argType, typ.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
-  of tkModule:
+  of ltkModule:
     if typ.module.data.isNone:
       err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
     else:
@@ -275,9 +275,9 @@ proc resolveFunctionCall(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: Fu
   let typ = ? fileCtx.findType(fncall.root)
   let access =
     case typ.kind:
-    of tkModule: typeCtx.access(typ.module)
+    of ltkModule: typeCtx.access(typ.module)
     # Generic funcDefs are implicitly public — access is vacuous.
-    of tkGeneric: faPublic
+    of ltkGeneric: faPublic
   let defs = ? typ.findFunctionDefs(fncall.name, fncall.arity, access)
   assert(defs.len > 0, "[BUG] - findFunctionDefs never returns an empty overload list")
   var resolvedArgs: seq[ResolvedExpression]
@@ -488,15 +488,15 @@ proc resolveGeneric(fileCtx: FileContext, generic: Generic): Result[ResolvedGene
   # Input-signature uniqueness lives on the constructor.
   newResolvedGeneric(generic, resolvedFuncDefs)
 
-proc resolveType(fileCtx: FileContext, typ: Type): Result[ResolvedType, string] =
+proc resolveType(fileCtx: FileContext, typ: LocalType): Result[ResolvedLocalType, string] =
   assert(typ.decorators.len == 0, fmt"{typ.loc} types do not support decorators")
   case typ.kind:
-  of tkGeneric:
+  of ltkGeneric:
     let resolvedGeneric = ? resolveGeneric(fileCtx, typ.generic)
-    ok(newResolvedType(resolvedGeneric))
-  of tkModule:
+    ok(newResolvedLocalType(resolvedGeneric))
+  of ltkModule:
     let resolvedModule = ? resolveModule(fileCtx, typ.module)
-    ok(newResolvedType(resolvedModule))
+    ok(newResolvedLocalType(resolvedModule))
 
 proc resolveExplicitImport(imp: Import, impFile: parser.File): Result[seq[ResolvedImportedType], string] =
   var resolvedImpTypes: seq[ResolvedImportedType]
@@ -532,7 +532,7 @@ proc resolveFile(app: App, file: parser.File): Result[ResolvedFile, string] =
   let resolvedImports = ? resolveImports(app, file.imports)
   var fileCtx = ? newFileContext(resolvedImports, file.types)
 
-  var resolvedTypes: seq[ResolvedType]
+  var resolvedTypes: seq[ResolvedLocalType]
   for typ in file.types:
     let resolvedType = ? resolveType(fileCtx, typ)
     resolvedTypes.add(resolvedType)

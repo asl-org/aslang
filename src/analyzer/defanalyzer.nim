@@ -379,14 +379,14 @@ proc analyzeDefGeneric(fileCtx: ResolvedFileContext, generic: ResolvedGeneric): 
 # Phase-A defined-type dispatcher (W5 of plan_analyzer_two_pass.md).
 # ============================================================
 
-proc analyzeDefType(fileCtx: ResolvedFileContext, typ: ResolvedType): Result[AnalyzedType, string] =
+proc analyzeDefType(fileCtx: ResolvedFileContext, typ: ResolvedLocalType): Result[AnalyzedLocalType, string] =
   case typ.kind:
-  of rtkGeneric:
+  of rltkGeneric:
     let analyzedGeneric = ? analyzeDefGeneric(fileCtx, typ.generic)
-    ok(newAnalyzedType(analyzedGeneric))
-  of rtkModule:
+    ok(newAnalyzedLocalType(analyzedGeneric))
+  of rltkModule:
     let analyzedModule = ? analyzeDefModule(fileCtx, typ.module)
-    ok(newAnalyzedType(analyzedModule))
+    ok(newAnalyzedLocalType(analyzedModule))
 
 proc analyzeDefImportedType(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
   ok(newAnalyzedDefImportedType(impType, impFile.findType(impType.typ)))
@@ -406,7 +406,7 @@ proc analyzeDefFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFil
     analyzedImports.add(analyzedImport)
 
   let fileCtx = newResolvedFileContext(analyzedImports, file.types)
-  var analyzedTypes: seq[AnalyzedType]
+  var analyzedTypes: seq[AnalyzedLocalType]
   for typ in file.types:
     let analyzedType = ? analyzeDefType(fileCtx, typ)
     analyzedTypes.add(analyzedType)

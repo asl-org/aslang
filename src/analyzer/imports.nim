@@ -1,6 +1,6 @@
 ## Phase-B `AnalyzedImport` — one `import` statement's phase-A def
 ## lifted to its body-level form: each imported type carries the
-## source file's AnalyzedType. Produced by `analyzeImport` on
+## source file's AnalyzedLocalType. Produced by `analyzeImport` on
 ## the body barrel and consumed by `newAnalyzedFileContext` when
 ## building the per-file AnalyzedFileContext.
 
