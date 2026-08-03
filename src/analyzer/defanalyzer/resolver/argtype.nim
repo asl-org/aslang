@@ -35,7 +35,7 @@ type
 
 proc newResolvedArgumentType*(module: ResolvedModuleArgumentType): ResolvedArgumentType
 proc newResolvedArgumentType*(generic: ResolvedGenericArgumentType): ResolvedArgumentType
-proc substitute*(argType: ResolvedArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType
+proc concrete*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType
 proc hash*(argType: ResolvedArgumentType): Hash
 proc asl*(argType: ResolvedArgumentType): string
 
@@ -59,7 +59,7 @@ proc satisfies*(argType: ResolvedGenericArgumentType, base: Generic): Result[voi
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc substitute*(argType: ResolvedGenericArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
+proc concrete*(argType: ResolvedGenericArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
   if argType.generic == generic: replacement
   else: newResolvedArgumentType(argType)
 
@@ -108,10 +108,10 @@ proc satisfies*(argType: ResolvedModuleArgumentType, base: Generic, typeCtx: Typ
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc substitute*(argType: ResolvedModuleArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
+proc concrete*(argType: ResolvedModuleArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
   var impls: seq[ResolvedArgumentType]
   for impl in argType.impls:
-    impls.add(impl.substitute(generic, replacement))
+    impls.add(impl.concrete(replacement, generic))
   let moduleArgType = newResolvedModuleArgumentType(argType.module, impls, argType.loc)
   newResolvedArgumentType(moduleArgType)
 
@@ -157,38 +157,16 @@ proc asl*(argType: ResolvedArgumentType): string =
   of ratkModule: argType.module.asl
   of ratkGeneric: argType.generic.asl
 
-proc concreteArgumentType*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
-  case argType.kind:
-  of ratkModule: argType
-  of ratkGeneric:
-    if argType.generic.generic != generic: argType
-    else: concrete
-
-proc satisfies*(argType: ResolvedArgumentType, base: Generic, typeCtx: TypeContext): Result[void, string] =
-  case argType.kind:
-  of ratkModule: argType.module.satisfies(base, typeCtx)
-  of ratkGeneric: argType.generic.satisfies(base)
-
-proc substitute*(argType: ResolvedArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
+proc concrete*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
   ## Recursive single-generic substitution — unlike
   ## `concreteArgumentType` (top level only) this rewrites the bound
   ## generic at any depth of the impl tree (`Array[Eq]` under Eq → u8
   ## becomes `Array[u8]`). Other generics stay as-is.
   case argType.kind:
-  of ratkGeneric: argType.generic.substitute(generic, replacement)
-  of ratkModule: argType.module.substitute(generic, replacement)
+  of ratkGeneric: argType.generic.concrete(generic, concrete)
+  of ratkModule: argType.module.concrete(generic, concrete)
 
-type SignatureParity* = enum
-  ## Verdict of the four-case argument-type matching relation
-  ## (`argTypeMatches` on the defanalyzer barrel, which owns the
-  ## scope lookups the recursion needs):
-  ##   module   vs module   — identity (loc-based hash equality);
-  ##   module   vs generic  — never matches (the expected side is
-  ##                          already concrete, kinds cannot
-  ##                          reconcile);
-  ##   generic  vs module   — the expected generic is a CONTRACT: the
-  ##   generic  vs generic    actual type must provide every funcDef
-  ##                          the generic mandates, with the generic
-  ##                          substituted by the actual's fully
-  ##                          qualified type (recursively).
-  spEqual, spUnequal
+proc satisfies*(argType: ResolvedArgumentType, base: Generic, typeCtx: TypeContext): Result[void, string] =
+  case argType.kind:
+  of ratkModule: argType.module.satisfies(base, typeCtx)
+  of ratkGeneric: argType.generic.satisfies(base)

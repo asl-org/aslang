@@ -522,23 +522,21 @@ Three phase-A invariants worth naming:
   arity/accessibility presence) was already enforced at resolve
   time, so there are no module/generic proc twins — one context
   value, one proc.
-- **Deep constraint satisfaction** (`checkImplSatisfies`). For every
-  parameterized module argument type, each impl↔require pair is
-  checked through the four-case matching relation
-  (`argTypeMatches`, verdicts = `SignatureParity`):
-  module-vs-module is identity (loc-based hash); a generic offered
-  where a module type is expected never matches (the expectation is
-  already concrete); an EXPECTED generic is a contract — the actual
-  type (module or generic) must provide every funcDef the generic
-  mandates, compared at DEFINITION level: the generic's
-  self-references substituted (via `substitute`) by the actual's
-  self shape (`A[B, C]` built from its own require slots — not the
+- **Deep constraint satisfaction** (inline in
+  `analyzeDefModuleArgumentType`). For every parameterized module
+  argument type, each impl↔require pair is checked def-time: the
+  require-slot generic's funcDefs are concretized at DEFINITION
+  level — self-references become the impl's self shape (`A[B, C]`
+  built from its own require slots via the deep `concrete`, not the
   site-bound impls, which the recursive argtype walk validates
-  separately), candidates as declared. Satisfaction is therefore a
-  binding-independent property of the module, and contract positions
-  nest recursively. This
-  fires def-time — an impl with a mismatched signature is rejected
-  at its declaration even if the function is never called.
+  separately) — and each concretized def is probed by IDENTITY
+  against the impl's funcDefIndex through `findImplDef`
+  (hash = name + input types, per the input-signature uniqueness
+  rule; the return type and access level are checked explicitly on
+  the hit). Satisfaction is therefore a binding-independent property
+  of the module, decided by one index probe per required def. An
+  impl with a mismatched signature is rejected at its declaration
+  even if the function is never called.
 - **Lookups assert, never err.** Every name phase A looks up was
   bound and validated by the resolver, so a failed lookup is a
   compiler bug, not a user error — the walkers unwrap lookups behind
@@ -1272,7 +1270,7 @@ The **Analyzer phase is functionally complete** — `analyze*` walks
 the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
 holds a type-rich representation of every value, expression, and
 statement in each function body. Integration suite at **33/35**;
-unit suite at **327/327**. Recent structural work: the two-pass
+unit suite at **340/340**. Recent structural work: the two-pass
 analyzer recovery (plans/plan_analyzer_two_pass.md), the
 identity-based lookup migration
 (plans/plan_identity_based_lookups.md +
@@ -1289,7 +1287,9 @@ What the analyzer does today (all wired):
 - Impl-list arity + generic constraint satisfaction — presence and
   accessibility checked at resolve time in
   `resolveModuleArgumentType` via `satisfies`; signature parity
-  checked def-time by the def analyzer's `checkImplSatisfies`;
+  checked def-time inline in `analyzeDefModuleArgumentType`
+  (contract funcDefs concretized at definition level, probed by
+  identity via `findImplDef`);
   `analyzeValueTypeAgainstDefType` still runs use-site checks.
 - Concretization — the matched funcDef's return type and the
   match-subject's union are rewritten through `concrete()` with the
@@ -1349,6 +1349,24 @@ Focused TODOs still open:
   compatibility and match exhaustiveness. (Setter type equality is
   now enforced in `analyzeSetter`; its error message is still rough
   — flagged with a TODO.)
+- **Redundant constraint re-checking — PERFORMANCE, revisit after
+  codegen.** The def-time constraint check in
+  `analyzeDefModuleArgumentType` runs at every occurrence of a
+  parameterized argument type: every field, every funcDef
+  arg/return, every ref/initializer in the statement walk, plus
+  phase B's synthetic argtypes. Because the check compares at
+  DEFINITION level, its verdict is a constant per
+  `(impl root, contract generic, access)` triple — a file writing
+  `Array[u8]` fifty times derives the same fact fifty times. The
+  natural fix is a per-app memo keyed on that triple (access has
+  only two values); it needs a home that respects the pure-proc
+  discipline, which is why it is deliberately deferred rather than
+  bolted on. The same theme runs through every phase — the
+  resolver's `inferGenerics` re-derives require slots at each use
+  site, phase B re-concretizes per call — so this line item stands
+  in for a dedicated caching pass over the whole pipeline.
+  Priority order is settled: memory-safe C code generation first,
+  then the performance pass.
 
 After the analyzer:
 - **IR generation** — lower the analyzed AST into an intermediate

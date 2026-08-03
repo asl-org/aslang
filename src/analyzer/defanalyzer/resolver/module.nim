@@ -67,6 +67,24 @@ proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDef): Opt
   else:
     some(module.functions[module.funcDefIndex[funcDef]].def)
 
+proc findImplDef*(module: ResolvedModule, funcDef: ResolvedFunctionDef, access: FunctionAccess): Result[ResolvedFunctionDef, string] =
+  ## Does the module provide exactly this signature, visible at
+  ## `access`? Identity (hash) covers name + input types only — the
+  ## uniqueness rule — so the probe's return type is checked
+  ## explicitly on top of the index hit.
+  if funcDef notin module.funcDefIndex:
+    err(fmt"{funcDef.loc} module `{module.name.asl}` does not have a function named `{funcDef.name.asl}` with arity `{funcDef.arity}`")
+  else:
+    let def = module.functions[module.funcDefIndex[funcDef]].def
+    if def.returns != funcDef.returns:
+      err(fmt"{def.loc} function `{def.name.asl}` of module `{module.name.asl}` returns `{def.returns.asl}` but `{funcDef.returns.asl}` is required")
+    else:
+      case access:
+      of faAll: ok(def)
+      of faPublic:
+        if def.public: ok(def)
+        else: err(fmt"{def.loc} function `{def.name.asl}` of module `{module.name.asl}` is not public")
+
 proc findFunctionDefs*(module: ResolvedModule, name: Identifier, arity: int, access: FunctionAccess): Result[seq[ResolvedFunctionDef], string] =
   ## Overload-lookup entry point — returns every function definition
   ## that matches `name` + `arity`, filtered to what `access` may see

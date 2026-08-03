@@ -6,7 +6,7 @@
 ## once. Nesting convention: parser ⊂ resolver ⊂ defanalyzer ⊂
 ## analyzer.
 
-import options, results, sequtils, strformat, strutils
+import options, results, sequtils, strformat
 
 import ./defanalyzer/resolver
 export resolver
@@ -95,113 +95,6 @@ proc analyzeDefGenericArgumentType(fileCtx: ResolvedFileContext, genericArgType:
 
 proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
-# ============================================================
-# Deep constraint-satisfaction check.
-#
-# The resolver's shallow `satisfies` (name + arity + accessibility)
-# already ran at every module-argtype site; by phase A every
-# signature in the app is fully resolved, so each impl↔require pair
-# is additionally checked for SIGNATURE parity via the four-case
-# matching relation (`argTypeMatches`):
-#   module  vs module  — identity (loc-based hash equality);
-#   module  vs generic — never matches;
-#   generic vs module  — the expected generic is a CONTRACT: the
-#   generic vs generic   actual type must provide every funcDef the
-#                        generic mandates, compared at DEFINITION
-#                        level — the generic substituted by the
-#                        actual's self shape (`Map[Key, Any]`, not the
-#                        site-bound `Map[String, ...]`), candidates as
-#                        declared. Satisfaction is a property of the
-#                        module, uniform over bindings; the site's
-#                        bound impls are validated separately by the
-#                        recursive analyzeDefArgumentType walk, so
-#                        specializing here would only re-check them.
-# ============================================================
-
-proc argTypeMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expected: ResolvedArgumentType, actual: ResolvedArgumentType): SignatureParity
-
-proc signatureMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, base: Generic, self: ResolvedArgumentType, requiredDef: ResolvedFunctionDef, candidate: ResolvedFunctionDef): SignatureParity =
-  ## Positional fold across args + returns: `candidate` (as declared)
-  ## against `requiredDef` with `base` standing for `self`. Any
-  ## spUnequal position fails the candidate.
-  for i in 0 ..< requiredDef.args.len:
-    let expected = requiredDef.args[i].argType.substitute(base, self)
-    case argTypeMatches(fileCtx, typeCtx, expected, candidate.args[i].argType):
-    of spUnequal: return spUnequal
-    of spEqual: discard
-  argTypeMatches(fileCtx, typeCtx, requiredDef.returns.substitute(base, self), candidate.returns)
-
-proc implementsDef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, base: Generic, self: ResolvedArgumentType, actual: AnalyzedArgumentType, requiredDef: ResolvedFunctionDef): SignatureParity =
-  ## Does `actual` expose an accessible overload matching
-  ## `requiredDef`? The analyzed type already carries its resolved
-  ## module/generic — no scope lookups. A missing name/arity or one
-  ## hidden by visibility folds to spUnequal — absence and mismatch
-  ## are the same contract failure (nested contract positions are not
-  ## covered by the resolver's shallow satisfies, only require slots
-  ## are).
-  let maybeCandidates =
-    case actual.kind:
-    of aatkModule:
-      actual.module.module.findFunctionDefs(requiredDef.name, requiredDef.arity, typeCtx.access(actual.module.module))
-    of aatkGeneric:
-      actual.generic.resolved.findFunctionDefs(requiredDef.name, requiredDef.arity)
-  if maybeCandidates.isErr: return spUnequal
-  for candidate in maybeCandidates.get:
-    case signatureMatches(fileCtx, typeCtx, base, self, requiredDef, candidate):
-    of spEqual: return spEqual
-    of spUnequal: discard
-  spUnequal
-
-proc renderRequiredSig(base: Generic, self: ResolvedArgumentType, requiredDef: ResolvedFunctionDef): string =
-  var args: seq[string]
-  for argDef in requiredDef.args:
-    args.add(fmt"{argDef.name.asl}: {argDef.argType.substitute(base, self).asl}")
-  let argList = args.join(", ")
-  fmt"{requiredDef.name.asl}({argList}): {requiredDef.returns.substitute(base, self).asl}"
-
-proc genericSatisfiedBy(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, required: ResolvedGeneric, actual: AnalyzedArgumentType): Result[void, string] =
-  ## The contract core (matching cases 3 and 4): `actual` provides
-  ## every funcDef `required` mandates, the contract's self-references
-  ## standing for the actual's definition-form self — a module's fully
-  ## qualified self shape (`Map[Key, Any]`), a generic as itself.
-  let self = actual.self
-  for requiredDef in required.funcDefs:
-    case implementsDef(fileCtx, typeCtx, required.parsed, self, actual, requiredDef):
-    of spEqual: discard
-    of spUnequal:
-      return err(fmt"{actual.loc} type `{actual.asl}` does not implement `{renderRequiredSig(required.parsed, self, requiredDef)}` to support `{required.name.asl}`")
-  ok()
-
-proc argTypeMatches(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expected: ResolvedArgumentType, actual: ResolvedArgumentType): SignatureParity =
-  if expected == actual:
-    spEqual
-  else:
-    case expected.kind:
-    # Expected module + differing hash: whether the actual is a
-    # different module type or a bare generic, nothing reconciles an
-    # already-concrete expectation (cases 1 and 2).
-    of ratkModule: spUnequal
-    # Expected generic = contract (cases 3 and 4). The nested actual
-    # is a signature position (resolved only) — lift it to its
-    # analyzed twin so the contract check has direct module/generic
-    # access; a failed lift means the position's own constraints
-    # don't hold, which is a mismatch here.
-    of ratkGeneric:
-      let maybeRequired = fileCtx.findGeneric(expected.generic.generic, expected.loc)
-      assert(maybeRequired.isOk, "[BUG] - Resolver ensures that generics appearing in signatures are in the file scope")
-      let maybeActual = analyzeDefArgumentType(fileCtx, typeCtx, actual)
-      if maybeActual.isErr: spUnequal
-      elif genericSatisfiedBy(fileCtx, typeCtx, maybeRequired.get, maybeActual.get).isOk: spEqual
-      else: spUnequal
-
-proc checkImplSatisfies(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, requirement: ResolvedGenericArgumentType, impl: AnalyzedArgumentType): Result[void, string] =
-  # The require-slot generic resolves through THIS file's scope — the
-  # resolver already found it here by name (inferGenerics), so the
-  # identity lookup cannot miss.
-  let maybeRequired = fileCtx.findGeneric(requirement.generic, requirement.loc)
-  assert(maybeRequired.isOk, "[BUG] - Resolver ensures that the require-slot generic is in the file scope")
-  genericSatisfiedBy(fileCtx, typeCtx, maybeRequired.get, impl)
-
 proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   let maybeModule = fileCtx.findModule(argType.module, argType.loc)
   assert(maybeModule.isOk, "[BUG] - Resolver ensures that the argument type module exists")
@@ -215,7 +108,29 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
   for (requirement, impl) in zip(requires, argType.impls):
     let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
     analyzedImpls.add(analyzedImpl)
-    ? checkImplSatisfies(fileCtx, typeCtx, requirement, analyzedImpl)
+    # The require-slot generic resolves through THIS file's scope — the
+    # resolver already found it here by name (inferGenerics), so the
+    # identity lookup cannot miss.
+    let maybeBaseGeneric = fileCtx.findGeneric(requirement.generic, requirement.loc)
+    assert(maybeBaseGeneric.isOk, "[BUG] - Resolver ensures that the require-slot generic is in the file scope")
+    let baseGeneric = maybeBaseGeneric.get
+    # Contracts compare at DEFINITION level: self-references become the
+    # impl's self shape (`Array[Comparable]`, not the site-bound
+    # `Array[u8]`) so the concretized defs land in the impl's own
+    # vocabulary and the identity probe below can hit its funcDefIndex.
+    # The site-bound impls were already validated by the recursive
+    # analyzeDefArgumentType call above.
+    for def in baseGeneric.concrete(analyzedImpl.self):
+      let maybeMatchingDef =
+        case analyzedImpl.kind:
+        of aatkModule:
+          let resolvedImplModule = analyzedImpl.module.module
+          resolvedImplModule.findImplDef(def, typeCtx.access(resolvedImplModule))
+        of aatkGeneric:
+          let resolvedImplGeneric = analyzedImpl.generic.resolved
+          resolvedImplGeneric.findImplDef(def, faAll)
+      if maybeMatchingDef.isErr:
+        return err(fmt"{impl.loc} type `{impl.asl}` does not implement `{def.asl}` to support `{baseGeneric.name.asl}`")
 
   ok(newAnalyzedModuleArgumentType(argType, module, analyzedImpls))
 
@@ -233,34 +148,12 @@ proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedType
 # plans/plan_analyzer_two_pass.md). Ported from the retired
 # oldanalyzer.nim.
 #
-# ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
-#   UNIFICATION.
-#
-# The impl-satisfies-base signature check (done at
-# `analyzeValueTypeAgainstDefType` on the facade + the def-time
-# `checkImplSatisfies` above) uses hash-based `==` for
-# argument-type comparison at module positions. The def-time
-# matching relation treats an EXPECTED generic as a contract
-# (structural check), but the phase-B value-vs-defType walk still
-# compares by hash — free generics there remain unification
-# territory.
-#
-# What breaks: an impl providing `byte_size(items: Array[u8])` where
-# the base generic mandates `byte_size(items: Array[Any])` — hash
-# equality treats these as different types when a unification pass
-# would bind `Any → u8` and accept the impl. Dormant today because
-# every fixture in the test suite uses fully-bound impl types at the
-# base-generic satisfaction boundary; the bug lies waiting until
-# someone writes an impl whose funcDef references a partially-generic
-# argument type.
-#
-# The fix requires routing every assignability check through
-# `analyzeValueTypeAgainstDefType` + `merge` with eager chain-
-# collapsing in `merge` (so `Sample → K, K → u8` collapses to
-# `Sample → u8`). See `plans/plan_deferred_typing.md` §
-# "Equality vs unification for analyzed types" — that plan owns the
-# fix; this port preserves current behavior and does not introduce
-# any new use of `==`.
+# Def-time constraint checks compare by identity soundly: the deep
+# `concrete` grounds every self-reference before the funcDefIndex
+# probe, so nested positions like `Array[Any]` arrive fully
+# substituted. The hash-vs-unification limitation lives in phase B
+# only — see the banner above `analyzeValueTypeAgainstDefType` on
+# the body barrel.
 # ============================================================
 
 proc analyzeDefArgumentDefinition(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
@@ -476,7 +369,6 @@ proc analyzeDefFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeConte
     let analyzedUserFunction = ? analyzeDefUserFunction(fileCtx, typeCtx, function.user)
     ok(newAnalyzedDefFunction(analyzedUserFunction))
 
-
 # ============================================================
 # Phase-A module + generic analyzers (W4 of plan_analyzer_two_pass.md).
 # Ported from the retired oldanalyzer.nim.
@@ -490,13 +382,11 @@ proc analyzeDefFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeConte
 proc analyzeDefModule(fileCtx: ResolvedFileContext, module: ResolvedModule): Result[AnalyzedDefModule, string] =
   let typeCtx = newResolvedTypeContext(module)
   var requires: seq[AnalyzedGenericArgumentType]
+  var maybeAnalyzedData: Option[AnalyzedData]
   if module.data.isSome:
     for genericArgType in module.data.get.requires:
       let analyzedArgType = ? analyzeDefGenericArgumentType(fileCtx, genericArgType)
       requires.add(analyzedArgType)
-
-  var maybeAnalyzedData: Option[AnalyzedData]
-  if module.data.isSome:
     let analyzedData = ? analyzeDefData(fileCtx, typeCtx, module.data.get)
     maybeAnalyzedData = some(analyzedData)
 

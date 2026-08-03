@@ -185,6 +185,26 @@ proc analyzeExpression*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCt
 proc analyzeStatement*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, statement: ResolvedStatement): Result[AnalyzedStatement, string]
 proc analyzeValueTypeAgainstDefType(defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
 
+# ============================================================
+# ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
+#   UNIFICATION.
+#
+# The value-vs-defType walk below compares argument types with
+# hash-based `==` at module positions. That is sound when both sides
+# are ground, but a free generic in impl position (post leave-as-is
+# inference, e.g. Box[u8, Sample] against Box[u8, MyImpl]) needs
+# unification — solving for the binding — not equality. The def-time
+# constraint check no longer shares this limitation (its deep
+# `concrete` grounds contract defs before the identity probe).
+#
+# The fix routes every assignability check through
+# `analyzeValueTypeAgainstDefType` + `merge` with eager chain-
+# collapsing in `merge` (so `Sample → K, K → u8` collapses to
+# `Sample → u8`). See `plans/plan_deferred_typing.md` §
+# "Equality vs unification for analyzed types" — that plan owns the
+# fix.
+# ============================================================
+
 proc analyzeValueTypeAgainstDefType(defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
   if defType.module != valType.module:
     err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
@@ -203,7 +223,7 @@ proc analyzeValueTypeAgainstDefType(defType: AnalyzedModuleArgumentType, valType
     analyzeValueTypeAgainstDefType(defType, valType.module, loc)
 
 proc analyzeValueTypeAgainstDefType(defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
-  let funcDefs = defType.resolved.concreteImpls(valType.self)
+  let funcDefs = defType.resolved.concrete(valType.self)
   for funcDef in funcDefs:
     case valType.kind:
     of aatkGeneric:
