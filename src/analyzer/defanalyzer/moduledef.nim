@@ -50,6 +50,13 @@ proc newAnalyzedDefModule*(resolved: ResolvedModule,
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
 proc data*(m: AnalyzedDefModule): Option[AnalyzedData] = m.data
+
+proc dataDef*(m: AnalyzedDefModule): AnalyzedData =
+  ## Kind-asserted projection — phase B reaches a module through an
+  ## expression type only after the resolver verified it is a data
+  ## module. The block-kind asserts live on AnalyzedData's accessors.
+  assert(m.data.isSome, fmt"[BUG] - {m.resolved.loc} module `{m.resolved.name.asl}` has no data block")
+  m.data.get
 proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDefinition] = m.functions.mapIt(it.def)
 proc name*(m: AnalyzedDefModule): Identifier = m.resolved.name
 proc loc*(m: AnalyzedDefModule): Location = m.resolved.loc

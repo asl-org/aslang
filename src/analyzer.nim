@@ -31,14 +31,11 @@ import ./analyzer/file
 import ./analyzer/app
 
 proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedData, string] =
-  let moduleDef = fileCtx.findModule(argType.module)
-  assert(moduleDef.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
-  ok(moduleDef.data.get)
+  ok(fileCtx.findModule(argType.module).dataDef)
 
 proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedStructDef, string] =
   let moduleDef = fileCtx.findModule(argType.module)
-  assert(moduleDef.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
-  let dataDef = moduleDef.data.get
+  let dataDef = moduleDef.dataDef
   case dataDef.kind:
   of adkStruct: ok(dataDef.struct)
   of adkUnion: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found union")
@@ -46,8 +43,7 @@ proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgu
 
 proc extractUnionFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedUnionDef, string] =
   let moduleDef = fileCtx.findModule(argType.module)
-  assert(moduleDef.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
-  let dataDef = moduleDef.data.get
+  let dataDef = moduleDef.dataDef
   case dataDef.kind:
   of adkUnion: ok(dataDef.union)
   of adkStruct: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found struct")
@@ -162,8 +158,7 @@ proc analyzeLiteralInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile
     err(fmt"{init.loc} expected `{analyzedArgType.module.name.asl}` to be a module found generic")
   of aatkModule:
     let argDefModule = fileCtx.findModule(analyzedArgType.module.module)
-    assert(argDefModule.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
-    let argDefData = argDefModule.data.get
+    let argDefData = argDefModule.dataDef
     case argDefData.kind:
     of adkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
     of adkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
@@ -575,8 +570,7 @@ proc analyzeBareLiteral(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCt
     err(fmt"{literal.loc} expected a module `{concreteArgType.name.asl}` but found generic")
   of aatkModule:
     let argDefModule = fileCtx.findModule(concreteArgType.module.module)
-    assert(argDefModule.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
-    let argDefData = argDefModule.data.get
+    let argDefData = argDefModule.dataDef
     case argDefData.kind:
     of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
     of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")

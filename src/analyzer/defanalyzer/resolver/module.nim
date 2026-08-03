@@ -7,6 +7,9 @@ import results, strformat, options, tables, hashes, sequtils
 import ./parser
 import argtype
 import funcdef
+import literaldef
+import structdef
+import uniondef
 import datadef
 import function
 
@@ -44,6 +47,19 @@ proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: s
 
 proc parsed*(module: ResolvedModule): Module = module.parsed
 proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
+
+# Kind-asserted data projections — callers reach a module through an
+# argument type, ref, or literal binding only after the resolver
+# verified it is a data module (of the right kind), so absence is a
+# compiler bug. The block-kind asserts live on ResolvedData's own
+# accessors.
+proc dataDef*(module: ResolvedModule): ResolvedData =
+  assert(module.data.isSome, fmt"[BUG] - {module.parsed.loc} module `{module.parsed.name.asl}` has no data block")
+  module.data.get
+
+proc structDef*(module: ResolvedModule): ResolvedStructDef = module.dataDef.struct
+proc unionDef*(module: ResolvedModule): ResolvedUnionDef = module.dataDef.union
+proc literalDef*(module: ResolvedModule): ResolvedLiteralDef = module.dataDef.literal
 proc functions*(module: ResolvedModule): seq[ResolvedFunction] = module.functions
 proc funcDefIndex*(module: ResolvedModule): Table[ResolvedFunctionDef, int] = module.funcDefIndex
 proc funcNameArityIndex*(module: ResolvedModule): Table[Identifier, Table[int, seq[int]]] = module.funcNameArityIndex

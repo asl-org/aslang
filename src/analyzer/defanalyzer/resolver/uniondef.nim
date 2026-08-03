@@ -49,3 +49,10 @@ proc findVariant*(union: ResolvedUnionDef, variant: Identifier): Result[Resolved
   if variant in union.variantIndex: ok(union.variants[union.variantIndex[variant]])
   else: err(fmt"{variant.loc} union does not contain variant `{variant.asl}`")
 
+proc findVariant*(union: ResolvedUnionDef, variant: VariantDef): ResolvedVariant =
+  ## Identity form — the resolver already located this variant on the
+  ## parser-side union at ref-resolve time, so the resolved twin
+  ## cannot miss.
+  assert(variant.name in union.variantIndex, fmt"[BUG] - {variant.loc} variant `{variant.name.asl}` missing from the resolved union")
+  union.variants[union.variantIndex[variant.name]]
+

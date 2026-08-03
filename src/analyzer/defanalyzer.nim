@@ -96,9 +96,7 @@ proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedType
 
 proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
   let module = fileCtx.findModule(argType.module)
-  assert(module.data.isSome, "[BUG] - Resolver ensures that argument type modules are data modules")
-
-  let requires = module.data.get.requires
+  let requires = module.dataDef.requires
   assert(requires.len == argType.impls.len, "[BUG] - Resolver ensures impls match the module's require slots")
 
   var analyzedImpls: seq[AnalyzedArgumentType]
@@ -194,14 +192,8 @@ proc analyzeDefData(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, 
 
 proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, unionRef: ResolvedUnionRef): Result[AnalyzedDefUnionRef, string] =
   let unionModule = fileCtx.findModule(unionRef.module)
-  assert(unionModule.data.isSome, "[BUG] - Resolver ensures that union ref module has a data block")
-  assert(unionModule.data.get.kind == rdkUnion, "[BUG] - Resolver ensures that union ref module has a union block")
-  let union = unionModule.data.get.union
-  # The resolver already located this variant on the parser-side
-  # union; the same name cannot miss on the resolved twin.
-  let maybeVariant = union.findVariant(unionRef.variant.name)
-  assert(maybeVariant.isOk, "[BUG] - Resolver ensures that the union ref variant exists")
-  let variant = maybeVariant.get
+  let union = unionModule.unionDef
+  let variant = union.findVariant(unionRef.variant)
   if unionRef.argType.impls.len == 0:
     ok(newAnalyzedDefUnionRef(unionRef, unionModule, union, variant))
   else:
@@ -210,9 +202,7 @@ proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeConte
 
 proc analyzeDefStructRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, structRef: ResolvedStructRef): Result[AnalyzedDefStructRef, string] =
   let structModule = fileCtx.findModule(structRef.module)
-  assert(structModule.data.isSome, "[BUG] - Resolver ensures that struct ref module has a data block")
-  assert(structModule.data.get.kind == rdkStruct, "[BUG] - Resolver ensures that struct ref module has a struct block")
-  let struct = structModule.data.get.struct
+  let struct = structModule.structDef
   if structRef.argType.impls.len == 0:
     ok(newAnalyzedDefStructRef(structRef, structModule, struct))
   else:
@@ -224,9 +214,7 @@ proc analyzeDefExpression(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeCon
 
 proc analyzeDefBareLiteral(fileCtx: ResolvedFileContext, literal: ResolvedLiteral): Result[AnalyzedDefLiteral, string] =
   let literalModule = fileCtx.findModule(literal.default)
-  assert(literalModule.data.isSome, "[BUG] - Resolver ensures that literal module has a data block")
-  assert(literalModule.data.get.kind == rdkLiteral, "[BUG] - Resolver ensures that literal module has a literal block")
-  ok(newAnalyzedDefLiteral(literal, literalModule, literalModule.data.get.literal))
+  ok(newAnalyzedDefLiteral(literal, literalModule, literalModule.literalDef))
 
 proc analyzeDefCase(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, caseBlock: ResolvedCaseBlock): Result[AnalyzedDefCase, string] =
   var statements: seq[AnalyzedDefStatement]
@@ -272,9 +260,7 @@ proc analyzeDefStructInitializer(fileCtx: ResolvedFileContext, typeCtx: Resolved
 
 proc analyzeDefLiteralInitializer(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, init: ResolvedLiteralInitializer): Result[AnalyzedDefLiteralInitializer, string] =
   let argType = ? analyzeDefModuleArgumentType(fileCtx, typeCtx, init.argType)
-  assert(argType.module.data.isSome, "[BUG] - Resolver ensures that literal module has a data block")
-  assert(argType.module.data.get.kind == rdkLiteral, "[BUG] - Resolver ensures that literal module has a literal block")
-  ok(newAnalyzedDefLiteralInitializer(init, argType, argType.module.data.get.literal))
+  ok(newAnalyzedDefLiteralInitializer(init, argType, argType.module.literalDef))
 
 proc analyzeDefInitializer(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, init: ResolvedInitializer): Result[AnalyzedDefInitializer, string] =
   case init.kind:
