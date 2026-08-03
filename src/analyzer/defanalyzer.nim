@@ -233,7 +233,7 @@ proc analyzeDefMatch(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext,
   ok(newAnalyzedDefMatch(match, subject, cases))
 
 proc analyzeDefFunctionCall(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, fncall: ResolvedFunctionCall): Result[AnalyzedDefFunctionCall, string] =
-  let resolvedType = fileCtx.findType(fncall.typ)
+  let resolvedType = fileCtx.findType(fncall.typ).localType
   var args: seq[AnalyzedDefExpression]
   for arg in fncall.args:
     let analyzedDefArg = ? analyzeDefExpression(fileCtx, typeCtx, arg)

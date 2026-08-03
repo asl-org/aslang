@@ -289,7 +289,7 @@ proc analyzeArgumentList(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileC
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let typ = fileDef.scope.findType(fncall.typ)
+  let typ = fileDef.scope.findType(fncall.typ).localType
   let access =
     case typ.kind:
     of rltkModule:

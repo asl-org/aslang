@@ -172,7 +172,7 @@ proc resolveGenericArgumentType(typeCtx: TypeContext, argType: ArgumentType, arg
       err(fmt"{argType.loc} type `{argGeneric.name.asl}` is a generic and does not support further impls")
 
 proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let typ = ? fileCtx.findType(argType.root)
+  let typ = (? fileCtx.findType(argType.root)).localType
   case typ.kind:
   of ltkGeneric:
     let resolvedGenericType = ? resolveGenericArgumentType(typeCtx, argType, typ.generic)
@@ -272,7 +272,7 @@ proc resolveExpression(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: Func
 proc resolveStatement(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string]
 
 proc resolveFunctionCall(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let typ = ? fileCtx.findType(fncall.root)
+  let typ = (? fileCtx.findType(fncall.root)).localType
   let access =
     case typ.kind:
     of ltkModule: typeCtx.access(typ.module)

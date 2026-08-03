@@ -1,15 +1,58 @@
-## FileContext — the imported-name -> imported LocalType table populated by
+## FileContext — the name -> scope-entry table populated by
 ## resolver/imports.nim and threaded through every scope-consuming
-## `resolve*` proc downstream. Pure type alias; no procs of its own.
+## `resolve*` proc downstream. The entry type `Type` is the
+## Local | Imported union from grammar.md: a name resolves either to
+## a type declared in this file or to the LINKED import binding,
+## which carries the source file's LocalType. Provenance is preserved
+## at insertion instead of flattened away.
 
-import results, sequtils, sets, strformat, tables
+import results, sequtils, sets, strformat, hashes, tables
 
 import ./parser
 import ./imports
 
-type FileContext* = Table[Identifier, LocalType]
+type
+  TypeKind* = enum
+    tkLocal, tkImported
+  Type* = ref object
+    ## Scope entry — what a name resolves to. Hashes and compares by
+    ## the underlying LocalType so aliased imports land on one
+    ## identity key; provenance is payload, not identity.
+    case kind: TypeKind
+    of tkLocal: local: LocalType
+    of tkImported: imported: ResolvedImportedType
 
-proc insert(fileCtx: var FileContext, name: Identifier, typ: LocalType): Result[FileContext, string] =
+proc newType*(local: LocalType): Type =
+  Type(kind: tkLocal, local: local)
+
+proc newType*(imported: ResolvedImportedType): Type =
+  Type(kind: tkImported, imported: imported)
+
+proc kind*(t: Type): TypeKind = t.kind
+
+proc local*(t: Type): LocalType =
+  assert t.kind == tkLocal, "Type.local accessed but kind is tkImported"
+  t.local
+
+proc imported*(t: Type): ResolvedImportedType =
+  assert t.kind == tkImported, "Type.imported accessed but kind is tkLocal"
+  t.imported
+
+proc localType*(t: Type): LocalType =
+  ## The underlying declared type, regardless of provenance — what
+  ## every consumer that only cares about the definition shape reads.
+  case t.kind:
+  of tkLocal: t.local
+  of tkImported: t.imported.typ
+
+proc name*(t: Type): Identifier = t.localType.name
+proc loc*(t: Type): Location = t.localType.loc
+proc hash*(t: Type): Hash = t.localType.hash
+proc `==`*(a, b: Type): bool = a.localType == b.localType
+
+type FileContext* = Table[Identifier, Type]
+
+proc insert(fileCtx: var FileContext, name: Identifier, typ: Type): Result[FileContext, string] =
   if name in fileCtx:
     let loc = fileCtx[name].loc
     err(fmt"{name.loc} duplicate type declaration encountered, see previous declaration at {loc}")
@@ -21,23 +64,23 @@ proc newFileContext*(imports: seq[ResolvedImport], types: seq[LocalType]): Resul
   var fileCtx: FileContext
   for imp in imports:
     for impType in imp.importedTypes:
-      fileCtx = ? fileCtx.insert(impType.binding, impType.typ)
+      fileCtx = ? fileCtx.insert(impType.binding, newType(impType))
   for typ in types:
-    fileCtx = ? fileCtx.insert(typ.name, typ)
+    fileCtx = ? fileCtx.insert(typ.name, newType(typ))
   ok(fileCtx)
 
-proc findType*(fileCtx: FileContext, name: Identifier): Result[LocalType, string] =
+proc findType*(fileCtx: FileContext, name: Identifier): Result[Type, string] =
   if name in fileCtx: ok(fileCtx[name])
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findModule*(fileCtx: FileContext, name: Identifier): Result[Module, string] =
-  let initType = ? fileCtx.findType(name)
+  let initType = (? fileCtx.findType(name)).localType
   case initType.kind:
   of ltkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
   of ltkModule: ok(initType.module)
 
 proc findGeneric*(fileCtx: FileContext, name: Identifier): Result[Generic, string] =
-  let initType = ? fileCtx.findType(name)
+  let initType = (? fileCtx.findType(name)).localType
   case initType.kind:
   of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
   of ltkGeneric: ok(initType.generic)
@@ -56,7 +99,7 @@ proc inferGenerics(fileCtx: FileContext, fields: seq[ArgumentDef]): Result[seq[G
   ## use sites supply one impl per distinct generic, not per field.
   var generics: OrderedSet[Generic]
   for field in fields:
-    let definedFieldType = ? fileCtx.findType(field.argType.root)
+    let definedFieldType = (? fileCtx.findType(field.argType.root)).localType
     case definedFieldType.kind:
     of ltkModule: discard
     of ltkGeneric: generics.incl(definedFieldType.generic)
