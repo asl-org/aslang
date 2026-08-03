@@ -1,6 +1,6 @@
 ## Type / File / App + the public resolve* entry point.
 
-import results, sequtils, strformat, tables
+import sequtils, strformat, tables
 
 import ./parser
 import filecontext
@@ -20,7 +20,7 @@ type ResolvedFile* = ref object
 proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedType], scope: FileContext): ResolvedFile =
   var typeIndex: Table[parser.Type, int]
   for id, typ in types:
-    assert typ.parsed notin typeIndex, "duplicate local type detected in the resolved file"
+    assert(typ.parsed notin typeIndex, fmt"[BUG] - {typ.loc} duplicate local type `{typ.name.asl}` in the resolved file")
     typeIndex[typ.parsed] = id
   ResolvedFile(parsed: parsed, imports: imports, types: types, typeIndex: typeIndex, scope: scope)
 
@@ -32,20 +32,19 @@ proc scope*(file: ResolvedFile): FileContext = file.scope
 proc modules*(file: ResolvedFile): seq[ResolvedModule] =
   file.types.filterIt(it.kind == rtkModule).mapIt(it.module)
 
-proc findType*(file: ResolvedFile, typ: parser.Type, loc: Location): Result[ResolvedType, string] =
-  if typ notin file.typeIndex:
-    err(fmt"{loc} type `{typ.name.asl}` does not exist in the file scope")
-  else:
-    ok(file.types[file.typeIndex[typ]])
+# Identity lookups — every key handed to these was bound by the
+# resolver against this same file, so a miss (or a kind mismatch) is
+# a compiler bug, never a user error.
+proc findType*(file: ResolvedFile, typ: parser.Type): ResolvedType =
+  assert(typ in file.typeIndex, fmt"[BUG] - {typ.loc} type `{typ.name.asl}` missing from the resolved file")
+  file.types[file.typeIndex[typ]]
 
-proc findModule*(file: ResolvedFile, typ: Module, loc: Location): Result[ResolvedModule, string] =
-  let resolvedType = ? file.findType(newType(typ), loc)
-  case resolvedType.kind:
-  of rtkModule: ok(resolvedType.module)
-  of rtkGeneric: err(fmt"{loc} expected type `{typ.name.asl}` to be a module but found generic")
+proc findModule*(file: ResolvedFile, typ: Module): ResolvedModule =
+  let resolvedType = file.findType(newType(typ))
+  assert(resolvedType.kind == rtkModule, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a module by the resolver")
+  resolvedType.module
 
-proc findGeneric*(file: ResolvedFile, typ: Generic, loc: Location): Result[ResolvedGeneric, string] =
-  let resolvedType = ? file.findType(newType(typ), loc)
-  case resolvedType.kind:
-  of rtkGeneric: ok(resolvedType.generic)
-  of rtkModule: err(fmt"{loc} expected type `{typ.name.asl}` to be a generic but found module")
+proc findGeneric*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
+  let resolvedType = file.findType(newType(typ))
+  assert(resolvedType.kind == rtkGeneric, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a generic by the resolver")
+  resolvedType.generic

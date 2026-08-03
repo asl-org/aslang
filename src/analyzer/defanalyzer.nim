@@ -89,16 +89,13 @@ export importdef
 # here is a compiler bug, never a user error — and there are no
 # module/generic context twins; one context value, one proc.
 proc analyzeDefGenericArgumentType(fileCtx: ResolvedFileContext, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =
-  let maybeGeneric = fileCtx.findGeneric(genericArgType.generic, genericArgType.loc)
-  assert(maybeGeneric.isOk, "[BUG] - Resolver ensures that the generic referenced by an argument type exists")
-  ok(newAnalyzedGenericArgumentType(maybeGeneric.get, genericArgType.loc))
+  let generic = fileCtx.findGeneric(genericArgType.generic)
+  ok(newAnalyzedGenericArgumentType(generic, genericArgType.loc))
 
 proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
 proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  let maybeModule = fileCtx.findModule(argType.module, argType.loc)
-  assert(maybeModule.isOk, "[BUG] - Resolver ensures that the argument type module exists")
-  let module = maybeModule.get
+  let module = fileCtx.findModule(argType.module)
   assert(module.data.isSome, "[BUG] - Resolver ensures that argument type modules are data modules")
 
   let requires = module.data.get.requires
@@ -108,12 +105,7 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
   for (requirement, impl) in zip(requires, argType.impls):
     let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
     analyzedImpls.add(analyzedImpl)
-    # The require-slot generic resolves through THIS file's scope — the
-    # resolver already found it here by name (inferGenerics), so the
-    # identity lookup cannot miss.
-    let maybeBaseGeneric = fileCtx.findGeneric(requirement.generic, requirement.loc)
-    assert(maybeBaseGeneric.isOk, "[BUG] - Resolver ensures that the require-slot generic is in the file scope")
-    let baseGeneric = maybeBaseGeneric.get
+    let baseGeneric = fileCtx.findGeneric(requirement.generic)
     # Contracts compare at DEFINITION level: self-references become the
     # impl's self shape (`Array[Comparable]`, not the site-bound
     # `Array[u8]`) so the concretized defs land in the impl's own
@@ -201,9 +193,7 @@ proc analyzeDefData(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, 
     ok(newAnalyzedData(analyzedUnion))
 
 proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, unionRef: ResolvedUnionRef): Result[AnalyzedDefUnionRef, string] =
-  let maybeUnionModule = fileCtx.findModule(unionRef.module, unionRef.loc)
-  assert(maybeUnionModule.isOk, "[BUG] - Resolver ensures that the union ref module exists")
-  let unionModule = maybeUnionModule.get
+  let unionModule = fileCtx.findModule(unionRef.module)
   assert(unionModule.data.isSome, "[BUG] - Resolver ensures that union ref module has a data block")
   assert(unionModule.data.get.kind == rdkUnion, "[BUG] - Resolver ensures that union ref module has a union block")
   let union = unionModule.data.get.union
@@ -219,9 +209,7 @@ proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeConte
     ok(newAnalyzedDefUnionRef(unionRef, analyzedArgType, union, variant))
 
 proc analyzeDefStructRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, structRef: ResolvedStructRef): Result[AnalyzedDefStructRef, string] =
-  let maybeStructModule = fileCtx.findModule(structRef.module, structRef.loc)
-  assert(maybeStructModule.isOk, "[BUG] - Resolver ensures that the struct ref module exists")
-  let structModule = maybeStructModule.get
+  let structModule = fileCtx.findModule(structRef.module)
   assert(structModule.data.isSome, "[BUG] - Resolver ensures that struct ref module has a data block")
   assert(structModule.data.get.kind == rdkStruct, "[BUG] - Resolver ensures that struct ref module has a struct block")
   let struct = structModule.data.get.struct
@@ -235,9 +223,7 @@ proc analyzeDefStatement(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeCont
 proc analyzeDefExpression(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expression: ResolvedExpression): Result[AnalyzedDefExpression, string]
 
 proc analyzeDefBareLiteral(fileCtx: ResolvedFileContext, literal: ResolvedLiteral): Result[AnalyzedDefLiteral, string] =
-  let maybeLiteralModule = fileCtx.findModule(literal.default, literal.loc)
-  assert(maybeLiteralModule.isOk, "[BUG] - Resolver ensures that the literal default module exists")
-  let literalModule = maybeLiteralModule.get
+  let literalModule = fileCtx.findModule(literal.default)
   assert(literalModule.data.isSome, "[BUG] - Resolver ensures that literal module has a data block")
   assert(literalModule.data.get.kind == rdkLiteral, "[BUG] - Resolver ensures that literal module has a literal block")
   ok(newAnalyzedDefLiteral(literal, literalModule, literalModule.data.get.literal))
@@ -259,9 +245,7 @@ proc analyzeDefMatch(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext,
   ok(newAnalyzedDefMatch(match, subject, cases))
 
 proc analyzeDefFunctionCall(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, fncall: ResolvedFunctionCall): Result[AnalyzedDefFunctionCall, string] =
-  let maybeType = fileCtx.findType(fncall.typ, fncall.loc)
-  assert(maybeType.isOk, "[BUG] - Resolver ensures that the function call receiver type exists")
-  let resolvedType = maybeType.get
+  let resolvedType = fileCtx.findType(fncall.typ)
   var args: seq[AnalyzedDefExpression]
   for arg in fncall.args:
     let analyzedDefArg = ? analyzeDefExpression(fileCtx, typeCtx, arg)
@@ -419,14 +403,10 @@ proc analyzeDefType(fileCtx: ResolvedFileContext, typ: ResolvedType): Result[Ana
     ok(newAnalyzedType(analyzedModule))
 
 proc analyzeDefImportedType(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
-  let maybeImpType = impFile.findType(impType.typ, impType.loc)
-  assert(maybeImpType.isOk, "[BUG] - Resolver ensures that the imported type exists in the imported file")
-  ok(newAnalyzedDefImportedType(impType, maybeImpType.get))
+  ok(newAnalyzedDefImportedType(impType, impFile.findType(impType.typ)))
 
 proc analyzeDefImport(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
-  let maybeImpFile = app.findFile(imp.impFile)
-  assert(maybeImpFile.isOk, "[BUG] - Resolver ensures that the imported file exists in the app")
-  let impFile = maybeImpFile.get
+  let impFile = app.findFile(imp.impFile)
   var analyzedImpTypes: seq[AnalyzedDefImportedType]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeDefImportedType(impFile, impType)
@@ -439,9 +419,7 @@ proc analyzeDefFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFil
     let analyzedImport = ? analyzeDefImport(app, imp)
     analyzedImports.add(analyzedImport)
 
-  let maybeFileCtx = newResolvedFileContext(analyzedImports, file.types)
-  assert(maybeFileCtx.isOk, "[BUG] - Resolver ensures per-file type bindings are conflict-free")
-  let fileCtx = maybeFileCtx.get
+  let fileCtx = newResolvedFileContext(analyzedImports, file.types)
   var analyzedTypes: seq[AnalyzedType]
   for typ in file.types:
     let analyzedType = ? analyzeDefType(fileCtx, typ)

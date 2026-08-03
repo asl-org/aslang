@@ -1036,3 +1036,55 @@ module A:
 """)
     cleanupDir(dir)
     check r.isOk
+
+suite "resolver — input-signature uniqueness":
+
+  test "two functions with identical input signatures are rejected":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+module A:
+  func go(x: u8): u8
+    x
+
+  func go(x: u8): u8
+    x
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate function `go` with the same input signature")
+
+  test "same inputs with a different return type is still a duplicate":
+    # The return type does not distinguish functions — call sites
+    # could never disambiguate by arguments alone.
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public module u32:
+  literal: "u32"
+
+module A:
+  func go(x: u8): u8
+    x
+
+  func go(x: u8): u32
+    u32 0
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate function `go` with the same input signature")
+
+  test "duplicate funcDef inside a generic block is rejected":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public generic Eq:
+  func eq(a: Eq, b: Eq): u8
+  func eq(a: Eq, b: Eq): u8
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "duplicate function `eq` with the same input signature")

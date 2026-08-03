@@ -9,7 +9,7 @@
 ## not merely visible there. Phase-B lookups spanning imports go
 ## through the body layer's `AnalyzedFileContext` instead.
 
-import results, strformat, tables
+import strformat, tables
 
 import ./resolver
 import ./argtype
@@ -18,6 +18,13 @@ import ./types
 import ./importdef
 import ./moduledef
 
+proc buildTypeIndex(types: seq[AnalyzedType]): Table[ResolvedType, AnalyzedType] =
+  var typeIndex: Table[ResolvedType, AnalyzedType]
+  for typ in types:
+    assert(typ.resolved notin typeIndex, fmt"[BUG] - {typ.loc} duplicate defined type `{typ.name.asl}` in the file def")
+    typeIndex[typ.resolved] = typ
+  return typeIndex
+
 type AnalyzedDefFile* = ref object
   resolved: ResolvedFile
   imports: seq[AnalyzedDefImport]
@@ -25,15 +32,9 @@ type AnalyzedDefFile* = ref object
   scope: ResolvedFileContext
   definedTypeIndex: Table[ResolvedType, AnalyzedType]
 
-proc newAnalyzedDefFile*(resolved: ResolvedFile,
-    imports: seq[AnalyzedDefImport],
-    types: seq[AnalyzedType],
-    scope: ResolvedFileContext): AnalyzedDefFile =
-  var definedTypeIndex: Table[ResolvedType, AnalyzedType]
-  for definedType in types:
-    definedTypeIndex[definedType.resolved] = definedType
-  AnalyzedDefFile(resolved: resolved, imports: imports,
-    types: types, scope: scope, definedTypeIndex: definedTypeIndex)
+proc newAnalyzedDefFile*(resolved: ResolvedFile, imports: seq[AnalyzedDefImport], types: seq[AnalyzedType], scope: ResolvedFileContext): AnalyzedDefFile =
+  let definedTypeIndex = buildTypeIndex(types)
+  AnalyzedDefFile(resolved: resolved, imports: imports, types: types, scope: scope, definedTypeIndex: definedTypeIndex)
 
 proc resolved*(f: AnalyzedDefFile): ResolvedFile = f.resolved
 proc path*(f: AnalyzedDefFile): string = f.resolved.path
@@ -41,20 +42,20 @@ proc imports*(f: AnalyzedDefFile): seq[AnalyzedDefImport] = f.imports
 proc types*(f: AnalyzedDefFile): seq[AnalyzedType] = f.types
 proc scope*(f: AnalyzedDefFile): ResolvedFileContext = f.scope
 
-proc findType*(fileDef: AnalyzedDefFile, typ: ResolvedType, loc: Location): Result[AnalyzedType, string] =
-  if typ in fileDef.definedTypeIndex: ok(fileDef.definedTypeIndex[typ])
-  else: err(fmt"{loc} type `{typ.name.asl}` does not exist")
+# Identity lookups — phase A analyzed every type DEFINED in this
+# file (local-only by design: analyzeImportedType uses findType to
+# verify an imported name is defined in its source file), so a miss
+# is a compiler bug.
+proc findType*(fileDef: AnalyzedDefFile, typ: ResolvedType): AnalyzedType =
+  assert(typ in fileDef.definedTypeIndex, fmt"[BUG] - {typ.loc} type `{typ.name.asl}` missing from the file def")
+  fileDef.definedTypeIndex[typ]
 
-proc findModule*(fileDef: AnalyzedDefFile, module: ResolvedModule, loc: Location): Result[AnalyzedDefModule, string] =
-  let typ = newResolvedType(module)
-  let foundType = ? fileDef.findType(typ, loc)
-  case foundType.kind:
-  of atkModule: ok(foundType.module)
-  of atkGeneric: err(fmt"{loc} expected `{foundType.name.asl}` to be a module but found generic")
+proc findModule*(fileDef: AnalyzedDefFile, module: ResolvedModule): AnalyzedDefModule =
+  let foundType = fileDef.findType(newResolvedType(module))
+  assert(foundType.kind == atkModule, fmt"[BUG] - {module.loc} `{module.name.asl}` was analyzed as a module in phase A")
+  foundType.module
 
-proc defaultLiteralType*(fileDef: AnalyzedDefFile, literal: ResolvedLiteral): Result[AnalyzedArgumentType, string] =
-  let maybeResolvedLiteralModule = fileDef.scope.findModule(literal.default, literal.loc)
-  if maybeResolvedLiteralModule.isErr:
-    err(fmt"{literal.loc} bare literal defaults to `{literal.default.name.asl}` but it is not in scope; ensure `@std` auto-injection or an explicit import brings it in")
-  else:
-    ok(newAnalyzedArgumentType(maybeResolvedLiteralModule.get))
+proc defaultLiteralType*(fileDef: AnalyzedDefFile, literal: ResolvedLiteral): AnalyzedArgumentType =
+  ## The resolver bound `literal.default` through this file's scope
+  ## (resolveLiteral), so the identity lookup cannot miss.
+  newAnalyzedArgumentType(fileDef.scope.findModule(literal.default))

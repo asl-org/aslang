@@ -11,7 +11,7 @@
 ## pre-analyzed funcDef signatures are then read off the result via
 ## `findFunctionDefs`. Immune to aliased-import name mismatch.
 
-import results, strformat, tables
+import strformat, tables
 
 import ./resolver
 import ./filedef
@@ -25,14 +25,15 @@ proc newAnalyzedDefApp*(resolved: ResolvedApp,
     fileDefs: seq[AnalyzedDefFile]): AnalyzedDefApp =
   var fileDefIndex: Table[string, int]
   for index, fileDef in fileDefs:
+    assert(fileDef.path notin fileDefIndex, fmt"[BUG] - duplicate file def `{fileDef.path}` in the app def")
     fileDefIndex[fileDef.path] = index
   AnalyzedDefApp(resolved: resolved, fileDefs: fileDefs, fileDefIndex: fileDefIndex)
 
 proc resolved*(a: AnalyzedDefApp): ResolvedApp = a.resolved
 proc fileDefs*(a: AnalyzedDefApp): seq[AnalyzedDefFile] = a.fileDefs
 
-proc findFileDef*(appDef: AnalyzedDefApp, path: string): Result[AnalyzedDefFile, string] =
-  if path notin appDef.fileDefIndex:
-    err(fmt"file `{path}` not found")
-  else:
-    ok(appDef.fileDefs[appDef.fileDefIndex[path]])
+proc findFileDef*(appDef: AnalyzedDefApp, path: string): AnalyzedDefFile =
+  ## Identity lookup — phase A produced a file def for every resolved
+  ## file, so a miss is a compiler bug.
+  assert(path in appDef.fileDefIndex, fmt"[BUG] - file `{path}` missing from the app def")
+  appDef.fileDefs[appDef.fileDefIndex[path]]

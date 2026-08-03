@@ -5,7 +5,7 @@
 ## along the way carries a parser Module back-ref so nothing depends
 ## on another file's resolved form existing yet.
 
-import results, strformat, tables
+import strformat, tables
 
 import ./parser
 import files
@@ -18,10 +18,13 @@ type ResolvedApp* = ref object
 proc newResolvedApp*(files: seq[ResolvedFile]): ResolvedApp =
   var fileIndex: Table[parser.File, int]
   for id, file in files:
+    assert(file.parsed notin fileIndex, fmt"[BUG] - duplicate file `{file.path}` in the resolved app")
     fileIndex[file.parsed] = id
   ResolvedApp(files: files, fileIndex: fileIndex)
 
 proc files*(app: ResolvedApp): seq[ResolvedFile] = app.files
-proc findFile*(app: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
-  if file notin app.fileIndex: err(fmt"file `{file.path}` does not exist")
-  else: ok(app.files[app.fileIndex[file]])
+proc findFile*(app: ResolvedApp, file: parser.File): ResolvedFile =
+  ## Identity lookup — the resolver resolved every file the loader
+  ## produced, so a miss is a compiler bug.
+  assert(file in app.fileIndex, fmt"[BUG] - file `{file.path}` missing from the resolved app")
+  app.files[app.fileIndex[file]]

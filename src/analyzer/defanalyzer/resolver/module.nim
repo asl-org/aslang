@@ -37,7 +37,7 @@ proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: s
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   var funcDefs: seq[ResolvedFunctionDef]
   for id, function in functions:
-    assert(function.def notin funcDefIndex, fmt"NOTE: should be unreachable {function.def.asl}")
+    assert(function.def notin funcDefIndex, fmt"[BUG] - Resolver rejects duplicate input signatures ({function.def.asl})")
     funcDefIndex[function.def] = id
     funcDefs.add(function.def)
   ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions)

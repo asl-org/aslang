@@ -10,7 +10,7 @@ import argdef
 proc buildFieldIndex(fields: seq[ResolvedArgumentDef]): Table[Identifier, int] =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
-    assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name — should have been caught in parser")
+    assert(field.name notin fieldIndex, "[BUG] - Parser rejects duplicate field names")
     fieldIndex[field.name] = id
   return fieldIndex
 

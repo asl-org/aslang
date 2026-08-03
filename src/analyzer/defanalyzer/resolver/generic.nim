@@ -19,7 +19,7 @@ type ResolvedGeneric* = ref object
 proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): ResolvedGeneric =
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   for id, funcDef in funcDefs:
-    assert(funcDef notin funcDefIndex, "UNREACHABLE: generic resolution broke due to duplicated function definition")
+    assert(funcDef notin funcDefIndex, fmt"[BUG] - Resolver rejects duplicate input signatures ({funcDef.asl})")
     funcDefIndex[funcDef] = id
   ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs))
 

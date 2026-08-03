@@ -54,11 +54,11 @@ proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDefinition] = m.functi
 proc name*(m: AnalyzedDefModule): Identifier = m.resolved.name
 proc loc*(m: AnalyzedDefModule): Location = m.resolved.loc
 
-proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
-  if funcDef notin module.funcDefIndex:
-    err(fmt"{funcDef.loc} module `{module.name.asl}` does not have a function with name `{funcDef.name.asl}`")
-  else:
-    ok(module.functions[module.funcDefIndex[funcDef]].def)
+proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): AnalyzedFunctionDefinition =
+  ## Identity lookup — phase A indexed every resolver function
+  ## definition of this module, so a miss is a compiler bug.
+  assert(funcDef in module.funcDefIndex, fmt"[BUG] - {funcDef.loc} function `{funcDef.name.asl}` missing from module `{module.name.asl}`")
+  module.functions[module.funcDefIndex[funcDef]].def
 
 proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDefinition], string] =
   ## Overload-lookup entry point — returns every AnalyzedFunctionDefinition

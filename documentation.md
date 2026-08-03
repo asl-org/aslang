@@ -247,6 +247,14 @@ effects.
 
 ### Public functions
 
+Function overloads are distinguished by their input signature —
+the function name plus its argument types. Two functions in the
+same module (or funcDefs in the same generic) may not share an
+input signature, and the return type does not distinguish them:
+call sites could never disambiguate by arguments alone. The
+resolver rejects violations with a `duplicate function` error
+pointing at both declarations.
+
 `public func` exports the function across module/file boundaries.
 Without `public`, the function is module-internal: it is only
 callable from inside its own module, and it only counts toward

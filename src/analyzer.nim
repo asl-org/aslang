@@ -31,16 +31,12 @@ import ./analyzer/file
 import ./analyzer/app
 
 proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedData, string] =
-  let maybeModuleDef = fileCtx.findModule(argType.module, loc)
-  assert(maybeModuleDef.isOk, "[BUG] - Phase A ensures every analyzed argument type module is in the file scope")
-  let moduleDef = maybeModuleDef.get
+  let moduleDef = fileCtx.findModule(argType.module)
   assert(moduleDef.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
   ok(moduleDef.data.get)
 
 proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedStructDef, string] =
-  let maybeModuleDef = fileCtx.findModule(argType.module, loc)
-  assert(maybeModuleDef.isOk, "[BUG] - Phase A ensures every analyzed argument type module is in the file scope")
-  let moduleDef = maybeModuleDef.get
+  let moduleDef = fileCtx.findModule(argType.module)
   assert(moduleDef.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
   let dataDef = moduleDef.data.get
   case dataDef.kind:
@@ -49,9 +45,7 @@ proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgu
   of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found literal")
 
 proc extractUnionFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedUnionDef, string] =
-  let maybeModuleDef = fileCtx.findModule(argType.module, loc)
-  assert(maybeModuleDef.isOk, "[BUG] - Phase A ensures every analyzed argument type module is in the file scope")
-  let moduleDef = maybeModuleDef.get
+  let moduleDef = fileCtx.findModule(argType.module)
   assert(moduleDef.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
   let dataDef = moduleDef.data.get
   case dataDef.kind:
@@ -167,9 +161,7 @@ proc analyzeLiteralInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile
   of aatkGeneric:
     err(fmt"{init.loc} expected `{analyzedArgType.module.name.asl}` to be a module found generic")
   of aatkModule:
-    let maybeArgDefModule = fileCtx.findModule(analyzedArgType.module.module, init.loc)
-    assert(maybeArgDefModule.isOk, "[BUG] - Phase A ensures every analyzed argument type module is in the file scope")
-    let argDefModule = maybeArgDefModule.get
+    let argDefModule = fileCtx.findModule(analyzedArgType.module.module)
     assert(argDefModule.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
     let argDefData = argDefModule.data.get
     case argDefData.kind:
@@ -302,17 +294,13 @@ proc analyzeArgumentList(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileC
     err(message.join("\n"))
 
 proc analyzeFunctionCall*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: ResolvedFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let maybeTyp = fileDef.scope.findType(fncall.typ, fncall.loc)
-  assert(maybeTyp.isOk, "[BUG] - Resolver ensures that the function call receiver type exists")
-  let typ = maybeTyp.get
+  let typ = fileDef.scope.findType(fncall.typ)
   let access =
     case typ.kind:
     of rtkModule:
       if module.resolved == typ.module: faAll else: faPublic
     of rtkGeneric: faPublic
-  let maybeDefinedType = fileCtx.findType(typ, fncall.loc)
-  assert(maybeDefinedType.isOk, "[BUG] - Phase A analyzes every type in the file scope")
-  let definedType = maybeDefinedType.get
+  let definedType = fileCtx.findType(typ)
   let maybeFuncDefs = definedType.findFunctionDefs(fncall.parsed.name, fncall.parsed.args.len, access)
   assert(maybeFuncDefs.isOk, "[BUG] - Resolver validates every call target (name, arity, access) at resolve time")
   let funcDefs = maybeFuncDefs.get
@@ -425,9 +413,7 @@ proc analyzeUnionRef(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: A
   ## produces the analyzer-side equivalents. Empty in → empty out.
   ## Parser-Module → ResolvedModule via identity lookup on fileCtx —
   ## immune to aliased-import name mismatch.
-  let maybeResolvedModule = fileDef.scope.findModule(unionRef.module, unionRef.loc)
-  assert(maybeResolvedModule.isOk, "[BUG] - Resolver ensures that the union ref module exists")
-  let resolvedModule = maybeResolvedModule.get
+  let resolvedModule = fileDef.scope.findModule(unionRef.module)
   var analyzedImpls = newSeq[AnalyzedArgumentType](unionRef.impls.len)
   for i, resolvedImpl in unionRef.impls:
     analyzedImpls[i] = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), resolvedImpl)
@@ -515,9 +501,7 @@ proc analyzeStructRef(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: 
   ## into a ResolvedModule via `fileDef.scope.findModule` (identity-keyed) — the
   ## resolver keeps struct/union refs parser-level to break the ref
   ## cycle; analyzer types can hold the resolved view freely.
-  let maybeResolvedModule = fileDef.scope.findModule(structRef.module, structRef.loc)
-  assert(maybeResolvedModule.isOk, "[BUG] - Resolver ensures that the struct ref module exists")
-  let resolvedModule = maybeResolvedModule.get
+  let resolvedModule = fileDef.scope.findModule(structRef.module)
   var analyzedImpls = newSeq[AnalyzedArgumentType](structRef.impls.len)
   for i, resolvedImpl in structRef.impls:
     analyzedImpls[i] = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), resolvedImpl)
@@ -582,17 +566,15 @@ proc analyzeBareLiteral(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCt
     if expected.isSome:
       case expected.get.kind:
       of aatkModule: expected.get
-      of aatkGeneric: ? fileDef.defaultLiteralType(literal)
+      of aatkGeneric: fileDef.defaultLiteralType(literal)
     else:
-      ? fileDef.defaultLiteralType(literal)
+      fileDef.defaultLiteralType(literal)
 
   case concreteArgType.kind:
   of aatkGeneric:
     err(fmt"{literal.loc} expected a module `{concreteArgType.name.asl}` but found generic")
   of aatkModule:
-    let maybeArgDefModule = fileCtx.findModule(concreteArgType.module.module, literal.loc)
-    assert(maybeArgDefModule.isOk, "[BUG] - Phase A ensures every analyzed argument type module is in the file scope")
-    let argDefModule = maybeArgDefModule.get
+    let argDefModule = fileCtx.findModule(concreteArgType.module.module)
     assert(argDefModule.data.isSome, "[BUG] - Resolver ensures expression types are data modules")
     let argDefData = argDefModule.data.get
     case argDefData.kind:
@@ -648,9 +630,7 @@ proc analyzeStatement*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx
     ok(newAnalyzedStatement(analyzedMutation))
 
 proc analyzeUserFunction*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: ResolvedUserFunction): Result[AnalyzedUserFunction, string] =
-  let maybeFunctionDef = module.findFunctionDef(function.def)
-  assert(maybeFunctionDef.isOk, "[BUG] - Phase A indexes every resolver function definition")
-  let analyzedFunctionDef = maybeFunctionDef.get
+  let analyzedFunctionDef = module.findFunctionDef(function.def)
   var funcCtx = newAnalyzedFunctionContext(analyzedFunctionDef)
   assert(function.statements.len > 0, fmt"{function.loc} [BUG] empty user function must have been caught by the resolver")
 
@@ -666,9 +646,7 @@ proc analyzeUserFunction*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, file
     ok(newAnalyzedUserFunction(function, analyzedFunctionDef, analyzedStatements))
 
 proc analyzeExternFunction(moduleDef: AnalyzedDefModule, function: ResolvedExternFunction): Result[AnalyzedExternFunction, string] =
-  let maybeFunctionDef = moduleDef.findFunctionDef(function.def)
-  assert(maybeFunctionDef.isOk, "[BUG] - Phase A indexes every resolver function definition")
-  ok(newAnalyzedExternFunction(function, maybeFunctionDef.get))
+  ok(newAnalyzedExternFunction(function, moduleDef.findFunctionDef(function.def)))
 
 proc analyzeFunction(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: ResolvedFunction): Result[AnalyzedFunction, string] =
   case function.kind:
@@ -687,15 +665,11 @@ proc analyzeModule*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: A
   ok(newAnalyzedModule(module, analyzedFunctions))
 
 proc analyzeImportedType*(impFile: AnalyzedDefFile, impType: AnalyzedDefImportedType): Result[AnalyzedImportedType, string] =
-  let maybeImpType = impFile.findType(impType.typ, impType.loc)
-  assert(maybeImpType.isOk, "[BUG] - Phase A validates imported types against their source file")
-  let analyzedImpType = maybeImpType.get
+  let analyzedImpType = impFile.findType(impType.typ)
   ok(newAnalyzedImportedType(impType, analyzedImpType))
 
 proc analyzeImport*(appDef: AnalyzedDefApp, imp: AnalyzedDefImport): Result[AnalyzedImport, string] =
-  let maybeImpFile = appDef.findFileDef(imp.path)
-  assert(maybeImpFile.isOk, "[BUG] - Phase A indexes every file def by its path")
-  let impFile = maybeImpFile.get
+  let impFile = appDef.findFileDef(imp.path)
   var analyzedImpTypes: seq[AnalyzedImportedType]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeImportedType(impFile, impType)
@@ -708,14 +682,10 @@ proc analyzeFile(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile): Result[Analy
     let analyzedImport = ? analyzeImport(appDef, imp)
     analyzedImports.add(analyzedImport)
 
-  let maybeFileCtx = newAnalyzedFileContext(analyzedImports, fileDef.types)
-  assert(maybeFileCtx.isOk, "[BUG] - Phase A ensures per-file type bindings are conflict-free")
-  let fileCtx = maybeFileCtx.get
+  let fileCtx = newAnalyzedFileContext(analyzedImports, fileDef.types)
   var analyzedModules: seq[AnalyzedModule]
   for module in fileDef.resolved.modules:
-    let maybeModuleDef = fileCtx.findModule(module, module.loc)
-    assert(maybeModuleDef.isOk, "[BUG] - Phase A analyzes every module in the file")
-    let analyzedModuleDef = maybeModuleDef.get
+    let analyzedModuleDef = fileCtx.findModule(module)
     let analyzedModule = ? analyzeModule(appDef, fileDef, fileCtx, analyzedModuleDef)
     analyzedModules.add(analyzedModule)
   ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))

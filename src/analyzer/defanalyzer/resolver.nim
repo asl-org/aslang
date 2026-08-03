@@ -508,18 +508,33 @@ proc resolveModule(fileCtx: FileContext, module: Module): Result[ResolvedModule,
     else:
       none(ResolvedData)
 
+  # Input-signature uniqueness: two functions may not share a name +
+  # input types (the return type does not distinguish them — call
+  # sites could never disambiguate). ResolvedFunctionDef hashes by
+  # exactly that signature, so the seen-table catches violations.
+  var seenDefs: Table[ResolvedFunctionDef, Location]
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:
     let resolvedFunction = ? resolveFunction(fileCtx, typeCtx, function)
+    if resolvedFunction.def in seenDefs:
+      let prevLoc = seenDefs[resolvedFunction.def]
+      return err(fmt"{resolvedFunction.def.loc} duplicate function `{resolvedFunction.def.name.asl}` with the same input signature encountered, see previous declaration at {prevLoc}")
+    seenDefs[resolvedFunction.def] = resolvedFunction.def.loc
     resolvedFunctions.add(resolvedFunction)
 
   ok(newResolvedModule(module, resolvedData, resolvedFunctions))
 
 proc resolveGeneric(fileCtx: FileContext, generic: Generic): Result[ResolvedGeneric, string] =
   let typeCtx = newTypeContext(generic)
+  # Same input-signature uniqueness rule as resolveModule.
+  var seenDefs: Table[ResolvedFunctionDef, Location]
   var resolvedFuncDefs: seq[ResolvedFunctionDef]
   for def in generic.defs:
     let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeCtx, def)
+    if resolvedFuncDef in seenDefs:
+      let prevLoc = seenDefs[resolvedFuncDef]
+      return err(fmt"{resolvedFuncDef.loc} duplicate function `{resolvedFuncDef.name.asl}` with the same input signature encountered, see previous declaration at {prevLoc}")
+    seenDefs[resolvedFuncDef] = resolvedFuncDef.loc
     resolvedFuncDefs.add(resolvedFuncDef)
 
   ok(newResolvedGeneric(generic, resolvedFuncDefs))

@@ -16,7 +16,7 @@ proc buildGenericTypeIndex(generics: seq[ResolvedGenericArgumentType]): Table[Re
 proc buildVariantIndex(variants: seq[ResolvedVariant]): Table[Identifier, int] =
   var variantIndex: Table[Identifier, int]
   for id, variant in variants:
-    assert(variant.name notin variantIndex, "UNREACHABLE: duplicate variant — should have been caught in parser")
+    assert(variant.name notin variantIndex, "[BUG] - Parser rejects duplicate variants")
     variantIndex[variant.name] = id
   return variantIndex
 

@@ -537,12 +537,18 @@ Three phase-A invariants worth naming:
   of the module, decided by one index probe per required def. An
   impl with a mismatched signature is rejected at its declaration
   even if the function is never called.
-- **Lookups assert, never err.** Every name phase A looks up was
-  bound and validated by the resolver, so a failed lookup is a
-  compiler bug, not a user error — the walkers unwrap lookups behind
-  `assert "[BUG] - ..."` instead of propagating `err` (the deep
-  check's parity failures are the deliberate exception: new
-  validation, real user errors). The exported surface is
+- **Identity lookups assert, never err — on the types themselves.**
+  Every identity-keyed lookup (`findType` / `findModule` /
+  `findGeneric` on both FileContext rungs, `ResolvedFile.findType`,
+  `ResolvedApp.findFile`, `AnalyzedDefApp.findFileDef`,
+  `AnalyzedDefModule.findFunctionDef`) returns its value directly
+  with an `assert "[BUG] - ..."` inside: by construction callers can
+  only ask about identities the layer below bound, so a miss is a
+  compiler bug and no caller consumes an error path. The split is
+  principled — name-keyed lookups (resolve time, `findVariant`,
+  `findFunctionDefs`, `findImplDef`) keep `Result` because user
+  errors genuinely surface there; constraint-check failures are the
+  def analyzer's own user errors. The exported surface is
   deliberately narrow: `analyzeDefApp` (the pass entry) and
   `analyzeDefArgumentType` (reused by phase B for synthetic argument
   types); every other walker is private to the barrel.

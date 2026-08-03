@@ -10,14 +10,14 @@ import argdef
 proc buildFieldIndex(fields: seq[ResolvedArgumentDef]): Table[Identifier, int] =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
-    assert(field.name notin fieldIndex, "UNREACHABLE: duplicate field name — should have been caught in parser")
+    assert(field.name notin fieldIndex, "[BUG] - Parser rejects duplicate field names")
     fieldIndex[field.name] = id
   return fieldIndex
 
 proc buildGenericTypeIndex(generics: seq[ResolvedGenericArgumentType]): Table[ResolvedGenericArgumentType, int] =
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
   for id, generic in generics:
-    assert(generic notin genericTypeIndex, "UNREACHABLE: duplicate generic field — should have been caught in resolver")
+    assert(generic notin genericTypeIndex, "[BUG] - Resolver dedups generic slots first-seen")
     genericTypeIndex[generic] = id
   return genericTypeIndex
 
