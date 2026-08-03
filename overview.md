@@ -93,8 +93,9 @@ Tokenizer ─── seq[Token]
 Parser ────── App           (raw AST + uniqueness/structural checks
   │                          enforced in constructors, BFS multi-file
   │                          resolution, topo-sorted leaves-first,
-  │                          per-file typeIndex covering both imports
-  │                          and defined types)
+  │                          per-file typeIndex over locally-defined
+  │                          types + importedNameIndex over
+  │                          explicit-import bindings)
   ▼
 Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              name/shape resolution for every ArgumentType,
@@ -108,11 +109,11 @@ Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              `Module` identifier (not a ResolvedModule back-ref),
   │              so no ref-object cycle forms. Downstream layers
   │              that need the resolved module do an identity-keyed
-  │              lookup at their site (the analyzer's
-  │              `fileCtx.findModule(module, loc)` or the
-  │              resolver's `ResolvedFile.findModule` — keys hash
-  │              by source location, so aliased imports can never
-  │              miss).
+  │              lookup at their site (`fileCtx.findModule(module)`
+  │              on either FileContext rung, or
+  │              `ResolvedFile.findModule` — assert-backed direct
+  │              returns; keys hash by source location, so aliased
+  │              imports can never miss).
   ▼
 Analyzer ──── Two-pass over the resolved app.
   │
@@ -200,6 +201,10 @@ space, newline, alphabet, digit, utf8), `value` (the character), and
 Security: validates UTF-8 encoding and rejects bidirectional control
 codepoints, zero-width characters, and invisible Unicode (Trojan
 Source defense).
+
+A synthetic trailing newline token is appended to every token stream,
+so parsers can rely on "statement ends with a newline" holding for
+the last line of a file with no terminating newline.
 
 ### Phase 2: Parsing
 
@@ -400,12 +405,14 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   every `ResolvedModuleArgumentType` is well-formed at construction
   without any forward-reference dance. The historical shell /
   populate two-pass has been retired.
-- **Impl-list validation** — `resolveModuleArgumentType` calls
-  `satisfies` on every impl inference path (explicit
-  `struct(...)` header, inferred struct fields, inferred union
-  fields). The check verifies `(name, arity)` plus accessibility at
-  the parser level; signature parity is checked at def time by the
-  def analyzer's `checkImplSatisfies`, and
+- **Impl-list validation** — `resolveModuleArgumentType` first
+  checks the impls count against the require slots ("expects N impls
+  but found M"), then calls `satisfies` on each pair, on every impl
+  inference path (explicit `struct(...)` header, inferred struct
+  fields, inferred union fields). `satisfies` verifies `(name,
+  arity)` plus accessibility at the parser level; signature parity
+  is checked at def time by the def analyzer's identity-probe
+  constraint check (`findImplDef`), and
   `analyzeValueTypeAgainstDefType` still guards use sites.
 - **Generic param-list ownership** — each data-block type derives
   its own order-preserving `generics` seq at construction:
@@ -1322,6 +1329,14 @@ What the analyzer does today (all wired):
   case-arm bindings, struct + union initializers, literal
   initializers.
 
+**Phase B (body analysis) is the next fix target.** The phase-A
+hardening arc — the identity ladder with assert-backed lookups, the
+TypeContext/visibility machinery, definition-level constraint
+satisfaction, input-signature uniqueness — was groundwork: phase B's
+unification rebuild can now assume every def-level fact it consumes
+is already validated and identity-addressable. The first two TODOs
+below are the bugs that rebuild exists to fix.
+
 Focused TODOs still open:
 
 - **Equality vs unification for analyzed types**
@@ -1339,7 +1354,22 @@ Focused TODOs still open:
 - **Substitution chains in `merge` / `concrete()`**
   (`analyzer/defanalyzer/genericimplmap.nim`) — `Sample → K, K → u8` should
   collapse to `Sample → u8`; today `concrete()` does a single
-  `getOrDefault`. Pairs with the equality fix above.
+  `getOrDefault`, so a type rewritten through the map can come out
+  HALF-substituted (still carrying a free `K` where `u8` belongs).
+  Downstream hash comparisons then see two different types for the
+  same value — the visible symptom is `verifyUniformReturnType`
+  failing with "function does not return the expected return type"
+  on correct code (the match.asl integration failure). Pairs with
+  the equality fix above; the two land together as the phase-B
+  unification rebuild.
+- **Dummy location in `AnalyzedArgumentType.self`**
+  (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
+  reconstructs a `ResolvedGenericArgumentType` with a fabricated
+  `newLocation()` (0:0). No current consumer renders that loc
+  (constraint errors report the impl site; hashing ignores loc), but
+  any future diagnostic built from a reconstructed self-type will
+  point nowhere. Fix when the phase-B rebuild touches this path —
+  the self shape should carry the use site's loc.
 - **F32 / F64 / Pointer literal kinds** — Pointer literal positions
   still return a todo (`analyzer.nim`'s literal dispatch).
 - **Impl-map update from literal positions** — when a literal arg

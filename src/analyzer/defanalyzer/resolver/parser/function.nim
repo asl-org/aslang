@@ -73,7 +73,9 @@ type FunctionList* = ref object
 
 proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserError] =
   var functionIndex: Table[Identifier, Table[int, seq[int]]]
-  # TODO: ensure that there no duplicate function signatures
+  # Duplicate input signatures are NOT checked here — the parser
+  # cannot compare argument types by identity. resolveModule /
+  # resolveGeneric own that check (input-signature uniqueness).
   for index, function in functions:
     if function.name notin functionIndex:
       functionIndex[function.name] = initTable[int, seq[int]]()

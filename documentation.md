@@ -38,17 +38,30 @@ written import line.
 ## Lexical conventions
 
 - **Indentation-based.** Block structure follows indentation (default 2
-  spaces; configurable via `--indent-width=N` to 2 or 4). There are no
-  braces around blocks and no semicolons between statements.
+  spaces; configurable via `--indent-width=N` to 2 or 4). Each nesting
+  level must be indented by exactly `indent-width` additional spaces —
+  a line indented by anything other than an exact multiple is a parse
+  error. There are no braces around blocks and no semicolons between
+  statements.
 - **Newlines end statements.** A statement runs from the start of a line
   to the next newline; there is no line continuation.
 - **Comments.** `#` introduces a line comment; the rest of the line is
   ignored. There is no block-comment syntax.
 - **Identifiers.** Head: ASCII letter or `_`. Tail: ASCII letter, digit,
-  or `_`. Hyphens are not allowed.
-- **String literals.** Double-quoted, with the usual escape sequences.
+  or `_`. Hyphens are not allowed. Maximum length is 256 characters.
+  The `__asl` prefix is reserved for compiler-generated identifiers
+  and rejected in user code.
+- **String literals.** Double-quoted. Exactly four escape sequences
+  are recognized: `\\`, `\"`, `\n`, `\t` — nothing else (no `\r`,
+  no `\xNN`, no `\uXXXX`). Consequence: a string literal cannot
+  contain a carriage return, so CRLF (`\r\n`) line endings cannot be
+  written in source. Text destined for CRLF-expecting consumers must
+  get its `\r` bytes from the runtime (e.g. a stdlib helper), not
+  from a literal. This is a deliberate design decision, not a gap.
 - **Number literals.** Decimal integers (`42`, `-1`), decimal floats
-  (`3.14`, `1.5e3`, `-0.5`).
+  (`3.14`, `1.5e3`, `-0.5`; exponent marker `e` or `E`). Float
+  positions additionally accept the special IEEE-754 forms `nan`,
+  `inf`, `+inf`, `-inf` (`nan` cannot be sign-prefixed).
 - **Unicode safety.** The tokenizer rejects bidirectional control
   codepoints, zero-width characters, and invisible Unicode (Trojan
   Source defense).
@@ -355,6 +368,38 @@ The two modes cannot be combined: if a struct uses the explicit
 Attempting both is rejected with "struct with explicit generic
 requirements does not support generic fields".
 
+### Constraint satisfaction
+
+Writing `Container[T]` obligates `T` to satisfy the slot's generic.
+Satisfaction is checked in two stages, both before any function body
+is analyzed:
+
+- **At resolve time**: `T` must provide a function for every funcDef
+  the generic declares, matched by name and argument count, and
+  visible from the file where `Container[T]` is written (a private
+  function satisfies a constraint only inside its own module).
+- **At definition-analysis time**: the full signatures must match.
+  The generic's funcDefs are read with the generic's self-references
+  standing for `T`'s own declared shape, and `T` must declare exactly
+  those input types AND the exact return type. A `T` whose `compare`
+  returns the wrong type is rejected at the `Container[T]`
+  declaration even if `compare` is never called.
+
+Satisfaction is a property of the type itself, independent of what
+the slots happen to be bound to at any particular site.
+
+### Constraint generics must be in scope at use sites
+
+Resolving `Container[T]` reads Container's require slots by name in
+the file where the use site appears. That means the constraint
+generic itself (e.g. `Comparable`) must be visible there. Shorthand
+and `@std` imports bring every public type over, so this is
+automatic; with explicit imports you must list the constraint generic
+alongside the container — `import { Container, Comparable } from
+"./lib.asl"` — even if your code never names `Comparable` directly.
+Omitting it fails with "type `Comparable` does not exist in the
+scope" at the use site.
+
 Within the explicit header, every named generic must be distinct —
 `struct(K, K):` is rejected with "duplicate generic encountered".
 
@@ -515,8 +560,9 @@ bitset.bits = updated_bits
 ```
 
 `obj.field = expr` writes a struct field. This is a `Setter` statement
-(distinct from an `Assignment`, which binds a new local); equality of
-LHS and RHS types is not yet type-checked end-to-end.
+(distinct from an `Assignment`, which binds a new local). The analyzer
+enforces that the RHS type equals the field's declared type and
+rejects mismatches.
 
 ---
 

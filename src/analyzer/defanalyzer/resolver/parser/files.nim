@@ -117,7 +117,10 @@ proc newAslFile*(path: string, imports: seq[Import], types: seq[Type],
   ## the validators and builders above.
   ? validateNoExternFunctions(types)
   let allImports = ? insertStdImport(imports, vendorRoots)
-  ? validateNoSelfImport(imports, path)
+  # Validated AFTER @std injection — a vendor registered to point at
+  # this very file would otherwise smuggle a self-import past the
+  # check.
+  ? validateNoSelfImport(allImports, path)
   let importedNameIndex = ? buildImportedTypeNameIndex(imports)
   let typeNameIndex = ? buildTypeNameIndex(types)
   ? validateTypeNameConflict(importedNameIndex, typeNameIndex)

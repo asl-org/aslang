@@ -189,7 +189,9 @@ Binding: Identifier
 Identifier: [_a-zA-Z][_a-zA-Z0-9]*
 # `_` is a valid `Identifier`. Keyword exclusion (rejecting
 # `module` / `func` / `import` etc. as Identifiers) is a
-# parser-level concern, not encoded in this regex.
+# parser-level concern, not encoded in this regex — as are the
+# 256-character length cap and the reserved `__asl` prefix
+# (compiler-generated identifiers only).
 ```
 
 ## Design decisions worth preserving
@@ -237,9 +239,10 @@ contributors can find the *why* alongside the *what*.
   defining module (`FunctionAccess`: `faAll` vs `faPublic`). The
   rule is enforced at both checkpoints that look functions up: call
   sites (`resolveFunctionCall`) and generic-constraint satisfaction
-  (`satisfies` at resolve time, `checkImplSatisfies` at def time) —
-  so a private function can neither be called from another module
-  nor make its module satisfy a constraint written elsewhere.
+  (`satisfies` at resolve time; the def analyzer's identity-probe
+  check via `findImplDef` at def time) — so a private function can
+  neither be called from another module nor make its module satisfy
+  a constraint written elsewhere.
 
 - **`ArgumentType` splits at the resolver level, not the parser
   level.** From the parse text alone, `Foo` could be a module or a
@@ -288,9 +291,10 @@ contributors can find the *why* alongside the *what*.
 
 ## Relationship to the layer types
 
-Each pipeline phase's type module (`src/analyzer/resolver/parser/*`,
-`src/analyzer/resolver/*`, `src/analyzer/*`) is expected to trace
-back to this grammar. Renames
+Each pipeline phase's type module
+(`src/analyzer/defanalyzer/resolver/parser/*`,
+`src/analyzer/defanalyzer/resolver/*`, `src/analyzer/defanalyzer/*`,
+`src/analyzer/*`) is expected to trace back to this grammar. Renames
 land here first; then the code catches up. When a type appears in two
 layers (e.g. `Struct` at parser level, `ResolvedStruct` at resolver
 level), both are recognizable projections of the same grammar rule —

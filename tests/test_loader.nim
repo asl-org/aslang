@@ -5,7 +5,7 @@
 ## successful topological order, cycle detection, missing files,
 ## parent-directory escapes, and large-file rejection.
 
-import unittest, os, strutils, results
+import unittest, os, strutils, results, tables
 
 import analyzer
 import tutils
@@ -412,3 +412,21 @@ public module Caller:
     ], 2, vendorRoots)
     cleanupDir(userDir); cleanupDir(vendorDir)
     check r.isErr
+
+  test "vendor pointing at the importing file is a self-import":
+    # --vendor std:<entry file> auto-injects `import "@std"` resolving
+    # to the entry file itself; the self-import check runs on the
+    # post-injection list, so this is rejected like any other
+    # self-import.
+    let dir = writeFiles([("entry.asl", """
+module M:
+  func go(): u8
+    u8 0
+""")])
+    let entry = dir / "entry.asl"
+    var roots = initTable[string, string]()
+    roots["std"] = entry
+    let r = parse(entry, 2, false, roots)
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "importing the source file in itself")
