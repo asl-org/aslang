@@ -157,25 +157,39 @@ using-scope assert in the gap.
   (File.importedNameIndex has bindings, not targets), which is WHY
   the resolver-rung capture is needed.
 
-- **P3a [DECISION — no commit]** — rung-2 enrichment route for the
-  transitive case: (i) chain — rung-2 entries capture source
-  capability, rung-2 context construction threads the fileDef
-  accumulator (file-philosophy pure, more machinery); vs (ii)
-  app-wide identity index (Table[parser.LocalType,
-  ResolvedLocalType] built once in analyzeDefApp — identity is
-  app-unique by construction; less machinery, app-flavored).
-  UNDECIDED — user call.
+- **P3a [DECIDED 2026-08-04: provenance chain]** — rung-2 route for
+  the transitive case: chain over app-wide identity index. The
+  one-hop invariant makes it cheap: a module's requirement generic
+  is ALWAYS in its defining file's scope (the file referenced it to
+  define the module), so the hop is bounded, never recursive. The
+  index would have been the compiler's first API answering
+  questions no file is entitled to ask; the chain keeps "what can
+  this file see" structural.
 
-- **P3-pre-2 [STRUCTURAL-neutral, post-decision]** — build the chosen
-  rung-2 route (index or chain capture + threading). Additive,
-  unconsumed → neutral.
+- **P3-pre-2 [STRUCTURAL-neutral, post-decision]** — build the chain,
+  unconsumed → neutral. Two pieces: (a) AnalyzedDefImportedType
+  captures `impFile: ResolvedFile` (the source's resolved file,
+  already in hand at analyzeDefImport). A resolver-rung value —
+  freely referencable below defanalyzer/filecontext.nim, where
+  capturing AnalyzedDefFile or ResolvedFileContext would cycle.
+  (b) ResolvedFile gains an identity-keyed generic lookup spanning
+  its OWN types AND its import bindings (locals via typeIndex,
+  imports via the P3-pre-1-captured resolvedType), assert-backed by
+  the one-hop invariant. Identity keys are the point: the source
+  may import the contract under an alias, so its name-keyed rung-1
+  scope cannot answer for `requirement.generic.name` — identity
+  (hash-by-loc) is alias-immune.
 
-- **P3-swap [STRUCTURAL-neutral]** — the defanalyzer contract lookup
-  switches from `fileCtx.findGeneric(requirement.generic)` (using
-  scope) to the new route. Neutral by construction: for every
-  currently-legal program both routes return the same
-  ResolvedGeneric (the resolver's import rule still guarantees the
-  old route works); expectations untouched prove it.
+- **P3-swap [STRUCTURAL-neutral]** — the contract lookup in
+  analyzeDefModuleArgumentType dispatches on the module's own
+  scope entry: rtkLocal keeps `fileCtx.findGeneric(
+  requirement.generic)` (using scope IS defining scope); rtkImported
+  hops — `entry.imported.impFile.findGenericInScope(...)`. Neutral
+  by construction: for every currently-legal program both routes
+  return the same ResolvedGeneric (the resolver's import rule still
+  guarantees the old route works); expectations untouched prove it.
+  Nested module argument types hop per level through their own
+  module's source via the recursive analyzeDefArgumentType walk.
 
 - **P3-flip [BEHAVIORAL — the only one]** — requires for an imported
   type read straight off the captured resolved twin (its data def's
