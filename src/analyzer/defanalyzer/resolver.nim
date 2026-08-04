@@ -94,8 +94,9 @@ export types
 
 import ./resolver/imports
 import ./resolver/files
+import ./resolver/appcontext
 import ./resolver/app
-export imports, files, app
+export imports, files, appcontext, app
 
 
 # resolveArgumentType — single proc for both definition contexts; the
@@ -498,42 +499,39 @@ proc resolveType(fileCtx: FileContext, typ: LocalType): Result[ResolvedLocalType
     let resolvedModule = ? resolveModule(fileCtx, typ.module)
     ok(newResolvedLocalType(resolvedModule))
 
-proc resolveExplicitImport(imp: Import, impFile: parser.File, srcFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
+proc resolveExplicitImport(imp: Import, impFile: parser.File, resolvedImpFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
   var resolvedImpTypes: seq[ResolvedImportedType]
   for impType in imp.names:
     let exportedType = ? impFile.findExportedType(impType.name)
-    let resolvedImpType = newResolvedImportedType(impType, srcFile.findType(exportedType))
+    let resolvedImpType = newResolvedImportedType(impType, resolvedImpFile.findType(exportedType))
     resolvedImpTypes.add(resolvedImpType)
   ok(resolvedImpTypes)
 
-proc resolveShorthandImport(imp: Import, impFile: parser.File, srcFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
+proc resolveShorthandImport(imp: Import, impFile: parser.File, resolvedImpFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
   var resolvedImpTypes: seq[ResolvedImportedType]
   for typ in impFile.publicTypes:
-    let resolvedImpType = newResolvedImportedType(srcFile.findType(typ))
+    let resolvedImpType = newResolvedImportedType(resolvedImpFile.findType(typ))
     resolvedImpTypes.add(resolvedImpType)
   ok(resolvedImpTypes)
 
-proc resolveImport(app: App, srcFiles: Table[string, ResolvedFile], imp: Import): Result[ResolvedImport, string] =
-  let impFile = ? app.findFile(imp.absPath)
-  # Topo order (BFS leaves-first) guarantees every import's source
-  # file was resolved before its importer — a miss is a compiler bug.
-  assert(impFile.path in srcFiles, fmt"[BUG] - {imp.loc} file `{impFile.path}` not resolved before its importer")
-  let srcFile = srcFiles[impFile.path]
+proc resolveImport(appCtx: AppContext, imp: Import): Result[ResolvedImport, string] =
+  let impFile = ? appCtx.findFile(imp.absPath)
+  let resolvedImpFile = appCtx.findImportedFile(impFile.path)
   let resolvedImpTypes =
     case imp.kind:
-    of ikExplicit: ? resolveExplicitImport(imp, impFile, srcFile)
-    of ikShorthand: ? resolveShorthandImport(imp, impFile, srcFile)
+    of ikExplicit: ? resolveExplicitImport(imp, impFile, resolvedImpFile)
+    of ikShorthand: ? resolveShorthandImport(imp, impFile, resolvedImpFile)
   ok(newResolvedImport(imp, impFile, resolvedImpTypes))
 
-proc resolveImports(app: App, srcFiles: Table[string, ResolvedFile], imports: seq[Import]): Result[seq[ResolvedImport], string] =
+proc resolveImports(appCtx: AppContext, imports: seq[Import]): Result[seq[ResolvedImport], string] =
   var resolvedImports: seq[ResolvedImport]
   for imp in imports:
-    let resolvedImport = ? resolveImport(app, srcFiles, imp)
+    let resolvedImport = ? resolveImport(appCtx, imp)
     resolvedImports.add(resolvedImport)
   ok(resolvedImports)
 
-proc resolveFile(app: App, srcFiles: Table[string, ResolvedFile], file: parser.File): Result[ResolvedFile, string] =
-  let resolvedImports = ? resolveImports(app, srcFiles, file.imports)
+proc resolveFile(appCtx: AppContext, file: parser.File): Result[ResolvedFile, string] =
+  let resolvedImports = ? resolveImports(appCtx, file.imports)
   var fileCtx = ? newFileContext(resolvedImports, file.types)
 
   var resolvedTypes: seq[ResolvedLocalType]
@@ -544,10 +542,8 @@ proc resolveFile(app: App, srcFiles: Table[string, ResolvedFile], file: parser.F
   ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileCtx))
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
-  var resolvedFiles: seq[ResolvedFile]
-  var srcFiles: Table[string, ResolvedFile]
-  for file in app.files:
-    let resolvedFile = ? resolveFile(app, srcFiles, file)
-    resolvedFiles.add(resolvedFile)
-    srcFiles[resolvedFile.path] = resolvedFile
-  ok(newResolvedApp(resolvedFiles))
+  let appCtx = newAppContext(app)
+  for file in appCtx.files:
+    let resolvedFile = ? resolveFile(appCtx, file)
+    appCtx.add(resolvedFile)
+  ok(newResolvedApp(appCtx.resolvedFiles))
