@@ -74,6 +74,9 @@ export filedef
 import ./defanalyzer/appdef
 export appdef
 
+import ./defanalyzer/appcontext
+export appcontext
+
 import ./defanalyzer/importedtypedef
 export importedtypedef
 
@@ -391,18 +394,18 @@ proc analyzeDefType(fileCtx: ResolvedFileContext, typ: ResolvedLocalType): Resul
 proc analyzeDefImportedType(impFile: ResolvedFile, impType: ResolvedImportedType): Result[AnalyzedDefImportedType, string] =
   ok(newAnalyzedDefImportedType(impType, impFile.findType(impType.typ)))
 
-proc analyzeDefImport(app: ResolvedApp, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
-  let impFile = app.findFile(imp.impFile)
+proc analyzeDefImport(appCtx: ResolvedAppContext, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
+  let impFile = appCtx.findFile(imp.impFile)
   var analyzedImpTypes: seq[AnalyzedDefImportedType]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeDefImportedType(impFile, impType)
     analyzedImpTypes.add(analyzedImportedType)
   ok(newAnalyzedDefImport(imp, analyzedImpTypes))
 
-proc analyzeDefFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFile, string] =
+proc analyzeDefFile(appCtx: ResolvedAppContext, file: ResolvedFile): Result[AnalyzedDefFile, string] =
   var analyzedImports: seq[AnalyzedDefImport]
   for imp in file.imports:
-    let analyzedImport = ? analyzeDefImport(app, imp)
+    let analyzedImport = ? analyzeDefImport(appCtx, imp)
     analyzedImports.add(analyzedImport)
 
   let fileCtx = newResolvedFileContext(analyzedImports, file.types)
@@ -420,8 +423,8 @@ proc analyzeDefFile(app: ResolvedApp, file: ResolvedFile): Result[AnalyzedDefFil
 # ============================================================
 
 proc analyzeDefApp*(app: ResolvedApp): Result[AnalyzedDefApp, string] =
-  var analyzedFileDefinitions: seq[AnalyzedDefFile]
-  for file in app.files:
-    let analyzedFileDefinition = ? analyzeDefFile(app, file)
-    analyzedFileDefinitions.add(analyzedFileDefinition)
-  ok(newAnalyzedDefApp(app, analyzedFileDefinitions))
+  let appCtx = newResolvedAppContext(app)
+  for file in appCtx.files:
+    let analyzedFileDefinition = ? analyzeDefFile(appCtx, file)
+    appCtx.add(analyzedFileDefinition)
+  ok(newAnalyzedDefApp(app, appCtx.fileDefs))
