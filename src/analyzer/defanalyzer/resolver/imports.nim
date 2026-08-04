@@ -1,29 +1,34 @@
-## Import resolution. ResolvedImportedType captures the (name,
-## binding, target parser LocalType) triple for a single imported
-## name; ResolvedImport bundles the target file with the seq of
-## resolved imported names. Both are used by the file scope built in
-## decls.nim.
+## Import resolution. ResolvedImportedType is the LINKED binding for
+## a single imported name: the (name, binding) pair plus the source
+## file's resolved twin, captured at link time — topo order (BFS
+## leaves-first) guarantees the source file resolved before its
+## importer. The target parser LocalType is derived from the twin
+## (`resolvedType.parsed`), never stored separately. ResolvedImport
+## bundles the target file with the seq of resolved imported names.
+## Both are used by the file scope built in decls.nim.
 
 import ./parser
+import types
 
 # ResolvedImportedType
 type ResolvedImportedType* = ref object
   parsed: ImportedType
-  typ: LocalType
+  resolvedType: ResolvedLocalType
 
-proc newResolvedImportedType*(parsed: ImportedType, typ: LocalType): ResolvedImportedType =
-  ResolvedImportedType(parsed: parsed, typ: typ)
+proc newResolvedImportedType*(parsed: ImportedType, resolvedType: ResolvedLocalType): ResolvedImportedType =
+  ResolvedImportedType(parsed: parsed, resolvedType: resolvedType)
 
 # TODO: Fix the location mess up for error reporting
-proc newResolvedImportedType*(typ: LocalType): ResolvedImportedType =
-  let parsed = newImportedType(typ.name)
-  ResolvedImportedType(parsed: parsed, typ: typ)
+proc newResolvedImportedType*(resolvedType: ResolvedLocalType): ResolvedImportedType =
+  let parsed = newImportedType(resolvedType.name)
+  ResolvedImportedType(parsed: parsed, resolvedType: resolvedType)
 
 proc parsed*(t: ResolvedImportedType): ImportedType = t.parsed
 proc name*(t: ResolvedImportedType): Identifier = t.parsed.name
 proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding
 proc loc*(t: ResolvedImportedType): Location = t.parsed.binding.loc
-proc typ*(t: ResolvedImportedType): LocalType = t.typ
+proc typ*(t: ResolvedImportedType): LocalType = t.resolvedType.parsed
+proc resolvedType*(t: ResolvedImportedType): ResolvedLocalType = t.resolvedType
 
 # ResolvedImport
 type ResolvedImport* = ref object
