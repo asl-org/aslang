@@ -98,7 +98,8 @@ proc analyzeDefGenericArgumentType(fileCtx: ResolvedFileContext, genericArgType:
 proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
 proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
-  let module = fileCtx.findModule(argType.module)
+  let moduleEntry = fileCtx.findType(newLocalType(argType.module))
+  let module = moduleEntry.localType.module
   let requires = module.dataDef.requires
   assert(requires.len == argType.impls.len, "[BUG] - Resolver ensures impls match the module's require slots")
 
@@ -106,7 +107,14 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
   for (requirement, impl) in zip(requires, argType.impls):
     let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
     analyzedImpls.add(analyzedImpl)
-    let baseGeneric = fileCtx.findGeneric(requirement.generic)
+    # A requirement's contract generic lives in the scope of the file
+    # that DEFINES the module — for a local module that is this very
+    # fileCtx; for an imported one, hop through the captured source
+    # file (identity-keyed, so a source-side import alias can't miss).
+    let baseGeneric =
+      case moduleEntry.kind:
+      of rtkLocal: fileCtx.findGeneric(requirement.generic)
+      of rtkImported: moduleEntry.imported.impFile.findGenericInScope(requirement.generic)
     # Contracts compare at DEFINITION level: self-references become the
     # impl's self shape (`Array[Comparable]`, not the site-bound
     # `Array[u8]`) so the concretized defs land in the impl's own
