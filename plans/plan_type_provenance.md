@@ -140,12 +140,22 @@ using-scope assert in the gap.
   capture, fork-INDEPENDENT (the P3a fork concerns rung 2 only):
   `resolve()` threads its accumulated ResolvedFiles into
   resolveFile → resolveImports → resolveImport (topo order
-  guarantees presence); the import binding captures the source's
-  FileContext (or ResolvedFile) at link time. Nothing consumes the
-  captured data yet → zero behavior change, zero expectation edits.
-  Note: parser-level hops dead-end transitively (File.importedNameIndex
-  has bindings, not targets), which is WHY the resolver-rung capture
-  is needed.
+  guarantees presence); the import binding (ResolvedImportedType)
+  captures the source's **ResolvedLocalType** at link time — one
+  assert-backed identity lookup, `srcFile.findType(typ)`. NOT the
+  source's FileContext: the defining file already derived every
+  require slot when it resolved itself (ResolvedStructDef.generics
+  holds the underlying parser Generics, unwrapped through
+  `.localType` by the source's own inference — import-chain
+  independent), so capturing scope to re-run inference would
+  recompute what the source already stored. This also makes rung 1
+  symmetric with rung 2, whose binding already carries the resolved
+  twin (AnalyzedDefImportedType.typ: ResolvedLocalType). No cycle:
+  nothing in types.nim's closure imports imports.nim. Nothing
+  consumes the captured data yet → zero behavior change, zero
+  expectation edits. Note: parser-level hops dead-end transitively
+  (File.importedNameIndex has bindings, not targets), which is WHY
+  the resolver-rung capture is needed.
 
 - **P3a [DECISION — no commit]** — rung-2 enrichment route for the
   transitive case: (i) chain — rung-2 entries capture source
@@ -167,9 +177,13 @@ using-scope assert in the gap.
   ResolvedGeneric (the resolver's import rule still guarantees the
   old route works); expectations untouched prove it.
 
-- **P3-flip [BEHAVIORAL — the only one]** — inferGenerics + shallow
-  satisfies derive requires against the DEFINING file via the
-  captured source scope; the constraint-generic import rule DIES.
+- **P3-flip [BEHAVIORAL — the only one]** — requires for an imported
+  type read straight off the captured resolved twin (its data def's
+  already-derived generics); local types keep today's fileCtx
+  derivation, which is both correct there (using scope IS the
+  defining scope) and necessary (in-file cycles mean the local twin
+  may not exist yet mid-pass). The constraint-generic import rule
+  DIES.
   Contains exactly: the derivation switch, the flagship test
   (`Container[u8]` without importing Comparable compiles), test
   expectation updates forced by the behavior change, and the doc
