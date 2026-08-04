@@ -394,9 +394,11 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   filters by it at every layer. Scope lookups live with their owning type:
   name-keyed `findType` / `findModule` / `findGeneric` on `FileContext`
   (filecontext.nim, the name→parser-Type bridge), identity-keyed
-  `findType` / `findModule` / `findGeneric` on `ResolvedFile`
-  (files.nim), and identity-keyed `findFile` / `findType` on
-  `ResolvedApp` (app.nim).
+  `findType` / `findModule` / `findGeneric` plus the scope-spanning
+  `findGenericInScope` on `ResolvedFile` (files.nim), identity-keyed
+  `findFile` / `findType` on `ResolvedApp` (app.nim), and path-keyed
+  `findImportedFile` on `AppContext` (appcontext.nim — the
+  resolve-time accumulator that owns the topo-order assert).
 - **Single-pass walk per app** (files come topo-sorted leaves-first
   from the parser's multi-file `parse*` entry, so imports are always
   resolved before use). For
@@ -554,6 +556,7 @@ Three phase-A invariants worth naming:
   Every identity-keyed lookup (`findType` / `findModule` /
   `findGeneric` on both FileContext rungs, `ResolvedFile.findType`,
   `ResolvedApp.findFile`, `AnalyzedDefApp.findFileDef`,
+  `AppContext.findImportedFile`, `ResolvedFile.findGenericInScope`,
   `AnalyzedDefModule.findFunctionDef`) returns its value directly
   with an `assert "[BUG] - ..."` inside: by construction callers can
   only ask about identities the layer below bound, so a miss is a
@@ -835,6 +838,16 @@ src/
                                    the per-file scopes, not the app.
                                    The actor `resolve*` proc lives
                                    on the facade.
+    appcontext.nim                 AppContext — the resolver's
+                                   app-level accumulator: parsed App
+                                   + ResolvedFiles added as they
+                                   land, behind a path-keyed
+                                   findImportedFile (owns the
+                                   topo-order assert the import-
+                                   binding capture relies on).
+                                   `resolve*` builds it, add()s per
+                                   file, projects the seq into
+                                   newResolvedApp at the end.
 
     parser.nim                     parser layer — combinator machinery
                                    (Spec[T], Parser, oneOf / any /
@@ -1076,6 +1089,13 @@ src/
     appdef.nim                     AnalyzedDefApp (fileDefs +
                                    path-keyed fileDefIndex +
                                    findFileDef).
+    appcontext.nim                 ResolvedAppContext — phase A's
+                                   app-level accumulator (ResolvedApp
+                                   + AnalyzedDefFiles added as they
+                                   land, path-indexed); analyzeDefApp
+                                   builds it and projects the seq
+                                   into newAnalyzedDefApp. The rung-2
+                                   twin of the resolver's AppContext.
     importedtypedef.nim            AnalyzedDefImportedType (binding →
                                    ResolvedLocalType).
     importdef.nim                  AnalyzedDefImport (resolved
@@ -1182,6 +1202,12 @@ src/
     app.nim                        AnalyzedApp (resolved + files) —
                                    the handle downstream codegen will
                                    thread through.
+    appcontext.nim                 AnalyzedAppContext — phase B's
+                                   app-level accumulator (the phase-A
+                                   AnalyzedDefApp + AnalyzedFiles
+                                   added as they land, path-indexed);
+                                   analyze* builds it and projects
+                                   the seq into newAnalyzedApp.
 
 examples/
   base.aslr                        standard library definition (extern
@@ -1289,7 +1315,7 @@ The **Analyzer phase is functionally complete** — `analyze*` walks
 the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
 holds a type-rich representation of every value, expression, and
 statement in each function body. Integration suite at **33/35**;
-unit suite at **340/340**. Recent structural work: the two-pass
+unit suite at **350/350**. Recent structural work: the two-pass
 analyzer recovery (plans/plan_analyzer_two_pass.md), the
 identity-based lookup migration
 (plans/plan_identity_based_lookups.md +

@@ -1,8 +1,9 @@
 ## Phase-A `AnalyzedLocalType` — tagged union over the two defined-
 ## type kinds (module / generic). Phase-B module/generic lookups go
-## through `AnalyzedDefApp.findDefinedType(ResolvedLocalType)`
-## (app-level, identity-keyed); this file just owns the variant
-## itself + the per-defined-type function-overload accessor.
+## through `AnalyzedFileContext.findType(ResolvedLocalType)`
+## (per-file, identity-keyed, spans imports + locals) or the
+## local-only `AnalyzedDefFile.findType`; this file just owns the
+## variant itself + the per-defined-type function-overload accessor.
 
 import results, strformat
 
