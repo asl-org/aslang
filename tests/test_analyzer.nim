@@ -233,6 +233,60 @@ module M:
     cleanupDir(dir)
     check r.isOk
 
+suite "analyzer — cross-file constraint provenance":
+
+  # Three-file chain: the contract (Comparable) lives in c.asl, the
+  # container (Pair) in b.asl, the use site in entry.asl — which
+  # imports only Pair and its own impl deps, never Comparable. The
+  # flagship test in the happy-path suite covers the contract-LOCAL
+  # branch of findGenericInScope (Any is defined in base.aslr
+  # itself).
+  #
+  # KNOWN BUG (recorded in overview.md "What's Next"): the POSITIVE
+  # transitive cases — instantiating Pair[Impl] when the contract
+  # is not in the use site's scope — currently crash on a phase-A
+  # assert re-entered from phase B (analyzeStructInitializer
+  # re-analyzes Pair's field types against the USING file's scope).
+  # Those tests land together with the phase-B fix.
+
+  test "impl missing the contract function is rejected with the contract's name":
+    # BadImpl has no compare. The error must still name the contract
+    # and the missing function even though `Comparable` is not in
+    # the use site's scope.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8 } from "./c.asl"
+import { Pair } from "./b.asl"
+
+public module BadImpl:
+  struct:
+    x: u8
+
+module N:
+  func make(x: BadImpl): Pair[BadImpl]
+    Pair[BadImpl] { value: x }
+"""),
+      ("b.asl", """
+import { Comparable } from "./c.asl"
+
+public module Pair:
+  struct:
+    value: Comparable
+"""),
+      ("c.asl", """
+public module u8:
+  literal: "u8"
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): u8
+""")
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "BadImpl")
+    check errorContains(r.error, "compare")
+    check errorContains(r.error, "Comparable")
+
 suite "analyzer — error propagation":
 
   test "resolver errors propagate through analyze*":

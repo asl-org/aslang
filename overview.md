@@ -1394,6 +1394,31 @@ Focused TODOs still open:
   on correct code (the match.asl integration failure). Pairs with
   the equality fix above; the two land together as the phase-B
   unification rebuild.
+- **Phase-B re-entries analyze DEF-side argtypes in the USING
+  file's scope** — found by the cross-file provenance tests
+  (test_analyzer.nim documents the repro). Body walkers re-enter
+  `analyzeDefArgumentType(fileDef.scope, ...)` on an imported
+  module's OWN definition types — struct/variant field types
+  (`analyzeStructInitializer`, `analyzeUnionCasePattern`) and union
+  generic slots — so a field typed by the module's contract generic
+  (`Pair { value: Comparable }`) hits
+  `analyzeDefGenericArgumentType` → `fileCtx.findGeneric` against
+  the use site's context and crashes on the phase-A `[BUG]` assert
+  when the contract legitimately isn't imported there (legal since
+  the P3-flip). The existing suite never hit it because every test
+  container is `Array` with an explicit phantom header — no
+  generic-typed field. Symptom chain: `Pair[Impl] { value: x }` in
+  a file that imports Pair but not Comparable → AssertionDefect
+  "type `Comparable` missing from the file context". Two fix
+  routes, both P3-shaped: read the stored twin (the defining file
+  already analyzed its own fields — B's `AnalyzedDefModule`
+  carries the `AnalyzedArgumentType`s; reachable via
+  `appDef.findFileDef(entry.imported.impFile.path)`) or route the
+  re-entry's fileCtx to the owner's scope by module-entry
+  provenance, mirroring the P3-swap dispatch. Site-WRITTEN
+  argtypes (initializer/ref impl lists, synthetic literal types)
+  stay in the use-site scope — only def-side re-entries move.
+  Lands with the phase-B unification rebuild.
 - **Dummy location in `AnalyzedArgumentType.self`**
   (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
   reconstructs a `ResolvedGenericArgumentType` with a fabricated
