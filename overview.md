@@ -407,14 +407,18 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   every `ResolvedModuleArgumentType` is well-formed at construction
   without any forward-reference dance. The historical shell /
   populate two-pass has been retired.
-- **Impl-list validation** — `resolveModuleArgumentType` first
-  checks the impls count against the require slots ("expects N impls
-  but found M"), then calls `satisfies` on each pair, on every impl
-  inference path (explicit `struct(...)` header, inferred struct
-  fields, inferred union fields). `satisfies` verifies `(name,
+- **Impl-list validation** — `resolveModuleArgumentType` derives the
+  require slots in the module's DEFINING scope: a local module via
+  `inferGenerics` in this file's context (explicit `struct(...)`
+  header or inferred struct/union fields), an imported module by
+  reading the slots off the binding's captured resolved twin — so
+  the contract generic need not be imported at the use site. It then
+  checks the impls count ("expects N impls but found M") and calls
+  `satisfies` on each pair. `satisfies` verifies `(name,
   arity)` plus accessibility at the parser level; signature parity
   is checked at def time by the def analyzer's identity-probe
-  constraint check (`findImplDef`), and
+  constraint check (`findImplDef`), which finds the contract through
+  the imported module's source file (`findGenericInScope`), and
   `analyzeValueTypeAgainstDefType` still guards use sites.
 - **Generic param-list ownership** — each data-block type derives
   its own order-preserving `generics` seq at construction:
@@ -1400,8 +1404,9 @@ Focused TODOs still open:
   only two values); it needs a home that respects the pure-proc
   discipline, which is why it is deliberately deferred rather than
   bolted on. The same theme runs through every phase — the
-  resolver's `inferGenerics` re-derives require slots at each use
-  site, phase B re-concretizes per call — so this line item stands
+  resolver's `inferGenerics` re-derives require slots at each
+  local-module use site (imported modules read the twin's stored
+  slots), phase B re-concretizes per call — so this line item stands
   in for a dedicated caching pass over the whole pipeline.
   Priority order is settled: memory-safe C code generation first,
   then the performance pass.

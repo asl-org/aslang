@@ -145,7 +145,18 @@ proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: Ar
 # resolved.
 
 proc resolveModuleArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType, argModule: Module, dataDef: DataDef): Result[ResolvedModuleArgumentType, string] =
-  let requires = ? fileCtx.inferGenerics(dataDef)
+  # Require slots derive in the module's DEFINING scope. A local
+  # module derives here — this fileCtx IS its defining scope, and its
+  # resolved twin may not exist yet mid-pass (in-file cycles). An
+  # imported module reads the slots off its captured twin, already
+  # derived by the source file — the contract generic need not be in
+  # the importer's scope.
+  let entry = ? fileCtx.findType(argType.root)
+  assert(entry.localType.kind == ltkModule and entry.localType.module == argModule, fmt"[BUG] - {argType.loc} argument type root `{argType.root.asl}` does not name module `{argModule.name.asl}`")
+  let requires =
+    case entry.kind:
+    of tkLocal: ? fileCtx.inferGenerics(dataDef)
+    of tkImported: entry.imported.resolvedType.module.dataDef.requires.mapIt(it.generic)
   if argType.impls.len != requires.len:
     err(fmt"{argType.loc} type `{argModule.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
   else:

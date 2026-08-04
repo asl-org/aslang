@@ -103,12 +103,29 @@ public generic Any:
 
   test "Array[u8] argument type analyzes when u8 implements Any":
     # Verifies the analyzer's generic-constraint check: Array requires
-    # Any, u8 supplies the Any funcDefs (byte_size in Base). `Any`
-    # must be in scope so the analyzer can look up the required
-    # generic when iterating Array's requires.
+    # Any, u8 supplies the Any funcDefs (byte_size in Base). `Any` is
+    # imported here but no longer has to be — see the next test.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
 import { Array, Any, u8, u32 } from "./base.aslr"
+
+module N:
+  struct:
+    a: Array[u8]
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "constraint check hops to the defining file for the contract":
+    # `Any` is NOT imported: the resolver reads Array's require slots
+    # off the captured twin, and the def analyzer's deep check finds
+    # the contract generic through the imported module's source file
+    # (findGenericInScope) instead of this file's scope.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { Array, u8 } from "./base.aslr"
 
 module N:
   struct:

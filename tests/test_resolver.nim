@@ -346,6 +346,22 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
+  test "imported container's contract generic need not be imported":
+    # The require slot (Any) derives in base.aslr — the DEFINING
+    # file — so the importer names only what it writes: Array and u8.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Array } from "./base.aslr"
+
+public module M:
+  public func first(items: Array[u8]): u8
+    u8 0
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
 suite "resolver — name resolution errors":
 
   test "unknown type is reported":

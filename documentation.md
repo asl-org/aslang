@@ -368,6 +368,14 @@ The two modes cannot be combined: if a struct uses the explicit
 Attempting both is rejected with "struct with explicit generic
 requirements does not support generic fields".
 
+Within the explicit header, every named generic must be distinct —
+`struct(K, K):` is rejected with "duplicate generic encountered".
+
+Unions do NOT have an equivalent explicit-header form. A union's
+generic parameters are always inferred from its variant field types,
+in first-seen order across variants (repeated names keep their
+original slot; new names take the next).
+
 ### Constraint satisfaction
 
 Writing `Container[T]` obligates `T` to satisfy the slot's generic.
@@ -385,6 +393,12 @@ is analyzed:
   returns the wrong type is rejected at the `Container[T]`
   declaration even if `compare` is never called.
 
+The constraint generic itself does not need to be in scope at the
+use site. Require slots derive in the file that DEFINES the module,
+so `import { Container } from "./lib.asl"` suffices even though
+Container's slots name `Comparable` — the imported binding carries
+its contract.
+
 Satisfaction is a property of the type itself, independent of what
 the slots happen to be bound to at any particular site.
 
@@ -393,32 +407,12 @@ the slots happen to be bound to at any particular site.
 A `public module`'s type parameters are part of its public
 interface. If a require slot names a non-public generic — whether
 via an explicit `struct(G):` header or inferred from a field typed
-`G` — the module is unusable by every importer (they would need the
-constraint generic in scope and cannot import a private one). The
-resolver rejects this at the defining module: "public module `M`
-requires non-public generic `G` — a generic named in a public
-module's type parameters must be public". Private modules may use
-private generics freely.
-
-### Constraint generics must be in scope at use sites
-
-Resolving `Container[T]` reads Container's require slots by name in
-the file where the use site appears. That means the constraint
-generic itself (e.g. `Comparable`) must be visible there. Shorthand
-and `@std` imports bring every public type over, so this is
-automatic; with explicit imports you must list the constraint generic
-alongside the container — `import { Container, Comparable } from
-"./lib.asl"` — even if your code never names `Comparable` directly.
-Omitting it fails with "type `Comparable` does not exist in the
-scope" at the use site.
-
-Within the explicit header, every named generic must be distinct —
-`struct(K, K):` is rejected with "duplicate generic encountered".
-
-Unions do NOT have an equivalent explicit-header form. A union's
-generic parameters are always inferred from its variant field types,
-in first-seen order across variants (repeated names keep their
-original slot; new names take the next).
+`G` — the module's contract references a type its importers can
+never see or name: signatures and constraint errors would point at
+an invisible type. The resolver rejects this at the defining module:
+"public module `M` requires non-public generic `G` — a generic named
+in a public module's type parameters must be public". Private
+modules may use private generics freely.
 
 ---
 
