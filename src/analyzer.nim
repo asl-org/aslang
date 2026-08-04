@@ -28,6 +28,7 @@ import ./analyzer/filecontext
 import ./analyzer/importedtype
 import ./analyzer/imports
 import ./analyzer/file
+import ./analyzer/appcontext
 import ./analyzer/app
 
 proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedData, string] =
@@ -662,32 +663,31 @@ proc analyzeImportedType*(impFile: AnalyzedDefFile, impType: AnalyzedDefImported
   let analyzedImpType = impFile.findType(impType.typ)
   ok(newAnalyzedImportedType(impType, analyzedImpType))
 
-proc analyzeImport*(appDef: AnalyzedDefApp, imp: AnalyzedDefImport): Result[AnalyzedImport, string] =
-  let impFile = appDef.findFileDef(imp.path)
+proc analyzeImport*(appCtx: AnalyzedAppContext, imp: AnalyzedDefImport): Result[AnalyzedImport, string] =
+  let impFile = appCtx.findFileDef(imp.path)
   var analyzedImpTypes: seq[AnalyzedImportedType]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeImportedType(impFile, impType)
     analyzedImpTypes.add(analyzedImportedType)
   ok(newAnalyzedImport(imp, analyzedImpTypes))
 
-proc analyzeFile(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile): Result[AnalyzedFile, string] =
+proc analyzeFile(appCtx: AnalyzedAppContext, fileDef: AnalyzedDefFile): Result[AnalyzedFile, string] =
   var analyzedImports: seq[AnalyzedImport]
   for imp in fileDef.imports:
-    let analyzedImport = ? analyzeImport(appDef, imp)
+    let analyzedImport = ? analyzeImport(appCtx, imp)
     analyzedImports.add(analyzedImport)
 
   let fileCtx = newAnalyzedFileContext(analyzedImports, fileDef.types)
   var analyzedModules: seq[AnalyzedModule]
   for module in fileDef.resolved.modules:
     let analyzedModuleDef = fileCtx.findModule(module)
-    let analyzedModule = ? analyzeModule(appDef, fileDef, fileCtx, analyzedModuleDef)
+    let analyzedModule = ? analyzeModule(appCtx.appDef, fileDef, fileCtx, analyzedModuleDef)
     analyzedModules.add(analyzedModule)
   ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  let appDef = ? analyzeDefApp(app)
-  var analyzedFiles: seq[AnalyzedFile]
-  for fileDef in appDef.fileDefs:
-    let analyzedFile = ? analyzeFile(appDef, fileDef)
-    analyzedFiles.add(analyzedFile)
-  ok(newAnalyzedApp(app, analyzedFiles))
+  let appCtx = newAnalyzedAppContext(? analyzeDefApp(app))
+  for fileDef in appCtx.fileDefs:
+    let analyzedFile = ? analyzeFile(appCtx, fileDef)
+    appCtx.add(analyzedFile)
+  ok(newAnalyzedApp(app, appCtx.files))
