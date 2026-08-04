@@ -11,9 +11,11 @@ underlying all along. Consequences today:
 
 - `inferGenerics` derives an imported module's require slots by name
   in the *using* file's scope → the constraint-generic import rule
-  ("import `Comparable` alongside `Container`") and the
-  nested_generics.asl failure (`type Map does not exist` — a field
-  root of an imported struct's def, not user-written).
+  ("import `Comparable` alongside `Container`"). [CORRECTED at
+  P3-post: the nested_generics.asl failure was originally blamed on
+  this family, wrongly — base.aslr has no `Map` module at all, so
+  `type Map does not exist` is a correct rejection of the
+  aspirational example, unrelated to the import rule.]
 - The defanalyzer's contract lookup (`fileCtx.findGeneric`) is
   use-site-scoped for the same reason.
 
@@ -203,9 +205,11 @@ using-scope assert in the gap.
   expectation updates forced by the behavior change, and the doc
   edits that DESCRIBE the changed behavior (documentation.md
   "Constraint generics must be in scope at use sites" section
-  deleted, overview Phase-4 bullet). nested_generics.asl expected to
-  flip — test.sh baseline may become 34/35. Commit message names the
-  newly-accepted program classes.
+  deleted, overview Phase-4 bullet). Commit message names the
+  newly-accepted program classes. [OUTCOME: landed as 85b5070;
+  gates 350/350 + 33/35 + sample SUCCESS. nested_generics.asl did
+  NOT flip — see the corrected note in the Problem section; the
+  33/35 baseline stands.]
 
 - **P3-post [MECHANICAL, post-decision]** — dead-code sweep orphaned
   by the flip (any unused using-scope derivation remnants), comment/

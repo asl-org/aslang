@@ -1,4 +1,4 @@
-import results, sequtils, sets, strformat, tables, options
+import results, sequtils, strformat, tables, options
 
 ## Package façade. Consumers say `import resolver` to get every
 ## resolved-side type PLUS the parser layer that resolver builds on
@@ -139,7 +139,7 @@ proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: Ar
 # entirely" case — the common regression path — using the parser-
 # level `findFunctionDefs` API directly, no resolver-side lookup
 # needed. Signature parity is checked one phase later by the def
-# def analyzer's deep constraint check (analyzeDefModuleArgumentType
+# analyzer's deep constraint check (analyzeDefModuleArgumentType
 # concretizes the contract's funcDefs and probes the impl's
 # funcDefIndex via findImplDef), which runs after every signature is
 # resolved.
