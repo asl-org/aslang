@@ -520,7 +520,7 @@ proc resolveExplicitImport(imp: Import, impFile: parser.File, resolvedImpFile: R
     resolvedImpTypes.add(resolvedImpType)
   ok(resolvedImpTypes)
 
-proc resolveShorthandImport(imp: Import, impFile: parser.File, resolvedImpFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
+proc resolveShorthandImport(impFile: parser.File, resolvedImpFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
   var resolvedImpTypes: seq[ResolvedImportedType]
   for typ in impFile.publicTypes:
     let resolvedImpType = newResolvedImportedType(resolvedImpFile.findType(typ))
@@ -533,7 +533,7 @@ proc resolveImport(appCtx: AppContext, imp: Import): Result[ResolvedImport, stri
   let resolvedImpTypes =
     case imp.kind:
     of ikExplicit: ? resolveExplicitImport(imp, impFile, resolvedImpFile)
-    of ikShorthand: ? resolveShorthandImport(imp, impFile, resolvedImpFile)
+    of ikShorthand: ? resolveShorthandImport(impFile, resolvedImpFile)
   ok(newResolvedImport(imp, impFile, resolvedImpTypes))
 
 proc resolveImports(appCtx: AppContext, imports: seq[Import]): Result[seq[ResolvedImport], string] =
