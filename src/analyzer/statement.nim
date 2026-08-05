@@ -53,13 +53,13 @@ type
   AnalyzedStructInitializer* = ref object
     resolved: ResolvedStructInitializer
     structRef: AnalyzedStructRef
-    argType: AnalyzedArgumentType
+    argType: AnalyzedModuleArgumentType
     kwargs: seq[AnalyzedKeywordArgument]
 
   AnalyzedUnionInitializer* = ref object
     resolved: ResolvedUnionInitializer
     unionRef: AnalyzedUnionRef
-    argType: AnalyzedArgumentType
+    argType: AnalyzedModuleArgumentType
     variant: ResolvedVariant
     kwargs: seq[AnalyzedKeywordArgument]
 
@@ -153,22 +153,22 @@ proc module*(u: AnalyzedUnionRef): ResolvedModule = u.module
 proc analyzedImpls*(u: AnalyzedUnionRef): seq[AnalyzedArgumentType] = u.analyzedImpls
 proc loc*(u: AnalyzedUnionRef): Location = u.resolved.loc
 
-proc newAnalyzedStructInitializer*(resolved: ResolvedStructInitializer, structRef: AnalyzedStructRef, argType: AnalyzedArgumentType, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
+proc newAnalyzedStructInitializer*(resolved: ResolvedStructInitializer, structRef: AnalyzedStructRef, argType: AnalyzedModuleArgumentType, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
   AnalyzedStructInitializer(resolved: resolved, structRef: structRef, argType: argType, kwargs: kwargs)
 
 proc resolved*(struct: AnalyzedStructInitializer): ResolvedStructInitializer = struct.resolved
 proc loc*(init: AnalyzedStructInitializer): Location = init.resolved.loc
 proc structRef*(struct: AnalyzedStructInitializer): AnalyzedStructRef = struct.structRef
-proc argType*(struct: AnalyzedStructInitializer): AnalyzedArgumentType = struct.argType
+proc argType*(struct: AnalyzedStructInitializer): AnalyzedModuleArgumentType = struct.argType
 proc kwargs*(struct: AnalyzedStructInitializer): seq[AnalyzedKeywordArgument] = struct.kwargs
 
-proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: AnalyzedUnionRef, argType: AnalyzedArgumentType, variant: ResolvedVariant, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedUnionInitializer =
+proc newAnalyzedUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: AnalyzedUnionRef, argType: AnalyzedModuleArgumentType, variant: ResolvedVariant, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedUnionInitializer =
   AnalyzedUnionInitializer(resolved: resolved, unionRef: unionRef, argType: argType, variant: variant, kwargs: kwargs)
 
 proc resolved*(init: AnalyzedUnionInitializer): ResolvedUnionInitializer = init.resolved
 proc loc*(init: AnalyzedUnionInitializer): Location = init.resolved.loc
 proc unionRef*(init: AnalyzedUnionInitializer): AnalyzedUnionRef = init.unionRef
-proc argType*(init: AnalyzedUnionInitializer): AnalyzedArgumentType = init.argType
+proc argType*(init: AnalyzedUnionInitializer): AnalyzedModuleArgumentType = init.argType
 proc variant*(init: AnalyzedUnionInitializer): ResolvedVariant = init.variant
 proc kwargs*(init: AnalyzedUnionInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
 
@@ -191,7 +191,7 @@ proc struct*(init: AnalyzedInitializer): AnalyzedStructInitializer =
     fmt"AnalyzedInitializer.struct accessed but kind is {init.kind}"
   init.struct
 
-proc argType*(init: AnalyzedInitializer): AnalyzedArgumentType =
+proc argType*(init: AnalyzedInitializer): AnalyzedModuleArgumentType =
   case init.kind:
   of aikLiteral: init.literal.argType
   of aikUnion: init.union.argType
@@ -292,7 +292,7 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
   of aekFunctionCall: expression.fncall.returns
   of aekVariable: expression.variable.argType
   of aekMatchExpr: expression.match.returns
-  of aekInitializer: expression.init.argType
+  of aekInitializer: newAnalyzedArgumentType(expression.init.argType)
   of aekGetter: expression.getter.argType
 
 proc newAnalyzedStatement*(expression: AnalyzedExpression): AnalyzedStatement =

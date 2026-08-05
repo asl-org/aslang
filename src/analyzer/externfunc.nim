@@ -4,11 +4,8 @@
 import ./defanalyzer
 
 type AnalyzedExternFunction* = ref object
-  resolved: ResolvedExternFunction
-  def: AnalyzedFunctionDefinition
+  def: AnalyzedDefExternFunction
 
-proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDefinition): AnalyzedExternFunction =
-  AnalyzedExternFunction(resolved: resolved, def: def)
+proc newAnalyzedExternFunction*(def: AnalyzedDefExternFunction): AnalyzedExternFunction =
+  AnalyzedExternFunction(def: def)
 
-proc resolved*(function: AnalyzedExternFunction): ResolvedExternFunction = function.resolved
-proc def*(function: AnalyzedExternFunction): AnalyzedFunctionDefinition = function.def

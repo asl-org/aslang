@@ -29,9 +29,11 @@ type AnalyzedDefUserFunction* = ref object
 proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDefinition, statements: seq[AnalyzedDefStatement]): AnalyzedDefUserFunction =
   AnalyzedDefUserFunction(resolved: resolved, def: def, statements: statements)
 
+proc loc*(function: AnalyzedDefUserFunction): Location = function.resolved.loc
 proc name*(function: AnalyzedDefUserFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefUserFunction): int = function.resolved.arity
 proc resolved*(function: AnalyzedDefUserFunction): ResolvedUserFunction = function.resolved
+proc def*(function: AnalyzedDefUserFunction): AnalyzedFunctionDefinition = function.def
 proc statements*(function: AnalyzedDefUserFunction): seq[AnalyzedDefStatement] = function.statements
 
 type

@@ -203,10 +203,12 @@ proc newResolvedFunctionCall*(parsed: FunctionCall,
     typ: parser.LocalType, args: seq[ResolvedExpression]): ResolvedFunctionCall =
   ResolvedFunctionCall(parsed: parsed, typ: typ, args: args)
 
+proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
+proc name*(fncall: ResolvedFunctionCall): Identifier = fncall.parsed.name
+proc arity*(fncall: ResolvedFunctionCall): int = fncall.parsed.arity
 proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
 proc typ*(fncall: ResolvedFunctionCall): parser.LocalType = fncall.typ
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
-proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
 
 proc impls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
   ## Empty for the time being — the parser has no impl syntax for

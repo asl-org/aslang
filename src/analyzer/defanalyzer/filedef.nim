@@ -12,7 +12,6 @@
 import sequtils, strformat, tables
 
 import ./resolver
-import ./argtype
 import ./filecontext
 import ./types
 import ./importdef
@@ -56,8 +55,3 @@ proc findModule*(fileDef: AnalyzedDefFile, module: ResolvedModule): AnalyzedDefM
   let foundType = fileDef.findType(newResolvedLocalType(module))
   assert(foundType.kind == altkModule, fmt"[BUG] - {module.loc} `{module.name.asl}` was analyzed as a module in phase A")
   foundType.module
-
-proc defaultLiteralType*(fileDef: AnalyzedDefFile, literal: ResolvedLiteral): AnalyzedArgumentType =
-  ## The resolver bound `literal.default` through this file's scope
-  ## (resolveLiteral), so the identity lookup cannot miss.
-  newAnalyzedArgumentType(fileDef.scope.findModule(literal.default))

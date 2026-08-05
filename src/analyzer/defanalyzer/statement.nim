@@ -6,6 +6,8 @@
 ## file scope. Built by the `analyzeDef*` body walk on the defanalyzer
 ## barrel; consumed by phase B.
 
+import strformat
+
 import resolver
 import argtype
 import structref
@@ -93,21 +95,41 @@ type
 proc newAnalyzedDefLiteral*(resolved: ResolvedLiteral, default: ResolvedModule, def: ResolvedLiteralDef): AnalyzedDefLiteral =
   AnalyzedDefLiteral(resolved: resolved, default: default, def: def)
 
+proc loc*(literal: AnalyzedDefLiteral): Location = literal.resolved.loc
+proc resolved*(literal: AnalyzedDefLiteral): ResolvedLiteral = literal.resolved
+proc default*(literal: AnalyzedDefLiteral): ResolvedModule = literal.default
+
 # AnalyzedDefLiteralInitializer
 proc newAnalyzedDefLiteralInitializer*(resolved: ResolvedLiteralInitializer, argType: AnalyzedModuleArgumentType, def: ResolvedLiteralDef): AnalyzedDefLiteralInitializer =
   AnalyzedDefLiteralInitializer(resolved: resolved, argType: argType, def: def)
+
+proc loc*(init: AnalyzedDefLiteralInitializer): Location = init.resolved.loc
+proc resolved*(init: AnalyzedDefLiteralInitializer): ResolvedLiteralInitializer = init.resolved
+proc argType*(init: AnalyzedDefLiteralInitializer): AnalyzedModuleArgumentType = init.argType
 
 # AnalyzedDefKeywordArgument
 proc newAnalyzedDefKeywordArgument*(resolved: ResolvedKeywordArgument, expression: AnalyzedDefExpression): AnalyzedDefKeywordArgument =
   AnalyzedDefKeywordArgument(resolved: resolved, expression: expression)
 
+proc name*(kwarg: AnalyzedDefKeywordArgument): Identifier = kwarg.resolved.name
+proc resolved*(kwarg: AnalyzedDefKeywordArgument): ResolvedKeywordArgument = kwarg.resolved
+proc expression*(kwarg: AnalyzedDefKeywordArgument): AnalyzedDefExpression = kwarg.expression
+
 # AnalyzedDefStructInitializer
 proc newAnalyzedDefStructInitializer*(resolved: ResolvedStructInitializer, structRef: AnalyzedDefStructRef, kwargs: seq[AnalyzedDefKeywordArgument]): AnalyzedDefStructInitializer =
   AnalyzedDefStructInitializer(resolved: resolved, structRef: structRef, kwargs: kwargs)
 
+proc loc*(init: AnalyzedDefStructInitializer): Location = init.resolved.loc
+proc resolved*(init: AnalyzedDefStructInitializer): ResolvedStructInitializer = init.resolved
+proc kwargs*(init: AnalyzedDefStructInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
+
 # AnalyzedDefUnionInitializer
 proc newAnalyzedDefUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: AnalyzedDefUnionRef, kwargs: seq[AnalyzedDefKeywordArgument]): AnalyzedDefUnionInitializer =
   AnalyzedDefUnionInitializer(resolved: resolved, unionRef: unionRef, kwargs: kwargs)
+
+proc loc*(init: AnalyzedDefUnionInitializer): Location = init.resolved.loc
+proc resolved*(init: AnalyzedDefUnionInitializer): ResolvedUnionInitializer = init.resolved
+proc kwargs*(init: AnalyzedDefUnionInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
 
 # AnalyzedDefInitializer
 proc newAnalyzedDefInitializer*(literal: AnalyzedDefLiteralInitializer): AnalyzedDefInitializer =
@@ -119,9 +141,30 @@ proc newAnalyzedDefInitializer*(struct: AnalyzedDefStructInitializer): AnalyzedD
 proc newAnalyzedDefInitializer*(union: AnalyzedDefUnionInitializer): AnalyzedDefInitializer =
   AnalyzedDefInitializer(kind: adikUnion, union: union)
 
+proc kind*(init: AnalyzedDefInitializer): AnalyzedDefInitializerKind = init.kind
+proc literal*(init: AnalyzedDefInitializer): AnalyzedDefLiteralInitializer =
+  assert init.kind == adikLiteral,
+    fmt"AnalyzedDefInitializer.literal accessed but kind is {init.kind}"
+  init.literal
+proc union*(init: AnalyzedDefInitializer): AnalyzedDefUnionInitializer =
+  assert init.kind == adikUnion,
+    fmt"AnalyzedDefInitializer.union accessed but kind is {init.kind}"
+  init.union
+proc struct*(init: AnalyzedDefInitializer): AnalyzedDefStructInitializer =
+  assert init.kind == adikStruct,
+    fmt"AnalyzedDefInitializer.struct accessed but kind is {init.kind}"
+  init.struct
+
 # AnalyzedDefFunctionCall
 proc newAnalyzedDefFunctionCall*(resolved: ResolvedFunctionCall, typ: ResolvedLocalType, args: seq[AnalyzedDefExpression]): AnalyzedDefFunctionCall =
   AnalyzedDefFunctionCall(resolved: resolved, typ: typ, args: args)
+
+proc loc*(fncall: AnalyzedDefFunctionCall): Location = fncall.resolved.loc
+proc name*(fncall: AnalyzedDefFunctionCall): Identifier = fncall.resolved.name
+proc arity*(fncall: AnalyzedDefFunctionCall): int = fncall.resolved.arity
+proc resolved*(fncall: AnalyzedDefFunctionCall): ResolvedFunctionCall = fncall.resolved
+proc typ*(fncall: AnalyzedDefFunctionCall): ResolvedLocalType = fncall.typ
+proc args*(fncall: AnalyzedDefFunctionCall): seq[AnalyzedDefExpression] = fncall.args
 
 # AnalyzedDefCase
 proc newAnalyzedDefCase*(resolved: ResolvedCaseBlock, statements: seq[AnalyzedDefStatement]): AnalyzedDefCase =
@@ -133,11 +176,16 @@ proc loc*(caseBlock: AnalyzedDefCase): Location = caseBlock.resolved.loc
 # which only phase B computes (`analyzeUnionCasePattern` on the body
 # barrel owns that check).
 proc pattern*(caseBlock: AnalyzedDefCase): ResolvedCasePattern = caseBlock.resolved.pattern
+proc resolved*(caseBlock: AnalyzedDefCase): ResolvedCaseBlock = caseBlock.resolved
 proc statements*(caseBlock: AnalyzedDefCase): seq[AnalyzedDefStatement] = caseBlock.statements
 
 # AnalyzedDefMatch
 proc newAnalyzedDefMatch*(resolved: ResolvedMatchExpression, subject: AnalyzedDefExpression, cases: seq[AnalyzedDefCase]): AnalyzedDefMatch =
   AnalyzedDefMatch(resolved: resolved, subject: subject, cases: cases)
+
+proc resolved*(match: AnalyzedDefMatch): ResolvedMatchExpression = match.resolved
+proc subject*(match: AnalyzedDefMatch): AnalyzedDefExpression = match.subject
+proc cases*(match: AnalyzedDefMatch): seq[AnalyzedDefCase] = match.cases
 
 # AnalyzedDefExpression
 proc newAnalyzedDefExpression*(literal: AnalyzedDefLiteral): AnalyzedDefExpression =
@@ -158,13 +206,45 @@ proc newAnalyzedDefExpression*(init: AnalyzedDefInitializer): AnalyzedDefExpress
 proc newAnalyzedDefExpression*(match: AnalyzedDefMatch): AnalyzedDefExpression =
   AnalyzedDefExpression(kind: adekMatchExpr, match: match)
 
+proc kind*(expression: AnalyzedDefExpression): AnalyzedDefExpressionKind = expression.kind
+proc fncall*(expression: AnalyzedDefExpression): AnalyzedDefFunctionCall =
+  assert expression.kind == adekFunctionCall,
+    fmt"AnalyzedDefExpression.fncall accessed but kind is {expression.kind}"
+  expression.fncall
+proc variable*(expression: AnalyzedDefExpression): Identifier =
+  assert expression.kind == adekVariable,
+    fmt"AnalyzedDefExpression.variable accessed but kind is {expression.kind}"
+  expression.variable
+proc literal*(expression: AnalyzedDefExpression): AnalyzedDefLiteral =
+  assert expression.kind == adekLiteral,
+    fmt"AnalyzedDefExpression.literal accessed but kind is {expression.kind}"
+  expression.literal
+proc match*(expression: AnalyzedDefExpression): AnalyzedDefMatch =
+  assert expression.kind == adekMatchExpr,
+    fmt"AnalyzedDefExpression.match accessed but kind is {expression.kind}"
+  expression.match
+proc init*(expression: AnalyzedDefExpression): AnalyzedDefInitializer =
+  assert expression.kind == adekInitializer,
+    fmt"AnalyzedDefExpression.init accessed but kind is {expression.kind}"
+  expression.init
+proc getter*(expression: AnalyzedDefExpression): ResolvedGetter =
+  assert expression.kind == adekGetter,
+    fmt"AnalyzedDefExpression.getter accessed but kind is {expression.kind}"
+  expression.getter
+
 # AnalyzedDefAssignment
 proc newAnalyzedDefAssignment*(resolved: ResolvedAssignment, expression: AnalyzedDefExpression): AnalyzedDefAssignment =
   AnalyzedDefAssignment(resolved: resolved, expression: expression)
 
+proc resolved*(assignment: AnalyzedDefAssignment): ResolvedAssignment = assignment.resolved
+proc expression*(assignment: AnalyzedDefAssignment): AnalyzedDefExpression = assignment.expression
+
 # AnalyzedDefSetter
 proc newAnalyzedDefSetter*(resolved: ResolvedSetter, expression: AnalyzedDefExpression): AnalyzedDefSetter =
   AnalyzedDefSetter(resolved: resolved, expression: expression)
+
+proc resolved*(setter: AnalyzedDefSetter): ResolvedSetter = setter.resolved
+proc expression*(setter: AnalyzedDefSetter): AnalyzedDefExpression = setter.expression
 
 # AnalyzedDefStatement
 proc newAnalyzedDefStatement*(assignment: AnalyzedDefAssignment): AnalyzedDefStatement =
@@ -175,3 +255,17 @@ proc newAnalyzedDefStatement*(expression: AnalyzedDefExpression): AnalyzedDefSta
 
 proc newAnalyzedDefStatement*(setter: AnalyzedDefSetter): AnalyzedDefStatement =
   AnalyzedDefStatement(kind: adskSetter, setter: setter)
+
+proc kind*(statement: AnalyzedDefStatement): AnalyzedDefStatementKind = statement.kind
+proc expression*(statement: AnalyzedDefStatement): AnalyzedDefExpression =
+  assert statement.kind == adskExpr,
+    fmt"AnalyzedDefStatement.expression accessed but kind is {statement.kind}"
+  statement.expression
+proc assignment*(statement: AnalyzedDefStatement): AnalyzedDefAssignment =
+  assert statement.kind == adskAssignment,
+    fmt"AnalyzedDefStatement.assignment accessed but kind is {statement.kind}"
+  statement.assignment
+proc setter*(statement: AnalyzedDefStatement): AnalyzedDefSetter =
+  assert statement.kind == adskSetter,
+    fmt"AnalyzedDefStatement.setter accessed but kind is {statement.kind}"
+  statement.setter
