@@ -1418,7 +1418,17 @@ Focused TODOs still open:
   provenance, mirroring the P3-swap dispatch. Site-WRITTEN
   argtypes (initializer/ref impl lists, synthetic literal types)
   stay in the use-site scope — only def-side re-entries move.
-  Lands with the phase-B unification rebuild.
+  ROUTE CHOSEN: read the stored twin — phase B is being
+  incrementally rewired to walk the AnalyzedDef* bundle instead of
+  re-deriving (first increment: analyzeFile/analyzeModule/
+  analyzeFunction consume fileDef.modules + module.functions).
+  Remaining: the def-side argtype re-entries themselves
+  (analyzeStructInitializer field types, analyzeUnionCasePattern
+  variant fields, the union generic-slot reconstructions) switch
+  to analyzed-twin accessors on AnalyzedStructDef /
+  AnalyzedVariantDef; then the two deferred positive provenance
+  tests (see test_analyzer.nim's suite comment) flip green as the
+  acceptance gate.
 - **Dummy location in `AnalyzedArgumentType.self`**
   (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
   reconstructs a `ResolvedGenericArgumentType` with a fabricated
@@ -1438,6 +1448,32 @@ Focused TODOs still open:
   (`fileCtx.inferGenerics` and the per-type builds in
   structdef / variantdef / uniondef) descend into impls yet — when
   this lands, all of them need the same descent.
+- **Require-slot derivation is implemented three times and must
+  agree** — `fileCtx.inferGenerics` (use-site, name-keyed) plus the
+  construction-time collections in structdef and uniondef that feed
+  the resolved twin's stored `generics`. Pre-flip these were
+  redundant checks of one truth; post-flip the twin's stored slots
+  are AUTHORITATIVE for imported modules while locals still use the
+  use-site derivation — any drift between the implementations
+  (ordering, dedup semantics, the impl-descent above) now diverges
+  across phases and lands on `analyzeDefModuleArgumentType`'s count
+  assert as a [BUG] crash instead of a diagnostic. Consolidating to
+  one derivation is a correctness item, not a cleanup.
+- **`AnalyzedDefImportedType` stores the twin twice** — `typ` and
+  `resolved.resolvedType` are the same object arriving via two
+  different derivations (the def-time `impFile.findType` re-lookup
+  vs the resolve-time P3-pre-1 capture), with no assert tying them.
+  Either derive `typ` from the binding or assert the tie in the
+  constructor.
+- **Small hygiene** — the shallow-vs-deep comment block on the
+  resolver facade still contains a pre-deep-check paragraph
+  assigning signature parity to phase B's value-vs-defType walk
+  (superseded by the def analyzer's identity-probe check described
+  further down in the same block); and `AppContext.findFile`
+  returns a Result although by resolve time the loader has
+  materialized every import target — either it is the assert-backed
+  form per the identity-lookup doctrine, or the user error it can
+  surface should be nameable.
 - **Type-correctness checks across statements** — assignment
   compatibility and match exhaustiveness. (Setter type equality is
   now enforced in `analyzeSetter`; its error message is still rough
