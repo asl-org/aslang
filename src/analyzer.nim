@@ -643,18 +643,18 @@ proc analyzeUserFunction*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, file
 proc analyzeExternFunction(moduleDef: AnalyzedDefModule, function: ResolvedExternFunction): Result[AnalyzedExternFunction, string] =
   ok(newAnalyzedExternFunction(function, moduleDef.findFunctionDef(function.def)))
 
-proc analyzeFunction(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: ResolvedFunction): Result[AnalyzedFunction, string] =
+proc analyzeFunction(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: AnalyzedDefFunction): Result[AnalyzedFunction, string] =
   case function.kind:
-  of rfkExtern:
-    let analyzedExternFunction = ? module.analyzeExternFunction(function.extern)
+  of adfkExtern:
+    let analyzedExternFunction = ? module.analyzeExternFunction(function.extern.resolved)
     ok(newAnalyzedFunction(analyzedExternFunction))
-  of rfkUser:
-    let analyzedUserFunction = ? analyzeUserFunction(appDef, fileDef, fileCtx, module, function.user)
+  of adfkUser:
+    let analyzedUserFunction = ? analyzeUserFunction(appDef, fileDef, fileCtx, module, function.user.resolved)
     ok(newAnalyzedFunction(analyzedUserFunction))
 
 proc analyzeModule*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule): Result[AnalyzedModule, string] =
   var analyzedFunctions: seq[AnalyzedFunction]
-  for function in module.resolved.functions:
+  for function in module.functions:
     let analyzedFunction = ? analyzeFunction(appDef, fileDef, fileCtx, module, function)
     analyzedFunctions.add(analyzedFunction)
   ok(newAnalyzedModule(module, analyzedFunctions))
@@ -679,9 +679,8 @@ proc analyzeFile(appCtx: AnalyzedAppContext, fileDef: AnalyzedDefFile): Result[A
 
   let fileCtx = newAnalyzedFileContext(analyzedImports, fileDef.types)
   var analyzedModules: seq[AnalyzedModule]
-  for module in fileDef.resolved.modules:
-    let analyzedModuleDef = fileCtx.findModule(module)
-    let analyzedModule = ? analyzeModule(appCtx.appDef, fileDef, fileCtx, analyzedModuleDef)
+  for module in fileDef.modules:
+    let analyzedModule = ? analyzeModule(appCtx.appDef, fileDef, fileCtx, module)
     analyzedModules.add(analyzedModule)
   ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))
 

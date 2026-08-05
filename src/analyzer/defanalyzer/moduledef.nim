@@ -50,6 +50,7 @@ proc newAnalyzedDefModule*(resolved: ResolvedModule,
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
 proc data*(m: AnalyzedDefModule): Option[AnalyzedData] = m.data
+proc functions*(m: AnalyzedDefModule): seq[AnalyzedDefFunction] = m.functions
 
 proc dataDef*(m: AnalyzedDefModule): AnalyzedData =
   ## Kind-asserted projection — phase B reaches a module through an

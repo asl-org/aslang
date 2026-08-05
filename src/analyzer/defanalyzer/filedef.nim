@@ -9,7 +9,7 @@
 ## not merely visible there. Phase-B lookups spanning imports go
 ## through the body layer's `AnalyzedFileContext` instead.
 
-import strformat, tables
+import sequtils, strformat, tables
 
 import ./resolver
 import ./argtype
@@ -41,6 +41,8 @@ proc path*(f: AnalyzedDefFile): string = f.resolved.path
 proc imports*(f: AnalyzedDefFile): seq[AnalyzedDefImport] = f.imports
 proc types*(f: AnalyzedDefFile): seq[AnalyzedLocalType] = f.types
 proc scope*(f: AnalyzedDefFile): ResolvedFileContext = f.scope
+proc modules*(file: AnalyzedDefFile): seq[AnalyzedDefModule] =
+  file.types.filterIt(it.kind == altkModule).mapIt(it.module)
 
 # Identity lookups — phase A analyzed every type DEFINED in this
 # file (local-only by design: analyzeImportedType uses findType to

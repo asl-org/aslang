@@ -5,7 +5,7 @@
 ## `AnalyzedDefModule.functions` one shape with uniform `def` /
 ## `name` / `arity` accessors dispatching on the kind.
 
-import resolver
+import resolver, strformat
 
 import funcdef
 import statement
@@ -19,6 +19,7 @@ proc newAnalyzedDefExternFunction*(resolved: ResolvedExternFunction, def: Analyz
 
 proc name*(function: AnalyzedDefExternFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefExternFunction): int = function.resolved.arity
+proc resolved*(function: AnalyzedDefExternFunction): ResolvedExternFunction = function.resolved
 
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction
@@ -30,6 +31,7 @@ proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFu
 
 proc name*(function: AnalyzedDefUserFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefUserFunction): int = function.resolved.arity
+proc resolved*(function: AnalyzedDefUserFunction): ResolvedUserFunction = function.resolved
 proc statements*(function: AnalyzedDefUserFunction): seq[AnalyzedDefStatement] = function.statements
 
 type
@@ -45,6 +47,16 @@ proc newAnalyzedDefFunction*(extern: AnalyzedDefExternFunction): AnalyzedDefFunc
 
 proc newAnalyzedDefFunction*(user: AnalyzedDefUserFunction): AnalyzedDefFunction =
   AnalyzedDefFunction(kind: adfkUser, user: user)
+
+proc kind*(function: AnalyzedDefFunction): AnalyzedDefFunctionKind = function.kind
+proc extern*(function: AnalyzedDefFunction): AnalyzedDefExternFunction =
+  assert function.kind == adfkExtern,
+    fmt"AnalyzedDefFunction.extern accessed but kind is {function.kind}"
+  function.extern
+proc user*(function: AnalyzedDefFunction): AnalyzedDefUserFunction =
+  assert function.kind == adfkUser,
+    fmt"AnalyzedDefFunction.user accessed but kind is {function.kind}"
+  function.user
 
 proc def*(function: AnalyzedDefFunction): AnalyzedFunctionDefinition =
   case function.kind:
