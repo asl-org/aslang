@@ -597,8 +597,9 @@ their `AnalyzedFunctionDefinition`). Scope:
   Bare-literal defaults are bound at resolve time too
   (`resolveLiteral` looks up `Literal.defaultType` — "i32"/"f32"/
   "String" — against the FileContext and stores the parser.Module on
-  `ResolvedLiteral.default`), so `fileDef.defaultLiteralType` is a
-  pure identity lookup on the pre-bound module. See
+  `ResolvedLiteral.default`); phase A carries the resolved default
+  module on `AnalyzedDefLiteral.default`, which phase B's
+  `analyzeBareLiteral` reads directly. See
   plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
 - **Per-file context = fileDef + fileCtx, minimal params** —
@@ -1076,16 +1077,13 @@ src/
                                    altkGeneric) + findFunctionDefs
                                    uniform overload lookup.
     filedef.nim                    AnalyzedDefFile (resolved +
-                                   imports + types + scope +
-                                   local-only identity-keyed
-                                   findType / findModule — used by
+                                   imports + types + a modules
+                                   projection + scope + local-only
+                                   identity-keyed findType /
+                                   findModule — used by
                                    analyzeImportedType to verify an
                                    imported name is DEFINED in its
-                                   source file). Also
-                                   defaultLiteralType(literal) — the
-                                   bare-literal default path,
-                                   chaining the resolver name scope
-                                   into the identity scope.
+                                   source file).
     appdef.nim                     AnalyzedDefApp (fileDefs +
                                    path-keyed fileDefIndex +
                                    findFileDef).
@@ -1188,9 +1186,10 @@ src/
                                    live on the facade.
     userfunc.nim                   AnalyzedUserFunction (resolved +
                                    def + statements).
-    externfunc.nim                 AnalyzedExternFunction (resolved +
-                                   its pre-analyzed
-                                   AnalyzedFunctionDefinition).
+    externfunc.nim                 AnalyzedExternFunction — wraps the
+                                   phase-A AnalyzedDefExternFunction
+                                   directly (def + resolved reached
+                                   through it).
     function.nim                   AnalyzedFunction tagged union
                                    (user / extern).
     module.nim                     AnalyzedModule (def:
@@ -1420,15 +1419,19 @@ Focused TODOs still open:
   stay in the use-site scope — only def-side re-entries move.
   ROUTE CHOSEN: read the stored twin — phase B is being
   incrementally rewired to walk the AnalyzedDef* bundle instead of
-  re-deriving (first increment: analyzeFile/analyzeModule/
-  analyzeFunction consume fileDef.modules + module.functions).
-  Remaining: the def-side argtype re-entries themselves
-  (analyzeStructInitializer field types, analyzeUnionCasePattern
-  variant fields, the union generic-slot reconstructions) switch
-  to analyzed-twin accessors on AnalyzedStructDef /
-  AnalyzedVariantDef; then the two deferred positive provenance
-  tests (see test_analyzer.nim's suite comment) flip green as the
-  acceptance gate.
+  re-deriving. Landed so far: the module/function walk consumes
+  fileDef.modules + module.functions, and the whole statement/
+  expression walk consumes the AnalyzedDef* statement tree (the
+  fncall-receiver and literal-initializer re-entries through
+  fileDef.scope are gone, along with the findFunctionDef and
+  defaultLiteralType re-lookups). Remaining: the def-side argtype
+  re-entries themselves — struct/union initializer + case-pattern
+  FIELD types and the union generic-slot reconstructions switch to
+  analyzed-twin accessors on AnalyzedStructDef / AnalyzedVariantDef
+  (the struct/union ref impl lists are site-written and stay
+  scope-analyzed by design); then the two deferred positive
+  provenance tests (see test_analyzer.nim's suite comment) flip
+  green as the acceptance gate.
 - **Dummy location in `AnalyzedArgumentType.self`**
   (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
   reconstructs a `ResolvedGenericArgumentType` with a fabricated
