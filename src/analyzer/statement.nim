@@ -83,11 +83,11 @@ type
     returns: AnalyzedArgumentType
 
   AnalyzedAssignment* = ref object
-    resolved: ResolvedAssignment
+    def: AnalyzedDefAssignment
     expression: AnalyzedExpression
 
   AnalyzedSetter* = ref object
-    resolved: ResolvedSetter
+    def: AnalyzedDefSetter
     getter: AnalyzedGetter
     expression: AnalyzedExpression
 
@@ -224,20 +224,18 @@ proc subject*(m: AnalyzedMatchExpression): AnalyzedExpression = m.subject
 proc cases*(m: AnalyzedMatchExpression): seq[AnalyzedCaseBlock] = m.cases
 proc returns*(m: AnalyzedMatchExpression): AnalyzedArgumentType = m.returns
 
-proc newAnalyzedAssignment*(resolved: ResolvedAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
-  AnalyzedAssignment(resolved: resolved, expression: expression)
+proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
+  AnalyzedAssignment(def: def, expression: expression)
 
-proc loc*(assignment: AnalyzedAssignment): Location = assignment.resolved.loc
-proc resolved*(assignment: AnalyzedAssignment): ResolvedAssignment = assignment.resolved
-proc target*(assignment: AnalyzedAssignment): Identifier = assignment.resolved.target
+proc loc*(assignment: AnalyzedAssignment): Location = assignment.def.loc
+proc target*(assignment: AnalyzedAssignment): Identifier = assignment.def.target
 proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression = assignment.expression
 proc argType*(assignment: AnalyzedAssignment): AnalyzedArgumentType = assignment.expression.argType
 
-proc newAnalyzedSetter*(resolved: ResolvedSetter, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedSetter =
-  AnalyzedSetter(resolved: resolved, getter: getter, expression: expression)
+proc newAnalyzedSetter*(def: AnalyzedDefSetter, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedSetter =
+  AnalyzedSetter(def: def, getter: getter, expression: expression)
 
-proc loc*(setter: AnalyzedSetter): Location = setter.resolved.loc
-proc resolved*(setter: AnalyzedSetter): ResolvedSetter = setter.resolved
+proc loc*(setter: AnalyzedSetter): Location = setter.def.loc
 proc getter*(setter: AnalyzedSetter): AnalyzedGetter = setter.getter
 proc expression*(setter: AnalyzedSetter): AnalyzedExpression = setter.expression
 proc argType*(setter: AnalyzedSetter): AnalyzedArgumentType = setter.expression.argType

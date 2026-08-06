@@ -6,13 +6,12 @@ import ./defanalyzer
 import statement
 
 type AnalyzedUserFunction* = ref object
-  resolved: ResolvedUserFunction
-  def: AnalyzedFunctionDefinition
+  def: AnalyzedDefUserFunction
   statements: seq[AnalyzedStatement]
 
-proc newAnalyzedUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDefinition, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
-  AnalyzedUserFunction(resolved: resolved, def: def, statements: statements)
+proc newAnalyzedUserFunction*(def: AnalyzedDefUserFunction, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
+  AnalyzedUserFunction(def: def, statements: statements)
 
-proc resolved*(function: AnalyzedUserFunction): ResolvedUserFunction = function.resolved
-proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDefinition = function.def
+proc resolved*(function: AnalyzedUserFunction): ResolvedUserFunction = function.def.resolved
+proc def*(function: AnalyzedUserFunction): AnalyzedDefUserFunction = function.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements

@@ -595,15 +595,15 @@ proc analyzeExpression*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCt
 
 proc analyzeAssignment*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, assignment: AnalyzedDefAssignment): Result[AnalyzedAssignment, string] =
   let analyzedExpr = ? analyzeExpression(appDef, fileDef, fileCtx, module, funcCtx, assignment.expression, none(AnalyzedArgumentType))
-  ok(newAnalyzedAssignment(assignment.resolved, analyzedExpr))
+  ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
 proc analyzeSetter*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, setter: AnalyzedDefSetter): Result[AnalyzedSetter, string] =
-  let analyzedGetter = ? analyzeGetter(appDef, fileDef, fileCtx, module, funcCtx, setter.resolved.getter)
+  let analyzedGetter = ? analyzeGetter(appDef, fileDef, fileCtx, module, funcCtx, setter.getter)
   let analyzedExpression = ? analyzeExpression(appDef, fileDef, fileCtx, module, funcCtx, setter.expression, some(analyzedGetter.argType))
   if analyzedGetter.argType != analyzedExpression.argType:
-    err(fmt"{setter.resolved.loc} argument type mismatch") # TODO: improve error message
+    err(fmt"{setter.loc} argument type mismatch") # TODO: improve error message
   else:
-    ok(newAnalyzedSetter(setter.resolved, analyzedGetter, analyzedExpression))
+    ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
 
 proc analyzeStatement*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
@@ -628,9 +628,9 @@ proc analyzeUserFunction*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, file
     funcCtx = funcCtx.update(analyzedStatement)
 
   if analyzedStatements[^1].argType != function.def.returns:
-    err(fmt"{function.resolved.statements[^1].loc} function does not return the expected return type")
+    err(fmt"{function.statements[^1].loc} function does not return the expected return type")
   else:
-    ok(newAnalyzedUserFunction(function.resolved, function.def, analyzedStatements))
+    ok(newAnalyzedUserFunction(function, analyzedStatements))
 
 proc analyzeFunction(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: AnalyzedDefFunction): Result[AnalyzedFunction, string] =
   case function.kind:

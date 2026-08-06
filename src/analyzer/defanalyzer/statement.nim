@@ -155,6 +155,12 @@ proc struct*(init: AnalyzedDefInitializer): AnalyzedDefStructInitializer =
     fmt"AnalyzedDefInitializer.struct accessed but kind is {init.kind}"
   init.struct
 
+proc loc*(init: AnalyzedDefInitializer): Location =
+  case init.kind
+  of adikLiteral: init.literal.loc
+  of adikStruct: init.struct.loc
+  of adikUnion: init.union.loc
+
 # AnalyzedDefFunctionCall
 proc newAnalyzedDefFunctionCall*(resolved: ResolvedFunctionCall, typ: ResolvedLocalType, args: seq[AnalyzedDefExpression]): AnalyzedDefFunctionCall =
   AnalyzedDefFunctionCall(resolved: resolved, typ: typ, args: args)
@@ -183,6 +189,7 @@ proc statements*(caseBlock: AnalyzedDefCase): seq[AnalyzedDefStatement] = caseBl
 proc newAnalyzedDefMatch*(resolved: ResolvedMatchExpression, subject: AnalyzedDefExpression, cases: seq[AnalyzedDefCase]): AnalyzedDefMatch =
   AnalyzedDefMatch(resolved: resolved, subject: subject, cases: cases)
 
+proc loc*(match: AnalyzedDefMatch): Location = match.resolved.loc
 proc resolved*(match: AnalyzedDefMatch): ResolvedMatchExpression = match.resolved
 proc subject*(match: AnalyzedDefMatch): AnalyzedDefExpression = match.subject
 proc cases*(match: AnalyzedDefMatch): seq[AnalyzedDefCase] = match.cases
@@ -232,10 +239,21 @@ proc getter*(expression: AnalyzedDefExpression): ResolvedGetter =
     fmt"AnalyzedDefExpression.getter accessed but kind is {expression.kind}"
   expression.getter
 
+proc loc*(expression: AnalyzedDefExpression): Location =
+  case expression.kind
+  of adekLiteral: expression.literal.loc
+  of adekVariable: expression.variable.loc
+  of adekGetter: expression.getter.loc
+  of adekFunctionCall: expression.fncall.loc
+  of adekInitializer: expression.init.loc
+  of adekMatchExpr: expression.match.loc
+
 # AnalyzedDefAssignment
 proc newAnalyzedDefAssignment*(resolved: ResolvedAssignment, expression: AnalyzedDefExpression): AnalyzedDefAssignment =
   AnalyzedDefAssignment(resolved: resolved, expression: expression)
 
+proc loc*(assignment: AnalyzedDefAssignment): Location = assignment.resolved.loc
+proc target*(assignment: AnalyzedDefAssignment): Identifier = assignment.resolved.target
 proc resolved*(assignment: AnalyzedDefAssignment): ResolvedAssignment = assignment.resolved
 proc expression*(assignment: AnalyzedDefAssignment): AnalyzedDefExpression = assignment.expression
 
@@ -243,6 +261,8 @@ proc expression*(assignment: AnalyzedDefAssignment): AnalyzedDefExpression = ass
 proc newAnalyzedDefSetter*(resolved: ResolvedSetter, expression: AnalyzedDefExpression): AnalyzedDefSetter =
   AnalyzedDefSetter(resolved: resolved, expression: expression)
 
+proc loc*(setter: AnalyzedDefSetter): Location = setter.resolved.loc
+proc getter*(setter: AnalyzedDefSetter): ResolvedGetter = setter.resolved.getter
 proc resolved*(setter: AnalyzedDefSetter): ResolvedSetter = setter.resolved
 proc expression*(setter: AnalyzedDefSetter): AnalyzedDefExpression = setter.expression
 
@@ -269,3 +289,9 @@ proc setter*(statement: AnalyzedDefStatement): AnalyzedDefSetter =
   assert statement.kind == adskSetter,
     fmt"AnalyzedDefStatement.setter accessed but kind is {statement.kind}"
   statement.setter
+
+proc loc*(statement: AnalyzedDefStatement): Location =
+  case statement.kind:
+  of adskAssignment: statement.assignment.loc
+  of adskExpr: statement.expression.loc
+  of adskSetter: statement.setter.loc
