@@ -96,6 +96,7 @@ proc newAnalyzedDefLiteral*(resolved: ResolvedLiteral, default: ResolvedModule, 
   AnalyzedDefLiteral(resolved: resolved, default: default, def: def)
 
 proc loc*(literal: AnalyzedDefLiteral): Location = literal.resolved.loc
+proc value*(literal: AnalyzedDefLiteral): Literal = literal.resolved.value
 proc resolved*(literal: AnalyzedDefLiteral): ResolvedLiteral = literal.resolved
 proc default*(literal: AnalyzedDefLiteral): ResolvedModule = literal.default
 
@@ -121,6 +122,7 @@ proc newAnalyzedDefStructInitializer*(resolved: ResolvedStructInitializer, struc
 
 proc loc*(init: AnalyzedDefStructInitializer): Location = init.resolved.loc
 proc resolved*(init: AnalyzedDefStructInitializer): ResolvedStructInitializer = init.resolved
+proc structRef*(init: AnalyzedDefStructInitializer): AnalyzedDefStructRef = init.structRef
 proc kwargs*(init: AnalyzedDefStructInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
 
 # AnalyzedDefUnionInitializer
@@ -129,6 +131,7 @@ proc newAnalyzedDefUnionInitializer*(resolved: ResolvedUnionInitializer, unionRe
 
 proc loc*(init: AnalyzedDefUnionInitializer): Location = init.resolved.loc
 proc resolved*(init: AnalyzedDefUnionInitializer): ResolvedUnionInitializer = init.resolved
+proc unionRef*(init: AnalyzedDefUnionInitializer): AnalyzedDefUnionRef = init.unionRef
 proc kwargs*(init: AnalyzedDefUnionInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
 
 # AnalyzedDefInitializer

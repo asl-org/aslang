@@ -32,7 +32,7 @@ proc newResolvedLiteral*(parsed: Literal, module: Module, def: LiteralDef): Reso
   ResolvedLiteral(parsed: parsed, default: module, def: def)
 
 proc loc*(literal: ResolvedLiteral): Location = literal.parsed.loc
-proc parsed*(literal: ResolvedLiteral): Literal = literal.parsed
+proc value*(literal: ResolvedLiteral): Literal = literal.parsed
 proc default*(literal: ResolvedLiteral): Module = literal.default
 proc kind*(literal: ResolvedLiteral): LiteralKind = literal.parsed.kind
 proc def*(literal: ResolvedLiteral): LiteralDef = literal.def

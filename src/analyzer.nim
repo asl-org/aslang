@@ -118,8 +118,9 @@ proc analyzeFloatLiteral[T: SomeFloat](literal: Literal, expected: string): Resu
       stderr.writeLine(fmt"[WARN] {literal.loc} literal `{literal.asl}` cannot be exactly represented in {expected}; using closest approximation")
     ok()
 
-proc analyzeLiteral(literalDef: ResolvedLiteralDef, literal: Literal): Result[void, string] =
-  case literalDef:
+proc analyzeLiteral(literalDef: AnalyzedLiteralDef, literal: Literal): Result[void, string] =
+  let resolved = literalDef.resolved
+  case resolved:
   of rltkF32: analyzeFloatLiteral[float32](literal, "32-bit float")
   of rltkF64: analyzeFloatLiteral[float64](literal, "64-bit float")
   of rltkPointer: err(fmt"{literal.loc} todo: analyze literal Pointer literal argument")
@@ -159,7 +160,7 @@ proc analyzeLiteralInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile
   of adkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of adkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of adkLiteral:
-    let maybeValidLiteral = analyzeLiteral(argDefData.literal.resolved, init.resolved.literal)
+    let maybeValidLiteral = analyzeLiteral(argDefData.literal, init.resolved.literal)
     if maybeValidLiteral.isOk: ok(newAnalyzedLiteralInitializer(init.resolved.literal, analyzedModuleArgType))
     else: err(maybeValidLiteral.error)
 
@@ -400,17 +401,6 @@ proc analyzeKeywordArgument*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, f
   discard ? analyzeValueTypeAgainstDefType(analyzedFieldArgType, analyzedExpression.argType, analyzedExpression.loc)
   ok(newAnalyzedKeywordArgument(kwarg.resolved, analyzedField, analyzedExpression))
 
-proc analyzeUnionRef(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: AnalyzedDefModule, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
-  ## Walks the resolver's already-checked `impls` seq once and
-  ## produces the analyzer-side equivalents. Empty in → empty out.
-  ## Parser-Module → ResolvedModule via identity lookup on fileCtx —
-  ## immune to aliased-import name mismatch.
-  let resolvedModule = fileDef.scope.findModule(unionRef.module)
-  var analyzedImpls = newSeq[AnalyzedArgumentType](unionRef.impls.len)
-  for i, resolvedImpl in unionRef.impls:
-    analyzedImpls[i] = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), resolvedImpl)
-  ok(newAnalyzedUnionRef(unionRef, resolvedModule, analyzedImpls))
-
 proc analyzeUnionInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefUnionInitializer): Result[AnalyzedUnionInitializer, string] =
   ## Single code path over the union initializer:
   ## - If the surface form supplied explicit impls, the resolver has
@@ -423,80 +413,18 @@ proc analyzeUnionInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, 
   ## Result-type construction is a single loop over the union's
   ## genericTypeIndex: fill bound positions from implMap, leave uncovered
   ## positions as free generics for downstream unification.
-  let analyzedUnionRef = ? analyzeUnionRef(appDef, fileDef, module, init.resolved.unionRef)
-  let receiver = analyzedUnionRef.module
-  if receiver.data.isNone:
-    return err(fmt"{init.loc} module `{receiver.name.asl}` is not a union")
-  let dataDef = receiver.data.get
-  case dataDef.kind:
-  of rdkLiteral: return err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
-  of rdkStruct: return err(fmt"{init.loc} module `{receiver.name.asl}` is a struct")
-  of rdkUnion: discard
-  let resolvedUnion = dataDef.union
-  let resolvedVariant = ? resolvedUnion.findVariant(init.resolved.variant)
-  let analyzedImpls = analyzedUnionRef.analyzedImpls
-  let hasExplicitImpls = analyzedImpls.len > 0
+  let unionModule = fileCtx.findModule(init.unionRef.module)
+  let unionDef = unionModule.dataDef.union
+  let variantDef = ? unionDef.findVariant(init.resolved.variant)
 
-  # Seed implMap positionally from the resolver-checked explicit impls
-  # (empty seq → no-op, preserving the bare/leave-as-is path).
-  var implMap: GenericImplMap
-  for genericArgType, position in resolvedUnion.genericTypeIndex:
-    if position < analyzedImpls.len:
-      # `genericArgType.parsed` is the parser-side Generic;
-      # GenericImplMap keys on ResolvedGeneric. Translate through
-      # analyzeArgumentType so the resolved generic is looked up via
-      # the file scope.
-      let analyzedGeneric = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), newResolvedArgumentType(genericArgType))
-      implMap[analyzedGeneric.generic.resolved] = analyzedImpls[position]
-
-  # Walk kwargs. Substitute the variant's field type via implMap before
-  # type-checking — equivalent to direct match on the bare path
-  # (implMap seeded from kwargs), full concretization on the explicit-
-  # impls path (implMap already seeded, merge-from-kwarg skipped so no
-  # inference happens).
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
   for kwarg in init.kwargs:
-    let resolvedField = ? resolvedVariant.findField(kwarg.name)
-    let analyzedFieldArgType = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), resolvedField.argType)
-    # Concretize the field type via the current implMap before analyzing
-    # the value so bare-literal kwargs adopt the concrete instantiation
-    # when known, and default (i32/f32/String) when the field is still
-    # a free generic on the bare path.
-    let fieldType = analyzedFieldArgType.concrete(implMap)
-    let analyzedExpression = ? analyzeExpression(appDef, fileDef, fileCtx, module, funcCtx, kwarg.expression, some(fieldType))
-    let local = ? analyzeValueTypeAgainstDefType(fieldType, analyzedExpression.argType, analyzedExpression.loc)
-    if not hasExplicitImpls:
-      implMap = ? implMap.merge(local)
-    analyzedKwargs.add(newAnalyzedKeywordArgument(kwarg.resolved, resolvedField, analyzedExpression))
+    let resolvedField = ? variantDef.findField(kwarg.name)
+    # TODO: We need to build impl map for struct's concrete type
+    let analyzedKwarg = ? analyzeKeywordArgument(appDef, fileDef, fileCtx, module, funcCtx, kwarg, resolvedField.resolved, resolvedField.argType)
+    analyzedKwargs.add(analyzedKwarg)
 
-  # Build the result type. One loop over the union's genericTypeIndex
-  # positions: bound positions read from implMap (seeded from explicit
-  # impls or accumulated via kwargs), free positions get a fresh
-  # AnalyzedGenericArgumentType for downstream unification.
-  var impls = newSeq[AnalyzedArgumentType](resolvedUnion.genericTypeIndex.len)
-  for genericArgType, position in resolvedUnion.genericTypeIndex:
-    let analyzedGeneric = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), newResolvedArgumentType(genericArgType))
-    if analyzedGeneric.generic.resolved in implMap:
-      impls[position] = implMap[analyzedGeneric.generic.resolved]
-    else:
-      impls[position] = analyzedGeneric
-  let resolvedSelfArg = receiver.self
-  let analyzedModuleArg = newAnalyzedModuleArgumentType(resolvedSelfArg, receiver, impls)
-
-  ok(newAnalyzedUnionInitializer(init.resolved, analyzedUnionRef, analyzedModuleArg, resolvedVariant, analyzedKwargs))
-
-proc analyzeStructRef(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: AnalyzedDefModule, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
-  ## Walks the resolver's already-checked `impls` seq once and
-  ## produces the analyzer-side equivalents. Empty in → empty out.
-  ## The parser Module carried on `structRef.module` is looked up here
-  ## into a ResolvedModule via `fileDef.scope.findModule` (identity-keyed) — the
-  ## resolver keeps struct/union refs parser-level to break the ref
-  ## cycle; analyzer types can hold the resolved view freely.
-  let resolvedModule = fileDef.scope.findModule(structRef.module)
-  var analyzedImpls = newSeq[AnalyzedArgumentType](structRef.impls.len)
-  for i, resolvedImpl in structRef.impls:
-    analyzedImpls[i] = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), resolvedImpl)
-  ok(newAnalyzedStructRef(structRef, resolvedModule, analyzedImpls))
+  ok(newAnalyzedUnionInitializer(init, analyzedKwargs))
 
 proc analyzeStructInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefStructInitializer): Result[AnalyzedStructInitializer, string] =
   ## Single code path over the struct initializer. Receiver is the
@@ -507,27 +435,17 @@ proc analyzeStructInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile,
   ## TODO: Inference for uncovered generic positions on the bare path
   ## still lives with the caller of receiverArgType — folded into the
   ## same seq-based build here.
-  let analyzedStructRef = ? analyzeStructRef(appDef, fileDef, module, init.resolved.structRef)
-  let receiver = analyzedStructRef.module
-  if receiver.data.isNone:
-    return err(fmt"{init.loc} module `{receiver.name.asl}` is not a struct")
-  let dataDef = receiver.data.get
-  case dataDef.kind:
-  of rdkLiteral: err(fmt"{init.loc} module `{receiver.name.asl}` is a literal")
-  of rdkUnion: err(fmt"{init.loc} module `{receiver.name.asl}` is a union")
-  of rdkStruct:
-    var analyzedKwargs: seq[AnalyzedKeywordArgument]
-    for kwarg in init.kwargs:
-      let resolvedField = ? dataDef.struct.findField(kwarg.name)
-      let analyzedFieldArgType = ? analyzeDefArgumentType(fileDef.scope, newResolvedTypeContext(module.resolved), resolvedField.argType)
-      let analyzedKwarg = ? analyzeKeywordArgument(appDef, fileDef, fileCtx, module, funcCtx, kwarg, resolvedField, analyzedFieldArgType)
-      analyzedKwargs.add(analyzedKwarg)
-    let argType =
-      if analyzedStructRef.analyzedImpls.len == 0:
-        newAnalyzedModuleArgumentType(receiver)
-      else:
-        newAnalyzedModuleArgumentType(receiver.self, receiver, analyzedStructRef.analyzedImpls)
-    ok(newAnalyzedStructInitializer(init.resolved, analyzedStructRef, argType, analyzedKwargs))
+  let analyzedStructRef = init.structRef
+  let structModule = fileCtx.findModule(analyzedStructRef.module)
+  let dataDef = structModule.dataDef
+  let structDef = dataDef.struct
+  var analyzedKwargs: seq[AnalyzedKeywordArgument]
+  for kwarg in init.kwargs:
+    let resolvedField = ? structDef.findField(kwarg.name)
+    # TODO: We need to build impl map for struct's concrete type
+    let analyzedKwarg = ? analyzeKeywordArgument(appDef, fileDef, fileCtx, module, funcCtx, kwarg, resolvedField.resolved, resolvedField.argType)
+    analyzedKwargs.add(analyzedKwarg)
+  ok(newAnalyzedStructInitializer(init, analyzedKwargs))
 
 proc analyzeInitializer*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
@@ -569,8 +487,8 @@ proc analyzeBareLiteral(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCt
     of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
     of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
     of adkLiteral:
-      ? analyzeLiteral(argDefData.literal.resolved, literal.resolved.parsed)
-      ok(newAnalyzedLiteralInitializer(literal.resolved.parsed, concreteArgType.module))
+      ? analyzeLiteral(argDefData.literal, literal.value)
+      ok(newAnalyzedLiteralInitializer(literal.value, concreteArgType.module))
 
 proc analyzeExpression*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
   case expression.kind:
