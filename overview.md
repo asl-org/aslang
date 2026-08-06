@@ -1184,8 +1184,10 @@ src/
                                    AnalyzedSetter. Type-only file —
                                    the corresponding analyze* procs
                                    live on the facade.
-    userfunc.nim                   AnalyzedUserFunction (resolved +
-                                   def + statements).
+    userfunc.nim                   AnalyzedUserFunction (def:
+                                   AnalyzedDefUserFunction twin +
+                                   statements; resolved derived
+                                   through the twin).
     externfunc.nim                 AnalyzedExternFunction — wraps the
                                    phase-A AnalyzedDefExternFunction
                                    directly (def + resolved reached
