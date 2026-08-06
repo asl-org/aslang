@@ -1422,18 +1422,44 @@ Focused TODOs still open:
   ROUTE CHOSEN: read the stored twin — phase B is being
   incrementally rewired to walk the AnalyzedDef* bundle instead of
   re-deriving. Landed so far: the module/function walk consumes
-  fileDef.modules + module.functions, and the whole statement/
-  expression walk consumes the AnalyzedDef* statement tree (the
-  fncall-receiver and literal-initializer re-entries through
-  fileDef.scope are gone, along with the findFunctionDef and
-  defaultLiteralType re-lookups). Remaining: the def-side argtype
-  re-entries themselves — struct/union initializer + case-pattern
-  FIELD types and the union generic-slot reconstructions switch to
-  analyzed-twin accessors on AnalyzedStructDef / AnalyzedVariantDef
-  (the struct/union ref impl lists are site-written and stay
-  scope-analyzed by design); then the two deferred positive
-  provenance tests (see test_analyzer.nim's suite comment) flip
-  green as the acceptance gate.
+  fileDef.modules + module.functions; the whole statement/
+  expression walk consumes the AnalyzedDef* statement tree; the
+  statement outputs anchor on their def twins; and the initializer
+  analyzers read the def twins' ref argTypes — leaving exactly ONE
+  fileDef.scope re-entry in analyzer.nim (union case-pattern field
+  types). Then the two deferred positive provenance tests (see
+  test_analyzer.nim's suite comment) flip green as the acceptance
+  gate.
+
+  CURRENT STATE — deliberately RED (WIP): stripping the
+  initializers' positional concretization (below) costs 3 unit
+  tests (bare-literal default in a generic union kwarg, banged
+  return types) and the integration suite (case-arm return-type
+  uniformity sees unconcretized generics) until the replacement
+  lands. Suites are red on main by intent; the WIP commits record
+  the exact counts.
+
+- **ImplMap-per-argument-type — the concretization rebuild
+  (IN PROGRESS).** WHY: phase B used to rebuild concrete
+  instantiations positionally — impls stored as a bare seq, each
+  consumer re-zipping against the resolver's `genericTypeIndex` and
+  re-entering `analyzeDefArgumentType` to translate slots, per
+  initializer and per case pattern. Positions only compose when the
+  substituted generic is one of the container's OWN slots in the
+  container's OWN order — shape-fragile, resolver-coupled, and the
+  reason `concrete()`'s single `getOrDefault` never had a place to
+  collapse substitution chains. WHAT: the def analyzer will
+  maintain a `GenericImplMap` per module argument type, built where
+  `zip(requires, impls)` already happens
+  (`analyzeDefModuleArgumentType`); phase B builds concrete types
+  from the stored map. Identity-keyed (alias/cross-file-immune),
+  free generics are simply absent keys (downstream unification
+  fills them), slot ORDER comes from the module twin's ordered
+  `requires` seq (retiring `genericTypeIndex` from phase-B use),
+  and the map is payload — hash/== stay on module + impls. Map
+  construction/merge becomes the single home for the
+  substitution-chain collapse (`Sample → K, K → u8`), pairing with
+  the equality-vs-unification rebuild below.
 - **Dummy location in `AnalyzedArgumentType.self`**
   (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
   reconstructs a `ResolvedGenericArgumentType` with a fabricated
