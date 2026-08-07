@@ -38,12 +38,9 @@ proc newResolvedVariantDef*(parsed: VariantDef, fields: seq[ResolvedArgumentDef]
   let generics = buildGenerics(fields)
   ResolvedVariantDef(parsed: parsed, fields: fields, generics: generics, fieldIndex: fieldIndex)
 
-proc loc*(variant: ResolvedVariantDef): Location = variant.parsed.loc
 proc name*(variant: ResolvedVariantDef): Identifier = variant.parsed.name
-proc parsed*(variant: ResolvedVariantDef): VariantDef = variant.parsed
 proc fields*(variant: ResolvedVariantDef): seq[ResolvedArgumentDef] = variant.fields
 proc requires*(variant: ResolvedVariantDef): seq[ResolvedGenericArgumentType] = variant.generics
-proc fieldIndex*(variant: ResolvedVariantDef): Table[Identifier, int] = variant.fieldIndex
 
 proc findField*(variant: ResolvedVariantDef, name: Identifier): Result[ResolvedArgumentDef, string] =
   if name in variant.fieldIndex: ok(variant.fields[variant.fieldIndex[name]])

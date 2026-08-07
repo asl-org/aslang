@@ -25,7 +25,6 @@ proc newStructDefHeader*(requires: seq[Identifier], loc: Location): Result[Struc
   ? validateRequiresNameConflict(requires)
   ok(StructDefHeader(loc: loc, requires: requires))
 
-proc loc*(header: StructDefHeader): Location = header.loc
 proc requires*(header: StructDefHeader): seq[Identifier] = header.requires
 proc asl*(s: StructDefHeader): string =
   if s.requires.len == 0:

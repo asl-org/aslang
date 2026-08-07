@@ -22,6 +22,4 @@ proc newAnalyzedDefUnionRef*(resolved: ResolvedUnionRef, module: ResolvedModule,
   newAnalyzedDefUnionRef(resolved, argType, union, variant)
 
 proc module*(unionRef: AnalyzedDefUnionRef): ResolvedModule = unionRef.argType.module
-proc union*(unionRef: AnalyzedDefUnionRef): ResolvedUnionDef = unionRef.union
-proc variant*(unionRef: AnalyzedDefUnionRef): ResolvedVariantDef = unionRef.variant
 proc argType*(unionRef: AnalyzedDefUnionRef): AnalyzedModuleArgumentType = unionRef.argType

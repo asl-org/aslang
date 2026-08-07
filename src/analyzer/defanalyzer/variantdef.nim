@@ -23,9 +23,7 @@ proc newAnalyzedVariantDef*(resolved: ResolvedVariantDef,
     fieldIndex[field.name] = id
   AnalyzedVariantDef(resolved: resolved, fields: fields, fieldIndex: fieldIndex)
 
-proc resolved*(v: AnalyzedVariantDef): ResolvedVariantDef = v.resolved
 proc name*(v: AnalyzedVariantDef): Identifier = v.resolved.name
-proc fields*(v: AnalyzedVariantDef): seq[AnalyzedArgumentDef] = v.fields
 
 proc findField*(v: AnalyzedVariantDef, name: Identifier): Result[AnalyzedArgumentDef, string] =
   if name in v.fieldIndex: ok(v.fields[v.fieldIndex[name]])

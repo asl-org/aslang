@@ -10,6 +10,4 @@ type AnalyzedImportedType* = ref object
 proc newAnalyzedImportedType*(def: AnalyzedDefImportedType, typ: AnalyzedLocalType): AnalyzedImportedType =
   AnalyzedImportedType(def: def, typ: typ)
 
-proc loc*(impType: AnalyzedImportedType): Location = impType.def.loc
-proc binding*(impType: AnalyzedImportedType): Identifier = impType.def.binding
 proc typ*(impType: AnalyzedImportedType): AnalyzedLocalType = impType.typ

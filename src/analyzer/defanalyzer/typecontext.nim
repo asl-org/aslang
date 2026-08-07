@@ -24,7 +24,6 @@ proc newResolvedTypeContext*(module: ResolvedModule): ResolvedTypeContext =
 proc newResolvedTypeContext*(generic: ResolvedGeneric): ResolvedTypeContext =
   ResolvedTypeContext(kind: rtckGeneric, generic: generic)
 
-proc kind*(typeCtx: ResolvedTypeContext): ResolvedTypeContextKind = typeCtx.kind
 
 proc module*(typeCtx: ResolvedTypeContext): ResolvedModule =
   assert typeCtx.kind == rtckModule,

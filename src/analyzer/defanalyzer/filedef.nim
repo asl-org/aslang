@@ -35,11 +35,9 @@ proc newAnalyzedDefFile*(resolved: ResolvedFile, imports: seq[AnalyzedDefImport]
   let definedTypeIndex = buildTypeIndex(types)
   AnalyzedDefFile(resolved: resolved, imports: imports, types: types, scope: scope, definedTypeIndex: definedTypeIndex)
 
-proc resolved*(f: AnalyzedDefFile): ResolvedFile = f.resolved
 proc path*(f: AnalyzedDefFile): string = f.resolved.path
 proc imports*(f: AnalyzedDefFile): seq[AnalyzedDefImport] = f.imports
 proc types*(f: AnalyzedDefFile): seq[AnalyzedLocalType] = f.types
-proc scope*(f: AnalyzedDefFile): ResolvedFileContext = f.scope
 proc modules*(file: AnalyzedDefFile): seq[AnalyzedDefModule] =
   file.types.filterIt(it.kind == altkModule).mapIt(it.module)
 

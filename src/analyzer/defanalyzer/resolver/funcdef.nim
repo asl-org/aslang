@@ -17,7 +17,6 @@ proc newResolvedFunctionDef*(parsed: FunctionDef,
     returns: ResolvedArgumentType): ResolvedFunctionDef =
   ResolvedFunctionDef(parsed: parsed, args: args, returns: returns)
 
-proc parsed*(funcDef: ResolvedFunctionDef): FunctionDef = funcDef.parsed
 proc args*(funcDef: ResolvedFunctionDef): seq[ResolvedArgumentDef] = funcDef.args
 proc returns*(funcDef: ResolvedFunctionDef): ResolvedArgumentType = funcDef.returns
 proc public*(funcDef: ResolvedFunctionDef): bool = funcDef.parsed.public

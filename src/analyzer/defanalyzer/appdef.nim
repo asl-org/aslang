@@ -29,7 +29,6 @@ proc newAnalyzedDefApp*(resolved: ResolvedApp,
     fileDefIndex[fileDef.path] = index
   AnalyzedDefApp(resolved: resolved, fileDefs: fileDefs, fileDefIndex: fileDefIndex)
 
-proc resolved*(a: AnalyzedDefApp): ResolvedApp = a.resolved
 proc fileDefs*(a: AnalyzedDefApp): seq[AnalyzedDefFile] = a.fileDefs
 
 proc findFileDef*(appDef: AnalyzedDefApp, path: string): AnalyzedDefFile =

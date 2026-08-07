@@ -19,7 +19,6 @@ proc newAnalyzedDefExternFunction*(resolved: ResolvedExternFunction, def: Analyz
 
 proc name*(function: AnalyzedDefExternFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefExternFunction): int = function.resolved.arity
-proc resolved*(function: AnalyzedDefExternFunction): ResolvedExternFunction = function.resolved
 
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction
@@ -32,7 +31,6 @@ proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFu
 proc loc*(function: AnalyzedDefUserFunction): Location = function.resolved.loc
 proc name*(function: AnalyzedDefUserFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefUserFunction): int = function.resolved.arity
-proc resolved*(function: AnalyzedDefUserFunction): ResolvedUserFunction = function.resolved
 proc def*(function: AnalyzedDefUserFunction): AnalyzedFunctionDef = function.def
 proc statements*(function: AnalyzedDefUserFunction): seq[AnalyzedDefStatement] = function.statements
 

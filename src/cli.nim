@@ -35,9 +35,7 @@ proc newAslBuildCommand(filename: string, outputFile: string,
       vendorRoots: vendorRoots)
 
 proc filename*(cmd: AslBuildCommand): string = cmd.filename
-proc outputFile*(cmd: AslBuildCommand): string = cmd.outputFile
 proc indentWidth*(cmd: AslBuildCommand): uint32 = cmd.indentWidth
-proc debug*(cmd: AslBuildCommand): bool = cmd.debug
 proc dumpTokens*(cmd: AslBuildCommand): bool = cmd.dumpTokens
 proc vendorRoots*(cmd: AslBuildCommand): VendorRoots = cmd.vendorRoots
 

@@ -19,5 +19,3 @@ type AnalyzedApp* = ref object
 proc newAnalyzedApp*(resolved: ResolvedApp, files: seq[AnalyzedFile]): AnalyzedApp =
   AnalyzedApp(resolved: resolved, files: files)
 
-proc resolved*(a: AnalyzedApp): ResolvedApp = a.resolved
-proc files*(a: AnalyzedApp): seq[AnalyzedFile] = a.files

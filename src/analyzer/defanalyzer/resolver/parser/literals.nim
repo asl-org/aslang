@@ -30,7 +30,6 @@ proc newStringLiteral*(content: string, loc: Location): StringLiteral =
 
 proc loc*(strLit: StringLiteral): Location = strLit.loc
 proc value*(strLit: StringLiteral): string = strLit.content
-proc content*(strLit: StringLiteral): string = strLit.content
 proc asl*(strLit: StringLiteral): string = fmt"""{strLit.content}"""
 
 # ============================================================
@@ -45,8 +44,6 @@ proc newUnsignedIntegerLiteral*(value: string,
     loc: Location): UnsignedIntegerLiteral =
   UnsignedIntegerLiteral(value: value, loc: loc)
 
-proc value*(literal: UnsignedIntegerLiteral): string = literal.value
-proc loc*(uil: UnsignedIntegerLiteral): Location = uil.loc
 proc asl(unsigned: UnsignedIntegerLiteral): string = unsigned.value
 
 type SignedIntegerLiteral* = ref object
@@ -58,7 +55,6 @@ proc newSignedIntegerLiteral*(sign: string, value: UnsignedIntegerLiteral,
     loc: Location): SignedIntegerLiteral =
   SignedIntegerLiteral(sign: sign, value: value, loc: loc)
 
-proc loc*(sil: SignedIntegerLiteral): Location = sil.loc
 
 proc asl*(signed: SignedIntegerLiteral): string =
   fmt"{signed.sign}{asl(signed.value)}"
@@ -77,7 +73,6 @@ proc newIntegerLiteral*(signed: SignedIntegerLiteral): IntegerLiteral =
 proc newIntegerLiteral*(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ilkUnsigned, unsigned: unsigned)
 
-proc kind*(il: IntegerLiteral): IntegerLiteralKind = il.kind
 
 proc signed*(il: IntegerLiteral): SignedIntegerLiteral =
   assert il.kind == ilkSigned,
@@ -110,7 +105,6 @@ type FloatLiteral* = ref object
 proc newFloatLiteral*(value: string, loc: Location): FloatLiteral =
   FloatLiteral(value: value, loc: loc)
 
-proc loc*(floatLit: FloatLiteral): Location = floatLit.loc
 proc asl*(floatLit: FloatLiteral): string = floatLit.value
 
 # ============================================================

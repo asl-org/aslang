@@ -34,9 +34,6 @@ proc newResolvedLiteral*(parsed: Literal, module: Module, def: LiteralDef): Reso
 proc loc*(literal: ResolvedLiteral): Location = literal.parsed.loc
 proc value*(literal: ResolvedLiteral): Literal = literal.parsed
 proc default*(literal: ResolvedLiteral): Module = literal.default
-proc kind*(literal: ResolvedLiteral): LiteralKind = literal.parsed.kind
-proc def*(literal: ResolvedLiteral): LiteralDef = literal.def
-proc asl*(literal: ResolvedLiteral): string = literal.parsed.asl
 
 type
   ResolvedKeywordArgument* = ref object
@@ -111,7 +108,6 @@ proc newResolvedKeywordArgument*(parsed: KeywordArgument,
     expression: ResolvedExpression): ResolvedKeywordArgument =
   ResolvedKeywordArgument(parsed: parsed, expression: expression)
 
-proc parsed*(kwarg: ResolvedKeywordArgument): KeywordArgument = kwarg.parsed
 proc expression*(kwarg: ResolvedKeywordArgument): ResolvedExpression = kwarg.expression
 proc name*(kwarg: ResolvedKeywordArgument): Identifier = kwarg.parsed.name
 proc loc*(kwarg: ResolvedKeywordArgument): Location = kwarg.parsed.loc
@@ -145,7 +141,6 @@ proc newResolvedStructInitializer*(parsed: StructInitializer,
   let ordered = ? orderedKwargs(kwargs, proc (name: Identifier): Result[int, string] = struct.findFieldId(name), struct.fields.len, parsed.kwargList.loc)
   ok(ResolvedStructInitializer(parsed: parsed, structRef: structRef, kwargs: ordered))
 
-proc parsed*(struct: ResolvedStructInitializer): StructInitializer = struct.parsed
 proc structRef*(struct: ResolvedStructInitializer): ResolvedStructRef = struct.structRef
 proc kwargs*(struct: ResolvedStructInitializer): seq[ResolvedKeywordArgument] = struct.kwargs
 proc loc*(struct: ResolvedStructInitializer): Location = struct.parsed.loc
@@ -161,7 +156,6 @@ proc newResolvedUnionInitializer*(parsed: UnionInitializer,
   let ordered = ? orderedKwargs(kwargs, proc (name: Identifier): Result[int, string] = variant.findFieldId(name), variant.fields.len, parsed.kwargList.loc)
   ok(ResolvedUnionInitializer(parsed: parsed, unionRef: unionRef, kwargs: ordered))
 
-proc parsed*(init: ResolvedUnionInitializer): UnionInitializer = init.parsed
 proc unionRef*(init: ResolvedUnionInitializer): ResolvedUnionRef = init.unionRef
 proc kwargs*(init: ResolvedUnionInitializer): seq[ResolvedKeywordArgument] = init.kwargs
 proc loc*(init: ResolvedUnionInitializer): Location = init.parsed.loc
@@ -206,7 +200,6 @@ proc newResolvedFunctionCall*(parsed: FunctionCall,
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
 proc name*(fncall: ResolvedFunctionCall): Identifier = fncall.parsed.name
 proc arity*(fncall: ResolvedFunctionCall): int = fncall.parsed.arity
-proc parsed*(fncall: ResolvedFunctionCall): FunctionCall = fncall.parsed
 proc typ*(fncall: ResolvedFunctionCall): parser.LocalType = fncall.typ
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 
@@ -227,7 +220,6 @@ proc newResolvedAssignment*(parsed: Assignment,
     expression: ResolvedExpression): ResolvedAssignment =
   ResolvedAssignment(parsed: parsed, expression: expression)
 
-proc parsed*(assignment: ResolvedAssignment): Assignment = assignment.parsed
 proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
 proc loc*(assignment: ResolvedAssignment): Location = assignment.parsed.loc
 proc target*(assignment: ResolvedAssignment): Identifier = assignment.parsed.target
@@ -238,7 +230,6 @@ proc newResolvedSetter*(parsed: Setter, getter: ResolvedGetter,
     expression: ResolvedExpression): ResolvedSetter =
   ResolvedSetter(parsed: parsed, getter: getter, expression: expression)
 
-proc parsed*(setter: ResolvedSetter): Setter = setter.parsed
 proc getter*(setter: ResolvedSetter): ResolvedGetter = setter.getter
 proc expression*(setter: ResolvedSetter): ResolvedExpression = setter.expression
 proc loc*(setter: ResolvedSetter): Location = setter.parsed.loc
@@ -249,7 +240,6 @@ proc newResolvedCaseBlock*(parsed: CaseBlock, pattern: ResolvedCasePattern,
     statements: seq[ResolvedStatement]): ResolvedCaseBlock =
   ResolvedCaseBlock(parsed: parsed, pattern: pattern, statements: statements)
 
-proc parsed*(caseBlock: ResolvedCaseBlock): CaseBlock = caseBlock.parsed
 proc pattern*(caseBlock: ResolvedCaseBlock): ResolvedCasePattern = caseBlock.pattern
 proc statements*(caseBlock: ResolvedCaseBlock): seq[ResolvedStatement] = caseBlock.statements
 proc loc*(caseBlock: ResolvedCaseBlock): Location = caseBlock.parsed.loc
@@ -261,7 +251,6 @@ proc newResolvedMatchExpression*(parsed: MatchExpression,
     cases: seq[ResolvedCaseBlock]): ResolvedMatchExpression =
   ResolvedMatchExpression(parsed: parsed, subject: subject, cases: cases)
 
-proc parsed*(match: ResolvedMatchExpression): MatchExpression = match.parsed
 proc subject*(match: ResolvedMatchExpression): ResolvedExpression = match.subject
 proc cases*(match: ResolvedMatchExpression): seq[ResolvedCaseBlock] = match.cases
 proc loc*(match: ResolvedMatchExpression): Location = match.parsed.loc

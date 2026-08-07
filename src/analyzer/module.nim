@@ -11,7 +11,3 @@ type AnalyzedModule* = ref object
 proc newAnalyzedModule*(def: AnalyzedDefModule, functions: seq[AnalyzedFunction]): AnalyzedModule =
   AnalyzedModule(def: def, functions: functions)
 
-proc loc*(m: AnalyzedModule): Location = m.def.loc
-proc name*(m: AnalyzedModule): Identifier = m.def.name
-proc def*(m: AnalyzedModule): AnalyzedDefModule = m.def
-proc functions*(m: AnalyzedModule): seq[AnalyzedFunction] = m.functions

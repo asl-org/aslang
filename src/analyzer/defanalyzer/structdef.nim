@@ -23,9 +23,6 @@ proc newAnalyzedStructDef*(resolved: ResolvedStructDef,
     fieldIndex[field.name] = id
   AnalyzedStructDef(resolved: resolved, fields: fields, fieldIndex: fieldIndex)
 
-proc resolved*(s: AnalyzedStructDef): ResolvedStructDef = s.resolved
-proc loc*(s: AnalyzedStructDef): Location = s.resolved.loc
-proc fields*(s: AnalyzedStructDef): seq[AnalyzedArgumentDef] = s.fields
 proc genericTypeIndex(s: AnalyzedStructDef): Table[ResolvedGenericArgumentType, int] = s.resolved.genericTypeIndex
 
 proc findField*(s: AnalyzedStructDef, name: Identifier): Result[AnalyzedArgumentDef, string] =

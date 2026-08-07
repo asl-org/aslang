@@ -47,12 +47,9 @@ proc newResolvedStructDef*(parsed: StructDef, requires: seq[ResolvedGenericArgum
   let fieldIndex = buildFieldIndex(fields)
   ok(ResolvedStructDef(parsed: parsed, generics: generics, fields: fields, fieldIndex: fieldIndex))
 
-proc loc*(struct: ResolvedStructDef): Location = struct.parsed.loc
-proc parsed*(struct: ResolvedStructDef): StructDef = struct.parsed
 proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDef] = struct.fields
 proc requires*(struct: ResolvedStructDef): seq[ResolvedGenericArgumentType] = struct.generics
 
-proc fieldIndex*(struct: ResolvedStructDef): Table[Identifier, int] = struct.fieldIndex
 proc genericTypeIndex*(struct: ResolvedStructDef): Table[ResolvedGenericArgumentType, int] = struct.generics.buildGenericTypeIndex()
 
 proc findField*(struct: ResolvedStructDef, name: Identifier): Result[ResolvedArgumentDef, string] =

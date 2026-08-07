@@ -98,34 +98,22 @@ proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFun
   AnalyzedFunctionCall(def: def, funcDef: funcDef, args: args, returns: returns)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
-proc resolved*(fncall: AnalyzedFunctionCall): ResolvedFunctionCall = fncall.def.resolved
-proc def*(fncall: AnalyzedFunctionCall): ResolvedFunctionDef = fncall.funcDef.resolved
-proc args*(fncall: AnalyzedFunctionCall): seq[AnalyzedExpression] = fncall.args
-proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType = fncall.returns
 
 proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(def: def, field: field, expression: expression)
 
-proc resolved*(kwarg: AnalyzedKeywordArgument): AnalyzedDefKeywordArgument = kwarg.def
-proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDef = kwarg.field
-proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
 
 proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
   AnalyzedStructInitializer(def: def, kwargs: kwargs)
 
 proc loc*(init: AnalyzedStructInitializer): Location = init.def.loc
-proc structRef*(init: AnalyzedStructInitializer): AnalyzedDefStructRef = init.def.structRef
 proc argType*(init: AnalyzedStructInitializer): AnalyzedModuleArgumentType = init.def.structRef.argType
-proc def*(init: AnalyzedStructInitializer): AnalyzedDefStructInitializer = init.def
-proc kwargs*(init: AnalyzedStructInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
 
 proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedUnionInitializer =
   AnalyzedUnionInitializer(def: def, kwargs: kwargs)
 
 proc loc*(init: AnalyzedUnionInitializer): Location = init.def.loc
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedModuleArgumentType = init.def.unionRef.argType
-proc def*(init: AnalyzedUnionInitializer): AnalyzedDefUnionInitializer = init.def
-proc kwargs*(init: AnalyzedUnionInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
 
 proc newAnalyzedInitializer*(literal: AnalyzedLiteralInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikLiteral, literal: literal)
@@ -136,7 +124,6 @@ proc newAnalyzedInitializer*(union: AnalyzedUnionInitializer): AnalyzedInitializ
 proc newAnalyzedInitializer*(struct: AnalyzedStructInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikStruct, struct: struct)
 
-proc kind*(init: AnalyzedInitializer): AnalyzedInitializerKind = init.kind
 proc union*(init: AnalyzedInitializer): AnalyzedUnionInitializer =
   assert init.kind == aikUnion,
     fmt"AnalyzedInitializer.union accessed but kind is {init.kind}"
@@ -162,9 +149,6 @@ proc newAnalyzedCaseBlock*(def: AnalyzedDefCase, pattern: AnalyzedCasePattern, s
   AnalyzedCaseBlock(def: def, pattern: pattern, statements: statements)
 
 proc loc*(caseBlock: AnalyzedCaseBlock): Location = caseBlock.def.resolved.loc
-proc resolved*(caseBlock: AnalyzedCaseBlock): ResolvedCaseBlock = caseBlock.def.resolved
-proc pattern*(caseBlock: AnalyzedCaseBlock): AnalyzedCasePattern = caseBlock.pattern
-proc statements*(caseBlock: AnalyzedCaseBlock): seq[AnalyzedStatement] = caseBlock.statements
 
 proc argType*(caseBlock: AnalyzedCaseBlock): AnalyzedArgumentType =
   assert(caseBlock.statements.len > 0, "UNREACHABLE: should have been caught by resolver")
@@ -174,9 +158,6 @@ proc newAnalyzedMatchExpression*(def: AnalyzedDefMatch, subject: AnalyzedExpress
   AnalyzedMatchExpression(def: def, subject: subject, cases: cases)
 
 proc loc*(m: AnalyzedMatchExpression): Location = m.def.resolved.loc
-proc resolved*(m: AnalyzedMatchExpression): ResolvedMatchExpression = m.def.resolved
-proc subject*(m: AnalyzedMatchExpression): AnalyzedExpression = m.subject
-proc cases*(m: AnalyzedMatchExpression): seq[AnalyzedCaseBlock] = m.cases
 proc returns*(m: AnalyzedMatchExpression): AnalyzedArgumentType = m.cases[0].argType
 
 proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
@@ -184,15 +165,12 @@ proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpr
 
 proc loc*(assignment: AnalyzedAssignment): Location = assignment.def.loc
 proc target*(assignment: AnalyzedAssignment): Identifier = assignment.def.target
-proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression = assignment.expression
 proc argType*(assignment: AnalyzedAssignment): AnalyzedArgumentType = assignment.expression.argType
 
 proc newAnalyzedSetter*(def: AnalyzedDefSetter, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedSetter =
   AnalyzedSetter(def: def, getter: getter, expression: expression)
 
 proc loc*(setter: AnalyzedSetter): Location = setter.def.loc
-proc getter*(setter: AnalyzedSetter): AnalyzedGetter = setter.getter
-proc expression*(setter: AnalyzedSetter): AnalyzedExpression = setter.expression
 proc argType*(setter: AnalyzedSetter): AnalyzedArgumentType = setter.expression.argType
 
 proc newAnalyzedExpression*(variable: AnalyzedVariable): AnalyzedExpression =
@@ -210,7 +188,6 @@ proc newAnalyzedExpression*(init: AnalyzedInitializer): AnalyzedExpression =
 proc newAnalyzedExpression*(getter: AnalyzedGetter): AnalyzedExpression =
   AnalyzedExpression(kind: aekGetter, getter: getter)
 
-proc kind*(expression: AnalyzedExpression): AnalyzedExpressionKind = expression.kind
 proc variable*(expression: AnalyzedExpression): AnalyzedVariable =
   assert expression.kind == aekVariable,
     fmt"AnalyzedExpression.variable accessed but kind is {expression.kind}"
@@ -257,7 +234,6 @@ proc newAnalyzedStatement*(assignment: AnalyzedAssignment): AnalyzedStatement =
 proc newAnalyzedStatement*(setter: AnalyzedSetter): AnalyzedStatement =
   AnalyzedStatement(kind: askSetter, setter: setter)
 
-proc kind*(statement: AnalyzedStatement): AnalyzedStatementKind = statement.kind
 proc expression*(statement: AnalyzedStatement): AnalyzedExpression =
   assert statement.kind == askExpr,
     fmt"AnalyzedStatement.expression accessed but kind is {statement.kind}"

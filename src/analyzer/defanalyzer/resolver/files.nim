@@ -28,7 +28,6 @@ proc path*(file: ResolvedFile): string = file.parsed.path
 proc parsed*(file: ResolvedFile): parser.File = file.parsed
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 proc types*(file: ResolvedFile): seq[ResolvedLocalType] = file.types
-proc scope*(file: ResolvedFile): FileContext = file.scope
 proc modules*(file: ResolvedFile): seq[ResolvedModule] =
   file.types.filterIt(it.kind == rltkModule).mapIt(it.module)
 

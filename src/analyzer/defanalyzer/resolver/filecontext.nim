@@ -45,7 +45,6 @@ proc localType*(t: Type): LocalType =
   of tkLocal: t.local
   of tkImported: t.imported.typ
 
-proc name*(t: Type): Identifier = t.localType.name
 proc loc*(t: Type): Location = t.localType.loc
 proc hash*(t: Type): Hash = t.localType.hash
 proc `==`*(a, b: Type): bool = a.localType == b.localType

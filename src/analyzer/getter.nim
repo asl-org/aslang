@@ -15,7 +15,4 @@ proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, 
   AnalyzedGetter(resolved: resolved, source: source, property: property)
 
 proc loc*(getter: AnalyzedGetter): Location = getter.resolved.loc
-proc resolved*(getter: AnalyzedGetter): ResolvedGetter = getter.resolved
-proc source*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.source
 proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.property.argType
-proc property*(getter: AnalyzedGetter): AnalyzedArgumentDef = getter.property

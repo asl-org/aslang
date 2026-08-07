@@ -16,7 +16,6 @@ type ResolvedAppContext* = ref object
 proc newResolvedAppContext*(resolved: ResolvedApp): ResolvedAppContext =
   ResolvedAppContext(resolved: resolved)
 
-proc resolved*(appCtx: ResolvedAppContext): ResolvedApp = appCtx.resolved
 proc files*(appCtx: ResolvedAppContext): seq[ResolvedFile] = appCtx.resolved.files
 proc fileDefs*(appCtx: ResolvedAppContext): seq[AnalyzedDefFile] = appCtx.fileDefs
 

@@ -23,7 +23,6 @@ proc newAnalyzedGeneric*(resolved: ResolvedGeneric,
     funcNameArityIndex: buildAnalyzedFuncNameArityIndex(funcDefs))
 
 proc resolved*(g: AnalyzedGeneric): ResolvedGeneric = g.resolved
-proc funcDefs*(g: AnalyzedGeneric): seq[AnalyzedFunctionDef] = g.funcDefs
 proc name*(g: AnalyzedGeneric): Identifier = g.resolved.name
 proc loc*(g: AnalyzedGeneric): Location = g.resolved.loc
 

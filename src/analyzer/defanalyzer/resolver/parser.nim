@@ -118,7 +118,6 @@ proc loc*(parser: Parser): Location =
   if parser.done(): parser.tokens[^1].loc
   else: parser.tokens[parser.index].loc
 
-proc filepath*(parser: Parser): string = parser.filepath
 
 
 # ============================================================

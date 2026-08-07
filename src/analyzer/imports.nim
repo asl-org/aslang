@@ -15,4 +15,3 @@ proc newAnalyzedImport*(def: AnalyzedDefImport, importedTypes: seq[AnalyzedImpor
   AnalyzedImport(def: def, importedTypes: importedTypes)
 
 proc importedTypes*(imp: AnalyzedImport): seq[AnalyzedImportedType] = imp.importedTypes
-proc path*(imp: AnalyzedImport): string = imp.def.path

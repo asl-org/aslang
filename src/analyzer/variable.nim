@@ -12,5 +12,4 @@ proc newAnalyzedVariable*(name: Identifier, argType: AnalyzedArgumentType): Anal
   AnalyzedVariable(name: name, argType: argType)
 
 proc loc*(variable: AnalyzedVariable): Location = variable.name.loc
-proc name*(variable: AnalyzedVariable): Identifier = variable.name
 proc argType*(variable: AnalyzedVariable): AnalyzedArgumentType = variable.argType

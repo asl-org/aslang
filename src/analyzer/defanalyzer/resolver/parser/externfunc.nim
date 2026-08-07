@@ -14,7 +14,6 @@ type ExternFunction* = ref object
   def: FunctionDef
   loc: Location
 
-proc ffi*(fn: ExternFunction): string = fn.ffi
 proc name*(fn: ExternFunction): Identifier = fn.def.name
 proc arity*(fn: ExternFunction): int = fn.def.arity
 proc def*(fn: ExternFunction): FunctionDef = fn.def

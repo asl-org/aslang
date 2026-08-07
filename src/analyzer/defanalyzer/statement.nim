@@ -97,7 +97,6 @@ proc newAnalyzedDefLiteral*(resolved: ResolvedLiteral, default: ResolvedModule, 
 
 proc loc*(literal: AnalyzedDefLiteral): Location = literal.resolved.loc
 proc value*(literal: AnalyzedDefLiteral): Literal = literal.resolved.value
-proc resolved*(literal: AnalyzedDefLiteral): ResolvedLiteral = literal.resolved
 proc default*(literal: AnalyzedDefLiteral): ResolvedModule = literal.default
 
 # AnalyzedDefLiteralInitializer
@@ -113,7 +112,6 @@ proc newAnalyzedDefKeywordArgument*(resolved: ResolvedKeywordArgument, expressio
   AnalyzedDefKeywordArgument(resolved: resolved, expression: expression)
 
 proc name*(kwarg: AnalyzedDefKeywordArgument): Identifier = kwarg.resolved.name
-proc resolved*(kwarg: AnalyzedDefKeywordArgument): ResolvedKeywordArgument = kwarg.resolved
 proc expression*(kwarg: AnalyzedDefKeywordArgument): AnalyzedDefExpression = kwarg.expression
 
 # AnalyzedDefStructInitializer
@@ -121,7 +119,6 @@ proc newAnalyzedDefStructInitializer*(resolved: ResolvedStructInitializer, struc
   AnalyzedDefStructInitializer(resolved: resolved, structRef: structRef, kwargs: kwargs)
 
 proc loc*(init: AnalyzedDefStructInitializer): Location = init.resolved.loc
-proc resolved*(init: AnalyzedDefStructInitializer): ResolvedStructInitializer = init.resolved
 proc structRef*(init: AnalyzedDefStructInitializer): AnalyzedDefStructRef = init.structRef
 proc kwargs*(init: AnalyzedDefStructInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
 
@@ -179,7 +176,6 @@ proc args*(fncall: AnalyzedDefFunctionCall): seq[AnalyzedDefExpression] = fncall
 proc newAnalyzedDefCase*(resolved: ResolvedCaseBlock, statements: seq[AnalyzedDefStatement]): AnalyzedDefCase =
   AnalyzedDefCase(resolved: resolved, statements: statements)
 
-proc loc*(caseBlock: AnalyzedDefCase): Location = caseBlock.resolved.loc
 # The pattern stays at the resolved level — validating a union
 # pattern's variant/field names needs the match subject's union type,
 # which only phase B computes (`analyzeUnionCasePattern` on the body
@@ -257,7 +253,6 @@ proc newAnalyzedDefAssignment*(resolved: ResolvedAssignment, expression: Analyze
 
 proc loc*(assignment: AnalyzedDefAssignment): Location = assignment.resolved.loc
 proc target*(assignment: AnalyzedDefAssignment): Identifier = assignment.resolved.target
-proc resolved*(assignment: AnalyzedDefAssignment): ResolvedAssignment = assignment.resolved
 proc expression*(assignment: AnalyzedDefAssignment): AnalyzedDefExpression = assignment.expression
 
 # AnalyzedDefSetter
@@ -266,7 +261,6 @@ proc newAnalyzedDefSetter*(resolved: ResolvedSetter, expression: AnalyzedDefExpr
 
 proc loc*(setter: AnalyzedDefSetter): Location = setter.resolved.loc
 proc getter*(setter: AnalyzedDefSetter): ResolvedGetter = setter.resolved.getter
-proc resolved*(setter: AnalyzedDefSetter): ResolvedSetter = setter.resolved
 proc expression*(setter: AnalyzedDefSetter): AnalyzedDefExpression = setter.expression
 
 # AnalyzedDefStatement

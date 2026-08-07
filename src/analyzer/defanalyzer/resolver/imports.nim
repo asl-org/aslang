@@ -23,10 +23,7 @@ proc newResolvedImportedType*(resolvedType: ResolvedLocalType): ResolvedImported
   let parsed = newImportedType(resolvedType.name)
   ResolvedImportedType(parsed: parsed, resolvedType: resolvedType)
 
-proc parsed*(t: ResolvedImportedType): ImportedType = t.parsed
-proc name*(t: ResolvedImportedType): Identifier = t.parsed.name
 proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding
-proc loc*(t: ResolvedImportedType): Location = t.parsed.binding.loc
 proc typ*(t: ResolvedImportedType): LocalType = t.resolvedType.parsed
 proc resolvedType*(t: ResolvedImportedType): ResolvedLocalType = t.resolvedType
 
@@ -39,7 +36,5 @@ type ResolvedImport* = ref object
 proc newResolvedImport*(parsed: Import, impFile: parser.File, importedTypes: seq[ResolvedImportedType]): ResolvedImport =
   ResolvedImport(parsed: parsed, impFile: impFile, importedTypes: importedTypes)
 
-proc parsed*(i: ResolvedImport): Import = i.parsed
 proc impFile*(i: ResolvedImport): parser.File = i.impFile
 proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] = i.importedTypes
-proc loc*(i: ResolvedImport): Location = i.parsed.loc

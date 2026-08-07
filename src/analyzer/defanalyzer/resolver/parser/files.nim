@@ -134,7 +134,6 @@ proc newAslrFile*(path: string, types: seq[LocalType], imports: seq[Import]): Re
   var typeIndex = ? buildTypeNameIndex(types)
   ok(File(kind: fkAslr, path: path, types: types, typeIndex: typeIndex))
 
-proc kind*(file: File): FileKind = file.kind
 proc path*(file: File): string = file.path
 proc types*(file: File): seq[LocalType] = file.types
 proc imports*(file: File): seq[Import] =

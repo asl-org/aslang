@@ -21,7 +21,6 @@ proc newAnalyzedFunction*(user: AnalyzedUserFunction): AnalyzedFunction =
 proc newAnalyzedFunction*(extern: AnalyzedExternFunction): AnalyzedFunction =
   AnalyzedFunction(kind: afkExtern, extern: extern)
 
-proc kind*(function: AnalyzedFunction): AnalyzedFunctionKind = function.kind
 proc user*(function: AnalyzedFunction): AnalyzedUserFunction =
   assert function.kind == afkUser,
     fmt"AnalyzedFunction.user accessed but kind is {function.kind}"

@@ -21,7 +21,6 @@ type AnalyzedArgumentDef* = ref object
 proc newAnalyzedArgumentDef*(resolved: ResolvedArgumentDef, argType: AnalyzedArgumentType): AnalyzedArgumentDef =
   AnalyzedArgumentDef(resolved: resolved, argType: argType)
 
-proc resolved*(d: AnalyzedArgumentDef): ResolvedArgumentDef = d.resolved
 proc argType*(d: AnalyzedArgumentDef): AnalyzedArgumentType = d.argType
 proc name*(d: AnalyzedArgumentDef): Identifier = d.resolved.name
 proc loc*(d: AnalyzedArgumentDef): Location = d.resolved.name.loc

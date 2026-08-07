@@ -30,10 +30,7 @@ proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): R
 
 proc parsed*(generic: ResolvedGeneric): Generic = generic.parsed
 proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDef] = generic.funcDefs
-proc funcDefIndex*(generic: ResolvedGeneric): Table[ResolvedFunctionDef, int] = generic.funcDefIndex
-proc funcNameArityIndex*(generic: ResolvedGeneric): Table[Identifier, Table[int, seq[int]]] = generic.funcNameArityIndex
 proc self*(generic: ResolvedGeneric): Generic = generic.parsed
-proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
 proc name*(generic: ResolvedGeneric): Identifier = generic.parsed.name
 proc loc*(generic: ResolvedGeneric): Location = generic.parsed.loc
 proc hash*(a: ResolvedGeneric): Hash = a.parsed.hash

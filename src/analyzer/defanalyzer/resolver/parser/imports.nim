@@ -77,7 +77,6 @@ proc newImportedType*(name: Identifier): ImportedType =
   ImportedType(name: name, alias: none(Identifier))
 
 proc name*(n: ImportedType): Identifier = n.name
-proc alias*(n: ImportedType): Option[Identifier] = n.alias
 proc loc*(n: ImportedType): Location = n.name.loc
 proc binding*(n: ImportedType): Identifier =
   if n.alias.isSome: n.alias.get else: n.name
@@ -147,7 +146,6 @@ proc names*(imp: Import): seq[ImportedType] =
   assert imp.kind == ikExplicit,
     fmt"Import.names accessed but kind is {imp.kind}"
   imp.names
-proc parsedPath*(imp: Import): ImportPath = imp.parsedPath
 proc absPath*(imp: Import): string = imp.absPath
 proc loc*(imp: Import): Location = imp.loc
 

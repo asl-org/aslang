@@ -48,8 +48,6 @@ proc newAnalyzedDefModule*(resolved: ResolvedModule,
   AnalyzedDefModule(resolved: resolved, requires: requires, data: data, functions: functions, funcNameArityIndex: funcNameArityIndex, funcDefIndex: funcDefIndex)
 
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
-proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
-proc data*(m: AnalyzedDefModule): Option[AnalyzedDataDef] = m.data
 proc functions*(m: AnalyzedDefModule): seq[AnalyzedDefFunction] = m.functions
 
 proc dataDef*(m: AnalyzedDefModule): AnalyzedDataDef =

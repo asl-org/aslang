@@ -53,8 +53,6 @@ proc localType*(t: ResolvedType): ResolvedLocalType =
   of rtkLocal: t.local
   of rtkImported: t.imported.typ
 
-proc loc*(t: ResolvedType): Location = t.localType.loc
-proc name*(t: ResolvedType): Identifier = t.localType.name
 proc hash*(t: ResolvedType): Hash = t.localType.hash
 proc `==`*(a, b: ResolvedType): bool = a.localType == b.localType
 

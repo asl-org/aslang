@@ -15,7 +15,5 @@ type AnalyzedDefImportedType* = ref object
 proc newAnalyzedDefImportedType*(resolved: ResolvedImportedType, impFile: ResolvedFile, typ: ResolvedLocalType): AnalyzedDefImportedType =
   AnalyzedDefImportedType(resolved: resolved, impFile: impFile, typ: typ)
 
-proc loc*(impType: AnalyzedDefImportedType): Location = impType.resolved.loc
-proc binding*(impType: AnalyzedDefImportedType): Identifier = impType.resolved.binding
 proc impFile*(impType: AnalyzedDefImportedType): ResolvedFile = impType.impFile
 proc typ*(impType: AnalyzedDefImportedType): ResolvedLocalType = impType.typ

@@ -10,7 +10,6 @@ type ResolvedGetter* = ref object
 proc newResolvedGetter*(parsed: Getter): ResolvedGetter =
   ResolvedGetter(parsed: parsed)
 
-proc parsed*(getter: ResolvedGetter): Getter = getter.parsed
 proc source*(getter: ResolvedGetter): Identifier = getter.parsed.source
 proc property*(getter: ResolvedGetter): Identifier = getter.parsed.property
 proc loc*(getter: ResolvedGetter): Location = getter.parsed.loc

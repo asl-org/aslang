@@ -29,9 +29,6 @@ proc newResolvedStructRef*(parsed: StructRef, module: Module, struct: StructDef)
   let syntheticArgType = newResolvedModuleArgumentType(module, parsed.loc)
   ok(newResolvedStructRef(parsed, syntheticArgType, struct))
 
-proc loc*(s: ResolvedStructRef): Location = s.parsed.loc
-proc parsed*(s: ResolvedStructRef): StructRef = s.parsed
 proc module*(s: ResolvedStructRef): Module = s.argType.module
-proc impls*(s: ResolvedStructRef): seq[ResolvedArgumentType] = s.argType.impls
 proc struct*(s: ResolvedStructRef): StructDef = s.struct
 proc argType*(s: ResolvedStructRef): ResolvedModuleArgumentType = s.argType

@@ -23,9 +23,6 @@ proc newResolvedUnionRef*(parsed: UnionRef, module: Module, variant: VariantDef)
   let moduleArgType = newResolvedModuleArgumentType(module, parsed.loc)
   newResolvedUnionRef(parsed, moduleArgType, variant)
 
-proc loc*(u: ResolvedUnionRef): Location = u.parsed.loc
-proc parsed*(u: ResolvedUnionRef): UnionRef = u.parsed
 proc module*(u: ResolvedUnionRef): Module = u.argType.module
-proc impls*(u: ResolvedUnionRef): seq[ResolvedArgumentType] = u.argType.impls
 proc argType*(u: ResolvedUnionRef): ResolvedModuleArgumentType = u.argType
 proc variant*(u: ResolvedUnionRef): VariantDef = u.variant

@@ -14,7 +14,6 @@ proc newResolvedArgumentDef*(parsed: ArgumentDef,
     argType: ResolvedArgumentType): ResolvedArgumentDef =
   ResolvedArgumentDef(parsed: parsed, argType: argType)
 
-proc parsed*(d: ResolvedArgumentDef): ArgumentDef = d.parsed
 proc name*(d: ResolvedArgumentDef): Identifier = d.parsed.name
 proc argType*(d: ResolvedArgumentDef): ResolvedArgumentType = d.argType
 proc loc*(d: ResolvedArgumentDef): Location = d.argType.loc

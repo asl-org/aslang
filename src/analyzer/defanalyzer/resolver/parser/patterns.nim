@@ -21,7 +21,6 @@ proc newUnionPatternField*(name: Identifier, binding: Identifier,
 
 proc name*(field: UnionPatternField): Identifier = field.name
 proc binding*(field: UnionPatternField): Identifier = field.binding
-proc loc*(field: UnionPatternField): Location = field.loc
 
 proc asl(field: UnionPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"

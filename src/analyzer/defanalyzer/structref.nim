@@ -22,4 +22,3 @@ proc newAnalyzedDefStructRef*(resolved: ResolvedStructRef, module: ResolvedModul
 
 proc module*(structRef: AnalyzedDefStructRef): ResolvedModule = structRef.argType.module
 proc argType*(structRef: AnalyzedDefStructRef): AnalyzedModuleArgumentType = structRef.argType
-proc struct*(structRef: AnalyzedDefStructRef): ResolvedStructDef = structRef.struct

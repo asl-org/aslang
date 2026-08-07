@@ -23,7 +23,6 @@ proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef, variants: seq[AnalyzedVari
     variantIndex[variant.name] = id
   AnalyzedUnionDef(resolved: resolved, variants: variants, variantIndex: variantIndex)
 
-proc resolved*(u: AnalyzedUnionDef): ResolvedUnionDef = u.resolved
 proc variants*(u: AnalyzedUnionDef): seq[AnalyzedVariantDef] = u.variants
 proc genericTypeIndex*(u: AnalyzedUnionDef): Table[ResolvedGenericArgumentType, int] =
   u.resolved.genericTypeIndex

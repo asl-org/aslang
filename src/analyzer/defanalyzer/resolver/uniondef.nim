@@ -38,11 +38,8 @@ proc newResolvedUnionDef*(parsed: UnionDef, variants: seq[ResolvedVariantDef]): 
   let generics = buildGenerics(variants)
   ResolvedUnionDef(parsed: parsed, variants: variants, generics: generics, variantIndex: variantIndex)
 
-proc loc*(union: ResolvedUnionDef): Location = union.parsed.loc
-proc parsed*(union: ResolvedUnionDef): UnionDef = union.parsed
 proc variants*(union: ResolvedUnionDef): seq[ResolvedVariantDef] = union.variants
 proc requires*(union: ResolvedUnionDef): seq[ResolvedGenericArgumentType] = union.generics
-proc variantIndex*(union: ResolvedUnionDef): Table[Identifier, int] = union.variantIndex
 proc genericTypeIndex*(union: ResolvedUnionDef): Table[ResolvedGenericArgumentType, int] = buildGenericTypeIndex(union.generics)
 
 proc findVariant*(union: ResolvedUnionDef, variant: Identifier): Result[ResolvedVariantDef, string] =
