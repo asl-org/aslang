@@ -128,7 +128,7 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
           let resolvedImplModule = analyzedImpl.module.module
           resolvedImplModule.findImplDef(def, typeCtx.access(resolvedImplModule))
         of aatkGeneric:
-          let resolvedImplGeneric = analyzedImpl.generic.resolved
+          let resolvedImplGeneric = analyzedImpl.generic.generic
           resolvedImplGeneric.findImplDef(def, faAll)
       if maybeMatchingDef.isErr:
         return err(fmt"{impl.loc} type `{impl.asl}` does not implement `{def.asl}` to support `{baseGeneric.name.asl}`")

@@ -105,7 +105,7 @@ proc newAnalyzedDefLiteralInitializer*(resolved: ResolvedLiteralInitializer, arg
   AnalyzedDefLiteralInitializer(resolved: resolved, argType: argType, def: def)
 
 proc loc*(init: AnalyzedDefLiteralInitializer): Location = init.resolved.loc
-proc resolved*(init: AnalyzedDefLiteralInitializer): ResolvedLiteralInitializer = init.resolved
+proc literal*(init: AnalyzedDefLiteralInitializer): Literal = init.resolved.literal
 proc argType*(init: AnalyzedDefLiteralInitializer): AnalyzedModuleArgumentType = init.argType
 
 # AnalyzedDefKeywordArgument
@@ -130,7 +130,7 @@ proc newAnalyzedDefUnionInitializer*(resolved: ResolvedUnionInitializer, unionRe
   AnalyzedDefUnionInitializer(resolved: resolved, unionRef: unionRef, kwargs: kwargs)
 
 proc loc*(init: AnalyzedDefUnionInitializer): Location = init.resolved.loc
-proc resolved*(init: AnalyzedDefUnionInitializer): ResolvedUnionInitializer = init.resolved
+proc variant*(init: AnalyzedDefUnionInitializer): Identifier = init.resolved.variant
 proc unionRef*(init: AnalyzedDefUnionInitializer): AnalyzedDefUnionRef = init.unionRef
 proc kwargs*(init: AnalyzedDefUnionInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
 

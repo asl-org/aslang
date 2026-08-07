@@ -4,7 +4,7 @@
 ## resolver); `concrete*(impls)` distributes the impls to every
 ## variant via each variant's own `concrete`.
 
-import results, strformat, tables
+import tables
 
 import ./resolver
 import ./argtype
@@ -28,9 +28,9 @@ proc variants*(u: AnalyzedUnionDef): seq[AnalyzedVariantDef] = u.variants
 proc genericTypeIndex*(u: AnalyzedUnionDef): Table[ResolvedGenericArgumentType, int] =
   u.resolved.genericTypeIndex
 
-proc findVariant*(union: AnalyzedUnionDef, name: Identifier): Result[AnalyzedVariantDef, string] =
-  if name in union.variantIndex: ok(union.variants[union.variantIndex[name]])
-  else: err(fmt"{name.loc} union does not contain variant `{name.asl}`")
+proc findVariant*(union: AnalyzedUnionDef, name: Identifier): AnalyzedVariantDef =
+  assert(name in union.variantIndex, "UNREACHABLE: duplicate variant name must have been caught by resolver")
+  union.variants[union.variantIndex[name]]
 
 proc concrete*(union: AnalyzedUnionDef,
     impls: seq[AnalyzedArgumentType]): AnalyzedUnionDef =

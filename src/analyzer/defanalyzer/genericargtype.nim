@@ -15,7 +15,7 @@ type AnalyzedGenericArgumentType* = ref object
 proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): AnalyzedGenericArgumentType =
   AnalyzedGenericArgumentType(resolved: resolved, loc: loc)
 
-proc resolved*(g: AnalyzedGenericArgumentType): ResolvedGeneric = g.resolved
+proc generic*(g: AnalyzedGenericArgumentType): ResolvedGeneric = g.resolved
 proc loc*(g: AnalyzedGenericArgumentType): Location = g.loc
 proc name*(g: AnalyzedGenericArgumentType): Identifier = g.resolved.name
 proc hash*(g: AnalyzedGenericArgumentType): Hash = g.resolved.hash

@@ -54,4 +54,4 @@ proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): Analyzed
     return newAnalyzedArgumentType(concreteModuleArgType)
   of aatkGeneric:
     let genericArgType = argType.generic
-    return implMap.getOrDefault(genericArgType.resolved, argType)
+    return implMap.getOrDefault(genericArgType.generic, argType)

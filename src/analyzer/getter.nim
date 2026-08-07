@@ -9,14 +9,13 @@ import ./defanalyzer
 type AnalyzedGetter* = ref object
   resolved: ResolvedGetter
   source: AnalyzedArgumentType
-  property: ResolvedArgumentDef
-  propertyArgType: AnalyzedArgumentType
+  property: AnalyzedArgumentDefinition
 
-proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, property: ResolvedArgumentDef, propertyArgType: AnalyzedArgumentType): AnalyzedGetter =
-  AnalyzedGetter(resolved: resolved, source: source, property: property, propertyArgType: propertyArgType)
+proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, property: AnalyzedArgumentDefinition): AnalyzedGetter =
+  AnalyzedGetter(resolved: resolved, source: source, property: property)
 
 proc loc*(getter: AnalyzedGetter): Location = getter.resolved.loc
 proc resolved*(getter: AnalyzedGetter): ResolvedGetter = getter.resolved
 proc source*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.source
-proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.propertyArgType
-proc property*(getter: AnalyzedGetter): ResolvedArgumentDef = getter.property
+proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.property.argType
+proc property*(getter: AnalyzedGetter): AnalyzedArgumentDefinition = getter.property

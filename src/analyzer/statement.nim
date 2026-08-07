@@ -29,15 +29,14 @@ import getter
 # back to AnalyzedExpression / AnalyzedStatement must live here.
 type
   AnalyzedFunctionCall* = ref object
-    resolved: ResolvedFunctionCall
-    def: ResolvedFunctionDef
+    def: AnalyzedDefFunctionCall
+    funcDef: AnalyzedFunctionDefinition
     args: seq[AnalyzedExpression]
     returns: AnalyzedArgumentType
 
   AnalyzedKeywordArgument* = ref object
-    # todo: add a concrete type
-    resolved: ResolvedKeywordArgument
-    field: ResolvedArgumentDef
+    def: AnalyzedDefKeywordArgument
+    field: AnalyzedArgumentDefinition
     expression: AnalyzedExpression
 
   AnalyzedStructRef* = ref object
@@ -68,15 +67,14 @@ type
     of aikStruct: struct: AnalyzedStructInitializer
 
   AnalyzedCaseBlock* = ref object
-    resolved: ResolvedCaseBlock
+    def: AnalyzedDefCase
     pattern: AnalyzedCasePattern
     statements: seq[AnalyzedStatement]
 
   AnalyzedMatchExpression* = ref object
-    resolved: ResolvedMatchExpression
+    def: AnalyzedDefMatch
     subject: AnalyzedExpression
     cases: seq[AnalyzedCaseBlock]
-    returns: AnalyzedArgumentType
 
   AnalyzedAssignment* = ref object
     def: AnalyzedDefAssignment
@@ -108,20 +106,20 @@ type
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
 
-proc newAnalyzedFunctionCall*(resolved: ResolvedFunctionCall, def: ResolvedFunctionDef, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
-  AnalyzedFunctionCall(resolved: resolved, def: def, args: args, returns: returns)
+proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDefinition, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
+  AnalyzedFunctionCall(def: def, funcDef: funcDef, args: args, returns: returns)
 
-proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.resolved.loc
-proc resolved*(fncall: AnalyzedFunctionCall): ResolvedFunctionCall = fncall.resolved
-proc def*(fncall: AnalyzedFunctionCall): ResolvedFunctionDef = fncall.def
+proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
+proc resolved*(fncall: AnalyzedFunctionCall): ResolvedFunctionCall = fncall.def.resolved
+proc def*(fncall: AnalyzedFunctionCall): ResolvedFunctionDef = fncall.funcDef.resolved
 proc args*(fncall: AnalyzedFunctionCall): seq[AnalyzedExpression] = fncall.args
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType = fncall.returns
 
-proc newAnalyzedKeywordArgument*(resolved: ResolvedKeywordArgument, field: ResolvedArgumentDef, expression: AnalyzedExpression): AnalyzedKeywordArgument =
-  AnalyzedKeywordArgument(resolved: resolved, field: field, expression: expression)
+proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDefinition, expression: AnalyzedExpression): AnalyzedKeywordArgument =
+  AnalyzedKeywordArgument(def: def, field: field, expression: expression)
 
-proc resolved*(kwarg: AnalyzedKeywordArgument): ResolvedKeywordArgument = kwarg.resolved
-proc field*(kwarg: AnalyzedKeywordArgument): ResolvedArgumentDef = kwarg.field
+proc resolved*(kwarg: AnalyzedKeywordArgument): AnalyzedDefKeywordArgument = kwarg.def
+proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDefinition = kwarg.field
 proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
 
 proc newAnalyzedStructRef*(resolved: ResolvedStructRef,
@@ -197,11 +195,11 @@ proc loc*(init: AnalyzedInitializer): Location =
   of aikUnion: init.union.loc
   of aikStruct: init.struct.loc
 
-proc newAnalyzedCaseBlock*(resolved: ResolvedCaseBlock, pattern: AnalyzedCasePattern, statements: seq[AnalyzedStatement]): AnalyzedCaseBlock =
-  AnalyzedCaseBlock(resolved: resolved, pattern: pattern, statements: statements)
+proc newAnalyzedCaseBlock*(def: AnalyzedDefCase, pattern: AnalyzedCasePattern, statements: seq[AnalyzedStatement]): AnalyzedCaseBlock =
+  AnalyzedCaseBlock(def: def, pattern: pattern, statements: statements)
 
-proc loc*(caseBlock: AnalyzedCaseBlock): Location = caseBlock.resolved.loc
-proc resolved*(caseBlock: AnalyzedCaseBlock): ResolvedCaseBlock = caseBlock.resolved
+proc loc*(caseBlock: AnalyzedCaseBlock): Location = caseBlock.def.resolved.loc
+proc resolved*(caseBlock: AnalyzedCaseBlock): ResolvedCaseBlock = caseBlock.def.resolved
 proc pattern*(caseBlock: AnalyzedCaseBlock): AnalyzedCasePattern = caseBlock.pattern
 proc statements*(caseBlock: AnalyzedCaseBlock): seq[AnalyzedStatement] = caseBlock.statements
 
@@ -209,14 +207,14 @@ proc argType*(caseBlock: AnalyzedCaseBlock): AnalyzedArgumentType =
   assert(caseBlock.statements.len > 0, "UNREACHABLE: should have been caught by resolver")
   caseBlock.statements[^1].argType
 
-proc newAnalyzedMatchExpression*(resolved: ResolvedMatchExpression, subject: AnalyzedExpression, cases: seq[AnalyzedCaseBlock], returns: AnalyzedArgumentType): AnalyzedMatchExpression =
-  AnalyzedMatchExpression(resolved: resolved, subject: subject, cases: cases, returns: returns)
+proc newAnalyzedMatchExpression*(def: AnalyzedDefMatch, subject: AnalyzedExpression, cases: seq[AnalyzedCaseBlock]): AnalyzedMatchExpression =
+  AnalyzedMatchExpression(def: def, subject: subject, cases: cases)
 
-proc loc*(m: AnalyzedMatchExpression): Location = m.resolved.loc
-proc resolved*(m: AnalyzedMatchExpression): ResolvedMatchExpression = m.resolved
+proc loc*(m: AnalyzedMatchExpression): Location = m.def.resolved.loc
+proc resolved*(m: AnalyzedMatchExpression): ResolvedMatchExpression = m.def.resolved
 proc subject*(m: AnalyzedMatchExpression): AnalyzedExpression = m.subject
 proc cases*(m: AnalyzedMatchExpression): seq[AnalyzedCaseBlock] = m.cases
-proc returns*(m: AnalyzedMatchExpression): AnalyzedArgumentType = m.returns
+proc returns*(m: AnalyzedMatchExpression): AnalyzedArgumentType = m.cases[0].argType
 
 proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
   AnalyzedAssignment(def: def, expression: expression)

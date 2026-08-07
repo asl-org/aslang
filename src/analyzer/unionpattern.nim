@@ -8,10 +8,10 @@ import binding
 
 type AnalyzedUnionPattern* = ref object
   resolved: UnionPattern
-  variant: ResolvedVariant
+  variant: AnalyzedVariantDef
   bindings: seq[AnalyzedBinding]
 
-proc newAnalyzedUnionPattern*(resolved: UnionPattern, variant: ResolvedVariant, bindings: seq[AnalyzedBinding]): AnalyzedUnionPattern =
+proc newAnalyzedUnionPattern*(resolved: UnionPattern, variant: AnalyzedVariantDef, bindings: seq[AnalyzedBinding]): AnalyzedUnionPattern =
   AnalyzedUnionPattern(resolved: resolved, variant: variant, bindings: bindings)
 
 proc bindings*(pattern: AnalyzedUnionPattern): seq[AnalyzedBinding] = pattern.bindings

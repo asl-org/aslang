@@ -116,7 +116,7 @@ proc self*(argType: AnalyzedArgumentType): ResolvedArgumentType =
   of aatkGeneric:
     # TODO: Fix this dummy location
     let dummyLocation = newLocation()
-    newResolvedArgumentType(newResolvedGenericArgumentType(argType.generic.resolved.self, dummyLocation))
+    newResolvedArgumentType(newResolvedGenericArgumentType(argType.generic.generic.self, dummyLocation))
 
 proc asl*(argType: AnalyzedArgumentType): string =
   case argType.kind:
@@ -160,7 +160,7 @@ proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], 
     let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
     newAnalyzedArgumentType(concreteModuleArgType)
   of aatkGeneric:
-    let key = newResolvedGenericArgumentType(argType.generic.resolved.self, argType.generic.loc)
+    let key = newResolvedGenericArgumentType(argType.generic.generic.self, argType.generic.loc)
     if key in genericTypeIndex:
       impls[genericTypeIndex[key]]
     else:
