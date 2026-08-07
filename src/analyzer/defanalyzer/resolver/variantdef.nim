@@ -1,4 +1,4 @@
-## ResolvedVariant — one branch of a resolved union: the parser
+## ResolvedVariantDef — one branch of a resolved union: the parser
 ## VariantDef together with its resolved fields.
 
 import results, sets, strformat, tables
@@ -27,24 +27,24 @@ proc buildGenerics(fields: seq[ResolvedArgumentDef]): seq[ResolvedGenericArgumen
         genericSet.incl(generic)
   return generics
 
-type ResolvedVariant* = ref object
+type ResolvedVariantDef* = ref object
   parsed: VariantDef
   fields: seq[ResolvedArgumentDef]
   generics: seq[ResolvedGenericArgumentType]
   fieldIndex: Table[Identifier, int]
 
-proc newResolvedVariantDef*(parsed: VariantDef, fields: seq[ResolvedArgumentDef]): ResolvedVariant =
+proc newResolvedVariantDef*(parsed: VariantDef, fields: seq[ResolvedArgumentDef]): ResolvedVariantDef =
   let fieldIndex = buildFieldIndex(fields)
   let generics = buildGenerics(fields)
-  ResolvedVariant(parsed: parsed, fields: fields, generics: generics, fieldIndex: fieldIndex)
+  ResolvedVariantDef(parsed: parsed, fields: fields, generics: generics, fieldIndex: fieldIndex)
 
-proc loc*(variant: ResolvedVariant): Location = variant.parsed.loc
-proc name*(variant: ResolvedVariant): Identifier = variant.parsed.name
-proc parsed*(variant: ResolvedVariant): VariantDef = variant.parsed
-proc fields*(variant: ResolvedVariant): seq[ResolvedArgumentDef] = variant.fields
-proc requires*(variant: ResolvedVariant): seq[ResolvedGenericArgumentType] = variant.generics
-proc fieldIndex*(variant: ResolvedVariant): Table[Identifier, int] = variant.fieldIndex
+proc loc*(variant: ResolvedVariantDef): Location = variant.parsed.loc
+proc name*(variant: ResolvedVariantDef): Identifier = variant.parsed.name
+proc parsed*(variant: ResolvedVariantDef): VariantDef = variant.parsed
+proc fields*(variant: ResolvedVariantDef): seq[ResolvedArgumentDef] = variant.fields
+proc requires*(variant: ResolvedVariantDef): seq[ResolvedGenericArgumentType] = variant.generics
+proc fieldIndex*(variant: ResolvedVariantDef): Table[Identifier, int] = variant.fieldIndex
 
-proc findField*(variant: ResolvedVariant, name: Identifier): Result[ResolvedArgumentDef, string] =
+proc findField*(variant: ResolvedVariantDef, name: Identifier): Result[ResolvedArgumentDef, string] =
   if name in variant.fieldIndex: ok(variant.fields[variant.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")

@@ -3,7 +3,7 @@
 ## Post-6c the analyzer has no separate def-level pass — every
 ## definition-level index and accessor is carried directly on the
 ## resolver's ResolvedApp / ResolvedFile / ResolvedModule / ResolvedGeneric
-## / ResolvedStructDef / ResolvedUnionDef / ResolvedVariant. The facade's
+## / ResolvedStructDef / ResolvedUnionDef / ResolvedVariantDef. The facade's
 ## `analyze` walks the app tree file-by-file, seeds each file's scope
 ## from imports + local defined types, and drives per-module body
 ## analysis. Extern functions have no body to analyze — the walker

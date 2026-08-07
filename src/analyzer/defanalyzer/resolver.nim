@@ -224,12 +224,12 @@ proc resolveStructDef(fileCtx: FileContext, typeCtx: TypeContext, struct: Struct
   # constructor.
   newResolvedStructDef(struct, resolvedRequires, resolvedFields)
 
-proc resolveVariantDef(fileCtx: FileContext, typeCtx: TypeContext, variant: VariantDef): Result[ResolvedVariant, string] =
+proc resolveVariantDef(fileCtx: FileContext, typeCtx: TypeContext, variant: VariantDef): Result[ResolvedVariantDef, string] =
   let resolvedFields = ? resolveFields(fileCtx, typeCtx, variant.fields)
   ok(newResolvedVariantDef(variant, resolvedFields))
 
 proc resolveUnionDef(fileCtx: FileContext, typeCtx: TypeContext, union: UnionDef): Result[ResolvedUnionDef, string] =
-  var resolvedVariants: seq[ResolvedVariant]
+  var resolvedVariants: seq[ResolvedVariantDef]
   for variant in union.variants:
     let resolvedVariant = ? resolveVariantDef(fileCtx, typeCtx, variant)
     resolvedVariants.add(resolvedVariant)

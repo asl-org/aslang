@@ -13,14 +13,14 @@ proc buildGenericTypeIndex(generics: seq[ResolvedGenericArgumentType]): Table[Re
     genericTypeIndex[generic] = id
   return genericTypeIndex
 
-proc buildVariantIndex(variants: seq[ResolvedVariant]): Table[Identifier, int] =
+proc buildVariantIndex(variants: seq[ResolvedVariantDef]): Table[Identifier, int] =
   var variantIndex: Table[Identifier, int]
   for id, variant in variants:
     assert(variant.name notin variantIndex, "[BUG] - Parser rejects duplicate variants")
     variantIndex[variant.name] = id
   return variantIndex
 
-proc buildGenerics(variants: seq[ResolvedVariant]): seq[ResolvedGenericArgumentType] =
+proc buildGenerics(variants: seq[ResolvedVariantDef]): seq[ResolvedGenericArgumentType] =
   var generics: OrderedSet[ResolvedGenericArgumentType]
   for variant in variants:
     for generic in variant.requires:
@@ -30,26 +30,26 @@ proc buildGenerics(variants: seq[ResolvedVariant]): seq[ResolvedGenericArgumentT
 type ResolvedUnionDef* = ref object
   parsed: UnionDef
   generics: seq[ResolvedGenericArgumentType]
-  variants: seq[ResolvedVariant]
+  variants: seq[ResolvedVariantDef]
   variantIndex: Table[Identifier, int]
 
-proc newResolvedUnionDef*(parsed: UnionDef, variants: seq[ResolvedVariant]): ResolvedUnionDef =
+proc newResolvedUnionDef*(parsed: UnionDef, variants: seq[ResolvedVariantDef]): ResolvedUnionDef =
   let variantIndex = buildVariantIndex(variants)
   let generics = buildGenerics(variants)
   ResolvedUnionDef(parsed: parsed, variants: variants, generics: generics, variantIndex: variantIndex)
 
 proc loc*(union: ResolvedUnionDef): Location = union.parsed.loc
 proc parsed*(union: ResolvedUnionDef): UnionDef = union.parsed
-proc variants*(union: ResolvedUnionDef): seq[ResolvedVariant] = union.variants
+proc variants*(union: ResolvedUnionDef): seq[ResolvedVariantDef] = union.variants
 proc requires*(union: ResolvedUnionDef): seq[ResolvedGenericArgumentType] = union.generics
 proc variantIndex*(union: ResolvedUnionDef): Table[Identifier, int] = union.variantIndex
 proc genericTypeIndex*(union: ResolvedUnionDef): Table[ResolvedGenericArgumentType, int] = buildGenericTypeIndex(union.generics)
 
-proc findVariant*(union: ResolvedUnionDef, variant: Identifier): Result[ResolvedVariant, string] =
+proc findVariant*(union: ResolvedUnionDef, variant: Identifier): Result[ResolvedVariantDef, string] =
   if variant in union.variantIndex: ok(union.variants[union.variantIndex[variant]])
   else: err(fmt"{variant.loc} union does not contain variant `{variant.asl}`")
 
-proc findVariant*(union: ResolvedUnionDef, variant: VariantDef): ResolvedVariant =
+proc findVariant*(union: ResolvedUnionDef, variant: VariantDef): ResolvedVariantDef =
   ## Identity form — the resolver already located this variant on the
   ## parser-side union at ref-resolve time, so the resolved twin
   ## cannot miss.

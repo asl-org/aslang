@@ -424,7 +424,7 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   `analyzeValueTypeAgainstDefType` still guards use sites.
 - **Generic param-list ownership** — each data-block type derives
   its own order-preserving `generics` seq at construction:
-  `ResolvedVariant` from its generic-typed fields,
+  `ResolvedVariantDef` from its generic-typed fields,
   `ResolvedUnionDef` by merging variant requires (first-seen order
   across variants — one union scope, Rust-style shared params),
   `ResolvedStructDef` from its explicit `struct(...)` header or its
@@ -446,7 +446,7 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   itself (self-reference) or a module. Other generics are rejected
   at resolve time, keeping each generic's type world bounded.
 - **Enriched Resolved* def-level types** — `ResolvedStructDef` /
-  `ResolvedVariant` / `ResolvedUnionDef` / `ResolvedModule` /
+  `ResolvedVariantDef` / `ResolvedUnionDef` / `ResolvedModule` /
   `ResolvedGeneric` carry every accessor the analyzer's retired
   phase-A wrappers used to add: `findField`, `findVariant`,
   `findFunctionDefs(name, arity, public)`, `funcNameArityIndex`,
@@ -771,7 +771,7 @@ src/
                                    seq + fieldIndex + findField;
                                    genericTypeIndex is an on-demand
                                    projection).
-    variantdef.nim                 ResolvedVariant (fieldIndex +
+    variantdef.nim                 ResolvedVariantDef (fieldIndex +
                                    findField + generics derived from
                                    its generic-typed fields).
     uniondef.nim                   ResolvedUnionDef (variantIndex +

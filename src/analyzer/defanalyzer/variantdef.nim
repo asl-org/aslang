@@ -10,11 +10,11 @@ import ./argtype
 import ./argdef
 
 type AnalyzedVariantDef* = ref object
-  resolved: ResolvedVariant
+  resolved: ResolvedVariantDef
   fields: seq[AnalyzedArgumentDefinition]
   fieldIndex: Table[Identifier, int]
 
-proc newAnalyzedVariantDef*(resolved: ResolvedVariant,
+proc newAnalyzedVariantDef*(resolved: ResolvedVariantDef,
     fields: seq[AnalyzedArgumentDefinition]): AnalyzedVariantDef =
   var fieldIndex: Table[Identifier, int]
   for id, field in fields:
@@ -23,7 +23,7 @@ proc newAnalyzedVariantDef*(resolved: ResolvedVariant,
     fieldIndex[field.name] = id
   AnalyzedVariantDef(resolved: resolved, fields: fields, fieldIndex: fieldIndex)
 
-proc resolved*(v: AnalyzedVariantDef): ResolvedVariant = v.resolved
+proc resolved*(v: AnalyzedVariantDef): ResolvedVariantDef = v.resolved
 proc name*(v: AnalyzedVariantDef): Identifier = v.resolved.name
 proc fields*(v: AnalyzedVariantDef): seq[AnalyzedArgumentDefinition] = v.fields
 

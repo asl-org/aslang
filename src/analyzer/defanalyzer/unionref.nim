@@ -12,16 +12,16 @@ type AnalyzedDefUnionRef* = ref object
   resolved: ResolvedUnionRef
   argType: AnalyzedModuleArgumentType
   union: ResolvedUnionDef
-  variant: ResolvedVariant
+  variant: ResolvedVariantDef
 
-proc newAnalyzedDefUnionRef*(resolved: ResolvedUnionRef, argType: AnalyzedModuleArgumentType, union: ResolvedUnionDef, variant: ResolvedVariant): AnalyzedDefUnionRef =
+proc newAnalyzedDefUnionRef*(resolved: ResolvedUnionRef, argType: AnalyzedModuleArgumentType, union: ResolvedUnionDef, variant: ResolvedVariantDef): AnalyzedDefUnionRef =
   AnalyzedDefUnionRef(resolved: resolved, argType: argType, union: union, variant: variant)
 
-proc newAnalyzedDefUnionRef*(resolved: ResolvedUnionRef, module: ResolvedModule, union: ResolvedUnionDef, variant: ResolvedVariant): AnalyzedDefUnionRef =
+proc newAnalyzedDefUnionRef*(resolved: ResolvedUnionRef, module: ResolvedModule, union: ResolvedUnionDef, variant: ResolvedVariantDef): AnalyzedDefUnionRef =
   let argType = newAnalyzedModuleArgumentType(resolved.argType, module)
   newAnalyzedDefUnionRef(resolved, argType, union, variant)
 
 proc module*(unionRef: AnalyzedDefUnionRef): ResolvedModule = unionRef.argType.module
 proc union*(unionRef: AnalyzedDefUnionRef): ResolvedUnionDef = unionRef.union
-proc variant*(unionRef: AnalyzedDefUnionRef): ResolvedVariant = unionRef.variant
+proc variant*(unionRef: AnalyzedDefUnionRef): ResolvedVariantDef = unionRef.variant
 proc argType*(unionRef: AnalyzedDefUnionRef): AnalyzedModuleArgumentType = unionRef.argType

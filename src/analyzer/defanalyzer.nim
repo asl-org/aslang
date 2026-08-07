@@ -176,7 +176,7 @@ proc analyzeDefStruct(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext
     analyzedFields.add(analyzedField)
   ok(newAnalyzedStructDef(struct, analyzedFields))
 
-proc analyzeDefVariant(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, variant: ResolvedVariant): Result[AnalyzedVariantDef, string] =
+proc analyzeDefVariant(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, variant: ResolvedVariantDef): Result[AnalyzedVariantDef, string] =
   var analyzedFields: seq[AnalyzedArgumentDefinition]
   for field in variant.fields:
     let analyzedField = ? analyzeDefArgumentDefinition(fileCtx, typeCtx, field)
