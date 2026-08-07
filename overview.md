@@ -597,9 +597,10 @@ their `AnalyzedFunctionDef`). Scope:
   Bare-literal defaults are bound at resolve time too
   (`resolveLiteral` looks up `Literal.defaultType` — "i32"/"f32"/
   "String" — against the FileContext and stores the parser.Module on
-  `ResolvedLiteral.default`); phase A carries the resolved default
-  module on `AnalyzedDefLiteral.default`, which phase B's
-  `analyzeBareLiteral` reads directly. See
+  `ResolvedLiteral.default`); phase A carries the resolved default as
+  an `AnalyzedModuleArgumentType` on `AnalyzedDefLiteral.default`,
+  which phase B's `analyzeBareLiteral` reads directly (module-argtype
+  throughout — no re-wrapping). See
   plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
 - **Per-file context = fileDef + fileCtx, minimal params** —
@@ -1196,7 +1197,8 @@ src/
                                    + analyzed functions).
     file.nim                       AnalyzedFile (def:
                                    AnalyzedDefFile back-ref +
-                                   imports + modules).
+                                   analyzed imports (AnalyzedImport,
+                                   the phase-B form) + modules).
     app.nim                        AnalyzedApp (resolved + files) —
                                    the handle downstream codegen will
                                    thread through.
