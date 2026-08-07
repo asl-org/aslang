@@ -9,11 +9,11 @@ import ./resolver
 import ./filedef
 
 type ResolvedAppContext* = ref object
-  resolved: ResolvedApp
+  resolved: AppContext
   fileDefs: seq[AnalyzedDefFile]
   fileDefIndex: Table[string, int]
 
-proc newResolvedAppContext*(resolved: ResolvedApp): ResolvedAppContext =
+proc newResolvedAppContext*(resolved: AppContext): ResolvedAppContext =
   ResolvedAppContext(resolved: resolved)
 
 proc files*(appCtx: ResolvedAppContext): seq[ResolvedFile] = appCtx.resolved.files

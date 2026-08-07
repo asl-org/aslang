@@ -95,8 +95,7 @@ export types
 import ./resolver/imports
 import ./resolver/files
 import ./resolver/appcontext
-import ./resolver/app
-export imports, files, appcontext, app
+export imports, files, appcontext
 
 
 # resolveArgumentType — single proc for both definition contexts; the
@@ -554,9 +553,9 @@ proc resolveFile(appCtx: AppContext, file: parser.File): Result[ResolvedFile, st
 
   ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileCtx))
 
-proc resolve*(app: App): Result[ResolvedApp, string] =
+proc resolve*(app: App): Result[AppContext, string] =
   let appCtx = newAppContext(app)
-  for file in appCtx.files:
+  for file in app.files:
     let resolvedFile = ? resolveFile(appCtx, file)
     appCtx.add(resolvedFile)
-  ok(newResolvedApp(appCtx.resolvedFiles))
+  ok(appCtx)

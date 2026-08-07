@@ -17,11 +17,11 @@ import ./resolver
 import ./filedef
 
 type AnalyzedDefApp* = ref object
-  resolved: ResolvedApp
+  resolved: AppContext
   fileDefs: seq[AnalyzedDefFile]
   fileDefIndex: Table[string, int]
 
-proc newAnalyzedDefApp*(resolved: ResolvedApp,
+proc newAnalyzedDefApp*(resolved: AppContext,
     fileDefs: seq[AnalyzedDefFile]): AnalyzedDefApp =
   var fileDefIndex: Table[string, int]
   for index, fileDef in fileDefs:
