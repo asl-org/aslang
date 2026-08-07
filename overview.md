@@ -1166,8 +1166,8 @@ src/
     variable.nim                   AnalyzedVariable.
     literalinit.nim                AnalyzedLiteralInitializer.
     getter.nim                     AnalyzedGetter (source argType +
-                                   resolved property + property
-                                   argType).
+                                   property: AnalyzedArgumentDefinition
+                                   — its argType is the getter's).
     statement.nim                  Body-cluster mutually-recursive
                                    types: AnalyzedExpression /
                                    AnalyzedStatement /
@@ -1419,17 +1419,20 @@ Focused TODOs still open:
   provenance, mirroring the P3-swap dispatch. Site-WRITTEN
   argtypes (initializer/ref impl lists, synthetic literal types)
   stay in the use-site scope — only def-side re-entries move.
-  ROUTE CHOSEN: read the stored twin — phase B is being
-  incrementally rewired to walk the AnalyzedDef* bundle instead of
-  re-deriving. Landed so far: the module/function walk consumes
-  fileDef.modules + module.functions; the whole statement/
-  expression walk consumes the AnalyzedDef* statement tree; the
-  statement outputs anchor on their def twins; and the initializer
-  analyzers read the def twins' ref argTypes — leaving exactly ONE
-  fileDef.scope re-entry in analyzer.nim (union case-pattern field
-  types). Then the two deferred positive provenance tests (see
-  test_analyzer.nim's suite comment) flip green as the acceptance
-  gate.
+  ROUTE CHOSEN: read the stored twin — phase B was incrementally
+  rewired to walk the AnalyzedDef* bundle instead of re-deriving.
+  DONE: analyzer.nim no longer calls `analyzeDefArgumentType` at
+  all — the module/function walk, the whole statement/expression
+  walk, the statement outputs, the initializers, and finally the
+  union case-pattern field types all read what phase A already
+  analyzed (the last read `fieldDef.argType` off the analyzed
+  variant twin). Every body output now anchors on its AnalyzedDef*
+  twin (getter → AnalyzedArgumentDefinition; function call / kwarg /
+  case block / match → their def twins; union pattern →
+  AnalyzedVariantDef). The cross-file re-entry crash path is
+  structurally gone. Acceptance gate: the two deferred positive
+  provenance tests (see test_analyzer.nim's suite comment) go back
+  in once concretization is restored.
 
   CURRENT STATE — deliberately RED (WIP): stripping the
   initializers' positional concretization (below) costs 3 unit
@@ -1459,7 +1462,14 @@ Focused TODOs still open:
   and the map is payload — hash/== stay on module + impls. Map
   construction/merge becomes the single home for the
   substitution-chain collapse (`Sample → K, K → u8`), pairing with
-  the equality-vs-unification rebuild below.
+  the equality-vs-unification rebuild below. PLUMBING OWED (the WIP
+  red state): the map is not built yet — the struct/union
+  initializer kwarg walks carry a `# TODO: build impl map` and
+  currently type-check kwargs against the field's UNconcretized
+  declared type, which is what drops the 3 unit + integration
+  cases. When `analyzeDefModuleArgumentType` stores the map and the
+  kwarg/pattern concretization reads it, those flip green and the
+  deferred provenance tests join them.
 - **Dummy location in `AnalyzedArgumentType.self`**
   (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
   reconstructs a `ResolvedGenericArgumentType` with a fabricated
