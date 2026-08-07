@@ -587,7 +587,7 @@ proc analyzeFile(appCtx: AnalyzedAppContext, fileDef: AnalyzedDefFile): Result[A
     analyzedModules.add(analyzedModule)
   ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))
 
-proc analyze*(app: AppContext): Result[AnalyzedApp, string] =
+proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
   let appCtx = newAnalyzedAppContext(? analyzeDefApp(app))
   for fileDef in appCtx.fileDefs:
     let analyzedFile = ? analyzeFile(appCtx, fileDef)

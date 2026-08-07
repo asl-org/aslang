@@ -1,7 +1,7 @@
 ## AnalyzedAppContext — the analyzer's app-level context: the phase-A
 ## def bundle plus every AnalyzedFile accumulated so far. `analyze*`
 ## adds each file's analyzed form as it lands. The rung-3 twin of the
-## resolver's AppContext and the def analyzer's ResolvedAppContext.
+## resolver's ResolvedApp and the def analyzer's ResolvedAppContext.
 
 import strformat, tables
 

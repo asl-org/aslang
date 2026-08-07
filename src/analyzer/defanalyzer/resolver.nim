@@ -94,8 +94,8 @@ export types
 
 import ./resolver/imports
 import ./resolver/files
-import ./resolver/appcontext
-export imports, files, appcontext
+import ./resolver/app
+export imports, files, app
 
 
 # resolveArgumentType — single proc for both definition contexts; the
@@ -526,7 +526,7 @@ proc resolveShorthandImport(impFile: parser.File, resolvedImpFile: ResolvedFile)
     resolvedImpTypes.add(resolvedImpType)
   ok(resolvedImpTypes)
 
-proc resolveImport(appCtx: AppContext, imp: Import): Result[ResolvedImport, string] =
+proc resolveImport(appCtx: ResolvedApp, imp: Import): Result[ResolvedImport, string] =
   let impFile = ? appCtx.findFile(imp.absPath)
   let resolvedImpFile = appCtx.findImportedFile(impFile.path)
   let resolvedImpTypes =
@@ -535,14 +535,14 @@ proc resolveImport(appCtx: AppContext, imp: Import): Result[ResolvedImport, stri
     of ikShorthand: ? resolveShorthandImport(impFile, resolvedImpFile)
   ok(newResolvedImport(imp, impFile, resolvedImpTypes))
 
-proc resolveImports(appCtx: AppContext, imports: seq[Import]): Result[seq[ResolvedImport], string] =
+proc resolveImports(appCtx: ResolvedApp, imports: seq[Import]): Result[seq[ResolvedImport], string] =
   var resolvedImports: seq[ResolvedImport]
   for imp in imports:
     let resolvedImport = ? resolveImport(appCtx, imp)
     resolvedImports.add(resolvedImport)
   ok(resolvedImports)
 
-proc resolveFile(appCtx: AppContext, file: parser.File): Result[ResolvedFile, string] =
+proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
   let resolvedImports = ? resolveImports(appCtx, file.imports)
   var fileCtx = ? newFileContext(resolvedImports, file.types)
 
@@ -553,8 +553,8 @@ proc resolveFile(appCtx: AppContext, file: parser.File): Result[ResolvedFile, st
 
   ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileCtx))
 
-proc resolve*(app: App): Result[AppContext, string] =
-  let appCtx = newAppContext(app)
+proc resolve*(app: App): Result[ResolvedApp, string] =
+  let appCtx = newResolvedApp(app)
   for file in app.files:
     let resolvedFile = ? resolveFile(appCtx, file)
     appCtx.add(resolvedFile)

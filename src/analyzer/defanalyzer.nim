@@ -430,7 +430,7 @@ proc analyzeDefFile(appCtx: ResolvedAppContext, file: ResolvedFile): Result[Anal
 # analyzeDefApp first and then walks the bundle for phase B.
 # ============================================================
 
-proc analyzeDefApp*(app: AppContext): Result[AnalyzedDefApp, string] =
+proc analyzeDefApp*(app: ResolvedApp): Result[AnalyzedDefApp, string] =
   let appCtx = newResolvedAppContext(app)
   for file in appCtx.files:
     let analyzedFileDefinition = ? analyzeDefFile(appCtx, file)

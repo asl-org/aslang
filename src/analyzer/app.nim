@@ -13,9 +13,9 @@ import ./defanalyzer
 import file
 
 type AnalyzedApp* = ref object
-  resolved: AppContext
+  resolved: ResolvedApp
   files: seq[AnalyzedFile]
 
-proc newAnalyzedApp*(resolved: AppContext, files: seq[AnalyzedFile]): AnalyzedApp =
+proc newAnalyzedApp*(resolved: ResolvedApp, files: seq[AnalyzedFile]): AnalyzedApp =
   AnalyzedApp(resolved: resolved, files: files)
 
