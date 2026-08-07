@@ -97,7 +97,7 @@ proc newAnalyzedDefLiteral*(resolved: ResolvedLiteral, default: ResolvedModule, 
 
 proc loc*(literal: AnalyzedDefLiteral): Location = literal.resolved.loc
 proc value*(literal: AnalyzedDefLiteral): Literal = literal.resolved.value
-proc default*(literal: AnalyzedDefLiteral): ResolvedModule = literal.default
+proc default*(literal: AnalyzedDefLiteral): AnalyzedModuleArgumentType = newAnalyzedModuleArgumentType(literal.default)
 
 # AnalyzedDefLiteralInitializer
 proc newAnalyzedDefLiteralInitializer*(resolved: ResolvedLiteralInitializer, argType: AnalyzedModuleArgumentType, def: ResolvedLiteralDef): AnalyzedDefLiteralInitializer =

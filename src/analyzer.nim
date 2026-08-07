@@ -286,6 +286,33 @@ proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule
     message.add(errors)
     err(message.join("\n"))
 
+proc analyzeBareLiteral(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, literal: AnalyzedDefLiteral, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
+  ## Approach C — pick a concrete type for the bare literal.
+  ##   - `expected = some(module)`  → adopt the module type. If the
+  ##     module's data def is struct/union the caller wrote a literal
+  ##     where an initializer was expected → error with a clear message.
+  ##   - `expected = some(generic)` → default (the binding contributes
+  ##     to the generic-impl map at the call site).
+  ##   - `expected = none`          → default (bare assignment / bare
+  ##     statement).
+  ## Then fit-check the value against the chosen module's literal spec.
+  let literalArgType =
+    if expected.isSome:
+      case expected.get.kind:
+      of aatkModule: expected.get.module
+      of aatkGeneric: literal.default
+    else:
+      literal.default
+
+  let argDefModule = fileCtx.findModule(literalArgType.module)
+  let argDefData = argDefModule.dataDef
+  case argDefData.kind:
+  of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
+  of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
+  of adkLiteral:
+    ? analyzeLiteral(argDefData.literal, literal.value)
+    ok(newAnalyzedLiteralInitializer(literal.value, literalArgType))
+
 proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall): Result[AnalyzedFunctionCall, string] =
   let typ = fncall.typ
   let definedType = fileCtx.findType(typ)
@@ -446,45 +473,14 @@ proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDef
 proc analyzeInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of adikLiteral:
-    let analyzedLiteralInit = ? analyzeLiteralInitializer(fileCtx, module, funcCtx, init.literal)
-    ok(newAnalyzedInitializer(analyzedLiteralInit))
+    let literalInit = ? analyzeLiteralInitializer(fileCtx, module, funcCtx, init.literal)
+    ok(newAnalyzedInitializer(literalInit))
   of adikStruct:
-    let analyzedStructInit = ? analyzeStructInitializer(fileCtx, module, funcCtx, init.struct)
-    ok(newAnalyzedInitializer(analyzedStructInit))
+    let structInit = ? analyzeStructInitializer(fileCtx, module, funcCtx, init.struct)
+    ok(newAnalyzedInitializer(structInit))
   of adikUnion:
-    let analyzedUnionInit = ? analyzeUnionInitializer(fileCtx, module, funcCtx, init.union)
-    ok(newAnalyzedInitializer(analyzedUnionInit))
-
-proc analyzeBareLiteral(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, literal: AnalyzedDefLiteral, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
-  ## Approach C — pick a concrete type for the bare literal.
-  ##   - `expected = some(module)`  → adopt the module type. If the
-  ##     module's data def is struct/union the caller wrote a literal
-  ##     where an initializer was expected → error with a clear message.
-  ##   - `expected = some(generic)` → default (the binding contributes
-  ##     to the generic-impl map at the call site).
-  ##   - `expected = none`          → default (bare assignment / bare
-  ##     statement).
-  ## Then fit-check the value against the chosen module's literal spec.
-  let concreteArgType =
-    if expected.isSome:
-      case expected.get.kind:
-      of aatkModule: expected.get
-      of aatkGeneric: newAnalyzedArgumentType(literal.default)
-    else:
-      newAnalyzedArgumentType(literal.default)
-
-  case concreteArgType.kind:
-  of aatkGeneric:
-    err(fmt"{literal.loc} expected a module `{concreteArgType.name.asl}` but found generic")
-  of aatkModule:
-    let argDefModule = fileCtx.findModule(concreteArgType.module.module)
-    let argDefData = argDefModule.dataDef
-    case argDefData.kind:
-    of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
-    of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
-    of adkLiteral:
-      ? analyzeLiteral(argDefData.literal, literal.value)
-      ok(newAnalyzedLiteralInitializer(literal.value, concreteArgType.module))
+    let unionInit = ? analyzeUnionInitializer(fileCtx, module, funcCtx, init.union)
+    ok(newAnalyzedInitializer(unionInit))
 
 proc analyzeExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
   case expression.kind:
@@ -585,10 +581,11 @@ proc analyzeFile(appCtx: AnalyzedAppContext, fileDef: AnalyzedDefFile): Result[A
   for module in fileDef.modules:
     let analyzedModule = ? analyzeModule(fileCtx, module)
     analyzedModules.add(analyzedModule)
-  ok(newAnalyzedFile(fileDef, fileDef.imports, analyzedModules))
+  ok(newAnalyzedFile(fileDef, analyzedImports, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  let appCtx = newAnalyzedAppContext(? analyzeDefApp(app))
+  let appDef = ? analyzeDefApp(app)
+  let appCtx = newAnalyzedAppContext(appDef)
   for fileDef in appCtx.fileDefs:
     let analyzedFile = ? analyzeFile(appCtx, fileDef)
     appCtx.add(analyzedFile)
