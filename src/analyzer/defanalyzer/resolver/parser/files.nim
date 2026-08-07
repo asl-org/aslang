@@ -134,21 +134,6 @@ proc newAslrFile*(path: string, types: seq[LocalType], imports: seq[Import]): Re
   var typeIndex = ? buildTypeNameIndex(types)
   ok(File(kind: fkAslr, path: path, types: types, typeIndex: typeIndex))
 
-proc newFile*(path: string, imports: seq[Import], types: seq[LocalType]): Result[File, ParserError] =
-  ## Unified entry point — dispatches on the file's extension to the
-  ## appropriate kind constructor. `.aslr` paths with non-empty
-  ## imports are rejected here (the user wrote an import in a
-  ## runtime-interface file). Once W7 splits the parser specs the
-  ## fkAslr arm never receives imports in practice; this dispatcher
-  ## remains the fallback for callers (test helpers, ad-hoc builders)
-  ## that go through the unified entry.
-  if path.endsWith(".aslr"):
-    newAslrFile(path, types, imports)
-  elif path.endsWith(".asl"):
-    newAslFile(path, imports, types)
-  else:
-    err(newParserError(fmt"file `{path}` is unsupported", newLocation()))
-
 proc kind*(file: File): FileKind = file.kind
 proc path*(file: File): string = file.path
 proc types*(file: File): seq[LocalType] = file.types

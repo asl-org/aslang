@@ -4,7 +4,6 @@
 ## one `type` block, so every node in the cycle lives here:
 ##
 ##   AnalyzedFunctionCall, AnalyzedKeywordArgument,
-##   AnalyzedStructRef, AnalyzedUnionRef,
 ##   AnalyzedStructInitializer, AnalyzedUnionInitializer,
 ##   AnalyzedInitializer, AnalyzedCaseBlock,
 ##   AnalyzedMatchExpression, AnalyzedAssignment, AnalyzedSetter,
@@ -39,23 +38,12 @@ type
     field: AnalyzedArgumentDef
     expression: AnalyzedExpression
 
-  AnalyzedStructRef* = ref object
-    resolved: ResolvedStructRef
-    module: ResolvedModule
-    analyzedImpls: seq[AnalyzedArgumentType]
-
-  AnalyzedUnionRef* = ref object
-    resolved: ResolvedUnionRef
-    module: ResolvedModule
-    analyzedImpls: seq[AnalyzedArgumentType]
-
   AnalyzedStructInitializer* = ref object
     def: AnalyzedDefStructInitializer
     kwargs: seq[AnalyzedKeywordArgument]
 
   AnalyzedUnionInitializer* = ref object
     def: AnalyzedDefUnionInitializer
-    unionRef: AnalyzedUnionRef
     kwargs: seq[AnalyzedKeywordArgument]
 
   AnalyzedInitializerKind* = enum
@@ -121,31 +109,6 @@ proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: Analyze
 proc resolved*(kwarg: AnalyzedKeywordArgument): AnalyzedDefKeywordArgument = kwarg.def
 proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDef = kwarg.field
 proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
-
-proc newAnalyzedStructRef*(resolved: ResolvedStructRef,
-    module: ResolvedModule,
-    analyzedImpls: seq[AnalyzedArgumentType]): AnalyzedStructRef =
-  ## One-shape constructor. `analyzedImpls` mirrors the resolver's
-  ## `impls` seq: empty when the surface form was bare,
-  ## non-empty (arity + constraint validated at resolve time) when the
-  ## surface form supplied explicit impls.
-  AnalyzedStructRef(resolved: resolved, module: module, analyzedImpls: analyzedImpls)
-
-proc resolved*(s: AnalyzedStructRef): ResolvedStructRef = s.resolved
-proc module*(s: AnalyzedStructRef): ResolvedModule = s.module
-proc analyzedImpls*(s: AnalyzedStructRef): seq[AnalyzedArgumentType] = s.analyzedImpls
-proc loc*(s: AnalyzedStructRef): Location = s.resolved.loc
-
-proc newAnalyzedUnionRef*(resolved: ResolvedUnionRef,
-    module: ResolvedModule,
-    analyzedImpls: seq[AnalyzedArgumentType]): AnalyzedUnionRef =
-  ## One-shape constructor. See `newAnalyzedStructRef` for shape rules.
-  AnalyzedUnionRef(resolved: resolved, module: module, analyzedImpls: analyzedImpls)
-
-proc resolved*(u: AnalyzedUnionRef): ResolvedUnionRef = u.resolved
-proc module*(u: AnalyzedUnionRef): ResolvedModule = u.module
-proc analyzedImpls*(u: AnalyzedUnionRef): seq[AnalyzedArgumentType] = u.analyzedImpls
-proc loc*(u: AnalyzedUnionRef): Location = u.resolved.loc
 
 proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
   AnalyzedStructInitializer(def: def, kwargs: kwargs)
