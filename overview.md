@@ -173,7 +173,7 @@ Phase-A output (`AnalyzedDefApp` + per-file
 `AnalyzedDefFile` + per-module `AnalyzedDefModule` +
 `AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
 wrappers `AnalyzedStructDef` / `AnalyzedVariantDef` / `AnalyzedUnionDef` /
-`AnalyzedLiteralDef` / `AnalyzedData`) is threaded through the
+`AnalyzedLiteralDef` / `AnalyzedDataDef`) is threaded through the
 body walker chain as `(appDef, fileDef, fileCtx)` — the
 `AnalyzedFileContext` built at `analyzeFile` entry spans imports +
 local types, so phase-B overload resolution reads pre-analyzed
@@ -514,7 +514,7 @@ their `AnalyzedDefStatement` tree) / `AnalyzedGeneric` (bare
 `AnalyzedFunctionDefinition`s — generics have no extern/user split)
 and the data-block wrappers (`AnalyzedStructDef` /
 `AnalyzedVariantDef` / `AnalyzedUnionDef` / `AnalyzedLiteralDef` /
-`AnalyzedData`). The statement walk mirrors the resolver's statement
+`AnalyzedDataDef`). The statement walk mirrors the resolver's statement
 cluster 1:1 (`AnalyzedDefLiteral` → kwargs → fncalls → initializers
 → match → expression → statement, hosted in
 `defanalyzer/statement.nim` with the ref wrappers in
@@ -778,7 +778,7 @@ src/
                                    findVariant + generics merged
                                    from variant requires, first-seen
                                    order).
-    datadef.nim                    ResolvedData (ddkLiteral / ddkStruct
+    datadef.nim                    ResolvedDataDef (ddkLiteral / ddkStruct
                                    / ddkUnion).
     getter.nim                     ResolvedGetter.
     literalinit.nim                ResolvedLiteralInitializer.
@@ -1059,7 +1059,7 @@ src/
     structdef.nim                  AnalyzedStructDef (analyzed fields).
     variantdef.nim                 AnalyzedVariantDef (analyzed fields).
     uniondef.nim                   AnalyzedUnionDef (analyzed variants).
-    datadef.nim                    AnalyzedData (adkLiteral /
+    datadef.nim                    AnalyzedDataDef (adkLiteral /
                                    adkStruct / adkUnion).
     moduledef.nim                  AnalyzedDefModule (requires +
                                    data + functions:

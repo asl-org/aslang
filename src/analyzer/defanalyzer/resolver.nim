@@ -235,17 +235,17 @@ proc resolveUnionDef(fileCtx: FileContext, typeCtx: TypeContext, union: UnionDef
     resolvedVariants.add(resolvedVariant)
   ok(newResolvedUnionDef(union, resolvedVariants))
 
-proc resolveDataDef(fileCtx: FileContext, typeCtx: TypeContext, data: DataDef): Result[ResolvedData, string] =
+proc resolveDataDef(fileCtx: FileContext, typeCtx: TypeContext, data: DataDef): Result[ResolvedDataDef, string] =
   case data.kind:
   of ddkLiteral:
     let resolvedLiteralDef = ? newResolvedLiteralDef(data.literal)
-    ok(newResolvedData(resolvedLiteralDef))
+    ok(newResolvedDataDef(resolvedLiteralDef))
   of ddkStruct:
     let resolvedStructDef = ? resolveStructDef(fileCtx, typeCtx, data.struct)
-    ok(newResolvedData(resolvedStructDef))
+    ok(newResolvedDataDef(resolvedStructDef))
   of ddkUnion:
     let resolvedUnionDef = ? resolveUnionDef(fileCtx, typeCtx, data.union)
-    ok(newResolvedData(resolvedUnionDef))
+    ok(newResolvedDataDef(resolvedUnionDef))
 
 proc resolveFunctionDef(fileCtx: FileContext, typeCtx: TypeContext, def: FunctionDef): Result[ResolvedFunctionDef, string] =
   var resolvedArgDefs: seq[ResolvedArgumentDef]
@@ -481,7 +481,7 @@ proc resolveModule(fileCtx: FileContext, module: Module): Result[ResolvedModule,
       let resolvedDataDef = ? resolveDataDef(fileCtx, typeCtx, module.data.get)
       some(resolvedDataDef)
     else:
-      none(ResolvedData)
+      none(ResolvedDataDef)
 
   var resolvedFunctions: seq[ResolvedFunction]
   for function in module.functions:

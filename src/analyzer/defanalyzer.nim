@@ -190,16 +190,16 @@ proc analyzeDefUnion(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext,
     analyzedVariants.add(analyzedVariant)
   ok(newAnalyzedUnionDef(union, analyzedVariants))
 
-proc analyzeDefData(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, data: ResolvedData): Result[AnalyzedData, string] =
+proc analyzeDefData(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, data: ResolvedDataDef): Result[AnalyzedDataDef, string] =
   case data.kind:
   of rdkLiteral:
-    ok(newAnalyzedData(newAnalyzedLiteralDef(data.literal)))
+    ok(newAnalyzedDataDef(newAnalyzedLiteralDef(data.literal)))
   of rdkStruct:
     let analyzedStruct = ? analyzeDefStruct(fileCtx, typeCtx, data.struct)
-    ok(newAnalyzedData(analyzedStruct))
+    ok(newAnalyzedDataDef(analyzedStruct))
   of rdkUnion:
     let analyzedUnion = ? analyzeDefUnion(fileCtx, typeCtx, data.union)
-    ok(newAnalyzedData(analyzedUnion))
+    ok(newAnalyzedDataDef(analyzedUnion))
 
 proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, unionRef: ResolvedUnionRef): Result[AnalyzedDefUnionRef, string] =
   let unionModule = fileCtx.findModule(unionRef.module)
@@ -363,7 +363,7 @@ proc analyzeDefFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeConte
 proc analyzeDefModule(fileCtx: ResolvedFileContext, module: ResolvedModule): Result[AnalyzedDefModule, string] =
   let typeCtx = newResolvedTypeContext(module)
   var requires: seq[AnalyzedGenericArgumentType]
-  var maybeAnalyzedData: Option[AnalyzedData]
+  var maybeAnalyzedData: Option[AnalyzedDataDef]
   if module.data.isSome:
     for genericArgType in module.data.get.requires:
       let analyzedArgType = ? analyzeDefGenericArgumentType(fileCtx, genericArgType)

@@ -31,7 +31,7 @@ import ./analyzer/file
 import ./analyzer/appcontext
 import ./analyzer/app
 
-proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedData, string] =
+proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedDataDef, string] =
   ok(fileCtx.findModule(argType.module).dataDef)
 
 proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedStructDef, string] =

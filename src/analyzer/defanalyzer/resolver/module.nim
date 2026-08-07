@@ -15,7 +15,7 @@ import function
 
 type ResolvedModule* = ref object
   parsed: Module
-  data: Option[ResolvedData]
+  data: Option[ResolvedDataDef]
   funcDefIndex: Table[ResolvedFunctionDef, int]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   functions: seq[ResolvedFunction]
@@ -33,7 +33,7 @@ proc buildFuncNameArityIndex*(funcDefs: seq[ResolvedFunctionDef]): Table[Identif
       result[funcDef.name][funcDef.arity] = newSeq[int]()
     result[funcDef.name][funcDef.arity].add(id)
 
-proc validatePublicRequires(parsed: Module, data: ResolvedData): Result[void, string] =
+proc validatePublicRequires(parsed: Module, data: ResolvedDataDef): Result[void, string] =
   ## A public module's require slots are part of its public
   ## interface. A non-public generic there is broken-by-construction
   ## for every importer — the importing file must have the constraint
@@ -45,7 +45,7 @@ proc validatePublicRequires(parsed: Module, data: ResolvedData): Result[void, st
       return err(fmt"{requirement.loc} public module `{parsed.name.asl}` requires non-public generic `{requirement.generic.name.asl}` — a generic named in a public module's type parameters must be public")
   ok()
 
-proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: seq[ResolvedFunction]): Result[ResolvedModule, string] =
+proc newResolvedModule*(parsed: Module, data: Option[ResolvedDataDef], functions: seq[ResolvedFunction]): Result[ResolvedModule, string] =
   ## Front-door: owns the module's construction invariants —
   ## input-signature uniqueness (two functions may not share name +
   ## input types; ResolvedFunctionDef hashes by exactly that, returns
@@ -67,14 +67,14 @@ proc newResolvedModule*(parsed: Module, data: Option[ResolvedData], functions: s
   ok(ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions))
 
 proc parsed*(module: ResolvedModule): Module = module.parsed
-proc data*(module: ResolvedModule): Option[ResolvedData] = module.data
+proc data*(module: ResolvedModule): Option[ResolvedDataDef] = module.data
 
 # Kind-asserted data projections — callers reach a module through an
 # argument type, ref, or literal binding only after the resolver
 # verified it is a data module (of the right kind), so absence is a
-# compiler bug. The block-kind asserts live on ResolvedData's own
+# compiler bug. The block-kind asserts live on ResolvedDataDef's own
 # accessors.
-proc dataDef*(module: ResolvedModule): ResolvedData =
+proc dataDef*(module: ResolvedModule): ResolvedDataDef =
   assert(module.data.isSome, fmt"[BUG] - {module.parsed.loc} module `{module.parsed.name.asl}` has no data block")
   module.data.get
 

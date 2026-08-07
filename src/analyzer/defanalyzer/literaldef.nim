@@ -1,6 +1,6 @@
 ## Phase-A `AnalyzedLiteralDef` — thin wrapper around a
 ## `ResolvedLiteralDef`. Literal blocks carry no field types, so
-## analysis is a no-op — the wrapper exists so `AnalyzedData` can
+## analysis is a no-op — the wrapper exists so `AnalyzedDataDef` can
 ## discriminate uniformly over literal / struct / union.
 
 import ./resolver

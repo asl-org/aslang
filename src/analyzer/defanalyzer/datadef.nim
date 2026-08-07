@@ -1,4 +1,4 @@
-## Phase-A `AnalyzedData` — tagged union over the three data-block
+## Phase-A `AnalyzedDataDef` — tagged union over the three data-block
 ## kinds (literal / struct / union). Produced by `analyzeData` on
 ## the facade; consumed by `AnalyzedDefModule` as the
 ## module's optional data field.
@@ -12,31 +12,31 @@ import ./uniondef
 type
   AnalyzedDataKind* = enum
     adkLiteral, adkStruct, adkUnion
-  AnalyzedData* = ref object
+  AnalyzedDataDef* = ref object
     case kind: AnalyzedDataKind
     of adkLiteral: literal: AnalyzedLiteralDef
     of adkStruct: struct: AnalyzedStructDef
     of adkUnion: union: AnalyzedUnionDef
 
-proc newAnalyzedData*(literal: AnalyzedLiteralDef): AnalyzedData =
-  AnalyzedData(kind: adkLiteral, literal: literal)
+proc newAnalyzedDataDef*(literal: AnalyzedLiteralDef): AnalyzedDataDef =
+  AnalyzedDataDef(kind: adkLiteral, literal: literal)
 
-proc newAnalyzedData*(struct: AnalyzedStructDef): AnalyzedData =
-  AnalyzedData(kind: adkStruct, struct: struct)
+proc newAnalyzedDataDef*(struct: AnalyzedStructDef): AnalyzedDataDef =
+  AnalyzedDataDef(kind: adkStruct, struct: struct)
 
-proc newAnalyzedData*(union: AnalyzedUnionDef): AnalyzedData =
-  AnalyzedData(kind: adkUnion, union: union)
+proc newAnalyzedDataDef*(union: AnalyzedUnionDef): AnalyzedDataDef =
+  AnalyzedDataDef(kind: adkUnion, union: union)
 
-proc kind*(d: AnalyzedData): AnalyzedDataKind = d.kind
-proc literal*(d: AnalyzedData): AnalyzedLiteralDef =
+proc kind*(d: AnalyzedDataDef): AnalyzedDataKind = d.kind
+proc literal*(d: AnalyzedDataDef): AnalyzedLiteralDef =
   assert d.kind == adkLiteral,
-    fmt"AnalyzedData.literal accessed but kind is {d.kind}"
+    fmt"AnalyzedDataDef.literal accessed but kind is {d.kind}"
   d.literal
-proc struct*(d: AnalyzedData): AnalyzedStructDef =
+proc struct*(d: AnalyzedDataDef): AnalyzedStructDef =
   assert d.kind == adkStruct,
-    fmt"AnalyzedData.struct accessed but kind is {d.kind}"
+    fmt"AnalyzedDataDef.struct accessed but kind is {d.kind}"
   d.struct
-proc union*(d: AnalyzedData): AnalyzedUnionDef =
+proc union*(d: AnalyzedDataDef): AnalyzedUnionDef =
   assert d.kind == adkUnion,
-    fmt"AnalyzedData.union accessed but kind is {d.kind}"
+    fmt"AnalyzedDataDef.union accessed but kind is {d.kind}"
   d.union

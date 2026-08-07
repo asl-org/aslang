@@ -31,14 +31,14 @@ proc buildAnalyzedFuncNameArityIndex*(funcDefs: seq[AnalyzedFunctionDefinition])
 type AnalyzedDefModule* = ref object
   resolved: ResolvedModule
   requires: seq[AnalyzedGenericArgumentType]
-  data: Option[AnalyzedData]
+  data: Option[AnalyzedDataDef]
   functions: seq[AnalyzedDefFunction]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[ResolvedFunctionDef, int]
 
 proc newAnalyzedDefModule*(resolved: ResolvedModule,
     requires: seq[AnalyzedGenericArgumentType],
-    data: Option[AnalyzedData],
+    data: Option[AnalyzedDataDef],
     functions: seq[AnalyzedDefFunction]): AnalyzedDefModule =
   var funcDefIndex: Table[ResolvedFunctionDef, int]
   for id, function in functions:
@@ -49,13 +49,13 @@ proc newAnalyzedDefModule*(resolved: ResolvedModule,
 
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
-proc data*(m: AnalyzedDefModule): Option[AnalyzedData] = m.data
+proc data*(m: AnalyzedDefModule): Option[AnalyzedDataDef] = m.data
 proc functions*(m: AnalyzedDefModule): seq[AnalyzedDefFunction] = m.functions
 
-proc dataDef*(m: AnalyzedDefModule): AnalyzedData =
+proc dataDef*(m: AnalyzedDefModule): AnalyzedDataDef =
   ## Kind-asserted projection — phase B reaches a module through an
   ## expression type only after the resolver verified it is a data
-  ## module. The block-kind asserts live on AnalyzedData's accessors.
+  ## module. The block-kind asserts live on AnalyzedDataDef's accessors.
   assert(m.data.isSome, fmt"[BUG] - {m.resolved.loc} module `{m.resolved.name.asl}` has no data block")
   m.data.get
 proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDefinition] = m.functions.mapIt(it.def)
