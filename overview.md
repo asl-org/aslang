@@ -395,10 +395,10 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   name-keyed `findType` / `findModule` / `findGeneric` on `FileContext`
   (filecontext.nim, the name→parser-Type bridge), identity-keyed
   `findType` / `findModule` / `findGeneric` plus the scope-spanning
-  `findGenericInScope` on `ResolvedFile` (files.nim), identity-keyed
-  `findFile` / `findType` on `ResolvedApp` (app.nim), and path-keyed
-  `findImportedFile` on `AppContext` (appcontext.nim — the
-  resolve-time accumulator that owns the topo-order assert).
+  `findGenericInScope` on `ResolvedFile` (files.nim), and identity-
+  keyed `findFile` plus path-keyed `findImportedFile` on `ResolvedApp`
+  (app.nim — the resolve-time result-and-accumulator that owns the
+  topo-order assert).
 - **Single-pass walk per app** (files come topo-sorted leaves-first
   from the parser's multi-file `parse*` entry, so imports are always
   resolved before use). For
@@ -555,8 +555,8 @@ Three phase-A invariants worth naming:
 - **Identity lookups assert, never err — on the types themselves.**
   Every identity-keyed lookup (`findType` / `findModule` /
   `findGeneric` on both FileContext rungs, `ResolvedFile.findType`,
-  `ResolvedApp.findFile`, `AnalyzedDefApp.findFileDef`,
-  `AppContext.findImportedFile`, `ResolvedFile.findGenericInScope`,
+  `ResolvedApp.findFile` / `ResolvedApp.findImportedFile`,
+  `AnalyzedDefApp.findFileDef`, `ResolvedFile.findGenericInScope`,
   `AnalyzedDefModule.findFunctionDef`) returns its value directly
   with an `assert "[BUG] - ..."` inside: by construction callers can
   only ask about identities the layer below bound, so a miss is a
@@ -833,22 +833,19 @@ src/
                                    the resolve-time FileContext
                                    (`scope` accessor) for downstream
                                    name→parser.LocalType bridging.
-    app.nim                        ResolvedApp — the top-level handle;
-                                   identity-keyed fileIndex +
-                                   findFile. Type lookups live on
-                                   the per-file scopes, not the app.
-                                   The actor `resolve*` proc lives
-                                   on the facade.
-    appcontext.nim                 AppContext — the resolver's
-                                   app-level accumulator: parsed App
-                                   + ResolvedFiles added as they
-                                   land, behind a path-keyed
-                                   findImportedFile (owns the
-                                   topo-order assert the import-
-                                   binding capture relies on).
-                                   `resolve*` builds it, add()s per
-                                   file, projects the seq into
-                                   newResolvedApp at the end.
+    app.nim                        ResolvedApp — the resolver's
+                                   app-level result AND accumulator:
+                                   parsed App + ResolvedFiles added as
+                                   they land, behind an identity
+                                   fileIndex (findFile) and a
+                                   path-keyed filePathIndex
+                                   (findImportedFile — owns the
+                                   topo-order assert the import-binding
+                                   capture relies on). Type lookups
+                                   live on the per-file scopes, not the
+                                   app. `resolve*` builds it, add()s
+                                   per file; the actor proc lives on
+                                   the facade.
 
     parser.nim                     parser layer — combinator machinery
                                    (Spec[T], Parser, oneOf / any /
@@ -1093,7 +1090,7 @@ src/
                                    land, path-indexed); analyzeDefApp
                                    builds it and projects the seq
                                    into newAnalyzedDefApp. The rung-2
-                                   twin of the resolver's AppContext.
+                                   twin of the resolver's ResolvedApp.
     importedtypedef.nim            AnalyzedDefImportedType (binding →
                                    ResolvedLocalType).
     importdef.nim                  AnalyzedDefImport (resolved
@@ -1510,7 +1507,7 @@ Focused TODOs still open:
   resolver facade still contains a pre-deep-check paragraph
   assigning signature parity to phase B's value-vs-defType walk
   (superseded by the def analyzer's identity-probe check described
-  further down in the same block); and `AppContext.findFile`
+  further down in the same block); and `ResolvedApp.findFile`
   returns a Result although by resolve time the loader has
   materialized every import target — either it is the assert-backed
   form per the identity-lookup doctrine, or the user error it can
