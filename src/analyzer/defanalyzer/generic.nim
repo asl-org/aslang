@@ -6,7 +6,7 @@
 ## (a generic's whole point is to declare an interface for external
 ## callers) — `findFunctionDefs` has no `public` parameter.
 
-import results, sequtils, strformat, tables
+import results, sequtils, strformat, tables, hashes
 
 import ./resolver
 import ./funcdef
@@ -25,6 +25,11 @@ proc newAnalyzedGeneric*(resolved: ResolvedGeneric,
 proc resolved*(g: AnalyzedGeneric): ResolvedGeneric = g.resolved
 proc name*(g: AnalyzedGeneric): Identifier = g.resolved.name
 proc loc*(g: AnalyzedGeneric): Location = g.resolved.loc
+
+# Identity is the underlying resolved generic — so an AnalyzedGeneric
+# keys a GenericImplMap by the same identity a ResolvedGeneric would.
+proc hash*(g: AnalyzedGeneric): Hash = g.resolved.hash
+proc `==`*(a, b: AnalyzedGeneric): bool = a.resolved == b.resolved
 
 proc findFunctionDefs*(generic: AnalyzedGeneric, name: Identifier, arity: int): Result[seq[AnalyzedFunctionDef], string] =
   ## No public filter — every generic funcDef is implicitly public.

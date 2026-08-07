@@ -4,15 +4,14 @@
 ## walkers for kwarg / arg validation without re-analyzing the
 ## underlying argument type.
 ##
-## `concrete*` overloads substitute generic slots in the analyzed
-## argument type, preserving the identifier. See argtype.nim's own
-## `concrete*` for the substitution semantics.
+## `concrete*` substitutes generic slots in the analyzed argument
+## type positionally (via impls + genericTypeIndex), preserving the
+## identifier. See argtype.nim's own `concrete*` for the semantics.
 
 import tables
 
 import ./resolver
 import ./argtype
-import ./genericimplmap
 
 type AnalyzedArgumentDef* = ref object
   resolved: ResolvedArgumentDef
@@ -27,11 +26,6 @@ proc loc*(d: AnalyzedArgumentDef): Location = d.resolved.name.loc
 
 proc asl*(d: AnalyzedArgumentDef): string =
   d.name.asl & ": " & d.argType.asl
-
-proc concrete*(d: AnalyzedArgumentDef, implMap: GenericImplMap): AnalyzedArgumentDef =
-  ## Substitute generic slots via the implMap, preserving the resolver
-  ## back-ref (name is derived from `resolved.name`).
-  newAnalyzedArgumentDef(d.resolved, d.argType.concrete(implMap))
 
 proc concrete*(d: AnalyzedArgumentDef,
     impls: seq[AnalyzedArgumentType],

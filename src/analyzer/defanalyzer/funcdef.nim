@@ -3,19 +3,12 @@
 ## return type. Produced by phase-A `analyzeFunctionDefinition` when
 ## walking a module's or generic's function list; consumed by phase-B
 ## overload resolution + body-typing without re-analysis.
-##
-## `concrete*` substitutes generic slots in every arg + the return
-## type via the given `GenericImplMap`, preserving the underlying
-## resolver reference. The resolver back-ref (`resolved`) is copied
-## as-is to the concrete def; see the same caveat noted on
-## `AnalyzedArgumentDef.concrete`.
 
 import strutils, sequtils
 
 import ./resolver
 import ./argtype
 import ./argdef
-import ./genericimplmap
 
 type AnalyzedFunctionDef* = ref object
   resolved: ResolvedFunctionDef
@@ -45,17 +38,3 @@ proc filter*(defs: seq[AnalyzedFunctionDef], access: FunctionAccess): seq[Analyz
   case access:
   of faAll: defs
   of faPublic: defs.filterIt(it.public)
-
-proc concrete*(f: AnalyzedFunctionDef,
-    implMap: GenericImplMap): AnalyzedFunctionDef =
-  ## Substitute generic slots in every arg + the return type via
-  ## `implMap`. The resolver back-ref is preserved as-is on the
-  ## concretized def — see the caveat on `argdef.concrete`; consider
-  ## persisting the (originalDef, implMap) pair separately if
-  ## downstream code needs precise source locations for concretized
-  ## types.
-  var concreteArgs: seq[AnalyzedArgumentDef]
-  for arg in f.args:
-    concreteArgs.add(arg.concrete(implMap))
-  let concreteReturns = f.returns.concrete(implMap)
-  newAnalyzedFunctionDef(f.resolved, concreteArgs, concreteReturns)

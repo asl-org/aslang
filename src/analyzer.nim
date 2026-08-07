@@ -212,7 +212,7 @@ proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, defType: Analy
       if maybeConcreteFuncDef.isNone:
         return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.name.asl}`")
   var genericImplMap: GenericImplMap
-  genericImplMap[defType.generic] = valType
+  genericImplMap[fileCtx.findGeneric(defType.generic)] = valType
   ok(genericImplMap)
 
 proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
