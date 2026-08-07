@@ -50,7 +50,7 @@ proc extractUnionFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgum
   of adkStruct: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found struct")
   of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found literal")
 
-proc analyzeUnionCasePattern*(module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, variantPattern: UnionPattern, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
+proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   let variant = union.findVariant(variantPattern.name)
   var bindings: seq[AnalyzedBinding]
   for field in variantPattern.fields:
@@ -60,16 +60,16 @@ proc analyzeUnionCasePattern*(module: AnalyzedDefModule, funcCtx: AnalyzedFuncti
     bindings.add((name: field.binding, argType: concreteFieldArgType))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
-proc analyzeCasePattern*(module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} integer literals are not allowed in union case pattern")
   of rcpkVariable:
     ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType)))
   of rcpkUnion:
-    let analyzedPattern = ? analyzeUnionCasePattern(module, funcCtx, pattern.variant, union, subjectImpls)
+    let analyzedPattern = ? analyzeUnionCasePattern(pattern.variant, union, subjectImpls)
     ok(newAnalyzedCasePattern(analyzedPattern))
 
-proc analyzeCasePattern*(module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkUnion:
     err(fmt"{pattern.loc} union variants are not allowed in literal case pattern")
@@ -309,7 +309,7 @@ proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
 proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCaseBlock, string] =
   var caseCtx = funcCtx
 
-  let analyzedCasePattern = ? analyzeCasePattern(module, funcCtx, caseBlock.pattern, subjectType, union, subjectImpls)
+  let analyzedCasePattern = ? analyzeCasePattern(caseBlock.pattern, subjectType, union, subjectImpls)
   caseCtx = caseCtx.update(analyzedCasePattern)
 
   var analyzedStatements: seq[AnalyzedStatement]
@@ -322,7 +322,7 @@ proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, 
 proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType): Result[AnalyzedCaseBlock, string] =
   var caseCtx = funcCtx
 
-  let analyzedCasePattern = ? analyzeCasePattern(module, funcCtx, caseBlock.pattern, subjectType)
+  let analyzedCasePattern = ? analyzeCasePattern(caseBlock.pattern, subjectType)
   caseCtx = caseCtx.update(analyzedCasePattern)
 
   var analyzedStatements: seq[AnalyzedStatement]
