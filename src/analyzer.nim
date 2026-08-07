@@ -228,8 +228,8 @@ proc analyzeValueTypeAgainstDefType(defType: AnalyzedArgumentType, valType: Anal
   of aatkModule: analyzeValueTypeAgainstDefType(defType.module, valType, loc)
   of aatkGeneric: analyzeValueTypeAgainstDefType(defType.generic, valType, loc)
 
-proc analyzeArgumentList*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDefinition): Result[GenericImplMap, string] =
-  # Reads pre-analyzed args directly from the AnalyzedFunctionDefinition
+proc analyzeArgumentList*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDef): Result[GenericImplMap, string] =
+  # Reads pre-analyzed args directly from the AnalyzedFunctionDef
   # — no lookup, no re-analysis. Every analyzed expression carries a
   # concrete argType post-Approach C; bare literals adopt the caller's
   # expected type or default to i32/f32/String at the
@@ -243,8 +243,8 @@ proc analyzeArgumentList*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, modu
     genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
-proc analyzeArgumentList(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall, funcDefs: seq[AnalyzedFunctionDefinition]): Result[(AnalyzedFunctionDefinition, seq[AnalyzedExpression], GenericImplMap), string] =
-  # Per-candidate analysis over pre-analyzed AnalyzedFunctionDefinition
+proc analyzeArgumentList(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall, funcDefs: seq[AnalyzedFunctionDef]): Result[(AnalyzedFunctionDef, seq[AnalyzedExpression], GenericImplMap), string] =
+  # Per-candidate analysis over pre-analyzed AnalyzedFunctionDef
   # candidates: for each candidate, walk the call's raw arguments and
   # analyze each with the candidate's declared arg type (pre-analyzed)
   # as the expected context. Bare literals adopt the declared type when
@@ -252,7 +252,7 @@ proc analyzeArgumentList(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileC
   # (`analyzeBareLiteral`). First candidate whose args analyze +
   # type-check wins; ambiguity fires the existing multi-match error
   # path.
-  var matches: seq[(AnalyzedFunctionDefinition, seq[AnalyzedExpression], GenericImplMap)]
+  var matches: seq[(AnalyzedFunctionDef, seq[AnalyzedExpression], GenericImplMap)]
   var errors: seq[string]
   for index, analyzedFuncDef in funcDefs:
     assert(analyzedFuncDef.args.len == fncall.args.len, "[BUG] - UNREACHABLE")
@@ -300,7 +300,7 @@ proc analyzeFunctionCall*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, file
   let funcDefs = maybeFuncDefs.get
 
   let (matchingFuncDef, analyzedArgs, genericImpls) = ? analyzeArgumentList(appDef, fileDef, fileCtx, module, funcCtx, fncall, funcDefs)
-  # Return type comes pre-analyzed from the AnalyzedFunctionDefinition;
+  # Return type comes pre-analyzed from the AnalyzedFunctionDef;
   # apply the caller's inferred generic-impl substitution to concretize
   # any free generics the return type touches.
   let concreteReturns = matchingFuncDef.returns.concrete(genericImpls)
@@ -391,7 +391,7 @@ proc analyzeMatchExpression*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, f
       let analyzedCases = ? analyzeCases(appDef, fileDef, fileCtx, module, funcCtx, match.cases, subjectArgType, analyzedSubjectDataType.union, subjectArgType.module.impls, match.loc)
       ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases))
 
-proc analyzeKeywordArgument*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, kwarg: AnalyzedDefKeywordArgument, analyzedField: AnalyzedArgumentDefinition): Result[AnalyzedKeywordArgument, string] =
+proc analyzeKeywordArgument*(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile, fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, kwarg: AnalyzedDefKeywordArgument, analyzedField: AnalyzedArgumentDef): Result[AnalyzedKeywordArgument, string] =
   # Field's declared type is the expected context — bare literals in
   # kwarg values adapt when concrete, default when generic.
   let analyzedExpression = ? analyzeExpression(appDef, fileDef, fileCtx, module, funcCtx, kwarg.expression, some(analyzedField.argType))

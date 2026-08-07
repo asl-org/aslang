@@ -1,4 +1,4 @@
-## Phase-A `AnalyzedFunctionDefinition` — a resolver function
+## Phase-A `AnalyzedFunctionDef` — a resolver function
 ## definition paired with its fully-analyzed argument definitions and
 ## return type. Produced by phase-A `analyzeFunctionDefinition` when
 ## walking a module's or generic's function list; consumed by phase-B
@@ -8,7 +8,7 @@
 ## type via the given `GenericImplMap`, preserving the underlying
 ## resolver reference. The resolver back-ref (`resolved`) is copied
 ## as-is to the concrete def; see the same caveat noted on
-## `AnalyzedArgumentDefinition.concrete`.
+## `AnalyzedArgumentDef.concrete`.
 
 import strutils, sequtils
 
@@ -17,45 +17,45 @@ import ./argtype
 import ./argdef
 import ./genericimplmap
 
-type AnalyzedFunctionDefinition* = ref object
+type AnalyzedFunctionDef* = ref object
   resolved: ResolvedFunctionDef
-  args: seq[AnalyzedArgumentDefinition]
+  args: seq[AnalyzedArgumentDef]
   returns: AnalyzedArgumentType
 
-proc newAnalyzedFunctionDefinition*(resolved: ResolvedFunctionDef,
-    args: seq[AnalyzedArgumentDefinition],
-    returns: AnalyzedArgumentType): AnalyzedFunctionDefinition =
-  AnalyzedFunctionDefinition(resolved: resolved, args: args, returns: returns)
+proc newAnalyzedFunctionDef*(resolved: ResolvedFunctionDef,
+    args: seq[AnalyzedArgumentDef],
+    returns: AnalyzedArgumentType): AnalyzedFunctionDef =
+  AnalyzedFunctionDef(resolved: resolved, args: args, returns: returns)
 
-proc resolved*(f: AnalyzedFunctionDefinition): ResolvedFunctionDef = f.resolved
-proc public*(f: AnalyzedFunctionDefinition): bool = f.resolved.public
-proc name*(f: AnalyzedFunctionDefinition): Identifier = f.resolved.name
-proc loc*(f: AnalyzedFunctionDefinition): Location = f.resolved.loc
-proc arity*(f: AnalyzedFunctionDefinition): int = f.args.len
-proc args*(f: AnalyzedFunctionDefinition): seq[AnalyzedArgumentDefinition] = f.args
-proc returns*(f: AnalyzedFunctionDefinition): AnalyzedArgumentType = f.returns
+proc resolved*(f: AnalyzedFunctionDef): ResolvedFunctionDef = f.resolved
+proc public*(f: AnalyzedFunctionDef): bool = f.resolved.public
+proc name*(f: AnalyzedFunctionDef): Identifier = f.resolved.name
+proc loc*(f: AnalyzedFunctionDef): Location = f.resolved.loc
+proc arity*(f: AnalyzedFunctionDef): int = f.args.len
+proc args*(f: AnalyzedFunctionDef): seq[AnalyzedArgumentDef] = f.args
+proc returns*(f: AnalyzedFunctionDef): AnalyzedArgumentType = f.returns
 
-proc asl*(f: AnalyzedFunctionDefinition): string =
+proc asl*(f: AnalyzedFunctionDef): string =
   var args: seq[string]
   for arg in f.args:
     args.add(arg.asl)
   "func " & f.name.asl & "(" & args.join(", ") & "): " & f.returns.asl
 
-proc filter*(defs: seq[AnalyzedFunctionDefinition], access: FunctionAccess): seq[AnalyzedFunctionDefinition] =
+proc filter*(defs: seq[AnalyzedFunctionDef], access: FunctionAccess): seq[AnalyzedFunctionDef] =
   case access:
   of faAll: defs
   of faPublic: defs.filterIt(it.public)
 
-proc concrete*(f: AnalyzedFunctionDefinition,
-    implMap: GenericImplMap): AnalyzedFunctionDefinition =
+proc concrete*(f: AnalyzedFunctionDef,
+    implMap: GenericImplMap): AnalyzedFunctionDef =
   ## Substitute generic slots in every arg + the return type via
   ## `implMap`. The resolver back-ref is preserved as-is on the
   ## concretized def — see the caveat on `argdef.concrete`; consider
   ## persisting the (originalDef, implMap) pair separately if
   ## downstream code needs precise source locations for concretized
   ## types.
-  var concreteArgs: seq[AnalyzedArgumentDefinition]
+  var concreteArgs: seq[AnalyzedArgumentDef]
   for arg in f.args:
     concreteArgs.add(arg.concrete(implMap))
   let concreteReturns = f.returns.concrete(implMap)
-  newAnalyzedFunctionDefinition(f.resolved, concreteArgs, concreteReturns)
+  newAnalyzedFunctionDef(f.resolved, concreteArgs, concreteReturns)

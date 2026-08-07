@@ -18,7 +18,7 @@ import ./function
 
 # ---- shared name+arity indexer over analyzed funcDefs ----
 
-proc buildAnalyzedFuncNameArityIndex*(funcDefs: seq[AnalyzedFunctionDefinition]): Table[Identifier, Table[int, seq[int]]] =
+proc buildAnalyzedFuncNameArityIndex*(funcDefs: seq[AnalyzedFunctionDef]): Table[Identifier, Table[int, seq[int]]] =
   for id, funcDef in funcDefs:
     if funcDef.name notin result:
       result[funcDef.name] = initTable[int, seq[int]]()
@@ -58,18 +58,18 @@ proc dataDef*(m: AnalyzedDefModule): AnalyzedDataDef =
   ## module. The block-kind asserts live on AnalyzedDataDef's accessors.
   assert(m.data.isSome, fmt"[BUG] - {m.resolved.loc} module `{m.resolved.name.asl}` has no data block")
   m.data.get
-proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDefinition] = m.functions.mapIt(it.def)
+proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDef] = m.functions.mapIt(it.def)
 proc name*(m: AnalyzedDefModule): Identifier = m.resolved.name
 proc loc*(m: AnalyzedDefModule): Location = m.resolved.loc
 
-proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): AnalyzedFunctionDefinition =
+proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): AnalyzedFunctionDef =
   ## Identity lookup — phase A indexed every resolver function
   ## definition of this module, so a miss is a compiler bug.
   assert(funcDef in module.funcDefIndex, fmt"[BUG] - {funcDef.loc} function `{funcDef.name.asl}` missing from module `{module.name.asl}`")
   module.functions[module.funcDefIndex[funcDef]].def
 
-proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDefinition], string] =
-  ## Overload-lookup entry point — returns every AnalyzedFunctionDefinition
+proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDef], string] =
+  ## Overload-lookup entry point — returns every AnalyzedFunctionDef
   ## that matches `name` + `arity`, filtered to what `access` may see
   ## (`faPublic` for external-call receivers). Uniqueness is left to
   ## the caller's overload-selection step.

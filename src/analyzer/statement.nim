@@ -30,13 +30,13 @@ import getter
 type
   AnalyzedFunctionCall* = ref object
     def: AnalyzedDefFunctionCall
-    funcDef: AnalyzedFunctionDefinition
+    funcDef: AnalyzedFunctionDef
     args: seq[AnalyzedExpression]
     returns: AnalyzedArgumentType
 
   AnalyzedKeywordArgument* = ref object
     def: AnalyzedDefKeywordArgument
-    field: AnalyzedArgumentDefinition
+    field: AnalyzedArgumentDef
     expression: AnalyzedExpression
 
   AnalyzedStructRef* = ref object
@@ -106,7 +106,7 @@ type
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
 
-proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDefinition, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
+proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
   AnalyzedFunctionCall(def: def, funcDef: funcDef, args: args, returns: returns)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
@@ -115,11 +115,11 @@ proc def*(fncall: AnalyzedFunctionCall): ResolvedFunctionDef = fncall.funcDef.re
 proc args*(fncall: AnalyzedFunctionCall): seq[AnalyzedExpression] = fncall.args
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType = fncall.returns
 
-proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDefinition, expression: AnalyzedExpression): AnalyzedKeywordArgument =
+proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(def: def, field: field, expression: expression)
 
 proc resolved*(kwarg: AnalyzedKeywordArgument): AnalyzedDefKeywordArgument = kwarg.def
-proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDefinition = kwarg.field
+proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDef = kwarg.field
 proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
 
 proc newAnalyzedStructRef*(resolved: ResolvedStructRef,

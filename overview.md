@@ -123,7 +123,7 @@ Analyzer ──── Two-pass over the resolved app.
   │              across the whole app. Produces AnalyzedDefApp
   │              bundling per-file AnalyzedDefFile + per-module
   │              AnalyzedDefModule + per-def
-  │              AnalyzedFunctionDefinition (args + return type
+  │              AnalyzedFunctionDef (args + return type
   │              fully analyzed) + per-function AnalyzedDefStatement
   │              trees (every def-level fact in a body — literal
   │              defaults, call receivers, struct/union refs —
@@ -136,7 +136,7 @@ Analyzer ──── Two-pass over the resolved app.
   │              candidates via the per-file AnalyzedFileContext
   │              (`fileCtx.findType(typ).findFunctionDefs(name,
   │              arity, public)`) returning
-  │              seq[AnalyzedFunctionDefinition] — no re-analysis
+  │              seq[AnalyzedFunctionDef] — no re-analysis
   │              at the call site. Return types come pre-analyzed
   │              from matchingFuncDef.returns; only the
   │              generic-impl substitution (.concrete) runs per
@@ -171,7 +171,7 @@ analyzed modules parsed out of it.
 
 Phase-A output (`AnalyzedDefApp` + per-file
 `AnalyzedDefFile` + per-module `AnalyzedDefModule` +
-`AnalyzedGeneric` + `AnalyzedFunctionDefinition` + the data-block
+`AnalyzedGeneric` + `AnalyzedFunctionDef` + the data-block
 wrappers `AnalyzedStructDef` / `AnalyzedVariantDef` / `AnalyzedUnionDef` /
 `AnalyzedLiteralDef` / `AnalyzedDataDef`) is threaded through the
 body walker chain as `(appDef, fileDef, fileCtx)` — the
@@ -509,9 +509,9 @@ app, producing an `AnalyzedDefApp`: per-file `AnalyzedDefFile`
 `ResolvedFileContext`), per-def `AnalyzedDefModule` (whose `functions`
 are tagged `AnalyzedDefFunction`s — extern/user, each pairing the
 resolver function with its pre-analyzed
-`AnalyzedFunctionDefinition`; user functions additionally carry
+`AnalyzedFunctionDef`; user functions additionally carry
 their `AnalyzedDefStatement` tree) / `AnalyzedGeneric` (bare
-`AnalyzedFunctionDefinition`s — generics have no extern/user split)
+`AnalyzedFunctionDef`s — generics have no extern/user split)
 and the data-block wrappers (`AnalyzedStructDef` /
 `AnalyzedVariantDef` / `AnalyzedUnionDef` / `AnalyzedLiteralDef` /
 `AnalyzedDataDef`). The statement walk mirrors the resolver's statement
@@ -579,7 +579,7 @@ signatures via `fileCtx.findType(typ).findFunctionDefs(...)` — no
 re-analysis of arg types or return types per call site. Body-level
 analyzed types back-reference the phase-A defs that produced them
 (`AnalyzedFile.def` / `AnalyzedModule.def`; extern functions carry
-their `AnalyzedFunctionDefinition`). Scope:
+their `AnalyzedFunctionDef`). Scope:
 
 - **Identity-based lookups only** — the analyzer never resolves a
   user-typed name. Every reference reaching it already carries the
@@ -674,7 +674,7 @@ their `AnalyzedFunctionDefinition`). Scope:
 - **Pattern-side bindings** — `AnalyzedUnionPattern.fields` is now
   a seq of `AnalyzedBinding = tuple[name: Identifier, argType:
   AnalyzedArgumentType]` — the body-level replacement for the
-  retired def-level `AnalyzedArgumentDefinition` wrapper.
+  retired def-level `AnalyzedArgumentDef` wrapper.
 - **Scope tables** — `ResolvedFileContext`
   (defanalyzer/filecontext.nim) and `AnalyzedFileContext`
   (analyzer/filecontext.nim) both span imports + local defined types;
@@ -1050,10 +1050,10 @@ src/
                                    (conflict-on-different-binding;
                                    substitution-chain collapsing
                                    still TODO).
-    argdef.nim                     AnalyzedArgumentDefinition —
+    argdef.nim                     AnalyzedArgumentDef —
                                    phase-A arg wrapper (resolved def
                                    + analyzed argType).
-    funcdef.nim                    AnalyzedFunctionDefinition — args
+    funcdef.nim                    AnalyzedFunctionDef — args
                                    + return type fully analyzed.
     literaldef.nim                 AnalyzedLiteralDef.
     structdef.nim                  AnalyzedStructDef (analyzed fields).
@@ -1140,7 +1140,7 @@ src/
                                    AnalyzedArgumentType) —
                                    per-function variable scope;
                                    seeded from a pre-analyzed
-                                   AnalyzedFunctionDefinition's args
+                                   AnalyzedFunctionDef's args
                                    (newAnalyzedFunctionContext) and
                                    extended via update overloads
                                    (statement binding / case-pattern
@@ -1166,7 +1166,7 @@ src/
     variable.nim                   AnalyzedVariable.
     literalinit.nim                AnalyzedLiteralInitializer.
     getter.nim                     AnalyzedGetter (source argType +
-                                   property: AnalyzedArgumentDefinition
+                                   property: AnalyzedArgumentDef
                                    — its argType is the getter's).
     statement.nim                  Body-cluster mutually-recursive
                                    types: AnalyzedExpression /
@@ -1427,7 +1427,7 @@ Focused TODOs still open:
   union case-pattern field types all read what phase A already
   analyzed (the last read `fieldDef.argType` off the analyzed
   variant twin). Every body output now anchors on its AnalyzedDef*
-  twin (getter → AnalyzedArgumentDefinition; function call / kwarg /
+  twin (getter → AnalyzedArgumentDef; function call / kwarg /
   case block / match → their def twins; union pattern →
   AnalyzedVariantDef). The cross-file re-entry crash path is
   structurally gone. Acceptance gate: the two deferred positive

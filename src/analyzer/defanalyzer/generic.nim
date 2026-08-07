@@ -14,20 +14,20 @@ import ./moduledef  # buildAnalyzedFuncNameArityIndex
 
 type AnalyzedGeneric* = ref object
   resolved: ResolvedGeneric
-  funcDefs: seq[AnalyzedFunctionDefinition]
+  funcDefs: seq[AnalyzedFunctionDef]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
 proc newAnalyzedGeneric*(resolved: ResolvedGeneric,
-    funcDefs: seq[AnalyzedFunctionDefinition]): AnalyzedGeneric =
+    funcDefs: seq[AnalyzedFunctionDef]): AnalyzedGeneric =
   AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs,
     funcNameArityIndex: buildAnalyzedFuncNameArityIndex(funcDefs))
 
 proc resolved*(g: AnalyzedGeneric): ResolvedGeneric = g.resolved
-proc funcDefs*(g: AnalyzedGeneric): seq[AnalyzedFunctionDefinition] = g.funcDefs
+proc funcDefs*(g: AnalyzedGeneric): seq[AnalyzedFunctionDef] = g.funcDefs
 proc name*(g: AnalyzedGeneric): Identifier = g.resolved.name
 proc loc*(g: AnalyzedGeneric): Location = g.resolved.loc
 
-proc findFunctionDefs*(generic: AnalyzedGeneric, name: Identifier, arity: int): Result[seq[AnalyzedFunctionDefinition], string] =
+proc findFunctionDefs*(generic: AnalyzedGeneric, name: Identifier, arity: int): Result[seq[AnalyzedFunctionDef], string] =
   ## No public filter — every generic funcDef is implicitly public.
   if name notin generic.funcNameArityIndex:
     err(fmt"{name.loc} generic `{generic.name.asl}` does not have a function named `{name.asl}`")

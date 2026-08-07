@@ -1,4 +1,4 @@
-## Phase-A `AnalyzedArgumentDefinition` — a name + fully-analyzed
+## Phase-A `AnalyzedArgumentDef` — a name + fully-analyzed
 ## argument type. Produced by phase-A `analyzeArgumentDefinition` when
 ## walking a function's signature, then consumed by phase-B body
 ## walkers for kwarg / arg validation without re-analyzing the
@@ -14,30 +14,30 @@ import ./resolver
 import ./argtype
 import ./genericimplmap
 
-type AnalyzedArgumentDefinition* = ref object
+type AnalyzedArgumentDef* = ref object
   resolved: ResolvedArgumentDef
   argType: AnalyzedArgumentType
 
-proc newAnalyzedArgumentDefinition*(resolved: ResolvedArgumentDef, argType: AnalyzedArgumentType): AnalyzedArgumentDefinition =
-  AnalyzedArgumentDefinition(resolved: resolved, argType: argType)
+proc newAnalyzedArgumentDef*(resolved: ResolvedArgumentDef, argType: AnalyzedArgumentType): AnalyzedArgumentDef =
+  AnalyzedArgumentDef(resolved: resolved, argType: argType)
 
-proc resolved*(d: AnalyzedArgumentDefinition): ResolvedArgumentDef = d.resolved
-proc argType*(d: AnalyzedArgumentDefinition): AnalyzedArgumentType = d.argType
-proc name*(d: AnalyzedArgumentDefinition): Identifier = d.resolved.name
-proc loc*(d: AnalyzedArgumentDefinition): Location = d.resolved.name.loc
+proc resolved*(d: AnalyzedArgumentDef): ResolvedArgumentDef = d.resolved
+proc argType*(d: AnalyzedArgumentDef): AnalyzedArgumentType = d.argType
+proc name*(d: AnalyzedArgumentDef): Identifier = d.resolved.name
+proc loc*(d: AnalyzedArgumentDef): Location = d.resolved.name.loc
 
-proc asl*(d: AnalyzedArgumentDefinition): string =
+proc asl*(d: AnalyzedArgumentDef): string =
   d.name.asl & ": " & d.argType.asl
 
-proc concrete*(d: AnalyzedArgumentDefinition, implMap: GenericImplMap): AnalyzedArgumentDefinition =
+proc concrete*(d: AnalyzedArgumentDef, implMap: GenericImplMap): AnalyzedArgumentDef =
   ## Substitute generic slots via the implMap, preserving the resolver
   ## back-ref (name is derived from `resolved.name`).
-  newAnalyzedArgumentDefinition(d.resolved, d.argType.concrete(implMap))
+  newAnalyzedArgumentDef(d.resolved, d.argType.concrete(implMap))
 
-proc concrete*(d: AnalyzedArgumentDefinition,
+proc concrete*(d: AnalyzedArgumentDef,
     impls: seq[AnalyzedArgumentType],
-    genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedArgumentDefinition =
+    genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedArgumentDef =
   ## Positional generic substitution via the (impls, genericTypeIndex)
   ## pair. Preserves `resolved`. See argtype.nim:concrete for semantics.
-  newAnalyzedArgumentDefinition(
+  newAnalyzedArgumentDef(
     d.resolved, d.argType.concrete(impls, genericTypeIndex))

@@ -1,6 +1,6 @@
 ## Phase-A function wrappers — `AnalyzedDefExternFunction` /
 ## `AnalyzedDefUserFunction` each pair the resolver function with its
-## pre-analyzed `AnalyzedFunctionDefinition`, and the tagged
+## pre-analyzed `AnalyzedFunctionDef`, and the tagged
 ## `AnalyzedDefFunction` (adfkExtern / adfkUser) gives
 ## `AnalyzedDefModule.functions` one shape with uniform `def` /
 ## `name` / `arity` accessors dispatching on the kind.
@@ -12,9 +12,9 @@ import statement
 
 type AnalyzedDefExternFunction* = ref object
   resolved: ResolvedExternFunction
-  def: AnalyzedFunctionDefinition
+  def: AnalyzedFunctionDef
 
-proc newAnalyzedDefExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDefinition): AnalyzedDefExternFunction =
+proc newAnalyzedDefExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDef): AnalyzedDefExternFunction =
   AnalyzedDefExternFunction(resolved: resolved, def: def)
 
 proc name*(function: AnalyzedDefExternFunction): Identifier = function.resolved.name
@@ -23,17 +23,17 @@ proc resolved*(function: AnalyzedDefExternFunction): ResolvedExternFunction = fu
 
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction
-  def: AnalyzedFunctionDefinition
+  def: AnalyzedFunctionDef
   statements: seq[AnalyzedDefStatement]
 
-proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDefinition, statements: seq[AnalyzedDefStatement]): AnalyzedDefUserFunction =
+proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDef, statements: seq[AnalyzedDefStatement]): AnalyzedDefUserFunction =
   AnalyzedDefUserFunction(resolved: resolved, def: def, statements: statements)
 
 proc loc*(function: AnalyzedDefUserFunction): Location = function.resolved.loc
 proc name*(function: AnalyzedDefUserFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefUserFunction): int = function.resolved.arity
 proc resolved*(function: AnalyzedDefUserFunction): ResolvedUserFunction = function.resolved
-proc def*(function: AnalyzedDefUserFunction): AnalyzedFunctionDefinition = function.def
+proc def*(function: AnalyzedDefUserFunction): AnalyzedFunctionDef = function.def
 proc statements*(function: AnalyzedDefUserFunction): seq[AnalyzedDefStatement] = function.statements
 
 type
@@ -60,7 +60,7 @@ proc user*(function: AnalyzedDefFunction): AnalyzedDefUserFunction =
     fmt"AnalyzedDefFunction.user accessed but kind is {function.kind}"
   function.user
 
-proc def*(function: AnalyzedDefFunction): AnalyzedFunctionDefinition =
+proc def*(function: AnalyzedDefFunction): AnalyzedFunctionDef =
   case function.kind:
   of adfkExtern: function.extern.def
   of adfkUser: function.user.def

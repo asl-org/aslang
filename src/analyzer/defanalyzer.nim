@@ -157,27 +157,27 @@ proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedType
 # the body barrel.
 # ============================================================
 
-proc analyzeDefArgumentDefinition(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDefinition, string] =
+proc analyzeDefArgumentDefinition(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argDef: ResolvedArgumentDef): Result[AnalyzedArgumentDef, string] =
   let analyzedArgType = ? analyzeDefArgumentType(fileCtx, typeCtx, argDef.argType)
-  ok(newAnalyzedArgumentDefinition(argDef, analyzedArgType))
+  ok(newAnalyzedArgumentDef(argDef, analyzedArgType))
 
-proc analyzeDefFunctionDefinition(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDefinition, string] =
-  var analyzedArgDefs: seq[AnalyzedArgumentDefinition]
+proc analyzeDefFunctionDefinition(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, funcDef: ResolvedFunctionDef): Result[AnalyzedFunctionDef, string] =
+  var analyzedArgDefs: seq[AnalyzedArgumentDef]
   for arg in funcDef.args:
     let analyzedArgDef = ? analyzeDefArgumentDefinition(fileCtx, typeCtx, arg)
     analyzedArgDefs.add(analyzedArgDef)
   let analyzedReturns = ? analyzeDefArgumentType(fileCtx, typeCtx, funcDef.returns)
-  ok(newAnalyzedFunctionDefinition(funcDef, analyzedArgDefs, analyzedReturns))
+  ok(newAnalyzedFunctionDef(funcDef, analyzedArgDefs, analyzedReturns))
 
 proc analyzeDefStruct(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, struct: ResolvedStructDef): Result[AnalyzedStructDef, string] =
-  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  var analyzedFields: seq[AnalyzedArgumentDef]
   for field in struct.fields:
     let analyzedField = ? analyzeDefArgumentDefinition(fileCtx, typeCtx, field)
     analyzedFields.add(analyzedField)
   ok(newAnalyzedStructDef(struct, analyzedFields))
 
 proc analyzeDefVariant(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, variant: ResolvedVariantDef): Result[AnalyzedVariantDef, string] =
-  var analyzedFields: seq[AnalyzedArgumentDefinition]
+  var analyzedFields: seq[AnalyzedArgumentDef]
   for field in variant.fields:
     let analyzedField = ? analyzeDefArgumentDefinition(fileCtx, typeCtx, field)
     analyzedFields.add(analyzedField)
@@ -380,7 +380,7 @@ proc analyzeDefModule(fileCtx: ResolvedFileContext, module: ResolvedModule): Res
 
 proc analyzeDefGeneric(fileCtx: ResolvedFileContext, generic: ResolvedGeneric): Result[AnalyzedGeneric, string] =
   let typeCtx = newResolvedTypeContext(generic)
-  var analyzedFuncDefs: seq[AnalyzedFunctionDefinition]
+  var analyzedFuncDefs: seq[AnalyzedFunctionDef]
   for funcDef in generic.funcDefs:
     let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileCtx, typeCtx, funcDef)
     analyzedFuncDefs.add(analyzedFuncDef)

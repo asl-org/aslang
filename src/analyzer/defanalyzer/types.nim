@@ -49,7 +49,7 @@ proc resolved*(definedType: AnalyzedLocalType): ResolvedLocalType =
   of altkModule: newResolvedLocalType(definedType.module.resolved)
   of altkGeneric: newResolvedLocalType(definedType.generic.resolved)
 
-proc findFunctionDefs*(definedType: AnalyzedLocalType, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDefinition], string] =
+proc findFunctionDefs*(definedType: AnalyzedLocalType, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDef], string] =
   ## Uniform overload lookup regardless of definedType.kind. `access`
   ## is honored by modules and ignored by generics (their funcDefs
   ## are implicitly public — a generic block is an interface
