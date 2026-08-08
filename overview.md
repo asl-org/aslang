@@ -140,12 +140,12 @@ Analyzer ──── Two-pass over the resolved app.
   │              at the call site. Return types come pre-analyzed
   │              from matchingFuncDef.returns; only the
   │              generic-impl substitution (.concrete) runs per
-  │              call. Union initializer parametric inference reads
-  │              the flattened StructRef / UnionRef analyzedImpls
-  │              seq — empty seq → accumulate from kwargs +
-  │              leave-as-is uncovered positions; non-empty seq
-  │              → substitute user-supplied impls into variant
-  │              fields. Literal initializers, case patterns over
+  │              call. Union initializer parametric inference
+  │              accumulates a GenericImplMap from the kwargs
+  │              (merged across fields), concretizes the result
+  │              type through it (covered slots bound, uncovered
+  │              left free), and the result argtype carries that
+  │              map as its own impls. Literal initializers, case patterns over
   │              all integer kinds + String, and per-arg-list
   │              literal validation share one analyzeLiteral
   │              helper. The equality-vs-unification gap
@@ -631,23 +631,18 @@ their `AnalyzedFunctionDef`). Scope:
   via `GenericImplMap` + `merge`. The unique survivor is picked;
   ambiguity is rejected.
 - **Concretization** — funcDef return types and match-subject
-  unions are rewritten through `concrete()` using the inferred
-  impls so downstream sites see substituted types. `concrete()`
-  has a resolver-keyed overload
-  `(argType, impls, genericTypeIndex: Table[ResolvedGenericArgumentType, int])`
-  since the union/struct genericTypeIndex is read directly off the
-  resolver's data types.
-- **Union-initializer parametric inference** — reads
-  `AnalyzedUnionRef.analyzedImpls` (single-shape after task 8).
-  Empty seq: the initializer walks kwargs accumulating a
-  `GenericImplMap` against variant fields and builds the result
-  argType with bound concretes at covered positions + free
-  generics at uncovered positions (leave-as-is). Non-empty seq:
-  the user-supplied impls are substituted into variant fields via
-  `concrete()` before per-kwarg type-check. The `GenericImplMap`
-  seed loop runs unconditionally — bounded `if position <
-  analyzedImpls.len` gates each per-position seed, so an empty
-  seq is a no-op.
+  unions are rewritten through `concrete(argType, implMap)` using the
+  inferred impls so downstream sites see substituted types. The map is
+  identity-keyed by `ResolvedGeneric`; the old positional overload that
+  re-zipped against the resolver's `genericTypeIndex` is gone.
+- **Union-initializer parametric inference** — the initializer walks
+  its kwargs, checking each value against its variant field type
+  (`analyzeValueTypeAgainstDefType`) for the bindings that kwarg
+  contributes, and `merge`s them across fields (inconsistent bindings
+  rejected). The merged map concretizes the receiver's result type via
+  `concrete()` — covered slots bound, uncovered slots left free
+  (leave-as-is) — and the resulting `AnalyzedModuleArgumentType`
+  carries that map as its own `impls`.
 - **Literal type inference + validation** — the `analyzeLiteral`
   helper on the analyzer facade dispatches on `ResolvedLiteralDef`
   and validates the literal text against all integer kinds plus
@@ -1035,23 +1030,29 @@ src/
                                    findModule / findGeneric.
                                    Same-identity re-imports are
                                    idempotent.
-    argtype.nim                    AnalyzedArgumentType — flat tagged
-                                   union (aatkModule / aatkGeneric)
-                                   mirroring the resolver shape +
-                                   hash/== (hash-equality; see the
-                                   equality-vs-unification TODO) +
-                                   concrete* substitution overloads.
-    moduleargtype.nim              AnalyzedModuleArgumentType —
-                                   resolved back-ref + ResolvedModule
-                                   + analyzed impls seq.
+    argtype.nim                    The analyzed argtype cluster in one
+                                   type block: AnalyzedArgumentType
+                                   (flat tagged union aatkModule /
+                                   aatkGeneric), AnalyzedModuleArgument-
+                                   Type (resolved back-ref +
+                                   ResolvedModule + its impls), and
+                                   GenericImplMap. A module argtype's
+                                   `impls` IS a GenericImplMap
+                                   (OrderedTable[ResolvedGeneric,
+                                   AnalyzedArgumentType]) — the ordered
+                                   slot→impl map whose values, in slot
+                                   order, ARE the positional impls
+                                   (`Status[u8]` ≡ {Any: u8}). hash/==
+                                   fold module + ordered values (keys
+                                   are fixed by the module); see the
+                                   equality-vs-unification TODO.
     genericargtype.nim             AnalyzedGenericArgumentType —
                                    ResolvedGeneric + use-site loc.
-    genericimplmap.nim             GenericImplMap
-                                   (Table[ResolvedGeneric,
-                                   AnalyzedArgumentType]) + merge
+    genericimplmap.nim             GenericImplMap operations (the type
+                                   lives in argtype.nim): merge
                                    (conflict-on-different-binding;
-                                   substitution-chain collapsing
-                                   still TODO).
+                                   substitution-chain collapsing still
+                                   TODO) + concrete substitution.
     argdef.nim                     AnalyzedArgumentDef —
                                    phase-A arg wrapper (resolved def
                                    + analyzed argType).
@@ -1318,8 +1319,11 @@ the runner).
 The **Analyzer phase is functionally complete** — `analyze*` walks
 the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
 holds a type-rich representation of every value, expression, and
-statement in each function body. Integration suite at **33/35**;
-unit suite at **350/350**. Recent structural work: the two-pass
+statement in each function body. Integration suite at **15/35**
+(WIP-red on case-arm return-type uniformity, see below); unit suite
+at **348/351**. Recent structural work: the impl-map-per-argument-type
+rebuild (the intrinsic `GenericImplMap` on every module argtype), the
+two-pass
 analyzer recovery (plans/plan_analyzer_two_pass.md), the
 identity-based lookup migration
 (plans/plan_identity_based_lookups.md +
@@ -1340,9 +1344,17 @@ What the analyzer does today (all wired):
   (contract funcDefs concretized at definition level, probed by
   identity via `findImplDef`);
   `analyzeValueTypeAgainstDefType` still runs use-site checks.
-- Concretization — the matched funcDef's return type and the
-  match-subject's union are rewritten through `concrete()` with the
-  inferred impls so downstream sites see substituted types.
+- Concretization — every argument type carries its own generic-impl
+  map intrinsically: an `AnalyzedModuleArgumentType`'s `impls` IS the
+  ordered slot→impl map, built once in `analyzeDefModuleArgumentType`
+  (where the slot generics are already resolved in the module's own
+  scope). Consumers read the bindings straight off the type —
+  `expression.impls` is just `expression.argType.impls`, and a match's
+  variant-field concretization pulls the map off the subject type — so
+  a `match` on a plain function argument (`s: Status[u8]`) sees
+  `{Any: u8}` with no file-context re-derivation. The matched
+  funcDef's return type is still rewritten through `concrete()` with
+  the call-inferred impls.
 - Struct / union initializer inference — the initializer walks its
   kwargs; each kwarg's value is checked against its field type by
   `analyzeValueTypeAgainstDefType`, which yields the generic
@@ -1350,9 +1362,9 @@ What the analyzer does today (all wired):
   `T -> u8`). Those bindings ride on `AnalyzedKeywordArgument.impls`,
   and the initializer `merge`s them across fields — so kwargs
   binding the same generic must agree (`Pair { a: T, b: T }` with
-  `a: u8, b: String` is rejected). Consuming the merged map to
-  concretize the initializer's result type is the remaining step
-  (see What's Next).
+  `a: u8, b: String` is rejected). The merged map concretizes the
+  initializer's result type (`Pair[T]` → `Pair[u8]`), which then
+  carries that map as its own `impls`.
 - Literal type inference — the `analyzeLiteral` helper dispatches on
   `ResolvedLiteralDef` and validates every integer kind
   (U8/U16/U32/U64/I8/I16/I32/I64) plus String against the expected
@@ -1438,45 +1450,46 @@ Focused TODOs still open:
   provenance tests (see test_analyzer.nim's suite comment) go back
   in once concretization is restored.
 
-  CURRENT STATE — deliberately RED (WIP): stripping the
-  initializers' positional concretization (below) costs 3 unit
-  tests (bare-literal default in a generic union kwarg, banged
-  return types) and the integration suite (case-arm return-type
-  uniformity sees unconcretized generics) until the replacement
-  lands. Suites are red on main by intent; the WIP commits record
-  the exact counts.
+  CURRENT STATE — RED (WIP): 348/351 unit, 15/35 integration.
+  The impl-map-per-argument-type replacement for the stripped
+  positional concretization has now landed (see below), but 3 unit
+  tests (bare-literal default in a generic union kwarg, banged return
+  types) and the integration suite (case-arm return-type uniformity
+  sees unconcretized generics) stay red — those trace to bare-literal
+  type-defaulting and the module-position equality-vs-unification gap,
+  not the impl-map plumbing. Suites are red on main by intent; the WIP
+  commits record the exact counts.
 
-- **ImplMap-per-argument-type — the concretization rebuild
-  (IN PROGRESS).** WHY: phase B used to rebuild concrete
-  instantiations positionally — impls stored as a bare seq, each
-  consumer re-zipping against the resolver's `genericTypeIndex` and
-  re-entering `analyzeDefArgumentType` to translate slots, per
-  initializer and per case pattern. Positions only compose when the
-  substituted generic is one of the container's OWN slots in the
-  container's OWN order — shape-fragile, resolver-coupled, and the
-  reason `concrete()`'s single `getOrDefault` never had a place to
-  collapse substitution chains. WHAT: the def analyzer will
-  maintain a `GenericImplMap` per module argument type, built where
-  `zip(requires, impls)` already happens
-  (`analyzeDefModuleArgumentType`); phase B builds concrete types
-  from the stored map. Identity-keyed (alias/cross-file-immune),
-  free generics are simply absent keys (downstream unification
-  fills them), slot ORDER comes from the module twin's ordered
-  `requires` seq (retiring `genericTypeIndex` from phase-B use),
-  and the map is payload — hash/== stay on module + impls. Map
-  construction/merge becomes the single home for the
-  substitution-chain collapse (`Sample → K, K → u8`), pairing with
-  the equality-vs-unification rebuild below. PLUMBING OWED (the WIP
-  red state): the map is now BUILT — analyzeKeywordArgument stores
-  each kwarg's bindings on `AnalyzedKeywordArgument.impls` and the
-  struct/union initializers merge them across fields (rejecting
-  inconsistent bindings). What remains is CONSUMING the merged map:
-  the initializer's result type is still `init.def.*Ref.argType`
-  (the unconcretized def twin, e.g. `Pair[T]` not `Pair[u8]`), which
-  is what still drops the 3 unit + integration cases. When the
-  initializer concretizes its result type from the merged map (and
-  the union case-pattern path does the same), those flip green and
-  the deferred provenance tests join them.
+- **ImplMap-per-argument-type — the concretization rebuild (DONE).**
+  WHY: phase B used to rebuild concrete instantiations positionally —
+  impls stored as a bare seq, each consumer re-zipping against the
+  resolver's `genericTypeIndex` and re-entering `analyzeDefArgumentType`
+  to translate slots, per initializer and per case pattern. Positions
+  only compose when the substituted generic is one of the container's
+  OWN slots in the container's OWN order — shape-fragile,
+  resolver-coupled, and the reason `concrete()`'s single `getOrDefault`
+  never had a place to collapse substitution chains. WHAT (shipped):
+  an `AnalyzedModuleArgumentType`'s `impls` field now IS its
+  `GenericImplMap` — a single `OrderedTable[ResolvedGeneric,
+  AnalyzedArgumentType]` whose values, in slot order, ARE the
+  positional impls (the seq + separate map collapsed into one). Built
+  once in `analyzeDefModuleArgumentType` where `zip(requires, impls)`
+  already happens; identity-keyed (alias/cross-file-immune); free
+  generics are simply absent keys; slot ORDER is the OrderedTable's
+  insertion order, so `genericTypeIndex` is no longer consulted in
+  phase B. hash/== fold module + ordered values (keys fixed by the
+  module). Consumers read the map straight off the type:
+  `expression.impls` ≡ `expression.argType.impls`, and the retired
+  per-node maps (`variable`/`binding`/`fncall`/initializer `.impls`
+  accessors, and the whole `subjectImplMap` threading through
+  `analyzeCases`/`CaseBlock`/`CasePattern`) collapse into that one
+  read. This completes the function-argument match subject
+  (`match s` on `s: Status[u8]`). `merge` remains the single home for
+  the still-TODO substitution-chain collapse (`Sample → K, K → u8`),
+  pairing with the equality-vs-unification rebuild below. What still
+  keeps the 3 unit + integration cases red is NOT this plumbing but
+  bare-literal type-defaulting in a generic kwarg slot and the
+  module-position equality-vs-unification gap (see below).
 - **Dummy location in `AnalyzedArgumentType.self`**
   (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
   reconstructs a `ResolvedGenericArgumentType` with a fabricated
