@@ -43,6 +43,12 @@ proc concrete*(generic: ResolvedGeneric, concrete: ResolvedArgumentType): seq[Re
     concreteFuncDefs.add(concreteDef)
   return concreteFuncDefs
 
+proc concrete*(generic: ResolvedGeneric, concrete: ResolvedGenericArgumentType): seq[ResolvedFunctionDef] =
+  generic.concrete(newResolvedArgumentType(concrete))
+
+proc concrete*(generic: ResolvedGeneric, concrete: ResolvedModuleArgumentType): seq[ResolvedFunctionDef] =
+  generic.concrete(newResolvedArgumentType(concrete))
+
 proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): Option[ResolvedFunctionDef] =
   if funcDef notin generic.funcDefIndex:
     none(ResolvedFunctionDef)

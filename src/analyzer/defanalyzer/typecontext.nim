@@ -7,6 +7,7 @@
 ## its own module; generic blocks are not modules and see public
 ## functions only.
 
+import results
 import ./resolver
 
 type
@@ -42,3 +43,10 @@ proc access*(typeCtx: ResolvedTypeContext, module: ResolvedModule): FunctionAcce
     if typeCtx.module == module: faAll
     else: faPublic
   of rtckGeneric: faPublic
+
+proc findImplDef*(typeCtx: ResolvedTypeContext, module: ResolvedModule, def: ResolvedFunctionDef): Result[ResolvedFunctionDef, string] =
+  let access = typeCtx.access(module)
+  module.findImplDef(def, access)
+
+proc findImplDef*(typeCtx: ResolvedTypeContext, generic: ResolvedGeneric, def: ResolvedFunctionDef): Result[ResolvedFunctionDef, string] =
+  generic.findImplDef(def, faAll)

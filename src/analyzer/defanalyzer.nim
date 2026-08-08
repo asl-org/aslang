@@ -95,6 +95,31 @@ proc analyzeDefGenericArgumentType(fileCtx: ResolvedFileContext, genericArgType:
   let generic = fileCtx.findGeneric(genericArgType.generic)
   ok(newAnalyzedGenericArgumentType(generic, genericArgType.loc))
 
+proc analyzeDefImpl(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedModuleArgumentType): Result[seq[ResolvedFunctionDef], string] =
+  var impls: seq[ResolvedFunctionDef]
+  for def in base.concrete(impl.self):
+    let maybeMatchingDef = typeCtx.findImplDef(impl.module, def)
+    if maybeMatchingDef.isErr:
+      return err(fmt"{impl.loc} type `{impl.asl}` does not implement `{def.asl}` to support `{base.name.asl}`")
+    else:
+      impls.add(maybeMatchingDef.get)
+  ok(impls)
+
+proc analyzeDefImpl(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedGenericArgumentType): Result[seq[ResolvedFunctionDef], string] =
+  var impls: seq[ResolvedFunctionDef]
+  for def in base.concrete(impl.self):
+    let maybeMatchingDef = typeCtx.findImplDef(impl.generic, def)
+    if maybeMatchingDef.isErr:
+      return err(fmt"{impl.loc} type `{impl.asl}` does not implement `{def.asl}` to support `{base.name.asl}`")
+    else:
+      impls.add(maybeMatchingDef.get)
+  ok(impls)
+
+proc analyzeDefImpl*(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedArgumentType): Result[seq[ResolvedFunctionDef], string] =
+  case impl.kind:
+  of aatkModule: typeCtx.analyzeDefImpl(base, impl.module)
+  of aatkGeneric: typeCtx.analyzeDefImpl(base, impl.generic)
+
 proc analyzeDefArgumentType*(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedArgumentType): Result[AnalyzedArgumentType, string]
 
 proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, argType: ResolvedModuleArgumentType): Result[AnalyzedModuleArgumentType, string] =
@@ -121,17 +146,7 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
     # vocabulary and the identity probe below can hit its funcDefIndex.
     # The site-bound impls were already validated by the recursive
     # analyzeDefArgumentType call above.
-    for def in baseGeneric.concrete(analyzedImpl.self):
-      let maybeMatchingDef =
-        case analyzedImpl.kind:
-        of aatkModule:
-          let resolvedImplModule = analyzedImpl.module.module
-          resolvedImplModule.findImplDef(def, typeCtx.access(resolvedImplModule))
-        of aatkGeneric:
-          let resolvedImplGeneric = analyzedImpl.generic.generic
-          resolvedImplGeneric.findImplDef(def, faAll)
-      if maybeMatchingDef.isErr:
-        return err(fmt"{impl.loc} type `{impl.asl}` does not implement `{def.asl}` to support `{baseGeneric.name.asl}`")
+    discard ? analyzeDefImpl(typeCtx, baseGeneric, analyzedImpl)
 
   ok(newAnalyzedModuleArgumentType(argType, module, analyzedImpls))
 

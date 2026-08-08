@@ -6,7 +6,6 @@
 import results, strformat, tables
 
 import ./resolver
-import ./argtype
 import ./argdef
 
 type AnalyzedVariantDef* = ref object
@@ -28,11 +27,3 @@ proc name*(v: AnalyzedVariantDef): Identifier = v.resolved.name
 proc findField*(v: AnalyzedVariantDef, name: Identifier): Result[AnalyzedArgumentDef, string] =
   if name in v.fieldIndex: ok(v.fields[v.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
-
-proc concrete*(variant: AnalyzedVariantDef,
-    impls: seq[AnalyzedArgumentType],
-    genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedVariantDef =
-  var concreteFields: seq[AnalyzedArgumentDef]
-  for field in variant.fields:
-    concreteFields.add(field.concrete(impls, genericTypeIndex))
-  newAnalyzedVariantDef(variant.resolved, concreteFields)

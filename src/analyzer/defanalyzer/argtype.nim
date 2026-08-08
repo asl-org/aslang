@@ -61,7 +61,7 @@ proc loc*(m: AnalyzedModuleArgumentType): Location = m.resolved.loc
 proc module*(m: AnalyzedModuleArgumentType): ResolvedModule = m.module
 proc impls*(m: AnalyzedModuleArgumentType): seq[AnalyzedArgumentType] = m.impls
 proc name*(m: AnalyzedModuleArgumentType): Identifier = m.module.name
-proc self(argType: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = argType.module.self
+proc self*(argType: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = argType.module.self
 proc hash*(m: AnalyzedModuleArgumentType): Hash =
   var acc = m.module.hash
   for impl in m.impls:
@@ -113,10 +113,7 @@ proc loc*(argType: AnalyzedArgumentType): Location =
 proc self*(argType: AnalyzedArgumentType): ResolvedArgumentType =
   case argType.kind:
   of aatkModule: newResolvedArgumentType(argType.module.self)
-  of aatkGeneric:
-    # TODO: Fix this dummy location
-    let dummyLocation = newLocation()
-    newResolvedArgumentType(newResolvedGenericArgumentType(argType.generic.generic.self, dummyLocation))
+  of aatkGeneric: newResolvedArgumentType(argType.generic.self)
 
 proc asl*(argType: AnalyzedArgumentType): string =
   case argType.kind:

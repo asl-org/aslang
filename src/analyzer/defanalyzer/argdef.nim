@@ -8,7 +8,6 @@
 ## type positionally (via impls + genericTypeIndex), preserving the
 ## identifier. See argtype.nim's own `concrete*` for the semantics.
 
-import tables
 
 import ./resolver
 import ./argtype
@@ -26,11 +25,3 @@ proc loc*(d: AnalyzedArgumentDef): Location = d.resolved.name.loc
 
 proc asl*(d: AnalyzedArgumentDef): string =
   d.name.asl & ": " & d.argType.asl
-
-proc concrete*(d: AnalyzedArgumentDef,
-    impls: seq[AnalyzedArgumentType],
-    genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedArgumentDef =
-  ## Positional generic substitution via the (impls, genericTypeIndex)
-  ## pair. Preserves `resolved`. See argtype.nim:concrete for semantics.
-  newAnalyzedArgumentDef(
-    d.resolved, d.argType.concrete(impls, genericTypeIndex))

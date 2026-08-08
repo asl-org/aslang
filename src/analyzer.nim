@@ -50,6 +50,58 @@ proc extractUnionFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgum
   of adkStruct: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found struct")
   of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found literal")
 
+# ============================================================
+# ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
+#   UNIFICATION.
+#
+# The value-vs-defType walk below compares argument types with
+# hash-based `==` at module positions. That is sound when both sides
+# are ground, but a free generic in impl position (post leave-as-is
+# inference, e.g. Box[u8, Sample] against Box[u8, MyImpl]) needs
+# unification — solving for the binding — not equality. The def-time
+# constraint check no longer shares this limitation (its deep
+# `concrete` grounds contract defs before the identity probe).
+#
+# The fix routes every assignability check through
+# `analyzeValueTypeAgainstDefType` + `merge` with eager chain-
+# collapsing in `merge` (so `Sample → K, K → u8` collapses to
+# `Sample → u8`). See `plans/plan_deferred_typing.md` §
+# "Equality vs unification for analyzed types" — that plan owns the
+# fix.
+# ============================================================
+
+proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
+
+proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
+  if defType.module != valType.module:
+    err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
+  else:
+    var genericImplMap: GenericImplMap
+    for (defImpl, valImpl) in zip(defType.impls, valType.impls):
+      let valGenericImplMap = ? analyzeValueTypeAgainstDefType(fileCtx, module, defImpl, valImpl, loc)
+      genericImplMap = ? genericImplMap.merge(valGenericImplMap)
+    ok(genericImplMap)
+
+proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+  let typeCtx = newResolvedTypeContext(module.resolved)
+  discard ? analyzeDefImpl(typeCtx, defType.generic, valType)
+  var genericImplMap: GenericImplMap
+  genericImplMap[fileCtx.findGeneric(defType.generic)] = valType
+  ok(genericImplMap)
+
+proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+  case valType.kind:
+  of aatkGeneric:
+    err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
+  of aatkModule:
+    analyzeValueTypeAgainstDefType(fileCtx, module, defType, valType.module, loc)
+
+# TODO: Return a map of generic -> argType from the recursive analysis
+proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+  case defType.kind:
+  of aatkModule: analyzeValueTypeAgainstDefType(fileCtx, module, defType.module, valType, loc)
+  of aatkGeneric: analyzeValueTypeAgainstDefType(fileCtx, module, defType.generic, valType, loc)
+
 proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   let variant = union.findVariant(variantPattern.name)
   var bindings: seq[AnalyzedBinding]
@@ -167,66 +219,6 @@ proc analyzeLiteralInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDe
 # Forward declarations for the analyzeX procs in the cluster.
 proc analyzeExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
 proc analyzeStatement*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string]
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
-
-# ============================================================
-# ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
-#   UNIFICATION.
-#
-# The value-vs-defType walk below compares argument types with
-# hash-based `==` at module positions. That is sound when both sides
-# are ground, but a free generic in impl position (post leave-as-is
-# inference, e.g. Box[u8, Sample] against Box[u8, MyImpl]) needs
-# unification — solving for the binding — not equality. The def-time
-# constraint check no longer shares this limitation (its deep
-# `concrete` grounds contract defs before the identity probe).
-#
-# The fix routes every assignability check through
-# `analyzeValueTypeAgainstDefType` + `merge` with eager chain-
-# collapsing in `merge` (so `Sample → K, K → u8` collapses to
-# `Sample → u8`). See `plans/plan_deferred_typing.md` §
-# "Equality vs unification for analyzed types" — that plan owns the
-# fix.
-# ============================================================
-
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
-  if defType.module != valType.module:
-    err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
-  else:
-    var genericImplMap: GenericImplMap
-    for (defImpl, valImpl) in zip(defType.impls, valType.impls):
-      let valGenericImplMap = ? analyzeValueTypeAgainstDefType(fileCtx, defImpl, valImpl, loc)
-      genericImplMap = ? genericImplMap.merge(valGenericImplMap)
-    ok(genericImplMap)
-
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
-  let funcDefs = defType.generic.concrete(valType.self)
-  for funcDef in funcDefs:
-    case valType.kind:
-    of aatkGeneric:
-      let maybeConcreteFuncDef = valType.generic.generic.findFunctionDef(funcDef)
-      if maybeConcreteFuncDef.isNone:
-        return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.name.asl}`")
-    of aatkModule:
-      let maybeConcreteFuncDef = valType.module.module.findFunctionDef(funcDef)
-      if maybeConcreteFuncDef.isNone:
-        return err(fmt"{loc} type `{valType.name.asl}` does not implement function `{funcDef.name.asl}` to support `{defType.name.asl}`")
-  var genericImplMap: GenericImplMap
-  genericImplMap[fileCtx.findGeneric(defType.generic)] = valType
-  ok(genericImplMap)
-
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
-  case valType.kind:
-  of aatkGeneric:
-    err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
-  of aatkModule:
-    analyzeValueTypeAgainstDefType(fileCtx, defType, valType.module, loc)
-
-# TODO: Return a map of generic -> argType from the recursive analysis
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
-  case defType.kind:
-  of aatkModule: analyzeValueTypeAgainstDefType(fileCtx, defType.module, valType, loc)
-  of aatkGeneric: analyzeValueTypeAgainstDefType(fileCtx, defType.generic, valType, loc)
 
 proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDef): Result[GenericImplMap, string] =
   # Reads pre-analyzed args directly from the AnalyzedFunctionDef
@@ -239,7 +231,7 @@ proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
     fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {analyzedFuncDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
   var genericImplMap: GenericImplMap
   for (analyzedArgDef, argValue) in zip(analyzedFuncDef.args, argValues):
-    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(fileCtx, analyzedArgDef.argType, argValue.argType, argValue.loc)
+    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(fileCtx, module, analyzedArgDef.argType, argValue.argType, argValue.loc)
     genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
@@ -423,7 +415,7 @@ proc analyzeKeywordArgument*(fileCtx: AnalyzedFileContext, module: AnalyzedDefMo
   # kwarg values adapt when concrete, default when generic.
   let analyzedExpression = ? analyzeExpression(fileCtx, module, funcCtx, kwarg.expression, some(analyzedField.argType))
   # TODO: Utilize the returned generic impl map
-  discard ? analyzeValueTypeAgainstDefType(fileCtx, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
+  discard ? analyzeValueTypeAgainstDefType(fileCtx, module, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
   ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
 proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefUnionInitializer): Result[AnalyzedUnionInitializer, string] =

@@ -6,7 +6,6 @@
 import results, strformat, tables
 
 import ./resolver
-import ./argtype
 import ./argdef
 
 type AnalyzedStructDef* = ref object
@@ -29,8 +28,3 @@ proc findField*(s: AnalyzedStructDef, name: Identifier): Result[AnalyzedArgument
   if name in s.fieldIndex: ok(s.fields[s.fieldIndex[name]])
   else: err(fmt"{name.loc} field `{name.asl}` does not exist")
 
-proc concrete*(struct: AnalyzedStructDef, impls: seq[AnalyzedArgumentType]): AnalyzedStructDef =
-  var concreteFields: seq[AnalyzedArgumentDef]
-  for field in struct.fields:
-    concreteFields.add(field.concrete(impls, struct.resolved.genericTypeIndex))
-  newAnalyzedStructDef(struct.resolved, concreteFields)

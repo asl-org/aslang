@@ -7,7 +7,6 @@
 import tables
 
 import ./resolver
-import ./argtype
 import ./variantdef
 
 type AnalyzedUnionDef* = ref object
@@ -30,10 +29,3 @@ proc genericTypeIndex*(u: AnalyzedUnionDef): Table[ResolvedGenericArgumentType, 
 proc findVariant*(union: AnalyzedUnionDef, name: Identifier): AnalyzedVariantDef =
   assert(name in union.variantIndex, "UNREACHABLE: duplicate variant name must have been caught by resolver")
   union.variants[union.variantIndex[name]]
-
-proc concrete*(union: AnalyzedUnionDef,
-    impls: seq[AnalyzedArgumentType]): AnalyzedUnionDef =
-  var concreteVariants: seq[AnalyzedVariantDef]
-  for variant in union.variants:
-    concreteVariants.add(variant.concrete(impls, union.resolved.genericTypeIndex))
-  newAnalyzedUnionDef(union.resolved, concreteVariants)
