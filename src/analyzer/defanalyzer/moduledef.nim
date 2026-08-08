@@ -49,6 +49,10 @@ proc newAnalyzedDefModule*(resolved: ResolvedModule,
 
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc functions*(m: AnalyzedDefModule): seq[AnalyzedDefFunction] = m.functions
+proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
+  ## The module's generic slots in canonical order — the full set an
+  ## initializer's impl map must cover, defaulting any slot a variant
+  ## did not touch to itself (free).
 
 proc dataDef*(m: AnalyzedDefModule): AnalyzedDataDef =
   ## Kind-asserted projection — phase B reaches a module through an

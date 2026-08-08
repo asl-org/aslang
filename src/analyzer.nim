@@ -442,7 +442,16 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
     impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
 
-  ok(newAnalyzedUnionInitializer(init, analyzedKwargs, impls))
+  # A variant only touches the generics its own fields use, but the
+  # union type has all of them — the merged map may cover only a
+  # subset. Rebuild it over the union's canonical slots so every slot
+  # is present and in order: a covered slot keeps its concrete binding,
+  # an uncovered one defaults to itself (a free generic, leave-as-is).
+  var completeImpls: GenericImplMap
+  for requirement in unionModule.requires:
+    completeImpls[requirement.generic] = impls.getOrDefault(requirement.generic, newAnalyzedArgumentType(requirement))
+
+  ok(newAnalyzedUnionInitializer(init, analyzedKwargs, completeImpls))
 
 proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefStructInitializer): Result[AnalyzedStructInitializer, string] =
   ## Walks the struct's kwargs, checking each value against its field
