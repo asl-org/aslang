@@ -98,23 +98,25 @@ proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: Analyzed
   of aatkModule: analyzeValueTypeAgainstDefType(module, defType.module, valType, loc)
   of aatkGeneric: analyzeValueTypeAgainstDefType(module, defType.generic, valType, loc)
 
-proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnionDef, subjectImplMap: GenericImplMap): Result[AnalyzedUnionPattern, string] =
+proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnionDef, subjectType: AnalyzedArgumentType): Result[AnalyzedUnionPattern, string] =
   let variant = union.findVariant(variantPattern.name)
   var bindings: seq[AnalyzedBinding]
   for field in variantPattern.fields:
     let fieldDef = ? variant.findField(field.name)
     let analyzedFieldArgType = fieldDef.argType
-    let concreteFieldArgType = analyzedFieldArgType.concrete(subjectImplMap)
+    # The variant field is typed against the union's slots; the subject
+    # type carries their concrete bindings ({Any: u8}) intrinsically.
+    let concreteFieldArgType = analyzedFieldArgType.concrete(subjectType.impls)
     bindings.add(newAnalyzedBinding(field.binding, concreteFieldArgType))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
-proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImplMap: GenericImplMap): Result[AnalyzedCasePattern, string] =
+proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} integer literals are not allowed in union case pattern")
   of rcpkVariable:
     ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType)))
   of rcpkUnion:
-    let analyzedPattern = ? analyzeUnionCasePattern(pattern.variant, union, subjectImplMap)
+    let analyzedPattern = ? analyzeUnionCasePattern(pattern.variant, union, subjectType)
     ok(newAnalyzedCasePattern(analyzedPattern))
 
 proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType): Result[AnalyzedCasePattern, string] =
@@ -322,10 +324,10 @@ proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
   # it on access (matching the initializers).
   ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, genericImpls))
 
-proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImplMap: GenericImplMap): Result[AnalyzedCaseBlock, string] =
+proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCaseBlock, string] =
   var caseCtx = funcCtx
 
-  let analyzedCasePattern = ? analyzeCasePattern(caseBlock.pattern, subjectType, union, subjectImplMap)
+  let analyzedCasePattern = ? analyzeCasePattern(caseBlock.pattern, subjectType, union)
   caseCtx = caseCtx.update(analyzedCasePattern)
 
   var analyzedStatements: seq[AnalyzedStatement]
@@ -355,7 +357,7 @@ proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string
       return err(fmt"{c.loc} todo: return an error message telling that the case block return types are not same")
   ok()
 
-proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, cases: seq[AnalyzedDefCase], subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImplMap: GenericImplMap, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, cases: seq[AnalyzedDefCase], subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = newAnalyzedUnionPatternScope(cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
@@ -366,7 +368,7 @@ proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, func
 
   var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
   for caseBlock in cases:
-    let analyzedCaseBlock = ? analyzeCaseBlock(fileCtx, module, funcCtx, caseBlock, subjectType, union, subjectImplMap)
+    let analyzedCaseBlock = ? analyzeCaseBlock(fileCtx, module, funcCtx, caseBlock, subjectType, union)
     analyzedCaseBlocks.add(analyzedCaseBlock)
   ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
@@ -404,7 +406,7 @@ proc analyzeMatchExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefMo
       ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases))
     of adkUnion:
       assert(match.cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
-      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, match.cases, subjectArgType, analyzedSubjectDataType.union, analyzedSubjectExpr.impls, match.loc)
+      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, match.cases, subjectArgType, analyzedSubjectDataType.union, match.loc)
       ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases))
 
 proc analyzeKeywordArgument*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, kwarg: AnalyzedDefKeywordArgument, analyzedField: AnalyzedArgumentDef): Result[AnalyzedKeywordArgument, string] =
