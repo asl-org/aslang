@@ -137,28 +137,3 @@ proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 # / GenericImplMap merge instead. Pure type-identity uses
 # (deduplication, table keying) stay as-is.
 
-proc concrete*(argType: AnalyzedArgumentType, impls: seq[AnalyzedArgumentType], genericTypeIndex: Table[ResolvedGenericArgumentType, int]): AnalyzedArgumentType =
-  ## Positional generic substitution. The `genericTypeIndex` maps each
-  ## generic that a union's variant field types touch to its position
-  ## in the impl list — this is a resolver-side table
-  ## (`ResolvedUnionDef.genericTypeIndex`), so the analyzer-side generic
-  ## argType is translated back through its underlying parser Generic
-  ## to hit the same table entry (both types hash by parser Generic
-  ## identity). Structs don't route through this proc — their impl
-  ## substitution goes through `ResolvedStructDef.requires`, which
-  ## already merges the explicit-header and inferred-from-fields cases.
-  case argType.kind:
-  of aatkModule:
-    let moduleArgType = argType.module
-    var concreteImpls: seq[AnalyzedArgumentType]
-    for impl in moduleArgType.impls:
-      let concreteImpl = impl.concrete(impls, genericTypeIndex)
-      concreteImpls.add(concreteImpl)
-    let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
-    newAnalyzedArgumentType(concreteModuleArgType)
-  of aatkGeneric:
-    let key = newResolvedGenericArgumentType(argType.generic.generic.self, argType.generic.loc)
-    if key in genericTypeIndex:
-      impls[genericTypeIndex[key]]
-    else:
-      argType
