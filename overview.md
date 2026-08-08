@@ -1319,10 +1319,12 @@ the runner).
 The **Analyzer phase is functionally complete** — `analyze*` walks
 the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
 holds a type-rich representation of every value, expression, and
-statement in each function body. Integration suite at **15/35**
-(WIP-red on case-arm return-type uniformity, see below); unit suite
-at **348/351**. Recent structural work: the impl-map-per-argument-type
-rebuild (the intrinsic `GenericImplMap` on every module argtype), the
+statement in each function body. Unit suite **351/351** (green);
+integration **33/35** (2 fixtures red on the equality-vs-unification
+gap, see Focused TODOs). Recent structural work: the
+impl-map-per-argument-type rebuild (the intrinsic `GenericImplMap` on
+every module argtype) and its resolver/defanalyzer duplication cleanup
+(delegated function-def lookup, shared `indexByName` generic), the
 two-pass
 analyzer recovery (plans/plan_analyzer_two_pass.md), the
 identity-based lookup migration
@@ -1411,6 +1413,49 @@ Focused TODOs still open:
   on correct code (the match.asl integration failure). Pairs with
   the equality fix above; the two land together as the phase-B
   unification rebuild.
+- **Two generic-substitution engines (resolver-positional vs
+  analyzer-map).** The core "instantiate generics into a parameterized
+  type" operation is forked into two independent implementations over
+  two type universes:
+  - resolver: `concrete(argType, replacement, generic)`
+    (`resolver/argtype.nim:160`, cascading through `argdef.nim`,
+    `funcdef.nim`, `generic.nim`) substitutes ONE `parser.Generic` by
+    identity, recursively at any depth. Used at DEFINITION time to
+    ground contract funcDefs before the `findImplDef` identity probe.
+  - analyzer: `concrete(argType, implMap: GenericImplMap)`
+    (`defanalyzer/genericimplmap.nim:35`) substitutes ALL free
+    generics at once via the ordered `ResolvedGeneric ->
+    AnalyzedArgumentType` map. Used at USE time (call returns,
+    initializer results, match fields).
+  The two must agree on substitution semantics for soundness, yet are
+  maintained separately and already diverge: the map engine has the
+  substitution-chain gap above (one-pass `getOrDefault`), the resolver
+  engine sidesteps chains only because it rewrites one generic per
+  call and so cannot express a multi-binding instantiation in a single
+  pass. Full consolidation is hard (different type universes), but the
+  fork is a latent-soundness liability worth naming; the map engine is
+  the intended long-term home.
+- **Inconsistent absence contract across the `find*` family.** The
+  same conceptual "look X up by name/identity" is spelled with three
+  different failure modes and no legible rule: `findFunctionDefs` ->
+  `Result`, `findFunctionDef` -> `Option` (resolver) or assert-returning
+  bare value (analyzed twin), and `findVariant` / `findType` /
+  `findModule` each expose BOTH a `Result` overload AND an
+  assert-returning bare overload under one name. The intended rule
+  (user error -> `Result`, compiler invariant -> `assert`) is real but
+  applied unevenly — a reader can't predict a `find*`'s failure mode
+  from its signature. Low risk, but a genuine legibility debt; worth a
+  naming convention (e.g. `tryFind*` returns, `find*` asserts).
+- **Fabricated sentinel locations in identity reconstruction.**
+  `newLocation()` (a 0:0 sentinel) is minted at ~5 sites
+  (`defanalyzer/genericargtype.nim` `self`, `resolver/module.nim`
+  `self`, `resolver/parser/files.nim`) whenever a `*ArgumentType` is
+  rebuilt from a def rather than a source position. Any diagnostic
+  built from a reconstructed self-type points at 0:0. The single
+  `AnalyzedArgumentType.self` spot is already flagged below; the
+  pattern is systemic to every `self`/identity reconstruction. Fix
+  when a phase first needs to render one of these locs — the self
+  shape should carry the use site's loc.
 - **Phase-B re-entries analyze DEF-side argtypes in the USING
   file's scope** — found by the cross-file provenance tests
   (test_analyzer.nim documents the repro). Body walkers re-enter
@@ -1450,15 +1495,15 @@ Focused TODOs still open:
   provenance tests (see test_analyzer.nim's suite comment) go back
   in once concretization is restored.
 
-  CURRENT STATE — RED (WIP): 348/351 unit, 15/35 integration.
-  The impl-map-per-argument-type replacement for the stripped
-  positional concretization has now landed (see below), but 3 unit
-  tests (bare-literal default in a generic union kwarg, banged return
-  types) and the integration suite (case-arm return-type uniformity
-  sees unconcretized generics) stay red — those trace to bare-literal
-  type-defaulting and the module-position equality-vs-unification gap,
-  not the impl-map plumbing. Suites are red on main by intent; the WIP
-  commits record the exact counts.
+  CURRENT STATE: 351/351 unit (green), 33/35 integration. The
+  impl-map-per-argument-type replacement for the stripped positional
+  concretization has landed AND the union initializer now builds its
+  result type from the completed impl map — which flipped the 3
+  formerly-red unit tests (bare-literal default in a generic union
+  kwarg, both banged-return cases) green. The only remaining reds are
+  the 2 integration fixtures `match.asl` and `nested_generics.asl`,
+  which trace to the equality-vs-unification + substitution-chain gaps
+  above, not the impl-map plumbing.
 
 - **ImplMap-per-argument-type — the concretization rebuild (DONE).**
   WHY: phase B used to rebuild concrete instantiations positionally —
