@@ -109,14 +109,14 @@ proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnion
     let fieldDef = ? variant.findField(field.name)
     let analyzedFieldArgType = fieldDef.argType
     let concreteFieldArgType = analyzedFieldArgType.concrete(subjectImplMap)
-    bindings.add((name: field.binding, argType: concreteFieldArgType))
+    bindings.add((name: field.binding, argType: concreteFieldArgType, impls: subjectImplMap))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
 proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImplMap: GenericImplMap): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} integer literals are not allowed in union case pattern")
   of rcpkVariable:
-    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType)))
+    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType, impls: subjectImplMap)))
   of rcpkUnion:
     let analyzedPattern = ? analyzeUnionCasePattern(pattern.variant, union, subjectImplMap)
     ok(newAnalyzedCasePattern(analyzedPattern))
@@ -128,7 +128,7 @@ proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgu
   of rcpkInteger:
     ok(newAnalyzedCasePattern(pattern.integer))
   of rcpkVariable:
-    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType)))
+    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType, impls: default(GenericImplMap))))
 
 proc analyzeIntegerLiteral[T: SomeInteger](literal: Literal, expected: string): Result[void, string] =
   case literal.kind:
@@ -187,14 +187,16 @@ proc analyzeLiteral(literalDef: AnalyzedLiteralDef, literal: Literal): Result[vo
   of rltkString: literal.analyzeStringLiteral()
 
 proc analyzeVariable*(scope: AnalyzedFunctionContext, variable: Identifier): Result[AnalyzedVariable, string] =
-  if variable in scope: ok(newAnalyzedVariable(variable, scope[variable]))
+  if variable in scope:
+    let binding = scope[variable]
+    ok(newAnalyzedVariable(variable, binding.argType, binding.impls))
   else: err(fmt"{variable.loc} variable `{variable.asl}` does not exist in scope")
 
 proc analyzeGetter*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
   if getter.source notin funcCtx:
     err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
   else:
-    let analyzedSourceArgType = funcCtx[getter.source]
+    let analyzedSourceArgType = funcCtx[getter.source].argType
     case analyzedSourceArgType.kind:
     of aatkGeneric:
       err(fmt"{getter.loc} expected `{getter.source.asl}` to be a module but found generic ")

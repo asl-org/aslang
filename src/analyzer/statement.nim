@@ -263,7 +263,8 @@ proc impls*(expression: AnalyzedExpression): GenericImplMap =
   case expression.kind:
   of aekFunctionCall: expression.fncall.impls
   of aekInitializer: expression.init.impls
-  of aekVariable, aekMatchExpr, aekGetter: default(GenericImplMap)
+  of aekVariable: expression.variable.impls
+  of aekMatchExpr, aekGetter: default(GenericImplMap)
 
 proc newAnalyzedStatement*(expression: AnalyzedExpression): AnalyzedStatement =
   AnalyzedStatement(kind: askExpr, expression: expression)
@@ -305,4 +306,4 @@ proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
   # every statement's argType is concrete, so no "no-type" fallback.
   case statement.kind:
   of askExpr, askSetter: none(AnalyzedBinding)
-  of askAssignment: some((name: statement.assignment.target, argType: statement.argType))
+  of askAssignment: some((name: statement.assignment.target, argType: statement.argType, impls: statement.assignment.expression.impls))

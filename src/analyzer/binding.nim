@@ -1,8 +1,8 @@
-## AnalyzedBinding — the (name, argType) pair produced when a case
-## pattern introduces a variable into scope. Body-level replacement
-## for the retired AnalyzedArgumentDef wrapper: the analyzer's
-## function scope keys on Identifier and stores AnalyzedArgumentType,
-## so a binding is exactly a name + its analyzed argument type.
+## AnalyzedBinding — the (name, argType, impls) triple produced when a
+## binding enters the function scope (a case pattern's variable, an
+## assignment's target). `impls` is the generic-impl map that
+## concretizes the binding's type on demand — carried so a variable
+## used later as a match subject can concretize a pulled variant field.
 ##
 ## Pure tuple alias — no procs. Lives in its own file because it's
 ## referenced across the pattern cluster (union/case patterns) and
@@ -10,4 +10,4 @@
 
 import ./defanalyzer
 
-type AnalyzedBinding* = tuple[name: Identifier, argType: AnalyzedArgumentType]
+type AnalyzedBinding* = tuple[name: Identifier, argType: AnalyzedArgumentType, impls: GenericImplMap]
