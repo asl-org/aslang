@@ -109,14 +109,14 @@ proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnion
     let fieldDef = ? variant.findField(field.name)
     let analyzedFieldArgType = fieldDef.argType
     let concreteFieldArgType = analyzedFieldArgType.concrete(subjectImplMap)
-    bindings.add((name: field.binding, argType: concreteFieldArgType, impls: subjectImplMap))
+    bindings.add(newAnalyzedBinding(field.binding, concreteFieldArgType, subjectImplMap))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
 proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImplMap: GenericImplMap): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} integer literals are not allowed in union case pattern")
   of rcpkVariable:
-    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType, impls: subjectImplMap)))
+    ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType, subjectImplMap)))
   of rcpkUnion:
     let analyzedPattern = ? analyzeUnionCasePattern(pattern.variant, union, subjectImplMap)
     ok(newAnalyzedCasePattern(analyzedPattern))
@@ -128,7 +128,7 @@ proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgu
   of rcpkInteger:
     ok(newAnalyzedCasePattern(pattern.integer))
   of rcpkVariable:
-    ok(newAnalyzedCasePattern((name: pattern.variable, argType: subjectType, impls: default(GenericImplMap))))
+    ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType, default(GenericImplMap))))
 
 proc analyzeIntegerLiteral[T: SomeInteger](literal: Literal, expected: string): Result[void, string] =
   case literal.kind:

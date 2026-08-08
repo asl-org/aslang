@@ -306,4 +306,4 @@ proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
   # every statement's argType is concrete, so no "no-type" fallback.
   case statement.kind:
   of askExpr, askSetter: none(AnalyzedBinding)
-  of askAssignment: some((name: statement.assignment.target, argType: statement.argType, impls: statement.assignment.expression.impls))
+  of askAssignment: some(newAnalyzedBinding(statement.assignment.target, statement.argType, statement.assignment.expression.impls))

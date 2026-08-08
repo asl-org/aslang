@@ -1511,7 +1511,7 @@ proc parseGenericHeader(parser: Parser): Result[GenericHeader, ParserError] =
   let nameIdent = ? parser.parseIdentifier()
   discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
-  ok((public, nameIdent, loc))
+  ok(newGenericHeader(public, nameIdent, loc))
 
 proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
   ## Parses a `[public] generic Name:` block followed by its function
@@ -1538,14 +1538,14 @@ proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =
   let nameIdent = ? parser.parseIdentifier()
   discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
-  ok((public, nameIdent, loc))
+  ok(newModuleHeader(public, nameIdent, loc))
 
 
 proc parseModuleBody(parser: Parser): Result[ModuleBody, ParserError] =
   discard parser.run(parseBlankLines)
   let data = ? parser.runOptional(parseData)
   let funcList = ? parser.parseFunctionList()
-  ok((data, funcList))
+  ok(newModuleBody(data, funcList))
 
 proc parseModule(parser: Parser): Result[Module, ParserError] =
   ## Parses a `[public] module Name:` block with optional decorator

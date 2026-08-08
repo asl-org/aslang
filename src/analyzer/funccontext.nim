@@ -26,7 +26,7 @@ proc newAnalyzedFunctionContext*(def: AnalyzedFunctionDef): AnalyzedFunctionCont
   var funcCtx: AnalyzedFunctionContext
   for argDef in def.args:
     assert(argDef.name notin funcCtx, fmt"{argDef.loc}: [BUG] duplicate function argument names encountered")
-    funcCtx[argDef.name] = (name: argDef.name, argType: argDef.argType, impls: default(GenericImplMap))
+    funcCtx[argDef.name] = newAnalyzedBinding(argDef.name, argDef.argType, default(GenericImplMap))
   return funcCtx
 
 proc update*(funcCtx: var AnalyzedFunctionContext, statement: AnalyzedStatement): AnalyzedFunctionContext =

@@ -59,4 +59,14 @@ proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[s
     let defIds = generic.funcDefArityIndex[name][arity]
     ok(defIds.mapIt(generic.defs[it]))
 
-type GenericHeader* = tuple[public: bool, name: Identifier, loc: Location]
+type GenericHeader* = ref object
+  public: bool
+  name: Identifier
+  loc: Location
+
+proc newGenericHeader*(public: bool, name: Identifier, loc: Location): GenericHeader =
+  GenericHeader(public: public, name: name, loc: loc)
+
+proc public*(header: GenericHeader): bool = header.public
+proc name*(header: GenericHeader): Identifier = header.name
+proc loc*(header: GenericHeader): Location = header.loc

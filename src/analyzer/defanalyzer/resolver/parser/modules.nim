@@ -84,7 +84,25 @@ proc findFunctionDefs*(module: Module, name: Identifier, arity: int, access: Fun
     if defs.len > 0: ok(defs)
     else: err(fmt"{name.loc} function `{name.asl}` of module `{module.name.asl}` is not public")
 
-type ModuleHeader* = tuple[public: bool, name: Identifier, loc: Location]
+type ModuleHeader* = ref object
+  public: bool
+  name: Identifier
+  loc: Location
 
-# Module body: optional requires + optional data block + function list
-type ModuleBody* = tuple[data: Option[DataDef], funcList: FunctionList]
+proc newModuleHeader*(public: bool, name: Identifier, loc: Location): ModuleHeader =
+  ModuleHeader(public: public, name: name, loc: loc)
+
+proc public*(header: ModuleHeader): bool = header.public
+proc name*(header: ModuleHeader): Identifier = header.name
+proc loc*(header: ModuleHeader): Location = header.loc
+
+# Module body: optional data block + function list
+type ModuleBody* = ref object
+  data: Option[DataDef]
+  funcList: FunctionList
+
+proc newModuleBody*(data: Option[DataDef], funcList: FunctionList): ModuleBody =
+  ModuleBody(data: data, funcList: funcList)
+
+proc data*(body: ModuleBody): Option[DataDef] = body.data
+proc funcList*(body: ModuleBody): FunctionList = body.funcList
