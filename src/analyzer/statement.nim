@@ -42,10 +42,12 @@ type
   AnalyzedStructInitializer* = ref object
     def: AnalyzedDefStructInitializer
     kwargs: seq[AnalyzedKeywordArgument]
+    impls: GenericImplMap
 
   AnalyzedUnionInitializer* = ref object
     def: AnalyzedDefUnionInitializer
     kwargs: seq[AnalyzedKeywordArgument]
+    impls: GenericImplMap
 
   AnalyzedInitializerKind* = enum
     aikUnion, aikStruct, aikLiteral
@@ -109,17 +111,22 @@ proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: Analyze
 proc impls*(kwarg: AnalyzedKeywordArgument): GenericImplMap = kwarg.impls
 
 
-proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =
-  AnalyzedStructInitializer(def: def, kwargs: kwargs)
+proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: GenericImplMap): AnalyzedStructInitializer =
+  AnalyzedStructInitializer(def: def, kwargs: kwargs, impls: impls)
 
 proc loc*(init: AnalyzedStructInitializer): Location = init.def.loc
-proc argType*(init: AnalyzedStructInitializer): AnalyzedModuleArgumentType = init.def.structRef.argType
+# Result type = the receiver's def-side type (`Pair[T]`) concretized
+# by the cross-field bindings the kwargs produced (`{T -> u8}` →
+# `Pair[u8]`). Uncovered generics stay free.
+proc argType*(init: AnalyzedStructInitializer): AnalyzedModuleArgumentType =
+  newAnalyzedArgumentType(init.def.structRef.argType).concrete(init.impls).module
 
-proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedUnionInitializer =
-  AnalyzedUnionInitializer(def: def, kwargs: kwargs)
+proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: GenericImplMap): AnalyzedUnionInitializer =
+  AnalyzedUnionInitializer(def: def, kwargs: kwargs, impls: impls)
 
 proc loc*(init: AnalyzedUnionInitializer): Location = init.def.loc
-proc argType*(init: AnalyzedUnionInitializer): AnalyzedModuleArgumentType = init.def.unionRef.argType
+proc argType*(init: AnalyzedUnionInitializer): AnalyzedModuleArgumentType =
+  newAnalyzedArgumentType(init.def.unionRef.argType).concrete(init.impls).module
 
 proc newAnalyzedInitializer*(literal: AnalyzedLiteralInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikLiteral, literal: literal)

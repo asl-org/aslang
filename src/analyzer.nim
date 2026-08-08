@@ -439,7 +439,7 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
     impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
 
-  ok(newAnalyzedUnionInitializer(init, analyzedKwargs))
+  ok(newAnalyzedUnionInitializer(init, analyzedKwargs, impls))
 
 proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefStructInitializer): Result[AnalyzedStructInitializer, string] =
   ## Walks the struct's kwargs, checking each value against its field
@@ -456,7 +456,7 @@ proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDef
     let analyzedKwarg = ? analyzeKeywordArgument(fileCtx, module, funcCtx, kwarg, field)
     impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
-  ok(newAnalyzedStructInitializer(init, analyzedKwargs))
+  ok(newAnalyzedStructInitializer(init, analyzedKwargs, impls))
 
 proc analyzeInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
