@@ -70,37 +70,37 @@ proc extractUnionFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgum
 # fix.
 # ============================================================
 
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
 
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
   if defType.module != valType.module:
     err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
   else:
     var genericImplMap: GenericImplMap
     for (defImpl, valImpl) in zip(defType.impls, valType.impls):
-      let valGenericImplMap = ? analyzeValueTypeAgainstDefType(fileCtx, module, defImpl, valImpl, loc)
+      let valGenericImplMap = ? analyzeValueTypeAgainstDefType(module, defImpl, valImpl, loc)
       genericImplMap = ? genericImplMap.merge(valGenericImplMap)
     ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   let typeCtx = newResolvedTypeContext(module.resolved)
   discard ? analyzeDefImpl(typeCtx, defType.generic, valType)
   var genericImplMap: GenericImplMap
-  genericImplMap[fileCtx.findGeneric(defType.generic)] = valType
+  genericImplMap[defType.generic] = valType
   ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case valType.kind:
   of aatkGeneric:
     err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
   of aatkModule:
-    analyzeValueTypeAgainstDefType(fileCtx, module, defType, valType.module, loc)
+    analyzeValueTypeAgainstDefType(module, defType, valType.module, loc)
 
 # TODO: Return a map of generic -> argType from the recursive analysis
-proc analyzeValueTypeAgainstDefType(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
   case defType.kind:
-  of aatkModule: analyzeValueTypeAgainstDefType(fileCtx, module, defType.module, valType, loc)
-  of aatkGeneric: analyzeValueTypeAgainstDefType(fileCtx, module, defType.generic, valType, loc)
+  of aatkModule: analyzeValueTypeAgainstDefType(module, defType.module, valType, loc)
+  of aatkGeneric: analyzeValueTypeAgainstDefType(module, defType.generic, valType, loc)
 
 proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedUnionPattern, string] =
   let variant = union.findVariant(variantPattern.name)
@@ -231,7 +231,7 @@ proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
     fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {analyzedFuncDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
   var genericImplMap: GenericImplMap
   for (analyzedArgDef, argValue) in zip(analyzedFuncDef.args, argValues):
-    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(fileCtx, module, analyzedArgDef.argType, argValue.argType, argValue.loc)
+    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(module, analyzedArgDef.argType, argValue.argType, argValue.loc)
     genericImplMap = ? genericImplMap.merge(argGenericImplMap)
   ok(genericImplMap)
 
@@ -415,7 +415,7 @@ proc analyzeKeywordArgument*(fileCtx: AnalyzedFileContext, module: AnalyzedDefMo
   # kwarg values adapt when concrete, default when generic.
   let analyzedExpression = ? analyzeExpression(fileCtx, module, funcCtx, kwarg.expression, some(analyzedField.argType))
   # TODO: Utilize the returned generic impl map
-  discard ? analyzeValueTypeAgainstDefType(fileCtx, module, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
+  discard ? analyzeValueTypeAgainstDefType(module, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
   ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
 
 proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefUnionInitializer): Result[AnalyzedUnionInitializer, string] =

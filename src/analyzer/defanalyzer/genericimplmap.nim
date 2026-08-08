@@ -1,8 +1,9 @@
-## GenericImplMap — AnalyzedGeneric -> AnalyzedArgumentType. Threaded
+## GenericImplMap — ResolvedGeneric -> AnalyzedArgumentType. Threaded
 ## through call-site and initializer analysis to accumulate the
 ## concrete instantiation of every generic seen during argument-list
-## / kwarg walking. Keyed by the analyzed twin (identity is the
-## underlying resolved generic, so lookups are alias/rung immune).
+## / kwarg walking. Keyed by the ResolvedGeneric — the def-side
+## argtypes already name their generic as a ResolvedGeneric, so both
+## insertion and `concrete`'s lookup are direct hashed accesses.
 ##
 ## `merge` combines two maps and detects conflicts (same generic bound
 ## to two different concrete types) — the strict one-to-one guarantee.
@@ -13,11 +14,10 @@ import results, strformat, tables
 
 import ./resolver
 
-import ./generic
 import ./genericargtype
 import ./argtype
 
-type GenericImplMap* = Table[AnalyzedGeneric, AnalyzedArgumentType]
+type GenericImplMap* = Table[ResolvedGeneric, AnalyzedArgumentType]
 
 proc merge*(global: var GenericImplMap, local: GenericImplMap): Result[GenericImplMap, string] =
   # TODO(union-inference): eagerly collapse substitution chains.
@@ -55,12 +55,5 @@ proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): Analyzed
     let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
     return newAnalyzedArgumentType(concreteModuleArgType)
   of aatkGeneric:
-    # The argtype names a ResolvedGeneric; the map keys by its
-    # AnalyzedGeneric twin. This layer has no AnalyzedFileContext to
-    # convert one to the other, so match on the shared resolved
-    # identity (the map holds a handful of entries at most).
-    let target = argType.generic.generic
-    for analyzedGeneric, impl in implMap:
-      if analyzedGeneric.resolved == target:
-        return impl
-    return argType
+    let genericArgType = argType.generic
+    return implMap.getOrDefault(genericArgType.generic, argType)
