@@ -16,16 +16,6 @@ import ./funcdef
 import ./datadef
 import ./function
 
-# ---- shared name+arity indexer over analyzed funcDefs ----
-
-proc buildAnalyzedFuncNameArityIndex*(funcDefs: seq[AnalyzedFunctionDef]): Table[Identifier, Table[int, seq[int]]] =
-  for id, funcDef in funcDefs:
-    if funcDef.name notin result:
-      result[funcDef.name] = initTable[int, seq[int]]()
-    if funcDef.arity notin result[funcDef.name]:
-      result[funcDef.name][funcDef.arity] = newSeq[int]()
-    result[funcDef.name][funcDef.arity].add(id)
-
 # ---- AnalyzedDefModule ----
 
 type AnalyzedDefModule* = ref object
@@ -33,7 +23,6 @@ type AnalyzedDefModule* = ref object
   requires: seq[AnalyzedGenericArgumentType]
   data: Option[AnalyzedDataDef]
   functions: seq[AnalyzedDefFunction]
-  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
   funcDefIndex: Table[ResolvedFunctionDef, int]
 
 proc newAnalyzedDefModule*(resolved: ResolvedModule,
@@ -44,8 +33,7 @@ proc newAnalyzedDefModule*(resolved: ResolvedModule,
   for id, function in functions:
     assert function.def.resolved notin funcDefIndex, "[BUG] - Duplicated function definitions encountered"
     funcDefIndex[function.def.resolved] = id
-  let funcNameArityIndex = functions.mapIt(it.def).buildAnalyzedFuncNameArityIndex()
-  AnalyzedDefModule(resolved: resolved, requires: requires, data: data, functions: functions, funcNameArityIndex: funcNameArityIndex, funcDefIndex: funcDefIndex)
+  AnalyzedDefModule(resolved: resolved, requires: requires, data: data, functions: functions, funcDefIndex: funcDefIndex)
 
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc functions*(m: AnalyzedDefModule): seq[AnalyzedDefFunction] = m.functions
@@ -71,16 +59,10 @@ proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): 
   module.functions[module.funcDefIndex[funcDef]].def
 
 proc findFunctionDefs*(module: AnalyzedDefModule, name: Identifier, arity: int, access: FunctionAccess): Result[seq[AnalyzedFunctionDef], string] =
-  ## Overload-lookup entry point — returns every AnalyzedFunctionDef
-  ## that matches `name` + `arity`, filtered to what `access` may see
-  ## (`faPublic` for external-call receivers). Uniqueness is left to
-  ## the caller's overload-selection step.
-  if name notin module.funcNameArityIndex:
-    err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}`")
-  elif arity notin module.funcNameArityIndex[name]:
-    err(fmt"{name.loc} module `{module.name.asl}` does not have a function named `{name.asl}` with arity `{arity}`")
-  else:
-    let defs = module.funcNameArityIndex[name][arity].mapIt(module.funcDefs[it]).filter(access)
-    if defs.len > 0: ok(defs)
-    else: err(fmt"{name.loc} function `{name.asl}` of module `{module.name.asl}` is not public")
+  ## Overload-lookup entry point. The name/arity/visibility rules are
+  ## the resolver twin's, so delegate to it (single source of truth)
+  ## and map each surviving ResolvedFunctionDef back to its analyzed
+  ## def by identity. Uniqueness is left to the caller's overload step.
+  let resolvedDefs = ? module.resolved.findFunctionDefs(name, arity, access)
+  ok(resolvedDefs.mapIt(module.findFunctionDef(it)))
 

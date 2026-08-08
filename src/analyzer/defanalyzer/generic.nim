@@ -10,27 +10,32 @@ import results, sequtils, strformat, tables
 
 import ./resolver
 import ./funcdef
-import ./moduledef  # buildAnalyzedFuncNameArityIndex
 
 type AnalyzedGeneric* = ref object
   resolved: ResolvedGeneric
   funcDefs: seq[AnalyzedFunctionDef]
-  funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
+  funcDefIndex: Table[ResolvedFunctionDef, int]
 
 proc newAnalyzedGeneric*(resolved: ResolvedGeneric,
     funcDefs: seq[AnalyzedFunctionDef]): AnalyzedGeneric =
-  AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs,
-    funcNameArityIndex: buildAnalyzedFuncNameArityIndex(funcDefs))
+  var funcDefIndex: Table[ResolvedFunctionDef, int]
+  for id, funcDef in funcDefs:
+    funcDefIndex[funcDef.resolved] = id
+  AnalyzedGeneric(resolved: resolved, funcDefs: funcDefs, funcDefIndex: funcDefIndex)
 
 proc resolved*(g: AnalyzedGeneric): ResolvedGeneric = g.resolved
 proc name*(g: AnalyzedGeneric): Identifier = g.resolved.name
 proc loc*(g: AnalyzedGeneric): Location = g.resolved.loc
 
+proc findFunctionDef*(generic: AnalyzedGeneric, funcDef: ResolvedFunctionDef): AnalyzedFunctionDef =
+  ## Identity lookup — phase A indexed every resolver funcDef of this
+  ## generic, so a miss is a compiler bug.
+  assert(funcDef in generic.funcDefIndex, fmt"[BUG] - {funcDef.loc} function `{funcDef.name.asl}` missing from generic `{generic.name.asl}`")
+  generic.funcDefs[generic.funcDefIndex[funcDef]]
+
 proc findFunctionDefs*(generic: AnalyzedGeneric, name: Identifier, arity: int): Result[seq[AnalyzedFunctionDef], string] =
-  ## No public filter — every generic funcDef is implicitly public.
-  if name notin generic.funcNameArityIndex:
-    err(fmt"{name.loc} generic `{generic.name.asl}` does not have a function named `{name.asl}`")
-  elif arity notin generic.funcNameArityIndex[name]:
-    err(fmt"{name.loc} generic `{generic.name.asl}` does not have a function named `{name.asl}` with arity `{arity}`")
-  else:
-    ok(generic.funcNameArityIndex[name][arity].mapIt(generic.funcDefs[it]))
+  ## No public filter — every generic funcDef is implicitly public. The
+  ## name/arity rules are the resolver twin's, so delegate to it and map
+  ## each surviving ResolvedFunctionDef back to its analyzed def.
+  let resolvedDefs = ? generic.resolved.findFunctionDefs(name, arity)
+  ok(resolvedDefs.mapIt(generic.findFunctionDef(it)))
