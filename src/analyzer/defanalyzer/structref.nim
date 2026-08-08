@@ -1,4 +1,4 @@
-## Phase-A struct-ref wrapper — `AnalyzedDefStructRef` pairs the
+## Phase-A struct-ref wrapper — `AnalyzedStructRef` pairs the
 ## resolved ref with its receiver arg-type lifted to the analyzed form
 ## plus the RESOLVED struct def (the resolver's ref only carries the
 ## parser-level def; the def analyzer re-derives the resolved twin
@@ -8,17 +8,17 @@
 import resolver
 import argtype
 
-type AnalyzedDefStructRef* = ref object
+type AnalyzedStructRef* = ref object
   resolved: ResolvedStructRef
   argType: AnalyzedModuleArgumentType
   struct: ResolvedStructDef
 
-proc newAnalyzedDefStructRef*(resolved: ResolvedStructRef, argType: AnalyzedModuleArgumentType, struct: ResolvedStructDef): AnalyzedDefStructRef =
-  AnalyzedDefStructRef(resolved: resolved, argType: argType, struct: struct)
+proc newAnalyzedStructRef*(resolved: ResolvedStructRef, argType: AnalyzedModuleArgumentType, struct: ResolvedStructDef): AnalyzedStructRef =
+  AnalyzedStructRef(resolved: resolved, argType: argType, struct: struct)
 
-proc newAnalyzedDefStructRef*(resolved: ResolvedStructRef, module: ResolvedModule, struct: ResolvedStructDef): AnalyzedDefStructRef =
+proc newAnalyzedStructRef*(resolved: ResolvedStructRef, module: ResolvedModule, struct: ResolvedStructDef): AnalyzedStructRef =
   let argType = newAnalyzedModuleArgumentType(resolved.argType, module)
-  newAnalyzedDefStructRef(resolved, argType, struct)
+  newAnalyzedStructRef(resolved, argType, struct)
 
-proc module*(structRef: AnalyzedDefStructRef): ResolvedModule = structRef.argType.module
-proc argType*(structRef: AnalyzedDefStructRef): AnalyzedModuleArgumentType = structRef.argType
+proc module*(structRef: AnalyzedStructRef): ResolvedModule = structRef.argType.module
+proc argType*(structRef: AnalyzedStructRef): AnalyzedModuleArgumentType = structRef.argType

@@ -218,24 +218,24 @@ proc analyzeDefData(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, 
     let analyzedUnion = ? analyzeDefUnion(fileCtx, typeCtx, data.union)
     ok(newAnalyzedDataDef(analyzedUnion))
 
-proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, unionRef: ResolvedUnionRef): Result[AnalyzedDefUnionRef, string] =
+proc analyzeDefUnionRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, unionRef: ResolvedUnionRef): Result[AnalyzedUnionRef, string] =
   let unionModule = fileCtx.findModule(unionRef.module)
   let union = unionModule.unionDef
   let variant = union.findVariant(unionRef.variant)
   if unionRef.argType.impls.len == 0:
-    ok(newAnalyzedDefUnionRef(unionRef, unionModule, union, variant))
+    ok(newAnalyzedUnionRef(unionRef, unionModule, union, variant))
   else:
     let analyzedArgType = ? analyzeDefModuleArgumentType(fileCtx, typeCtx, unionRef.argType)
-    ok(newAnalyzedDefUnionRef(unionRef, analyzedArgType, union, variant))
+    ok(newAnalyzedUnionRef(unionRef, analyzedArgType, union, variant))
 
-proc analyzeDefStructRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, structRef: ResolvedStructRef): Result[AnalyzedDefStructRef, string] =
+proc analyzeDefStructRef(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, structRef: ResolvedStructRef): Result[AnalyzedStructRef, string] =
   let structModule = fileCtx.findModule(structRef.module)
   let struct = structModule.structDef
   if structRef.argType.impls.len == 0:
-    ok(newAnalyzedDefStructRef(structRef, structModule, struct))
+    ok(newAnalyzedStructRef(structRef, structModule, struct))
   else:
     let analyzedArgType = ? analyzeDefModuleArgumentType(fileCtx, typeCtx, structRef.argType)
-    ok(newAnalyzedDefStructRef(structRef, analyzedArgType, struct))
+    ok(newAnalyzedStructRef(structRef, analyzedArgType, struct))
 
 proc analyzeDefStatement(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, statement: ResolvedStatement): Result[AnalyzedDefStatement, string]
 proc analyzeDefExpression(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, expression: ResolvedExpression): Result[AnalyzedDefExpression, string]

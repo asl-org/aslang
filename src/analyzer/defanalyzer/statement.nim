@@ -39,12 +39,12 @@ type
 
   AnalyzedDefStructInitializer* = ref object
     resolved: ResolvedStructInitializer
-    structRef: AnalyzedDefStructRef
+    structRef: AnalyzedStructRef
     kwargs: seq[AnalyzedDefKeywordArgument]
 
   AnalyzedDefUnionInitializer* = ref object
     resolved: ResolvedUnionInitializer
-    unionRef: AnalyzedDefUnionRef
+    unionRef: AnalyzedUnionRef
     kwargs: seq[AnalyzedDefKeywordArgument]
 
   AnalyzedDefInitializerKind* = enum
@@ -115,20 +115,20 @@ proc name*(kwarg: AnalyzedDefKeywordArgument): Identifier = kwarg.resolved.name
 proc expression*(kwarg: AnalyzedDefKeywordArgument): AnalyzedDefExpression = kwarg.expression
 
 # AnalyzedDefStructInitializer
-proc newAnalyzedDefStructInitializer*(resolved: ResolvedStructInitializer, structRef: AnalyzedDefStructRef, kwargs: seq[AnalyzedDefKeywordArgument]): AnalyzedDefStructInitializer =
+proc newAnalyzedDefStructInitializer*(resolved: ResolvedStructInitializer, structRef: AnalyzedStructRef, kwargs: seq[AnalyzedDefKeywordArgument]): AnalyzedDefStructInitializer =
   AnalyzedDefStructInitializer(resolved: resolved, structRef: structRef, kwargs: kwargs)
 
 proc loc*(init: AnalyzedDefStructInitializer): Location = init.resolved.loc
-proc structRef*(init: AnalyzedDefStructInitializer): AnalyzedDefStructRef = init.structRef
+proc structRef*(init: AnalyzedDefStructInitializer): AnalyzedStructRef = init.structRef
 proc kwargs*(init: AnalyzedDefStructInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
 
 # AnalyzedDefUnionInitializer
-proc newAnalyzedDefUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: AnalyzedDefUnionRef, kwargs: seq[AnalyzedDefKeywordArgument]): AnalyzedDefUnionInitializer =
+proc newAnalyzedDefUnionInitializer*(resolved: ResolvedUnionInitializer, unionRef: AnalyzedUnionRef, kwargs: seq[AnalyzedDefKeywordArgument]): AnalyzedDefUnionInitializer =
   AnalyzedDefUnionInitializer(resolved: resolved, unionRef: unionRef, kwargs: kwargs)
 
 proc loc*(init: AnalyzedDefUnionInitializer): Location = init.resolved.loc
 proc variant*(init: AnalyzedDefUnionInitializer): Identifier = init.resolved.variant
-proc unionRef*(init: AnalyzedDefUnionInitializer): AnalyzedDefUnionRef = init.unionRef
+proc unionRef*(init: AnalyzedDefUnionInitializer): AnalyzedUnionRef = init.unionRef
 proc kwargs*(init: AnalyzedDefUnionInitializer): seq[AnalyzedDefKeywordArgument] = init.kwargs
 
 # AnalyzedDefInitializer
