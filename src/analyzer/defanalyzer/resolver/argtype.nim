@@ -32,17 +32,17 @@ type
     of ratkGeneric: generic: ResolvedGenericArgumentType
 
   # Substitution map for generic grounding — the resolver-side, map-based
-  # counterpart to the analyzer's `GenericImplMap` + `concrete`. In
+  # counterpart to the analyzer's `AnalyzedImplMap` + `concrete`. In
   # practice it carries a single entry (a generic block has one type
   # parameter, so constraint grounding substitutes that one generic),
   # but the map shape keeps both layers' `concrete` engines aligned.
-  GenericSubst* = Table[Generic, ResolvedArgumentType]
+  ResolvedImplMap* = Table[Generic, ResolvedArgumentType]
 
 # ---- forward declarations (case-union recursion) ----
 
 proc newResolvedArgumentType*(module: ResolvedModuleArgumentType): ResolvedArgumentType
 proc newResolvedArgumentType*(generic: ResolvedGenericArgumentType): ResolvedArgumentType
-proc concrete*(argType: ResolvedArgumentType, subst: GenericSubst): ResolvedArgumentType
+proc concrete*(argType: ResolvedArgumentType, subst: ResolvedImplMap): ResolvedArgumentType
 proc hash*(argType: ResolvedArgumentType): Hash
 proc asl*(argType: ResolvedArgumentType): string
 
@@ -66,7 +66,7 @@ proc satisfies*(argType: ResolvedGenericArgumentType, base: Generic): Result[voi
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc concrete*(argType: ResolvedGenericArgumentType, subst: GenericSubst): ResolvedArgumentType =
+proc concrete*(argType: ResolvedGenericArgumentType, subst: ResolvedImplMap): ResolvedArgumentType =
   subst.getOrDefault(argType.generic, newResolvedArgumentType(argType))
 
 # ---- ResolvedModuleArgumentType ----
@@ -114,7 +114,7 @@ proc satisfies*(argType: ResolvedModuleArgumentType, base: Generic, typeCtx: Typ
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc concrete*(argType: ResolvedModuleArgumentType, subst: GenericSubst): ResolvedArgumentType =
+proc concrete*(argType: ResolvedModuleArgumentType, subst: ResolvedImplMap): ResolvedArgumentType =
   var impls: seq[ResolvedArgumentType]
   for impl in argType.impls:
     impls.add(impl.concrete(subst))
@@ -163,7 +163,7 @@ proc asl*(argType: ResolvedArgumentType): string =
   of ratkModule: argType.module.asl
   of ratkGeneric: argType.generic.asl
 
-proc concrete*(argType: ResolvedArgumentType, subst: GenericSubst): ResolvedArgumentType =
+proc concrete*(argType: ResolvedArgumentType, subst: ResolvedImplMap): ResolvedArgumentType =
   ## Recursive generic substitution — rewrites any generic bound by
   ## `subst` at any depth of the impl tree (`Array[Eq]` under {Eq: u8}
   ## becomes `Array[u8]`); unbound generics stay as-is. Map-based, so it

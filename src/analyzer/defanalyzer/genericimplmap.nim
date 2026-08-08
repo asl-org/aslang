@@ -1,4 +1,4 @@
-## GenericImplMap operations. The type itself lives with the argument
+## AnalyzedImplMap operations. The type itself lives with the argument
 ## types in ./argtype (it IS a module argtype's `impls` — the ordered
 ## slot→impl map). This file owns the two operations over it:
 ##
@@ -14,7 +14,7 @@ import ./resolver
 import ./genericargtype
 import ./argtype
 
-proc merge*(global: var GenericImplMap, local: GenericImplMap): Result[GenericImplMap, string] =
+proc merge*(global: var AnalyzedImplMap, local: AnalyzedImplMap): Result[AnalyzedImplMap, string] =
   # TODO(union-inference): eagerly collapse substitution chains.
   # When inserting `K → u8`, also rewrite any existing values in the
   # map that mention K as a free generic (e.g. an earlier
@@ -32,7 +32,7 @@ proc merge*(global: var GenericImplMap, local: GenericImplMap): Result[GenericIm
       global[generic] = impl
   ok(global)
 
-proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): AnalyzedArgumentType =
+proc concrete*(argType: AnalyzedArgumentType, implMap: AnalyzedImplMap): AnalyzedArgumentType =
   # TODO(union-inference): handle substitution chains. A single use
   # site can produce an implMap with both `Sample → K` and `K → u8`
   # (e.g. `func f(a: Box[u8, K], b: K)` called as
@@ -45,7 +45,7 @@ proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): Analyzed
     let moduleArgType = argType.module
     # Rebuild the ordered slot→impl map, concretizing each impl and
     # keeping the same slot keys and order.
-    var concreteImpls: GenericImplMap
+    var concreteImpls: AnalyzedImplMap
     for generic, impl in moduleArgType.impls:
       concreteImpls[generic] = impl.concrete(implMap)
     let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)

@@ -130,7 +130,7 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
 
   # The impls ARE the slot→impl map, keyed by each require's contract
   # generic and kept in slot order (OrderedTable insertion order).
-  var analyzedImpls: GenericImplMap
+  var analyzedImpls: AnalyzedImplMap
   for (requirement, impl) in zip(requires, argType.impls):
     let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
     # A requirement's contract generic lives in the scope of the file

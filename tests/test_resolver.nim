@@ -232,7 +232,7 @@ module M:
     # Two fields typed as the same generic `K` resolve fine — K
     # claims one position in the struct's param list, and any
     # conflict between value types at init surfaces via the
-    # analyzer's GenericImplMap merge, not here.
+    # analyzer's AnalyzedImplMap merge, not here.
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
@@ -297,7 +297,7 @@ public module Pair:
     # Repeating `K` across variants is fine — K claims one position
     # in the union's param list (first-seen wins), and any conflict
     # between value types at a single construction surfaces at init
-    # via the analyzer's GenericImplMap merge, not here.
+    # via the analyzer's AnalyzedImplMap merge, not here.
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"

@@ -141,7 +141,7 @@ Analyzer ──── Two-pass over the resolved app.
   │              from matchingFuncDef.returns; only the
   │              generic-impl substitution (.concrete) runs per
   │              call. Union initializer parametric inference
-  │              accumulates a GenericImplMap from the kwargs
+  │              accumulates a AnalyzedImplMap from the kwargs
   │              (merged across fields), concretizes the result
   │              type through it (covered slots bound, uncovered
   │              left free), and the result argtype carries that
@@ -437,7 +437,7 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   parser side via `fileCtx.inferGenerics`. No uniqueness
   rule is enforced at resolution time — the same generic name
   appearing in multiple fields is fine, since the analyzer's
-  `GenericImplMap` binds one generic to one concrete type per
+  `AnalyzedImplMap` binds one generic to one concrete type per
   construction and surfaces any mismatch as a `merge()` error at
   the init site. Generic-uniqueness inside the explicit
   `struct(...)` header is the one place that *is* checked.
@@ -628,7 +628,7 @@ their `AnalyzedFunctionDef`). Scope:
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
-  via `GenericImplMap` + `merge`. The unique survivor is picked;
+  via `AnalyzedImplMap` + `merge`. The unique survivor is picked;
   ambiguity is rejected.
 - **Concretization** — funcDef return types and match-subject
   unions are rewritten through `concrete(argType, implMap)` using the
@@ -1036,8 +1036,8 @@ src/
                                    aatkGeneric), AnalyzedModuleArgument-
                                    Type (resolved back-ref +
                                    ResolvedModule + its impls), and
-                                   GenericImplMap. A module argtype's
-                                   `impls` IS a GenericImplMap
+                                   AnalyzedImplMap. A module argtype's
+                                   `impls` IS a AnalyzedImplMap
                                    (OrderedTable[ResolvedGeneric,
                                    AnalyzedArgumentType]) — the ordered
                                    slot→impl map whose values, in slot
@@ -1048,7 +1048,7 @@ src/
                                    equality-vs-unification TODO.
     genericargtype.nim             AnalyzedGenericArgumentType —
                                    ResolvedGeneric + use-site loc.
-    genericimplmap.nim             GenericImplMap operations (the type
+    genericimplmap.nim             AnalyzedImplMap operations (the type
                                    lives in argtype.nim): merge
                                    (conflict-on-different-binding;
                                    substitution-chain collapsing still
@@ -1322,7 +1322,7 @@ holds a type-rich representation of every value, expression, and
 statement in each function body. Unit suite **351/351** (green);
 integration **33/35** (2 fixtures red on the equality-vs-unification
 gap, see Focused TODOs). Recent structural work: the
-impl-map-per-argument-type rebuild (the intrinsic `GenericImplMap` on
+impl-map-per-argument-type rebuild (the intrinsic `AnalyzedImplMap` on
 every module argtype) and its resolver/defanalyzer duplication cleanup
 (delegated function-def lookup, shared `indexByName` generic), the
 two-pass
@@ -1337,7 +1337,7 @@ for the DDD-refactor trail that preceded them.
 What the analyzer does today (all wired):
 
 - Overload selection at function-call sites — each candidate funcDef
-  is unified against the call's argument types via `GenericImplMap`
+  is unified against the call's argument types via `AnalyzedImplMap`
   + `merge`, and uniqueness picks the survivor (ambiguity rejected).
 - Impl-list arity + generic constraint satisfaction — presence and
   accessibility checked at resolve time in
@@ -1422,7 +1422,7 @@ Focused TODOs still open:
     `funcdef.nim`, `generic.nim`) substitutes ONE `parser.Generic` by
     identity, recursively at any depth. Used at DEFINITION time to
     ground contract funcDefs before the `findImplDef` identity probe.
-  - analyzer: `concrete(argType, implMap: GenericImplMap)`
+  - analyzer: `concrete(argType, implMap: AnalyzedImplMap)`
     (`defanalyzer/genericimplmap.nim:35`) substitutes ALL free
     generics at once via the ordered `ResolvedGeneric ->
     AnalyzedArgumentType` map. Used at USE time (call returns,
@@ -1515,7 +1515,7 @@ Focused TODOs still open:
   resolver-coupled, and the reason `concrete()`'s single `getOrDefault`
   never had a place to collapse substitution chains. WHAT (shipped):
   an `AnalyzedModuleArgumentType`'s `impls` field now IS its
-  `GenericImplMap` — a single `OrderedTable[ResolvedGeneric,
+  `AnalyzedImplMap` — a single `OrderedTable[ResolvedGeneric,
   AnalyzedArgumentType]` whose values, in slot order, ARE the
   positional impls (the seq + separate map collapsed into one). Built
   once in `analyzeDefModuleArgumentType` where `zip(requires, impls)`

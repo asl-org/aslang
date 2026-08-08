@@ -40,7 +40,7 @@ proc concrete*(generic: ResolvedGeneric, concrete: ResolvedArgumentType): seq[Re
   # A generic block has one type parameter, so grounding its contract is
   # a single substitution — expressed as a one-entry map to keep the
   # engine map-based (mirrors the analyzer's `concrete`).
-  var subst: GenericSubst
+  var subst: ResolvedImplMap
   subst[generic.parsed] = concrete
   var concreteFuncDefs: seq[ResolvedFunctionDef]
   for def in generic.funcDefs:

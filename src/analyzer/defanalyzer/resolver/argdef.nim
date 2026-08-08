@@ -22,6 +22,6 @@ proc `==`*(a, b: ResolvedArgumentDef): bool = a.hash == b.hash
 proc asl*(argDef: ResolvedArgumentDef): string =
   fmt"{argDef.name.asl}: {argDef.argType.asl}"
 
-proc concrete*(argDef: ResolvedArgumentDef, subst: GenericSubst): ResolvedArgumentDef =
+proc concrete*(argDef: ResolvedArgumentDef, subst: ResolvedImplMap): ResolvedArgumentDef =
   let concreteArgType = argDef.argType.concrete(subst)
   newResolvedArgumentDef(argDef.parsed, concreteArgType)

@@ -39,7 +39,7 @@ proc hash*(funcDef: ResolvedFunctionDef): Hash =
 
 proc `==`*(a, b: ResolvedFunctionDef): bool = a.hash == b.hash
 
-proc concrete*(funcDef: ResolvedFunctionDef, subst: GenericSubst): ResolvedFunctionDef =
+proc concrete*(funcDef: ResolvedFunctionDef, subst: ResolvedImplMap): ResolvedFunctionDef =
   var concreteArgs: seq[ResolvedArgumentDef]
   for arg in funcDef.args:
     concreteArgs.add(arg.concrete(subst))

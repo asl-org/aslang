@@ -31,23 +31,23 @@ type
     def: AnalyzedDefFunctionCall
     funcDef: AnalyzedFunctionDef
     args: seq[AnalyzedExpression]
-    impls: GenericImplMap
+    impls: AnalyzedImplMap
 
   AnalyzedKeywordArgument* = ref object
     def: AnalyzedDefKeywordArgument
     field: AnalyzedArgumentDef
     expression: AnalyzedExpression
-    impls: GenericImplMap
+    impls: AnalyzedImplMap
 
   AnalyzedStructInitializer* = ref object
     def: AnalyzedDefStructInitializer
     kwargs: seq[AnalyzedKeywordArgument]
-    impls: GenericImplMap
+    impls: AnalyzedImplMap
 
   AnalyzedUnionInitializer* = ref object
     def: AnalyzedDefUnionInitializer
     kwargs: seq[AnalyzedKeywordArgument]
-    impls: GenericImplMap
+    impls: AnalyzedImplMap
 
   AnalyzedInitializerKind* = enum
     aikUnion, aikStruct, aikLiteral
@@ -97,7 +97,7 @@ type
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
 
-proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], impls: GenericImplMap): AnalyzedFunctionCall =
+proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], impls: AnalyzedImplMap): AnalyzedFunctionCall =
   AnalyzedFunctionCall(def: def, funcDef: funcDef, args: args, impls: impls)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
@@ -107,16 +107,16 @@ proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType =
   fncall.funcDef.returns.concrete(fncall.impls)
 
-proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression, impls: GenericImplMap): AnalyzedKeywordArgument =
+proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression, impls: AnalyzedImplMap): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(def: def, field: field, expression: expression, impls: impls)
 
 # The generic bindings this kwarg contributes (a field typed by a free
 # generic + a concrete value binds that generic; a concrete field →
 # empty map). The initializer merges these across fields.
-proc impls*(kwarg: AnalyzedKeywordArgument): GenericImplMap = kwarg.impls
+proc impls*(kwarg: AnalyzedKeywordArgument): AnalyzedImplMap = kwarg.impls
 
 
-proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: GenericImplMap): AnalyzedStructInitializer =
+proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: AnalyzedImplMap): AnalyzedStructInitializer =
   AnalyzedStructInitializer(def: def, kwargs: kwargs, impls: impls)
 
 proc loc*(init: AnalyzedStructInitializer): Location = init.def.loc
@@ -126,7 +126,7 @@ proc loc*(init: AnalyzedStructInitializer): Location = init.def.loc
 proc argType*(init: AnalyzedStructInitializer): AnalyzedModuleArgumentType =
   newAnalyzedArgumentType(init.def.structRef.argType).concrete(init.impls).module
 
-proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: GenericImplMap): AnalyzedUnionInitializer =
+proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: AnalyzedImplMap): AnalyzedUnionInitializer =
   AnalyzedUnionInitializer(def: def, kwargs: kwargs, impls: impls)
 
 proc loc*(init: AnalyzedUnionInitializer): Location = init.def.loc
@@ -254,7 +254,7 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
 # every AnalyzedModuleArgumentType carries the slot→impl bindings of its
 # instantiation (`Status[u8]` → {Any: u8}), so the map a consumer needs
 # is intrinsic to the type, whatever expression produced it.
-proc impls*(expression: AnalyzedExpression): GenericImplMap =
+proc impls*(expression: AnalyzedExpression): AnalyzedImplMap =
   expression.argType.impls
 
 proc newAnalyzedStatement*(expression: AnalyzedExpression): AnalyzedStatement =

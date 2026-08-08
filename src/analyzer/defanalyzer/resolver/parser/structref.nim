@@ -10,7 +10,7 @@ import ./argtype
 # impls list. Empty impls === the user wrote `Module { ... }`; non-empty
 # impls === the user wrote `Module[Impl, ...] { ... }`. The parser no
 # longer discriminates between the two surface forms — downstream layers
-# initialise their GenericImplMap from the impls seq directly (empty
+# initialise their AnalyzedImplMap from the impls seq directly (empty
 # seq → empty map, non-empty → pre-populated).
 type StructRef* = ref object
   argType: ArgumentType

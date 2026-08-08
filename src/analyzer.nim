@@ -62,30 +62,30 @@ proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgu
 # fix.
 # ============================================================
 
-proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string]
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string]
 
-proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedImplMap, string] =
   if defType.module != valType.module:
     err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
   else:
-    var genericImplMap: GenericImplMap
+    var genericImplMap: AnalyzedImplMap
     # Same module ⇒ both impl maps are keyed by the same require slots;
     # walk the def slots and match each against the value's impl in the
     # same slot.
     for defGeneric, defImpl in defType.impls:
       let valImpl = valType.impls[defGeneric]
-      let valGenericImplMap = ? analyzeValueTypeAgainstDefType(module, defImpl, valImpl, loc)
-      genericImplMap = ? genericImplMap.merge(valGenericImplMap)
+      let valAnalyzedImplMap = ? analyzeValueTypeAgainstDefType(module, defImpl, valImpl, loc)
+      genericImplMap = ? genericImplMap.merge(valAnalyzedImplMap)
     ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string] =
   let typeCtx = newResolvedTypeContext(module.resolved)
   discard ? analyzeDefImpl(typeCtx, defType.generic, valType)
-  var genericImplMap: GenericImplMap
+  var genericImplMap: AnalyzedImplMap
   genericImplMap[defType.generic] = valType
   ok(genericImplMap)
 
-proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string] =
   case valType.kind:
   of aatkGeneric:
     err(fmt"{loc} expected a module {defType.asl} type but found generic type {valType.asl}")
@@ -93,7 +93,7 @@ proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: Analyzed
     analyzeValueTypeAgainstDefType(module, defType, valType.module, loc)
 
 # TODO: Return a map of generic -> argType from the recursive analysis
-proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[GenericImplMap, string] =
+proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string] =
   case defType.kind:
   of aatkModule: analyzeValueTypeAgainstDefType(module, defType.module, valType, loc)
   of aatkGeneric: analyzeValueTypeAgainstDefType(module, defType.generic, valType, loc)
@@ -220,7 +220,7 @@ proc analyzeLiteralInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDe
 proc analyzeExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
 proc analyzeStatement*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string]
 
-proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDef): Result[GenericImplMap, string] =
+proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDef): Result[AnalyzedImplMap, string] =
   # Reads pre-analyzed args directly from the AnalyzedFunctionDef
   # — no lookup, no re-analysis. Every analyzed expression carries a
   # concrete argType post-Approach C; bare literals adopt the caller's
@@ -229,13 +229,13 @@ proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
   # from `analyzeFunctionCall`.
   assert(analyzedFuncDef.args.len == argValues.len,
     fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {analyzedFuncDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
-  var genericImplMap: GenericImplMap
+  var genericImplMap: AnalyzedImplMap
   for (analyzedArgDef, argValue) in zip(analyzedFuncDef.args, argValues):
-    let argGenericImplMap = ? analyzeValueTypeAgainstDefType(module, analyzedArgDef.argType, argValue.argType, argValue.loc)
-    genericImplMap = ? genericImplMap.merge(argGenericImplMap)
+    let argAnalyzedImplMap = ? analyzeValueTypeAgainstDefType(module, analyzedArgDef.argType, argValue.argType, argValue.loc)
+    genericImplMap = ? genericImplMap.merge(argAnalyzedImplMap)
   ok(genericImplMap)
 
-proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall, funcDefs: seq[AnalyzedFunctionDef]): Result[(AnalyzedFunctionDef, seq[AnalyzedExpression], GenericImplMap), string] =
+proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall, funcDefs: seq[AnalyzedFunctionDef]): Result[(AnalyzedFunctionDef, seq[AnalyzedExpression], AnalyzedImplMap), string] =
   # Per-candidate analysis over pre-analyzed AnalyzedFunctionDef
   # candidates: for each candidate, walk the call's raw arguments and
   # analyze each with the candidate's declared arg type (pre-analyzed)
@@ -244,7 +244,7 @@ proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule
   # (`analyzeBareLiteral`). First candidate whose args analyze +
   # type-check wins; ambiguity fires the existing multi-match error
   # path.
-  var matches: seq[(AnalyzedFunctionDef, seq[AnalyzedExpression], GenericImplMap)]
+  var matches: seq[(AnalyzedFunctionDef, seq[AnalyzedExpression], AnalyzedImplMap)]
   var errors: seq[string]
   for index, analyzedFuncDef in funcDefs:
     assert(analyzedFuncDef.args.len == fncall.args.len, "[BUG] - UNREACHABLE")
@@ -260,11 +260,11 @@ proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule
       errors.add(fmt"[{index + 1}] - {candidateErr}")
       errors.add("\t" & fmt"{analyzedFuncDef.loc}: {analyzedFuncDef.asl}")
       continue
-    let maybeGenericImplMap = analyzeArgumentList(fileCtx, module, funcCtx, analyzedArgs, analyzedFuncDef)
-    if maybeGenericImplMap.isOk:
-      matches.add((analyzedFuncDef, analyzedArgs, maybeGenericImplMap.get))
+    let maybeAnalyzedImplMap = analyzeArgumentList(fileCtx, module, funcCtx, analyzedArgs, analyzedFuncDef)
+    if maybeAnalyzedImplMap.isOk:
+      matches.add((analyzedFuncDef, analyzedArgs, maybeAnalyzedImplMap.get))
     else:
-      errors.add(fmt"[{index + 1}] - " & maybeGenericImplMap.error)
+      errors.add(fmt"[{index + 1}] - " & maybeAnalyzedImplMap.error)
       errors.add("\t" & fmt"{analyzedFuncDef.loc}: {analyzedFuncDef.asl}")
 
   if matches.len == 1:
@@ -447,7 +447,7 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
   # subset. Rebuild it over the union's canonical slots so every slot
   # is present and in order: a covered slot keeps its concrete binding,
   # an uncovered one defaults to itself (a free generic, leave-as-is).
-  var completeImpls: GenericImplMap
+  var completeImpls: AnalyzedImplMap
   for requirement in unionModule.requires:
     completeImpls[requirement.generic] = impls.getOrDefault(requirement.generic, newAnalyzedArgumentType(requirement))
 
