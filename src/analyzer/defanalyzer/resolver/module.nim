@@ -96,11 +96,11 @@ proc self*(module: ResolvedModule): ResolvedModuleArgumentType =
 proc hash*(a: ResolvedModule): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedModule): bool = a.hash == b.hash
 
-proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDef): Option[ResolvedFunctionDef] =
-  if funcDef notin module.funcDefIndex:
-    none(ResolvedFunctionDef)
-  else:
-    some(module.functions[module.funcDefIndex[funcDef]].def)
+proc findFunctionDef*(module: ResolvedModule, funcDef: ResolvedFunctionDef): ResolvedFunctionDef =
+  ## Identity membership — the module was indexed over exactly these
+  ## funcDefs, so a miss is a compiler bug (mirrors the analyzed twin).
+  assert(funcDef in module.funcDefIndex, fmt"[BUG] - {funcDef.loc} function `{funcDef.name.asl}` missing from module `{module.name.asl}`")
+  module.functions[module.funcDefIndex[funcDef]].def
 
 proc findImplDef*(module: ResolvedModule, funcDef: ResolvedFunctionDef, access: FunctionAccess): Result[ResolvedFunctionDef, string] =
   ## Does the module provide exactly this signature, visible at

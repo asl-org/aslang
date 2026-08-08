@@ -3,7 +3,7 @@
 ## Every funcDef inside a generic is implicitly public (per grammar),
 ## so no public filter on findFunctionDefs.
 
-import results, strformat, options, tables, hashes, sequtils
+import results, strformat, tables, hashes, sequtils
 
 import ./parser
 import argtype
@@ -49,11 +49,11 @@ proc concrete*(generic: ResolvedGeneric, concrete: ResolvedGenericArgumentType):
 proc concrete*(generic: ResolvedGeneric, concrete: ResolvedModuleArgumentType): seq[ResolvedFunctionDef] =
   generic.concrete(newResolvedArgumentType(concrete))
 
-proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): Option[ResolvedFunctionDef] =
-  if funcDef notin generic.funcDefIndex:
-    none(ResolvedFunctionDef)
-  else:
-    some(generic.funcDefs[generic.funcDefIndex[funcDef]])
+proc findFunctionDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDef): ResolvedFunctionDef =
+  ## Identity membership — the generic was indexed over exactly these
+  ## funcDefs, so a miss is a compiler bug (mirrors the analyzed twin).
+  assert(funcDef in generic.funcDefIndex, fmt"[BUG] - {funcDef.loc} function `{funcDef.name.asl}` missing from generic `{generic.name.asl}`")
+  generic.funcDefs[generic.funcDefIndex[funcDef]]
 
 proc findImplDef*(generic: ResolvedGeneric, funcDef: ResolvedFunctionDef, access: FunctionAccess): Result[ResolvedFunctionDef, string] =
   ## Does the generic declare exactly this signature, visible at
