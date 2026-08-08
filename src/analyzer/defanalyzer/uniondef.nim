@@ -15,12 +15,7 @@ type AnalyzedUnionDef* = ref object
   variantIndex: Table[Identifier, int]
 
 proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef, variants: seq[AnalyzedVariantDef]): AnalyzedUnionDef =
-  var variantIndex: Table[Identifier, int]
-  for id, variant in variants:
-    assert(variant.name notin variantIndex,
-      "UNREACHABLE: duplicate variant name must have been caught by resolver")
-    variantIndex[variant.name] = id
-  AnalyzedUnionDef(resolved: resolved, variants: variants, variantIndex: variantIndex)
+  AnalyzedUnionDef(resolved: resolved, variants: variants, variantIndex: variants.indexByName())
 
 proc variants*(u: AnalyzedUnionDef): seq[AnalyzedVariantDef] = u.variants
 proc genericTypeIndex*(u: AnalyzedUnionDef): Table[ResolvedGenericArgumentType, int] =

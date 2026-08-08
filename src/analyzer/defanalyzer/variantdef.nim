@@ -15,12 +15,7 @@ type AnalyzedVariantDef* = ref object
 
 proc newAnalyzedVariantDef*(resolved: ResolvedVariantDef,
     fields: seq[AnalyzedArgumentDef]): AnalyzedVariantDef =
-  var fieldIndex: Table[Identifier, int]
-  for id, field in fields:
-    assert(field.name notin fieldIndex,
-      "UNREACHABLE: duplicate field name must have been caught by resolver")
-    fieldIndex[field.name] = id
-  AnalyzedVariantDef(resolved: resolved, fields: fields, fieldIndex: fieldIndex)
+  AnalyzedVariantDef(resolved: resolved, fields: fields, fieldIndex: fields.indexByName())
 
 proc name*(v: AnalyzedVariantDef): Identifier = v.resolved.name
 

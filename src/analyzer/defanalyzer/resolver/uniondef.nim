@@ -4,6 +4,7 @@
 import results, sequtils, sets, strformat, tables
 
 import ./parser
+import ./indexing
 import argtype  # ResolvedGenericArgumentType lives here
 import variantdef
 
@@ -12,13 +13,6 @@ proc buildGenericTypeIndex(generics: seq[ResolvedGenericArgumentType]): Table[Re
   for id, generic in generics:
     genericTypeIndex[generic] = id
   return genericTypeIndex
-
-proc buildVariantIndex(variants: seq[ResolvedVariantDef]): Table[Identifier, int] =
-  var variantIndex: Table[Identifier, int]
-  for id, variant in variants:
-    assert(variant.name notin variantIndex, "[BUG] - Parser rejects duplicate variants")
-    variantIndex[variant.name] = id
-  return variantIndex
 
 proc buildGenerics(variants: seq[ResolvedVariantDef]): seq[ResolvedGenericArgumentType] =
   var generics: OrderedSet[ResolvedGenericArgumentType]
@@ -34,7 +28,7 @@ type ResolvedUnionDef* = ref object
   variantIndex: Table[Identifier, int]
 
 proc newResolvedUnionDef*(parsed: UnionDef, variants: seq[ResolvedVariantDef]): ResolvedUnionDef =
-  let variantIndex = buildVariantIndex(variants)
+  let variantIndex = variants.indexByName()
   let generics = buildGenerics(variants)
   ResolvedUnionDef(parsed: parsed, variants: variants, generics: generics, variantIndex: variantIndex)
 

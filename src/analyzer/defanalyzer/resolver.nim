@@ -14,6 +14,9 @@ import results, sequtils, strformat, tables, options
 import ./resolver/parser
 export parser
 
+import ./resolver/indexing
+export indexing
+
 import ./resolver/literaldef
 export literaldef
 

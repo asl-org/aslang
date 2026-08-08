@@ -4,15 +4,9 @@
 import results, sequtils, sets, strformat, tables
 
 import ./parser
+import ./indexing
 import argtype  # ResolvedGenericArgumentType lives here
 import argdef
-
-proc buildFieldIndex(fields: seq[ResolvedArgumentDef]): Table[Identifier, int] =
-  var fieldIndex: Table[Identifier, int]
-  for id, field in fields:
-    assert(field.name notin fieldIndex, "[BUG] - Parser rejects duplicate field names")
-    fieldIndex[field.name] = id
-  return fieldIndex
 
 proc buildGenericTypeIndex(generics: seq[ResolvedGenericArgumentType]): Table[ResolvedGenericArgumentType, int] =
   var genericTypeIndex: Table[ResolvedGenericArgumentType, int]
@@ -44,7 +38,7 @@ proc newResolvedStructDef*(parsed: StructDef, requires: seq[ResolvedGenericArgum
     return err(fmt"{parsed.loc} struct with explicit generic requirements does not support generic fields")
 
   let generics = if requires.len > 0: requires else: genericFields.toSeq
-  let fieldIndex = buildFieldIndex(fields)
+  let fieldIndex = fields.indexByName()
   ok(ResolvedStructDef(parsed: parsed, generics: generics, fields: fields, fieldIndex: fieldIndex))
 
 proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDef] = struct.fields

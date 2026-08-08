@@ -15,12 +15,7 @@ type AnalyzedStructDef* = ref object
 
 proc newAnalyzedStructDef*(resolved: ResolvedStructDef,
     fields: seq[AnalyzedArgumentDef]): AnalyzedStructDef =
-  var fieldIndex: Table[Identifier, int]
-  for id, field in fields:
-    assert(field.name notin fieldIndex,
-      "UNREACHABLE: duplicate field name must have been caught by resolver")
-    fieldIndex[field.name] = id
-  AnalyzedStructDef(resolved: resolved, fields: fields, fieldIndex: fieldIndex)
+  AnalyzedStructDef(resolved: resolved, fields: fields, fieldIndex: fields.indexByName())
 
 proc genericTypeIndex(s: AnalyzedStructDef): Table[ResolvedGenericArgumentType, int] = s.resolved.genericTypeIndex
 

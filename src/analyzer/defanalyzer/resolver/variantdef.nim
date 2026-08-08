@@ -4,15 +4,9 @@
 import results, sets, strformat, tables
 
 import ./parser
+import ./indexing
 import argtype
 import argdef
-
-proc buildFieldIndex(fields: seq[ResolvedArgumentDef]): Table[Identifier, int] =
-  var fieldIndex: Table[Identifier, int]
-  for id, field in fields:
-    assert(field.name notin fieldIndex, "[BUG] - Parser rejects duplicate field names")
-    fieldIndex[field.name] = id
-  return fieldIndex
 
 proc buildGenerics(fields: seq[ResolvedArgumentDef]): seq[ResolvedGenericArgumentType] =
   var genericSet: HashSet[ResolvedGenericArgumentType]
@@ -34,7 +28,7 @@ type ResolvedVariantDef* = ref object
   fieldIndex: Table[Identifier, int]
 
 proc newResolvedVariantDef*(parsed: VariantDef, fields: seq[ResolvedArgumentDef]): ResolvedVariantDef =
-  let fieldIndex = buildFieldIndex(fields)
+  let fieldIndex = fields.indexByName()
   let generics = buildGenerics(fields)
   ResolvedVariantDef(parsed: parsed, fields: fields, generics: generics, fieldIndex: fieldIndex)
 
