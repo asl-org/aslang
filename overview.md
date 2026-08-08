@@ -1343,15 +1343,16 @@ What the analyzer does today (all wired):
 - Concretization — the matched funcDef's return type and the
   match-subject's union are rewritten through `concrete()` with the
   inferred impls so downstream sites see substituted types.
-- Union initializer parametric inference — reads
-  `AnalyzedUnionRef.analyzedImpls` (single-shape after task 8).
-  Non-empty seq: user-supplied impls are substituted into variant
-  fields via `concrete()` before type-check. Empty seq: the
-  initializer walks kwargs accumulating a `GenericImplMap` and
-  emits a result type with bound concretes where the variant
-  touched the generic and free generics where it didn't
-  (leave-as-is). Single code path — bounded seed loop over
-  `analyzedImpls.len` handles both cases.
+- Struct / union initializer inference — the initializer walks its
+  kwargs; each kwarg's value is checked against its field type by
+  `analyzeValueTypeAgainstDefType`, which yields the generic
+  bindings that field contributes (`value: T` + a `u8` value binds
+  `T -> u8`). Those bindings ride on `AnalyzedKeywordArgument.impls`,
+  and the initializer `merge`s them across fields — so kwargs
+  binding the same generic must agree (`Pair { a: T, b: T }` with
+  `a: u8, b: String` is rejected). Consuming the merged map to
+  concretize the initializer's result type is the remaining step
+  (see What's Next).
 - Literal type inference — the `analyzeLiteral` helper dispatches on
   `ResolvedLiteralDef` and validates every integer kind
   (U8/U16/U32/U64/I8/I16/I32/I64) plus String against the expected
@@ -1466,13 +1467,16 @@ Focused TODOs still open:
   construction/merge becomes the single home for the
   substitution-chain collapse (`Sample → K, K → u8`), pairing with
   the equality-vs-unification rebuild below. PLUMBING OWED (the WIP
-  red state): the map is not built yet — the struct/union
-  initializer kwarg walks carry a `# TODO: build impl map` and
-  currently type-check kwargs against the field's UNconcretized
-  declared type, which is what drops the 3 unit + integration
-  cases. When `analyzeDefModuleArgumentType` stores the map and the
-  kwarg/pattern concretization reads it, those flip green and the
-  deferred provenance tests join them.
+  red state): the map is now BUILT — analyzeKeywordArgument stores
+  each kwarg's bindings on `AnalyzedKeywordArgument.impls` and the
+  struct/union initializers merge them across fields (rejecting
+  inconsistent bindings). What remains is CONSUMING the merged map:
+  the initializer's result type is still `init.def.*Ref.argType`
+  (the unconcretized def twin, e.g. `Pair[T]` not `Pair[u8]`), which
+  is what still drops the 3 unit + integration cases. When the
+  initializer concretizes its result type from the merged map (and
+  the union case-pattern path does the same), those flip green and
+  the deferred provenance tests join them.
 - **Dummy location in `AnalyzedArgumentType.self`**
   (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
   reconstructs a `ResolvedGenericArgumentType` with a fabricated
