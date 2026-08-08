@@ -31,7 +31,7 @@ type
   # consumer (a match subject, say) reads the generic bindings straight
   # off the type instead of re-deriving them from a file context. The
   # `merge` / `concrete` operations live in the sibling
-  # genericimplmap.nim. Keyed by ResolvedGeneric, so a type's require
+  # analyzedimplmap.nim. Keyed by ResolvedGeneric, so a type's require
   # slots must be distinct generics — the same invariant the resolver's
   # genericTypeIndex already relies on.
   AnalyzedImplMap* = OrderedTable[ResolvedGeneric, AnalyzedArgumentType]
@@ -66,7 +66,7 @@ proc newAnalyzedModuleArgumentType*(module: ResolvedModule): AnalyzedModuleArgum
   newAnalyzedModuleArgumentType(module.self, module)
 
 proc resolved*(m: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = m.resolved
-  ## Exposed so the sibling genericimplmap.nim can rebuild a
+  ## Exposed so the sibling analyzedimplmap.nim can rebuild a
   ## ModuleArgumentType during generic substitution. Previously the
   ## `concrete` overload lived in the same file as the type
   ## declaration and read the private field directly; the per-type

@@ -23,8 +23,8 @@ export argtype
 import ./defanalyzer/genericargtype
 export genericargtype
 
-import ./defanalyzer/genericimplmap
-export genericimplmap
+import ./defanalyzer/analyzedimplmap
+export analyzedimplmap
 
 import ./defanalyzer/argdef
 export argdef

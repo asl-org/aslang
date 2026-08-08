@@ -689,7 +689,7 @@ The remaining gaps are listed in **What's Next**. The headline ones
 are the equality-vs-unification trap for free-generic types and the
 substitution-chain handling in `concrete()` — both are flagged as
 `TODO(union-inference)` in `analyzer/defanalyzer/argtype.nim` /
-`analyzer/defanalyzer/genericimplmap.nim` and surface as case-arm uniformity
+`analyzer/defanalyzer/analyzedimplmap.nim` and surface as case-arm uniformity
 check failures on fixtures that flow leave-as-is values through
 `verifyUniformReturnType` (the 2 known integration failures).
 
@@ -1048,7 +1048,7 @@ src/
                                    equality-vs-unification TODO.
     genericargtype.nim             AnalyzedGenericArgumentType —
                                    ResolvedGeneric + use-site loc.
-    genericimplmap.nim             AnalyzedImplMap operations (the type
+    analyzedimplmap.nim             AnalyzedImplMap operations (the type
                                    lives in argtype.nim): merge
                                    (conflict-on-different-binding;
                                    substitution-chain collapsing still
@@ -1403,7 +1403,7 @@ Focused TODOs still open:
   chain-collapsing in `merge`. Owned by
   plans/plan_deferred_typing.md.
 - **Substitution chains in `merge` / `concrete()`**
-  (`analyzer/defanalyzer/genericimplmap.nim`) — `Sample → K, K → u8` should
+  (`analyzer/defanalyzer/analyzedimplmap.nim`) — `Sample → K, K → u8` should
   collapse to `Sample → u8`; today `concrete()` does a single
   `getOrDefault`, so a type rewritten through the map can come out
   HALF-substituted (still carrying a free `K` where `u8` belongs).
@@ -1423,7 +1423,7 @@ Focused TODOs still open:
     identity, recursively at any depth. Used at DEFINITION time to
     ground contract funcDefs before the `findImplDef` identity probe.
   - analyzer: `concrete(argType, implMap: AnalyzedImplMap)`
-    (`defanalyzer/genericimplmap.nim:35`) substitutes ALL free
+    (`defanalyzer/analyzedimplmap.nim:35`) substitutes ALL free
     generics at once via the ordered `ResolvedGeneric ->
     AnalyzedArgumentType` map. Used at USE time (call returns,
     initializer results, match fields).
