@@ -37,6 +37,7 @@ type
     def: AnalyzedDefKeywordArgument
     field: AnalyzedArgumentDef
     expression: AnalyzedExpression
+    impls: GenericImplMap
 
   AnalyzedStructInitializer* = ref object
     def: AnalyzedDefStructInitializer
@@ -99,8 +100,13 @@ proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFun
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
 
-proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression): AnalyzedKeywordArgument =
-  AnalyzedKeywordArgument(def: def, field: field, expression: expression)
+proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression, impls: GenericImplMap): AnalyzedKeywordArgument =
+  AnalyzedKeywordArgument(def: def, field: field, expression: expression, impls: impls)
+
+# The generic bindings this kwarg contributes (a field typed by a free
+# generic + a concrete value binds that generic; a concrete field →
+# empty map). The initializer merges these across fields.
+proc impls*(kwarg: AnalyzedKeywordArgument): GenericImplMap = kwarg.impls
 
 
 proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument]): AnalyzedStructInitializer =

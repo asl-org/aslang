@@ -412,53 +412,49 @@ proc analyzeMatchExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefMo
 
 proc analyzeKeywordArgument*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, kwarg: AnalyzedDefKeywordArgument, analyzedField: AnalyzedArgumentDef): Result[AnalyzedKeywordArgument, string] =
   # Field's declared type is the expected context — bare literals in
-  # kwarg values adapt when concrete, default when generic.
+  # kwarg values adapt when concrete, default when generic. The
+  # value-vs-field check yields the bindings this kwarg contributes
+  # (field `value: T` + a `u8` value binds `T -> u8`); they ride on
+  # the kwarg node so the initializer can merge them across fields.
   let analyzedExpression = ? analyzeExpression(fileCtx, module, funcCtx, kwarg.expression, some(analyzedField.argType))
-  # TODO: Utilize the returned generic impl map
-  discard ? analyzeValueTypeAgainstDefType(module, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
-  ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression))
+  let impls = ? analyzeValueTypeAgainstDefType(module, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
+  ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression, impls))
 
 proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefUnionInitializer): Result[AnalyzedUnionInitializer, string] =
-  ## Single code path over the union initializer:
-  ## - If the surface form supplied explicit impls, the resolver has
-  ##   already threaded them into `analyzedImpls`. We seed implMap
-  ##   positionally from that seq up front, then skip the merge-from-
-  ##   kwarg step so no inference happens.
-  ## - If the surface form was bare, `analyzedImpls` is empty. The seed
-  ##   loop is a no-op and the kwarg walk accumulates the implMap via
-  ##   value-vs-field type matches (leave-as-is).
-  ## Result-type construction is a single loop over the union's
-  ## genericTypeIndex: fill bound positions from implMap, leave uncovered
-  ## positions as free generics for downstream unification.
+  ## Walks the variant's kwargs, checking each value against its field
+  ## type and accumulating the generic bindings each kwarg contributes
+  ## (carried on `AnalyzedKeywordArgument.impls`). Merging across
+  ## fields enforces that kwargs binding the same generic agree — e.g.
+  ## a variant `Ok { a: T, b: T }` with `a: u8, b: String` is rejected
+  ## here. TODO: consume the merged map to concretize the result type.
   let unionModule = fileCtx.findModule(init.unionRef.module)
   let unionDef = unionModule.dataDef.union
   let variantDef = unionDef.findVariant(init.variant)
 
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
+  var impls: GenericImplMap
   for kwarg in init.kwargs:
     let field = ? variantDef.findField(kwarg.name)
-    # TODO: We need to build impl map for struct's concrete type
     let analyzedKwarg = ? analyzeKeywordArgument(fileCtx, module, funcCtx, kwarg, field)
+    impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
 
   ok(newAnalyzedUnionInitializer(init, analyzedKwargs))
 
 proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefStructInitializer): Result[AnalyzedStructInitializer, string] =
-  ## Single code path over the struct initializer. Receiver is the
-  ## resolver's already-resolved module; result argType wraps the
-  ## analyzedImpls seq (empty when the surface form was bare — matches
-  ## the receiverArgType() no-impls shape; non-empty when explicit
-  ## impls were supplied and arity+constraint-checked at resolve time).
-  ## TODO: Inference for uncovered generic positions on the bare path
-  ## still lives with the caller of receiverArgType — folded into the
-  ## same seq-based build here.
+  ## Walks the struct's kwargs, checking each value against its field
+  ## type and accumulating the generic bindings each kwarg contributes
+  ## (carried on `AnalyzedKeywordArgument.impls`). Merging across
+  ## fields enforces that kwargs binding the same generic agree.
+  ## TODO: consume the merged map to concretize the result type.
   let structModule = fileCtx.findModule(init.structRef.module)
   let structDef = structModule.dataDef.struct
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
+  var impls: GenericImplMap
   for kwarg in init.kwargs:
     let field = ? structDef.findField(kwarg.name)
-    # TODO: We need to build impl map for struct's concrete type
     let analyzedKwarg = ? analyzeKeywordArgument(fileCtx, module, funcCtx, kwarg, field)
+    impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
   ok(newAnalyzedStructInitializer(init, analyzedKwargs))
 
