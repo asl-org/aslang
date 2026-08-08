@@ -431,7 +431,11 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
   let variantDef = unionDef.findVariant(init.variant)
 
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
-  var impls: GenericImplMap
+  # Auto-inference: the ref may or may not carry explicit impls. Seed
+  # the map with the ref's own impls (`Status[u8].Ok {...}` → {Any: u8})
+  # so a kwarg value contradicting them is caught by merge; a bare ref
+  # (`Status.Ok {...}`) seeds empty and the kwargs infer the slots.
+  var impls = init.unionRef.argType.impls
   for kwarg in init.kwargs:
     let field = ? variantDef.findField(kwarg.name)
     let analyzedKwarg = ? analyzeKeywordArgument(fileCtx, module, funcCtx, kwarg, field)
@@ -449,7 +453,11 @@ proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDef
   let structModule = fileCtx.findModule(init.structRef.module)
   let structDef = structModule.dataDef.struct
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
-  var impls: GenericImplMap
+  # Auto-inference: the ref may or may not carry explicit impls. Seed
+  # the map with the ref's own impls (`Pair[u8] {...}` → {T: u8}) so a
+  # kwarg value contradicting them is caught by merge; a bare ref
+  # (`Pair {...}`) seeds empty and the kwargs infer the slots.
+  var impls = init.structRef.argType.impls
   for kwarg in init.kwargs:
     let field = ? structDef.findField(kwarg.name)
     let analyzedKwarg = ? analyzeKeywordArgument(fileCtx, module, funcCtx, kwarg, field)
