@@ -39,9 +39,9 @@ proc hash*(funcDef: ResolvedFunctionDef): Hash =
 
 proc `==`*(a, b: ResolvedFunctionDef): bool = a.hash == b.hash
 
-proc concrete*(funcDef: ResolvedFunctionDef, moduleType: ResolvedArgumentType, generic: Generic): ResolvedFunctionDef =
+proc concrete*(funcDef: ResolvedFunctionDef, subst: GenericSubst): ResolvedFunctionDef =
   var concreteArgs: seq[ResolvedArgumentDef]
   for arg in funcDef.args:
-    concreteArgs.add(arg.concrete(moduleType, generic))
-  let concreteReturns = funcDef.returns.concrete(moduleType, generic)
+    concreteArgs.add(arg.concrete(subst))
+  let concreteReturns = funcDef.returns.concrete(subst)
   newResolvedFunctionDef(funcDef.parsed, concreteArgs, concreteReturns)

@@ -8,7 +8,7 @@
 ## `genericargtype.nim` files re-export this module so downstream
 ## callers that only need one variant can import it by name.
 
-import results, strformat, strutils, hashes
+import results, strformat, strutils, hashes, tables
 
 import ./parser
 import ./typecontext
@@ -31,11 +31,18 @@ type
     of ratkModule: module: ResolvedModuleArgumentType
     of ratkGeneric: generic: ResolvedGenericArgumentType
 
+  # Substitution map for generic grounding — the resolver-side, map-based
+  # counterpart to the analyzer's `GenericImplMap` + `concrete`. In
+  # practice it carries a single entry (a generic block has one type
+  # parameter, so constraint grounding substitutes that one generic),
+  # but the map shape keeps both layers' `concrete` engines aligned.
+  GenericSubst* = Table[Generic, ResolvedArgumentType]
+
 # ---- forward declarations (case-union recursion) ----
 
 proc newResolvedArgumentType*(module: ResolvedModuleArgumentType): ResolvedArgumentType
 proc newResolvedArgumentType*(generic: ResolvedGenericArgumentType): ResolvedArgumentType
-proc concrete*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType
+proc concrete*(argType: ResolvedArgumentType, subst: GenericSubst): ResolvedArgumentType
 proc hash*(argType: ResolvedArgumentType): Hash
 proc asl*(argType: ResolvedArgumentType): string
 
@@ -59,9 +66,8 @@ proc satisfies*(argType: ResolvedGenericArgumentType, base: Generic): Result[voi
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc concrete*(argType: ResolvedGenericArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
-  if argType.generic == generic: replacement
-  else: newResolvedArgumentType(argType)
+proc concrete*(argType: ResolvedGenericArgumentType, subst: GenericSubst): ResolvedArgumentType =
+  subst.getOrDefault(argType.generic, newResolvedArgumentType(argType))
 
 # ---- ResolvedModuleArgumentType ----
 
@@ -108,10 +114,10 @@ proc satisfies*(argType: ResolvedModuleArgumentType, base: Generic, typeCtx: Typ
     if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
   ok()
 
-proc concrete*(argType: ResolvedModuleArgumentType, generic: Generic, replacement: ResolvedArgumentType): ResolvedArgumentType =
+proc concrete*(argType: ResolvedModuleArgumentType, subst: GenericSubst): ResolvedArgumentType =
   var impls: seq[ResolvedArgumentType]
   for impl in argType.impls:
-    impls.add(impl.concrete(replacement, generic))
+    impls.add(impl.concrete(subst))
   let moduleArgType = newResolvedModuleArgumentType(argType.module, impls, argType.loc)
   newResolvedArgumentType(moduleArgType)
 
@@ -157,14 +163,14 @@ proc asl*(argType: ResolvedArgumentType): string =
   of ratkModule: argType.module.asl
   of ratkGeneric: argType.generic.asl
 
-proc concrete*(argType: ResolvedArgumentType, concrete: ResolvedArgumentType, generic: Generic): ResolvedArgumentType =
-  ## Recursive single-generic substitution — unlike
-  ## `concreteArgumentType` (top level only) this rewrites the bound
-  ## generic at any depth of the impl tree (`Array[Eq]` under Eq → u8
-  ## becomes `Array[u8]`). Other generics stay as-is.
+proc concrete*(argType: ResolvedArgumentType, subst: GenericSubst): ResolvedArgumentType =
+  ## Recursive generic substitution — rewrites any generic bound by
+  ## `subst` at any depth of the impl tree (`Array[Eq]` under {Eq: u8}
+  ## becomes `Array[u8]`); unbound generics stay as-is. Map-based, so it
+  ## mirrors the analyzer's `concrete(argType, implMap)`.
   case argType.kind:
-  of ratkGeneric: argType.generic.concrete(generic, concrete)
-  of ratkModule: argType.module.concrete(generic, concrete)
+  of ratkGeneric: argType.generic.concrete(subst)
+  of ratkModule: argType.module.concrete(subst)
 
 proc satisfies*(argType: ResolvedArgumentType, base: Generic, typeCtx: TypeContext): Result[void, string] =
   case argType.kind:

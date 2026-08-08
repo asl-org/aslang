@@ -37,10 +37,14 @@ proc hash*(a: ResolvedGeneric): Hash = a.parsed.hash
 proc `==`*(a, b: ResolvedGeneric): bool = a.hash == b.hash
 
 proc concrete*(generic: ResolvedGeneric, concrete: ResolvedArgumentType): seq[ResolvedFunctionDef] =
+  # A generic block has one type parameter, so grounding its contract is
+  # a single substitution — expressed as a one-entry map to keep the
+  # engine map-based (mirrors the analyzer's `concrete`).
+  var subst: GenericSubst
+  subst[generic.parsed] = concrete
   var concreteFuncDefs: seq[ResolvedFunctionDef]
   for def in generic.funcDefs:
-    let concreteDef = def.concrete(concrete, generic.parsed)
-    concreteFuncDefs.add(concreteDef)
+    concreteFuncDefs.add(def.concrete(subst))
   return concreteFuncDefs
 
 proc concrete*(generic: ResolvedGeneric, concrete: ResolvedGenericArgumentType): seq[ResolvedFunctionDef] =
