@@ -31,7 +31,7 @@ type
     def: AnalyzedDefFunctionCall
     funcDef: AnalyzedFunctionDef
     args: seq[AnalyzedExpression]
-    returns: AnalyzedArgumentType
+    impls: GenericImplMap
 
   AnalyzedKeywordArgument* = ref object
     def: AnalyzedDefKeywordArgument
@@ -97,10 +97,15 @@ type
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
 
-proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], returns: AnalyzedArgumentType): AnalyzedFunctionCall =
-  AnalyzedFunctionCall(def: def, funcDef: funcDef, args: args, returns: returns)
+proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], impls: GenericImplMap): AnalyzedFunctionCall =
+  AnalyzedFunctionCall(def: def, funcDef: funcDef, args: args, impls: impls)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
+# Return type = the matched funcDef's declared return concretized by
+# the bindings inferred from the call's arguments (`{T -> u8}` →
+# `T` becomes `u8`). Materialized on access, like the initializers.
+proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType =
+  fncall.funcDef.returns.concrete(fncall.impls)
 
 proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression, impls: GenericImplMap): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(def: def, field: field, expression: expression, impls: impls)

@@ -319,11 +319,10 @@ proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
   let funcDefs = maybeFuncDefs.get
 
   let (matchingFuncDef, analyzedArgs, genericImpls) = ? analyzeArgumentList(fileCtx, module, funcCtx, fncall, funcDefs)
-  # Return type comes pre-analyzed from the AnalyzedFunctionDef;
-  # apply the caller's inferred generic-impl substitution to concretize
-  # any free generics the return type touches.
-  let concreteReturns = matchingFuncDef.returns.concrete(genericImpls)
-  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, concreteReturns))
+  # The impl map inferred from the arguments rides on the call node;
+  # the `returns` accessor concretizes the funcDef's return type from
+  # it on access (matching the initializers).
+  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, genericImpls))
 
 proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImpls: seq[AnalyzedArgumentType]): Result[AnalyzedCaseBlock, string] =
   var caseCtx = funcCtx
