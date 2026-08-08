@@ -106,6 +106,10 @@ proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
 # `T` becomes `u8`). Materialized on access, like the initializers.
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType =
   fncall.funcDef.returns.concrete(fncall.impls)
+# The generic bindings this call inferred from its arguments — exposed
+# so a match/case can concretize a variant field pulled from the
+# subject expression's result type.
+proc impls*(fncall: AnalyzedFunctionCall): GenericImplMap = fncall.impls
 
 proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression, impls: GenericImplMap): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(def: def, field: field, expression: expression, impls: impls)
@@ -125,6 +129,7 @@ proc loc*(init: AnalyzedStructInitializer): Location = init.def.loc
 # `Pair[u8]`). Uncovered generics stay free.
 proc argType*(init: AnalyzedStructInitializer): AnalyzedModuleArgumentType =
   newAnalyzedArgumentType(init.def.structRef.argType).concrete(init.impls).module
+proc impls*(init: AnalyzedStructInitializer): GenericImplMap = init.impls
 
 proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: GenericImplMap): AnalyzedUnionInitializer =
   AnalyzedUnionInitializer(def: def, kwargs: kwargs, impls: impls)
@@ -132,6 +137,7 @@ proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[
 proc loc*(init: AnalyzedUnionInitializer): Location = init.def.loc
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedModuleArgumentType =
   newAnalyzedArgumentType(init.def.unionRef.argType).concrete(init.impls).module
+proc impls*(init: AnalyzedUnionInitializer): GenericImplMap = init.impls
 
 proc newAnalyzedInitializer*(literal: AnalyzedLiteralInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikLiteral, literal: literal)
@@ -156,6 +162,12 @@ proc argType*(init: AnalyzedInitializer): AnalyzedModuleArgumentType =
   of aikLiteral: init.literal.argType
   of aikUnion: init.union.argType
   of aikStruct: init.struct.argType
+
+proc impls*(init: AnalyzedInitializer): GenericImplMap =
+  case init.kind:
+  of aikLiteral: default(GenericImplMap)  # a literal binds no generics
+  of aikUnion: init.union.impls
+  of aikStruct: init.struct.impls
 
 proc loc*(init: AnalyzedInitializer): Location =
   case init.kind:
@@ -242,6 +254,16 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
   of aekMatchExpr: expression.match.returns
   of aekInitializer: newAnalyzedArgumentType(expression.init.argType)
   of aekGetter: expression.getter.argType
+
+# The generic bindings the expression carries for its result type —
+# the map a match/case pattern uses to concretize a variant field
+# pulled from the subject. Only nodes that infer bindings (calls,
+# initializers) carry one; the rest yield an empty map.
+proc impls*(expression: AnalyzedExpression): GenericImplMap =
+  case expression.kind:
+  of aekFunctionCall: expression.fncall.impls
+  of aekInitializer: expression.init.impls
+  of aekVariable, aekMatchExpr, aekGetter: default(GenericImplMap)
 
 proc newAnalyzedStatement*(expression: AnalyzedExpression): AnalyzedStatement =
   AnalyzedStatement(kind: askExpr, expression: expression)
