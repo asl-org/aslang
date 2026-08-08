@@ -130,8 +130,13 @@ proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[
   AnalyzedUnionInitializer(def: def, kwargs: kwargs, impls: impls)
 
 proc loc*(init: AnalyzedUnionInitializer): Location = init.def.loc
+# `impls` already covers every union slot in canonical order (bound or
+# defaulted to self), so it IS the result type's impl map — build the
+# module argtype straight from it rather than concretizing the ref's
+# argtype, whose own map is empty for a bare `Union.Variant {...}`.
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedModuleArgumentType =
-  newAnalyzedArgumentType(init.def.unionRef.argType).concrete(init.impls).module
+  let refArgType = init.def.unionRef.argType
+  newAnalyzedModuleArgumentType(refArgType.resolved, refArgType.module, init.impls)
 
 proc newAnalyzedInitializer*(literal: AnalyzedLiteralInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikLiteral, literal: literal)
