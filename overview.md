@@ -537,21 +537,25 @@ Three phase-A invariants worth naming:
   arity/accessibility presence) was already enforced at resolve
   time, so there are no module/generic proc twins — one context
   value, one proc.
-- **Deep constraint satisfaction** (inline in
-  `analyzeDefModuleArgumentType`). For every parameterized module
-  argument type, each impl↔require pair is checked def-time: the
+- **Deep constraint satisfaction** (`analyzeDefImpl`, called by
+  `analyzeDefModuleArgumentType` AND by the phase-B generic value
+  check — one shared routine). For each impl↔require pair, the
   require-slot generic's funcDefs are concretized at DEFINITION
   level — self-references become the impl's self shape (`A[B, C]`
   built from its own require slots via the deep `concrete`, not the
   site-bound impls, which the recursive argtype walk validates
   separately) — and each concretized def is probed by IDENTITY
-  against the impl's funcDefIndex through `findImplDef`
-  (hash = name + input types, per the input-signature uniqueness
-  rule; the return type and access level are checked explicitly on
-  the hit). Satisfaction is therefore a binding-independent property
-  of the module, decided by one index probe per required def. An
-  impl with a mismatched signature is rejected at its declaration
-  even if the function is never called.
+  against the impl's funcDefIndex through
+  `ResolvedTypeContext.findImplDef`, which owns the visibility
+  decision (module → `access(module)`, generic → `faAll`). Hash =
+  name + input types (input-signature uniqueness rule; return type
+  and access are checked explicitly on the hit). Satisfaction is a
+  binding-independent property of the module, decided by one index
+  probe per required def — an impl with a mismatched signature is
+  rejected at its declaration even if the function is never called.
+  Phase B's `analyzeValueTypeAgainstDefType` generic arm now runs
+  this same check (was a shallower identity-only loop), so the
+  value-position check is visibility-aware too.
 - **Identity lookups assert, never err — on the types themselves.**
   Every identity-keyed lookup (`findType` / `findModule` /
   `findGeneric` on both FileContext rungs, `ResolvedFile.findType`,
