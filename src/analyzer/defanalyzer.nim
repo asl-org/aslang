@@ -6,7 +6,7 @@
 ## once. Nesting convention: parser ⊂ resolver ⊂ defanalyzer ⊂
 ## analyzer.
 
-import options, results, sequtils, strformat
+import options, results, sequtils, strformat, tables
 
 import ./defanalyzer/resolver
 export resolver
@@ -128,10 +128,11 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
   let requires = module.dataDef.requires
   assert(requires.len == argType.impls.len, "[BUG] - Resolver ensures impls match the module's require slots")
 
-  var analyzedImpls: seq[AnalyzedArgumentType]
+  # The impls ARE the slot→impl map, keyed by each require's contract
+  # generic and kept in slot order (OrderedTable insertion order).
+  var analyzedImpls: GenericImplMap
   for (requirement, impl) in zip(requires, argType.impls):
     let analyzedImpl = ? analyzeDefArgumentType(fileCtx, typeCtx, impl)
-    analyzedImpls.add(analyzedImpl)
     # A requirement's contract generic lives in the scope of the file
     # that DEFINES the module — for a local module that is this very
     # fileCtx; for an imported one, hop through the captured source
@@ -140,6 +141,7 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
       case moduleEntry.kind:
       of rtkLocal: fileCtx.findGeneric(requirement.generic)
       of rtkImported: moduleEntry.imported.impFile.findGenericInScope(requirement.generic)
+    analyzedImpls[baseGeneric] = analyzedImpl
     # Contracts compare at DEFINITION level: self-references become the
     # impl's self shape (`Array[Comparable]`, not the site-bound
     # `Array[u8]`) so the concretized defs land in the impl's own

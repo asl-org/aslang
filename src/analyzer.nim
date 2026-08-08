@@ -42,14 +42,6 @@ proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgu
   of adkUnion: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found union")
   of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found literal")
 
-proc extractUnionFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedUnionDef, string] =
-  let moduleDef = fileCtx.findModule(argType.module)
-  let dataDef = moduleDef.dataDef
-  case dataDef.kind:
-  of adkUnion: ok(dataDef.union)
-  of adkStruct: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found struct")
-  of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a union block but found literal")
-
 # ============================================================
 # ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
 #   UNIFICATION.
@@ -77,7 +69,11 @@ proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: Analyzed
     err(fmt"{loc} expected `{defType.name.asl}` but found `{valType.name.asl}`")
   else:
     var genericImplMap: GenericImplMap
-    for (defImpl, valImpl) in zip(defType.impls, valType.impls):
+    # Same module ⇒ both impl maps are keyed by the same require slots;
+    # walk the def slots and match each against the value's impl in the
+    # same slot.
+    for defGeneric, defImpl in defType.impls:
+      let valImpl = valType.impls[defGeneric]
       let valGenericImplMap = ? analyzeValueTypeAgainstDefType(module, defImpl, valImpl, loc)
       genericImplMap = ? genericImplMap.merge(valGenericImplMap)
     ok(genericImplMap)
@@ -109,14 +105,14 @@ proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnion
     let fieldDef = ? variant.findField(field.name)
     let analyzedFieldArgType = fieldDef.argType
     let concreteFieldArgType = analyzedFieldArgType.concrete(subjectImplMap)
-    bindings.add(newAnalyzedBinding(field.binding, concreteFieldArgType, subjectImplMap))
+    bindings.add(newAnalyzedBinding(field.binding, concreteFieldArgType))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
 proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, subjectImplMap: GenericImplMap): Result[AnalyzedCasePattern, string] =
   case pattern.kind:
   of rcpkInteger: err(fmt"{pattern.loc} integer literals are not allowed in union case pattern")
   of rcpkVariable:
-    ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType, subjectImplMap)))
+    ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType)))
   of rcpkUnion:
     let analyzedPattern = ? analyzeUnionCasePattern(pattern.variant, union, subjectImplMap)
     ok(newAnalyzedCasePattern(analyzedPattern))
@@ -128,7 +124,7 @@ proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgu
   of rcpkInteger:
     ok(newAnalyzedCasePattern(pattern.integer))
   of rcpkVariable:
-    ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType, default(GenericImplMap))))
+    ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType)))
 
 proc analyzeIntegerLiteral[T: SomeInteger](literal: Literal, expected: string): Result[void, string] =
   case literal.kind:
@@ -189,7 +185,7 @@ proc analyzeLiteral(literalDef: AnalyzedLiteralDef, literal: Literal): Result[vo
 proc analyzeVariable*(scope: AnalyzedFunctionContext, variable: Identifier): Result[AnalyzedVariable, string] =
   if variable in scope:
     let binding = scope[variable]
-    ok(newAnalyzedVariable(variable, binding.argType, binding.impls))
+    ok(newAnalyzedVariable(variable, binding.argType))
   else: err(fmt"{variable.loc} variable `{variable.asl}` does not exist in scope")
 
 proc analyzeGetter*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, getter: ResolvedGetter): Result[AnalyzedGetter, string] =

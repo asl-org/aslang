@@ -22,10 +22,24 @@ import ./genericargtype
 # imported types resolve through fileCtx and surface as ordinary
 # `aatkModule`/`aatkGeneric` values just like local types.
 type
+  # GenericImplMap lives here, in the same type block as the argument
+  # types it relates, because it IS a concrete parameterized type's
+  # impls: each of the module's require slots (a ResolvedGeneric) bound
+  # to the impl sitting in that position, kept in slot order. Every
+  # AnalyzedModuleArgumentType's `impls` IS this map — `Status[u8]` is
+  # {Any: u8} — so the positional impls are its values (in order) and a
+  # consumer (a match subject, say) reads the generic bindings straight
+  # off the type instead of re-deriving them from a file context. The
+  # `merge` / `concrete` operations live in the sibling
+  # genericimplmap.nim. Keyed by ResolvedGeneric, so a type's require
+  # slots must be distinct generics — the same invariant the resolver's
+  # genericTypeIndex already relies on.
+  GenericImplMap* = OrderedTable[ResolvedGeneric, AnalyzedArgumentType]
+
   AnalyzedModuleArgumentType* = ref object
     resolved: ResolvedModuleArgumentType
     module: ResolvedModule
-    impls: seq[AnalyzedArgumentType]
+    impls: GenericImplMap
 
   AnalyzedArgumentTypeKind* = enum
     aatkModule, aatkGeneric
@@ -42,11 +56,11 @@ proc hash*(m: AnalyzedArgumentType): Hash
 proc asl*(argType: AnalyzedArgumentType): string
 
 # Constructors + accessors + self for the cluster.
-proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule, impls: seq[AnalyzedArgumentType]): AnalyzedModuleArgumentType =
+proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule, impls: GenericImplMap): AnalyzedModuleArgumentType =
   AnalyzedModuleArgumentType(resolved: resolved, module: module, impls: impls)
 
 proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule): AnalyzedModuleArgumentType =
-  newAnalyzedModuleArgumentType(resolved, module, @[])
+  newAnalyzedModuleArgumentType(resolved, module, default(GenericImplMap))
 
 proc newAnalyzedModuleArgumentType*(module: ResolvedModule): AnalyzedModuleArgumentType =
   newAnalyzedModuleArgumentType(module.self, module)
@@ -59,12 +73,16 @@ proc resolved*(m: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = m.re
   ## split moved it out.
 proc loc*(m: AnalyzedModuleArgumentType): Location = m.resolved.loc
 proc module*(m: AnalyzedModuleArgumentType): ResolvedModule = m.module
-proc impls*(m: AnalyzedModuleArgumentType): seq[AnalyzedArgumentType] = m.impls
+proc impls*(m: AnalyzedModuleArgumentType): GenericImplMap = m.impls
 proc name*(m: AnalyzedModuleArgumentType): Identifier = m.module.name
 proc self*(argType: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = argType.module.self
 proc hash*(m: AnalyzedModuleArgumentType): Hash =
+  # The impl values in slot order, on top of the module. The keys (the
+  # module's require slots) are fixed by the module, already folded in
+  # via module.hash — so hashing the ordered values suffices, and the
+  # OrderedTable's stable iteration keeps it deterministic.
   var acc = m.module.hash
-  for impl in m.impls:
+  for impl in m.impls.values:
     acc = acc !& impl.hash
   return acc
 proc `==`*(a, b: AnalyzedModuleArgumentType): bool = a.hash == b.hash
@@ -73,7 +91,7 @@ proc asl*(argType: AnalyzedModuleArgumentType): string =
     fmt"{argType.module.name.asl}"
   else:
     var impls: seq[string]
-    for impl in argType.impls:
+    for impl in argType.impls.values:
       impls.add(impl.asl)
     let implChildren = impls.join(", ")
     fmt"{argType.module.name.asl}[{implChildren}]"
@@ -104,6 +122,12 @@ proc name*(argType: AnalyzedArgumentType): Identifier =
   case argType.kind:
   of aatkModule: argType.module.name
   of aatkGeneric: argType.generic.name
+
+proc impls*(argType: AnalyzedArgumentType): GenericImplMap =
+  # A bare generic names no slots — its impls map is empty.
+  case argType.kind:
+  of aatkModule: argType.module.impls
+  of aatkGeneric: default(GenericImplMap)
 
 proc loc*(argType: AnalyzedArgumentType): Location =
   case argType.kind:

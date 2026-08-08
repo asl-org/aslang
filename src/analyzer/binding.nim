@@ -1,8 +1,8 @@
-## AnalyzedBinding — the (name, argType, impls) triple produced when a
-## binding enters the function scope (a case pattern's variable, an
-## assignment's target). `impls` is the generic-impl map that
-## concretizes the binding's type on demand — carried so a variable
-## used later as a match subject can concretize a pulled variant field.
+## AnalyzedBinding — the (name, argType) pair produced when a binding
+## enters the function scope (a case pattern's variable, an
+## assignment's target). The generic bindings a later match on this
+## variable needs are intrinsic to its `argType` (every module argtype
+## carries its slot→impl map), so no separate map rides on the binding.
 ##
 ## Lives in its own file because it's referenced across the pattern
 ## cluster (union/case patterns) and the statement cluster (`arg`
@@ -13,13 +13,9 @@ import ./defanalyzer
 type AnalyzedBinding* = ref object
   name: Identifier
   argType: AnalyzedArgumentType
-  impls: GenericImplMap
 
-proc newAnalyzedBinding*(name: Identifier, argType: AnalyzedArgumentType, impls: GenericImplMap): AnalyzedBinding =
-  AnalyzedBinding(name: name, argType: argType, impls: impls)
+proc newAnalyzedBinding*(name: Identifier, argType: AnalyzedArgumentType): AnalyzedBinding =
+  AnalyzedBinding(name: name, argType: argType)
 
 proc name*(binding: AnalyzedBinding): Identifier = binding.name
 proc argType*(binding: AnalyzedBinding): AnalyzedArgumentType = binding.argType
-# The impl map inherited from whatever bound this variable — used to
-# concretize a variant field when the binding is a match subject.
-proc impls*(binding: AnalyzedBinding): GenericImplMap = binding.impls

@@ -1,9 +1,6 @@
-## GenericImplMap — ResolvedGeneric -> AnalyzedArgumentType. Threaded
-## through call-site and initializer analysis to accumulate the
-## concrete instantiation of every generic seen during argument-list
-## / kwarg walking. Keyed by the ResolvedGeneric — the def-side
-## argtypes already name their generic as a ResolvedGeneric, so both
-## insertion and `concrete`'s lookup are direct hashed accesses.
+## GenericImplMap operations. The type itself lives with the argument
+## types in ./argtype (it IS a module argtype's `impls` — the ordered
+## slot→impl map). This file owns the two operations over it:
 ##
 ## `merge` combines two maps and detects conflicts (same generic bound
 ## to two different concrete types) — the strict one-to-one guarantee.
@@ -16,8 +13,6 @@ import ./resolver
 
 import ./genericargtype
 import ./argtype
-
-type GenericImplMap* = Table[ResolvedGeneric, AnalyzedArgumentType]
 
 proc merge*(global: var GenericImplMap, local: GenericImplMap): Result[GenericImplMap, string] =
   # TODO(union-inference): eagerly collapse substitution chains.
@@ -48,10 +43,11 @@ proc concrete*(argType: AnalyzedArgumentType, implMap: GenericImplMap): Analyzed
   case argType.kind:
   of aatkModule:
     let moduleArgType = argType.module
-    var concreteImpls: seq[AnalyzedArgumentType]
-    for impl in moduleArgType.impls:
-      let concreteImpl = impl.concrete(implMap)
-      concreteImpls.add(concreteImpl)
+    # Rebuild the ordered slot→impl map, concretizing each impl and
+    # keeping the same slot keys and order.
+    var concreteImpls: GenericImplMap
+    for generic, impl in moduleArgType.impls:
+      concreteImpls[generic] = impl.concrete(implMap)
     let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
     return newAnalyzedArgumentType(concreteModuleArgType)
   of aatkGeneric:

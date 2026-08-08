@@ -16,17 +16,17 @@ import ./binding
 import ./statement
 import ./casepattern
 
-# Stores the whole binding (name, argType, impls) per variable, so a
-# variable used as a match subject carries the impl map that
-# concretizes a pulled variant field. Function args have no inferred
-# map (their declared type is what it is) → empty.
+# Stores the (name, argType) binding per variable. The generic
+# bindings a match on a variable needs are intrinsic to its argType
+# (every module argtype carries its slot→impl map) — a function arg's
+# `Status[u8]` already carries {Any: u8} — so nothing extra rides here.
 type AnalyzedFunctionContext* = Table[Identifier, AnalyzedBinding]
 
 proc newAnalyzedFunctionContext*(def: AnalyzedFunctionDef): AnalyzedFunctionContext =
   var funcCtx: AnalyzedFunctionContext
   for argDef in def.args:
     assert(argDef.name notin funcCtx, fmt"{argDef.loc}: [BUG] duplicate function argument names encountered")
-    funcCtx[argDef.name] = newAnalyzedBinding(argDef.name, argDef.argType, default(GenericImplMap))
+    funcCtx[argDef.name] = newAnalyzedBinding(argDef.name, argDef.argType)
   return funcCtx
 
 proc update*(funcCtx: var AnalyzedFunctionContext, statement: AnalyzedStatement): AnalyzedFunctionContext =
