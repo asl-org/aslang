@@ -36,9 +36,6 @@ export datadef
 import ./parser/getter
 export getter
 
-import ./parser/literalinit
-export literalinit
-
 import ./parser/patterns
 export patterns
 

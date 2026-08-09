@@ -7,7 +7,6 @@ import ./identifiers
 import ./literals
 import ./patterns
 import ./getter
-import ./literalinit
 import ./refs
 
 # ============================================================
