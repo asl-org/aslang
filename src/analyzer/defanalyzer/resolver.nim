@@ -17,9 +17,6 @@ export parser
 import ./resolver/indexing
 export indexing
 
-import ./resolver/literaldef
-export literaldef
-
 import ./resolver/patterns
 export patterns
 
@@ -53,15 +50,6 @@ import ./resolver/externfunc
 export externfunc
 
 # ---- data-block cluster ----
-import ./resolver/structdef
-export structdef
-
-import ./resolver/variantdef
-export variantdef
-
-import ./resolver/uniondef
-export uniondef
-
 import ./resolver/datadef
 export datadef
 
