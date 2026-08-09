@@ -15,7 +15,6 @@ import ./resolver
 import ./context
 import ./types
 import ./importdef
-import ./moduledef
 
 proc buildTypeIndex(types: seq[AnalyzedLocalType]): Table[ResolvedLocalType, AnalyzedLocalType] =
   var typeIndex: Table[ResolvedLocalType, AnalyzedLocalType]

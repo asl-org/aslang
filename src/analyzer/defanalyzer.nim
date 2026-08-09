@@ -21,12 +21,6 @@ export argtype
 import ./defanalyzer/datadef
 export datadef
 
-import ./defanalyzer/moduledef
-export moduledef
-
-import ./defanalyzer/generic
-export generic
-
 import ./defanalyzer/refs
 export refs
 
