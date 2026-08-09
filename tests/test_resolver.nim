@@ -392,7 +392,9 @@ public module M:
     check errorContains(r.error, "not present in scope")
 
   test "literal-backed type with type parameters is rejected":
-    let (r, dir) = resolveFiles([
+    # Impl-count validation moved to the def analyzer, so this surfaces
+    # at analyze time, not resolve time.
+    let (r, dir) = analyzeFiles([
       ("entry.asl", """
 import { u8 } from "./base.aslr"
 
@@ -957,7 +959,9 @@ public module Use:
     check r.isOk
 
   test "union arg type with too few impls is rejected":
-    let (r, dir) = resolveSingle(UnionParamsPrelude & """
+    # Impl-count validation moved to the def analyzer, so this surfaces
+    # at analyze time, not resolve time.
+    let (r, dir) = analyzeSingle(UnionParamsPrelude & """
 public module Use:
   struct:
     b: Box[Any]
@@ -996,7 +1000,9 @@ public module u8:
     check r.isOk
 
   test "private function does not satisfy a constraint from another module":
-    let (r, dir) = resolveSingle("""
+    # Constraint satisfaction moved to the def analyzer, so this surfaces
+    # at analyze time, not resolve time.
+    let (r, dir) = analyzeSingle("""
 public module i32:
   literal: "i32"
 
@@ -1019,7 +1025,8 @@ module M:
 """)
     cleanupDir(dir)
     check r.isErr
-    check errorContains(r.error, "does not implement function `compare` to support `Comparable`")
+    check errorContains(r.error, "does not implement")
+    check errorContains(r.error, "to support `Comparable`")
 
   test "cross-module call to a private function is rejected":
     let (r, dir) = resolveSingle("""

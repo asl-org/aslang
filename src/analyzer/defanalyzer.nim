@@ -82,7 +82,8 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
   let moduleEntry = fileCtx.findType(newLocalType(argType.module))
   let module = moduleEntry.localType.module
   let requires = module.dataDef.requires
-  assert(requires.len == argType.impls.len, "[BUG] - Resolver ensures impls match the module's require slots")
+  if requires.len != argType.impls.len:
+    return err(fmt"{argType.loc} type `{module.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
 
   # The impls ARE the slot→impl map, keyed by each require's contract
   # generic and kept in slot order (OrderedTable insertion order).

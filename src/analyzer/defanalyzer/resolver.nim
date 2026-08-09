@@ -98,32 +98,24 @@ proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: Ar
 # resolved.
 
 proc resolveModuleArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedModuleArgumentType, string] =
-  # The entry at argType.root is the single source of truth: the
-  # module, its data block, and the require-slot derivation all come
-  # from it. Require slots derive in the module's DEFINING scope. A
-  # local module derives here — this fileCtx IS its defining scope,
-  # and its resolved twin may not exist yet mid-pass (in-file
-  # cycles). An imported module reads the slots off its captured
-  # twin, already derived by the source file — the contract generic
-  # need not be in the importer's scope.
+  # The resolver only POPULATES the impl types here: it looks the module
+  # up and resolves each nested argument type in slot order. Impl count
+  # (against the module's require slots) and generic-constraint
+  # satisfaction are validated one phase later by the def analyzer's
+  # `analyzeDefModuleArgumentType`, which reads the require slots off the
+  # module's data block. Deferring keeps the resolver from having to
+  # derive require slots for a module whose resolved twin may not exist
+  # yet (in-file cycles) or hop into an imported module's defining scope.
   let entry = ? fileCtx.findType(argType.root)
   assert(entry.localType.kind == ltkModule, fmt"[BUG] - {argType.loc} argument type root `{argType.root.asl}` was dispatched here as a module")
   let argModule = entry.localType.module
   if argModule.data.isNone:
     return err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
-  let requires =
-    case entry.kind:
-    of tkLocal: ? fileCtx.inferGenerics(argModule.data.get)
-    of tkImported: entry.imported.resolvedType.module.dataDef.requires.mapIt(it.generic)
-  if argType.impls.len != requires.len:
-    err(fmt"{argType.loc} type `{argModule.name.asl}` expects {requires.len} impls but found {argType.impls.len}")
-  else:
-    var impls: seq[ResolvedArgumentType]
-    for (base, impl) in zip(requires, argType.impls):
-      let resolvedImpl = ? resolveArgumentType(fileCtx, typeCtx, impl)
-      ? typeCtx.satisfies(base, resolvedImpl)
-      impls.add(resolvedImpl)
-    ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
+  var impls: seq[ResolvedArgumentType]
+  for impl in argType.impls:
+    let resolvedImpl = ? resolveArgumentType(fileCtx, typeCtx, impl)
+    impls.add(resolvedImpl)
+  ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
 
 proc resolveGenericArgumentType(typeCtx: TypeContext, argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
   case typeCtx.kind:
