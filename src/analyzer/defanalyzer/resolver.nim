@@ -30,16 +30,7 @@ export functioncontext
 import ./resolver/argtype
 export argtype
 
-import ./resolver/moduleargtype
-export moduleargtype
-
-import ./resolver/genericargtype
-export genericargtype
-
 # ---- function-def cluster ----
-import ./resolver/argdef
-export argdef
-
 # ---- data-block cluster ----
 import ./resolver/datadef
 export datadef

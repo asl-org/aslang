@@ -154,3 +154,27 @@ proc concrete*(argType: ResolvedArgumentType, subst: ResolvedImplMap): ResolvedA
   case argType.kind:
   of ratkGeneric: argType.generic.concrete(subst)
   of ratkModule: argType.module.concrete(subst)
+
+# ============================================================
+# ResolvedArgumentDef (a named argument whose type is resolved)
+# ============================================================
+
+type ResolvedArgumentDef* = ref object
+  parsed: ArgumentDef
+  argType: ResolvedArgumentType
+
+proc newResolvedArgumentDef*(parsed: ArgumentDef,
+    argType: ResolvedArgumentType): ResolvedArgumentDef =
+  ResolvedArgumentDef(parsed: parsed, argType: argType)
+
+proc name*(d: ResolvedArgumentDef): Identifier = d.parsed.name
+proc argType*(d: ResolvedArgumentDef): ResolvedArgumentType = d.argType
+proc loc*(d: ResolvedArgumentDef): Location = d.argType.loc
+proc hash*(d: ResolvedArgumentDef): Hash = d.argType.hash
+proc `==`*(a, b: ResolvedArgumentDef): bool = a.hash == b.hash
+proc asl*(argDef: ResolvedArgumentDef): string =
+  fmt"{argDef.name.asl}: {argDef.argType.asl}"
+
+proc concrete*(argDef: ResolvedArgumentDef, subst: ResolvedImplMap): ResolvedArgumentDef =
+  let concreteArgType = argDef.argType.concrete(subst)
+  newResolvedArgumentDef(argDef.parsed, concreteArgType)

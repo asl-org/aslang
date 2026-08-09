@@ -7,7 +7,7 @@ import strformat, strutils, hashes
 
 import parser
 import argtype
-import argdef
+import argtype
 import statement
 
 # ---- ResolvedFunctionDef ----

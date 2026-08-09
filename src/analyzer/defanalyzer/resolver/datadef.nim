@@ -8,7 +8,7 @@ import results, sequtils, sets, strformat, tables
 import parser
 import indexing
 import argtype  # ResolvedGenericArgumentType lives here
-import argdef
+import argtype
 
 # ---- ResolvedLiteralDef ----
 # The discriminator tag a literal-backed module (u8..u64, i8..i64, f32,

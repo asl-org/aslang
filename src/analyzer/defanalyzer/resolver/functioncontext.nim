@@ -13,7 +13,7 @@
 import options, results, strformat, tables
 
 import parser
-import argdef
+import argtype
 import function
 import patterns
 import statement
