@@ -203,6 +203,86 @@ module N:
     cleanupDir(dir)
     check r.isOk
 
+  test "literal-backed type with type parameters is rejected":
+    # u8 is a literal-backed module with zero require slots, so giving it
+    # an impl (`u8[u8]`) fails the def analyzer's impl-count check.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8 } from "./base.aslr"
+
+module M:
+  struct:
+    a: u8[u8]
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "expects 0 impls but found")
+
+  test "union arg type with too few impls is rejected":
+    # Box's require slots are [Any, Sample] (two distinct generics across
+    # its variants); `Box[Any]` supplies only one impl. The def analyzer
+    # owns this impl-count check.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "u8"
+
+public module u32:
+  literal: "u32"
+
+public module u64:
+  literal: "u64"
+
+public generic Any:
+  func byte_size(items: u32): u64
+
+public generic Sample:
+  func foo(): u8
+
+public module Box:
+  union:
+    First { a: Any }
+    Second { a: Any, b: Sample }
+
+public module Use:
+  struct:
+    b: Box[Any]
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "expects")
+    check errorContains(r.error, "2")
+
+  test "private function does not satisfy a constraint from another module":
+    # u8's `compare` is private, so from Pair's site it does not satisfy
+    # Comparable. The def analyzer's deep constraint check owns this.
+    let (r, dir) = analyzeSingle("""
+public module i32:
+  literal: "i32"
+
+public generic Comparable:
+  func compare(a: Comparable, b: Comparable): i32
+
+public module u8:
+  literal: "u8"
+
+  func compare(a: u8, b: u8): i32
+    i32 0
+
+module Pair:
+  struct:
+    value: Comparable
+
+module M:
+  struct:
+    p: Pair[u8]
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "does not implement")
+    check errorContains(r.error, "to support `Comparable`")
+
 suite "analyzer — imports":
 
   test "module that imports + uses a generic + concrete impl works":

@@ -4,7 +4,7 @@
 ## carried so visibility and constraint satisfaction can be decided at
 ## the site that needs them).
 
-import results, sequtils, sets, strformat, hashes, tables
+import results, strformat, hashes, tables
 
 import parser
 import imports
@@ -103,45 +103,6 @@ proc findGeneric*(fileCtx: FileContext, name: Identifier): Result[Generic, strin
   of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
   of ltkGeneric: ok(initType.generic)
 
-proc requiredGenerics(fileCtx: FileContext, struct: StructDef): Result[seq[Generic], string] =
-  var requiredGenerics: seq[Generic]
-  for generic in struct.header.requires:
-    let foundGeneric = ? fileCtx.findGeneric(generic)
-    requiredGenerics.add(foundGeneric)
-  ok(requiredGenerics)
-
-proc inferGenerics(fileCtx: FileContext, fields: seq[ArgumentDef]): Result[seq[Generic], string] =
-  ## First-seen dedup (OrderedSet preserves insertion order): repeated
-  ## generic fields claim ONE require slot, matching the resolved side
-  ## (`ResolvedStructDef.generics`) and the union overload below —
-  ## use sites supply one impl per distinct generic, not per field.
-  var generics: OrderedSet[Generic]
-  for field in fields:
-    let definedFieldType = (? fileCtx.findType(field.argType.root)).localType
-    case definedFieldType.kind:
-    of ltkModule: discard
-    of ltkGeneric: generics.incl(definedFieldType.generic)
-  ok(generics.toSeq)
-
-proc inferGenerics(fileCtx: FileContext, struct: StructDef): Result[seq[Generic], string] =
-  let requiredGenerics = ? fileCtx.requiredGenerics(struct)
-  if requiredGenerics.len > 0: ok(requiredGenerics)
-  else: fileCtx.inferGenerics(struct.fields)
-
-proc inferGenerics(fileCtx: FileContext, union: UnionDef): Result[seq[Generic], string] =
-  var generics: OrderedSet[Generic]
-  for variant in union.variants:
-    let inferredGenerics = ? fileCtx.inferGenerics(variant.fields)
-    for generic in inferredGenerics:
-      generics.incl(generic)
-  ok(generics.toSeq)
-
-proc inferGenerics*(fileCtx: FileContext, dataDef: DataDef): Result[seq[Generic], string] =
-  case dataDef.kind:
-  of ddkLiteral: ok(newSeq[Generic]())
-  of ddkStruct: fileCtx.inferGenerics(dataDef.struct)
-  of ddkUnion: fileCtx.inferGenerics(dataDef.union)
-
 # ============================================================
 # TypeContext
 # ============================================================
@@ -185,25 +146,3 @@ proc access*(typeCtx: TypeContext, module: Module): FunctionAccess =
     faPublic
   of tckModule:
     if typeCtx.module == module: faAll else: faPublic
-
-proc satisfies*(typeCtx: TypeContext, base: Generic, argType: ResolvedGenericArgumentType): Result[void, string] =
-  for def in base.defs:
-    # NOTE: Generic functions are always public so we don't need access parameter
-    let maybeFuncDefs = argType.generic.findFunctionDefs(def.name, def.arity)
-    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
-  ok()
-
-proc satisfies*(typeCtx: TypeContext, base: Generic, impl: ResolvedModuleArgumentType): Result[void, string] =
-  ## A private function only counts as implementing `base` when the
-  ## lookup context is the impl module itself (`faAll`) — everywhere
-  ## else the constraint demands a public function.
-  let access = typeCtx.access(impl.module)
-  for def in base.defs:
-    let maybeFuncDefs = impl.module.findFunctionDefs(def.name, def.arity, access)
-    if maybeFuncDefs.isErr: return err(fmt"{impl.loc} module `{impl.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
-  ok()
-
-proc satisfies*(typeCtx: TypeContext, base: Generic, impl: ResolvedArgumentType): Result[void, string] =
-  case impl.kind:
-  of ratkModule: typeCtx.satisfies(base, impl.module)
-  of ratkGeneric: typeCtx.satisfies(base, impl.generic)

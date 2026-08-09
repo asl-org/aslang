@@ -391,23 +391,6 @@ public module M:
     check errorContains(r.error, "missing")
     check errorContains(r.error, "not present in scope")
 
-  test "literal-backed type with type parameters is rejected":
-    # Impl-count validation moved to the def analyzer, so this surfaces
-    # at analyze time, not resolve time.
-    let (r, dir) = analyzeFiles([
-      ("entry.asl", """
-import { u8 } from "./base.aslr"
-
-module M:
-  struct:
-    a: u8[u8]
-"""),
-      ("base.aslr", Base)
-    ])
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "expects 0 impls but found")
-
   test "calling a non-existent function on a module is rejected":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
@@ -958,19 +941,6 @@ public module Use:
     cleanupDir(dir)
     check r.isOk
 
-  test "union arg type with too few impls is rejected":
-    # Impl-count validation moved to the def analyzer, so this surfaces
-    # at analyze time, not resolve time.
-    let (r, dir) = analyzeSingle(UnionParamsPrelude & """
-public module Use:
-  struct:
-    b: Box[Any]
-""")
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "expects")
-    check errorContains(r.error, "2")
-
 suite "resolver — function visibility":
 
   test "private function satisfies a constraint inside its own module":
@@ -998,35 +968,6 @@ public module u8:
 """)
     cleanupDir(dir)
     check r.isOk
-
-  test "private function does not satisfy a constraint from another module":
-    # Constraint satisfaction moved to the def analyzer, so this surfaces
-    # at analyze time, not resolve time.
-    let (r, dir) = analyzeSingle("""
-public module i32:
-  literal: "i32"
-
-public generic Comparable:
-  func compare(a: Comparable, b: Comparable): i32
-
-public module u8:
-  literal: "u8"
-
-  func compare(a: u8, b: u8): i32
-    i32 0
-
-module Pair:
-  struct:
-    value: Comparable
-
-module M:
-  struct:
-    p: Pair[u8]
-""")
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "does not implement")
-    check errorContains(r.error, "to support `Comparable`")
 
   test "cross-module call to a private function is rejected":
     let (r, dir) = resolveSingle("""
