@@ -6,7 +6,6 @@ import ./error
 import ./identifiers
 import ./function
 import ./imports
-import ./modules
 import ./types
 
 # ============================================================

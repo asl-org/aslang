@@ -39,12 +39,6 @@ export statement
 import ./parser/function
 export function
 
-import ./parser/generics
-export generics
-
-import ./parser/modules
-export modules
-
 import ./parser/types
 export types
 
