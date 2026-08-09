@@ -1,11 +1,22 @@
-## Phase-B `AnalyzedImport` — one `import` statement's phase-A def
-## lifted to its body-level form: each imported type carries the
-## source file's AnalyzedLocalType. Produced by `analyzeImport` on
-## the body barrel and consumed by `newAnalyzedFileContext` when
-## building the per-file AnalyzedFileContext.
+## Phase-B import cluster — `AnalyzedImportedType` (an imported name
+## lifted to its body-level AnalyzedLocalType) and `AnalyzedImport` (one
+## `import` statement's imported types). Produced by `analyzeImport` on
+## the body barrel and consumed by `newAnalyzedFileContext`.
 
 import ./defanalyzer
-import importedtype
+
+# ---- AnalyzedImportedType ----
+
+type AnalyzedImportedType* = ref object
+  def: AnalyzedDefImportedType
+  typ: AnalyzedLocalType
+
+proc newAnalyzedImportedType*(def: AnalyzedDefImportedType, typ: AnalyzedLocalType): AnalyzedImportedType =
+  AnalyzedImportedType(def: def, typ: typ)
+
+proc typ*(impType: AnalyzedImportedType): AnalyzedLocalType = impType.typ
+
+# ---- AnalyzedImport ----
 
 type AnalyzedImport* = ref object
   def: AnalyzedDefImport

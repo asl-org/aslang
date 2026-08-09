@@ -14,7 +14,6 @@
 import strformat, tables
 
 import ./defanalyzer
-import ./importedtype
 import ./imports
 
 type AnalyzedFileContext* = Table[ResolvedLocalType, AnalyzedLocalType]
