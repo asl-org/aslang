@@ -33,14 +33,8 @@ export function
 import ./defanalyzer/types
 export types
 
-import ./defanalyzer/filedef
-export filedef
-
-import ./defanalyzer/appdef
-export appdef
-
-import ./defanalyzer/appcontext
-export appcontext
+import ./defanalyzer/app
+export app
 
 import ./defanalyzer/importdef
 export importdef
