@@ -9,6 +9,7 @@ import results, sequtils, sets, strformat, hashes, tables
 import parser
 import imports
 import argtype
+import types
 
 # ============================================================
 # FileContext
@@ -56,27 +57,38 @@ proc loc*(t: Type): Location = t.localType.loc
 proc hash*(t: Type): Hash = t.localType.hash
 proc `==`*(a, b: Type): bool = a.localType == b.localType
 
-type FileContext* = Table[Identifier, Type]
+type FileContext* = ref object
+  parsed: parser.File
+  imports: seq[ResolvedImport]
+  localTypes: seq[ResolvedLocalType]
+  typeIndex: Table[Identifier, Type]
 
-proc insert(fileCtx: var FileContext, name: Identifier, typ: Type): Result[FileContext, string] =
-  if name in fileCtx:
-    let loc = fileCtx[name].loc
+proc insert(fileCtx: FileContext, name: Identifier, typ: Type): Result[FileContext, string] =
+  if name in fileCtx.typeIndex:
+    let loc = fileCtx.typeIndex[name].loc
     err(fmt"{name.loc} duplicate type declaration encountered, see previous declaration at {loc}")
   else:
-    fileCtx[name] = typ
+    fileCtx.typeIndex[name] = typ
     ok(fileCtx)
 
-proc newFileContext*(imports: seq[ResolvedImport], types: seq[LocalType]): Result[FileContext, string] =
-  var fileCtx: FileContext
-  for imp in imports:
-    for impType in imp.importedTypes:
-      fileCtx = ? fileCtx.insert(impType.binding, newType(impType))
-  for typ in types:
+proc newFileContext*(parsed: parser.File): Result[FileContext, string] =
+  var fileCtx = FileContext(parsed: parsed)
+  for typ in parsed.types:
     fileCtx = ? fileCtx.insert(typ.name, newType(typ))
   ok(fileCtx)
 
+proc add*(fileCtx: FileContext, imp: ResolvedImport): Result[FileContext, string] =
+  fileCtx.imports.add(imp)
+  for impType in imp.importedTypes:
+    discard ? fileCtx.insert(impType.binding, newType(impType))
+  ok(fileCtx)
+
+proc add*(fileCtx: FileContext, localType: ResolvedLocalType): Result[FileContext, string] =
+  fileCtx.localTypes.add(localType)
+  ok(fileCtx)
+
 proc findType*(fileCtx: FileContext, name: Identifier): Result[Type, string] =
-  if name in fileCtx: ok(fileCtx[name])
+  if name in fileCtx.typeIndex: ok(fileCtx.typeIndex[name])
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findModule*(fileCtx: FileContext, name: Identifier): Result[Module, string] =

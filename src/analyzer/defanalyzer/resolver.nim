@@ -489,16 +489,14 @@ proc resolveImport(appCtx: ResolvedApp, imp: Import): Result[ResolvedImport, str
     of ikShorthand: ? resolveShorthandImport(impFile, resolvedImpFile)
   ok(newResolvedImport(imp, impFile, resolvedImpTypes))
 
-proc resolveImports(appCtx: ResolvedApp, imports: seq[Import]): Result[seq[ResolvedImport], string] =
+proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
+  var fileCtx = ? newFileContext(file)
+
   var resolvedImports: seq[ResolvedImport]
-  for imp in imports:
+  for imp in file.imports:
     let resolvedImport = ? resolveImport(appCtx, imp)
     resolvedImports.add(resolvedImport)
-  ok(resolvedImports)
-
-proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
-  let resolvedImports = ? resolveImports(appCtx, file.imports)
-  var fileCtx = ? newFileContext(resolvedImports, file.types)
+    fileCtx = ? fileCtx.add(resolvedImport)
 
   var resolvedTypes: seq[ResolvedLocalType]
   for typ in file.types:
@@ -508,8 +506,8 @@ proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, s
   ok(newResolvedFile(file, resolvedImports, resolvedTypes))
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
-  let appCtx = newResolvedApp(app)
+  let resolvedApp = newResolvedApp(app)
   for file in app.files:
-    let resolvedFile = ? resolveFile(appCtx, file)
-    appCtx.add(resolvedFile)
-  ok(appCtx)
+    let resolvedFile = ? resolveFile(resolvedApp, file)
+    resolvedApp.add(resolvedFile)
+  ok(resolvedApp)
