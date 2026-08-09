@@ -33,12 +33,6 @@ export refs
 import ./parser/datadef
 export datadef
 
-import ./parser/getter
-export getter
-
-import ./parser/patterns
-export patterns
-
 import ./parser/statement
 export statement
 
