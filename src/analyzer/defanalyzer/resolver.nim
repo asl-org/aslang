@@ -17,9 +17,6 @@ export parser
 import ./resolver/indexing
 export indexing
 
-import ./resolver/patterns
-export patterns
-
 # ---- argument-type cluster (mutually-recursive tagged union) ----
 import ./resolver/context
 export context
@@ -36,12 +33,6 @@ import ./resolver/datadef
 export datadef
 
 # ---- body cluster: leaf nodes ----
-import ./resolver/getter
-export getter
-
-import ./resolver/literalinit
-export literalinit
-
 import ./resolver/refs
 export refs
 

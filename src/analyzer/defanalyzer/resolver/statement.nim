@@ -17,10 +17,77 @@ import results, strformat, options, tables
 
 import parser
 import argtype
-import patterns  # ResolvedCasePattern
-import getter
-import literalinit
 import refs
+
+# ---- ResolvedGetter (dotted access `source.property`) ----
+
+type ResolvedGetter* = ref object
+  parsed: Getter
+
+proc newResolvedGetter*(parsed: Getter): ResolvedGetter =
+  ResolvedGetter(parsed: parsed)
+
+proc source*(getter: ResolvedGetter): Identifier = getter.parsed.source
+proc property*(getter: ResolvedGetter): Identifier = getter.parsed.property
+proc loc*(getter: ResolvedGetter): Location = getter.parsed.loc
+
+# ---- ResolvedCasePattern (integer | variable | union match) ----
+
+type
+  ResolvedCasePatternKind* = enum
+    rcpkInteger, rcpkVariable, rcpkUnion
+  ResolvedCasePattern* = ref object
+    case kind: ResolvedCasePatternKind
+    of rcpkInteger: integer: IntegerLiteral
+    of rcpkVariable: variable: Identifier
+    of rcpkUnion: variant: UnionPattern
+
+proc newResolvedCasePattern*(integer: IntegerLiteral): ResolvedCasePattern =
+  ResolvedCasePattern(kind: rcpkInteger, integer: integer)
+
+proc newResolvedCasePattern*(variable: Identifier): ResolvedCasePattern =
+  ResolvedCasePattern(kind: rcpkVariable, variable: variable)
+
+proc newResolvedCasePattern*(variant: UnionPattern): ResolvedCasePattern =
+  ResolvedCasePattern(kind: rcpkUnion, variant: variant)
+
+proc kind*(pattern: ResolvedCasePattern): ResolvedCasePatternKind = pattern.kind
+proc integer*(pattern: ResolvedCasePattern): IntegerLiteral =
+  assert pattern.kind == rcpkInteger,
+    fmt"ResolvedCasePattern.integer accessed but kind is {pattern.kind}"
+  pattern.integer
+proc variable*(pattern: ResolvedCasePattern): Identifier =
+  assert pattern.kind == rcpkVariable,
+    fmt"ResolvedCasePattern.variable accessed but kind is {pattern.kind}"
+  pattern.variable
+proc variant*(pattern: ResolvedCasePattern): UnionPattern =
+  assert pattern.kind == rcpkUnion,
+    fmt"ResolvedCasePattern.variant accessed but kind is {pattern.kind}"
+  pattern.variant
+proc loc*(pattern: ResolvedCasePattern): Location =
+  case pattern.kind:
+  of rcpkInteger: pattern.integer.loc
+  of rcpkVariable: pattern.variable.loc
+  of rcpkUnion: pattern.variant.loc
+proc bindings*(pattern: ResolvedCasePattern): seq[Identifier] =
+  case pattern.kind:
+  of rcpkInteger: @[]
+  of rcpkVariable: @[pattern.variable]
+  of rcpkUnion: pattern.variant.bindings
+
+# ---- ResolvedLiteralInitializer (`u32 42` — primitive literal) ----
+
+type ResolvedLiteralInitializer* = ref object
+  parsed: LiteralInitializer
+  argType: ResolvedModuleArgumentType
+  def: LiteralDef
+
+proc newResolvedLiteralInitializer*(parsed: LiteralInitializer, argType: ResolvedModuleArgumentType, def: LiteralDef): ResolvedLiteralInitializer =
+  ResolvedLiteralInitializer(parsed: parsed, argType: argType, def: def)
+
+proc loc*(init: ResolvedLiteralInitializer): Location = init.parsed.loc
+proc literal*(init: ResolvedLiteralInitializer): Literal = init.parsed.value
+proc argType*(init: ResolvedLiteralInitializer): ResolvedModuleArgumentType = init.argType
 
 type ResolvedLiteral* = ref object
   parsed: Literal
