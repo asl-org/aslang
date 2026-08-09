@@ -20,8 +20,6 @@ import ./analyzer/variable
 import ./analyzer/literalinit
 import ./analyzer/getter
 import ./analyzer/statement
-import ./analyzer/userfunc
-import ./analyzer/externfunc
 import ./analyzer/function
 import ./analyzer/module
 import ./analyzer/filecontext

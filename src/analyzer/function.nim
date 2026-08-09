@@ -1,11 +1,34 @@
-## AnalyzedFunction — tagged union over user/extern functions. Lives
-## with its Kind enum in one file: enum + variant type + constructors +
-## accessors are all one cohesive unit.
+## Analyzed function cluster — AnalyzedExternFunction (body-less, just
+## the def) + AnalyzedUserFunction (def + analyzed statements) + the
+## AnalyzedFunction tagged union over them.
 
 import strformat
 
-import userfunc
-import externfunc
+import ./defanalyzer
+import statement
+
+# ---- AnalyzedExternFunction ----
+# An extern function has no body, so the analyzed form is just the
+# resolver back-ref + the function def.
+
+type AnalyzedExternFunction* = ref object
+  def: AnalyzedDefExternFunction
+
+proc newAnalyzedExternFunction*(def: AnalyzedDefExternFunction): AnalyzedExternFunction =
+  AnalyzedExternFunction(def: def)
+
+# ---- AnalyzedUserFunction ----
+# A user-defined function whose body has been analyzed: the resolver's
+# back-ref + the arg/return def + the analyzed statement list.
+
+type AnalyzedUserFunction* = ref object
+  def: AnalyzedDefUserFunction
+  statements: seq[AnalyzedStatement]
+
+proc newAnalyzedUserFunction*(def: AnalyzedDefUserFunction, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
+  AnalyzedUserFunction(def: def, statements: statements)
+
+# ---- AnalyzedFunction ----
 
 type
   AnalyzedFunctionKind* = enum
