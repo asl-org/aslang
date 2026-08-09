@@ -20,8 +20,7 @@ import argtype
 import patterns  # ResolvedCasePattern
 import getter
 import literalinit
-import structref
-import unionref
+import refs
 
 type ResolvedLiteral* = ref object
   parsed: Literal
