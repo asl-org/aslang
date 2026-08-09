@@ -12,9 +12,6 @@ export defanalyzer
 import ./analyzer/funccontext
 import ./analyzer/literalparse
 import ./analyzer/pattern
-import ./analyzer/variable
-import ./analyzer/literalinit
-import ./analyzer/getter
 import ./analyzer/statement
 import ./analyzer/function
 import ./analyzer/module

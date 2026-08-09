@@ -18,9 +18,43 @@ import strformat, options
 
 import ./defanalyzer
 import pattern
-import variable
-import literalinit
-import getter
+
+# ---- AnalyzedVariable (identifier bound to an argtype via scope) ----
+
+type AnalyzedVariable* = ref object
+  name: Identifier
+  argType: AnalyzedArgumentType
+
+proc newAnalyzedVariable*(name: Identifier, argType: AnalyzedArgumentType): AnalyzedVariable =
+  AnalyzedVariable(name: name, argType: argType)
+
+proc loc*(variable: AnalyzedVariable): Location = variable.name.loc
+proc argType*(variable: AnalyzedVariable): AnalyzedArgumentType = variable.argType
+
+# ---- AnalyzedGetter (resolved struct field access) ----
+
+type AnalyzedGetter* = ref object
+  resolved: ResolvedGetter
+  source: AnalyzedArgumentType
+  property: AnalyzedArgumentDef
+
+proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, property: AnalyzedArgumentDef): AnalyzedGetter =
+  AnalyzedGetter(resolved: resolved, source: source, property: property)
+
+proc loc*(getter: AnalyzedGetter): Location = getter.resolved.loc
+proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.property.argType
+
+# ---- AnalyzedLiteralInitializer (a literal + the argtype it adopts) ----
+
+type AnalyzedLiteralInitializer* = ref object
+  literal: Literal
+  argType: AnalyzedModuleArgumentType
+
+proc newAnalyzedLiteralInitializer*(literal: Literal, argType: AnalyzedModuleArgumentType): AnalyzedLiteralInitializer =
+  AnalyzedLiteralInitializer(literal: literal, argType: argType)
+
+proc loc*(init: AnalyzedLiteralInitializer): Location = init.literal.loc
+proc argType*(init: AnalyzedLiteralInitializer): AnalyzedModuleArgumentType = init.argType
 
 # Mutually-recursive body-level cluster — every type that cycles
 # back to AnalyzedExpression / AnalyzedStatement must live here.
