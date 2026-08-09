@@ -12,12 +12,11 @@
 
 import options, results, strformat, tables
 
-import ./parser
-
-import ./argdef
-import ./function
-import ./patterns
-import ./statement
+import parser
+import argdef
+import function
+import patterns
+import statement
 
 type FunctionContext* = Table[Identifier, Location]
 

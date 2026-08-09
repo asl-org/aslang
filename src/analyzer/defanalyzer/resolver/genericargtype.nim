@@ -5,5 +5,5 @@
 ##
 ## See ./argtype for the actual declaration and accessors.
 
-import ./argtype
+import argtype
 export argtype

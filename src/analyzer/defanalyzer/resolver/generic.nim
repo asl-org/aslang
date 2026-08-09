@@ -5,10 +5,10 @@
 
 import results, strformat, tables, hashes, sequtils
 
-import ./parser
+import parser
 import argtype
 import function
-import module  # buildFuncNameArityIndex
+import module
 
 type ResolvedGeneric* = ref object
   parsed: Generic

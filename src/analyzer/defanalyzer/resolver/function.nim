@@ -5,7 +5,7 @@
 
 import strformat, strutils, hashes
 
-import ./parser
+import parser
 import argtype
 import argdef
 import statement

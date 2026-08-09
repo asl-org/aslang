@@ -4,7 +4,7 @@
 
 import hashes, strformat
 
-import ./parser
+import parser
 import module
 import generic
 

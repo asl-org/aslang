@@ -2,8 +2,7 @@
 
 import sequtils, strformat, tables
 
-import ./parser
-import filecontext
+import parser
 import module
 import generic
 import types
@@ -15,14 +14,13 @@ type ResolvedFile* = ref object
   imports: seq[ResolvedImport]
   types: seq[ResolvedLocalType]
   typeIndex: Table[parser.LocalType, int]
-  scope: FileContext
 
-proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedLocalType], scope: FileContext): ResolvedFile =
+proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedLocalType]): ResolvedFile =
   var typeIndex: Table[parser.LocalType, int]
   for id, typ in types:
     assert(typ.parsed notin typeIndex, fmt"[BUG] - {typ.loc} duplicate local type `{typ.name.asl}` in the resolved file")
     typeIndex[typ.parsed] = id
-  ResolvedFile(parsed: parsed, imports: imports, types: types, typeIndex: typeIndex, scope: scope)
+  ResolvedFile(parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
 
 proc path*(file: ResolvedFile): string = file.parsed.path
 proc parsed*(file: ResolvedFile): parser.File = file.parsed

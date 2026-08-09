@@ -4,7 +4,7 @@
 
 import results, strformat, options, tables, hashes, sequtils
 
-import ./parser
+import parser
 import argtype
 import datadef
 import function

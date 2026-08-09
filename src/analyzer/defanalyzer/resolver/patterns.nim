@@ -5,7 +5,7 @@
 
 import strformat
 
-import ./parser
+import parser
 
 type
   ResolvedCasePatternKind* = enum

@@ -149,7 +149,7 @@ proc resolveModuleArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argTy
     var impls: seq[ResolvedArgumentType]
     for (base, impl) in zip(requires, argType.impls):
       let resolvedImpl = ? resolveArgumentType(fileCtx, typeCtx, impl)
-      ? resolvedImpl.satisfies(base, typeCtx)
+      ? typeCtx.satisfies(base, resolvedImpl)
       impls.add(resolvedImpl)
     ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
 
@@ -533,7 +533,7 @@ proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, s
     let resolvedType = ? resolveType(fileCtx, typ)
     resolvedTypes.add(resolvedType)
 
-  ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileCtx))
+  ok(newResolvedFile(file, resolvedImports, resolvedTypes))
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   let appCtx = newResolvedApp(app)

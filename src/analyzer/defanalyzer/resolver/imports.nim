@@ -7,7 +7,7 @@
 ## bundles the target file with the seq of resolved imported names.
 ## Both are used by the file scope built in decls.nim.
 
-import ./parser
+import parser
 import types
 
 # ResolvedImportedType

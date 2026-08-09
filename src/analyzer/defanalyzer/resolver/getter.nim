@@ -2,7 +2,7 @@
 ## node in the body cluster: nothing above it in the recursion cycle,
 ## so it lives on its own.
 
-import ./parser
+import parser
 
 type ResolvedGetter* = ref object
   parsed: Getter

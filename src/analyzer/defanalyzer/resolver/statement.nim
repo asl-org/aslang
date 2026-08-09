@@ -15,7 +15,7 @@
 
 import results, strformat, options, tables
 
-import ./parser
+import parser
 import argtype
 import patterns  # ResolvedCasePattern
 import getter

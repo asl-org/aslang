@@ -8,8 +8,8 @@
 
 import results, sequtils, sets, strformat, hashes, tables
 
-import ./parser
-import ./imports
+import parser
+import imports
 
 type
   TypeKind* = enum

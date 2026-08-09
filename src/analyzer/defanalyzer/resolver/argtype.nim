@@ -8,10 +8,9 @@
 ## `genericargtype.nim` files re-export this module so downstream
 ## callers that only need one variant can import it by name.
 
-import results, strformat, strutils, hashes, tables
+import strformat, strutils, hashes, tables
 
-import ./parser
-import ./typecontext
+import parser
 
 type
   ResolvedGenericArgumentType* = ref object
@@ -60,12 +59,6 @@ proc hash*(argType: ResolvedGenericArgumentType): Hash = argType.generic.hash
 proc `==`*(a, b: ResolvedGenericArgumentType): bool = a.hash == b.hash
 proc asl*(argType: ResolvedGenericArgumentType): string = argType.generic.name.asl
 
-proc satisfies*(argType: ResolvedGenericArgumentType, base: Generic): Result[void, string] =
-  for def in base.defs:
-    let maybeFuncDefs = argType.generic.findFunctionDefs(def.name, def.arity)
-    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} generic `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
-  ok()
-
 proc concrete*(argType: ResolvedGenericArgumentType, subst: ResolvedImplMap): ResolvedArgumentType =
   subst.getOrDefault(argType.generic, newResolvedArgumentType(argType))
 
@@ -103,16 +96,6 @@ proc asl*(argType: ResolvedModuleArgumentType): string =
       impls.add(impl.asl)
     let implsJoined = impls.join(", ")
     fmt"{argType.parsed.name.asl}[{implsJoined}]"
-
-proc satisfies*(argType: ResolvedModuleArgumentType, base: Generic, typeCtx: TypeContext): Result[void, string] =
-  ## A private function only counts as implementing `base` when the
-  ## lookup context is the impl module itself (`faAll`) — everywhere
-  ## else the constraint demands a public function.
-  let access = typeCtx.access(argType.module)
-  for def in base.defs:
-    let maybeFuncDefs = argType.module.findFunctionDefs(def.name, def.arity, access)
-    if maybeFuncDefs.isErr: return err(fmt"{argType.loc} module `{argType.name.asl}` does not implement function `{def.name.asl}` to support `{base.name.asl}`")
-  ok()
 
 proc concrete*(argType: ResolvedModuleArgumentType, subst: ResolvedImplMap): ResolvedArgumentType =
   var impls: seq[ResolvedArgumentType]
@@ -171,8 +154,3 @@ proc concrete*(argType: ResolvedArgumentType, subst: ResolvedImplMap): ResolvedA
   case argType.kind:
   of ratkGeneric: argType.generic.concrete(subst)
   of ratkModule: argType.module.concrete(subst)
-
-proc satisfies*(argType: ResolvedArgumentType, base: Generic, typeCtx: TypeContext): Result[void, string] =
-  case argType.kind:
-  of ratkModule: argType.module.satisfies(base, typeCtx)
-  of ratkGeneric: argType.generic.satisfies(base)

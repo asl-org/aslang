@@ -1,7 +1,7 @@
 ## ResolvedLiteralInitializer — a primitive literal typed against a
 ## resolved argument type (e.g. `u32 42`). Leaf node.
 
-import ./parser
+import parser
 import argtype
 
 type ResolvedLiteralInitializer* = ref object

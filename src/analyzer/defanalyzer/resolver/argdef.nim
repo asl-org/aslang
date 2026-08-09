@@ -3,7 +3,7 @@
 
 import strformat, hashes
 
-import ./parser
+import parser
 import argtype
 
 type ResolvedArgumentDef* = ref object

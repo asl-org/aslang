@@ -7,7 +7,7 @@
 
 import results, strformat, tables
 
-import ./parser
+import parser
 import files
 
 type ResolvedApp* = ref object
