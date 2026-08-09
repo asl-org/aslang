@@ -32,18 +32,6 @@ export argdef
 import ./defanalyzer/funcdef
 export funcdef
 
-import ./defanalyzer/literaldef
-export literaldef
-
-import ./defanalyzer/structdef
-export structdef
-
-import ./defanalyzer/variantdef
-export variantdef
-
-import ./defanalyzer/uniondef
-export uniondef
-
 import ./defanalyzer/datadef
 export datadef
 
