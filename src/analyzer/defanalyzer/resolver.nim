@@ -21,11 +21,8 @@ import ./resolver/patterns
 export patterns
 
 # ---- argument-type cluster (mutually-recursive tagged union) ----
-import ./resolver/typecontext
-export typecontext
-
-import ./resolver/filecontext
-export filecontext
+import ./resolver/context
+export context
 
 import ./resolver/functioncontext
 export functioncontext
