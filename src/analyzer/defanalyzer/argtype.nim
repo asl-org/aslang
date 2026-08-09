@@ -1,19 +1,18 @@
-## Analyzed argument-type cluster — `AnalyzedModuleArgumentType` and
-## the outer `AnalyzedArgumentType` tagged union share this file
-## because Nim requires mutually-referencing `ref object` types in one
-## `type` block (`impls: seq[AnalyzedArgumentType]` on the module
-## variant references the outer union). The generic variant has no
-## back-reference and lives in ./genericargtype. The analyzeDef*
-## procs (both context overloads) live on the defanalyzer barrel.
+## Analyzed argument-type cluster — the whole family in one file:
+## AnalyzedGenericArgumentType, AnalyzedModuleArgumentType, and the
+## outer AnalyzedArgumentType tagged union (they share a `type` block
+## since the module variant's impl map references the union), plus the
+## AnalyzedImplMap type and its merge/concrete operations and
+## AnalyzedArgumentDef. The analyzeDef* procs live on the defanalyzer
+## barrel.
 ##
 ## The resolver already validated arity + generic-constraint
 ## satisfaction — each ResolvedModuleArgumentType's `impls` seq is a
 ## provably valid value by the time the analyzer sees it.
 
-import strformat, strutils, tables, hashes
+import results, strformat, strutils, tables, hashes
 
 import ./resolver
-import ./genericargtype
 
 # Mutually-recursive cluster: AnalyzedModuleArgumentType's impls
 # field references AnalyzedArgumentType, which case-dispatches back
@@ -22,6 +21,13 @@ import ./genericargtype
 # imported types resolve through fileCtx and surface as ordinary
 # `aatkModule`/`aatkGeneric` values just like local types.
 type
+  # AnalyzedGenericArgumentType — a ResolvedGeneric + the use-site loc.
+  # No back-reference into the union, but kept in the same type block
+  # for cohesion.
+  AnalyzedGenericArgumentType* = ref object
+    resolved: ResolvedGeneric
+    loc: Location
+
   # AnalyzedImplMap lives here, in the same type block as the argument
   # types it relates, because it IS a concrete parameterized type's
   # impls: each of the module's require slots (a ResolvedGeneric) bound
@@ -54,6 +60,20 @@ type
 # analyzeModuleArgumentType.
 proc hash*(m: AnalyzedArgumentType): Hash
 proc asl*(argType: AnalyzedArgumentType): string
+
+# ---- AnalyzedGenericArgumentType accessors ----
+proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): AnalyzedGenericArgumentType =
+  AnalyzedGenericArgumentType(resolved: resolved, loc: loc)
+
+proc generic*(g: AnalyzedGenericArgumentType): ResolvedGeneric = g.resolved
+proc loc*(g: AnalyzedGenericArgumentType): Location = g.loc
+proc name*(g: AnalyzedGenericArgumentType): Identifier = g.resolved.name
+proc hash*(g: AnalyzedGenericArgumentType): Hash = g.resolved.hash
+proc `==`*(a, b: AnalyzedGenericArgumentType): bool = a.hash == b.hash
+proc self*(argType: AnalyzedGenericArgumentType): ResolvedGenericArgumentType =
+  newResolvedGenericArgumentType(argType.resolved.parsed, newLocation())
+proc asl*(argType: AnalyzedGenericArgumentType): string =
+  argType.resolved.name.asl
 
 # Constructors + accessors + self for the cluster.
 proc newAnalyzedModuleArgumentType*(resolved: ResolvedModuleArgumentType, module: ResolvedModule, impls: AnalyzedImplMap): AnalyzedModuleArgumentType =
@@ -161,3 +181,65 @@ proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 # / AnalyzedImplMap merge instead. Pure type-identity uses
 # (deduplication, table keying) stay as-is.
 
+
+# ============================================================
+# AnalyzedImplMap operations (merge / concrete)
+# ============================================================
+
+proc merge*(global: var AnalyzedImplMap, local: AnalyzedImplMap): Result[AnalyzedImplMap, string] =
+  # TODO(union-inference): eagerly collapse substitution chains.
+  # When inserting `K → u8`, also rewrite any existing values in the
+  # map that mention K as a free generic (e.g. an earlier
+  # `Sample → K` becomes `Sample → u8`). This keeps `concrete()` a
+  # single-pass lookup and prevents free generics from getting stuck
+  # half-resolved when one use site binds another generic that they
+  # depend on. Also: the `!=` conflict check on the next line needs
+  # to become a unification check once free generics can appear on
+  # either side (a bound u8 vs a free K should not "conflict" — K
+  # should unify to u8).
+  for generic, impl in local:
+    if generic in global and global[generic] != impl:
+      return err(fmt"{impl.loc} generic `{generic.name.asl}` already bound to `{global[generic].asl}` (at {global[generic].loc}) but here resolves to `{impl.asl}` — one generic binds to one concrete type per construction; declare a second generic if you need independent types")
+    else:
+      global[generic] = impl
+  ok(global)
+
+proc concrete*(argType: AnalyzedArgumentType, implMap: AnalyzedImplMap): AnalyzedArgumentType =
+  # TODO(union-inference): handle substitution chains. A single use
+  # site can produce an implMap with both `Sample → K` and `K → u8`
+  # (e.g. `func f(a: Box[u8, K], b: K)` called as
+  # `f(boxFirst, u8 5)`). Today getOrDefault returns the immediate
+  # map value, so `Sample` rewrites to `K`, not `u8`. Prefer eager
+  # chain-collapsing in `merge` (cheaper, single pass) — see the TODO
+  # there — over recursive lookup here.
+  case argType.kind:
+  of aatkModule:
+    let moduleArgType = argType.module
+    # Rebuild the ordered slot→impl map, concretizing each impl and
+    # keeping the same slot keys and order.
+    var concreteImpls: AnalyzedImplMap
+    for generic, impl in moduleArgType.impls:
+      concreteImpls[generic] = impl.concrete(implMap)
+    let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
+    return newAnalyzedArgumentType(concreteModuleArgType)
+  of aatkGeneric:
+    let genericArgType = argType.generic
+    return implMap.getOrDefault(genericArgType.generic, argType)
+
+# ============================================================
+# AnalyzedArgumentDef (name + fully-analyzed argument type)
+# ============================================================
+
+type AnalyzedArgumentDef* = ref object
+  resolved: ResolvedArgumentDef
+  argType: AnalyzedArgumentType
+
+proc newAnalyzedArgumentDef*(resolved: ResolvedArgumentDef, argType: AnalyzedArgumentType): AnalyzedArgumentDef =
+  AnalyzedArgumentDef(resolved: resolved, argType: argType)
+
+proc argType*(d: AnalyzedArgumentDef): AnalyzedArgumentType = d.argType
+proc name*(d: AnalyzedArgumentDef): Identifier = d.resolved.name
+proc loc*(d: AnalyzedArgumentDef): Location = d.resolved.name.loc
+
+proc asl*(d: AnalyzedArgumentDef): string =
+  d.name.asl & ": " & d.argType.asl

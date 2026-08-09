@@ -17,15 +17,6 @@ export context
 import ./defanalyzer/argtype
 export argtype
 
-import ./defanalyzer/genericargtype
-export genericargtype
-
-import ./defanalyzer/analyzedimplmap
-export analyzedimplmap
-
-import ./defanalyzer/argdef
-export argdef
-
 
 import ./defanalyzer/datadef
 export datadef

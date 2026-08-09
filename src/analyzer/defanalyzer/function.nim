@@ -10,7 +10,6 @@ import strformat, strutils, sequtils
 
 import resolver
 import argtype
-import argdef
 import statement
 
 # ---- AnalyzedFunctionDef ----

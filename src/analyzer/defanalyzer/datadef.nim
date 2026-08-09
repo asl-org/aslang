@@ -7,7 +7,7 @@
 import results, strformat, tables
 
 import ./resolver
-import ./argdef
+import ./argtype
 
 # ---- AnalyzedLiteralDef ----
 # Thin wrapper around a ResolvedLiteralDef. Literal blocks carry no
