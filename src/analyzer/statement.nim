@@ -11,15 +11,13 @@
 ##
 ## Leaf nodes that carry no back-reference into the cycle
 ## (AnalyzedVariable, AnalyzedGetter, AnalyzedLiteralInitializer) live
-## in their own files and are imported here. AnalyzedBinding is a
-## pure tuple alias imported from binding.nim; AnalyzedCasePattern is
-## the pattern-cluster leaf imported from casepattern.nim.
+## in their own files and are imported here. AnalyzedBinding and
+## AnalyzedCasePattern come from the pattern cluster (pattern.nim).
 
 import strformat, options
 
 import ./defanalyzer
-import binding
-import casepattern
+import pattern
 import variable
 import literalinit
 import getter

@@ -11,11 +11,7 @@ export defanalyzer
 
 import ./analyzer/funccontext
 import ./analyzer/literalparse
-import ./analyzer/unionpatternscope
-import ./analyzer/literalpatternscope
-import ./analyzer/binding
-import ./analyzer/unionpattern
-import ./analyzer/casepattern
+import ./analyzer/pattern
 import ./analyzer/variable
 import ./analyzer/literalinit
 import ./analyzer/getter

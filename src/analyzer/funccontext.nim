@@ -12,9 +12,8 @@
 import options, strformat, tables
 
 import ./defanalyzer
-import ./binding
 import ./statement
-import ./casepattern
+import ./pattern
 
 # Stores the (name, argType) binding per variable. The generic
 # bindings a match on a variable needs are intrinsic to its argType
