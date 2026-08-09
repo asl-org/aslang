@@ -6,7 +6,7 @@
 import strformat, tables
 
 import ./defanalyzer
-import file
+import app
 
 type AnalyzedAppContext* = ref object
   appDef: AnalyzedDefApp

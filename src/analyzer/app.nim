@@ -1,4 +1,6 @@
-## AnalyzedApp — the top-level container returned by `analyze`.
+## Phase-B app cluster — AnalyzedFile (per-file imports + modules with
+## the resolver-side back-ref) and AnalyzedApp (the top-level container
+## returned by `analyze`).
 ##
 ## Post-6c the analyzer has no separate def-level pass — every
 ## definition-level index and accessor is carried directly on the
@@ -10,7 +12,24 @@
 ## skips them at the function layer.
 
 import ./defanalyzer
-import file
+import module
+import imports
+
+# ---- AnalyzedFile ----
+# Per-file result of the analyzer pass: the file's imports and modules
+# alongside the resolver-side back-ref.
+
+type AnalyzedFile* = ref object
+  def: AnalyzedDefFile
+  imports: seq[AnalyzedImport]
+  modules: seq[AnalyzedModule]
+
+proc newAnalyzedFile*(def: AnalyzedDefFile, imports: seq[AnalyzedImport], modules: seq[AnalyzedModule]): AnalyzedFile =
+  AnalyzedFile(def: def, imports: imports, modules: modules)
+
+proc path*(f: AnalyzedFile): string = f.def.path
+
+# ---- AnalyzedApp ----
 
 type AnalyzedApp* = ref object
   resolved: ResolvedApp
@@ -18,4 +37,3 @@ type AnalyzedApp* = ref object
 
 proc newAnalyzedApp*(resolved: ResolvedApp, files: seq[AnalyzedFile]): AnalyzedApp =
   AnalyzedApp(resolved: resolved, files: files)
-

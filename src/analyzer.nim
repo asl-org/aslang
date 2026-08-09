@@ -17,7 +17,6 @@ import ./analyzer/function
 import ./analyzer/module
 import ./analyzer/filecontext
 import ./analyzer/imports
-import ./analyzer/file
 import ./analyzer/appcontext
 import ./analyzer/app
 
