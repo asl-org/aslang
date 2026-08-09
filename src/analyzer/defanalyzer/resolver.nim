@@ -53,12 +53,6 @@ import ./resolver/function
 export function
 
 # ---- module / generic / type umbrella ----
-import ./resolver/module
-export module
-
-import ./resolver/generic
-export generic
-
 import ./resolver/types
 export types
 

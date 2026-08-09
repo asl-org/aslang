@@ -3,8 +3,6 @@
 import sequtils, strformat, tables
 
 import parser
-import module
-import generic
 import types
 import imports
 
