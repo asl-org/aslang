@@ -29,8 +29,6 @@ export analyzedimplmap
 import ./defanalyzer/argdef
 export argdef
 
-import ./defanalyzer/funcdef
-export funcdef
 
 import ./defanalyzer/datadef
 export datadef

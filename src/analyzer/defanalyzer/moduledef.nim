@@ -12,7 +12,6 @@ import options, results, sequtils, strformat, tables
 
 import ./resolver
 import ./genericargtype
-import ./funcdef
 import ./datadef
 import ./function
 

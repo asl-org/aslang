@@ -1,14 +1,54 @@
-## Phase-A function wrappers — `AnalyzedDefExternFunction` /
-## `AnalyzedDefUserFunction` each pair the resolver function with its
-## pre-analyzed `AnalyzedFunctionDef`, and the tagged
-## `AnalyzedDefFunction` (adfkExtern / adfkUser) gives
-## `AnalyzedDefModule.functions` one shape with uniform `def` /
-## `name` / `arity` accessors dispatching on the kind.
+## Phase-A function cluster — `AnalyzedFunctionDef` (a resolver function
+## definition + its fully-analyzed args/return, the phase-B overload &
+## body-typing input) plus the function wrappers: `AnalyzedDefExtern-
+## Function` / `AnalyzedDefUserFunction` pair the resolver function with
+## its `AnalyzedFunctionDef`, and the tagged `AnalyzedDefFunction`
+## (adfkExtern / adfkUser) gives `AnalyzedDefModule.functions` one shape
+## with uniform `def` / `name` / `arity` accessors.
 
-import resolver, strformat
+import strformat, strutils, sequtils
 
-import funcdef
+import resolver
+import argtype
+import argdef
 import statement
+
+# ---- AnalyzedFunctionDef ----
+# A resolver function definition paired with its fully-analyzed argument
+# definitions and return type. Produced by phase-A when walking a
+# module's/generic's function list; consumed by phase-B overload
+# resolution + body-typing without re-analysis.
+
+type AnalyzedFunctionDef* = ref object
+  resolved: ResolvedFunctionDef
+  args: seq[AnalyzedArgumentDef]
+  returns: AnalyzedArgumentType
+
+proc newAnalyzedFunctionDef*(resolved: ResolvedFunctionDef,
+    args: seq[AnalyzedArgumentDef],
+    returns: AnalyzedArgumentType): AnalyzedFunctionDef =
+  AnalyzedFunctionDef(resolved: resolved, args: args, returns: returns)
+
+proc resolved*(f: AnalyzedFunctionDef): ResolvedFunctionDef = f.resolved
+proc public*(f: AnalyzedFunctionDef): bool = f.resolved.public
+proc name*(f: AnalyzedFunctionDef): Identifier = f.resolved.name
+proc loc*(f: AnalyzedFunctionDef): Location = f.resolved.loc
+proc arity*(f: AnalyzedFunctionDef): int = f.args.len
+proc args*(f: AnalyzedFunctionDef): seq[AnalyzedArgumentDef] = f.args
+proc returns*(f: AnalyzedFunctionDef): AnalyzedArgumentType = f.returns
+
+proc asl*(f: AnalyzedFunctionDef): string =
+  var args: seq[string]
+  for arg in f.args:
+    args.add(arg.asl)
+  "func " & f.name.asl & "(" & args.join(", ") & "): " & f.returns.asl
+
+proc filter*(defs: seq[AnalyzedFunctionDef], access: FunctionAccess): seq[AnalyzedFunctionDef] =
+  case access:
+  of faAll: defs
+  of faPublic: defs.filterIt(it.public)
+
+# ---- function wrappers ----
 
 type AnalyzedDefExternFunction* = ref object
   resolved: ResolvedExternFunction

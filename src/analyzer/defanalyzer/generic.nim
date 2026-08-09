@@ -9,7 +9,7 @@
 import results, sequtils, strformat, tables
 
 import ./resolver
-import ./funcdef
+import ./function
 
 type AnalyzedGeneric* = ref object
   resolved: ResolvedGeneric

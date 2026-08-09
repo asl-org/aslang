@@ -8,7 +8,7 @@
 import results, strformat
 
 import ./resolver
-import ./funcdef
+import ./function
 import ./moduledef
 import ./generic
 
