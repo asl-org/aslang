@@ -1,4 +1,4 @@
-import results, sequtils, strformat, tables, options
+import results, strformat, tables, options
 
 ## Package façade. Consumers say `import resolver` to get every
 ## resolved-side type PLUS the parser layer that resolver builds on
@@ -97,7 +97,7 @@ proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: Ar
 # funcDefIndex via findImplDef), which runs after every signature is
 # resolved.
 
-proc resolveModuleArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedModuleArgumentType, string] =
+proc resolveModuleArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType, argModule: Module): Result[ResolvedModuleArgumentType, string] =
   # The resolver only POPULATES the impl types here: it looks the module
   # up and resolves each nested argument type in slot order. Impl count
   # (against the module's require slots) and generic-constraint
@@ -106,9 +106,6 @@ proc resolveModuleArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argTy
   # module's data block. Deferring keeps the resolver from having to
   # derive require slots for a module whose resolved twin may not exist
   # yet (in-file cycles) or hop into an imported module's defining scope.
-  let entry = ? fileCtx.findType(argType.root)
-  assert(entry.localType.kind == ltkModule, fmt"[BUG] - {argType.loc} argument type root `{argType.root.asl}` was dispatched here as a module")
-  let argModule = entry.localType.module
   if argModule.data.isNone:
     return err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
   var impls: seq[ResolvedArgumentType]
@@ -134,13 +131,13 @@ proc resolveGenericArgumentType(typeCtx: TypeContext, argType: ArgumentType, arg
       err(fmt"{argType.loc} type `{argGeneric.name.asl}` is a generic and does not support further impls")
 
 proc resolveArgumentType(fileCtx: FileContext, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedArgumentType, string] =
-  let typ = (? fileCtx.findType(argType.root)).localType
+  let typ = ? fileCtx.findLocalType(argType.root)
   case typ.kind:
   of ltkGeneric:
     let resolvedGenericType = ? resolveGenericArgumentType(typeCtx, argType, typ.generic)
     ok(newResolvedArgumentType(resolvedGenericType))
   of ltkModule:
-    let resolvedModuleType = ? resolveModuleArgumentType(fileCtx, typeCtx, argType)
+    let resolvedModuleType = ? resolveModuleArgumentType(fileCtx, typeCtx, argType, typ.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
 proc resolveArgumentDef(fileCtx: FileContext, typeCtx: TypeContext, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
@@ -231,7 +228,7 @@ proc resolveExpression(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: Func
 proc resolveStatement(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string]
 
 proc resolveFunctionCall(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
-  let typ = (? fileCtx.findType(fncall.root)).localType
+  let typ = ? fileCtx.findLocalType(fncall.root)
   let access =
     case typ.kind:
     of ltkModule: typeCtx.access(typ.module)
@@ -261,7 +258,7 @@ proc resolveStructRef(fileCtx: FileContext, typeCtx: TypeContext, structRef: Str
         # on the constructor.
         newResolvedStructRef(structRef, structModule, struct)
       else:
-        let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, structRef.argType)
+        let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, structRef.argType, structModule)
         ok(newResolvedStructRef(structRef, resolvedModuleArgType, struct))
 
 proc resolveKeywordArguments(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
@@ -294,7 +291,7 @@ proc resolveUnionRef(fileCtx: FileContext, typeCtx: TypeContext, unionRef: Union
       if unionRef.impls.len == 0:
         ok(newResolvedUnionRef(unionRef, unionModule, variant))
       else:
-        let resolvedArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, unionRef.argType)
+        let resolvedArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, unionRef.argType, unionModule)
         ok(newResolvedUnionRef(unionRef, resolvedArgType, variant))
 
 proc resolveUnionInitializer(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
@@ -312,7 +309,7 @@ proc resolveLiteralInitializer(fileCtx: FileContext, typeCtx: TypeContext, init:
     of ddkStruct: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found struct")
     of ddkUnion: err(fmt"{init.loc} expected module `{init.module.asl}` to be literal but found union")
     of ddkLiteral:
-      let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, init.argType)
+      let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, init.argType, module)
       ok(newResolvedLiteralInitializer(init, resolvedModuleArgType, moduleData.literal))
 
 proc resolveInitializer(fileCtx: FileContext, typeCtx: TypeContext, funcCtx: FunctionContext, initializer: Initializer): Result[ResolvedInitializer, string] =

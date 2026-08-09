@@ -8,7 +8,6 @@ import results, strformat, hashes, tables
 
 import parser
 import imports
-import argtype
 import types
 
 # ============================================================
@@ -87,18 +86,18 @@ proc add*(fileCtx: FileContext, localType: ResolvedLocalType): Result[FileContex
   fileCtx.localTypes.add(localType)
   ok(fileCtx)
 
-proc findType*(fileCtx: FileContext, name: Identifier): Result[Type, string] =
-  if name in fileCtx.typeIndex: ok(fileCtx.typeIndex[name])
+proc findLocalType*(fileCtx: FileContext, name: Identifier): Result[LocalType, string] =
+  if name in fileCtx.typeIndex: ok(fileCtx.typeIndex[name].localType)
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
 proc findModule*(fileCtx: FileContext, name: Identifier): Result[Module, string] =
-  let initType = (? fileCtx.findType(name)).localType
+  let initType = ? fileCtx.findLocalType(name)
   case initType.kind:
   of ltkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
   of ltkModule: ok(initType.module)
 
 proc findGeneric*(fileCtx: FileContext, name: Identifier): Result[Generic, string] =
-  let initType = (? fileCtx.findType(name)).localType
+  let initType = ? fileCtx.findLocalType(name)
   case initType.kind:
   of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
   of ltkGeneric: ok(initType.generic)
