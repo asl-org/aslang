@@ -8,8 +8,7 @@ import ./literals
 import ./patterns
 import ./getter
 import ./literalinit
-import ./structref
-import ./unionref
+import ./refs
 
 # ============================================================
 # Body cluster (mutually recursive)

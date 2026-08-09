@@ -30,11 +30,8 @@ export argtype
 import ./parser/argdef
 export argdef
 
-import ./parser/structref
-export structref
-
-import ./parser/unionref
-export unionref
+import ./parser/refs
+export refs
 
 import ./parser/structdef
 export structdef
