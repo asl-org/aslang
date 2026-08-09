@@ -48,9 +48,6 @@ export modules
 import ./parser/types
 export types
 
-import ./parser/files
-export files
-
 import ./parser/app
 export app
 
@@ -60,7 +57,7 @@ import ./parser/error
 import ./parser/decorator
 import ./parser/utils
 
-type File = files.File
+type File = app.File
 
 # ============================================================
 # Parser
