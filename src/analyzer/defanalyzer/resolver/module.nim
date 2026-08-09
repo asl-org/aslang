@@ -6,7 +6,6 @@ import results, strformat, options, tables, hashes, sequtils
 
 import ./parser
 import argtype
-import funcdef
 import datadef
 import function
 

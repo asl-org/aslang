@@ -15,7 +15,7 @@ import options, results, strformat, tables
 import ./parser
 
 import ./argdef
-import ./funcdef
+import ./function
 import ./patterns
 import ./statement
 

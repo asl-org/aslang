@@ -43,12 +43,6 @@ export genericargtype
 import ./resolver/argdef
 export argdef
 
-import ./resolver/funcdef
-export funcdef
-
-import ./resolver/externfunc
-export externfunc
-
 # ---- data-block cluster ----
 import ./resolver/datadef
 export datadef

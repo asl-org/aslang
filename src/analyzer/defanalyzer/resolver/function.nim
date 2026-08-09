@@ -1,12 +1,74 @@
-## Function cluster — ResolvedUserFunction wraps a ResolvedFunctionDef
-## + statements; ResolvedFunction is the tagged union over user/extern.
+## Function cluster — ResolvedFunctionDef (a resolved signature: arg defs
+## + return type) plus the function wrappers: ResolvedExternFunction
+## (FFI body) and ResolvedUserFunction (def + statements), unified by the
+## ResolvedFunction tagged union over user/extern.
 
-import strformat
+import strformat, strutils, hashes
 
 import ./parser
-import funcdef
-import externfunc
+import argtype
+import argdef
 import statement
+
+# ---- ResolvedFunctionDef ----
+# A resolved function signature (arg defs + return type).
+
+type ResolvedFunctionDef* = ref object
+  parsed: FunctionDef
+  args: seq[ResolvedArgumentDef]
+  returns: ResolvedArgumentType
+
+proc newResolvedFunctionDef*(parsed: FunctionDef,
+    args: seq[ResolvedArgumentDef],
+    returns: ResolvedArgumentType): ResolvedFunctionDef =
+  ResolvedFunctionDef(parsed: parsed, args: args, returns: returns)
+
+proc args*(funcDef: ResolvedFunctionDef): seq[ResolvedArgumentDef] = funcDef.args
+proc returns*(funcDef: ResolvedFunctionDef): ResolvedArgumentType = funcDef.returns
+proc public*(funcDef: ResolvedFunctionDef): bool = funcDef.parsed.public
+proc name*(funcDef: ResolvedFunctionDef): Identifier = funcDef.parsed.name
+proc arity*(funcDef: ResolvedFunctionDef): int = funcDef.parsed.arity
+proc loc*(funcDef: ResolvedFunctionDef): Location = funcDef.parsed.loc
+
+proc asl*(funcDef: ResolvedFunctionDef): string =
+  var args: seq[string]
+  for arg in funcDef.args:
+    args.add(arg.asl)
+  let argsJoined = args.join(", ")
+  fmt"func {funcDef.name.asl}({argsJoined}): {funcDef.returns.asl}"
+
+proc hash*(funcDef: ResolvedFunctionDef): Hash =
+  var acc = funcDef.name.hash
+  for arg in funcDef.args:
+    acc = acc !& arg.hash
+  return acc
+
+proc `==`*(a, b: ResolvedFunctionDef): bool = a.hash == b.hash
+
+proc concrete*(funcDef: ResolvedFunctionDef, subst: ResolvedImplMap): ResolvedFunctionDef =
+  var concreteArgs: seq[ResolvedArgumentDef]
+  for arg in funcDef.args:
+    concreteArgs.add(arg.concrete(subst))
+  let concreteReturns = funcDef.returns.concrete(subst)
+  newResolvedFunctionDef(funcDef.parsed, concreteArgs, concreteReturns)
+
+# ---- ResolvedExternFunction ----
+# A function whose body lives in FFI-land, wrapping a resolved signature.
+
+type ResolvedExternFunction* = ref object
+  parsed: ExternFunction
+  def: ResolvedFunctionDef
+
+proc newResolvedExternFunction*(parsed: ExternFunction,
+    def: ResolvedFunctionDef): ResolvedExternFunction =
+  ResolvedExternFunction(parsed: parsed, def: def)
+
+proc loc*(function: ResolvedExternFunction): Location = function.def.loc
+proc name*(function: ResolvedExternFunction): Identifier = function.def.name
+proc arity*(function: ResolvedExternFunction): int = function.def.arity
+proc def*(function: ResolvedExternFunction): ResolvedFunctionDef = function.def
+
+# ---- ResolvedUserFunction / ResolvedFunction ----
 
 type
   ResolvedUserFunction* = ref object

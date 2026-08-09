@@ -7,7 +7,7 @@ import results, strformat, tables, hashes, sequtils
 
 import ./parser
 import argtype
-import funcdef
+import function
 import module  # buildFuncNameArityIndex
 
 type ResolvedGeneric* = ref object
