@@ -4,7 +4,7 @@ import ./tokenizer
 import ./error
 
 import ./identifiers
-import ./externfunc
+import ./function
 import ./imports
 import ./modules
 import ./types

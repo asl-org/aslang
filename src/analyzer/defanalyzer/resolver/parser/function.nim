@@ -1,12 +1,109 @@
-import strformat, tables, results
+## Parser function cluster — FunctionDef (signature, no body) + the
+## ExternFunction / UserFunction wrappers + the Function tagged union
+## over them and the FunctionList index.
+
+import strformat, strutils, sequtils, tables, results
 
 import ./tokenizer
 import ./error
 
 import ./identifiers
-import ./funcdef
-import ./userfunc
-import ./externfunc
+import ./argtype
+import ./argdef
+import ./decorator
+import ./statement
+
+# ============================================================
+# FunctionDef (signature only, no body)
+# ============================================================
+
+type FunctionAccess* = enum
+  ## What a function lookup may see: `faPublic` = public functions
+  ## only (the caller's context is outside the defining module),
+  ## `faAll` = every function (the caller IS the defining module).
+  ## Derived from a TypeContext one layer up (resolver/typecontext).
+  faPublic, faAll
+
+type FunctionDef* = ref object
+  public: bool
+  name: Identifier
+  argDefList: ArgumentDefList
+  returns: ArgumentType
+  loc: Location
+
+proc newFunctionDef*(public: bool, name: Identifier, argDefList: ArgumentDefList, returns: ArgumentType, loc: Location): FunctionDef =
+  FunctionDef(public: public, name: name, argDefList: argDefList, returns: returns, loc: loc)
+
+proc loc*(def: FunctionDef): Location = def.loc
+proc public*(def: FunctionDef): bool = def.public
+proc name*(def: FunctionDef): Identifier = def.name
+proc returns*(def: FunctionDef): ArgumentType = def.returns
+proc args*(def: FunctionDef): seq[ArgumentDef] = def.argDefList.argDefs
+proc arity*(def: FunctionDef): int = def.argDefList.arity
+
+proc asl*(funcDef: FunctionDef): string =
+  let prefix = if funcDef.public: "public func" else: "func"
+  fmt"{prefix} {funcDef.name.asl}{funcDef.argDefList.asl}: {funcDef.returns.asl}"
+
+proc filter*(defs: seq[FunctionDef], access: FunctionAccess): seq[FunctionDef] =
+  case access:
+  of faAll: defs
+  of faPublic: defs.filterIt(it.public)
+
+# ============================================================
+# ExternFunction
+# ============================================================
+
+type ExternFunction* = ref object
+  ffi: string
+  def: FunctionDef
+  loc: Location
+
+proc name*(fn: ExternFunction): Identifier = fn.def.name
+proc arity*(fn: ExternFunction): int = fn.def.arity
+proc def*(fn: ExternFunction): FunctionDef = fn.def
+proc loc*(fn: ExternFunction): Location = fn.loc
+
+proc newExternFunction*(ffi: string, def: FunctionDef, loc: Location): ExternFunction =
+  ExternFunction(ffi: ffi, def: def, loc: loc)
+
+proc asl*(fn: ExternFunction, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  return @[
+    fmt"{indent}@extern(""{fn.ffi}"")",
+    fmt"{indent}{asl(fn.def)}",
+  ]
+
+# ============================================================
+# UserFunction
+# ============================================================
+
+type UserFunction* = ref object
+  decorators: seq[Decorator]
+  def: FunctionDef
+  statementList: StatementList
+
+proc newUserFunction*(decorators: seq[Decorator], def: FunctionDef,
+    statementList: StatementList): UserFunction =
+  UserFunction(decorators: decorators, def: def, statementList: statementList)
+
+proc loc*(fn: UserFunction): Location = fn.def.loc
+proc name*(fn: UserFunction): Identifier = fn.def.name
+proc def*(fn: UserFunction): FunctionDef = fn.def
+proc statements*(fn: UserFunction): seq[Statement] = fn.statementList.statements
+proc decorators*(fn: UserFunction): seq[Decorator] = fn.decorators
+proc arity*(fn: UserFunction): int = fn.def.arity
+
+proc asl*(fn: UserFunction, level: int, indentWidth: uint32): seq[string] =
+  let indent = " ".repeat(level * indentWidth.int)
+  var lines: seq[string]
+  for d in fn.decorators:
+    lines.add(fmt"{indent}{asl(d)}")
+  lines.add(fmt"{indent}{asl(fn.def)}")
+  for stmt in fn.statementList.statements:
+    for line in asl(stmt, level + 1, indentWidth):
+      lines.add(line)
+  lines
 
 # ============================================================
 # Function (user | extern)

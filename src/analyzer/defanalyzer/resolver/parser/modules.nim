@@ -7,8 +7,6 @@ import ./identifiers
 import ./decorator
 
 import ./datadef
-import ./funcdef
-import ./externfunc
 import ./function
 
 # ============================================================

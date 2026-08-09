@@ -36,12 +36,6 @@ export refs
 import ./parser/datadef
 export datadef
 
-import ./parser/funcdef
-export funcdef
-
-import ./parser/externfunc
-export externfunc
-
 import ./parser/getter
 export getter
 
@@ -53,9 +47,6 @@ export patterns
 
 import ./parser/statement
 export statement
-
-import ./parser/userfunc
-export userfunc
 
 import ./parser/function
 export function

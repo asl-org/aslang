@@ -4,7 +4,7 @@ import ./tokenizer
 
 import ./identifiers
 import ./decorator
-import ./funcdef
+import ./function
 import ./generics
 import ./modules
 
