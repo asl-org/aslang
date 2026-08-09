@@ -72,11 +72,8 @@ export getter
 import ./resolver/literalinit
 export literalinit
 
-import ./resolver/structref
-export structref
-
-import ./resolver/unionref
-export unionref
+import ./resolver/refs
+export refs
 
 # ---- body cluster: mutually-recursive statement/expression web ----
 import ./resolver/statement
