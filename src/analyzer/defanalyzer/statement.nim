@@ -10,8 +10,7 @@ import strformat
 
 import resolver
 import argtype
-import structref
-import unionref
+import refs
 
 type
   AnalyzedDefLiteral* = ref object

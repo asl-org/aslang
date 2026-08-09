@@ -53,11 +53,8 @@ export moduledef
 import ./defanalyzer/generic
 export generic
 
-import ./defanalyzer/structref
-export structref
-
-import ./defanalyzer/unionref
-export unionref
+import ./defanalyzer/refs
+export refs
 
 import ./defanalyzer/statement
 export statement
