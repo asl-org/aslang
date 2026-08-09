@@ -33,15 +33,6 @@ export argdef
 import ./parser/refs
 export refs
 
-import ./parser/structdef
-export structdef
-
-import ./parser/variantdef
-export variantdef
-
-import ./parser/uniondef
-export uniondef
-
 import ./parser/datadef
 export datadef
 
