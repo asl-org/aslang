@@ -1,21 +1,22 @@
-## ResolvedFileContext — per-file identity-keyed lookup (parser.LocalType
-## -> ResolvedLocalType), spanning imports + local defined types. Keys
-## hash by source location, so the same type imported under two
-## bindings (`import { Solver as First }` + `{ Solver as Second }`)
-## lands on one key and aliased imports can never miss.
-##
-## Name resolution (user-typed name -> parser.LocalType) happens at
-## resolve time against the resolver's name-keyed FileContext — by the
-## time the analyzer runs, every reference already carries its
-## parser.LocalType identity. Binding-name collisions are also caught
-## there; construction here only rejects a genuinely different
-## entry under an existing key (see `update`).
+## Phase-A resolution contexts — `ResolvedFileContext` (per-file
+## identity-keyed name→scope-entry lookup) and `ResolvedTypeContext`
+## (the enclosing definition context — resolved module | resolved
+## generic — carried for the one visibility decision a constraint check
+## needs). Both threaded through the phase-A walk.
 
-import strformat, hashes, tables
+import results, strformat, hashes, tables
 
 import ./resolver
 import ./importdef
 import ./importedtypedef
+
+# ============================================================
+# ResolvedFileContext
+# ============================================================
+# Per-file identity-keyed lookup (parser.LocalType -> ResolvedLocalType),
+# spanning imports + local defined types. Keys hash by source location,
+# so the same type imported under two bindings lands on one key and
+# aliased imports can never miss.
 
 type
   ResolvedTypeKind* = enum
@@ -94,3 +95,50 @@ proc findGeneric*(fileCtx: ResolvedFileContext, generic: Generic): ResolvedGener
   let typ = fileCtx.findType(newLocalType(generic)).localType
   assert(typ.kind == rltkGeneric, fmt"[BUG] - {generic.loc} `{generic.name.asl}` was bound as a generic by the resolver")
   typ.generic
+
+# ============================================================
+# ResolvedTypeContext
+# ============================================================
+# The enclosing definition context (resolved module | resolved generic)
+# a type reference is analyzed in — carried for exactly one decision:
+# which functions of an impl module a constraint check may see.
+
+type
+  ResolvedTypeContextKind* = enum
+    rtckModule, rtckGeneric
+
+  ResolvedTypeContext* = ref object
+    case kind: ResolvedTypeContextKind
+    of rtckModule: module: ResolvedModule
+    of rtckGeneric: generic: ResolvedGeneric
+
+proc newResolvedTypeContext*(module: ResolvedModule): ResolvedTypeContext =
+  ResolvedTypeContext(kind: rtckModule, module: module)
+
+proc newResolvedTypeContext*(generic: ResolvedGeneric): ResolvedTypeContext =
+  ResolvedTypeContext(kind: rtckGeneric, generic: generic)
+
+proc module*(typeCtx: ResolvedTypeContext): ResolvedModule =
+  assert typeCtx.kind == rtckModule,
+    "ResolvedTypeContext.module accessed but kind is rtckGeneric"
+  typeCtx.module
+
+proc generic*(typeCtx: ResolvedTypeContext): ResolvedGeneric =
+  assert typeCtx.kind == rtckGeneric,
+    "ResolvedTypeContext.generic accessed but kind is rtckModule"
+  typeCtx.generic
+
+proc access*(typeCtx: ResolvedTypeContext, module: ResolvedModule): FunctionAccess =
+  ## Which functions of `module` this context may see.
+  case typeCtx.kind:
+  of rtckModule:
+    if typeCtx.module == module: faAll
+    else: faPublic
+  of rtckGeneric: faPublic
+
+proc findImplDef*(typeCtx: ResolvedTypeContext, module: ResolvedModule, def: ResolvedFunctionDef): Result[ResolvedFunctionDef, string] =
+  let access = typeCtx.access(module)
+  module.findImplDef(def, access)
+
+proc findImplDef*(typeCtx: ResolvedTypeContext, generic: ResolvedGeneric, def: ResolvedFunctionDef): Result[ResolvedFunctionDef, string] =
+  generic.findImplDef(def, faAll)

@@ -11,11 +11,8 @@ import options, results, sequtils, strformat, tables
 import ./defanalyzer/resolver
 export resolver
 
-import ./defanalyzer/filecontext
-export filecontext
-
-import ./defanalyzer/typecontext
-export typecontext
+import ./defanalyzer/context
+export context
 
 import ./defanalyzer/argtype
 export argtype

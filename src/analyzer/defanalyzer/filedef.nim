@@ -12,7 +12,7 @@
 import sequtils, strformat, tables
 
 import ./resolver
-import ./filecontext
+import ./context
 import ./types
 import ./importdef
 import ./moduledef
