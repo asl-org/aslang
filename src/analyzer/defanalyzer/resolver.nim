@@ -48,9 +48,8 @@ import ./resolver/types
 export types
 
 import ./resolver/imports
-import ./resolver/files
 import ./resolver/app
-export imports, files, app
+export imports, app
 
 
 # resolveArgumentType — single proc for both definition contexts; the
