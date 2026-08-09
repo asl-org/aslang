@@ -48,9 +48,6 @@ export appdef
 import ./defanalyzer/appcontext
 export appcontext
 
-import ./defanalyzer/importedtypedef
-export importedtypedef
-
 import ./defanalyzer/importdef
 export importdef
 

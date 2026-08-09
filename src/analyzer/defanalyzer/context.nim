@@ -8,7 +8,6 @@ import results, strformat, hashes, tables
 
 import ./resolver
 import ./importdef
-import ./importedtypedef
 
 # ============================================================
 # ResolvedFileContext

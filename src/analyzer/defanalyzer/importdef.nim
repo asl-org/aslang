@@ -1,11 +1,29 @@
-## Phase-A `AnalyzedDefImport` — bundles the analyzed imported
-## types from one `import` statement together with the source-file
-## back-ref. Produced by `analyzeImportDefinition` on the facade and
-## consumed by both phase-B `AnalyzedFile` (for downstream lookup) and
-## phase-A `AnalyzedDefFile` (for building the fileCtx).
+## Phase-A import cluster — `AnalyzedDefImportedType` (an individual
+## imported name verified to resolve to a defined type in its source
+## file) and `AnalyzedDefImport` (one `import` statement's analyzed
+## types + the source-file back-ref). Produced by the facade and
+## consumed by phase-A `AnalyzedDefFile` and phase-B `AnalyzedFile`.
 
 import ./resolver
-import importedtypedef
+
+# ---- AnalyzedDefImportedType ----
+# Carries the source's ResolvedFile (`impFile`) so the constraint hop
+# can look up a contract generic in the DEFINING file's scope — a
+# resolver-rung value, deliberately: capturing AnalyzedDefFile or
+# ResolvedFileContext here would cycle (both sit above this module).
+
+type AnalyzedDefImportedType* = ref object
+  resolved: ResolvedImportedType
+  impFile: ResolvedFile
+  typ: ResolvedLocalType
+
+proc newAnalyzedDefImportedType*(resolved: ResolvedImportedType, impFile: ResolvedFile, typ: ResolvedLocalType): AnalyzedDefImportedType =
+  AnalyzedDefImportedType(resolved: resolved, impFile: impFile, typ: typ)
+
+proc impFile*(impType: AnalyzedDefImportedType): ResolvedFile = impType.impFile
+proc typ*(impType: AnalyzedDefImportedType): ResolvedLocalType = impType.typ
+
+# ---- AnalyzedDefImport ----
 
 type AnalyzedDefImport* = ref object
   resolved: ResolvedImport
