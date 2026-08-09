@@ -27,9 +27,6 @@ export imports
 import ./parser/argtype
 export argtype
 
-import ./parser/argdef
-export argdef
-
 import ./parser/refs
 export refs
 

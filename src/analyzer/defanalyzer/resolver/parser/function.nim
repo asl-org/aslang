@@ -9,7 +9,6 @@ import ./error
 
 import ./identifiers
 import ./argtype
-import ./argdef
 import ./decorator
 import ./statement
 

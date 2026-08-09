@@ -10,7 +10,7 @@ import ./tokenizer
 import ./error
 
 import ./identifiers
-import ./argdef
+import ./argtype
 import ./literals
 
 # Shared field name→position index with duplicate detection — used by
