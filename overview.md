@@ -100,8 +100,9 @@ Parser ────── App           (raw AST + uniqueness/structural checks
 Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              name/shape resolution for every ArgumentType,
   │              body-level name resolution for user-function
-  │              bodies, arity + generic-constraint checks on
-  │              every impl list. Resolved* def-level types carry
+  │              bodies. Impl-list arity + generic-constraint
+  │              checks are the analyzer's job. Resolved* def-level
+  │              types carry
   │              the accessors + indices the analyzer needs
   │              (findField, findVariant, findFunctionDefs,
   │              genericTypeIndex, ...). Single-pass: resolved
@@ -349,9 +350,9 @@ resolver also enforces the structural `struct(...)`-header
 constraints (unique generics in the header — enforced by
 `validateRequiresNameConflict` inside `newStructDefHeader`; struct can't
 carry generic fields when the header is present — enforced in
-`resolveStructDef` around line 409), runs the arity +
-generic-constraint checks on every impl list (task 7 moved these here
-from the analyzer), resolves struct/union refs into provably valid
+`resolveStructDef` around line 409), populates each module argument
+type's impl slots (leaving impl-count + generic-constraint validation
+to the def analyzer), resolves struct/union refs into provably valid
 shapes at ref-resolve time (`ResolvedStructRef` carries the
 receiver's `ResolvedModuleArgumentType` + its `StructDef`;
 `ResolvedUnionRef` additionally its `UnionDef` + the referenced
@@ -382,12 +383,12 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   The facade `src/analyzer/defanalyzer/resolver.nim` re-exports every per-type
   file plus the nested parser layer (`src/analyzer/defanalyzer/resolver/parser.nim`)
   so consumers say `import resolver` once. The facade owns every
-  `resolve*` proc from `resolveArgumentType` through `resolveApp`
-  plus the constraint-satisfaction check (`satisfies` — deliberately
-  shallow `(name, arity, accessibility)` verification; see the
-  comment block above `resolveModuleArgumentType` for why the deep
-  signature check lives one phase up, in the def analyzer's
-  `checkImplSatisfies`). Every resolution site carries a
+  `resolve*` proc from `resolveArgumentType` through `resolveApp`.
+  Impl-count and generic-constraint checks are not done here — the
+  resolver only populates a module argument type's impls; both live one
+  phase up in the def analyzer (`analyzeDefModuleArgumentType`), for the
+  cyclic-dependency reason in the comment block above
+  `resolveModuleArgumentType`. Every resolution site carries a
   `TypeContext` (enclosing module | enclosing generic, typecontext.nim)
   from which `FunctionAccess` is derived: `faAll` inside the
   defining module, `faPublic` everywhere else — `findFunctionDefs`
@@ -409,19 +410,18 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   every `ResolvedModuleArgumentType` is well-formed at construction
   without any forward-reference dance. The historical shell /
   populate two-pass has been retired.
-- **Impl-list validation** — `resolveModuleArgumentType` derives the
-  require slots in the module's DEFINING scope: a local module via
-  `inferGenerics` in this file's context (explicit `struct(...)`
-  header or inferred struct/union fields), an imported module by
-  reading the slots off the binding's captured resolved twin — so
-  the contract generic need not be imported at the use site. It then
-  checks the impls count ("expects N impls but found M") and calls
-  `satisfies` on each pair. `satisfies` verifies `(name,
-  arity)` plus accessibility at the parser level; signature parity
-  is checked at def time by the def analyzer's identity-probe
-  constraint check (`findImplDef`), which finds the contract through
-  the imported module's source file (`findGenericInScope`), and
-  `analyzeValueTypeAgainstDefType` still guards use sites.
+- **Impl population, not validation** — `resolveModuleArgumentType`
+  only resolves a module argument type's impls in slot order; it does
+  NOT derive the module's require slots, count the impls, or check
+  constraint satisfaction. All of that is the def analyzer's
+  `analyzeDefModuleArgumentType`, which reads the require slots off the
+  module's data block (uniformly for local and imported modules),
+  raises "expects N impls but found M" on a count mismatch, and probes
+  each impl by identity (`findImplDef`, finding the contract through
+  the imported module's source file via `findGenericInScope`);
+  `analyzeValueTypeAgainstDefType` still guards use sites. Deferring is
+  forced by ASL's in-file cyclic module dependencies — see the comment
+  above `resolveModuleArgumentType`.
 - **Generic param-list ownership** — each data-block type derives
   its own order-preserving `generics` seq at construction:
   `ResolvedVariantDef` from its generic-typed fields,
@@ -432,9 +432,9 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   `resolveStructDef`; the constructed def carries no kind — nothing
   downstream needs to know which path produced it).
   `genericTypeIndex` is an on-demand projection of that seq; the
-  `requires*` accessors read it directly. Use-sites that can't
-  touch a mid-resolution module derive the same list from the
-  parser side via `fileCtx.inferGenerics`. No uniqueness
+  `requires*` accessors read it directly. Use-sites never re-derive
+  this list: the def analyzer reads it off the module's data block
+  (`module.dataDef.requires`). No uniqueness
   rule is enforced at resolution time — the same generic name
   appearing in multiple fields is fine, since the analyzer's
   `AnalyzedImplMap` binds one generic to one concrete type per
@@ -533,10 +533,9 @@ Three phase-A invariants worth naming:
   generic, defanalyzer/typecontext.nim — the identity-ladder twin of
   the resolver's `TypeContext`), consumed for exactly one decision:
   function visibility during constraint satisfaction. Everything
-  else context-sensitive (the generic self-reference rule, name/
-  arity/accessibility presence) was already enforced at resolve
-  time, so there are no module/generic proc twins — one context
-  value, one proc.
+  else context-sensitive (e.g. the generic self-reference rule) was
+  already enforced at resolve time, so there are no module/generic
+  proc twins — one context value, one proc.
 - **Deep constraint satisfaction** (`analyzeDefImpl`, called by
   `analyzeDefModuleArgumentType` AND by the phase-B generic value
   check — one shared routine). For each impl↔require pair, the
@@ -708,10 +707,9 @@ src/
                                    parser (its AST types, `parse*`
                                    entry point, and Location). Also
                                    owns every cross-cluster `resolve*`
-                                   proc and the constraint-
-                                   satisfaction check (`satisfies` —
-                                   shallow by design; deep signature
-                                   parity is the analyzer's job).
+                                   proc. Impl-count + generic-
+                                   constraint checks are the def
+                                   analyzer's job, not the resolver's.
                                    Scope lookups live with their
                                    owning types (filecontext.nim /
                                    files.nim / app.nim below).
@@ -1339,12 +1337,12 @@ What the analyzer does today (all wired):
 - Overload selection at function-call sites — each candidate funcDef
   is unified against the call's argument types via `AnalyzedImplMap`
   + `merge`, and uniqueness picks the survivor (ambiguity rejected).
-- Impl-list arity + generic constraint satisfaction — presence and
-  accessibility checked at resolve time in
-  `resolveModuleArgumentType` via `satisfies`; signature parity
-  checked def-time inline in `analyzeDefModuleArgumentType`
-  (contract funcDefs concretized at definition level, probed by
-  identity via `findImplDef`);
+- Impl-list arity + generic constraint satisfaction — both owned by
+  `analyzeDefModuleArgumentType`: it counts the impls against the
+  module's require slots ("expects N impls but found M") and probes
+  each impl by identity (contract funcDefs concretized at definition
+  level, checked via `findImplDef`). The resolver no longer does any
+  of this — it only populates the impls.
   `analyzeValueTypeAgainstDefType` still runs use-site checks.
 - Concretization — every argument type carries its own generic-impl
   map intrinsically: an `AnalyzedModuleArgumentType`'s `impls` IS the
@@ -1550,36 +1548,30 @@ Focused TODOs still open:
   inferable type), the resulting binding isn't yet recorded.
 - **Nested-impl generic accumulation** — a field typed
   `Box[u8, Sample]` should contribute `Sample` to the parent's
-  requires; none of the generic-collection walks
-  (`fileCtx.inferGenerics` and the per-type builds in
-  structdef / variantdef / uniondef) descend into impls yet — when
+  requires; none of the generic-collection walks (the per-type builds
+  in structdef / variantdef / uniondef) descend into impls yet — when
   this lands, all of them need the same descent.
-- **Require-slot derivation is implemented three times and must
-  agree** — `fileCtx.inferGenerics` (use-site, name-keyed) plus the
-  construction-time collections in structdef and uniondef that feed
-  the resolved twin's stored `generics`. Pre-flip these were
-  redundant checks of one truth; post-flip the twin's stored slots
-  are AUTHORITATIVE for imported modules while locals still use the
-  use-site derivation — any drift between the implementations
-  (ordering, dedup semantics, the impl-descent above) now diverges
-  across phases and lands on `analyzeDefModuleArgumentType`'s count
-  assert as a [BUG] crash instead of a diagnostic. Consolidating to
-  one derivation is a correctness item, not a cleanup.
+- **Require-slot derivation now has a single source** — the
+  construction-time collections in structdef and uniondef feed each
+  resolved type's stored `generics`, and the def analyzer reads those
+  slots off the module's data block (`module.dataDef.requires`)
+  uniformly for both local and imported modules. The former use-site
+  derivation (`fileCtx.inferGenerics`) is gone, so
+  `analyzeDefModuleArgumentType`'s count check is a real diagnostic
+  rather than a [BUG] crash from cross-phase drift. The residual item
+  is only that struct's and union's construction-time collections must
+  keep matching ordering + dedup semantics (and the impl-descent
+  above), since they still feed the one stored slot list.
 - **`AnalyzedDefImportedType` stores the twin twice** — `typ` and
   `resolved.resolvedType` are the same object arriving via two
   different derivations (the def-time `impFile.findType` re-lookup
   vs the resolve-time P3-pre-1 capture), with no assert tying them.
   Either derive `typ` from the binding or assert the tie in the
   constructor.
-- **Small hygiene** — the shallow-vs-deep comment block on the
-  resolver facade still contains a pre-deep-check paragraph
-  assigning signature parity to phase B's value-vs-defType walk
-  (superseded by the def analyzer's identity-probe check described
-  further down in the same block); and `ResolvedApp.findFile`
-  returns a Result although by resolve time the loader has
-  materialized every import target — either it is the assert-backed
-  form per the identity-lookup doctrine, or the user error it can
-  surface should be nameable.
+- **Small hygiene** — `ResolvedApp.findFile` returns a Result
+  although by resolve time the loader has materialized every import
+  target — either it is the assert-backed form per the identity-lookup
+  doctrine, or the user error it can surface should be nameable.
 - **Type-correctness checks across statements** — assignment
   compatibility and match exhaustiveness. (Setter type equality is
   now enforced in `analyzeSetter`; its error message is still rough
@@ -1596,11 +1588,9 @@ Focused TODOs still open:
   natural fix is a per-app memo keyed on that triple (access has
   only two values); it needs a home that respects the pure-proc
   discipline, which is why it is deliberately deferred rather than
-  bolted on. The same theme runs through every phase — the
-  resolver's `inferGenerics` re-derives require slots at each
-  local-module use site (imported modules read the twin's stored
-  slots), phase B re-concretizes per call — so this line item stands
-  in for a dedicated caching pass over the whole pipeline.
+  bolted on. The same theme runs through the analyzer — phase B
+  re-concretizes per call — so this line item stands in for a
+  dedicated caching pass over the whole pipeline.
   Priority order is settled: memory-safe C code generation first,
   then the performance pass.
 
