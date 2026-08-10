@@ -374,7 +374,7 @@ proc analyzeDefType(fileCtx: ResolvedFileContext, typ: ResolvedLocalType): Resul
     ok(newAnalyzedLocalType(analyzedModule))
 
 proc analyzeDefImportedType(impFile: ResolvedFile, impType: ResolvedImportedType): AnalyzedDefImportedType =
-  newAnalyzedDefImportedType(impType, impFile, impFile.findType(impType.typ))
+  newAnalyzedDefImportedType(impType, impFile, impFile.findType(impType.localType.parsed))
 
 proc analyzeDefImport(appCtx: ResolvedAppContext, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
   let impFile = appCtx.findFile(imp.file)

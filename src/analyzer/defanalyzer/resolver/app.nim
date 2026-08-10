@@ -44,23 +44,7 @@ proc findType*(file: ResolvedFile, localType: parser.LocalType): ResolvedLocalTy
 proc findModule*(file: ResolvedFile, module: Module): ResolvedModule = file.context.findModule(module)
 proc findGeneric*(file: ResolvedFile, generic: Generic): ResolvedGeneric = file.context.findGeneric(generic)
 proc findExportedType*(file: ResolvedFile, importedType: ImportedType): Result[ResolvedImportedType, string] = file.context.findExportedType(importedType)
-
-
-proc findGenericInScope*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
-  ## Identity lookup spanning the file's OWN types AND its import
-  ## bindings — everything this file's scope can see. Identity keys
-  ## (hash-by-loc) make it alias-immune: the file may import the
-  ## generic under a different binding name. Serves the constraint
-  ## hop: a module's requirement generic is always in its defining
-  ## file's scope (the file referenced it to define the module), so
-  ## a miss is a compiler bug.
-  let parsed = newLocalType(typ)
-  if parsed in file.typeIndex:
-    return file.findGeneric(typ)
-  for impType in file.importedBindings:
-    if impType.typ == parsed:
-      return impType.localType.generic
-  assert(false, fmt"[BUG] - {typ.loc} generic `{typ.name.asl}` is not in the scope of file `{file.path}`")
+proc findGenericInScope*(file: ResolvedFile, typ: Generic): ResolvedGeneric = file.context.findGenericInScope(typ)
 
 # ============================================================
 # ResolvedApp

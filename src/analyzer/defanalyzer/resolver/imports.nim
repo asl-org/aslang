@@ -26,7 +26,6 @@ proc newResolvedImportedType*(localType: ResolvedLocalType): ResolvedImportedTyp
   ResolvedImportedType(parsed: parsed, localType: localType)
 
 proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding
-proc typ*(t: ResolvedImportedType): LocalType = t.localType.parsed
 proc localType*(t: ResolvedImportedType): ResolvedLocalType = t.localType
 
 # ResolvedImport
@@ -73,7 +72,7 @@ proc localType*(t: Type): LocalType =
   ## every consumer that only cares about the definition shape reads.
   case t.kind:
   of tkLocal: t.local
-  of tkImported: t.imported.typ
+  of tkImported: t.imported.localType.parsed
 
 proc loc*(t: Type): Location = t.localType.loc
 proc hash*(t: Type): Hash = t.localType.hash

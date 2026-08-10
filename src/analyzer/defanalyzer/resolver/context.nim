@@ -24,6 +24,7 @@ import types
 type FileContext* = ref object
   parsed: parser.File
   imports: seq[ResolvedImport]
+  importedTypeIndex: Table[LocalType, ResolvedLocalType]
   localTypes: seq[ResolvedLocalType]
   localTypeIndex: Table[LocalType, int]
   typeIndex: Table[Identifier, Type]
@@ -46,6 +47,7 @@ proc add*(fileCtx: FileContext, imp: ResolvedImport): Result[FileContext, string
   fileCtx.imports.add(imp)
   for impType in imp.importedTypes:
     discard ? fileCtx.insert(impType.binding, newType(impType))
+    fileCtx.importedTypeIndex[impType.localType.parsed] = impType.localType
   ok(fileCtx)
 
 proc add*(fileCtx: FileContext, localType: ResolvedLocalType): Result[FileContext, string] =
@@ -100,6 +102,17 @@ proc findExportedType*(fileCtx: FileContext, importedType: ImportedType): Result
   let localType = ? fileCtx.parsed.findExportedType(importedType.name)
   let resolvedLocalType = fileCtx.findLocalType(localType)
   ok(newResolvedImportedType(importedType, resolvedLocalType))
+
+proc findGenericInScope*(fileCtx: FileContext, generic: Generic): ResolvedGeneric =
+  let localType = newLocalType(generic)
+  let resolvedLocalType =
+    if localType in fileCtx.localTypeIndex:
+      fileCtx.localTypes[fileCtx.localTypeIndex[localType]]
+    else:
+      fileCtx.importedTypeIndex[localType]
+
+  resolvedLocalType.generic
+
 
 # ============================================================
 # TypeContext
