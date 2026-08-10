@@ -452,19 +452,15 @@ proc resolveImport(app: ResolvedApp, imp: Import): Result[ResolvedImport, string
 proc resolveFile(app: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
   var fileCtx = ? newFileContext(file)
 
-  var resolvedImports: seq[ResolvedImport]
   for imp in file.imports:
     let resolvedImport = ? resolveImport(app, imp)
-    resolvedImports.add(resolvedImport)
     fileCtx = ? fileCtx.add(resolvedImport)
 
-  var resolvedTypes: seq[ResolvedLocalType]
   for typ in file.types:
     let resolvedType = ? resolveType(fileCtx, typ)
-    resolvedTypes.add(resolvedType)
     fileCtx = ? fileCtx.add(resolvedType)
 
-  ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileCtx))
+  ok(newResolvedFile(fileCtx))
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   let resolvedApp = newResolvedApp(app)

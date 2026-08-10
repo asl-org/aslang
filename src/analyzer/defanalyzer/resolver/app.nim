@@ -1,8 +1,9 @@
-## Resolver app/file cluster — ResolvedFile (a resolved file's types +
-## imports with identity-keyed lookups) and ResolvedApp (the app-level
-## result AND accumulator: the parsed App plus every ResolvedFile
-## accumulated so far, so import resolution can link a binding to its
-## source file's already-resolved types).
+## Resolver app/file cluster — ResolvedFile (a thin wrapper over the
+## file's FileContext, presenting its types + imports + identity-keyed
+## lookups) and ResolvedApp (the app-level result AND accumulator: the
+## parsed App plus every ResolvedFile accumulated so far, so import
+## resolution can link a binding to its source file's already-resolved
+## types).
 
 import results, strformat, tables
 
@@ -17,17 +18,9 @@ import context
 
 type ResolvedFile* = ref object
   context: FileContext
-  parsed: parser.File
-  imports: seq[ResolvedImport]
-  types: seq[ResolvedLocalType]
-  typeIndex: Table[parser.LocalType, int]
 
-proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedLocalType], context: FileContext): ResolvedFile =
-  var typeIndex: Table[parser.LocalType, int]
-  for id, typ in types:
-    assert(typ.parsed notin typeIndex, fmt"[BUG] - {typ.loc} duplicate local type `{typ.name.asl}` in the resolved file")
-    typeIndex[typ.parsed] = id
-  ResolvedFile(context: context, parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
+proc newResolvedFile*(context: FileContext): ResolvedFile =
+  ResolvedFile(context: context)
 
 proc path*(file: ResolvedFile): string = file.context.path
 proc parsed*(file: ResolvedFile): parser.File = file.context.parsed
@@ -35,7 +28,6 @@ proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.context.imports
 proc types*(file: ResolvedFile): seq[ResolvedLocalType] = file.context.localTypes
 proc modules*(file: ResolvedFile): seq[ResolvedModule] = file.context.modules
 proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] = file.context.exportedTypes
-proc importedBindings(file: ResolvedFile): seq[ResolvedImportedType] = file.context.importedBindings
 
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is

@@ -51,9 +51,12 @@ proc add*(fileCtx: FileContext, imp: ResolvedImport): Result[FileContext, string
   ok(fileCtx)
 
 proc add*(fileCtx: FileContext, localType: ResolvedLocalType): Result[FileContext, string] =
-  fileCtx.localTypeIndex[localType.parsed] = fileCtx.localTypes.len
-  fileCtx.localTypes.add(localType)
-  ok(fileCtx)
+  if localType.parsed in fileCtx.localTypeIndex:
+    err(fmt"[BUG] - {localType.loc} duplicate local type `{localType.name.asl}` in the resolved file")
+  else:
+    fileCtx.localTypeIndex[localType.parsed] = fileCtx.localTypes.len
+    fileCtx.localTypes.add(localType)
+    ok(fileCtx)
 
 proc findLocalType*(fileCtx: FileContext, name: Identifier): Result[LocalType, string] =
   if name in fileCtx.typeIndex: ok(fileCtx.typeIndex[name].localType)
@@ -80,9 +83,6 @@ proc modules*(fileCtx: FileContext): seq[ResolvedModule] =
 proc exportedTypes*(fileCtx: FileContext): seq[ResolvedImportedType] =
   fileCtx.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
 proc localTypes*(fileCtx: FileContext): seq[ResolvedLocalType] = fileCtx.localTypes
-proc importedBindings*(fileCtx: FileContext): seq[ResolvedImportedType] =
-  for imp in fileCtx.imports:
-    result.add(imp.importedTypes)
 
 proc findLocalType*(fileCtx: FileContext, localType: LocalType): ResolvedLocalType =
   assert(localType in fileCtx.localTypeIndex, fmt"[BUG] - {localType.loc} type `{localType.name.asl}` missing from the resolved file")
@@ -104,14 +104,19 @@ proc findExportedType*(fileCtx: FileContext, importedType: ImportedType): Result
   ok(newResolvedImportedType(importedType, resolvedLocalType))
 
 proc findGenericInScope*(fileCtx: FileContext, generic: Generic): ResolvedGeneric =
+  ## Identity lookup spanning the file's OWN types AND its import
+  ## bindings — everything this file's scope can see. Identity keys
+  ## (hash-by-loc) make it alias-immune: the file may import the generic
+  ## under a different binding name. Serves the constraint hop: a
+  ## module's requirement generic is always in its defining file's scope
+  ## (the file referenced it to define the module), so a miss is a
+  ## compiler bug.
   let localType = newLocalType(generic)
-  let resolvedLocalType =
-    if localType in fileCtx.localTypeIndex:
-      fileCtx.localTypes[fileCtx.localTypeIndex[localType]]
-    else:
-      fileCtx.importedTypeIndex[localType]
-
-  resolvedLocalType.generic
+  if localType in fileCtx.localTypeIndex:
+    return fileCtx.localTypes[fileCtx.localTypeIndex[localType]].generic
+  if localType in fileCtx.importedTypeIndex:
+    return fileCtx.importedTypeIndex[localType].generic
+  assert(false, fmt"[BUG] - {generic.loc} generic `{generic.name.asl}` is not in the scope of file `{fileCtx.path}`")
 
 
 # ============================================================
