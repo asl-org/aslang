@@ -20,7 +20,7 @@ type FunctionAccess* = enum
   ## What a function lookup may see: `faPublic` = public functions
   ## only (the caller's context is outside the defining module),
   ## `faAll` = every function (the caller IS the defining module).
-  ## Derived from a TypeContext one layer up (resolver/typecontext).
+  ## Derived from the enclosing definition via `LocalType.access`.
   faPublic, faAll
 
 type FunctionDef* = ref object

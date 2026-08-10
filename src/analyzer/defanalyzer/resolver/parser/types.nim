@@ -207,6 +207,15 @@ proc generic*(dt: LocalType): Generic =
     fmt"LocalType.generic accessed but kind is {dt.kind}"
   dt.generic
 
+proc access*(dt: LocalType, module: Module): FunctionAccess =
+  ## Which functions of `module` a reference inside `dt`'s enclosing
+  ## definition may see: a module sees its own private functions
+  ## (faAll), everything else sees only public.
+  case dt.kind:
+  of ltkGeneric: faPublic
+  of ltkModule:
+    if dt.module == module: faAll else: faPublic
+
 proc name*(typ: LocalType): Identifier =
   case typ.kind:
   of ltkModule: typ.module.name

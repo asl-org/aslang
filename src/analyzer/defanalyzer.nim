@@ -44,7 +44,7 @@ export importdef
 # satisfaction check (which functions of an impl module the context
 # may see). Everything else stays resolver-guaranteed: the generic
 # self-reference rule and name/arity/accessibility presence are
-# enforced at resolve time (TypeContext there), so a failed lookup
+# enforced at resolve time (via the enclosing `LocalType` there), so a failed lookup
 # here is a compiler bug, never a user error — and there are no
 # module/generic context twins; one context value, one proc.
 proc analyzeDefGenericArgumentType(fileCtx: ResolvedFileContext, genericArgType: ResolvedGenericArgumentType): Result[AnalyzedGenericArgumentType, string] =

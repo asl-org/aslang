@@ -18,9 +18,6 @@ import ./resolver/indexing
 export indexing
 
 # ---- argument-type cluster (mutually-recursive tagged union) ----
-import ./resolver/context
-export context
-
 import ./resolver/functioncontext
 export functioncontext
 
@@ -53,10 +50,10 @@ export imports, app
 
 
 # resolveArgumentType — single proc for both definition contexts; the
-# `TypeContext` (enclosing module | enclosing generic) rides along so
-# visibility and the generic self-reference rule are decided where
-# they apply.
-proc resolveArgumentType(fileCtx: ResolvedFile, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedArgumentType, string]
+# enclosing definition (a `LocalType` — the enclosing module | generic)
+# rides along so visibility (`access`) and the generic self-reference
+# rule are decided where they apply.
+proc resolveArgumentType(fileCtx: ResolvedFile, typeCtx: LocalType, argType: ArgumentType): Result[ResolvedArgumentType, string]
 
 # resolveModuleArgumentType (below) only POPULATES a module argument
 # type's impls — it neither counts them against the module's require
@@ -77,7 +74,7 @@ proc resolveArgumentType(fileCtx: ResolvedFile, typeCtx: TypeContext, argType: A
 # topological ordering (impossible with cycles) or a signatures-first /
 # validate-second split (breaks the single pass-B model).
 
-proc resolveModuleArgumentType(fileCtx: ResolvedFile, typeCtx: TypeContext, argType: ArgumentType, argModule: Module): Result[ResolvedModuleArgumentType, string] =
+proc resolveModuleArgumentType(fileCtx: ResolvedFile, typeCtx: LocalType, argType: ArgumentType, argModule: Module): Result[ResolvedModuleArgumentType, string] =
   # The resolver only POPULATES the impl types here: it looks the module
   # up and resolves each nested argument type in slot order. Impl count
   # (against the module's require slots) and generic-constraint
@@ -94,14 +91,14 @@ proc resolveModuleArgumentType(fileCtx: ResolvedFile, typeCtx: TypeContext, argT
     impls.add(resolvedImpl)
   ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
 
-proc resolveGenericArgumentType(typeCtx: TypeContext, argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
+proc resolveGenericArgumentType(typeCtx: LocalType, argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
   case typeCtx.kind:
-  of tckModule:
+  of ltkModule:
     if argType.impls.len == 0:
       ok(newResolvedGenericArgumentType(argGeneric, argType.loc))
     else:
       err(fmt"{argGeneric.loc} generic `{argGeneric.name.asl}` is not allowed to have impls")
-  of tckGeneric:
+  of ltkGeneric:
     if argType.impls.len == 0:
       if argGeneric == typeCtx.generic:
         ok(newResolvedGenericArgumentType(argGeneric, argType.loc))
@@ -110,7 +107,7 @@ proc resolveGenericArgumentType(typeCtx: TypeContext, argType: ArgumentType, arg
     else:
       err(fmt"{argType.loc} type `{argGeneric.name.asl}` is a generic and does not support further impls")
 
-proc resolveArgumentType(fileCtx: ResolvedFile, typeCtx: TypeContext, argType: ArgumentType): Result[ResolvedArgumentType, string] =
+proc resolveArgumentType(fileCtx: ResolvedFile, typeCtx: LocalType, argType: ArgumentType): Result[ResolvedArgumentType, string] =
   let typ = ? fileCtx.findLocalType(argType.root)
   case typ.kind:
   of ltkGeneric:
@@ -120,7 +117,7 @@ proc resolveArgumentType(fileCtx: ResolvedFile, typeCtx: TypeContext, argType: A
     let resolvedModuleType = ? resolveModuleArgumentType(fileCtx, typeCtx, argType, typ.module)
     ok(newResolvedArgumentType(resolvedModuleType))
 
-proc resolveArgumentDef(fileCtx: ResolvedFile, typeCtx: TypeContext, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
+proc resolveArgumentDef(fileCtx: ResolvedFile, typeCtx: LocalType, argDef: ArgumentDef): Result[ResolvedArgumentDef, string] =
   let resolvedArgumentType = ? resolveArgumentType(fileCtx, typeCtx, argDef.argType)
   ok(newResolvedArgumentDef(argDef, resolvedArgumentType))
 
@@ -132,32 +129,32 @@ proc resolveStructDefHeader(fileCtx: ResolvedFile, header: StructDefHeader): Res
     resolvedRequires.add(genericType)
   ok(resolvedRequires)
 
-proc resolveFields(fileCtx: ResolvedFile, typeCtx: TypeContext, fields: seq[ArgumentDef]): Result[seq[ResolvedArgumentDef], string] =
+proc resolveFields(fileCtx: ResolvedFile, typeCtx: LocalType, fields: seq[ArgumentDef]): Result[seq[ResolvedArgumentDef], string] =
   var resolvedFields: seq[ResolvedArgumentDef]
   for field in fields:
     let resolvedField = ? resolveArgumentDef(fileCtx, typeCtx, field)
     resolvedFields.add(resolvedField)
   ok(resolvedFields)
 
-proc resolveStructDef(fileCtx: ResolvedFile, typeCtx: TypeContext, struct: StructDef): Result[ResolvedStructDef, string] =
+proc resolveStructDef(fileCtx: ResolvedFile, typeCtx: LocalType, struct: StructDef): Result[ResolvedStructDef, string] =
   let resolvedRequires = ? resolveStructDefHeader(fileCtx, struct.header)
   let resolvedFields = ? resolveFields(fileCtx, typeCtx, struct.fields)
   # Explicit-vs-inferred decision + header/field conflict live on the
   # constructor.
   newResolvedStructDef(struct, resolvedRequires, resolvedFields)
 
-proc resolveVariantDef(fileCtx: ResolvedFile, typeCtx: TypeContext, variant: VariantDef): Result[ResolvedVariantDef, string] =
+proc resolveVariantDef(fileCtx: ResolvedFile, typeCtx: LocalType, variant: VariantDef): Result[ResolvedVariantDef, string] =
   let resolvedFields = ? resolveFields(fileCtx, typeCtx, variant.fields)
   ok(newResolvedVariantDef(variant, resolvedFields))
 
-proc resolveUnionDef(fileCtx: ResolvedFile, typeCtx: TypeContext, union: UnionDef): Result[ResolvedUnionDef, string] =
+proc resolveUnionDef(fileCtx: ResolvedFile, typeCtx: LocalType, union: UnionDef): Result[ResolvedUnionDef, string] =
   var resolvedVariants: seq[ResolvedVariantDef]
   for variant in union.variants:
     let resolvedVariant = ? resolveVariantDef(fileCtx, typeCtx, variant)
     resolvedVariants.add(resolvedVariant)
   ok(newResolvedUnionDef(union, resolvedVariants))
 
-proc resolveDataDef(fileCtx: ResolvedFile, typeCtx: TypeContext, data: DataDef): Result[ResolvedDataDef, string] =
+proc resolveDataDef(fileCtx: ResolvedFile, typeCtx: LocalType, data: DataDef): Result[ResolvedDataDef, string] =
   case data.kind:
   of ddkLiteral:
     let resolvedLiteralDef = ? newResolvedLiteralDef(data.literal)
@@ -169,7 +166,7 @@ proc resolveDataDef(fileCtx: ResolvedFile, typeCtx: TypeContext, data: DataDef):
     let resolvedUnionDef = ? resolveUnionDef(fileCtx, typeCtx, data.union)
     ok(newResolvedDataDef(resolvedUnionDef))
 
-proc resolveFunctionDef(fileCtx: ResolvedFile, typeCtx: TypeContext, def: FunctionDef): Result[ResolvedFunctionDef, string] =
+proc resolveFunctionDef(fileCtx: ResolvedFile, typeCtx: LocalType, def: FunctionDef): Result[ResolvedFunctionDef, string] =
   var resolvedArgDefs: seq[ResolvedArgumentDef]
   for argDef in def.args:
     let resolvedArgDef = ? resolveArgumentDef(fileCtx, typeCtx, argDef)
@@ -178,7 +175,7 @@ proc resolveFunctionDef(fileCtx: ResolvedFile, typeCtx: TypeContext, def: Functi
   let resolvedReturnType = ? resolveArgumentType(fileCtx, typeCtx, def.returns)
   ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
 
-proc resolveExternFunction(fileCtx: ResolvedFile, typeCtx: TypeContext, function: ExternFunction): Result[ResolvedExternFunction, string] =
+proc resolveExternFunction(fileCtx: ResolvedFile, typeCtx: LocalType, function: ExternFunction): Result[ResolvedExternFunction, string] =
   let resolvedFunctionDef = ? resolveFunctionDef(fileCtx, typeCtx, function.def)
   ok(newResolvedExternFunction(function, resolvedFunctionDef))
 
@@ -204,10 +201,10 @@ proc resolveGetter(scope: FunctionContext, getter: Getter): Result[ResolvedGette
   ok(newResolvedGetter(getter))
 
 # resolveExpression / resolveStatement form the body-cluster cycle.
-proc resolveExpression(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string]
-proc resolveStatement(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string]
+proc resolveExpression(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string]
+proc resolveStatement(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string]
 
-proc resolveFunctionCall(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
+proc resolveFunctionCall(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let typ = ? fileCtx.findLocalType(fncall.root)
   let access =
     case typ.kind:
@@ -222,7 +219,7 @@ proc resolveFunctionCall(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: F
     resolvedArgs.add(resolvedArg)
   ok(newResolvedFunctionCall(fncall, typ, resolvedArgs))
 
-proc resolveStructRef(fileCtx: ResolvedFile, typeCtx: TypeContext, structRef: StructRef): Result[ResolvedStructRef, string] =
+proc resolveStructRef(fileCtx: ResolvedFile, typeCtx: LocalType, structRef: StructRef): Result[ResolvedStructRef, string] =
   let structModule = ? fileCtx.findModule(structRef.module)
   if structModule.data.isNone:
     err(fmt"{structRef.loc} module `{structModule.name.asl}` does not define a data block")
@@ -241,7 +238,7 @@ proc resolveStructRef(fileCtx: ResolvedFile, typeCtx: TypeContext, structRef: St
         let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, structRef.argType, structModule)
         ok(newResolvedStructRef(structRef, resolvedModuleArgType, struct))
 
-proc resolveKeywordArguments(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
+proc resolveKeywordArguments(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, kwargList: KeywordArgumentList): Result[seq[ResolvedKeywordArgument], string] =
   ## Resolves each kwarg's expression, in source order. Field-name
   ## validation, duplicate detection, and canonical ordering live on
   ## the initializer constructors (one shape serves struct + union).
@@ -251,12 +248,12 @@ proc resolveKeywordArguments(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCt
     resolvedKwargs.add(newResolvedKeywordArgument(kwarg, resolvedExpression))
   ok(resolvedKwargs)
 
-proc resolveStructInitializer(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, init: StructInitializer): Result[ResolvedStructInitializer, string] =
+proc resolveStructInitializer(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, init: StructInitializer): Result[ResolvedStructInitializer, string] =
   let resolvedStructRef = ? resolveStructRef(fileCtx, typeCtx, init.structRef)
   let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, init.kwargList)
   newResolvedStructInitializer(init, resolvedStructRef, resolvedKeywordArgs)
 
-proc resolveUnionRef(fileCtx: ResolvedFile, typeCtx: TypeContext, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
+proc resolveUnionRef(fileCtx: ResolvedFile, typeCtx: LocalType, unionRef: UnionRef): Result[ResolvedUnionRef, string] =
   let unionModule = ? fileCtx.findModule(unionRef.module)
   if unionModule.data.isNone:
     err(fmt"{unionRef.loc} expected module `{unionRef.module.asl}` to be union but found none")
@@ -274,12 +271,12 @@ proc resolveUnionRef(fileCtx: ResolvedFile, typeCtx: TypeContext, unionRef: Unio
         let resolvedArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, unionRef.argType, unionModule)
         ok(newResolvedUnionRef(unionRef, resolvedArgType, variant))
 
-proc resolveUnionInitializer(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
+proc resolveUnionInitializer(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, unionInit: UnionInitializer): Result[ResolvedUnionInitializer, string] =
   let resolvedUnionRef = ? resolveUnionRef(fileCtx, typeCtx, unionInit.unionRef)
   let resolvedKeywordArgs = ? resolveKeywordArguments(fileCtx, typeCtx, funcCtx, unionInit.kwargList)
   newResolvedUnionInitializer(unionInit, resolvedUnionRef, resolvedKeywordArgs)
 
-proc resolveLiteralInitializer(fileCtx: ResolvedFile, typeCtx: TypeContext, init: LiteralInitializer): Result[ResolvedLiteralInitializer, string] =
+proc resolveLiteralInitializer(fileCtx: ResolvedFile, typeCtx: LocalType, init: LiteralInitializer): Result[ResolvedLiteralInitializer, string] =
   let module = ? fileCtx.findModule(init.module)
   if module.data.isNone:
     err(fmt"{init.loc} expected module `{init.module.asl}` to be a literal but found none")
@@ -292,7 +289,7 @@ proc resolveLiteralInitializer(fileCtx: ResolvedFile, typeCtx: TypeContext, init
       let resolvedModuleArgType = ? resolveModuleArgumentType(fileCtx, typeCtx, init.argType, module)
       ok(newResolvedLiteralInitializer(init, resolvedModuleArgType, moduleData.literal))
 
-proc resolveInitializer(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, initializer: Initializer): Result[ResolvedInitializer, string] =
+proc resolveInitializer(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, initializer: Initializer): Result[ResolvedInitializer, string] =
   case initializer.kind:
   of ikLiteral:
     let resolvedLiteralInit = ? resolveLiteralInitializer(fileCtx, typeCtx, initializer.literal)
@@ -313,7 +310,7 @@ proc resolveCasePattern(casePattern: CasePattern): Result[ResolvedCasePattern, s
   of cpkUnion:
     ok(newResolvedCasePattern(casePattern.variant))
 
-proc resolveCaseBlock(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
+proc resolveCaseBlock(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, caseBlock: CaseBlock): Result[ResolvedCaseBlock, string] =
   var caseCtx = funcCtx
   let resolvedCasePattern = ? resolveCasePattern(caseBlock.pattern)
   caseCtx = caseCtx.update(resolvedCasePattern)
@@ -325,7 +322,7 @@ proc resolveCaseBlock(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: Func
     caseCtx = caseCtx.update(resolvedStatement)
   ok(newResolvedCaseBlock(caseBlock, resolvedCasePattern, resolvedStatements))
 
-proc resolveMatchExpression(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, match: MatchExpression): Result[ResolvedMatchExpression, string] =
+proc resolveMatchExpression(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, match: MatchExpression): Result[ResolvedMatchExpression, string] =
   let resolvedSubject = ? resolveExpression(fileCtx, typeCtx, funcCtx, match.subject)
   var resolvedCaseBlocks: seq[ResolvedCaseBlock]
   for caseBlock in match.cases:
@@ -333,7 +330,7 @@ proc resolveMatchExpression(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx
     resolvedCaseBlocks.add(resolvedCaseBlock)
   ok(newResolvedMatchExpression(match, resolvedSubject, resolvedCaseBlocks))
 
-proc resolveExpression(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string] =
+proc resolveExpression(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string] =
   case expression.kind:
   of ekLiteral:
     let resolvedLiteral = ? resolveLiteral(fileCtx, expression.literal)
@@ -354,16 +351,16 @@ proc resolveExpression(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: Fun
     let resolvedMatchExpr = ? resolveMatchExpression(fileCtx, typeCtx, funcCtx, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))
 
-proc resolveAssignment(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, assignment: Assignment): Result[ResolvedAssignment, string] =
+proc resolveAssignment(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, assignment: Assignment): Result[ResolvedAssignment, string] =
   let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, assignment.expression)
   ok(newResolvedAssignment(assignment, resolvedExpression))
 
-proc resolveSetter(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, setter: Setter): Result[ResolvedSetter, string] =
+proc resolveSetter(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, setter: Setter): Result[ResolvedSetter, string] =
   let resolvedGetter = ? resolveGetter(funcCtx, setter.target)
   let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, setter.expression)
   ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
-proc resolveStatement(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string] =
+proc resolveStatement(fileCtx: ResolvedFile, typeCtx: LocalType, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string] =
   case statement.kind:
   of skExpr:
     let resolvedExpression = ? resolveExpression(fileCtx, typeCtx, funcCtx, statement.expression)
@@ -375,7 +372,7 @@ proc resolveStatement(fileCtx: ResolvedFile, typeCtx: TypeContext, funcCtx: Func
     let resolvedMutation = ? resolveSetter(fileCtx, typeCtx, funcCtx, statement.setter)
     ok(newResolvedStatement(resolvedMutation))
 
-proc resolveUserFunction(fileCtx: ResolvedFile, typeCtx: TypeContext, function: UserFunction): Result[ResolvedUserFunction, string] =
+proc resolveUserFunction(fileCtx: ResolvedFile, typeCtx: LocalType, function: UserFunction): Result[ResolvedUserFunction, string] =
   let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeCtx, function.def)
 
   var funcCtx = ? newFunctionContext(resolvedFuncDef)
@@ -387,7 +384,7 @@ proc resolveUserFunction(fileCtx: ResolvedFile, typeCtx: TypeContext, function: 
 
   ok(newResolvedUserFunction(function, resolvedFuncDef, resolvedStmts))
 
-proc resolveFunction(fileCtx: ResolvedFile, typeCtx: TypeContext, function: Function): Result[ResolvedFunction, string] =
+proc resolveFunction(fileCtx: ResolvedFile, typeCtx: LocalType, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
     let resolvedUserFunction = ? resolveUserFunction(fileCtx, typeCtx, function.user)
@@ -397,7 +394,7 @@ proc resolveFunction(fileCtx: ResolvedFile, typeCtx: TypeContext, function: Func
     ok(newResolvedFunction(resolvedExternFunction))
 
 proc resolveModule(fileCtx: ResolvedFile, module: Module): Result[ResolvedModule, string] =
-  let typeCtx = newTypeContext(module)
+  let typeCtx = newLocalType(module)
   let resolvedData =
     if module.data.isSome:
       let resolvedDataDef = ? resolveDataDef(fileCtx, typeCtx, module.data.get)
@@ -415,7 +412,7 @@ proc resolveModule(fileCtx: ResolvedFile, module: Module): Result[ResolvedModule
   newResolvedModule(module, resolvedData, resolvedFunctions)
 
 proc resolveGeneric(fileCtx: ResolvedFile, generic: Generic): Result[ResolvedGeneric, string] =
-  let typeCtx = newTypeContext(generic)
+  let typeCtx = newLocalType(generic)
   var resolvedFuncDefs: seq[ResolvedFunctionDef]
   for def in generic.defs:
     let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeCtx, def)
