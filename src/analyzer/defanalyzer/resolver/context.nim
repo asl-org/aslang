@@ -78,6 +78,28 @@ proc modules*(fileCtx: FileContext): seq[ResolvedModule] =
 proc exportedTypes*(fileCtx: FileContext): seq[ResolvedImportedType] =
   fileCtx.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
 proc localTypes*(fileCtx: FileContext): seq[ResolvedLocalType] = fileCtx.localTypes
+proc importedBindings*(fileCtx: FileContext): seq[ResolvedImportedType] =
+  for imp in fileCtx.imports:
+    result.add(imp.importedTypes)
+
+proc findLocalType*(fileCtx: FileContext, localType: LocalType): ResolvedLocalType =
+  assert(localType in fileCtx.localTypeIndex, fmt"[BUG] - {localType.loc} type `{localType.name.asl}` missing from the resolved file")
+  fileCtx.localTypes[fileCtx.localTypeIndex[localType]]
+
+proc findModule*(fileCtx: FileContext, typ: Module): ResolvedModule =
+  let resolvedLocalType = fileCtx.findLocalType(newLocalType(typ))
+  assert(resolvedLocalType.kind == rltkModule, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a module by the resolver")
+  resolvedLocalType.module
+
+proc findGeneric*(fileCtx: FileContext, typ: Generic): ResolvedGeneric =
+  let resolvedLocalType = fileCtx.findLocalType(newLocalType(typ))
+  assert(resolvedLocalType.kind == rltkGeneric, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a generic by the resolver")
+  resolvedLocalType.generic
+
+proc findExportedType*(fileCtx: FileContext, importedType: ImportedType): Result[ResolvedImportedType, string] =
+  let localType = ? fileCtx.parsed.findExportedType(importedType.name)
+  let resolvedLocalType = fileCtx.findLocalType(localType)
+  ok(newResolvedImportedType(importedType, resolvedLocalType))
 
 # ============================================================
 # TypeContext

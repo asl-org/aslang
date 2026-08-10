@@ -35,29 +35,16 @@ proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.context.imports
 proc types*(file: ResolvedFile): seq[ResolvedLocalType] = file.context.localTypes
 proc modules*(file: ResolvedFile): seq[ResolvedModule] = file.context.modules
 proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] = file.context.exportedTypes
+proc importedBindings(file: ResolvedFile): seq[ResolvedImportedType] = file.context.importedBindings
 
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is
 # a compiler bug, never a user error.
-proc findType*(file: ResolvedFile, typ: parser.LocalType): ResolvedLocalType =
-  assert(typ in file.typeIndex, fmt"[BUG] - {typ.loc} type `{typ.name.asl}` missing from the resolved file")
-  file.types[file.typeIndex[typ]]
+proc findType*(file: ResolvedFile, localType: parser.LocalType): ResolvedLocalType = file.context.findLocalType(localType)
+proc findModule*(file: ResolvedFile, module: Module): ResolvedModule = file.context.findModule(module)
+proc findGeneric*(file: ResolvedFile, generic: Generic): ResolvedGeneric = file.context.findGeneric(generic)
+proc findExportedType*(file: ResolvedFile, importedType: ImportedType): Result[ResolvedImportedType, string] = file.context.findExportedType(importedType)
 
-proc findModule*(file: ResolvedFile, typ: Module): ResolvedModule =
-  let resolvedType = file.findType(newLocalType(typ))
-  assert(resolvedType.kind == rltkModule, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a module by the resolver")
-  resolvedType.module
-
-proc findGeneric*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
-  let resolvedType = file.findType(newLocalType(typ))
-  assert(resolvedType.kind == rltkGeneric, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a generic by the resolver")
-  resolvedType.generic
-
-proc importedBindings(file: ResolvedFile): seq[ResolvedImportedType] =
-  var bindings: seq[ResolvedImportedType]
-  for imp in file.imports:
-    bindings.add(imp.importedTypes)
-  bindings
 
 proc findGenericInScope*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
   ## Identity lookup spanning the file's OWN types AND its import
@@ -74,11 +61,6 @@ proc findGenericInScope*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
     if impType.typ == parsed:
       return impType.localType.generic
   assert(false, fmt"[BUG] - {typ.loc} generic `{typ.name.asl}` is not in the scope of file `{file.path}`")
-
-proc findExportedType*(file: ResolvedFile, importedType: ImportedType): Result[ResolvedImportedType, string] =
-  let localType = ? file.parsed.findExportedType(importedType.name)
-  let resolvedLocalType = file.findType(localType)
-  ok(newResolvedImportedType(importedType, resolvedLocalType))
 
 # ============================================================
 # ResolvedApp
