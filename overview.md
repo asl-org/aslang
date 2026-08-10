@@ -1563,7 +1563,7 @@ Focused TODOs still open:
   keep matching ordering + dedup semantics (and the impl-descent
   above), since they still feed the one stored slot list.
 - **`AnalyzedDefImportedType` stores the twin twice** — `typ` and
-  `resolved.resolvedType` are the same object arriving via two
+  `resolved.localType` are the same object arriving via two
   different derivations (the def-time `impFile.findType` re-lookup
   vs the resolve-time P3-pre-1 capture), with no assert tying them.
   Either derive `typ` from the binding or assert the tie in the

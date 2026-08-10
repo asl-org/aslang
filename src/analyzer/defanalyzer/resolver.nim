@@ -434,29 +434,20 @@ proc resolveType(fileCtx: FileContext, typ: LocalType): Result[ResolvedLocalType
     let resolvedModule = ? resolveModule(fileCtx, typ.module)
     ok(newResolvedLocalType(resolvedModule))
 
-proc resolveExplicitImport(imp: Import, impFile: parser.File, resolvedImpFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
-  var resolvedImpTypes: seq[ResolvedImportedType]
-  for impType in imp.names:
-    let exportedType = ? impFile.findExportedType(impType.name)
-    let resolvedImpType = newResolvedImportedType(impType, resolvedImpFile.findType(exportedType))
-    resolvedImpTypes.add(resolvedImpType)
-  ok(resolvedImpTypes)
+proc resolveExplicitImport(imp: Import, importedFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
+  var importedTypes: seq[ResolvedImportedType]
+  for importedType in imp.names:
+    let resolvedImportedType = ? importedFile.findExportedType(importedType)
+    importedTypes.add(resolvedImportedType)
+  ok(importedTypes)
 
-proc resolveShorthandImport(impFile: parser.File, resolvedImpFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
-  var resolvedImpTypes: seq[ResolvedImportedType]
-  for typ in impFile.publicTypes:
-    let resolvedImpType = newResolvedImportedType(resolvedImpFile.findType(typ))
-    resolvedImpTypes.add(resolvedImpType)
-  ok(resolvedImpTypes)
-
-proc resolveImport(appCtx: ResolvedApp, imp: Import): Result[ResolvedImport, string] =
-  let impFile = ? appCtx.findFile(imp.absPath)
-  let resolvedImpFile = appCtx.findImportedFile(impFile.path)
-  let resolvedImpTypes =
+proc resolveImport(app: ResolvedApp, imp: Import): Result[ResolvedImport, string] =
+  let importedFile = app.findImportedFile(imp.absPath)
+  let importedTypes =
     case imp.kind:
-    of ikExplicit: ? resolveExplicitImport(imp, impFile, resolvedImpFile)
-    of ikShorthand: ? resolveShorthandImport(impFile, resolvedImpFile)
-  ok(newResolvedImport(imp, impFile, resolvedImpTypes))
+    of ikShorthand: importedFile.exportedTypes
+    of ikExplicit: ? resolveExplicitImport(imp, importedFile)
+  ok(newResolvedImport(imp, importedFile.parsed, importedTypes))
 
 proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
   var fileCtx = ? newFileContext(file)

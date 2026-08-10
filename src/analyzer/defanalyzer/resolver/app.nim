@@ -33,6 +33,8 @@ proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 proc types*(file: ResolvedFile): seq[ResolvedLocalType] = file.types
 proc modules*(file: ResolvedFile): seq[ResolvedModule] =
   file.types.filterIt(it.kind == rltkModule).mapIt(it.module)
+proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] =
+  file.types.filterIt(it.public).mapIt(newResolvedImportedType(it))
 
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is
@@ -70,8 +72,13 @@ proc findGenericInScope*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
     return file.findGeneric(typ)
   for impType in file.importedBindings:
     if impType.typ == parsed:
-      return impType.resolvedType.generic
+      return impType.localType.generic
   assert(false, fmt"[BUG] - {typ.loc} generic `{typ.name.asl}` is not in the scope of file `{file.path}`")
+
+proc findExportedType*(file: ResolvedFile, importedType: ImportedType): Result[ResolvedImportedType, string] =
+  let localType = ? file.parsed.findExportedType(importedType.name)
+  let resolvedLocalType = file.findType(localType)
+  ok(newResolvedImportedType(importedType, resolvedLocalType))
 
 # ============================================================
 # ResolvedApp

@@ -69,6 +69,7 @@ proc newResolvedModule*(parsed: Module, data: Option[ResolvedDataDef], functions
 
   ok(ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions))
 
+proc public*(module: ResolvedModule): bool = module.parsed.public
 proc parsed*(module: ResolvedModule): Module = module.parsed
 proc data*(module: ResolvedModule): Option[ResolvedDataDef] = module.data
 
@@ -169,6 +170,7 @@ proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): R
     funcDefIndex[funcDef] = id
   ok(ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs)))
 
+proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
 proc parsed*(generic: ResolvedGeneric): Generic = generic.parsed
 proc funcDefs*(generic: ResolvedGeneric): seq[ResolvedFunctionDef] = generic.funcDefs
 proc self*(generic: ResolvedGeneric): Generic = generic.parsed
@@ -256,6 +258,11 @@ proc generic*(typ: ResolvedLocalType): ResolvedGeneric =
   assert typ.kind == rltkGeneric,
     fmt"ResolvedLocalType.generic accessed but kind is {typ.kind}"
   typ.generic
+
+proc public*(typ: ResolvedLocalType): bool =
+  case typ.kind:
+  of rltkModule: typ.module.public
+  of rltkGeneric: typ.generic.public
 
 proc name*(typ: ResolvedLocalType): Identifier =
   case typ.kind:

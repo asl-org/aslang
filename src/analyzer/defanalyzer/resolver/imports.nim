@@ -13,28 +13,28 @@ import types
 # ResolvedImportedType
 type ResolvedImportedType* = ref object
   parsed: ImportedType
-  resolvedType: ResolvedLocalType
+  localType: ResolvedLocalType
 
-proc newResolvedImportedType*(parsed: ImportedType, resolvedType: ResolvedLocalType): ResolvedImportedType =
-  ResolvedImportedType(parsed: parsed, resolvedType: resolvedType)
+proc newResolvedImportedType*(parsed: ImportedType, localType: ResolvedLocalType): ResolvedImportedType =
+  ResolvedImportedType(parsed: parsed, localType: localType)
 
 # TODO: Fix the location mess up for error reporting
-proc newResolvedImportedType*(resolvedType: ResolvedLocalType): ResolvedImportedType =
-  let parsed = newImportedType(resolvedType.name)
-  ResolvedImportedType(parsed: parsed, resolvedType: resolvedType)
+proc newResolvedImportedType*(localType: ResolvedLocalType): ResolvedImportedType =
+  let parsed = newImportedType(localType.name)
+  ResolvedImportedType(parsed: parsed, localType: localType)
 
 proc binding*(t: ResolvedImportedType): Identifier = t.parsed.binding
-proc typ*(t: ResolvedImportedType): LocalType = t.resolvedType.parsed
-proc resolvedType*(t: ResolvedImportedType): ResolvedLocalType = t.resolvedType
+proc typ*(t: ResolvedImportedType): LocalType = t.localType.parsed
+proc localType*(t: ResolvedImportedType): ResolvedLocalType = t.localType
 
 # ResolvedImport
 type ResolvedImport* = ref object
   parsed: Import
-  impFile: parser.File
+  file: parser.File
   importedTypes: seq[ResolvedImportedType]
 
-proc newResolvedImport*(parsed: Import, impFile: parser.File, importedTypes: seq[ResolvedImportedType]): ResolvedImport =
-  ResolvedImport(parsed: parsed, impFile: impFile, importedTypes: importedTypes)
+proc newResolvedImport*(parsed: Import, file: parser.File, importedTypes: seq[ResolvedImportedType]): ResolvedImport =
+  ResolvedImport(parsed: parsed, file: file, importedTypes: importedTypes)
 
-proc impFile*(i: ResolvedImport): parser.File = i.impFile
+proc file*(i: ResolvedImport): parser.File = i.file
 proc importedTypes*(i: ResolvedImport): seq[ResolvedImportedType] = i.importedTypes

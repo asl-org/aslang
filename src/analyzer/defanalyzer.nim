@@ -377,7 +377,7 @@ proc analyzeDefImportedType(impFile: ResolvedFile, impType: ResolvedImportedType
   newAnalyzedDefImportedType(impType, impFile, impFile.findType(impType.typ))
 
 proc analyzeDefImport(appCtx: ResolvedAppContext, imp: ResolvedImport): Result[AnalyzedDefImport, string] =
-  let impFile = appCtx.findFile(imp.impFile)
+  let impFile = appCtx.findFile(imp.file)
   var analyzedImpTypes: seq[AnalyzedDefImportedType]
   for impType in imp.importedTypes:
     let analyzedImportedType = analyzeDefImportedType(impFile, impType)

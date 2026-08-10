@@ -33,4 +33,4 @@ proc newAnalyzedDefImport*(resolved: ResolvedImport, importedTypes: seq[Analyzed
   AnalyzedDefImport(resolved: resolved, importedTypes: importedTypes)
 
 proc importedTypes*(imp: AnalyzedDefImport): seq[AnalyzedDefImportedType] = imp.importedTypes
-proc path*(imp: AnalyzedDefImport): string = imp.resolved.impFile.path
+proc path*(imp: AnalyzedDefImport): string = imp.resolved.file.path
