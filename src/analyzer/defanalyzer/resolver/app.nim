@@ -4,37 +4,37 @@
 ## accumulated so far, so import resolution can link a binding to its
 ## source file's already-resolved types).
 
-import results, sequtils, strformat, tables
+import results, strformat, tables
 
 import parser
 import types
 import imports
+import context
 
 # ============================================================
 # ResolvedFile
 # ============================================================
 
 type ResolvedFile* = ref object
+  context: FileContext
   parsed: parser.File
   imports: seq[ResolvedImport]
   types: seq[ResolvedLocalType]
   typeIndex: Table[parser.LocalType, int]
 
-proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedLocalType]): ResolvedFile =
+proc newResolvedFile*(parsed: parser.File, imports: seq[ResolvedImport], types: seq[ResolvedLocalType], context: FileContext): ResolvedFile =
   var typeIndex: Table[parser.LocalType, int]
   for id, typ in types:
     assert(typ.parsed notin typeIndex, fmt"[BUG] - {typ.loc} duplicate local type `{typ.name.asl}` in the resolved file")
     typeIndex[typ.parsed] = id
-  ResolvedFile(parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
+  ResolvedFile(context: context, parsed: parsed, imports: imports, types: types, typeIndex: typeIndex)
 
-proc path*(file: ResolvedFile): string = file.parsed.path
-proc parsed*(file: ResolvedFile): parser.File = file.parsed
-proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
-proc types*(file: ResolvedFile): seq[ResolvedLocalType] = file.types
-proc modules*(file: ResolvedFile): seq[ResolvedModule] =
-  file.types.filterIt(it.kind == rltkModule).mapIt(it.module)
-proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] =
-  file.types.filterIt(it.public).mapIt(newResolvedImportedType(it))
+proc path*(file: ResolvedFile): string = file.context.path
+proc parsed*(file: ResolvedFile): parser.File = file.context.parsed
+proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.context.imports
+proc types*(file: ResolvedFile): seq[ResolvedLocalType] = file.context.localTypes
+proc modules*(file: ResolvedFile): seq[ResolvedModule] = file.context.modules
+proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] = file.context.exportedTypes
 
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is

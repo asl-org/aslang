@@ -449,12 +449,12 @@ proc resolveImport(app: ResolvedApp, imp: Import): Result[ResolvedImport, string
     of ikExplicit: ? resolveExplicitImport(imp, importedFile)
   ok(newResolvedImport(imp, importedFile.parsed, importedTypes))
 
-proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
+proc resolveFile(app: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
   var fileCtx = ? newFileContext(file)
 
   var resolvedImports: seq[ResolvedImport]
   for imp in file.imports:
-    let resolvedImport = ? resolveImport(appCtx, imp)
+    let resolvedImport = ? resolveImport(app, imp)
     resolvedImports.add(resolvedImport)
     fileCtx = ? fileCtx.add(resolvedImport)
 
@@ -462,8 +462,9 @@ proc resolveFile(appCtx: ResolvedApp, file: parser.File): Result[ResolvedFile, s
   for typ in file.types:
     let resolvedType = ? resolveType(fileCtx, typ)
     resolvedTypes.add(resolvedType)
+    fileCtx = ? fileCtx.add(resolvedType)
 
-  ok(newResolvedFile(file, resolvedImports, resolvedTypes))
+  ok(newResolvedFile(file, resolvedImports, resolvedTypes, fileCtx))
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   let resolvedApp = newResolvedApp(app)

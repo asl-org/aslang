@@ -4,7 +4,7 @@
 ## carried so visibility and constraint satisfaction can be decided at
 ## the site that needs them).
 
-import results, strformat, hashes, tables
+import results, sequtils, strformat, hashes, tables
 
 import parser
 import imports
@@ -13,53 +13,19 @@ import types
 # ============================================================
 # FileContext
 # ============================================================
-# The name -> scope-entry table populated by resolver/imports.nim. The
-# entry type `Type` is the Local | Imported union: a name resolves
-# either to a type declared in this file or to the LINKED import
-# binding, which carries the source file's LocalType.
-
-type
-  TypeKind* = enum
-    tkLocal, tkImported
-  Type* = ref object
-    ## Scope entry — what a name resolves to. Hashes and compares by
-    ## the underlying LocalType so aliased imports land on one
-    ## identity key; provenance is payload, not identity.
-    case kind: TypeKind
-    of tkLocal: local: LocalType
-    of tkImported: imported: ResolvedImportedType
-
-proc newType*(local: LocalType): Type =
-  Type(kind: tkLocal, local: local)
-
-proc newType*(imported: ResolvedImportedType): Type =
-  Type(kind: tkImported, imported: imported)
-
-proc kind*(t: Type): TypeKind = t.kind
-
-proc local*(t: Type): LocalType =
-  assert t.kind == tkLocal, "Type.local accessed but kind is tkImported"
-  t.local
-
-proc imported*(t: Type): ResolvedImportedType =
-  assert t.kind == tkImported, "Type.imported accessed but kind is tkLocal"
-  t.imported
-
-proc localType*(t: Type): LocalType =
-  ## The underlying declared type, regardless of provenance — what
-  ## every consumer that only cares about the definition shape reads.
-  case t.kind:
-  of tkLocal: t.local
-  of tkImported: t.imported.typ
-
-proc loc*(t: Type): Location = t.localType.loc
-proc hash*(t: Type): Hash = t.localType.hash
-proc `==`*(a, b: Type): bool = a.localType == b.localType
+# Per-file resolver scope: the name -> scope-entry table (`Type`, the
+# Local | Imported union defined in imports.nim) plus the file's
+# resolved imports and local types with an identity index — populated
+# by `insert` / `add` as the resolver walks the file. A `Type` entry
+# resolves either to a type declared in this file or to a LINKED import
+# binding carrying the source file's LocalType. ResolvedFile (app.nim)
+# wraps a FileContext and delegates to it.
 
 type FileContext* = ref object
   parsed: parser.File
   imports: seq[ResolvedImport]
   localTypes: seq[ResolvedLocalType]
+  localTypeIndex: Table[LocalType, int]
   typeIndex: Table[Identifier, Type]
 
 proc insert(fileCtx: FileContext, name: Identifier, typ: Type): Result[FileContext, string] =
@@ -83,6 +49,7 @@ proc add*(fileCtx: FileContext, imp: ResolvedImport): Result[FileContext, string
   ok(fileCtx)
 
 proc add*(fileCtx: FileContext, localType: ResolvedLocalType): Result[FileContext, string] =
+  fileCtx.localTypeIndex[localType.parsed] = fileCtx.localTypes.len
   fileCtx.localTypes.add(localType)
   ok(fileCtx)
 
@@ -101,6 +68,16 @@ proc findGeneric*(fileCtx: FileContext, name: Identifier): Result[Generic, strin
   case initType.kind:
   of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
   of ltkGeneric: ok(initType.generic)
+
+proc path*(fileCtx: FileContext): string = fileCtx.parsed.path
+proc parsed*(fileCtx: FileContext): parser.File = fileCtx.parsed
+proc imports*(fileCtx: FileContext): seq[ResolvedImport] = fileCtx.imports
+
+proc modules*(fileCtx: FileContext): seq[ResolvedModule] =
+  fileCtx.localTypes.filterIt(it.kind == rltkModule).mapIt(it.module)
+proc exportedTypes*(fileCtx: FileContext): seq[ResolvedImportedType] =
+  fileCtx.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
+proc localTypes*(fileCtx: FileContext): seq[ResolvedLocalType] = fileCtx.localTypes
 
 # ============================================================
 # TypeContext

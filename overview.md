@@ -725,6 +725,9 @@ src/
     literaldef.nim                 ResolvedLiteralDef + newResolvedLiteralDef
     patterns.nim                   ResolvedCasePattern + resolveCasePattern
     imports.nim                    ResolvedImportedType / ResolvedImport
+                                   + Type (the Local | Imported scope
+                                   entry FileContext keys its name
+                                   table on)
     filecontext.nim                  FileContext (Identifier → parser
                                    Type) — the name→identity bridge,
                                    populated from imports + local
