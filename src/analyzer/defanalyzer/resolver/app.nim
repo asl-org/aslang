@@ -107,9 +107,6 @@ proc add*(appCtx: ResolvedApp, file: ResolvedFile) =
 
   appCtx.files.add(file)
 
-proc findFile*(appCtx: ResolvedApp, path: string): Result[parser.File, string] =
-  appCtx.parsed.findFile(path)
-
 proc findFile*(appCtx: ResolvedApp, file: parser.File): ResolvedFile =
   ## Identity lookup — the resolver resolved every file the loader
   ## produced, so a miss is a compiler bug.

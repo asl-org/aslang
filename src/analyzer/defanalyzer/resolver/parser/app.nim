@@ -52,8 +52,9 @@ proc validateNoSelfImport(imports: seq[Import], path: string): Result[void, Pars
 proc buildImportedTypeNameIndex(imports: seq[Import]): Result[Table[Identifier, ImportedType], ParserError] =
   ## Parser-time index build: only ikExplicit imports contribute
   ## names. ikShorthand imports have no names until the resolver
-  ## expands them via `publicTypes()` (the target file isn't parsed
-  ## yet at this point). Shorthand-vs-local + shorthand-vs-explicit
+  ## expands them once the target file's types are resolved (the
+  ## target file isn't parsed yet at this point). Shorthand-vs-local
+  ## + shorthand-vs-explicit
   ## collisions are caught by validateNoDuplicateBindings in
   ## resolver/files.nim.
   var index: Table[Identifier, ImportedType]
@@ -184,9 +185,6 @@ proc findExportedType*(file: File, name: Identifier): Result[LocalType, string] 
   let typ = ? file.findType(name)
   if typ.public: ok(typ)
   else: err(fmt"{name.loc} type `{name.asl}` is defined but is non-public")
-
-proc publicTypes*(file: File): seq[LocalType] =
-  file.types.filterIt(it.public)
 
 # ============================================================
 # App

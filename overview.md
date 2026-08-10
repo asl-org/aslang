@@ -976,7 +976,7 @@ src/
                                    + importedNameIndex + findType
                                    (locally-defined) /
                                    findImportedType / findExportedType
-                                   / publicTypes / importPaths.
+                                   / importPaths.
       app.nim                      App — top-level handle over the
                                    topo-sorted seq[File] + file index.
       decorator.nim                Decorator (`@name` on module /
@@ -1568,10 +1568,6 @@ Focused TODOs still open:
   vs the resolve-time P3-pre-1 capture), with no assert tying them.
   Either derive `typ` from the binding or assert the tie in the
   constructor.
-- **Small hygiene** — `ResolvedApp.findFile` returns a Result
-  although by resolve time the loader has materialized every import
-  target — either it is the assert-backed form per the identity-lookup
-  doctrine, or the user error it can surface should be nameable.
 - **Type-correctness checks across statements** — assignment
   compatibility and match exhaustiveness. (Setter type equality is
   now enforced in `analyzeSetter`; its error message is still rough

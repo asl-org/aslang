@@ -940,8 +940,8 @@ proc parseExplicitImportLine(parser: Parser): Result[Import, ParserError] =
 
 # Shorthand form: `import "path"` — brings every public defined
 # type from the target file into scope under each type's original
-# name. The names list is materialized by the resolver via
-# `publicTypes()` once the target file's parser AST is available.
+# name. The names list is materialized by the resolver once the
+# target file's types are resolved.
 proc parseShorthandImportLine(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.parseKeyword("import")
   discard ? parser.run(ws1)

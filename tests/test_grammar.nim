@@ -206,7 +206,8 @@ module M:
 
   test "shorthand import parses":
     # `import "path"` parses to an ikShorthand Import — the names
-    # list is materialized later by the resolver via publicTypes().
+    # list is materialized later by the resolver once the target
+    # file's types are resolved.
     let r = parseStr("""
 import "./bar.asl"
 

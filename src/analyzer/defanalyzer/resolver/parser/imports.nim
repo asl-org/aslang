@@ -136,8 +136,8 @@ proc newImport*(names: seq[ImportedType], parsedPath: ImportPath, absPath: strin
 proc newImport*(parsedPath: ImportPath, absPath: string, loc: Location): Result[Import, ParserError] =
   ## Shorthand form: `import "path"` — brings every public defined type
   ## from the target file into scope under its original name. No names
-  ## list at parse time; the resolver expands via `publicTypes()` once
-  ## the target file's parser AST is in hand. No uniqueness check here
+  ## list at parse time; the resolver expands it once the target
+  ## file's types are resolved. No uniqueness check here
   ## (there are no names yet); collisions are caught at resolver time.
   ok(Import(kind: ikShorthand, parsedPath: parsedPath, absPath: absPath, loc: loc))
 
