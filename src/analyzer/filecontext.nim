@@ -5,7 +5,7 @@
 ## lands on one key and aliased imports can never miss.
 ##
 ## Name resolution (user-typed name -> ResolvedLocalType) happens at
-## resolve time against the resolver's name-keyed FileContext — by the
+## resolve time against the resolver's name-keyed ResolvedFile — by the
 ## time the analyzer runs, every reference already carries its
 ## ResolvedLocalType identity. Binding-name collisions are also caught
 ## there; construction here only rejects a genuinely different
@@ -23,7 +23,7 @@ proc update(fileCtx: var AnalyzedFileContext, resolved: ResolvedLocalType, analy
   ## binding) is idempotent — keys hash by source location, so both
   ## bindings land here with an equal AnalyzedLocalType. A genuinely
   ## different entry under an existing key is a compiler bug — the
-  ## resolver's name-keyed FileContext already rejected duplicate
+  ## resolver's name-keyed ResolvedFile already rejected duplicate
   ## declarations.
   assert(resolved notin fileCtx or fileCtx[resolved] == analyzed, fmt"[BUG] - {resolved.loc} conflicting entries for type `{resolved.name.asl}` in the file context")
   fileCtx[resolved] = analyzed

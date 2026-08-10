@@ -63,7 +63,7 @@ proc update(fileCtx: var ResolvedFileContext, parsed: parser.LocalType, resolved
   ## binding) is idempotent — keys hash by source location, and
   ## entries compare by their underlying, so both bindings land here
   ## equal. A genuinely different entry under an existing key is a
-  ## compiler bug — the resolver's name-keyed FileContext already
+  ## compiler bug — the resolver's name-keyed ResolvedFile already
   ## rejected duplicate declarations.
   assert(parsed notin fileCtx or fileCtx[parsed] == resolved, fmt"[BUG] - {parsed.loc} conflicting entries for type `{parsed.name.asl}` in the file context")
   fileCtx[parsed] = resolved

@@ -6,7 +6,7 @@
 ## twin (`localType.parsed`), never stored separately. ResolvedImport
 ## bundles the target file with the seq of resolved imported names. This
 ## file also owns `Type`, the Local | Imported scope entry the
-## FileContext (context.nim) keys its name table on.
+## ResolvedFile (app.nim) keys its name table on.
 import hashes
 
 import parser
