@@ -8,6 +8,7 @@
 import unittest, strutils, results
 
 import tutils
+import analyzer
 
 # A trim Base — defines u8 / u32 / u64 / String / Any / Status /
 # Array — kept small enough that each analyzer test can be diffed
@@ -1481,3 +1482,96 @@ module Wrapper:
     check r.isErr
     check errorContains(r.error, "does not implement")
     check errorContains(r.error, "to support `Eq`")
+
+suite "analyzer — entry point":
+  # `findEntryPoint` runs off the analyze path (CLI compile only). The
+  # root file must expose exactly one public module with a
+  # `public func start(): i32`. i32 is defined inline here so it resolves
+  # without the std-vendor injection.
+
+  const I32 = """
+public module i32:
+  literal: "i32"
+
+"""
+
+  test "exactly one public start(): i32 is the entry point":
+    let (r, dir) = analyzeAppSingle(I32 & """
+public module M:
+  public func start(): i32
+    i32 0
+""")
+    cleanupDir(dir)
+    check r.isOk
+    check findEntryPoint(r.get).isOk
+
+  test "no entry point is rejected":
+    let (r, dir) = analyzeAppSingle(I32 & """
+public module M:
+  public func run(): i32
+    i32 0
+""")
+    cleanupDir(dir)
+    check r.isOk
+    let entry = findEntryPoint(r.get)
+    check entry.isErr
+    check errorContains(entry.error, "found 0")
+
+  test "two entry points are rejected":
+    let (r, dir) = analyzeAppSingle(I32 & """
+public module A:
+  public func start(): i32
+    i32 0
+
+public module B:
+  public func start(): i32
+    i32 0
+""")
+    cleanupDir(dir)
+    check r.isOk
+    let entry = findEntryPoint(r.get)
+    check entry.isErr
+    check errorContains(entry.error, "found 2")
+
+  test "wrong return type is not an entry point":
+    let (r, dir) = analyzeAppSingle(I32 & """
+public module u8:
+  literal: "u8"
+
+public module M:
+  public func start(): u8
+    u8 0
+""")
+    cleanupDir(dir)
+    check r.isOk
+    check findEntryPoint(r.get).isErr
+
+  test "non-public start is not an entry point":
+    let (r, dir) = analyzeAppSingle(I32 & """
+public module M:
+  func start(): i32
+    i32 0
+""")
+    cleanupDir(dir)
+    check r.isOk
+    check findEntryPoint(r.get).isErr
+
+  test "start with arguments is not an entry point":
+    let (r, dir) = analyzeAppSingle(I32 & """
+public module M:
+  public func start(x: i32): i32
+    x
+""")
+    cleanupDir(dir)
+    check r.isOk
+    check findEntryPoint(r.get).isErr
+
+  test "start inside a non-public module is not an entry point":
+    let (r, dir) = analyzeAppSingle(I32 & """
+module M:
+  public func start(): i32
+    i32 0
+""")
+    cleanupDir(dir)
+    check r.isOk
+    check findEntryPoint(r.get).isErr

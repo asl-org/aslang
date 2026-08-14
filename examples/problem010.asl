@@ -39,13 +39,13 @@ public module Solver:
       case Err { error: err1 }:
         Status[u32].Err { error: err1 }
 
-  public func start(): u8
+  public func start(): i32
     match Bitset.init(2000001):
       case Ok { value: bitset }:
         match Solver.solve(bitset, 2, 0):
           case Ok { value: ans }:
-            u8 0
+            i32 0
           case Err { error: _ }:
-            u8 1
+            i32 1
       case Err { error: _ }:
-        u8 1
+        i32 1

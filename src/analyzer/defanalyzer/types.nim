@@ -35,6 +35,7 @@ proc newAnalyzedDefModule*(resolved: ResolvedModule,
     funcDefIndex[function.def.resolved] = id
   AnalyzedDefModule(resolved: resolved, requires: requires, data: data, functions: functions, funcDefIndex: funcDefIndex)
 
+proc public*(m: AnalyzedDefModule): bool = m.resolved.public
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc functions*(m: AnalyzedDefModule): seq[AnalyzedDefFunction] = m.functions
 proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires

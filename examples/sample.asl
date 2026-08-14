@@ -15,7 +15,7 @@ import { Solver   as Solution10 } from "./problem010.asl"
 
 
 public module Sample:
-  func start(): u8
+  public func start(): i32
     Solution1.start()
     Solution2.start()
     Solution3.start()
@@ -26,4 +26,4 @@ public module Sample:
     Solution8.start()
     Solution9.start()
     Solution10.start()
-    u8 0
+    i32 0

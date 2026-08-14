@@ -3,7 +3,7 @@
 # initializers (u64 100) and primitive method calls without any
 # match, data blocks, or recursion.
 public module Solver:
-  public func start(): u8
+  public func start(): i32
     n = u64 100
     match u64.subtract(n, 1):
       case Ok { value: a }:
@@ -21,20 +21,20 @@ public module Solver:
                               case Ok { value: g }:
                                 match u64.quotient(g, 12):
                                   case Ok { value: h }:
-                                    u8 0
+                                    i32 0
                                   case _:
-                                    u8 1
+                                    i32 1
                               case _:
-                                u8 1
+                                i32 1
                           case _:
-                            u8 1
+                            i32 1
                       case _:
-                        u8 1
+                        i32 1
                   case _:
-                    u8 1
+                    i32 1
               case _:
-                u8 1
+                i32 1
           case _:
-            u8 1
+            i32 1
       case _:
-        u8 1
+        i32 1

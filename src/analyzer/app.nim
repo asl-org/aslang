@@ -28,12 +28,15 @@ proc newAnalyzedFile*(def: AnalyzedDefFile, imports: seq[AnalyzedImport], module
   AnalyzedFile(def: def, imports: imports, modules: modules)
 
 proc path*(f: AnalyzedFile): string = f.def.path
+proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules
 
 # ---- AnalyzedApp ----
 
 type AnalyzedApp* = ref object
-  resolved: ResolvedApp
+  def: AnalyzedDefApp
   files: seq[AnalyzedFile]
 
-proc newAnalyzedApp*(resolved: ResolvedApp, files: seq[AnalyzedFile]): AnalyzedApp =
-  AnalyzedApp(resolved: resolved, files: files)
+proc newAnalyzedApp*(def: AnalyzedDefApp, files: seq[AnalyzedFile]): AnalyzedApp =
+  AnalyzedApp(def: def, files: files)
+
+proc files*(app: AnalyzedApp): seq[AnalyzedFile] = app.files

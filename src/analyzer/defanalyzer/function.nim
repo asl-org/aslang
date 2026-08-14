@@ -67,6 +67,7 @@ type AnalyzedDefUserFunction* = ref object
 proc newAnalyzedDefUserFunction*(resolved: ResolvedUserFunction, def: AnalyzedFunctionDef, statements: seq[AnalyzedDefStatement]): AnalyzedDefUserFunction =
   AnalyzedDefUserFunction(resolved: resolved, def: def, statements: statements)
 
+proc entry*(function: AnalyzedDefUserFunction): bool = function.resolved.entry
 proc loc*(function: AnalyzedDefUserFunction): Location = function.resolved.loc
 proc name*(function: AnalyzedDefUserFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefUserFunction): int = function.resolved.arity
@@ -111,3 +112,8 @@ proc arity*(function: AnalyzedDefFunction): int =
   case function.kind:
   of adfkExtern: function.extern.arity
   of adfkUser: function.user.arity
+
+proc entry*(function: AnalyzedDefFunction): bool =
+  case function.kind:
+  of adfkExtern: false
+  of adfkUser: function.user.entry

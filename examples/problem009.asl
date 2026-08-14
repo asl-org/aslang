@@ -87,9 +87,9 @@ public module Solver:
       case Err { error: err1 }:
         Status[u32].Err { error: err1 }
 
-  public func start(): u8
+  public func start(): i32
     match Solver.solve(1):
       case Ok { value: _ }:
-        u8 0
+        i32 0
       case _:
-        u8 1
+        i32 1

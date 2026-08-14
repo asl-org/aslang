@@ -28,6 +28,8 @@ type AnalyzedUserFunction* = ref object
 proc newAnalyzedUserFunction*(def: AnalyzedDefUserFunction, statements: seq[AnalyzedStatement]): AnalyzedUserFunction =
   AnalyzedUserFunction(def: def, statements: statements)
 
+proc entry(function: AnalyzedUserFunction): bool = function.def.entry
+
 # ---- AnalyzedFunction ----
 
 type
@@ -52,3 +54,7 @@ proc extern*(function: AnalyzedFunction): AnalyzedExternFunction =
   assert function.kind == afkExtern,
     fmt"AnalyzedFunction.extern accessed but kind is {function.kind}"
   function.extern
+proc entry*(function: AnalyzedFunction): bool =
+  case function.kind:
+  of afkExtern: false
+  of afkUser: function.user.entry

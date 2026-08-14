@@ -83,6 +83,7 @@ proc newResolvedUserFunction*(parsed: UserFunction,
   ResolvedUserFunction(parsed: parsed, def: def, statements: statements)
 
 proc loc*(function: ResolvedUserFunction): Location = function.parsed.loc
+proc entry*(function: ResolvedUserFunction): bool = function.parsed.entry
 proc name*(function: ResolvedUserFunction): Identifier = function.def.name
 proc arity*(function: ResolvedUserFunction): int = function.def.arity
 proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.def

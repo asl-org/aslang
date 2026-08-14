@@ -26,7 +26,7 @@ public module Solver:
       case Err { error: err1 }:
         Status[i64].Err { error: err1 }
 
-  public func start(): i64
+  public func start(): i32
     match Solver.count(999, 3):
       case Ok { value: a }:
         match Solver.count(999, 5):
@@ -37,14 +37,14 @@ public module Solver:
                   case Ok { value: d }:
                     match i64.subtract(d, c):
                       case Ok { value: e }:
-                        e
+                        i32 0
                       case _:
-                        i64 1
+                        i32 1
                   case _:
-                    i64 1
+                    i32 1
               case _:
-                i64 1
+                i32 1
           case _:
-            i64 1
+            i32 1
       case _:
-        i64 1
+        i32 1

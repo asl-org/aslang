@@ -11,3 +11,5 @@ type AnalyzedModule* = ref object
 proc newAnalyzedModule*(def: AnalyzedDefModule, functions: seq[AnalyzedFunction]): AnalyzedModule =
   AnalyzedModule(def: def, functions: functions)
 
+proc public*(module: AnalyzedModule): bool = module.def.public
+proc functions*(module: AnalyzedModule): seq[AnalyzedFunction] = module.functions

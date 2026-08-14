@@ -39,6 +39,8 @@ proc name*(def: FunctionDef): Identifier = def.name
 proc returns*(def: FunctionDef): ArgumentType = def.returns
 proc args*(def: FunctionDef): seq[ArgumentDef] = def.argDefList.argDefs
 proc arity*(def: FunctionDef): int = def.argDefList.arity
+proc entry*(def: FunctionDef): bool =
+  def.public and def.name.asl == "start" and def.arity == 0 and def.returns.asl == "i32"
 
 proc asl*(funcDef: FunctionDef): string =
   let prefix = if funcDef.public: "public func" else: "func"
@@ -88,10 +90,11 @@ proc newUserFunction*(decorators: seq[Decorator], def: FunctionDef,
 
 proc loc*(fn: UserFunction): Location = fn.def.loc
 proc name*(fn: UserFunction): Identifier = fn.def.name
+proc arity*(fn: UserFunction): int = fn.def.arity
+proc entry*(fn: UserFunction): bool = fn.def.entry
 proc def*(fn: UserFunction): FunctionDef = fn.def
 proc statements*(fn: UserFunction): seq[Statement] = fn.statementList.statements
 proc decorators*(fn: UserFunction): seq[Decorator] = fn.decorators
-proc arity*(fn: UserFunction): int = fn.def.arity
 
 proc asl*(fn: UserFunction, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)

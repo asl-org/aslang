@@ -49,13 +49,13 @@ public module Solver:
       case _:
         Status.Ok { value: ans }
 
-  public func start(): u8
+  public func start(): i32
     match Bitset.init(1000001):
       case Ok { value: bitset }:
         match Solver.solve(bitset, 2, 0):
           case Ok { value: _ }:
-            u8 0
+            i32 0
           case _:
-            u8 1
+            i32 1
       case _:
-        u8 1
+        i32 1

@@ -14,11 +14,18 @@ import ./analyzer/literalparse
 import ./analyzer/pattern
 import ./analyzer/statement
 import ./analyzer/function
+export function
+
+
 import ./analyzer/module
+export module
+
 import ./analyzer/filecontext
 import ./analyzer/imports
 import ./analyzer/appcontext
+
 import ./analyzer/app
+export app
 
 proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType): Result[AnalyzedDataDef, string] =
   ok(fileCtx.findModule(argType.module).dataDef)
@@ -582,4 +589,32 @@ proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
   for fileDef in appCtx.fileDefs:
     let analyzedFile = ? analyzeFile(appCtx, fileDef)
     appCtx.add(analyzedFile)
-  ok(newAnalyzedApp(app, appCtx.files))
+  ok(newAnalyzedApp(appDef, appCtx.files))
+
+# The program entry point — a whole-program requirement applied by the
+# CLI compile, deliberately NOT part of `analyze` (feature-level fixtures
+# resolve/analyze snippets that have no entry point).
+type EntryPoint* = ref object
+  file: AnalyzedFile
+  module: AnalyzedModule
+  function: AnalyzedFunction
+
+proc newEntryPoint(file: AnalyzedFile, module: AnalyzedModule, function: AnalyzedFunction): EntryPoint =
+  EntryPoint(file: file, module: module, function: function)
+
+proc function*(entry: EntryPoint): AnalyzedFunction = entry.function
+
+proc findEntryPoint*(app: AnalyzedApp): Result[EntryPoint, string] =
+  ## The root file (topo order puts it last) must expose exactly one
+  ## public module with `public func start(): i32` (the `entry` predicate).
+  var entrypoints: seq[EntryPoint]
+  let entryFile = app.files[^1]
+  for module in entryFile.modules:
+    if module.public:
+      for function in module.functions:
+        if function.entry:
+          entrypoints.add(newEntryPoint(entryFile, module, function))
+  if entrypoints.len != 1:
+    err(fmt"{entryFile.path} expected file to contain one public module with `public func start(): i32` but found {entrypoints.len}")
+  else:
+    ok(entrypoints[0])

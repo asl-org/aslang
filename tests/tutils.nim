@@ -159,6 +159,18 @@ proc analyzeSingle*(source: string,
   ## Convenience for a single-file program (no imports).
   analyzeFiles([("entry.asl", source)], indentWidth, vendorRoots)
 
+proc analyzeAppSingle*(source: string,
+    indentWidth: uint32 = 2,
+    vendorRoots: VendorRoots = emptyVendorRoots()): tuple[res: Result[AnalyzedApp, string], dir: string] =
+  ## Parse + resolve + analyze, returning the AnalyzedApp itself so callers
+  ## can inspect it (e.g. findEntryPoint).
+  let (maybeApp, dir) = parseFiles([("entry.asl", source)], indentWidth, vendorRoots)
+  proc go(app: Result[App, string]): Result[AnalyzedApp, string] =
+    let parsed = ? app
+    let resolved = ? resolve(parsed)
+    analyze(resolved)
+  (go(maybeApp), dir)
+
 proc errorContains*(err: string, needle: string): bool =
   ## Case-sensitive substring check, useful for asserting on error
   ## messages without locking in exact wording.
