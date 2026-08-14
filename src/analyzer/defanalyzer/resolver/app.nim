@@ -29,84 +29,84 @@ type ResolvedFile* = ref object
   localTypeIndex: Table[LocalType, int]
   typeIndex: Table[Identifier, Type]
 
-proc insert(fileCtx: ResolvedFile, name: Identifier, typ: Type): Result[ResolvedFile, string] =
-  if name in fileCtx.typeIndex:
-    let loc = fileCtx.typeIndex[name].loc
+proc insert(file: ResolvedFile, name: Identifier, typ: Type): Result[ResolvedFile, string] =
+  if name in file.typeIndex:
+    let loc = file.typeIndex[name].loc
     err(fmt"{name.loc} duplicate type declaration encountered, see previous declaration at {loc}")
   else:
-    fileCtx.typeIndex[name] = typ
-    ok(fileCtx)
+    file.typeIndex[name] = typ
+    ok(file)
 
 proc newResolvedFile*(parsed: parser.File): Result[ResolvedFile, string] =
-  var fileCtx = ResolvedFile(parsed: parsed)
+  var file = ResolvedFile(parsed: parsed)
   for typ in parsed.types:
-    fileCtx = ? fileCtx.insert(typ.name, newType(typ))
-  ok(fileCtx)
+    file = ? file.insert(typ.name, newType(typ))
+  ok(file)
 
-proc add*(fileCtx: ResolvedFile, imp: ResolvedImport): Result[ResolvedFile, string] =
-  fileCtx.imports.add(imp)
+proc add*(file: ResolvedFile, imp: ResolvedImport): Result[ResolvedFile, string] =
+  file.imports.add(imp)
   for impType in imp.importedTypes:
-    discard ? fileCtx.insert(impType.binding, newType(impType))
-    fileCtx.importedTypeIndex[impType.localType.parsed] = impType.localType
-  ok(fileCtx)
+    discard ? file.insert(impType.binding, newType(impType))
+    file.importedTypeIndex[impType.localType.parsed] = impType.localType
+  ok(file)
 
-proc add*(fileCtx: ResolvedFile, localType: ResolvedLocalType): Result[ResolvedFile, string] =
-  if localType.parsed in fileCtx.localTypeIndex:
+proc add*(file: ResolvedFile, localType: ResolvedLocalType): Result[ResolvedFile, string] =
+  if localType.parsed in file.localTypeIndex:
     err(fmt"[BUG] - {localType.loc} duplicate local type `{localType.name.asl}` in the resolved file")
   else:
-    fileCtx.localTypeIndex[localType.parsed] = fileCtx.localTypes.len
-    fileCtx.localTypes.add(localType)
-    ok(fileCtx)
+    file.localTypeIndex[localType.parsed] = file.localTypes.len
+    file.localTypes.add(localType)
+    ok(file)
 
-proc findLocalType*(fileCtx: ResolvedFile, name: Identifier): Result[LocalType, string] =
-  if name in fileCtx.typeIndex: ok(fileCtx.typeIndex[name].localType)
+proc findLocalType*(file: ResolvedFile, name: Identifier): Result[LocalType, string] =
+  if name in file.typeIndex: ok(file.typeIndex[name].localType)
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
 
-proc findModule*(fileCtx: ResolvedFile, name: Identifier): Result[Module, string] =
-  let initType = ? fileCtx.findLocalType(name)
+proc findModule*(file: ResolvedFile, name: Identifier): Result[Module, string] =
+  let initType = ? file.findLocalType(name)
   case initType.kind:
   of ltkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
   of ltkModule: ok(initType.module)
 
-proc findGeneric*(fileCtx: ResolvedFile, name: Identifier): Result[Generic, string] =
-  let initType = ? fileCtx.findLocalType(name)
+proc findGeneric*(file: ResolvedFile, name: Identifier): Result[Generic, string] =
+  let initType = ? file.findLocalType(name)
   case initType.kind:
   of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
   of ltkGeneric: ok(initType.generic)
 
-proc path*(fileCtx: ResolvedFile): string = fileCtx.parsed.path
-proc parsed*(fileCtx: ResolvedFile): parser.File = fileCtx.parsed
-proc imports*(fileCtx: ResolvedFile): seq[ResolvedImport] = fileCtx.imports
+proc path*(file: ResolvedFile): string = file.parsed.path
+proc parsed*(file: ResolvedFile): parser.File = file.parsed
+proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 
-proc modules*(fileCtx: ResolvedFile): seq[ResolvedModule] =
-  fileCtx.localTypes.filterIt(it.kind == rltkModule).mapIt(it.module)
-proc exportedTypes*(fileCtx: ResolvedFile): seq[ResolvedImportedType] =
-  fileCtx.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
-proc localTypes*(fileCtx: ResolvedFile): seq[ResolvedLocalType] = fileCtx.localTypes
+proc modules*(file: ResolvedFile): seq[ResolvedModule] =
+  file.localTypes.filterIt(it.kind == rltkModule).mapIt(it.module)
+proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] =
+  file.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
+proc localTypes*(file: ResolvedFile): seq[ResolvedLocalType] = file.localTypes
 
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is
 # a compiler bug, never a user error.
-proc findLocalType*(fileCtx: ResolvedFile, localType: LocalType): ResolvedLocalType =
-  assert(localType in fileCtx.localTypeIndex, fmt"[BUG] - {localType.loc} type `{localType.name.asl}` missing from the resolved file")
-  fileCtx.localTypes[fileCtx.localTypeIndex[localType]]
+proc findLocalType*(file: ResolvedFile, localType: LocalType): ResolvedLocalType =
+  assert(localType in file.localTypeIndex, fmt"[BUG] - {localType.loc} type `{localType.name.asl}` missing from the resolved file")
+  file.localTypes[file.localTypeIndex[localType]]
 
-proc findModule*(fileCtx: ResolvedFile, typ: Module): ResolvedModule =
-  let resolvedLocalType = fileCtx.findLocalType(newLocalType(typ))
+proc findModule*(file: ResolvedFile, typ: Module): ResolvedModule =
+  let resolvedLocalType = file.findLocalType(newLocalType(typ))
   assert(resolvedLocalType.kind == rltkModule, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a module by the resolver")
   resolvedLocalType.module
 
-proc findGeneric*(fileCtx: ResolvedFile, typ: Generic): ResolvedGeneric =
-  let resolvedLocalType = fileCtx.findLocalType(newLocalType(typ))
+proc findGeneric*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
+  let resolvedLocalType = file.findLocalType(newLocalType(typ))
   assert(resolvedLocalType.kind == rltkGeneric, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a generic by the resolver")
   resolvedLocalType.generic
 
-proc findExportedType*(fileCtx: ResolvedFile, importedType: ImportedType): Result[ResolvedImportedType, string] =
-  let localType = ? fileCtx.parsed.findExportedType(importedType.name)
-  let resolvedLocalType = fileCtx.findLocalType(localType)
+proc findExportedType*(file: ResolvedFile, importedType: ImportedType): Result[ResolvedImportedType, string] =
+  let localType = ? file.parsed.findExportedType(importedType.name)
+  let resolvedLocalType = file.findLocalType(localType)
   ok(newResolvedImportedType(importedType, resolvedLocalType))
 
-proc findGenericInScope*(fileCtx: ResolvedFile, generic: Generic): ResolvedGeneric =
+proc findGenericInScope*(file: ResolvedFile, generic: Generic): ResolvedGeneric =
   ## Identity lookup spanning the file's OWN types AND its import
   ## bindings — everything this file's scope can see. Identity keys
   ## (hash-by-loc) make it alias-immune: the file may import the generic
@@ -115,11 +115,11 @@ proc findGenericInScope*(fileCtx: ResolvedFile, generic: Generic): ResolvedGener
   ## (the file referenced it to define the module), so a miss is a
   ## compiler bug.
   let localType = newLocalType(generic)
-  if localType in fileCtx.localTypeIndex:
-    return fileCtx.localTypes[fileCtx.localTypeIndex[localType]].generic
-  if localType in fileCtx.importedTypeIndex:
-    return fileCtx.importedTypeIndex[localType].generic
-  assert(false, fmt"[BUG] - {generic.loc} generic `{generic.name.asl}` is not in the scope of file `{fileCtx.path}`")
+  if localType in file.localTypeIndex:
+    return file.localTypes[file.localTypeIndex[localType]].generic
+  if localType in file.importedTypeIndex:
+    return file.importedTypeIndex[localType].generic
+  assert(false, fmt"[BUG] - {generic.loc} generic `{generic.name.asl}` is not in the scope of file `{file.path}`")
 
 # ============================================================
 # ResolvedApp
