@@ -84,12 +84,13 @@ proc resolveModuleArgumentType(file: ResolvedFile, ctxType: LocalType, argType: 
   # derive require slots for a module whose resolved twin may not exist
   # yet (in-file cycles) or hop into an imported module's defining scope.
   if argModule.data.isNone:
-    return err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
-  var impls: seq[ResolvedArgumentType]
-  for impl in argType.impls:
-    let resolvedImpl = ? resolveArgumentType(file, ctxType, impl)
-    impls.add(resolvedImpl)
-  ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
+    err(fmt"{argType.loc} module `{argType.root.asl}` is not a data module")
+  else:
+    var impls: seq[ResolvedArgumentType]
+    for impl in argType.impls:
+      let resolvedImpl = ? resolveArgumentType(file, ctxType, impl)
+      impls.add(resolvedImpl)
+    ok(newResolvedModuleArgumentType(argModule, impls, argType.loc))
 
 proc resolveGenericArgumentType(ctxType: LocalType, argType: ArgumentType, argGeneric: Generic): Result[ResolvedGenericArgumentType, string] =
   case ctxType.kind:
@@ -123,7 +124,7 @@ proc resolveArgumentDef(file: ResolvedFile, ctxType: LocalType, argDef: Argument
 
 proc resolveStructDefHeader(file: ResolvedFile, header: StructDefHeader): Result[seq[ResolvedGenericArgumentType], string] =
   var resolvedRequires: seq[ResolvedGenericArgumentType]
-  for index, impl in header.requires:
+  for impl in header.requires:
     let generic = ? file.findGeneric(impl)
     let genericType = newResolvedGenericArgumentType(generic, impl.loc)
     resolvedRequires.add(genericType)
@@ -206,12 +207,7 @@ proc resolveStatement(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionC
 
 proc resolveFunctionCall(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
   let typ = ? file.findLocalType(fncall.root)
-  let access =
-    case typ.kind:
-    of ltkModule: ctxType.access(typ.module)
-    # Generic funcDefs are implicitly public — access is vacuous.
-    of ltkGeneric: faPublic
-  let defs = ? typ.findFunctionDefs(fncall.name, fncall.arity, access)
+  let defs = ? typ.findFunctionDefs(fncall.name, fncall.arity, ctxType)
   assert(defs.len > 0, "[BUG] - findFunctionDefs never returns an empty overload list")
   var resolvedArgs: seq[ResolvedExpression]
   for arg in fncall.args:

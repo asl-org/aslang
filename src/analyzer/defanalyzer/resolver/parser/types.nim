@@ -191,30 +191,32 @@ proc newLocalType*(module: Module): LocalType =
 proc newLocalType*(generic: Generic): LocalType =
   LocalType(kind: ltkGeneric, generic: generic)
 
-proc kind*(dt: LocalType): LocalTypeKind = dt.kind
-proc public*(dt: LocalType): bool =
-  case dt.kind:
-  of ltkModule: dt.module.public
-  of ltkGeneric: dt.generic.public
+proc kind*(localType: LocalType): LocalTypeKind = localType.kind
+proc public*(localType: LocalType): bool =
+  case localType.kind:
+  of ltkModule: localType.module.public
+  of ltkGeneric: localType.generic.public
 
-proc module*(dt: LocalType): Module =
-  assert dt.kind == ltkModule,
-    fmt"LocalType.module accessed but kind is {dt.kind}"
-  dt.module
+proc module*(localType: LocalType): Module =
+  assert localType.kind == ltkModule,
+    fmt"LocalType.module accessed but kind is {localType.kind}"
+  localType.module
 
-proc generic*(dt: LocalType): Generic =
-  assert dt.kind == ltkGeneric,
-    fmt"LocalType.generic accessed but kind is {dt.kind}"
-  dt.generic
+proc generic*(localType: LocalType): Generic =
+  assert localType.kind == ltkGeneric,
+    fmt"LocalType.generic accessed but kind is {localType.kind}"
+  localType.generic
 
-proc access*(dt: LocalType, module: Module): FunctionAccess =
-  ## Which functions of `module` a reference inside `dt`'s enclosing
+proc access*(localType: LocalType, context: LocalType): FunctionAccess =
+  ## Which functions of `module` a reference inside `context`'s enclosing
   ## definition may see: a module sees its own private functions
   ## (faAll), everything else sees only public.
-  case dt.kind:
-  of ltkGeneric: faPublic
+  case localType.kind:
   of ltkModule:
-    if dt.module == module: faAll else: faPublic
+    case context.kind:
+    of ltkModule: (if context.module == localType.module: faAll else: faPublic)
+    of ltkGeneric: faPublic
+  of ltkGeneric: faAll
 
 proc name*(typ: LocalType): Identifier =
   case typ.kind:
@@ -251,9 +253,9 @@ proc asl*(typ: LocalType, level: int, indentWidth: uint32): seq[string] =
   of ltkModule: typ.module.asl(level, indentWidth)
   of ltkGeneric: typ.generic.asl(level, indentWidth)
 
-proc findFunctionDefs*(typ: LocalType, name: Identifier, arity: int, access: FunctionAccess): Result[seq[FunctionDef], string] =
+proc findFunctionDefs*(typ: LocalType, name: Identifier, arity: int, context: LocalType): Result[seq[FunctionDef], string] =
   case typ.kind:
-  of ltkModule: typ.module.findFunctionDefs(name, arity, access)
+  of ltkModule: typ.module.findFunctionDefs(name, arity, typ.access(context))
   # Generic funcDefs are implicitly public per the grammar — no
   # access filter to apply.
   of ltkGeneric: typ.generic.findFunctionDefs(name, arity)
