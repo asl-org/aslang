@@ -58,6 +58,14 @@ proc add*(file: ResolvedFile, localType: ResolvedLocalType): Result[ResolvedFile
     file.localTypes.add(localType)
     ok(file)
 
+proc path*(file: ResolvedFile): string = file.parsed.path
+proc parsed*(file: ResolvedFile): parser.File = file.parsed
+proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
+
+proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] =
+  file.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
+proc localTypes*(file: ResolvedFile): seq[ResolvedLocalType] = file.localTypes
+
 proc findLocalType*(file: ResolvedFile, name: Identifier): Result[LocalType, string] =
   if name in file.typeIndex: ok(file.typeIndex[name].localType)
   else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
@@ -74,32 +82,12 @@ proc findGeneric*(file: ResolvedFile, name: Identifier): Result[Generic, string]
   of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
   of ltkGeneric: ok(initType.generic)
 
-proc path*(file: ResolvedFile): string = file.parsed.path
-proc parsed*(file: ResolvedFile): parser.File = file.parsed
-proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
-
-proc modules*(file: ResolvedFile): seq[ResolvedModule] =
-  file.localTypes.filterIt(it.kind == rltkModule).mapIt(it.module)
-proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] =
-  file.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
-proc localTypes*(file: ResolvedFile): seq[ResolvedLocalType] = file.localTypes
-
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is
 # a compiler bug, never a user error.
 proc findLocalType*(file: ResolvedFile, localType: LocalType): ResolvedLocalType =
   assert(localType in file.localTypeIndex, fmt"[BUG] - {localType.loc} type `{localType.name.asl}` missing from the resolved file")
   file.localTypes[file.localTypeIndex[localType]]
-
-proc findModule*(file: ResolvedFile, typ: Module): ResolvedModule =
-  let resolvedLocalType = file.findLocalType(newLocalType(typ))
-  assert(resolvedLocalType.kind == rltkModule, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a module by the resolver")
-  resolvedLocalType.module
-
-proc findGeneric*(file: ResolvedFile, typ: Generic): ResolvedGeneric =
-  let resolvedLocalType = file.findLocalType(newLocalType(typ))
-  assert(resolvedLocalType.kind == rltkGeneric, fmt"[BUG] - {typ.loc} `{typ.name.asl}` was bound as a generic by the resolver")
-  resolvedLocalType.generic
 
 proc findExportedType*(file: ResolvedFile, importedType: ImportedType): Result[ResolvedImportedType, string] =
   let localType = ? file.parsed.findExportedType(importedType.name)
