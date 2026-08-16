@@ -9,23 +9,30 @@ import options, results, sequtils, strformat, strutils, tables
 import ./analyzer/defanalyzer
 export defanalyzer
 
-import ./analyzer/funccontext
 import ./analyzer/literalparse
+export literalparse
+
 import ./analyzer/pattern
+export pattern
+
 import ./analyzer/statement
+export statement
+
 import ./analyzer/function
 export function
-
 
 import ./analyzer/module
 export module
 
-import ./analyzer/filecontext
 import ./analyzer/imports
-import ./analyzer/appcontext
+export imports
 
 import ./analyzer/app
 export app
+
+import ./analyzer/funccontext
+import ./analyzer/filecontext
+import ./analyzer/appcontext
 
 proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType): Result[AnalyzedDataDef, string] =
   ok(fileCtx.findModule(argType.module).dataDef)
@@ -302,15 +309,14 @@ proc analyzeBareLiteral(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule,
     ok(newAnalyzedLiteralInitializer(literal.value, literalArgType))
 
 proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let typ = fncall.typ
-  let definedType = fileCtx.findType(typ)
+  let localType = fileCtx.findType(fncall.typ)
   let access =
-    case definedType.kind:
+    case localType.kind:
     of altkGeneric:
       faPublic
     of altkModule:
-      if module == definedType.module: faAll else: faPublic
-  let maybeFuncDefs = definedType.findFunctionDefs(fncall.name, fncall.arity, access)
+      if module == localType.module: faAll else: faPublic
+  let maybeFuncDefs = localType.findFunctionDefs(fncall.name, fncall.arity, access)
   assert(maybeFuncDefs.isOk, "[BUG] - Resolver validates every call target (name, arity, access) at resolve time")
   let funcDefs = maybeFuncDefs.get
 
@@ -318,7 +324,7 @@ proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
   # The impl map inferred from the arguments rides on the call node;
   # the `returns` accessor concretizes the funcDef's return type from
   # it on access (matching the initializers).
-  ok(newAnalyzedFunctionCall(fncall, matchingFuncDef, analyzedArgs, genericImpls))
+  ok(newAnalyzedFunctionCall(fncall, localType, matchingFuncDef, analyzedArgs, genericImpls))
 
 proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCaseBlock, string] =
   var caseCtx = funcCtx

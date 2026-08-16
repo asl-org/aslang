@@ -11,7 +11,7 @@
 ## analysis. Extern functions have no body to analyze — the walker
 ## skips them at the function layer.
 
-import results, strformat
+import results, strformat, tables
 
 import defanalyzer
 import module
@@ -51,9 +51,17 @@ proc function*(entry: EntryPoint): AnalyzedFunction = entry.function
 type AnalyzedApp* = ref object
   def: AnalyzedDefApp
   files: seq[AnalyzedFile]
+  moduleIndex: Table[AnalyzedDefModule, AnalyzedModule]
 
 proc newAnalyzedApp*(def: AnalyzedDefApp, files: seq[AnalyzedFile]): AnalyzedApp =
-  AnalyzedApp(def: def, files: files)
+  # NOTE: Dissolve file level barrier for analyzed modules
+  var moduleIndex: Table[AnalyzedDefModule, AnalyzedModule]
+  for file in files:
+    for module in file.modules:
+      assert(module.def notin moduleIndex, "[BUG] - duplicate module def found")
+      moduleIndex[module.def] = module
+
+  AnalyzedApp(def: def, files: files, moduleIndex: moduleIndex)
 
 proc files*(app: AnalyzedApp): seq[AnalyzedFile] = app.files
 
@@ -71,3 +79,7 @@ proc entry*(app: AnalyzedApp): Result[EntryPoint, string] =
     err(fmt"{entryFile.path} expected file to contain one public module with `public func start(): i32` but found {entrypoints.len}")
   else:
     ok(entrypoints[0])
+
+proc findModule*(app: AnalyzedApp, module: AnalyzedDefModule): AnalyzedModule =
+  assert(module in app.moduleIndex, "[BUG] - module does not exist in the module index")
+  app.moduleIndex[module]

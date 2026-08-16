@@ -1,13 +1,14 @@
 import os, results, strformat
 
-import cli, analyzer
+import cli, analyzer, lifetime
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
   let resolvedApp = ? resolve(app)
   let analyzedApp = ? analyze(resolvedApp)
-  discard ? analyzedApp.entry
+  # TODO: Uncomment the line below to enable lifetime analysis
+  # ? analyzeLifetime(analyzedApp)
   ok("[SUCCESS]")
 
 when isMainModule:

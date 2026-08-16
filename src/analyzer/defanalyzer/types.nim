@@ -5,7 +5,7 @@
 ## `AnalyzedDefFile.findType`; this file owns the defs, the umbrella,
 ## and the per-defined-type overload accessors.
 
-import options, results, sequtils, strformat, tables
+import options, results, sequtils, strformat, tables, hashes
 
 import ./resolver
 import ./argtype
@@ -52,6 +52,8 @@ proc dataDef*(m: AnalyzedDefModule): AnalyzedDataDef =
 proc funcDefs*(m: AnalyzedDefModule): seq[AnalyzedFunctionDef] = m.functions.mapIt(it.def)
 proc name*(m: AnalyzedDefModule): Identifier = m.resolved.name
 proc loc*(m: AnalyzedDefModule): Location = m.resolved.loc
+proc hash*(m: AnalyzedDefModule): Hash = m.resolved.hash
+proc `==`*(a, b: AnalyzedDefModule): bool = a.hash == b.hash
 
 proc findFunctionDef*(module: AnalyzedDefModule, funcDef: ResolvedFunctionDef): AnalyzedFunctionDef =
   ## Identity lookup — phase A indexed every resolver function

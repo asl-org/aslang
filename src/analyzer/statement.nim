@@ -61,6 +61,7 @@ proc argType*(init: AnalyzedLiteralInitializer): AnalyzedModuleArgumentType = in
 type
   AnalyzedFunctionCall* = ref object
     def: AnalyzedDefFunctionCall
+    localType: AnalyzedLocalType
     funcDef: AnalyzedFunctionDef
     args: seq[AnalyzedExpression]
     impls: AnalyzedImplMap
@@ -129,10 +130,12 @@ type
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
 
-proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], impls: AnalyzedImplMap): AnalyzedFunctionCall =
-  AnalyzedFunctionCall(def: def, funcDef: funcDef, args: args, impls: impls)
+proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, localType: AnalyzedLocalType, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], impls: AnalyzedImplMap): AnalyzedFunctionCall =
+  AnalyzedFunctionCall(def: def, localType: localType, funcDef: funcDef, args: args, impls: impls)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
+proc localType*(fncall: AnalyzedFunctionCall): AnalyzedLocalType = fncall.localType
+proc funcDef*(fncall: AnalyzedFunctionCall): AnalyzedFunctionDef = fncall.funcDef
 # Return type = the matched funcDef's declared return concretized by
 # the bindings inferred from the call's arguments (`{T -> u8}` →
 # `T` becomes `u8`). Materialized on access, like the initializers.
@@ -243,6 +246,7 @@ proc newAnalyzedExpression*(init: AnalyzedInitializer): AnalyzedExpression =
 proc newAnalyzedExpression*(getter: AnalyzedGetter): AnalyzedExpression =
   AnalyzedExpression(kind: aekGetter, getter: getter)
 
+proc kind*(expression: AnalyzedExpression): AnalyzedExpressionKind = expression.kind
 proc variable*(expression: AnalyzedExpression): AnalyzedVariable =
   assert expression.kind == aekVariable,
     fmt"AnalyzedExpression.variable accessed but kind is {expression.kind}"
@@ -298,6 +302,7 @@ proc newAnalyzedStatement*(assignment: AnalyzedAssignment): AnalyzedStatement =
 proc newAnalyzedStatement*(setter: AnalyzedSetter): AnalyzedStatement =
   AnalyzedStatement(kind: askSetter, setter: setter)
 
+proc kind*(statement: AnalyzedStatement): AnalyzedStatementKind = statement.kind
 proc expression*(statement: AnalyzedStatement): AnalyzedExpression =
   assert statement.kind == askExpr,
     fmt"AnalyzedStatement.expression accessed but kind is {statement.kind}"

@@ -700,6 +700,13 @@ src/
   cli.nim                          CLI parsing via argparse
   utils.nim                        generic bfs[T, V] + topoSort with
                                    cycle detection
+  lifetime.nim                     lifetime / ownership pass (skeleton,
+                                   off the CLI path). Walks the entry
+                                   point statement-by-statement,
+                                   resolving each variable to a Source
+                                   (input param position | local
+                                   statement index); most arms are TODO
+                                   pending the value-graph build.
   nim.cfg                          per-component module search paths
   analyzer/defanalyzer/resolver.nim            resolver facade — the public entry
                                    for the resolver layer. Re-exports
@@ -1388,6 +1395,21 @@ satisfaction, input-signature uniqueness — was groundwork: phase B's
 unification rebuild can now assume every def-level fact it consumes
 is already validated and identity-addressable. The first two TODOs
 below are the bugs that rebuild exists to fix.
+
+**The lifetime / ownership pass has a skeleton** (`src/lifetime.nim`,
+`analyzeLifetime`), kept OFF the CLI compile path — the call in
+`asl.nim` is commented out because the pass is incomplete (most
+expression/statement arms return `todo:` errors). It walks the entry
+point (`app.entry`) statement-by-statement, seeding a scope that
+resolves every variable to a `Source` (input-param position | local
+statement index), and recurses into module-function call targets via
+new identity indexes: `AnalyzedApp.findModule`,
+`AnalyzedModule.findFunction`, and `AnalyzedFunctionCall.localType`.
+The intended design — a per-function value graph (node = value, not
+name), consumer→producer edges, escape / uniqueness / last-use
+queries, and interprocedural ownership summaries — is captured in
+plans/plan_dag_ir.md. No memoization / cycle guard yet; it lands once
+the recursive arms do.
 
 Focused TODOs still open:
 

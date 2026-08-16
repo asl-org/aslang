@@ -6,7 +6,7 @@
 ## (adfkExtern / adfkUser) gives `AnalyzedDefModule.functions` one shape
 ## with uniform `def` / `name` / `arity` accessors.
 
-import strformat, strutils, sequtils
+import strformat, strutils, sequtils, hashes
 
 import resolver
 import argtype
@@ -47,6 +47,9 @@ proc filter*(defs: seq[AnalyzedFunctionDef], access: FunctionAccess): seq[Analyz
   of faAll: defs
   of faPublic: defs.filterIt(it.public)
 
+proc hash*(def: AnalyzedFunctionDef): Hash = def.resolved.hash
+proc `==`*(a, b: AnalyzedFunctionDef): bool = a.hash == b.hash
+
 # ---- function wrappers ----
 
 type AnalyzedDefExternFunction* = ref object
@@ -56,8 +59,10 @@ type AnalyzedDefExternFunction* = ref object
 proc newAnalyzedDefExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDef): AnalyzedDefExternFunction =
   AnalyzedDefExternFunction(resolved: resolved, def: def)
 
+proc loc*(function: AnalyzedDefExternFunction): Location = function.resolved.loc
 proc name*(function: AnalyzedDefExternFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedDefExternFunction): int = function.resolved.arity
+proc def*(function: AnalyzedDefExternFunction): AnalyzedFunctionDef = function.def
 
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction
