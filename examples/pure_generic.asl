@@ -5,3 +5,7 @@
 generic Eq:
   func eq(a: Eq, b: Eq): u8
   func hash(a: Eq): u64
+
+public module Driver:
+  public func start(): i32
+    i32 0

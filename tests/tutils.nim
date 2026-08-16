@@ -163,7 +163,7 @@ proc analyzeAppSingle*(source: string,
     indentWidth: uint32 = 2,
     vendorRoots: VendorRoots = emptyVendorRoots()): tuple[res: Result[AnalyzedApp, string], dir: string] =
   ## Parse + resolve + analyze, returning the AnalyzedApp itself so callers
-  ## can inspect it (e.g. findEntryPoint).
+  ## can inspect it (e.g. entry).
   let (maybeApp, dir) = parseFiles([("entry.asl", source)], indentWidth, vendorRoots)
   proc go(app: Result[App, string]): Result[AnalyzedApp, string] =
     let parsed = ? app

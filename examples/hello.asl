@@ -11,3 +11,7 @@ public module App:
   public func start(): u8
     arr = Array[u32] { size: 100 }
     u8 0
+
+public module Driver:
+  public func start(): i32
+    i32 0

@@ -11,9 +11,12 @@
 ## analysis. Extern functions have no body to analyze — the walker
 ## skips them at the function layer.
 
-import ./defanalyzer
+import results, strformat
+
+import defanalyzer
 import module
 import imports
+import function
 
 # ---- AnalyzedFile ----
 # Per-file result of the analyzer pass: the file's imports and modules
@@ -30,6 +33,19 @@ proc newAnalyzedFile*(def: AnalyzedDefFile, imports: seq[AnalyzedImport], module
 proc path*(f: AnalyzedFile): string = f.def.path
 proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules
 
+# The program entry point — a whole-program requirement applied by the
+# CLI compile, deliberately NOT part of `analyze` (feature-level fixtures
+# resolve/analyze snippets that have no entry point).
+type EntryPoint* = ref object
+  file: AnalyzedFile
+  module: AnalyzedModule
+  function: AnalyzedFunction
+
+proc newEntryPoint(file: AnalyzedFile, module: AnalyzedModule, function: AnalyzedFunction): EntryPoint =
+  EntryPoint(file: file, module: module, function: function)
+
+proc function*(entry: EntryPoint): AnalyzedFunction = entry.function
+
 # ---- AnalyzedApp ----
 
 type AnalyzedApp* = ref object
@@ -40,3 +56,18 @@ proc newAnalyzedApp*(def: AnalyzedDefApp, files: seq[AnalyzedFile]): AnalyzedApp
   AnalyzedApp(def: def, files: files)
 
 proc files*(app: AnalyzedApp): seq[AnalyzedFile] = app.files
+
+proc entry*(app: AnalyzedApp): Result[EntryPoint, string] =
+  ## The root file (topo order puts it last) must expose exactly one
+  ## public module with `public func start(): i32` (the `entry` predicate).
+  var entrypoints: seq[EntryPoint]
+  let entryFile = app.files[^1]
+  for module in entryFile.modules:
+    if module.public:
+      for function in module.functions:
+        if function.entry:
+          entrypoints.add(newEntryPoint(entryFile, module, function))
+  if entrypoints.len != 1:
+    err(fmt"{entryFile.path} expected file to contain one public module with `public func start(): i32` but found {entrypoints.len}")
+  else:
+    ok(entrypoints[0])

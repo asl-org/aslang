@@ -25,3 +25,7 @@ module Plan:
         String.from(usage)
       case Pro { credits: credits, users: users }:
         String.concat(String.from(credits), String.from(users))
+
+public module Driver:
+  public func start(): i32
+    i32 0

@@ -13,3 +13,7 @@ public module Caller:
     # any aliasing clause.
     _ = Solution1.start()
     u8 0
+
+public module Driver:
+  public func start(): i32
+    i32 0

@@ -5,3 +5,7 @@
 module Foo:
   func start(): u8
     u8 0
+
+public module Driver:
+  public func start(): i32
+    i32 0

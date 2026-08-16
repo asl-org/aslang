@@ -19,3 +19,7 @@ module App:
         String.from("zero")
       case n:
         String.from(n)
+
+public module Driver:
+  public func start(): i32
+    i32 0

@@ -7,7 +7,7 @@ proc compile(opts: AslBuildCommand): Result[string, string] =
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
   let resolvedApp = ? resolve(app)
   let analyzedApp = ? analyze(resolvedApp)
-  let entryPoint = ? findEntryPoint(analyzedApp)
+  discard ? analyzedApp.entry
   ok("[SUCCESS]")
 
 when isMainModule:

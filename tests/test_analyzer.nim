@@ -1484,7 +1484,7 @@ module Wrapper:
     check errorContains(r.error, "to support `Eq`")
 
 suite "analyzer — entry point":
-  # `findEntryPoint` runs off the analyze path (CLI compile only). The
+  # `entry` runs off the analyze path (CLI compile only). The
   # root file must expose exactly one public module with a
   # `public func start(): i32`. i32 is defined inline here so it resolves
   # without the std-vendor injection.
@@ -1503,7 +1503,7 @@ public module M:
 """)
     cleanupDir(dir)
     check r.isOk
-    check findEntryPoint(r.get).isOk
+    check entry(r.get).isOk
 
   test "no entry point is rejected":
     let (r, dir) = analyzeAppSingle(I32 & """
@@ -1513,7 +1513,7 @@ public module M:
 """)
     cleanupDir(dir)
     check r.isOk
-    let entry = findEntryPoint(r.get)
+    let entry = entry(r.get)
     check entry.isErr
     check errorContains(entry.error, "found 0")
 
@@ -1529,7 +1529,7 @@ public module B:
 """)
     cleanupDir(dir)
     check r.isOk
-    let entry = findEntryPoint(r.get)
+    let entry = entry(r.get)
     check entry.isErr
     check errorContains(entry.error, "found 2")
 
@@ -1544,7 +1544,7 @@ public module M:
 """)
     cleanupDir(dir)
     check r.isOk
-    check findEntryPoint(r.get).isErr
+    check entry(r.get).isErr
 
   test "non-public start is not an entry point":
     let (r, dir) = analyzeAppSingle(I32 & """
@@ -1554,7 +1554,7 @@ public module M:
 """)
     cleanupDir(dir)
     check r.isOk
-    check findEntryPoint(r.get).isErr
+    check entry(r.get).isErr
 
   test "start with arguments is not an entry point":
     let (r, dir) = analyzeAppSingle(I32 & """
@@ -1564,7 +1564,7 @@ public module M:
 """)
     cleanupDir(dir)
     check r.isOk
-    check findEntryPoint(r.get).isErr
+    check entry(r.get).isErr
 
   test "start inside a non-public module is not an entry point":
     let (r, dir) = analyzeAppSingle(I32 & """
@@ -1574,4 +1574,4 @@ module M:
 """)
     cleanupDir(dir)
     check r.isOk
-    check findEntryPoint(r.get).isErr
+    check entry(r.get).isErr

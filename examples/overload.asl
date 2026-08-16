@@ -8,3 +8,7 @@ module Foo:
 
   func bar(a: String): String
     a
+
+public module Driver:
+  public func start(): i32
+    i32 0

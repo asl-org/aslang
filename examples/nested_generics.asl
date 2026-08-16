@@ -7,3 +7,7 @@ module Cache:
 
   func get(c: Cache): Map[String, Array[u64]]
     c.entries
+
+public module Driver:
+  public func start(): i32
+    i32 0

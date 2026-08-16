@@ -9,3 +9,7 @@ import { Solver as Second } from "./problem001.asl"
 module Caller:
   func start(): u8
     u8 0
+
+public module Driver:
+  public func start(): i32
+    i32 0
