@@ -31,6 +31,7 @@ proc newAnalyzedFile*(def: AnalyzedDefFile, imports: seq[AnalyzedImport], module
   AnalyzedFile(def: def, imports: imports, modules: modules)
 
 proc path*(f: AnalyzedFile): string = f.def.path
+proc generics*(f: AnalyzedFile): seq[AnalyzedGeneric] = f.def.generics
 proc modules*(f: AnalyzedFile): seq[AnalyzedModule] = f.modules
 
 # The program entry point — a whole-program requirement applied by the

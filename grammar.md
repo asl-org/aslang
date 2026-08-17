@@ -225,12 +225,13 @@ contributors can find the *why* alongside the *what*.
   `Map`: they store pointers to their element data, which is not
   representable in the language, so their type parameters cannot be
   inferred from fields and must be declared as phantom params.
-  Consequences: a struct with an explicit header rejects generic
-  fields and rejects bare (impl-less) refs ("expects N impls"),
-  while inferred-generic structs and generic unions accept bare
-  refs (leave-as-is inference fills the positions). Unions never
-  take a header — their params are always inferred from variant
-  fields.
+  Consequences: a struct with an explicit header rejects bare
+  (impl-less) refs ("expects N impls"), while inferred-generic
+  structs and generic unions accept bare refs (leave-as-is inference
+  fills the positions). A header may coexist with generic fields —
+  the struct's params are the union of the header slots and the
+  generics collected from the fields. Unions never take a header —
+  their params are always inferred from variant fields.
 
 - **Decorators are not first-class in the domain today.** `@extern` is
   handled inline on `ExternFunction`. If a second decorator (e.g.

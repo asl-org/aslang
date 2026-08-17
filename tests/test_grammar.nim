@@ -29,8 +29,8 @@ public module M:
     check r.isOk
 
   test "module with literal data block":
-    # extern functions only parse in .aslr files (the runtime
-    # interface); newAslFile rejects them otherwise.
+    # extern functions parse in both .asl and .aslr files; this
+    # fixture is written as .aslr.
     let r = parseStrAslr("""
 public module u8:
   literal: "u8"
@@ -127,7 +127,8 @@ public module Array:
     check r.isOk
 
   test "extern function":
-    # extern functions are only legal in .aslr files.
+    # extern functions are legal in both .asl and .aslr files; this
+    # fixture is written as .aslr.
     let r = parseStrAslr("""
 public module u8:
   literal: "u8"
@@ -381,7 +382,8 @@ module M:
     check r.isOk
 
   test "decorator on an extern function":
-    # extern functions are only legal in .aslr files.
+    # extern functions are legal in both .asl and .aslr files; this
+    # fixture is written as .aslr.
     let r = parseStrAslr("""
 public module u8:
   literal: "u8"
@@ -520,18 +522,16 @@ public module M:
 """)
     check r.isErr
 
-  test ".asl file with extern function inside a module is rejected":
-    # `newAslFile` walks every module's function list and rejects
-    # any extern, with a diagnostic that points the user at .aslr
-    # files as the right home for externs.
+  test ".asl file with an extern function inside a module parses":
+    # `.asl` files may now host `@extern` functions — the extern parses
+    # like any other module function (previously only `.aslr` files
+    # could declare externs).
     let r = parseStr("""
 public module Sys:
   @extern("sys_call")
   public func call(): u8
 """)
-    check r.isErr
-    check errorContains(r.error, "extern functions")
-    check errorContains(r.error, ".aslr")
+    check r.isOk
 
 suite "grammar — kwarg + pattern shorthand":
   # `Struct { x }` is sugar for `Struct { x: x }` — the parser

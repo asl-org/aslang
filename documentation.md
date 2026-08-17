@@ -20,13 +20,14 @@ each kind's invariants at parse time.
 
 | Extension | Purpose | May `import` | May host `@extern` | Auto-injected `@std` |
 |-----------|---------|--------------|--------------------|----------------------|
-| `.asl`    | User source code | yes | no | yes |
+| `.asl`    | User source code | yes | yes | yes |
 | `.aslr`   | Runtime interface — the boundary between ASL and the host runtime (C, etc.) | no | yes | no |
 
 `examples/base.aslr` is the standard library: every primitive type and
 host-provided function is declared there with an `@extern("c_symbol")`
-decorator. Application code lives in `.asl` files and never declares
-externs.
+decorator. Application code lives in `.asl` files, which may also declare
+their own `@extern` functions when they need to bind a runtime symbol
+directly.
 
 Every `.asl` file gets `import "@std"` injected at parse time, so
 standard-library types (`u8`..`u64`, `i8`..`i64`, `f32`/`f64`, `String`,
@@ -278,7 +279,7 @@ constraint only within `u8` itself. Generic blocks are not modules:
 from inside a generic, every module's public functions (and only
 those) are visible.
 
-### Extern functions (`.aslr` only)
+### Extern functions
 
 ```asl
 public module u8:
@@ -290,9 +291,9 @@ public module u8:
 
 The `@extern("c_symbol")` decorator names the runtime symbol that
 implements the function. The body is replaced by the host
-implementation. Extern functions are illegal in `.asl` files —
-`newAslFile` rejects them with a diagnostic pointing at `.aslr` as the
-correct home.
+implementation. Extern functions may appear in both `.aslr` and `.asl`
+files — `.aslr` is where the standard library declares them, but an
+`.asl` file may bind its own runtime symbols too.
 
 ### Overloading
 
@@ -363,10 +364,10 @@ exclusive ways:
   header with fields typed by a generic name; the generic parameters
   are collected in first-seen order across the fields.
 
-The two modes cannot be combined: if a struct uses the explicit
-`struct(A):` header, none of its fields may be typed by a generic.
-Attempting both is rejected with "struct with explicit generic
-requirements does not support generic fields".
+The two modes compose: a struct's generic parameter set is the union of
+its explicit `struct(A):` header generics and every generic collected
+from its field types — recursing into nested argtypes, so a field typed
+`Box[K]` contributes `K`. Header slots come first in the order.
 
 Within the explicit header, every named generic must be distinct —
 `struct(K, K):` is rejected with "duplicate generic encountered".

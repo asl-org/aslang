@@ -1,7 +1,7 @@
 ## AnalyzedModule — the per-module driver's result: the resolver
 ## ResolvedModule back-ref plus the analyzed function list.
 
-import tables
+import tables, options
 
 import defanalyzer
 import function
@@ -20,6 +20,8 @@ proc newAnalyzedModule*(def: AnalyzedDefModule, functions: seq[AnalyzedFunction]
   AnalyzedModule(def: def, functions: functions, funcDefIndex: funcDefIndex)
 
 proc public*(module: AnalyzedModule): bool = module.def.public
+proc name*(module: AnalyzedModule): Identifier = module.def.name
+proc data*(module: AnalyzedModule): Option[AnalyzedDataDef] = module.def.data
 proc def*(module: AnalyzedModule): AnalyzedDefModule = module.def
 proc functions*(module: AnalyzedModule): seq[AnalyzedFunction] = module.functions
 proc findFunction*(module: AnalyzedModule, funcDef: AnalyzedFunctionDef): AnalyzedFunction =

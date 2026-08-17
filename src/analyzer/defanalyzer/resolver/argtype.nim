@@ -8,7 +8,7 @@
 ## `genericargtype.nim` files re-export this module so downstream
 ## callers that only need one variant can import it by name.
 
-import strformat, strutils, hashes, tables
+import strformat, strutils, hashes, tables, sets
 
 import parser
 
@@ -87,6 +87,14 @@ proc hash*(argType: ResolvedModuleArgumentType): Hash =
   return acc
 proc `==`*(a, b: ResolvedModuleArgumentType): bool = a.hash == b.hash
 
+proc generics*(argType: ResolvedArgumentType): OrderedSet[ResolvedGenericArgumentType]
+proc generics*(argType: ResolvedModuleArgumentType): OrderedSet[ResolvedGenericArgumentType] =
+  var generics: OrderedSet[ResolvedGenericArgumentType]
+  for impl in argType.impls:
+    for generic in impl.generics:
+      generics.incl(generic)
+  return generics
+
 proc asl*(argType: ResolvedModuleArgumentType): string =
   if argType.impls.len == 0:
     fmt"{argType.parsed.name.asl}"
@@ -154,6 +162,15 @@ proc concrete*(argType: ResolvedArgumentType, subst: ResolvedImplMap): ResolvedA
   case argType.kind:
   of ratkGeneric: argType.generic.concrete(subst)
   of ratkModule: argType.module.concrete(subst)
+
+proc generics*(argType: ResolvedArgumentType): OrderedSet[ResolvedGenericArgumentType] =
+  var generics: OrderedSet[ResolvedGenericArgumentType]
+  case argType.kind:
+  of ratkGeneric: generics.incl(argType.generic)
+  of ratkModule:
+    for generic in argType.module.generics:
+      generics.incl(generic)
+  return generics
 
 # ============================================================
 # ResolvedArgumentDef (a named argument whose type is resolved)

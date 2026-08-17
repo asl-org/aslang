@@ -30,10 +30,9 @@ proc parseStr*(source: string, filepath: string = "",
 proc parseStrAslr*(source: string, indentWidth: uint32 = 2): Result[parser.File, string] =
   ## Same as `parseStr` but uses a `.aslr` filepath, so the parser
   ## dispatches to `aslrFileSpec` / `newAslrFile`. Use for tests of
-  ## grammar elements that are only legal in runtime-interface files
-  ## (extern functions inside modules). `.aslr` files never receive
-  ## vendor-driven auto-injection, so this helper does not take
-  ## `vendorRoots`.
+  ## `.aslr`-specific behavior — files that carry no imports. `.aslr`
+  ## files never receive vendor-driven auto-injection, so this helper
+  ## does not take `vendorRoots`.
   parseStr(source, getTempDir() / "asl_parseStr.aslr", indentWidth)
 
 proc writeFiles*(specs: openArray[FileSpec]): string =
@@ -129,11 +128,10 @@ proc resolveSingle*(source: string,
 proc resolveSingleAslr*(source: string,
     indentWidth: uint32 = 2): tuple[res: Result[void, string], dir: string] =
   ## Same as `resolveSingle` but writes the source as `entry.aslr` so
-  ## the parser dispatches to `aslrFileSpec` / `newAslrFile`. Use when
-  ## the source contains modules with extern functions (asl files
-  ## cannot host externs). `.aslr` entry points do not receive
-  ## vendor-driven auto-injection, so this helper does not take
-  ## `vendorRoots`.
+  ## the parser dispatches to `aslrFileSpec` / `newAslrFile`. Use for
+  ## `.aslr`-specific behavior — entry files that carry no imports.
+  ## `.aslr` entry points do not receive vendor-driven auto-injection,
+  ## so this helper does not take `vendorRoots`.
   resolveFiles([("entry.aslr", source)], indentWidth)
 
 proc analyzeFiles*(specs: openArray[FileSpec],

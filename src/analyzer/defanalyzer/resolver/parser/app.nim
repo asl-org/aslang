@@ -12,21 +12,6 @@ import ./types
 # File
 # ============================================================
 
-proc validateNoExternFunctions(types: seq[LocalType]): Result[void, ParserError] =
-  ## Walks every module's function list; rejects the first extern
-  ## found with the extern's own loc so the diagnostic points at
-  ## the offending decoration. Asl files cannot host extern
-  ## functions — those belong in .aslr files.
-  for typ in types:
-    case typ.kind:
-    of ltkGeneric: discard
-    of ltkModule:
-      let externFuncs = typ.module.externFunctions
-      if externFuncs.len > 0:
-        let msg = fmt"asl files cannot contain extern functions; extern functions belong in .aslr files (the runtime interface)"
-        return err(newParserError(msg, externFuncs[0].loc))
-  ok()
-
 proc insertStdImport(imports: seq[Import], vendors: VendorRoots): Result[seq[Import], ParserError] =
   ## When `vendors` contains a `"std"` entry, prepends a synthesized
   ## `import "@std"` (ikShorthand) so every public defined type from
@@ -110,12 +95,6 @@ type
 proc newAslFile*(path: string, imports: seq[Import], types: seq[LocalType],
     vendorRoots: VendorRoots = initTable[string, string]()): Result[
     File, ParserError] =
-  ## Builds an `fkAsl` File: source files written by users, may carry
-  ## imports, can not host extern functions in their modules (those
-  ## belong in .aslr files). Delegates the extern check, `@std`
-  ## auto-injection, self-import rejection, and name-index build to
-  ## the validators and builders above.
-  ? validateNoExternFunctions(types)
   let allImports = ? insertStdImport(imports, vendorRoots)
   # Validated AFTER @std injection — a vendor registered to point at
   # this very file would otherwise smuggle a self-import past the

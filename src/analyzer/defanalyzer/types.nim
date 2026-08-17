@@ -39,11 +39,12 @@ proc public*(m: AnalyzedDefModule): bool = m.resolved.public
 proc resolved*(m: AnalyzedDefModule): ResolvedModule = m.resolved
 proc functions*(m: AnalyzedDefModule): seq[AnalyzedDefFunction] = m.functions
 proc requires*(m: AnalyzedDefModule): seq[AnalyzedGenericArgumentType] = m.requires
+proc data*(m: AnalyzedDefModule): Option[AnalyzedDataDef] = m.data
   ## The module's generic slots in canonical order — the full set an
   ## initializer's impl map must cover, defaulting any slot a variant
   ## did not touch to itself (free).
 
-proc dataDef*(m: AnalyzedDefModule): AnalyzedDataDef =
+proc dataOrFail*(m: AnalyzedDefModule): AnalyzedDataDef =
   ## Kind-asserted projection — phase B reaches a module through an
   ## expression type only after the resolver verified it is a data
   ## module. The block-kind asserts live on AnalyzedDataDef's accessors.

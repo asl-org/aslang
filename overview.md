@@ -347,10 +347,10 @@ which in turn holds resolved imports plus a `ResolvedLocalType` for each
 module/generic. Body-level name resolution is complete (variables,
 getters, function calls, initializers, match/case patterns). The
 resolver also enforces the structural `struct(...)`-header
-constraints (unique generics in the header — enforced by
-`validateRequiresNameConflict` inside `newStructDefHeader`; struct can't
-carry generic fields when the header is present — enforced in
-`resolveStructDef` around line 409), populates each module argument
+constraint (unique generics in the header — enforced by
+`validateRequiresNameConflict` inside `newStructDefHeader`) and unions
+the header generics with those collected recursively from the field
+types, populates each module argument
 type's impl slots (leaving impl-count + generic-constraint validation
 to the def analyzer), resolves struct/union refs into provably valid
 shapes at ref-resolve time (`ResolvedStructRef` carries the
@@ -427,10 +427,10 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   `ResolvedVariantDef` from its generic-typed fields,
   `ResolvedUnionDef` by merging variant requires (first-seen order
   across variants — one union scope, Rust-style shared params),
-  `ResolvedStructDef` from its explicit `struct(...)` header or its
-  inferred generic fields (the split is decided inside
-  `resolveStructDef`; the constructed def carries no kind — nothing
-  downstream needs to know which path produced it).
+  `ResolvedStructDef` from the union of its explicit `struct(...)`
+  header generics and the generics collected recursively from its field
+  types (the constructed def carries no kind — nothing downstream needs
+  to know which path produced it).
   `genericTypeIndex` is an on-demand projection of that seq; the
   `requires*` accessors read it directly. Use-sites never re-derive
   this list: the def analyzer reads it off the module's data block

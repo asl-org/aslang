@@ -34,17 +34,6 @@ import ./analyzer/funccontext
 import ./analyzer/filecontext
 import ./analyzer/appcontext
 
-proc extractDataDef*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType): Result[AnalyzedDataDef, string] =
-  ok(fileCtx.findModule(argType.module).dataDef)
-
-proc extractStructFor*(fileCtx: AnalyzedFileContext, argType: AnalyzedModuleArgumentType, loc: Location): Result[AnalyzedStructDef, string] =
-  let moduleDef = fileCtx.findModule(argType.module)
-  let dataDef = moduleDef.dataDef
-  case dataDef.kind:
-  of adkStruct: ok(dataDef.struct)
-  of adkUnion: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found union")
-  of adkLiteral: err(fmt"{loc} expected module `{moduleDef.name.asl}` to have a struct block but found literal")
-
 # ============================================================
 # ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
 #   UNIFICATION.
@@ -197,25 +186,28 @@ proc analyzeGetter*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, fun
   if getter.source notin funcCtx:
     err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
   else:
-    let analyzedSourceArgType = funcCtx[getter.source].argType
-    case analyzedSourceArgType.kind:
+    let sourceArgType = funcCtx[getter.source].argType
+    case sourceArgType.kind:
     of aatkGeneric:
       err(fmt"{getter.loc} expected `{getter.source.asl}` to be a module but found generic ")
     of aatkModule:
-      let struct = ? fileCtx.extractStructFor(analyzedSourceArgType.module, getter.loc)
-      let property = ? struct.findField(getter.property)
-      # TODO: coerce the property type from the generic to concrete
-      ok(newAnalyzedGetter(getter, analyzedSourceArgType, property))
+      let sourceModule = fileCtx.findModule(sourceArgType.module.module)
+      case sourceModule.dataOrFail.kind:
+      of adkUnion: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct getter.block but found union")
+      of adkLiteral: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct block getter.but found literal")
+      of adkStruct:
+        let struct = sourceModule.dataOrFail.struct
+        let property = ? struct.findField(getter.property)
+        ok(newAnalyzedGetter(getter, sourceArgType, property))
 
 proc analyzeLiteralInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
   let analyzedModuleArgType = init.argType
   let argDefModule = fileCtx.findModule(init.argType.module)
-  let argDefData = argDefModule.dataDef
-  case argDefData.kind:
+  case argDefModule.dataOrFail.kind:
   of adkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of adkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of adkLiteral:
-    let maybeValidLiteral = analyzeLiteral(argDefData.literal, init.literal)
+    let maybeValidLiteral = analyzeLiteral(argDefModule.dataOrFail.literal, init.literal)
     if maybeValidLiteral.isOk: ok(newAnalyzedLiteralInitializer(init.literal, analyzedModuleArgType))
     else: err(maybeValidLiteral.error)
 
@@ -300,12 +292,11 @@ proc analyzeBareLiteral(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule,
       literal.default
 
   let argDefModule = fileCtx.findModule(literalArgType.module)
-  let argDefData = argDefModule.dataDef
-  case argDefData.kind:
+  case argDefModule.dataOrFail.kind:
   of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
   of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
   of adkLiteral:
-    ? analyzeLiteral(argDefData.literal, literal.value)
+    ? analyzeLiteral(argDefModule.dataOrFail.literal, literal.value)
     ok(newAnalyzedLiteralInitializer(literal.value, literalArgType))
 
 proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall): Result[AnalyzedFunctionCall, string] =
@@ -392,24 +383,24 @@ proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, func
   ok(analyzedCaseBlocks)
 
 proc analyzeMatchExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, match: AnalyzedDefMatch): Result[AnalyzedMatchExpression, string] =
-  let analyzedSubjectExpr = ? analyzeExpression(fileCtx, module, funcCtx, match.subject, none(AnalyzedArgumentType))
-  let subjectArgType = analyzedSubjectExpr.argType
+  let subjectExpr = ? analyzeExpression(fileCtx, module, funcCtx, match.subject, none(AnalyzedArgumentType))
+  let subjectArgType = subjectExpr.argType
   case subjectArgType.kind:
   of aatkGeneric:
     err(fmt"{match.subject.loc} expected subject expression to return a module but found generic")
   of aatkModule:
-    let analyzedSubjectDataType = ? fileCtx.extractDataDef(subjectArgType.module)
-    case analyzedSubjectDataType.kind:
+    let subjectDataModule = fileCtx.findModule(subjectArgType.module.module)
+    case subjectDataModule.dataOrFail.kind:
     of adkStruct:
       err(fmt"{match.loc} match block only supports literal and union types but subject expression returns `{subjectArgType.name.asl}` a struct type")
     of adkLiteral:
       assert(match.cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
-      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, match.cases, subjectArgType, analyzedSubjectDataType.literal, match.loc)
-      ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases))
+      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, match.cases, subjectArgType, subjectDataModule.dataOrFail.literal, match.loc)
+      ok(newAnalyzedMatchExpression(match, subjectExpr, analyzedCases))
     of adkUnion:
       assert(match.cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
-      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, match.cases, subjectArgType, analyzedSubjectDataType.union, match.loc)
-      ok(newAnalyzedMatchExpression(match, analyzedSubjectExpr, analyzedCases))
+      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, match.cases, subjectArgType, subjectDataModule.dataOrFail.union, match.loc)
+      ok(newAnalyzedMatchExpression(match, subjectExpr, analyzedCases))
 
 proc analyzeKeywordArgument*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, kwarg: AnalyzedDefKeywordArgument, analyzedField: AnalyzedArgumentDef): Result[AnalyzedKeywordArgument, string] =
   # Field's declared type is the expected context — bare literals in
@@ -429,7 +420,7 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
   ## a variant `Ok { a: T, b: T }` with `a: u8, b: String` is rejected
   ## here. TODO: consume the merged map to concretize the result type.
   let unionModule = fileCtx.findModule(init.unionRef.module)
-  let unionDef = unionModule.dataDef.union
+  let unionDef = unionModule.dataOrFail.union
   let variantDef = unionDef.findVariant(init.variant)
 
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
@@ -462,7 +453,7 @@ proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDef
   ## fields enforces that kwargs binding the same generic agree.
   ## TODO: consume the merged map to concretize the result type.
   let structModule = fileCtx.findModule(init.structRef.module)
-  let structDef = structModule.dataDef.struct
+  let structDef = structModule.dataOrFail.struct
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
   # Auto-inference: the ref may or may not carry explicit impls. Seed
   # the map with the ref's own impls (`Pair[u8] {...}` → {T: u8}) so a

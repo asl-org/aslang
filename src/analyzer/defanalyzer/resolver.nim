@@ -142,7 +142,7 @@ proc resolveStructDef(file: ResolvedFile, ctxType: LocalType, struct: StructDef)
   let resolvedFields = ? resolveFields(file, ctxType, struct.fields)
   # Explicit-vs-inferred decision + header/field conflict live on the
   # constructor.
-  newResolvedStructDef(struct, resolvedRequires, resolvedFields)
+  ok(newResolvedStructDef(struct, resolvedRequires, resolvedFields))
 
 proc resolveVariantDef(file: ResolvedFile, ctxType: LocalType, variant: VariantDef): Result[ResolvedVariantDef, string] =
   let resolvedFields = ? resolveFields(file, ctxType, variant.fields)

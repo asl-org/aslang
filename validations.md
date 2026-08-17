@@ -187,10 +187,9 @@ Source: `tests/test_grammar.nim` and `tests/test_ast.nim`.
 
 - **`.aslr` files reject `import` lines** — `aslrFileSpec` parses only
   modules and generics; a leading `import` line fails the parse.
-- **`.asl` files reject `extern` functions inside modules.**
-  `newAslFile` walks every module's function list; the first `@extern`
-  triggers "asl files cannot contain extern functions; extern
-  functions belong in .aslr files".
+- **`@extern` functions are allowed in both file kinds** — an earlier
+  rule rejected externs in `.asl` files; that restriction was removed,
+  so `.asl` and `.aslr` modules may both declare `@extern` functions.
 
 ### 4.2 File shape
 
@@ -501,16 +500,14 @@ Union:
 - **All named generics must be unique** — `struct(K, K):` is rejected
   with "duplicate generic encountered". Fires at struct-header parse
   time via `validateRequiresNameConflict` inside `newStructDefHeader`.
-- **Explicit header and generic fields are mutually exclusive** — if
-  a struct uses `struct(A):`, none of its fields may be typed by a
-  generic. Rejected with "struct with explicit generic requirements
-  does not support generic fields". Enforced in `resolveStructDef`.
-  A plain `struct:` header WITHOUT the parenthesised clause is
-  unaffected and may declare generic-typed fields freely (the
-  generics are collected in first-seen order across the fields; see
-  also §8.3a on how the analyzer handles their kwarg values). Use of
-  such structs is constrained separately by the impl-arity check
-  (§7.3) when their implicit generic parameter is exposed at a
+- **Header generics and field generics compose** — a struct's generic
+  parameter set is the union of its explicit `struct(A):` header slots
+  and every generic collected from its field types, recursing into
+  nested argtypes (a field typed `Box[K]` contributes `K`). Header
+  slots come first; the rest follow in first-seen order across the
+  fields (see also §8.3a on how the analyzer handles their kwarg
+  values). Use of such structs is constrained separately by the
+  impl-arity check (§7.3) when a generic parameter is exposed at a
   return position.
 
 Unions have no equivalent explicit-header form. A union's generic

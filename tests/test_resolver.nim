@@ -89,8 +89,8 @@ module Pair:
     check r.isOk
 
   test "explicit struct(...) header generic module resolves":
-    # Base has extern functions, so it must be parsed as .aslr
-    # (newAslFile rejects extern in `.asl` source).
+    # Base is the runtime-interface stdlib (extern functions, no
+    # imports), so it is parsed as .aslr.
     let (r, dir) = resolveSingleAslr(Base)
     cleanupDir(dir)
     check r.isOk
@@ -887,18 +887,64 @@ public module Array:
     check r.isErr
     check errorContains(r.error, "duplicate generic")
 
-  test "explicit struct(...) header + generic field is rejected":
-    # Header requires and generic fields are the two orthogonal ways
-    # to declare a struct's generic parameter set. Mixing them is
-    # ambiguous — use one or the other, not both.
+  test "explicit struct(...) header + generic field is allowed":
+    # A `struct(K)` header declares the generic parameter K; a field
+    # typed by K composes with it rather than conflicting, so the two
+    # may be mixed.
     let (r, dir) = resolveSingle(StructHeaderPrelude & """
 public module Array:
   struct(K):
     x: K
 """)
     cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "does not support generic fields")
+    check r.isOk
+
+  test "a generic nested in a field's argtype is collected as a struct param":
+    # `Holder.b` is typed `Box[K]` — the generic K is nested inside the
+    # Box argtype. The resolver recurses into field argtypes to collect
+    # it, so Holder gains K as its own parameter (top-level-only
+    # collection would have missed it).
+    let (r, dir) = resolveSingle(StructHeaderPrelude & """
+public module Box:
+  struct(K):
+    x: K
+
+public module Holder:
+  struct:
+    b: Box[K]
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+suite "resolver — extern in .asl":
+  # `.asl` files may host `@extern` functions (previously `.aslr`-only).
+
+  test "an extern function in an .asl module resolves":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public module Sys:
+  @extern("sys_read")
+  public func read(): u8
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "an extern and a user function coexist in an .asl module":
+    let (r, dir) = resolveSingle("""
+public module u8:
+  literal: "u8"
+
+public module Sys:
+  @extern("sys_read")
+  public func read(): u8
+
+  public func zero(): u8
+    u8 0
+""")
+    cleanupDir(dir)
+    check r.isOk
 
 suite "resolver — union param list":
   # A union's param list is the position-ordered set of distinct

@@ -43,6 +43,8 @@ proc imports*(f: AnalyzedDefFile): seq[AnalyzedDefImport] = f.imports
 proc types*(f: AnalyzedDefFile): seq[AnalyzedLocalType] = f.types
 proc modules*(file: AnalyzedDefFile): seq[AnalyzedDefModule] =
   file.types.filterIt(it.kind == altkModule).mapIt(it.module)
+proc generics*(file: AnalyzedDefFile): seq[AnalyzedGeneric] =
+  file.types.filterIt(it.kind == altkGeneric).mapIt(it.generic)
 
 # Identity lookups — phase A analyzed every type DEFINED in this
 # file (local-only by design), so a miss is a compiler bug.

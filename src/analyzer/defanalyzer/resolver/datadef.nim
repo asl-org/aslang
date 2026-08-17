@@ -55,25 +55,20 @@ type ResolvedStructDef* = ref object
   fields: seq[ResolvedArgumentDef]
   fieldIndex: Table[Identifier, int]
 
-proc newResolvedStructDef*(parsed: StructDef, requires: seq[ResolvedGenericArgumentType], fields: seq[ResolvedArgumentDef]): Result[ResolvedStructDef, string] =
-  ## Front-door: owns the explicit-vs-inferred decision. With an
-  ## explicit `struct(...)` header (`requires` non-empty) no field may
-  ## be generic-typed — the two declaration modes are mutually
-  ## exclusive; with a plain header the generics are inferred from
-  ## the fields in first-seen order. Nothing downstream needs to know
-  ## which path produced the def.
-  var genericFields: OrderedSet[ResolvedGenericArgumentType]
+proc newResolvedStructDef*(parsed: StructDef, requires: seq[ResolvedGenericArgumentType], fields: seq[ResolvedArgumentDef]): ResolvedStructDef =
+  ## Front-door: the struct's generic parameter set is the union of the
+  ## explicit `struct(...)` header generics and every generic collected
+  ## from the field types — recursing into nested argtypes, so a field
+  ## typed `Array[K]` contributes `K`. Order is first-seen, header slots
+  ## first. Nothing downstream needs to know which path produced the def.
+  var generics: OrderedSet[ResolvedGenericArgumentType]
+  for generic in requires:
+    generics.incl(generic)
   for field in fields:
-    case field.argType.kind:
-    of ratkModule: discard
-    of ratkGeneric: genericFields.incl(field.argType.generic)
-
-  if requires.len > 0 and genericFields.len > 0:
-    return err(fmt"{parsed.loc} struct with explicit generic requirements does not support generic fields")
-
-  let generics = if requires.len > 0: requires else: genericFields.toSeq
+    for generic in field.argType.generics:
+      generics.incl(generic)
   let fieldIndex = fields.indexByName()
-  ok(ResolvedStructDef(parsed: parsed, generics: generics, fields: fields, fieldIndex: fieldIndex))
+  ResolvedStructDef(parsed: parsed, generics: generics.toSeq, fields: fields, fieldIndex: fieldIndex)
 
 proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDef] = struct.fields
 proc requires*(struct: ResolvedStructDef): seq[ResolvedGenericArgumentType] = struct.generics
@@ -89,17 +84,11 @@ proc findField*(struct: ResolvedStructDef, name: Identifier): Result[ResolvedArg
 # fields, with the variant's own generic slots inferred from the fields.
 
 proc buildGenerics(fields: seq[ResolvedArgumentDef]): seq[ResolvedGenericArgumentType] =
-  var genericSet: HashSet[ResolvedGenericArgumentType]
-  var generics: seq[ResolvedGenericArgumentType]
+  var generics: OrderedSet[ResolvedGenericArgumentType]
   for field in fields:
-    case field.argType.kind:
-    of ratkModule: discard
-    of ratkGeneric:
-      let generic = field.argType.generic
-      if generic notin genericSet:
-        generics.add(generic)
-        genericSet.incl(generic)
-  return generics
+    for generic in field.argType.generics:
+      generics.incl(generic)
+  return generics.toSeq
 
 type ResolvedVariantDef* = ref object
   parsed: VariantDef
