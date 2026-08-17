@@ -69,6 +69,9 @@ suite "resolver — happy paths":
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 """)
     cleanupDir(dir)
     check r.isOk
@@ -76,7 +79,7 @@ public module u8:
   test "struct + literal type field resolves":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslr"
+import { u8, u64 } from "./base.aslr"
 
 module Pair:
   struct:
@@ -176,6 +179,9 @@ module Pair:
 
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 """)
     cleanupDir(dir)
     check r.isOk
@@ -237,6 +243,9 @@ module M:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public generic K:
   func foo(): u8
 
@@ -255,6 +264,9 @@ public module Pair:
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
   public func foo(): u8
     u8 0
@@ -279,6 +291,9 @@ module M:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public generic K:
   func foo(): u8
 
@@ -302,6 +317,9 @@ public module Pair:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public generic K:
   func foo(): u8
 
@@ -317,6 +335,9 @@ public module Status:
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 public generic K:
   func foo(): u8
@@ -551,7 +572,7 @@ public module M:
     # which naturally handles zero for empty variants.
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslr"
+import { u8, u64 } from "./base.aslr"
 
 public module Signal:
   union:
@@ -653,6 +674,9 @@ module M:
       ("other.asl", """
 module Hidden:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 """)
     ])
     cleanupDir(dir)
@@ -680,7 +704,7 @@ public module Other:
   test "import alias resolves at use sites":
     let (r, dir) = resolveFiles([
       ("entry.asl", """
-import { u8 as Byte } from "./base.aslr"
+import { u8 as Byte, u64 } from "./base.aslr"
 
 module M:
   struct:
@@ -727,6 +751,9 @@ public module u8:
 
 module Hidden:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 """)
     ])
     cleanupDir(dir)
@@ -784,10 +811,16 @@ module M:
       ("a.asl", """
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 """),
       ("b.asl", """
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 """)
     ])
     cleanupDir(dir)
@@ -803,6 +836,9 @@ suite "resolver — generic signature rule":
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 generic Eq:
   func eq(a: Eq, b: Eq): u8
 """)
@@ -814,6 +850,9 @@ generic Eq:
 public module u32:
   literal: "u32"
 
+public module u64:
+  literal: "u64"
+
 generic Sized:
   func size(s: Sized): u32
 """)
@@ -824,6 +863,9 @@ generic Sized:
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 generic Other:
   func id(x: Other): Other
@@ -871,6 +913,9 @@ suite "resolver — struct header constraints":
   const StructHeaderPrelude = """
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 public generic K:
   func foo(): u8
@@ -924,6 +969,9 @@ suite "resolver — extern in .asl":
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public module Sys:
   @extern("sys_read")
   public func read(): u8
@@ -935,6 +983,9 @@ public module Sys:
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 public module Sys:
   @extern("sys_read")
@@ -996,6 +1047,9 @@ suite "resolver — function visibility":
 public module i32:
   literal: "i32"
 
+public module u64:
+  literal: "u64"
+
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
 
@@ -1020,6 +1074,9 @@ public module u8:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 module A:
   func go(x: u8): u8
     x
@@ -1037,6 +1094,9 @@ module B:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 module A:
   func go(x: u8): u8
     x
@@ -1053,6 +1113,9 @@ suite "resolver — input-signature uniqueness":
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 module A:
   func go(x: u8): u8
@@ -1075,6 +1138,9 @@ public module u8:
 public module u32:
   literal: "u32"
 
+public module u64:
+  literal: "u64"
+
 module A:
   func go(x: u8): u8
     x
@@ -1091,6 +1157,9 @@ module A:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public generic Eq:
   func eq(a: Eq, b: Eq): u8
   func eq(a: Eq, b: Eq): u8
@@ -1105,6 +1174,9 @@ suite "resolver — public modules require public generics":
     let (r, dir) = resolveSingle("""
 public module u32:
   literal: "u32"
+
+public module u64:
+  literal: "u64"
 
 generic Any:
   func byte_size(items: u32): u32
@@ -1122,6 +1194,9 @@ public module Array:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 generic K:
   func foo(): u8
 
@@ -1138,6 +1213,9 @@ public module Box:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 generic K:
   func foo(): u8
 
@@ -1152,6 +1230,9 @@ module Box:
     let (r, dir) = resolveSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 public generic K:
   func foo(): u8

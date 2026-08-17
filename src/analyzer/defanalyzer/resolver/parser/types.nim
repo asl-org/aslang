@@ -104,8 +104,13 @@ proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier, data
   if data.isNone and funcList.len == 0:
     let msg = "module must have at least 1 struct/union/function block"
     return err(newParserError(msg, loc))
-  let functionIndex = buildNameArityIndex(funcList)
-  ok(Module(decorators: decorators, public: public, name: name, data: data, funcList: funcList, functionIndex: functionIndex, loc: loc))
+
+  # NOTE: Inject `public func byte_size(): u64` in every data module
+  var augumentedFuncList = funcList
+  if data.isSome: augumentedFuncList = ? funcList.add(byteSizeBuiltinFunction(data.get.ctype, data.get.loc))
+  let functionIndex = buildNameArityIndex(augumentedFuncList)
+
+  ok(Module(decorators: decorators, public: public, name: name, data: data, funcList: augumentedFuncList, functionIndex: functionIndex, loc: loc))
 
 proc public*(m: Module): bool = m.public
 proc name*(m: Module): Identifier = m.name

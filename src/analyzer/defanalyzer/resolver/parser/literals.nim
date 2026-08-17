@@ -183,6 +183,8 @@ proc newLiteralDef*(value: StringLiteral, loc: Location): LiteralDef =
 
 proc content*(literalType: LiteralDef): string = literalType.value.content
 proc loc*(literalType: LiteralDef): Location = literalType.loc
+proc ctype*(literalType: LiteralDef): string = literalType.value.value
+
 
 proc asl*(l: LiteralDef, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)

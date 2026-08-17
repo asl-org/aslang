@@ -162,6 +162,24 @@ proc asl*(fn: Function, level: int, indentWidth: uint32): seq[string] =
   of fkUser: asl(fn.user, level, indentWidth)
   of fkExtern: asl(fn.extern, level, indentWidth)
 
+proc byteSizeBuiltinFunction*(prefix: string, loc: Location): Function =
+  let maybeName = newIdentifier("byte_size", loc)
+  assert(maybeName.isOk, "[BUG] - failed to create function name identifier")
+  let name = maybeName.get
+
+  let maybeReturnTypeName = newIdentifier("u64", loc)
+  assert(maybeReturnTypeName.isOk, "[BUG] - failed to create function return type identifier")
+  let returnTypeName = maybeReturnTypeName.get
+  let returnType = newArgumentType(returnTypeName)
+
+  let maybeArgDefList = newArgumentDefList(@[], loc)
+  assert(maybeArgDefList.isOk, "[BUG] - failed to create function argument definition list")
+  let argDefList = maybeArgDefList.get
+
+  let funcDef = newFunctionDef(true, name, argDefList, returnType, loc)
+  let externFunction = newExternFunction(fmt"{prefix}_byte_size", funcDef, loc)
+  return newFunction(externFunction)
+
 # ============================================================
 # FunctionList
 # ============================================================
@@ -185,3 +203,7 @@ proc newFunctionList*(functions: seq[Function]): Result[FunctionList, ParserErro
 
 proc functions*(fnlist: FunctionList): seq[Function] = fnlist.functions
 proc len*(fnlist: FunctionList): int = fnlist.functions.len
+proc add*(fnlist: FunctionList, function: Function): Result[FunctionList, ParserError] =
+  var functions = fnlist.functions
+  functions.add(function)
+  newFunctionList(functions)

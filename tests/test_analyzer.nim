@@ -57,6 +57,9 @@ suite "analyzer — happy paths":
     let (r, dir) = analyzeSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 """)
     cleanupDir(dir)
     check r.isOk
@@ -65,6 +68,9 @@ public module u8:
     let (r, dir) = analyzeSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 module M:
   func go(x: u8): u8
@@ -76,7 +82,7 @@ module M:
   test "struct + simple field types analyze":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8, u32 } from "./base.aslr"
+import { u8, u32, u64 } from "./base.aslr"
 
 module Point:
   struct:
@@ -108,7 +114,7 @@ public generic Any:
     # imported here but no longer has to be — see the next test.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u8, u32 } from "./base.aslr"
+import { Array, Any, u8, u32, u64 } from "./base.aslr"
 
 module N:
   struct:
@@ -126,7 +132,7 @@ module N:
     # (findGenericInScope) instead of this file's scope.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, u8 } from "./base.aslr"
+import { Array, u8, u64 } from "./base.aslr"
 
 module N:
   struct:
@@ -147,7 +153,7 @@ module N:
     # of consolidating def-level lookup through the scope table.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8 as Byte } from "./base.aslr"
+import { u8 as Byte, u64 } from "./base.aslr"
 
 module M:
   struct:
@@ -169,7 +175,7 @@ suite "analyzer — generic constraint satisfaction":
     # function body forces the constraint check to fire.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.aslr"
+import { Array, Any, u32, u64 } from "./base.aslr"
 
 public module BadImpl:
   struct:
@@ -192,7 +198,7 @@ module N:
     # use u32 (which implements byte_size).
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.aslr"
+import { Array, Any, u32, u64 } from "./base.aslr"
 
 module N:
   struct:
@@ -209,7 +215,7 @@ module N:
     # an impl (`u8[u8]`) fails the def analyzer's impl-count check.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslr"
+import { u8, u64 } from "./base.aslr"
 
 module M:
   struct:
@@ -262,6 +268,9 @@ public module Use:
 public module i32:
   literal: "i32"
 
+public module u64:
+  literal: "u64"
+
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
 
@@ -289,7 +298,7 @@ suite "analyzer — imports":
   test "module that imports + uses a generic + concrete impl works":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Any, Array, u8 } from "./base.aslr"
+import { Any, Array, u8, u64 } from "./base.aslr"
 
 module N:
   struct:
@@ -303,7 +312,7 @@ module N:
   test "module that imports a type but doesn't use it still analyzes":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8 } from "./base.aslr"
+import { u8, u64 } from "./base.aslr"
 
 module M:
   struct:
@@ -336,7 +345,7 @@ suite "analyzer — cross-file constraint provenance":
     # the use site's scope.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8 } from "./c.asl"
+import { u8, u64 } from "./c.asl"
 import { Pair } from "./b.asl"
 
 public module BadImpl:
@@ -348,7 +357,7 @@ module N:
     Pair[BadImpl] { value: x }
 """),
       ("b.asl", """
-import { Comparable } from "./c.asl"
+import { Comparable, u64 } from "./c.asl"
 
 public module Pair:
   struct:
@@ -357,6 +366,9 @@ public module Pair:
       ("c.asl", """
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): u8
@@ -385,7 +397,7 @@ module M:
   test "analyzer error message includes the file path":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.aslr"
+import { Array, Any, u32, u64 } from "./base.aslr"
 
 public module BadImpl:
   literal: "bad"
@@ -403,7 +415,7 @@ module N:
   test "analyzer error message includes line:col":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { Array, Any, u32 } from "./base.aslr"
+import { Array, Any, u32, u64 } from "./base.aslr"
 
 public module BadImpl:
   literal: "bad"
@@ -430,6 +442,9 @@ suite "analyzer — generic-context signature":
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 generic Eq:
   func eq(a: Eq, b: Eq): u8
 """)
@@ -440,6 +455,9 @@ generic Eq:
     let (r, dir) = analyzeSingle("""
 public module u32:
   literal: "u32"
+
+public module u64:
+  literal: "u64"
 
 generic Sized:
   func size(s: Sized): u32
@@ -453,6 +471,9 @@ suite "analyzer — float literals":
     let (r, dir) = analyzeSingle("""
 public module f64:
   literal: "f64"
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f64
@@ -471,6 +492,9 @@ public module M:
 public module f64:
   literal: "f64"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): f64
     f64 0.1
@@ -485,6 +509,9 @@ public module M:
 public module f64:
   literal: "f64"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): f64
     f64 0.0625
@@ -497,6 +524,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module f64:
   literal: "f64"
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f64
@@ -512,6 +542,9 @@ public module M:
 public module f64:
   literal: "f64"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): f64
     f64 3.14
@@ -523,6 +556,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module f64:
   literal: "f64"
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f64
@@ -537,6 +573,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module f32:
   literal: "f32"
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f32
@@ -553,6 +592,9 @@ public module M:
 public module f32:
   literal: "f32"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): f32
     f32 0.1
@@ -564,6 +606,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module f32:
   literal: "f32"
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f32
@@ -578,6 +623,9 @@ public module M:
 public module f32:
   literal: "f32"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): f32
     f32 nan
@@ -589,6 +637,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module f32:
   literal: "f32"
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f32
@@ -602,6 +653,9 @@ public module M:
 public module f32:
   literal: "f32"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): f32
     f32 -inf
@@ -613,6 +667,9 @@ public module M:
     let (r, dir) = analyzeSingle("""
 public module f64:
   literal: "f64"
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f64
@@ -668,6 +725,9 @@ module Triple:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 module Signal:
   union:
     On { level: u8 }
@@ -697,6 +757,9 @@ module Caller:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public module Helper:
   public func value(): u8
     u8 42
@@ -717,6 +780,9 @@ public module u8:
 
   @extern("u8_add_u8")
   public func add(a: u8, b: u8): u8
+
+public module u64:
+  literal: "u64"
 """)
     ])
     cleanupDir(dir)
@@ -739,6 +805,9 @@ module Caller:
       ("helper.asl", """
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 public module Helper:
   public func value(): u8
@@ -796,6 +865,9 @@ public module i32:
   public func add(a: i32, b: i32): i32
     a
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): i32
     x = 10
@@ -811,6 +883,9 @@ public module f32:
 
   public func add(a: f32, b: f32): f32
     a
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f32
@@ -832,6 +907,9 @@ public module f32:
 
   public func add(a: f32, b: f32): f32
     a
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): f32
@@ -855,6 +933,9 @@ public module f32:
   public func add(a: f32, b: f32): f32
     a
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): f32
     f32.add(nan, inf)
@@ -872,6 +953,9 @@ public module String:
 
   public func length(s: String): u32
     u32 0
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): u32
@@ -896,6 +980,9 @@ public module u8:
 public module i32:
   literal: "i32"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): u8
     u8.add(10, 20)
@@ -913,6 +1000,9 @@ public module u8:
 
 public module i32:
   literal: "i32"
+
+public module u64:
+  literal: "u64"
 
 public module Pair:
   struct:
@@ -935,6 +1025,9 @@ public module u8:
 
 public module i32:
   literal: "i32"
+
+public module u64:
+  literal: "u64"
 
 public module Sig:
   union:
@@ -1026,6 +1119,9 @@ public module u8:
 public module i32:
   literal: "i32"
 
+public module u64:
+  literal: "u64"
+
 public module Pair:
   struct:
     a: u8
@@ -1051,6 +1147,9 @@ public module u8:
 public module i32:
   literal: "i32"
 
+public module u64:
+  literal: "u64"
+
 public module M:
   public func go(): u8
     u8.add(300, 0)
@@ -1070,6 +1169,9 @@ public module u8:
 
   public func add(a: u8, b: u8): u8
     a
+
+public module u64:
+  literal: "u64"
 
 public module M:
   public func go(): u8
@@ -1091,6 +1193,9 @@ public module u8:
 
 public module i32:
   literal: "i32"
+
+public module u64:
+  literal: "u64"
 
 public module Pair:
   struct:
@@ -1119,6 +1224,9 @@ suite "analyzer — kwarg + pattern shorthand end-to-end":
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public module Pair:
   struct:
     a: u8
@@ -1137,6 +1245,9 @@ public module Pair:
 public module u8:
   literal: "u8"
 
+public module u64:
+  literal: "u64"
+
 public module Status:
   union:
     Ok { value: u8 }
@@ -1154,6 +1265,9 @@ module M:
     let (r, dir) = analyzeSingle("""
 public module u8:
   literal: "u8"
+
+public module u64:
+  literal: "u64"
 
 public module Status:
   union:
@@ -1244,6 +1358,9 @@ public module u8:
   public func compare(a: u8, b: u8): i32
     i32 0
 
+public module u64:
+  literal: "u64"
+
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
 
@@ -1310,6 +1427,9 @@ public module u8:
   public func compare(a: u8, b: u8): i32
     i32 0
 
+public module u64:
+  literal: "u64"
+
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
 
@@ -1341,6 +1461,9 @@ public module i32:
 
 public module u32:
   literal: "u32"
+
+public module u64:
+  literal: "u64"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
@@ -1376,6 +1499,9 @@ public module u8:
   public func compare(a: u8, b: u8): i32
     i32 0
 
+public module u64:
+  literal: "u64"
+
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
 
@@ -1402,6 +1528,9 @@ public module i32:
 
 public module u32:
   literal: "u32"
+
+public module u64:
+  literal: "u64"
 
 public generic K:
   func foo(): u32
@@ -1437,6 +1566,9 @@ module M:
 public module u32:
   literal: "u32"
 
+public module u64:
+  literal: "u64"
+
 public generic Eq:
   func eq(a: Eq, b: Eq): u32
 
@@ -1463,6 +1595,9 @@ module Wrapper:
     let (r, dir) = analyzeSingle("""
 public module u32:
   literal: "u32"
+
+public module u64:
+  literal: "u64"
 
 public generic Eq:
   func eq(a: Eq, b: Eq): u32
@@ -1492,6 +1627,9 @@ suite "analyzer — entry point":
   const I32 = """
 public module i32:
   literal: "i32"
+
+public module u64:
+  literal: "u64"
 
 """
 

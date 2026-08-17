@@ -1,10 +1,6 @@
 public module u8:
   literal: "u8"
 
-  # core
-  @extern("u8_byte_size")
-  public func byte_size(): u64
-
   # binary
   @extern("u8_and_u8")
   public func and(a: u8, b: u8): u8
@@ -51,10 +47,6 @@ public module u8:
 public module u16:
   literal: "u16"
 
-  # core
-  @extern("u16_byte_size")
-  public func byte_size(): u64
-
   # binary
   @extern("u16_and_u16")
   public func and(a: u16, b: u16): u16
@@ -96,10 +88,6 @@ public module u16:
 
 public module u32:
   literal: "u32"
-
-  # core
-  @extern("u32_byte_size")
-  public func byte_size(): u64
 
   # binary
   @extern("u32_and_u32")
@@ -175,10 +163,6 @@ public module u32:
 public module u64:
   literal: "u64"
 
-  # core
-  @extern("u64_byte_size")
-  public func byte_size(): u64
-
   # binary
   @extern("u64_and_u64")
   public func and(a: u64, b: u64): u64
@@ -250,10 +234,6 @@ public module u64:
 public module i8:
   literal: "i8"
 
-  # core
-  @extern("i8_byte_size")
-  public func byte_size(): u64
-
   # binary
   @extern("i8_and_i8")
   public func and(a: i8, b: i8): i8
@@ -295,10 +275,6 @@ public module i8:
 
 public module i16:
   literal: "i16"
-
-  # core
-  @extern("i16_byte_size")
-  public func byte_size(): u64
 
   # binary
   @extern("i16_and_i16")
@@ -342,10 +318,6 @@ public module i16:
 public module i32:
   literal: "i32"
 
-  # core
-  @extern("i32_byte_size")
-  public func byte_size(): u64
-
   # binary
   @extern("i32_and_i32")
   public func and(a: i32, b: i32): i32
@@ -387,10 +359,6 @@ public module i32:
 
 public module i64:
   literal: "i64"
-
-  # core
-  @extern("i64_byte_size")
-  public func byte_size(): u64
 
   # binary
   @extern("i64_and_i64")
@@ -472,10 +440,6 @@ public module i64:
 public module f32:
   literal: "f32"
 
-  # core
-  @extern("f32_byte_size")
-  public func byte_size(): u64
-
   # binary
   @extern("f32_and_f32")
   public func and(a: f32, b: f32): f32
@@ -520,10 +484,6 @@ public module f32:
 # See the TODO above f32 — the same special-value gap applies to f64.
 public module f64:
   literal: "f64"
-
-  # core
-  @extern("f64_byte_size")
-  public func byte_size(): u64
 
   # binary
   @extern("f64_and_f64")
@@ -659,9 +619,6 @@ public module Array:
   struct(Any):
     size: u32
 
-  @extern("pointer_byte_size")
-  public func byte_size(): u64
-
   @extern("array_get")
   public func get(arr: Array[Any], index: u32): Status[Any]
 
@@ -671,9 +628,6 @@ public module Array:
 public module Bitset:
   struct:
     bits: Array[u32]
-
-  @extern("pointer_byte_size")
-  public func byte_size(): u64
 
   public func init(size: u32): Status[Bitset]
     match u32.add(size, 31):
