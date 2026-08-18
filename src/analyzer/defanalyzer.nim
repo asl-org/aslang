@@ -318,11 +318,14 @@ proc analyzeDefExternFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTyp
 proc analyzeDefFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedFunction): Result[AnalyzedDefFunction, string] =
   case function.kind:
   of rfkExtern:
-    let analyzedExternFunction = ? analyzeDefExternFunction(fileCtx, typeCtx, function.extern)
-    ok(newAnalyzedDefFunction(analyzedExternFunction))
+    let externFunc = ? analyzeDefExternFunction(fileCtx, typeCtx, function.extern)
+    ok(newAnalyzedDefFunction(externFunc))
   of rfkUser:
-    let analyzedUserFunction = ? analyzeDefUserFunction(fileCtx, typeCtx, function.user)
-    ok(newAnalyzedDefFunction(analyzedUserFunction))
+    let userFunc = ? analyzeDefUserFunction(fileCtx, typeCtx, function.user)
+    ok(newAnalyzedDefFunction(userFunc))
+  of rfkGenerated:
+    let generatedFunc = ? analyzeDefFunctionDefinition(fileCtx, typeCtx, function.generated)
+    ok(newAnalyzedDefFunction(generatedFunc))
 
 # ============================================================
 # Phase-A module + generic analyzers (W4 of plan_analyzer_two_pass.md).

@@ -5,7 +5,7 @@
 ## blocks, match expressions, and mutations. Tests exercise positive
 ## paths plus the more interesting parse failures.
 
-import unittest, results
+import unittest, results, strutils
 
 import analyzer
 import tutils
@@ -725,3 +725,37 @@ module M:
     u8 0
 """)
     check r.isOk
+
+suite "grammar — generated functions omitted from asl output":
+  # The injected `byte_size` is a `generated` function (fkGenerated).
+  # The pretty-printer must omit it, so a data module round-trips
+  # through `asl` without gaining a spurious `byte_size` line.
+
+  test "a literal module's asl output omits the injected byte_size":
+    let r = parseStr("""
+public module u8:
+  literal: "u8"
+""")
+    check r.isOk
+    let printed = r.get.asl(2'u32)
+    check "byte_size" notin printed
+    check "public module u8:" in printed
+    check "literal: \"u8\"" in printed
+
+  test "a struct module's asl output keeps user functions but omits byte_size":
+    let r = parseStr("""
+public module u8:
+  literal: "u8"
+
+public module Point:
+  struct:
+    x: u8
+    y: u8
+
+  public func zero(): u8
+    u8 0
+""")
+    check r.isOk
+    let printed = r.get.asl(2'u32)
+    check "byte_size" notin printed
+    check "public func zero(): u8" in printed

@@ -113,17 +113,21 @@ proc asl*(fn: UserFunction, level: int, indentWidth: uint32): seq[string] =
 
 type
   FunctionKind* = enum
-    fkUser, fkExtern
+    fkUser, fkExtern, fkGenerated
   Function* = ref object
     case kind: FunctionKind
     of fkUser: user: UserFunction
     of fkExtern: extern: ExternFunction
+    of fkGenerated: generated: FunctionDef
 
 proc newFunction*(user: UserFunction): Function =
   Function(kind: fkUser, user: user)
 
 proc newFunction*(extern: ExternFunction): Function =
   Function(kind: fkExtern, extern: extern)
+
+proc newFunction*(generated: FunctionDef): Function =
+  Function(kind: fkGenerated, generated: generated)
 
 proc kind*(fn: Function): FunctionKind = fn.kind
 
@@ -137,32 +141,42 @@ proc extern*(fn: Function): ExternFunction =
     fmt"Function.extern accessed but kind is {fn.kind}"
   fn.extern
 
+proc generated*(fn: Function): FunctionDef =
+  assert fn.kind == fkGenerated,
+    fmt"Function.generated accessed but kind is {fn.kind}"
+  fn.generated
+
 proc loc*(fn: Function): Location =
   case fn.kind:
   of fkUser: fn.user.loc
   of fkExtern: fn.extern.loc
+  of fkGenerated: fn.generated.loc
 
 proc name*(fn: Function): Identifier =
   case fn.kind:
   of fkUser: fn.user.name
   of fkExtern: fn.extern.name
+  of fkGenerated: fn.generated.name
 
 proc def*(fn: Function): FunctionDef =
   case fn.kind:
   of fkUser: fn.user.def
   of fkExtern: fn.extern.def
+  of fkGenerated: fn.generated
 
 proc arity*(fn: Function): int =
   case fn.kind:
   of fkUser: fn.user.arity
   of fkExtern: fn.extern.arity
+  of fkGenerated: fn.generated.arity
 
 proc asl*(fn: Function, level: int, indentWidth: uint32): seq[string] =
   case fn.kind:
   of fkUser: asl(fn.user, level, indentWidth)
   of fkExtern: asl(fn.extern, level, indentWidth)
+  of fkGenerated: @[]
 
-proc byteSizeBuiltinFunction*(prefix: string, loc: Location): Function =
+proc byteSizeBuiltinFunction*(loc: Location): Function =
   let maybeName = newIdentifier("byte_size", loc)
   assert(maybeName.isOk, "[BUG] - failed to create function name identifier")
   let name = maybeName.get
@@ -177,8 +191,7 @@ proc byteSizeBuiltinFunction*(prefix: string, loc: Location): Function =
   let argDefList = maybeArgDefList.get
 
   let funcDef = newFunctionDef(true, name, argDefList, returnType, loc)
-  let externFunction = newExternFunction(fmt"{prefix}_byte_size", funcDef, loc)
-  return newFunction(externFunction)
+  return newFunction(funcDef)
 
 # ============================================================
 # FunctionList

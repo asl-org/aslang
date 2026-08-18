@@ -4,7 +4,6 @@ import ./tokenizer
 import ./error
 
 import ./identifiers
-import ./function
 import ./imports
 import ./types
 

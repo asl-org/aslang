@@ -40,17 +40,21 @@ proc entry(function: AnalyzedUserFunction): bool = function.def.entry
 
 type
   AnalyzedFunctionKind* = enum
-    afkUser, afkExtern
+    afkUser, afkExtern, afkGenerated
   AnalyzedFunction* = ref object
     case kind: AnalyzedFunctionKind
     of afkUser: user: AnalyzedUserFunction
     of afkExtern: extern: AnalyzedExternFunction
+    of afkGenerated: generated: AnalyzedFunctionDef
 
 proc newAnalyzedFunction*(user: AnalyzedUserFunction): AnalyzedFunction =
   AnalyzedFunction(kind: afkUser, user: user)
 
 proc newAnalyzedFunction*(extern: AnalyzedExternFunction): AnalyzedFunction =
   AnalyzedFunction(kind: afkExtern, extern: extern)
+
+proc newAnalyzedFunction*(generated: AnalyzedFunctionDef): AnalyzedFunction =
+  AnalyzedFunction(kind: afkGenerated, generated: generated)
 
 proc kind*(function: AnalyzedFunction): AnalyzedFunctionKind = function.kind
 proc user*(function: AnalyzedFunction): AnalyzedUserFunction =
@@ -61,15 +65,21 @@ proc extern*(function: AnalyzedFunction): AnalyzedExternFunction =
   assert function.kind == afkExtern,
     fmt"AnalyzedFunction.extern accessed but kind is {function.kind}"
   function.extern
+proc generated*(function: AnalyzedFunction): AnalyzedFunctionDef =
+  assert function.kind == afkGenerated,
+    fmt"AnalyzedFunction.generated accessed but kind is {function.kind}"
+  function.generated
 proc loc*(function: AnalyzedFunction): Location =
   case function.kind:
   of afkExtern: function.extern.loc
   of afkUser: function.user.loc
+  of afkGenerated: function.generated.loc
 proc def*(function: AnalyzedFunction): AnalyzedFunctionDef =
   case function.kind:
   of afkExtern: def(function.extern)
   of afkUser: def(function.user)
+  of afkGenerated: function.generated
 proc entry*(function: AnalyzedFunction): bool =
   case function.kind:
-  of afkExtern: false
   of afkUser: function.user.entry
+  of afkExtern, afkGenerated: false

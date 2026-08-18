@@ -81,17 +81,21 @@ proc statements*(function: AnalyzedDefUserFunction): seq[AnalyzedDefStatement] =
 
 type
   AnalyzedDefFunctionKind* = enum
-    adfkExtern, adfkUser
+    adfkExtern, adfkUser, adfkGenerated
   AnalyzedDefFunction* = ref object
     case kind: AnalyzedDefFunctionKind
     of adfkExtern: extern: AnalyzedDefExternFunction
     of adfkUser: user: AnalyzedDefUserFunction
+    of adfkGenerated: generated: AnalyzedFunctionDef
 
 proc newAnalyzedDefFunction*(extern: AnalyzedDefExternFunction): AnalyzedDefFunction =
   AnalyzedDefFunction(kind: adfkExtern, extern: extern)
 
 proc newAnalyzedDefFunction*(user: AnalyzedDefUserFunction): AnalyzedDefFunction =
   AnalyzedDefFunction(kind: adfkUser, user: user)
+
+proc newAnalyzedDefFunction*(generated: AnalyzedFunctionDef): AnalyzedDefFunction =
+  AnalyzedDefFunction(kind: adfkGenerated, generated: generated)
 
 proc kind*(function: AnalyzedDefFunction): AnalyzedDefFunctionKind = function.kind
 proc extern*(function: AnalyzedDefFunction): AnalyzedDefExternFunction =
@@ -102,23 +106,30 @@ proc user*(function: AnalyzedDefFunction): AnalyzedDefUserFunction =
   assert function.kind == adfkUser,
     fmt"AnalyzedDefFunction.user accessed but kind is {function.kind}"
   function.user
+proc generated*(function: AnalyzedDefFunction): AnalyzedFunctionDef =
+  assert function.kind == adfkGenerated,
+    fmt"AnalyzedDefFunction.generated accessed but kind is {function.kind}"
+  function.generated
 
 proc def*(function: AnalyzedDefFunction): AnalyzedFunctionDef =
   case function.kind:
   of adfkExtern: function.extern.def
   of adfkUser: function.user.def
+  of adfkGenerated: function.generated
 
 proc name*(function: AnalyzedDefFunction): Identifier =
   case function.kind:
   of adfkExtern: function.extern.name
   of adfkUser: function.user.name
+  of adfkGenerated: function.generated.name
 
 proc arity*(function: AnalyzedDefFunction): int =
   case function.kind:
   of adfkExtern: function.extern.arity
   of adfkUser: function.user.arity
+  of adfkGenerated: function.def.arity
 
 proc entry*(function: AnalyzedDefFunction): bool =
   case function.kind:
-  of adfkExtern: false
   of adfkUser: function.user.entry
+  of adfkExtern, adfkGenerated: false

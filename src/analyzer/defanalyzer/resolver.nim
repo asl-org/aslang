@@ -383,11 +383,14 @@ proc resolveUserFunction(file: ResolvedFile, ctxType: LocalType, function: UserF
 proc resolveFunction(file: ResolvedFile, ctxType: LocalType, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
-    let resolvedUserFunction = ? resolveUserFunction(file, ctxType, function.user)
-    ok(newResolvedFunction(resolvedUserFunction))
+    let userFunc = ? resolveUserFunction(file, ctxType, function.user)
+    ok(newResolvedFunction(userFunc))
   of fkExtern:
-    let resolvedExternFunction = ? resolveExternFunction(file, ctxType, function.extern)
-    ok(newResolvedFunction(resolvedExternFunction))
+    let externFunc = ? resolveExternFunction(file, ctxType, function.extern)
+    ok(newResolvedFunction(externFunc))
+  of fkGenerated:
+    let generatedFunc = ? resolveFunctionDef(file, ctxType, function.generated)
+    ok(newResolvedFunction(generatedFunc))
 
 proc resolveModule(file: ResolvedFile, module: Module): Result[ResolvedModule, string] =
   let ctxType = newLocalType(module)

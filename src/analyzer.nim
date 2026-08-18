@@ -542,11 +542,13 @@ proc analyzeUserFunction*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
 proc analyzeFunction(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: AnalyzedDefFunction): Result[AnalyzedFunction, string] =
   case function.kind:
   of adfkExtern:
-    let analyzedExternFunction = newAnalyzedExternFunction(function.extern)
-    ok(newAnalyzedFunction(analyzedExternFunction))
+    let externFunc = newAnalyzedExternFunction(function.extern)
+    ok(newAnalyzedFunction(externFunc))
   of adfkUser:
-    let analyzedUserFunction = ? analyzeUserFunction(fileCtx, module, function.user)
-    ok(newAnalyzedFunction(analyzedUserFunction))
+    let userFunc = ? analyzeUserFunction(fileCtx, module, function.user)
+    ok(newAnalyzedFunction(userFunc))
+  of adfkGenerated:
+    ok(newAnalyzedFunction(function.generated))
 
 proc analyzeModule*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule): Result[AnalyzedModule, string] =
   var analyzedFunctions: seq[AnalyzedFunction]

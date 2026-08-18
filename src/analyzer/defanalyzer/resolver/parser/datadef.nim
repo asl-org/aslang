@@ -75,7 +75,6 @@ proc newStructDef*(header: StructDefHeader, fields: seq[ArgumentDef]): Result[St
 proc loc*(s: StructDef): Location = s.header.loc
 proc header*(s: StructDef): StructDefHeader = s.header
 proc fields*(s: StructDef): seq[ArgumentDef] = s.fields
-proc ctype*(s: StructDef): string = "pointer"
 
 proc asl*(s: StructDef, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)
@@ -151,7 +150,6 @@ proc newUnionDef*(variants: seq[VariantDef], loc: Location): Result[UnionDef, Pa
 
 proc variants*(u: UnionDef): seq[VariantDef] = u.variants
 proc loc*(u: UnionDef): Location = u.loc
-proc ctype*(u: UnionDef): string = "pointer"
 
 proc asl*(u: UnionDef, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)
@@ -206,12 +204,6 @@ proc loc*(db: DataDef): Location =
   of ddkLiteral: db.literal.loc
   of ddkStruct: db.struct.loc
   of ddkUnion: db.union.loc
-
-proc ctype*(db: DataDef): string =
-  case db.kind:
-  of ddkLiteral: db.literal.ctype
-  of ddkStruct: db.struct.ctype
-  of ddkUnion: db.union.ctype
 
 proc asl*(db: DataDef, level: int, indentWidth: uint32): seq[string] =
   case db.kind:

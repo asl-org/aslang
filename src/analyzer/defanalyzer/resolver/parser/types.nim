@@ -107,7 +107,7 @@ proc newModule*(decorators: seq[Decorator], public: bool, name: Identifier, data
 
   # NOTE: Inject `public func byte_size(): u64` in every data module
   var augumentedFuncList = funcList
-  if data.isSome: augumentedFuncList = ? funcList.add(byteSizeBuiltinFunction(data.get.ctype, data.get.loc))
+  if data.isSome: augumentedFuncList = ? funcList.add(byteSizeBuiltinFunction(data.get.loc))
   let functionIndex = buildNameArityIndex(augumentedFuncList)
 
   ok(Module(decorators: decorators, public: public, name: name, data: data, funcList: augumentedFuncList, functionIndex: functionIndex, loc: loc))
@@ -120,14 +120,6 @@ proc decorators*(m: Module): seq[Decorator] = m.decorators
 proc loc*(m: Module): Location = m.loc
 proc hash*(m: Module): Hash = m.loc.hash
 proc `==`*(a, b: Module): bool = a.hash == b.hash
-
-proc externFunctions*(m: Module): seq[ExternFunction] =
-  var externFuncs: seq[ExternFunction]
-  for fn in m.functions:
-    case fn.kind:
-    of fkExtern: externFuncs.add(fn.extern)
-    of fkUser: discard
-  return externFuncs
 
 proc asl*(module: Module, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)

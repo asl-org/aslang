@@ -91,17 +91,21 @@ proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = funct
 
 type
   ResolvedFunctionKind* = enum
-    rfkExtern, rfkUser
+    rfkExtern, rfkUser, rfkGenerated
   ResolvedFunction* = ref object
     case kind: ResolvedFunctionKind
     of rfkExtern: extern: ResolvedExternFunction
     of rfkUser: user: ResolvedUserFunction
+    of rfkGenerated: generated: ResolvedFunctionDef
 
 proc newResolvedFunction*(extern: ResolvedExternFunction): ResolvedFunction =
   ResolvedFunction(kind: rfkExtern, extern: extern)
 
 proc newResolvedFunction*(user: ResolvedUserFunction): ResolvedFunction =
   ResolvedFunction(kind: rfkUser, user: user)
+
+proc newResolvedFunction*(generated: ResolvedFunctionDef): ResolvedFunction =
+  ResolvedFunction(kind: rfkGenerated, generated: generated)
 
 proc kind*(function: ResolvedFunction): ResolvedFunctionKind = function.kind
 proc extern*(function: ResolvedFunction): ResolvedExternFunction =
@@ -112,12 +116,18 @@ proc user*(function: ResolvedFunction): ResolvedUserFunction =
   assert function.kind == rfkUser,
     fmt"ResolvedFunction.user accessed but kind is {function.kind}"
   function.user
+proc generated*(function: ResolvedFunction): ResolvedFunctionDef =
+  assert function.kind == rfkGenerated,
+    fmt"ResolvedFunction.generated accessed but kind is {function.kind}"
+  function.generated
 
 proc def*(function: ResolvedFunction): ResolvedFunctionDef =
   case function.kind:
   of rfkExtern: function.extern.def
   of rfkUser: function.user.def
+  of rfkGenerated: function.generated
 proc loc*(function: ResolvedFunction): Location =
   case function.kind:
   of rfkExtern: function.extern.loc
   of rfkUser: function.user.loc
+  of rfkGenerated: function.generated.loc
