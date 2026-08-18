@@ -542,8 +542,7 @@ proc analyzeUserFunction*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
 proc analyzeFunction(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: AnalyzedDefFunction): Result[AnalyzedFunction, string] =
   case function.kind:
   of adfkExtern:
-    let externFunc = newAnalyzedExternFunction(function.extern)
-    ok(newAnalyzedFunction(externFunc))
+    ok(newAnalyzedFunction(function.extern))
   of adfkUser:
     let userFunc = ? analyzeUserFunction(fileCtx, module, function.user)
     ok(newAnalyzedFunction(userFunc))

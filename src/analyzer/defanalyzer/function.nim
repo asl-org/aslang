@@ -52,17 +52,17 @@ proc `==`*(a, b: AnalyzedFunctionDef): bool = a.hash == b.hash
 
 # ---- function wrappers ----
 
-type AnalyzedDefExternFunction* = ref object
+type AnalyzedExternFunction* = ref object
   resolved: ResolvedExternFunction
   def: AnalyzedFunctionDef
 
-proc newAnalyzedDefExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDef): AnalyzedDefExternFunction =
-  AnalyzedDefExternFunction(resolved: resolved, def: def)
+proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedFunctionDef): AnalyzedExternFunction =
+  AnalyzedExternFunction(resolved: resolved, def: def)
 
-proc loc*(function: AnalyzedDefExternFunction): Location = function.resolved.loc
-proc name*(function: AnalyzedDefExternFunction): Identifier = function.resolved.name
-proc arity*(function: AnalyzedDefExternFunction): int = function.resolved.arity
-proc def*(function: AnalyzedDefExternFunction): AnalyzedFunctionDef = function.def
+proc loc*(function: AnalyzedExternFunction): Location = function.resolved.loc
+proc name*(function: AnalyzedExternFunction): Identifier = function.resolved.name
+proc arity*(function: AnalyzedExternFunction): int = function.resolved.arity
+proc def*(function: AnalyzedExternFunction): AnalyzedFunctionDef = function.def
 
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction
@@ -84,11 +84,11 @@ type
     adfkExtern, adfkUser, adfkGenerated
   AnalyzedDefFunction* = ref object
     case kind: AnalyzedDefFunctionKind
-    of adfkExtern: extern: AnalyzedDefExternFunction
+    of adfkExtern: extern: AnalyzedExternFunction
     of adfkUser: user: AnalyzedDefUserFunction
     of adfkGenerated: generated: AnalyzedFunctionDef
 
-proc newAnalyzedDefFunction*(extern: AnalyzedDefExternFunction): AnalyzedDefFunction =
+proc newAnalyzedDefFunction*(extern: AnalyzedExternFunction): AnalyzedDefFunction =
   AnalyzedDefFunction(kind: adfkExtern, extern: extern)
 
 proc newAnalyzedDefFunction*(user: AnalyzedDefUserFunction): AnalyzedDefFunction =
@@ -98,7 +98,7 @@ proc newAnalyzedDefFunction*(generated: AnalyzedFunctionDef): AnalyzedDefFunctio
   AnalyzedDefFunction(kind: adfkGenerated, generated: generated)
 
 proc kind*(function: AnalyzedDefFunction): AnalyzedDefFunctionKind = function.kind
-proc extern*(function: AnalyzedDefFunction): AnalyzedDefExternFunction =
+proc extern*(function: AnalyzedDefFunction): AnalyzedExternFunction =
   assert function.kind == adfkExtern,
     fmt"AnalyzedDefFunction.extern accessed but kind is {function.kind}"
   function.extern

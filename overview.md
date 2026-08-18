@@ -1078,11 +1078,12 @@ src/
                                    findFunctionDef(s) overload
                                    lookup; funcDefs projection
                                    accessor).
-    function.nim                   AnalyzedDefExternFunction /
+    function.nim                   AnalyzedExternFunction /
                                    AnalyzedDefUserFunction + tagged
                                    AnalyzedDefFunction (adfkExtern /
-                                   adfkUser) with uniform def / name
-                                   / arity accessors.
+                                   adfkUser / adfkGenerated) with
+                                   uniform def / name / arity
+                                   accessors.
     generic.nim                    AnalyzedGeneric (funcDefs).
     types.nim                      AnalyzedLocalType (altkModule /
                                    altkGeneric) + findFunctionDefs
@@ -1195,16 +1196,14 @@ src/
                                    AnalyzedSetter. Type-only file —
                                    the corresponding analyze* procs
                                    live on the facade.
-    userfunc.nim                   AnalyzedUserFunction (def:
+    function.nim                   AnalyzedUserFunction (def:
                                    AnalyzedDefUserFunction twin +
-                                   statements; resolved derived
-                                   through the twin).
-    externfunc.nim                 AnalyzedExternFunction — wraps the
-                                   phase-A AnalyzedDefExternFunction
-                                   directly (def + resolved reached
-                                   through it).
-    function.nim                   AnalyzedFunction tagged union
-                                   (user / extern).
+                                   statements) + the AnalyzedFunction
+                                   tagged union (afkUser / afkExtern /
+                                   afkGenerated): extern uses the
+                                   phase-A AnalyzedExternFunction
+                                   directly, generated is a bare
+                                   AnalyzedFunctionDef.
     module.nim                     AnalyzedModule (def:
                                    AnalyzedDefModule back-ref
                                    + analyzed functions).

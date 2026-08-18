@@ -7,19 +7,6 @@ import strformat
 import ./defanalyzer
 import statement
 
-# ---- AnalyzedExternFunction ----
-# An extern function has no body, so the analyzed form is just the
-# resolver back-ref + the function def.
-
-type AnalyzedExternFunction* = ref object
-  def: AnalyzedDefExternFunction
-
-proc newAnalyzedExternFunction*(def: AnalyzedDefExternFunction): AnalyzedExternFunction =
-  AnalyzedExternFunction(def: def)
-
-proc def*(function: AnalyzedExternFunction): AnalyzedFunctionDef = function.def.def
-proc loc*(function: AnalyzedExternFunction): Location = function.def.loc
-
 # ---- AnalyzedUserFunction ----
 # A user-defined function whose body has been analyzed: the resolver's
 # back-ref + the arg/return def + the analyzed statement list.

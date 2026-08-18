@@ -311,9 +311,9 @@ proc analyzeDefUserFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeC
     statements.add(analyzedDefStatement)
   ok(newAnalyzedDefUserFunction(function, funcDef, statements))
 
-proc analyzeDefExternFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedExternFunction): Result[AnalyzedDefExternFunction, string] =
+proc analyzeDefExternFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedExternFunction): Result[AnalyzedExternFunction, string] =
   let analyzedFuncDef = ? analyzeDefFunctionDefinition(fileCtx, typeCtx, function.def)
-  ok(newAnalyzedDefExternFunction(function, analyzedFuncDef))
+  ok(newAnalyzedExternFunction(function, analyzedFuncDef))
 
 proc analyzeDefFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedFunction): Result[AnalyzedDefFunction, string] =
   case function.kind:
