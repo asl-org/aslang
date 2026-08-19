@@ -47,9 +47,11 @@ import ./analyzer/appcontext
 # `concrete` grounds contract defs before the identity probe).
 #
 # The fix routes every assignability check through
-# `analyzeValueTypeAgainstDefType` + `merge` with eager chain-
-# collapsing in `merge` (so `Sample → K, K → u8` collapses to
-# `Sample → u8`). See `plans/plan_deferred_typing.md` §
+# `analyzeValueTypeAgainstDefType` + `merge`, turning the same-key
+# conflict check into a unification check (a free generic unifies with
+# the concrete type it is matched against). Independent generics are
+# NOT collapsed into each other — `{Sample → K, K → u8}` legitimately
+# keeps `Sample` bound to `K`. See `plans/plan_deferred_typing.md` §
 # "Equality vs unification for analyzed types" — that plan owns the
 # fix.
 # ============================================================

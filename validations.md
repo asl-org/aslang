@@ -8,8 +8,8 @@ specs), loader, resolver, analyzer, CLI. Each entry names the test
 file that pins the rule down.
 
 Coverage as of this document: **289 unit tests + 33/35 integration
-fixtures.** The two failing fixtures are pre-existing analyzer TODOs
-(equality-vs-unification, substitution chains) documented in
+fixtures.** The two failing fixtures are a pre-existing analyzer TODO
+(the equality-vs-unification gap) documented in
 `overview.md`'s "What's Next".
 
 ---

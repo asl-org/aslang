@@ -187,16 +187,16 @@ proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 # ============================================================
 
 proc merge*(global: var AnalyzedImplMap, local: AnalyzedImplMap): Result[AnalyzedImplMap, string] =
-  # TODO(union-inference): eagerly collapse substitution chains.
-  # When inserting `K → u8`, also rewrite any existing values in the
-  # map that mention K as a free generic (e.g. an earlier
-  # `Sample → K` becomes `Sample → u8`). This keeps `concrete()` a
-  # single-pass lookup and prevents free generics from getting stuck
-  # half-resolved when one use site binds another generic that they
-  # depend on. Also: the `!=` conflict check on the next line needs
-  # to become a unification check once free generics can appear on
-  # either side (a bound u8 vs a free K should not "conflict" — K
-  # should unify to u8).
+  # TODO(union-inference): the `!=` conflict check on the next line
+  # needs to become a unification check once free generics can appear
+  # on either side of the SAME key — a bound `u8` vs a free `K` should
+  # not "conflict"; `K` should unify to `u8`.
+  #
+  # Note: independent generics are deliberately NOT collapsed into each
+  # other. A map like `{Sample → K, K → u8}` is expected and correct —
+  # `Sample` stays bound to `K` (see `concrete`), because `Sample` and
+  # `K` are independent parameters. This is a chain by name only, not a
+  # substitution to flatten.
   for generic, impl in local:
     if generic in global and global[generic] != impl:
       return err(fmt"{impl.loc} generic `{generic.name.asl}` already bound to `{global[generic].asl}` (at {global[generic].loc}) but here resolves to `{impl.asl}` — one generic binds to one concrete type per construction; declare a second generic if you need independent types")
@@ -205,13 +205,11 @@ proc merge*(global: var AnalyzedImplMap, local: AnalyzedImplMap): Result[Analyze
   ok(global)
 
 proc concrete*(argType: AnalyzedArgumentType, implMap: AnalyzedImplMap): AnalyzedArgumentType =
-  # TODO(union-inference): handle substitution chains. A single use
-  # site can produce an implMap with both `Sample → K` and `K → u8`
-  # (e.g. `func f(a: Box[u8, K], b: K)` called as
-  # `f(boxFirst, u8 5)`). Today getOrDefault returns the immediate
-  # map value, so `Sample` rewrites to `K`, not `u8`. Prefer eager
-  # chain-collapsing in `merge` (cheaper, single pass) — see the TODO
-  # there — over recursive lookup here.
+  # Single-pass substitution, intentionally NOT chained: independent
+  # generics stay independent. With `{Sample → K, K → u8}`, a
+  # `Box[Sample, K]` concretizes to `Box[K, u8]` — the generic arm's
+  # `getOrDefault` rewrites `Sample` to `K` and stops. Collapsing it to
+  # `u8` would wrongly couple two independent parameters.
   case argType.kind:
   of aatkModule:
     let moduleArgType = argType.module

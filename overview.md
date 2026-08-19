@@ -1392,8 +1392,8 @@ hardening arc — the identity ladder with assert-backed lookups, the
 TypeContext/visibility machinery, definition-level constraint
 satisfaction, input-signature uniqueness — was groundwork: phase B's
 unification rebuild can now assume every def-level fact it consumes
-is already validated and identity-addressable. The first two TODOs
-below are the bugs that rebuild exists to fix.
+is already validated and identity-addressable. The equality-vs-
+unification TODO below is the bug that rebuild exists to fix.
 
 **The lifetime / ownership pass has a skeleton** (`src/lifetime.nim`,
 `analyzeLifetime`), kept OFF the CLI compile path — the call in
@@ -1421,20 +1421,20 @@ Focused TODOs still open:
   values through `verifyUniformReturnType` — the 2 known
   integration failures (`match.asl`, `nested_generics.asl`). Fix is
   to route every assignability check through
-  `analyzeValueTypeAgainstDefType` + `merge`, with eager
-  chain-collapsing in `merge`. Owned by
+  `analyzeValueTypeAgainstDefType` + `merge`, turning the same-key
+  conflict check into a unification check (a free generic unifies with
+  the concrete type it is matched against). This is what both known
+  integration failures (`match.asl`, `nested_generics.asl`) need —
+  their `verifyUniformReturnType` errors are a still-free generic
+  comparing unequal to a concrete type. Owned by
   plans/plan_deferred_typing.md.
-- **Substitution chains in `merge` / `concrete()`**
-  (`analyzer/defanalyzer/analyzedimplmap.nim`) — `Sample → K, K → u8` should
-  collapse to `Sample → u8`; today `concrete()` does a single
-  `getOrDefault`, so a type rewritten through the map can come out
-  HALF-substituted (still carrying a free `K` where `u8` belongs).
-  Downstream hash comparisons then see two different types for the
-  same value — the visible symptom is `verifyUniformReturnType`
-  failing with "function does not return the expected return type"
-  on correct code (the match.asl integration failure). Pairs with
-  the equality fix above; the two land together as the phase-B
-  unification rebuild.
+
+  Independent generics are deliberately NOT collapsed into each other:
+  a map like `{Sample → K, K → u8}` is correct as-is — `Box[Sample, K]`
+  concretizes to `Box[K, u8]`, keeping `Sample` bound to `K`. (An
+  earlier draft flagged a "substitution chain" bug here; that was a
+  misdiagnosis — flattening the chain would wrongly couple two
+  independent parameters.)
 - **Two generic-substitution engines (resolver-positional vs
   analyzer-map).** The core "instantiate generics into a parameterized
   type" operation is forked into two independent implementations over
@@ -1533,9 +1533,8 @@ Focused TODOs still open:
   resolver's `genericTypeIndex` and re-entering `analyzeDefArgumentType`
   to translate slots, per initializer and per case pattern. Positions
   only compose when the substituted generic is one of the container's
-  OWN slots in the container's OWN order — shape-fragile,
-  resolver-coupled, and the reason `concrete()`'s single `getOrDefault`
-  never had a place to collapse substitution chains. WHAT (shipped):
+  OWN slots in the container's OWN order — shape-fragile and
+  resolver-coupled. WHAT (shipped):
   an `AnalyzedModuleArgumentType`'s `impls` field now IS its
   `AnalyzedImplMap` — a single `OrderedTable[ResolvedGeneric,
   AnalyzedArgumentType]` whose values, in slot order, ARE the
@@ -1551,9 +1550,9 @@ Focused TODOs still open:
   accessors, and the whole `subjectImplMap` threading through
   `analyzeCases`/`CaseBlock`/`CasePattern`) collapse into that one
   read. This completes the function-argument match subject
-  (`match s` on `s: Status[u8]`). `merge` remains the single home for
-  the still-TODO substitution-chain collapse (`Sample → K, K → u8`),
-  pairing with the equality-vs-unification rebuild below. What still
+  (`match s` on `s: Status[u8]`). `merge`'s still-TODO is the
+  unification check (a free generic vs. a concrete type on the same
+  key) — part of the equality-vs-unification rebuild below. What still
   keeps the 3 unit + integration cases red is NOT this plumbing but
   bare-literal type-defaulting in a generic kwarg slot and the
   module-position equality-vs-unification gap (see below).
