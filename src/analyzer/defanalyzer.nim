@@ -98,14 +98,14 @@ proc analyzeDefModuleArgumentType(fileCtx: ResolvedFileContext, typeCtx: Resolve
       case moduleEntry.kind:
       of rtkLocal: fileCtx.findGeneric(requirement.generic)
       of rtkImported: moduleEntry.imported.impFile.findGenericInScope(requirement.generic)
-    analyzedImpls[baseGeneric] = analyzedImpl
     # Contracts compare at DEFINITION level: self-references become the
     # impl's self shape (`Array[Comparable]`, not the site-bound
     # `Array[u8]`) so the concretized defs land in the impl's own
     # vocabulary and the identity probe below can hit its funcDefIndex.
     # The site-bound impls were already validated by the recursive
     # analyzeDefArgumentType call above.
-    discard ? analyzeDefImpl(typeCtx, baseGeneric, analyzedImpl)
+    let defs = ? analyzeDefImpl(typeCtx, baseGeneric, analyzedImpl)
+    analyzedImpls[baseGeneric] = newAnalyzedImpl(analyzedImpl, defs)
 
   ok(newAnalyzedModuleArgumentType(argType, module, analyzedImpls))
 

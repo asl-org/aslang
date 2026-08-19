@@ -40,7 +40,11 @@ type
   # analyzedimplmap.nim. Keyed by ResolvedGeneric, so a type's require
   # slots must be distinct generics — the same invariant the resolver's
   # genericTypeIndex already relies on.
-  AnalyzedImplMap* = OrderedTable[ResolvedGeneric, AnalyzedArgumentType]
+  AnalyzedImpl* = ref object
+    argType: AnalyzedArgumentType
+    defs: seq[ResolvedFunctionDef]
+
+  AnalyzedImplMap* = OrderedTable[ResolvedGeneric, AnalyzedImpl]
 
   AnalyzedModuleArgumentType* = ref object
     resolved: ResolvedModuleArgumentType
@@ -58,8 +62,19 @@ type
 # Forward declarations for the dual-context overloads — both arities
 # of analyzeArgumentType need to be visible inside
 # analyzeModuleArgumentType.
+proc loc*(argType: AnalyzedArgumentType): Location
 proc hash*(m: AnalyzedArgumentType): Hash
 proc asl*(argType: AnalyzedArgumentType): string
+
+proc newAnalyzedImpl*(argType: AnalyzedArgumentType): AnalyzedImpl =
+  AnalyzedImpl(argType: argType)
+proc newAnalyzedImpl*(argType: AnalyzedArgumentType, defs: seq[ResolvedFunctionDef]): AnalyzedImpl =
+  AnalyzedImpl(argType: argType, defs: defs)
+proc argType*(impl: AnalyzedImpl): AnalyzedArgumentType = impl.argType
+proc loc*(impl: AnalyzedImpl): Location = impl.argType.loc
+proc hash*(impl: AnalyzedImpl): Hash = impl.argType.hash
+proc `==`*(a, b: AnalyzedImpl): bool = a.hash == b.hash
+proc asl*(impl: AnalyzedImpl): string = impl.argType.asl
 
 # ---- AnalyzedGenericArgumentType accessors ----
 proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): AnalyzedGenericArgumentType =
@@ -204,12 +219,13 @@ proc merge*(global: var AnalyzedImplMap, local: AnalyzedImplMap): Result[Analyze
       global[generic] = impl
   ok(global)
 
-proc concrete*(argType: AnalyzedArgumentType, implMap: AnalyzedImplMap): AnalyzedArgumentType =
+proc concrete*(impl: AnalyzedImpl, implMap: AnalyzedImplMap): AnalyzedImpl =
   # Single-pass substitution, intentionally NOT chained: independent
   # generics stay independent. With `{Sample → K, K → u8}`, a
   # `Box[Sample, K]` concretizes to `Box[K, u8]` — the generic arm's
   # `getOrDefault` rewrites `Sample` to `K` and stops. Collapsing it to
   # `u8` would wrongly couple two independent parameters.
+  let argType = impl.argType
   case argType.kind:
   of aatkModule:
     let moduleArgType = argType.module
@@ -219,10 +235,13 @@ proc concrete*(argType: AnalyzedArgumentType, implMap: AnalyzedImplMap): Analyze
     for generic, impl in moduleArgType.impls:
       concreteImpls[generic] = impl.concrete(implMap)
     let concreteModuleArgType = newAnalyzedModuleArgumentType(moduleArgType.resolved, moduleArgType.module, concreteImpls)
-    return newAnalyzedArgumentType(concreteModuleArgType)
+    newAnalyzedImpl(newAnalyzedArgumentType(concreteModuleArgType), impl.defs)
   of aatkGeneric:
     let genericArgType = argType.generic
-    return implMap.getOrDefault(genericArgType.generic, argType)
+    implMap.getOrDefault(genericArgType.generic, impl)
+
+proc concrete*(argType: AnalyzedArgumentType, implMap: AnalyzedImplMap): AnalyzedArgumentType =
+  newAnalyzedImpl(argType).concrete(implMap).argType
 
 # ============================================================
 # AnalyzedArgumentDef (name + fully-analyzed argument type)

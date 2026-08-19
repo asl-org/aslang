@@ -68,15 +68,15 @@ proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: Analyzed
     # same slot.
     for defGeneric, defImpl in defType.impls:
       let valImpl = valType.impls[defGeneric]
-      let valAnalyzedImplMap = ? analyzeValueTypeAgainstDefType(module, defImpl, valImpl, loc)
+      let valAnalyzedImplMap = ? analyzeValueTypeAgainstDefType(module, defImpl.argType, valImpl.argType, loc)
       genericImplMap = ? genericImplMap.merge(valAnalyzedImplMap)
     ok(genericImplMap)
 
 proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedGenericArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string] =
   let typeCtx = newResolvedTypeContext(module.resolved)
-  discard ? analyzeDefImpl(typeCtx, defType.generic, valType)
   var genericImplMap: AnalyzedImplMap
-  genericImplMap[defType.generic] = valType
+  let defs = ? analyzeDefImpl(typeCtx, defType.generic, valType)
+  genericImplMap[defType.generic] = newAnalyzedImpl(valType, defs)
   ok(genericImplMap)
 
 proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedModuleArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string] =
@@ -444,7 +444,7 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
   # an uncovered one defaults to itself (a free generic, leave-as-is).
   var completeImpls: AnalyzedImplMap
   for requirement in unionModule.requires:
-    completeImpls[requirement.generic] = impls.getOrDefault(requirement.generic, newAnalyzedArgumentType(requirement))
+    completeImpls[requirement.generic] = impls.getOrDefault(requirement.generic, requirement.newAnalyzedArgumentType.newAnalyzedImpl)
 
   ok(newAnalyzedUnionInitializer(init, analyzedKwargs, completeImpls))
 
