@@ -270,15 +270,15 @@ proc isExactlyRepresentable*(text: string, mantissaBits: int): bool =
 #   - float32 targets whose narrowed value overflows to ±Inf.
 #
 # Exact-representability (precision loss) is deliberately NOT
-# checked here — the caller (`analyzeFloatLiteral` in analyzer.nim)
-# runs `isExactlyRepresentable` after a successful parse and emits
-# a warning for lossy literals, so this proc returns the closest
+# checked here — the caller (`validateFloat`, below) runs
+# `isExactlyRepresentable` after a successful parse and emits a
+# warning for lossy literals, so this proc returns the closest
 # representable value in every finite case.
 #
 # Numeric float parse only. Special IEEE-754 values (`nan`, `inf`,
 # `+inf`, `-inf`) are handled upstream: the parser accepts them via
-# `specialFloatSpec` in `parser/literals.nim`, and the analyzer's
-# `analyzeFloatLiteral` short-circuits them before reaching this proc.
+# `specialFloatSpec`, and `validateFloat` (below) short-circuits them
+# before reaching this proc.
 # So the inf/nan rejection here catches ONLY the case a numeric input
 # overflows to infinity or produces NaN — which is a genuine
 # out-of-range error and stays rejected.
@@ -354,9 +354,8 @@ proc validateFloat*[T: SomeFloat](literal: Literal, expected: string): Result[vo
         # the literal's value. Emit to stderr with the source location
         # so users can find and (if they choose) rewrite lossy literals
         # as runtime quotients of exact-integer literals.
-        # TODO(diagnostics): thread warnings through the analyzer as a
-        # collected seq rather than writing to stderr from deep inside
-        # the pass.
+        # TODO(diagnostics): thread warnings up as a collected seq
+        # rather than writing to stderr from deep inside the pass.
         const mantissaBits =
           when T is float32: 24
           elif T is float64: 53
