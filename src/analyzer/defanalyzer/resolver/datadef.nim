@@ -35,6 +35,20 @@ proc newResolvedLiteralDef*(literal: LiteralDef): Result[ResolvedLiteralDef, str
   of "const char*": ok(rltkString)
   else: err(fmt"{literal.loc} unsupported literal type encountered `{literal.content}`")
 
+proc validate*(literalDef: ResolvedLiteralDef, literal: Literal): Result[void, string] =
+  case literalDef:
+  of rltkF32: validateFloat[float32](literal, "32-bit float")
+  of rltkF64: validateFloat[float64](literal, "64-bit float")
+  of rltkU8: validateInteger[uint8](literal, "8-bit unsigned integer")
+  of rltkU16: validateInteger[uint16](literal, "16-bit unsigned integer")
+  of rltkU32: validateInteger[uint32](literal, "32-bit unsigned integer")
+  of rltkU64: validateInteger[uint64](literal, "64-bit unsigned integer")
+  of rltkI8: validateInteger[int8](literal, "8-bit signed integer")
+  of rltkI16: validateInteger[int16](literal, "16-bit signed integer")
+  of rltkI32: validateInteger[int32](literal, "32-bit signed integer")
+  of rltkI64: validateInteger[int64](literal, "64-bit signed integer")
+  of rltkString: validateString(literal)
+
 # Shared slot→position index over a def's (already-deduped) generic
 # slots. Struct and union both use it; the assert never fires because
 # both `generics` seqs are deduped first-seen upstream.

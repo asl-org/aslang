@@ -22,6 +22,8 @@ proc newAnalyzedLiteralDef*(resolved: ResolvedLiteralDef): AnalyzedLiteralDef =
 
 proc resolved*(b: AnalyzedLiteralDef): ResolvedLiteralDef = b.resolved
 
+proc validate*(literalDef: AnalyzedLiteralDef, literal: Literal): Result[void, string] = literalDef.resolved.validate(literal)
+
 # ---- AnalyzedStructDef ----
 # A resolved struct + its fully-analyzed field defs. Delegates
 # genericTypeIndex to the resolver's already-computed table.

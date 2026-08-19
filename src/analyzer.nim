@@ -9,9 +9,6 @@ import options, results, sequtils, strformat, strutils, tables
 import ./analyzer/defanalyzer
 export defanalyzer
 
-import ./analyzer/literalparse
-export literalparse
-
 import ./analyzer/pattern
 export pattern
 
@@ -122,61 +119,6 @@ proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgu
   of rcpkVariable:
     ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType)))
 
-proc analyzeIntegerLiteral[T: SomeInteger](literal: Literal, expected: string): Result[void, string] =
-  case literal.kind:
-  of lkFloat: err(fmt"{literal.loc} expected a valid {expected} but found float")
-  of lkString: err(fmt"{literal.loc} expected a valid {expected} but found string")
-  of lkInteger:
-    let maybeParsedInt = parseInteger[T](literal.asl)
-    if maybeParsedInt.isSome: ok()
-    else: err(fmt"{literal.loc} expected a valid {expected} but found `{literal.asl}`")
-
-proc analyzeStringLiteral(literal: Literal): Result[void, string] =
-  case literal.kind:
-  of lkFloat: err(fmt"{literal.loc} expected a valid string literal but found float")
-  of lkInteger: err(fmt"{literal.loc} expected a valid string literal but found integer")
-  of lkString: ok()
-
-proc analyzeFloatLiteral[T: SomeFloat](literal: Literal, expected: string): Result[void, string] =
-  case literal.kind:
-  of lkInteger: err(fmt"{literal.loc} expected a valid {expected} but found integer")
-  of lkString: err(fmt"{literal.loc} expected a valid {expected} but found string")
-  of lkFloat:
-    if literal.asl in ["nan", "inf", "+inf", "-inf"]:
-      return ok()
-    let maybeParsedFloat = parseFloat[T](literal.asl)
-    if maybeParsedFloat.isNone:
-      return err(fmt"{literal.loc} expected a valid {expected} but found `{literal.asl}`")
-    # Exact-representability is a warning, not an error: the closest
-    # approximation stored in the parsed value is still returned as
-    # the literal's value. Emit to stderr with the source location
-    # so users can find and (if they choose) rewrite lossy literals
-    # as runtime quotients of exact-integer literals.
-    # TODO(diagnostics): thread warnings through the analyzer as a
-    # collected seq rather than writing to stderr from deep inside
-    # the pass.
-    const mantissaBits =
-      when T is float32: 24
-      elif T is float64: 53
-    if not isExactlyRepresentable(literal.asl, mantissaBits):
-      stderr.writeLine(fmt"[WARN] {literal.loc} literal `{literal.asl}` cannot be exactly represented in {expected}; using closest approximation")
-    ok()
-
-proc analyzeLiteral(literalDef: AnalyzedLiteralDef, literal: Literal): Result[void, string] =
-  let resolved = literalDef.resolved
-  case resolved:
-  of rltkF32: analyzeFloatLiteral[float32](literal, "32-bit float")
-  of rltkF64: analyzeFloatLiteral[float64](literal, "64-bit float")
-  of rltkU8: analyzeIntegerLiteral[uint8](literal, "8-bit unsigned integer")
-  of rltkU16: analyzeIntegerLiteral[uint16](literal, "16-bit unsigned integer")
-  of rltkU32: analyzeIntegerLiteral[uint32](literal, "32-bit unsigned integer")
-  of rltkU64: analyzeIntegerLiteral[uint64](literal, "64-bit unsigned integer")
-  of rltkI8: analyzeIntegerLiteral[int8](literal, "8-bit signed integer")
-  of rltkI16: analyzeIntegerLiteral[int16](literal, "16-bit signed integer")
-  of rltkI32: analyzeIntegerLiteral[int32](literal, "32-bit signed integer")
-  of rltkI64: analyzeIntegerLiteral[int64](literal, "64-bit signed integer")
-  of rltkString: literal.analyzeStringLiteral()
-
 proc analyzeVariable*(scope: AnalyzedFunctionContext, variable: Identifier): Result[AnalyzedVariable, string] =
   if variable in scope:
     let binding = scope[variable]
@@ -202,15 +144,13 @@ proc analyzeGetter*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, fun
         ok(newAnalyzedGetter(getter, sourceArgType, property))
 
 proc analyzeLiteralInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
-  let analyzedModuleArgType = init.argType
   let argDefModule = fileCtx.findModule(init.argType.module)
   case argDefModule.dataOrFail.kind:
   of adkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of adkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of adkLiteral:
-    let maybeValidLiteral = analyzeLiteral(argDefModule.dataOrFail.literal, init.literal)
-    if maybeValidLiteral.isOk: ok(newAnalyzedLiteralInitializer(init.literal, analyzedModuleArgType))
-    else: err(maybeValidLiteral.error)
+    ? argDefModule.dataOrFail.literal.validate(init.literal)
+    ok(newAnalyzedLiteralInitializer(init.literal, init.argType))
 
 # Forward declarations for the analyzeX procs in the cluster.
 proc analyzeExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
@@ -297,7 +237,7 @@ proc analyzeBareLiteral(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule,
   of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
   of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
   of adkLiteral:
-    ? analyzeLiteral(argDefModule.dataOrFail.literal, literal.value)
+    ? argDefModule.dataOrFail.literal.validate(literal.value)
     ok(newAnalyzedLiteralInitializer(literal.value, literalArgType))
 
 proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, fncall: AnalyzedDefFunctionCall): Result[AnalyzedFunctionCall, string] =

@@ -8,7 +8,6 @@
 import results, sets, strformat, options
 
 import ./defanalyzer
-import literalparse
 
 # ============================================================
 # AnalyzedBinding
