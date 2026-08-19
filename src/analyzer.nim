@@ -167,7 +167,6 @@ proc analyzeLiteral(literalDef: AnalyzedLiteralDef, literal: Literal): Result[vo
   case resolved:
   of rltkF32: analyzeFloatLiteral[float32](literal, "32-bit float")
   of rltkF64: analyzeFloatLiteral[float64](literal, "64-bit float")
-  of rltkPointer: err(fmt"{literal.loc} todo: analyze literal Pointer literal argument")
   of rltkU8: analyzeIntegerLiteral[uint8](literal, "8-bit unsigned integer")
   of rltkU16: analyzeIntegerLiteral[uint16](literal, "16-bit unsigned integer")
   of rltkU32: analyzeIntegerLiteral[uint32](literal, "32-bit unsigned integer")

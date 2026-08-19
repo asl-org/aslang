@@ -18,22 +18,21 @@ type
   ResolvedLiteralDef* = enum
     rltkU8, rltkU16, rltkU32, rltkU64
     rltkI8, rltkI16, rltkI32, rltkI64
-    rltkF32, rltkF64, rltkString, rltkPointer
+    rltkF32, rltkF64, rltkString
 
 proc newResolvedLiteralDef*(literal: LiteralDef): Result[ResolvedLiteralDef, string] =
   case literal.content:
-  of "u8": ok(rltkU8)
-  of "u16": ok(rltkU16)
-  of "u32": ok(rltkU32)
-  of "u64": ok(rltkU64)
-  of "i8": ok(rltkI8)
-  of "i16": ok(rltkI16)
-  of "i32": ok(rltkI32)
-  of "i64": ok(rltkI64)
-  of "f32": ok(rltkF32)
-  of "f64": ok(rltkF64)
-  of "string": ok(rltkString)
-  of "pointer": ok(rltkPointer)
+  of "uint8_t": ok(rltkU8)
+  of "uint16_t": ok(rltkU16)
+  of "uint32_t": ok(rltkU32)
+  of "uint64_t": ok(rltkU64)
+  of "int8_t": ok(rltkI8)
+  of "int16_t": ok(rltkI16)
+  of "int32_t": ok(rltkI32)
+  of "int64_t": ok(rltkI64)
+  of "float": ok(rltkF32)
+  of "double": ok(rltkF64)
+  of "const char*": ok(rltkString)
   else: err(fmt"{literal.loc} unsupported literal type encountered `{literal.content}`")
 
 # Shared slot→position index over a def's (already-deduped) generic

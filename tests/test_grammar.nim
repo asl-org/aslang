@@ -33,7 +33,7 @@ public module M:
     # fixture is written as .aslr.
     let r = parseStrAslr("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   @extern("u8_read")
   public func read(p: u8): u8
@@ -131,7 +131,7 @@ public module Array:
     # fixture is written as .aslr.
     let r = parseStrAslr("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   @extern("u8_add")
   public func add(a: u8, b: u8): u8
@@ -386,7 +386,7 @@ module M:
     # fixture is written as .aslr.
     let r = parseStrAslr("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   @extern("u8_add")
   public func add(a: u8, b: u8): u8
@@ -734,18 +734,18 @@ suite "grammar — generated functions omitted from asl output":
   test "a literal module's asl output omits the injected byte_size":
     let r = parseStr("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 """)
     check r.isOk
     let printed = r.get.asl(2'u32)
     check "byte_size" notin printed
     check "public module u8:" in printed
-    check "literal: \"u8\"" in printed
+    check "literal: \"uint8_t\"" in printed
 
   test "a struct module's asl output keeps user functions but omits byte_size":
     let r = parseStr("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module Point:
   struct:

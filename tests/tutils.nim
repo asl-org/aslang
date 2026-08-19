@@ -56,16 +56,16 @@ proc cleanupDir*(dir: string) =
 
 const StdVendorBase* = """
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module String:
-  literal: "string"
+  literal: "const char*"
 
 public generic Any:
   func byte_size(items: u32): u64

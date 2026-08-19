@@ -164,7 +164,7 @@ proc defaultType*(literal: Literal): Identifier =
     case literal.kind:
       of lkInteger: "i32"
       of lkFloat: "f32"
-      of lkString: "String"
+      of lkString: "string"
   let maybeId = newIdentifier(module, literal.loc)
   assert(maybeId.isOk, fmt"BUG: default literal type name `{module}` should always be a valid identifier")
   return maybeId.get

@@ -154,7 +154,6 @@ proc newAnalyzedLiteralPatternScope*(literal: AnalyzedLiteralDef, totalCases: in
   of rltkF32: err("match block does not support f32 values in case patterns")
   of rltkF64: err("match block does not support f64 values in case patterns")
   of rltkString: err("match block does not support string values in case patterns")
-  of rltkPointer: err("match block does not support pointer values in case patterns")
 
 proc checkDuplicate[T: SomeInteger](values: var HashSet[T], integer: IntegerLiteral, expected: string): Result[void, string] =
   let maybeInt = parseInteger[T](integer.asl)

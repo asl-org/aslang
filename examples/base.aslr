@@ -1,5 +1,5 @@
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   # binary
   @extern("u8_and_u8")
@@ -45,7 +45,7 @@ public module u8:
   public func from(a: u32): Status[u8]
 
 public module u16:
-  literal: "u16"
+  literal: "uint16_t"
 
   # binary
   @extern("u16_and_u16")
@@ -87,7 +87,7 @@ public module u16:
   public func compare(a: u16, b: u16): i8
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
   # binary
   @extern("u32_and_u32")
@@ -161,7 +161,7 @@ public module u32:
         b
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
   # binary
   @extern("u64_and_u64")
@@ -232,7 +232,7 @@ public module u64:
         b
 
 public module i8:
-  literal: "i8"
+  literal: "int8_t"
 
   # binary
   @extern("i8_and_i8")
@@ -274,7 +274,7 @@ public module i8:
   public func compare(a: i8, b: i8): i8
 
 public module i16:
-  literal: "i16"
+  literal: "int16_t"
 
   # binary
   @extern("i16_and_i16")
@@ -316,7 +316,7 @@ public module i16:
   public func compare(a: i16, b: i16): i8
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
   # binary
   @extern("i32_and_i32")
@@ -358,7 +358,7 @@ public module i32:
   public func compare(a: i32, b: i32): i8
 
 public module i64:
-  literal: "i64"
+  literal: "int64_t"
 
   # binary
   @extern("i64_and_i64")
@@ -438,7 +438,7 @@ public module i64:
 # and classifiers, both this module and the analyzer's parseFloat
 # helper should pick them up.
 public module f32:
-  literal: "f32"
+  literal: "float"
 
   # binary
   @extern("f32_and_f32")
@@ -483,7 +483,7 @@ public module f32:
 
 # See the TODO above f32 — the same special-value gap applies to f64.
 public module f64:
-  literal: "f64"
+  literal: "double"
 
   # binary
   @extern("f64_and_f64")
@@ -551,49 +551,49 @@ public module f64:
   public func negate(x: f64): Status[f64]
     f64.subtract(f64 0.0, x)
 
-public module String:
-  literal: "string"
+public module string:
+  literal: "const char*"
 
   # core
   @extern("string_init")
-  public func init(value: String): String
+  public func init(value: string): string
 
   @extern("string_get")
-  public func get(str: String, index: u32): Status[u8]
+  public func get(str: string, index: u32): Status[u8]
 
   # casting
   @extern("string_from_u8")
-  public func from(value: u8): String
+  public func from(value: u8): string
 
   @extern("string_from_u16")
-  public func from(value: u16): String
+  public func from(value: u16): string
 
   @extern("string_from_u32")
-  public func from(value: u32): String
+  public func from(value: u32): string
 
   @extern("string_from_u64")
-  public func from(value: u64): String
+  public func from(value: u64): string
 
   @extern("string_from_i8")
-  public func from(value: i8): String
+  public func from(value: i8): string
 
   @extern("string_from_i16")
-  public func from(value: i16): String
+  public func from(value: i16): string
 
   @extern("string_from_i32")
-  public func from(value: i32): String
+  public func from(value: i32): string
 
   @extern("string_from_i64")
-  public func from(value: i64): String
+  public func from(value: i64): string
 
   @extern("string_from_f32")
-  public func from(value: f32): String
+  public func from(value: f32): string
 
   @extern("string_from_f64")
-  public func from(value: f64): String
+  public func from(value: f64): string
 
   @extern("string_concat")
-  public func concat(first: String, second: String): String
+  public func concat(first: string, second: string): string
 
 public generic Any:
   func byte_size(): u64
@@ -601,7 +601,7 @@ public generic Any:
 public module Error:
   struct:
     code: i32
-    message: String
+    message: string
 
 public module Status:
   union:
@@ -610,10 +610,10 @@ public module Status:
 
 public module System:
   @extern("System_print")
-  public func print(str: String): u64
+  public func print(str: string): u64
 
   @extern("System_println")
-  public func println(str: String): u64
+  public func println(str: string): u64
 
 public module Array:
   struct(Any):

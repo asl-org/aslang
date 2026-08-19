@@ -15,7 +15,7 @@ import analyzer
 # without scrolling through the resolver's larger Base block.
 const Base = """
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   @extern("u8_byte_size")
   public func byte_size(items: u32): u64
@@ -24,16 +24,16 @@ public module u8:
   public func add(a: u8, b: u8): u8
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
   @extern("u32_byte_size")
   public func byte_size(items: u32): u64
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module String:
-  literal: "string"
+  literal: "const char*"
 
 public generic Any:
   func byte_size(items: u32): u64
@@ -56,10 +56,10 @@ suite "analyzer — happy paths":
   test "literal-data module analyzes end-to-end":
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 """)
     cleanupDir(dir)
     check r.isOk
@@ -67,10 +67,10 @@ public module u64:
   test "module with only a function (no data) analyzes":
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 module M:
   func go(x: u8): u8
@@ -97,10 +97,10 @@ module Point:
   test "generic block by itself analyzes":
     let (r, dir) = analyzeSingle("""
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Any:
   func byte_size(items: u32): u64
@@ -233,13 +233,13 @@ module M:
     # owns this impl-count check.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Any:
   func byte_size(items: u32): u64
@@ -266,16 +266,16 @@ public module Use:
     # Comparable. The def analyzer's deep constraint check owns this.
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
 
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   func compare(a: u8, b: u8): i32
     i32 0
@@ -365,10 +365,10 @@ public module Pair:
 """),
       ("c.asl", """
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): u8
@@ -440,10 +440,10 @@ suite "analyzer — generic-context signature":
   test "generic referring to itself analyzes":
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 generic Eq:
   func eq(a: Eq, b: Eq): u8
@@ -454,10 +454,10 @@ generic Eq:
   test "generic referring to a module analyzes":
     let (r, dir) = analyzeSingle("""
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 generic Sized:
   func size(s: Sized): u32
@@ -470,10 +470,10 @@ suite "analyzer — float literals":
   test "f64 accepts an exactly-representable value":
     let (r, dir) = analyzeSingle("""
 public module f64:
-  literal: "f64"
+  literal: "double"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f64
@@ -490,10 +490,10 @@ public module M:
     # stderr — the analyze result itself is Ok.
     let (r, dir) = analyzeSingle("""
 public module f64:
-  literal: "f64"
+  literal: "double"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f64
@@ -507,10 +507,10 @@ public module M:
     # mantissa fits trivially. Exactly representable.
     let (r, dir) = analyzeSingle("""
 public module f64:
-  literal: "f64"
+  literal: "double"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f64
@@ -523,10 +523,10 @@ public module M:
     # `-1.5e3` = -1500, an integer — exact.
     let (r, dir) = analyzeSingle("""
 public module f64:
-  literal: "f64"
+  literal: "double"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f64
@@ -540,10 +540,10 @@ public module M:
     # accept-with-warning shape as the `0.1` case.
     let (r, dir) = analyzeSingle("""
 public module f64:
-  literal: "f64"
+  literal: "double"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f64
@@ -555,10 +555,10 @@ public module M:
   test "f64 rejects an overflowing literal":
     let (r, dir) = analyzeSingle("""
 public module f64:
-  literal: "f64"
+  literal: "double"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f64
@@ -572,10 +572,10 @@ public module M:
   test "f32 accepts an exactly-representable value":
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -590,10 +590,10 @@ public module M:
     # closest f32 approximation and emits a `[WARN]` line.
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -605,10 +605,10 @@ public module M:
   test "f32 rejects an overflowing literal":
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -621,10 +621,10 @@ public module M:
   test "f32 accepts nan":
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -636,10 +636,10 @@ public module M:
   test "f32 accepts inf":
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -651,10 +651,10 @@ public module M:
   test "f32 accepts -inf":
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -666,10 +666,10 @@ public module M:
   test "f64 accepts nan / inf / -inf":
     let (r, dir) = analyzeSingle("""
 public module f64:
-  literal: "f64"
+  literal: "double"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f64
@@ -700,13 +700,13 @@ public generic Eq:
     # asserts the whole file analyzes end-to-end.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 module Triple:
   struct:
@@ -723,10 +723,10 @@ module Triple:
     # is a distinct code path from the struct-init tests.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 module Signal:
   union:
@@ -755,10 +755,10 @@ module Caller:
 """),
       ("helper.asl", """
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Helper:
   public func value(): u8
@@ -776,13 +776,13 @@ public module Helper:
     let (r, dir) = analyzeFiles([
       ("entry.aslr", """
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   @extern("u8_add_u8")
   public func add(a: u8, b: u8): u8
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 """)
     ])
     cleanupDir(dir)
@@ -804,10 +804,10 @@ module Caller:
 """),
       ("helper.asl", """
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Helper:
   public func value(): u8
@@ -860,13 +860,13 @@ suite "analyzer — bare literal defaulting":
     # (`add` body just returns `a` — enough to type-check.)
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
   public func add(a: i32, b: i32): i32
     a
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): i32
@@ -879,13 +879,13 @@ public module M:
   test "bare float literal in assignment defaults to f32":
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
   public func add(a: f32, b: f32): f32
     a
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -903,13 +903,13 @@ public module M:
     # as f32.
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
   public func add(a: f32, b: f32): f32
     a
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -928,13 +928,13 @@ public module M:
     # guard higher up in this suite.
     let (r, dir) = analyzeSingle("""
 public module f32:
-  literal: "f32"
+  literal: "float"
 
   public func add(a: f32, b: f32): f32
     a
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): f32
@@ -946,21 +946,21 @@ public module M:
   test "bare string literal in assignment defaults to String":
     let (r, dir) = analyzeSingle("""
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
-public module String:
-  literal: "string"
+public module string:
+  literal: "const char*"
 
-  public func length(s: String): u32
+  public func length(s: string): u32
     u32 0
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): u32
     z = "data"
-    String.length(z)
+    string.length(z)
 """)
     cleanupDir(dir)
     check r.isOk
@@ -972,16 +972,16 @@ public module M:
     # path (expected = some(u8)) — i.e. no forced i32 default.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func add(a: u8, b: u8): u8
     a
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): u8
@@ -996,13 +996,13 @@ public module M:
     # u8 directly (concrete-adopt branch in analyzeBareLiteral).
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Pair:
   struct:
@@ -1021,13 +1021,13 @@ public module Pair:
     # adopt path as struct kwargs.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Sig:
   union:
@@ -1050,13 +1050,13 @@ public module Sig:
     # generic-context ddkStruct path in `resolveDataModuleArgumentType`.
     let (r, dir) = analyzeSingle("""
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
   public func byte_size(items: u32): u64
     u64 0
@@ -1083,13 +1083,13 @@ public module M:
     # is bound to Any in the generic-impl map. Result: `Status[i32]`.
     let (r, dir) = analyzeSingle("""
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
   public func byte_size(items: u32): u64
     u64 0
@@ -1114,13 +1114,13 @@ public module M:
     # field type as expected. Bare 10 adopts u8 via concrete-adopt.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Pair:
   struct:
@@ -1139,16 +1139,16 @@ public module Pair:
     # adopt branch adopts u8, then analyzeLiteral's range-check rejects.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func add(a: u8, b: u8): u8
     a
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): u8
@@ -1165,13 +1165,13 @@ public module M:
     # hint at the scope.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func add(a: u8, b: u8): u8
     a
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module M:
   public func go(): u8
@@ -1189,13 +1189,13 @@ public module M:
     # some(module), the module's data def is rdkStruct — clear error.
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Pair:
   struct:
@@ -1222,10 +1222,10 @@ suite "analyzer — kwarg + pattern shorthand end-to-end":
   test "struct initializer kwarg shorthand analyzes":
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Pair:
   struct:
@@ -1243,10 +1243,10 @@ public module Pair:
   test "union initializer kwarg shorthand analyzes":
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Status:
   union:
@@ -1264,10 +1264,10 @@ module M:
   test "union pattern field-binding shorthand analyzes":
     let (r, dir) = analyzeSingle("""
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module Status:
   union:
@@ -1350,16 +1350,16 @@ suite "analyzer — deep constraint satisfaction":
   test "impl with matching signature satisfies the required generic":
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func compare(a: u8, b: u8): i32
     i32 0
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
@@ -1381,13 +1381,13 @@ module M:
     # Pair[u8] declaration.
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func compare(a: u8, b: u8): u64
     u64 0
@@ -1416,19 +1416,19 @@ module M:
     # (it is validated by the recursive argtype walk instead).
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func compare(a: u8, b: u8): i32
     i32 0
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
@@ -1457,13 +1457,13 @@ module M:
     # same generic identity, so equality decides without grounding.
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
@@ -1485,13 +1485,13 @@ module Wrapper:
   test "one matching overload among several satisfies":
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func compare(a: u32, b: u32): i32
     i32 0
@@ -1500,7 +1500,7 @@ public module u8:
     i32 0
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
@@ -1524,19 +1524,19 @@ module M:
     # deferral to the call site.
     let (r, dir) = analyzeSingle("""
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic K:
   func foo(): u32
 
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
   public func weight(a: u8, factor: K): i32
     i32 0
@@ -1564,10 +1564,10 @@ module M:
     # relation — subsumption, not identity.
     let (r, dir) = analyzeSingle("""
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Eq:
   func eq(a: Eq, b: Eq): u32
@@ -1594,10 +1594,10 @@ module Wrapper:
     # no functions, cannot satisfy Ord, so the candidate fails.
     let (r, dir) = analyzeSingle("""
 public module u32:
-  literal: "u32"
+  literal: "uint32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 public generic Eq:
   func eq(a: Eq, b: Eq): u32
@@ -1626,10 +1626,10 @@ suite "analyzer — entry point":
 
   const I32 = """
 public module i32:
-  literal: "i32"
+  literal: "int32_t"
 
 public module u64:
-  literal: "u64"
+  literal: "uint64_t"
 
 """
 
@@ -1674,7 +1674,7 @@ public module B:
   test "wrong return type is not an entry point":
     let (r, dir) = analyzeAppSingle(I32 & """
 public module u8:
-  literal: "u8"
+  literal: "uint8_t"
 
 public module M:
   public func start(): u8

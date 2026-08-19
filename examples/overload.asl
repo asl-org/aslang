@@ -6,7 +6,7 @@ module Foo:
   func bar(a: i64): i64
     a
 
-  func bar(a: String): String
+  func bar(a: string): string
     a
 
 public module Driver:

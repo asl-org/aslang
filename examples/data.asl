@@ -7,10 +7,10 @@
 # patterns with field bindings inside a match expression.
 module User:
   struct:
-    name: String
+    name: string
     age: u32
 
-  func new(n: String, a: u32): User
+  func new(n: string, a: u32): User
     User { name: n, age: a }
 
 module Plan:
@@ -18,13 +18,13 @@ module Plan:
     Free { usage: u32 }
     Pro { users: u32, credits: u32 }
 
-  func describe(plan: Plan): String
+  func describe(plan: Plan): string
     free = Plan.Free { usage: u32 100 }
     match plan:
       case Free { usage: usage }:
-        String.from(usage)
+        string.from(usage)
       case Pro { credits: credits, users: users }:
-        String.concat(String.from(credits), String.from(users))
+        string.concat(string.from(credits), string.from(users))
 
 public module Driver:
   public func start(): i32
