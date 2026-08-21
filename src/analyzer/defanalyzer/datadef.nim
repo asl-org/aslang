@@ -20,7 +20,9 @@ type AnalyzedLiteralDef* = ref object
 proc newAnalyzedLiteralDef*(resolved: ResolvedLiteralDef): AnalyzedLiteralDef =
   AnalyzedLiteralDef(resolved: resolved)
 
-proc resolved*(b: AnalyzedLiteralDef): ResolvedLiteralDef = b.resolved
+proc loc*(literalDef: AnalyzedLiteralDef): Location = literalDef.resolved.loc
+proc ctype*(literalDef: AnalyzedLiteralDef): string = literalDef.resolved.ctype
+proc resolved*(literalDef: AnalyzedLiteralDef): ResolvedLiteralDef = literalDef.resolved
 
 proc validate*(literalDef: AnalyzedLiteralDef, literal: Literal): Result[void, string] = literalDef.resolved.validate(literal)
 
@@ -37,7 +39,8 @@ proc newAnalyzedStructDef*(resolved: ResolvedStructDef,
     fields: seq[AnalyzedArgumentDef]): AnalyzedStructDef =
   AnalyzedStructDef(resolved: resolved, fields: fields, fieldIndex: fields.indexByName())
 
-proc genericTypeIndex(s: AnalyzedStructDef): Table[ResolvedGenericArgumentType, int] = s.resolved.genericTypeIndex
+proc loc*(struct: AnalyzedStructDef): Location = struct.resolved.loc
+proc fields*(struct: AnalyzedStructDef): seq[AnalyzedArgumentDef] = struct.fields
 
 proc findField*(s: AnalyzedStructDef, name: Identifier): Result[AnalyzedArgumentDef, string] =
   if name in s.fieldIndex: ok(s.fields[s.fieldIndex[name]])
@@ -56,7 +59,9 @@ proc newAnalyzedVariantDef*(resolved: ResolvedVariantDef,
     fields: seq[AnalyzedArgumentDef]): AnalyzedVariantDef =
   AnalyzedVariantDef(resolved: resolved, fields: fields, fieldIndex: fields.indexByName())
 
+proc loc*(variant: AnalyzedVariantDef): Location = variant.resolved.loc
 proc name*(v: AnalyzedVariantDef): Identifier = v.resolved.name
+proc fields*(variant: AnalyzedVariantDef): seq[AnalyzedArgumentDef] = variant.fields
 
 proc findField*(v: AnalyzedVariantDef, name: Identifier): Result[AnalyzedArgumentDef, string] =
   if name in v.fieldIndex: ok(v.fields[v.fieldIndex[name]])
@@ -75,6 +80,7 @@ type AnalyzedUnionDef* = ref object
 proc newAnalyzedUnionDef*(resolved: ResolvedUnionDef, variants: seq[AnalyzedVariantDef]): AnalyzedUnionDef =
   AnalyzedUnionDef(resolved: resolved, variants: variants, variantIndex: variants.indexByName())
 
+proc loc*(union: AnalyzedUnionDef): Location = union.resolved.loc
 proc variants*(u: AnalyzedUnionDef): seq[AnalyzedVariantDef] = u.variants
 proc genericTypeIndex*(u: AnalyzedUnionDef): Table[ResolvedGenericArgumentType, int] =
   u.resolved.genericTypeIndex
@@ -117,3 +123,8 @@ proc union*(d: AnalyzedDataDef): AnalyzedUnionDef =
   assert d.kind == adkUnion,
     fmt"AnalyzedDataDef.union accessed but kind is {d.kind}"
   d.union
+proc loc*(data: AnalyzedDataDef): Location =
+  case data.kind:
+  of adkLiteral: data.literal.loc
+  of adkStruct: data.struct.loc
+  of adkUnion: data.union.loc

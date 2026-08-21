@@ -2,7 +2,7 @@ import os, results, strformat
 
 import cli, analyzer
 # import lifetime
-# import expander
+import expander
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
@@ -10,7 +10,7 @@ proc compile(opts: AslBuildCommand): Result[string, string] =
   let resolvedApp = ? resolve(app)
   let analyzedApp = ? analyze(resolvedApp)
   # TODO: Uncomment the line below to enable lifetime analysis
-  # expand(analyzedApp)
+  let _ = expand(analyzedApp)
   # ? analyzeLifetime(analyzedApp)
   ok("[SUCCESS]")
 

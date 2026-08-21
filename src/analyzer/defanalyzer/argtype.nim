@@ -10,7 +10,7 @@
 ## satisfaction — each ResolvedModuleArgumentType's `impls` seq is a
 ## provably valid value by the time the analyzer sees it.
 
-import results, strformat, strutils, tables, hashes
+import results, strformat, strutils, tables, hashes, sets, sequtils
 
 import ./resolver
 
@@ -62,6 +62,7 @@ type
 # Forward declarations for the dual-context overloads — both arities
 # of analyzeArgumentType need to be visible inside
 # analyzeModuleArgumentType.
+proc generics*(argType: AnalyzedArgumentType): seq[ResolvedGeneric]
 proc loc*(argType: AnalyzedArgumentType): Location
 proc hash*(m: AnalyzedArgumentType): Hash
 proc asl*(argType: AnalyzedArgumentType): string
@@ -101,16 +102,18 @@ proc newAnalyzedModuleArgumentType*(module: ResolvedModule): AnalyzedModuleArgum
   newAnalyzedModuleArgumentType(module.self, module)
 
 proc resolved*(m: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = m.resolved
-  ## Exposed so the sibling analyzedimplmap.nim can rebuild a
-  ## ModuleArgumentType during generic substitution. Previously the
-  ## `concrete` overload lived in the same file as the type
-  ## declaration and read the private field directly; the per-type
-  ## split moved it out.
 proc loc*(m: AnalyzedModuleArgumentType): Location = m.resolved.loc
 proc module*(m: AnalyzedModuleArgumentType): ResolvedModule = m.module
 proc impls*(m: AnalyzedModuleArgumentType): AnalyzedImplMap = m.impls
 proc name*(m: AnalyzedModuleArgumentType): Identifier = m.module.name
 proc self*(argType: AnalyzedModuleArgumentType): ResolvedModuleArgumentType = argType.module.self
+proc generics*(argType: AnalyzedModuleArgumentType): seq[ResolvedGeneric] =
+  var generics: OrderedSet[ResolvedGeneric]
+  for _, impl in argType.impls:
+    for g in impl.argType.generics:
+      generics.incl(g)
+  return generics.toSeq
+
 proc hash*(m: AnalyzedModuleArgumentType): Hash =
   # The impl values in slot order, on top of the module. The keys (the
   # module's require slots) are fixed by the module, already folded in
@@ -163,6 +166,11 @@ proc impls*(argType: AnalyzedArgumentType): AnalyzedImplMap =
   case argType.kind:
   of aatkModule: argType.module.impls
   of aatkGeneric: default(AnalyzedImplMap)
+
+proc generics*(argType: AnalyzedArgumentType): seq[ResolvedGeneric] =
+  case argType.kind:
+  of aatkModule: argType.module.generics
+  of aatkGeneric: @[argType.generic.generic]
 
 proc loc*(argType: AnalyzedArgumentType): Location =
   case argType.kind:
@@ -254,9 +262,10 @@ type AnalyzedArgumentDef* = ref object
 proc newAnalyzedArgumentDef*(resolved: ResolvedArgumentDef, argType: AnalyzedArgumentType): AnalyzedArgumentDef =
   AnalyzedArgumentDef(resolved: resolved, argType: argType)
 
-proc argType*(d: AnalyzedArgumentDef): AnalyzedArgumentType = d.argType
 proc name*(d: AnalyzedArgumentDef): Identifier = d.resolved.name
 proc loc*(d: AnalyzedArgumentDef): Location = d.resolved.name.loc
+proc generics*(d: AnalyzedArgumentDef): seq[ResolvedGeneric] = d.argType.generics
+proc argType*(d: AnalyzedArgumentDef): AnalyzedArgumentType = d.argType
 
 proc asl*(d: AnalyzedArgumentDef): string =
   d.name.asl & ": " & d.argType.asl

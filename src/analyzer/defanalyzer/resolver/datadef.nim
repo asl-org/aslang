@@ -15,28 +15,35 @@ import argtype
 # f64, string, pointer) carries through resolution.
 
 type
-  ResolvedLiteralDef* = enum
+  ResolvedLiteralDefKind* = enum
     rltkU8, rltkU16, rltkU32, rltkU64
     rltkI8, rltkI16, rltkI32, rltkI64
     rltkF32, rltkF64, rltkString
+  ResolvedLiteralDef* = ref object
+    parsed: LiteralDef
+    kind: ResolvedLiteralDefKind
 
-proc newResolvedLiteralDef*(literal: LiteralDef): Result[ResolvedLiteralDef, string] =
-  case literal.content:
-  of "uint8_t": ok(rltkU8)
-  of "uint16_t": ok(rltkU16)
-  of "uint32_t": ok(rltkU32)
-  of "uint64_t": ok(rltkU64)
-  of "int8_t": ok(rltkI8)
-  of "int16_t": ok(rltkI16)
-  of "int32_t": ok(rltkI32)
-  of "int64_t": ok(rltkI64)
-  of "float": ok(rltkF32)
-  of "double": ok(rltkF64)
-  of "const char*": ok(rltkString)
-  else: err(fmt"{literal.loc} unsupported literal type encountered `{literal.content}`")
+proc newResolvedLiteralDef*(literalDef: LiteralDef): Result[ResolvedLiteralDef, string] =
+  case literalDef.content:
+  of "uint8_t": ok(ResolvedLiteralDef(kind: rltkU8, parsed: literalDef))
+  of "uint16_t": ok(ResolvedLiteralDef(kind: rltkU16, parsed: literalDef))
+  of "uint32_t": ok(ResolvedLiteralDef(kind: rltkU32, parsed: literalDef))
+  of "uint64_t": ok(ResolvedLiteralDef(kind: rltkU64, parsed: literalDef))
+  of "int8_t": ok(ResolvedLiteralDef(kind: rltkI8, parsed: literalDef))
+  of "int16_t": ok(ResolvedLiteralDef(kind: rltkI16, parsed: literalDef))
+  of "int32_t": ok(ResolvedLiteralDef(kind: rltkI32, parsed: literalDef))
+  of "int64_t": ok(ResolvedLiteralDef(kind: rltkI64, parsed: literalDef))
+  of "float": ok(ResolvedLiteralDef(kind: rltkF32, parsed: literalDef))
+  of "double": ok(ResolvedLiteralDef(kind: rltkF64, parsed: literalDef))
+  of "const char*": ok(ResolvedLiteralDef(kind: rltkString, parsed: literalDef))
+  else: err(fmt"{literalDef.loc} unsupported literal type encountered `{literalDef.content}`")
+
+proc kind*(literalDef: ResolvedLiteralDef): ResolvedLiteralDefKind = literalDef.kind
+proc loc*(literalDef: ResolvedLiteralDef): Location = literalDef.parsed.loc
+proc ctype*(literalDef: ResolvedLiteralDef): string = literalDef.parsed.content
 
 proc validate*(literalDef: ResolvedLiteralDef, literal: Literal): Result[void, string] =
-  case literalDef:
+  case literalDef.kind:
   of rltkF32: validateFloat[float32](literal, "32-bit float")
   of rltkF64: validateFloat[float64](literal, "64-bit float")
   of rltkU8: validateInteger[uint8](literal, "8-bit unsigned integer")
@@ -83,6 +90,7 @@ proc newResolvedStructDef*(parsed: StructDef, requires: seq[ResolvedGenericArgum
   let fieldIndex = fields.indexByName()
   ResolvedStructDef(parsed: parsed, generics: generics.toSeq, fields: fields, fieldIndex: fieldIndex)
 
+proc loc*(struct: ResolvedStructDef): Location = struct.parsed.loc
 proc fields*(struct: ResolvedStructDef): seq[ResolvedArgumentDef] = struct.fields
 proc requires*(struct: ResolvedStructDef): seq[ResolvedGenericArgumentType] = struct.generics
 
@@ -114,6 +122,7 @@ proc newResolvedVariantDef*(parsed: VariantDef, fields: seq[ResolvedArgumentDef]
   let generics = buildGenerics(fields)
   ResolvedVariantDef(parsed: parsed, fields: fields, generics: generics, fieldIndex: fieldIndex)
 
+proc loc*(variant: ResolvedVariantDef): Location = variant.parsed.loc
 proc name*(variant: ResolvedVariantDef): Identifier = variant.parsed.name
 proc fields*(variant: ResolvedVariantDef): seq[ResolvedArgumentDef] = variant.fields
 proc requires*(variant: ResolvedVariantDef): seq[ResolvedGenericArgumentType] = variant.generics
@@ -144,6 +153,7 @@ proc newResolvedUnionDef*(parsed: UnionDef, variants: seq[ResolvedVariantDef]): 
   let generics = buildGenerics(variants)
   ResolvedUnionDef(parsed: parsed, variants: variants, generics: generics, variantIndex: variantIndex)
 
+proc loc*(union: ResolvedUnionDef): Location = union.parsed.loc
 proc variants*(union: ResolvedUnionDef): seq[ResolvedVariantDef] = union.variants
 proc requires*(union: ResolvedUnionDef): seq[ResolvedGenericArgumentType] = union.generics
 proc genericTypeIndex*(union: ResolvedUnionDef): Table[ResolvedGenericArgumentType, int] = buildGenericTypeIndex(union.generics)

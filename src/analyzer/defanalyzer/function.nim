@@ -6,7 +6,7 @@
 ## (adfkExtern / adfkUser) gives `AnalyzedDefModule.functions` one shape
 ## with uniform `def` / `name` / `arity` accessors.
 
-import strformat, strutils, sequtils, hashes
+import strformat, strutils, sequtils, hashes, sets
 
 import resolver
 import argtype
@@ -35,6 +35,12 @@ proc loc*(f: AnalyzedFunctionDef): Location = f.resolved.loc
 proc arity*(f: AnalyzedFunctionDef): int = f.args.len
 proc args*(f: AnalyzedFunctionDef): seq[AnalyzedArgumentDef] = f.args
 proc returns*(f: AnalyzedFunctionDef): AnalyzedArgumentType = f.returns
+proc generics*(f: AnalyzedFunctionDef): seq[ResolvedGeneric] =
+  var generics: OrderedSet[ResolvedGeneric]
+  for arg in f.args:
+    for g in arg.generics:
+      generics.incl(g)
+  return generics.toSeq
 
 proc asl*(f: AnalyzedFunctionDef): string =
   var args: seq[string]
@@ -60,9 +66,11 @@ proc newAnalyzedExternFunction*(resolved: ResolvedExternFunction, def: AnalyzedF
   AnalyzedExternFunction(resolved: resolved, def: def)
 
 proc loc*(function: AnalyzedExternFunction): Location = function.resolved.loc
+proc ffi*(function: AnalyzedExternFunction): string = function.resolved.ffi
 proc name*(function: AnalyzedExternFunction): Identifier = function.resolved.name
 proc arity*(function: AnalyzedExternFunction): int = function.resolved.arity
 proc def*(function: AnalyzedExternFunction): AnalyzedFunctionDef = function.def
+proc generics*(function: AnalyzedExternFunction): seq[ResolvedGeneric] = function.def.generics
 
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction

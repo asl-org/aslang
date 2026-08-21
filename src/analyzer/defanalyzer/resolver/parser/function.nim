@@ -64,6 +64,7 @@ proc name*(fn: ExternFunction): Identifier = fn.def.name
 proc arity*(fn: ExternFunction): int = fn.def.arity
 proc def*(fn: ExternFunction): FunctionDef = fn.def
 proc loc*(fn: ExternFunction): Location = fn.loc
+proc ffi*(fn: ExternFunction): string = fn.ffi
 
 proc newExternFunction*(ffi: string, def: FunctionDef, loc: Location): ExternFunction =
   ExternFunction(ffi: ffi, def: def, loc: loc)

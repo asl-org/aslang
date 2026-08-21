@@ -141,7 +141,7 @@ type
     of alpskI64: i64Values: HashSet[int64]
 
 proc newAnalyzedLiteralPatternScope*(literal: AnalyzedLiteralDef, totalCases: int): Result[AnalyzedLiteralPatternScope, string] =
-  case literal.resolved:
+  case literal.resolved.kind:
   of rltkU8: ok(AnalyzedLiteralPatternScope(kind: alpskU8,  totalCases: totalCases, variablePatternFound: false, u8Values:  initHashSet[uint8]()))
   of rltkU16: ok(AnalyzedLiteralPatternScope(kind: alpskU16, totalCases: totalCases, variablePatternFound: false, u16Values: initHashSet[uint16]()))
   of rltkU32: ok(AnalyzedLiteralPatternScope(kind: alpskU32, totalCases: totalCases, variablePatternFound: false, u32Values: initHashSet[uint32]()))

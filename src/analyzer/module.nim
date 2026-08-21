@@ -19,6 +19,8 @@ proc newAnalyzedModule*(def: AnalyzedDefModule, functions: seq[AnalyzedFunction]
 
   AnalyzedModule(def: def, functions: functions, funcDefIndex: funcDefIndex)
 
+proc loc*(module: AnalyzedModule): Location = module.def.resolved.loc
+proc resolved*(module: AnalyzedModule): ResolvedModule = module.def.resolved
 proc public*(module: AnalyzedModule): bool = module.def.public
 proc name*(module: AnalyzedModule): Identifier = module.def.name
 proc data*(module: AnalyzedModule): Option[AnalyzedDataDef] = module.def.data
