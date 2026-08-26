@@ -2,7 +2,7 @@ import options, sequtils, strutils, strformat
 
 proc literalByteSizeFunction*(moduleName: string, literalType: string): seq[string] =
   @[
-    fmt"size_t {moduleName}_byte_size()",
+    fmt"size {moduleName}_byte_size()",
     "{",
     fmt"return sizeof({literalType});",
     "}",
@@ -11,14 +11,14 @@ proc literalByteSizeFunction*(moduleName: string, literalType: string): seq[stri
 proc structFieldOffsetFunction*(moduleName: string, fieldName: string, prevField: Option[string]): seq[string] =
   if prevField.isNone:
     @[
-      fmt"size_t {moduleName}_{fieldName}_offset()",
+      fmt"size {moduleName}_{fieldName}_offset()",
       "{",
       "return 0;",
       "}",
     ]
   else:
     @[
-      fmt"size_t {moduleName}_{fieldName}_offset()",
+      fmt"size {moduleName}_{fieldName}_offset()",
       "{",
       fmt"return {moduleName}_{prevField.get}_offset() + {moduleName}_{prevField.get}_size();",
       "}",
@@ -27,14 +27,14 @@ proc structFieldOffsetFunction*(moduleName: string, fieldName: string, prevField
 proc variantFieldOffsetFunction*(moduleName: string, variantName: string, fieldName: string, prevField: Option[string]): seq[string] =
   if prevField.isNone:
     @[
-      fmt"size_t {moduleName}_{variantName}_{fieldName}_offset()",
+      fmt"size {moduleName}_{variantName}_{fieldName}_offset()",
       "{",
       "return 1;", # A variant always contains a field called `id` of 1 byte because there can only be 256 variants at max
       "}",
     ]
   else:
     @[
-      fmt"size_t {moduleName}_{variantName}_{fieldName}_offset()",
+      fmt"size {moduleName}_{variantName}_{fieldName}_offset()",
       "{",
       fmt"return {moduleName}_{variantName}_{prevField.get}_offset() + {moduleName}_{variantName}_{prevField.get}_size();",
       "}",
@@ -42,7 +42,7 @@ proc variantFieldOffsetFunction*(moduleName: string, variantName: string, fieldN
 
 proc structFieldSizeFunction*(moduleName: string, fieldName: string, fieldType: string): seq[string] =
   @[
-    fmt"size_t {moduleName}_{fieldName}_size()",
+    fmt"size {moduleName}_{fieldName}_size()",
     "{",
     fmt"return sizeof({fieldType});",
     "}",
@@ -50,7 +50,7 @@ proc structFieldSizeFunction*(moduleName: string, fieldName: string, fieldType: 
 
 proc variantFieldSizeFunction*(moduleName: string, variantName: string, fieldName: string, fieldType: string): seq[string] =
   @[
-    fmt"size_t {moduleName}_{variantName}_{fieldName}_size()",
+    fmt"size {moduleName}_{variantName}_{fieldName}_size()",
     "{",
     fmt"return sizeof({fieldType});",
     "}",
@@ -92,7 +92,7 @@ proc variantFieldSetterFunction*(moduleName: string, variantName: string, fieldN
 
 proc structByteSizeFunction*(moduleName: string, lastField: string): seq[string] =
   @[
-    fmt"size_t {moduleName}_byte_size()",
+    fmt"size {moduleName}_byte_size()",
     "{",
     fmt"return {moduleName}_{lastField}_offset() + {moduleName}_{lastField}_size();",
     "}",
@@ -101,14 +101,14 @@ proc structByteSizeFunction*(moduleName: string, lastField: string): seq[string]
 proc variantByteSizeFunction*(moduleName: string, variantName: string, lastField: Option[string]): seq[string] =
   if lastField.isSome:
     @[
-      fmt"size_t {moduleName}_{variantName}_byte_size()",
+      fmt"size {moduleName}_{variantName}_byte_size()",
       "{",
       fmt"return {moduleName}_{variantName}_{lastField.get}_offset() + {moduleName}_{variantName}_{lastField.get}_size();",
       "}",
     ]
   else:
     @[
-      fmt"size_t {moduleName}_{variantName}_byte_size()",
+      fmt"size {moduleName}_{variantName}_byte_size()",
       "{",
       "return 1;", # variant can have zero fields but `id` will always be present
       "}",
@@ -179,17 +179,17 @@ proc variantFunctions*(moduleName: string, variantName: string, variantId: int, 
 
 proc unionIdGetterFunction*(moduleName: string): seq[string] =
   @[
-    fmt"uint8_t {moduleName}_get_id(pointer __asl_ptr)",
+    fmt"uint8 {moduleName}_get_id(pointer __asl_ptr)",
     "{",
-    "return *((uint8_t *)__asl_ptr);",
+    "return *((uint8 *)__asl_ptr);",
     "}",
   ]
 
 proc unionIdSetterFunction*(moduleName: string): seq[string] =
   @[
-    fmt"pointer {moduleName}_set_id(pointer __asl_ptr, uint8_t __asl_value)",
+    fmt"pointer {moduleName}_set_id(pointer __asl_ptr, uint8 __asl_value)",
     "{",
-    "*((uint8_t *)__asl_ptr) = __asl_value;",
+    "*((uint8 *)__asl_ptr) = __asl_value;",
     "return __asl_ptr;",
     "}",
   ]

@@ -17,15 +17,72 @@ import ./defanalyzer
 # needs are intrinsic to `argType` (every module argtype carries its
 # slot→impl map), so no separate map rides on the binding.
 
-type AnalyzedBinding* = ref object
+# ---- AnalyzedVariable (identifier bound to an argtype via scope) ----
+
+type AnalyzedVariable* = ref object
   name: Identifier
   argType: AnalyzedArgumentType
 
-proc newAnalyzedBinding*(name: Identifier, argType: AnalyzedArgumentType): AnalyzedBinding =
-  AnalyzedBinding(name: name, argType: argType)
+proc newAnalyzedVariable*(name: Identifier, argType: AnalyzedArgumentType): AnalyzedVariable =
+  AnalyzedVariable(name: name, argType: argType)
 
-proc name*(binding: AnalyzedBinding): Identifier = binding.name
-proc argType*(binding: AnalyzedBinding): AnalyzedArgumentType = binding.argType
+proc loc*(variable: AnalyzedVariable): Location = variable.name.loc
+proc name*(variable: AnalyzedVariable): Identifier = variable.name
+proc argType*(variable: AnalyzedVariable): AnalyzedArgumentType = variable.argType
+
+type AnalyzedVariantField* = ref object
+  name: Identifier
+  field: AnalyzedArgumentDef
+  impls: AnalyzedImplMap
+
+proc newAnalyzedVariantField*(name: Identifier, field: AnalyzedArgumentDef, impls: AnalyzedImplMap): AnalyzedVariantField =
+  AnalyzedVariantField(name: name, field: field, impls: impls)
+
+proc name*(variantField: AnalyzedVariantField): Identifier = variantField.name
+proc field*(variantField: AnalyzedVariantField): AnalyzedArgumentDef = variantField.field
+proc argType*(variantField: AnalyzedVariantField): AnalyzedArgumentType = variantField.field.argType.concrete(variantField.impls)
+# proc baseArgType*(variantField: AnalyzedVariantField): AnalyzedArgumentType = variantField.field.argType
+
+type
+  AnalyzedBindingKind* = enum
+    abkVariantField, abkVariable
+  AnalyzedBinding* = ref object
+    case kind: AnalyzedBindingKind
+    of abkVariantField: variantField: AnalyzedVariantField
+    of abkVariable: variable: AnalyzedVariable
+
+proc newAnalyzedBinding*(name: Identifier, argType: AnalyzedArgumentType): AnalyzedBinding =
+  let variable = newAnalyzedVariable(name, argType)
+  AnalyzedBinding(kind: abkVariable, variable: variable)
+
+proc newAnalyzedBinding*(name: Identifier, field: AnalyzedArgumentDef, impls: AnalyzedImplMap): AnalyzedBinding =
+  let variantField = newAnalyzedVariantField(name, field, impls)
+  AnalyzedBinding(kind: abkVariantField, variantField: variantField)
+
+proc kind*(binding: AnalyzedBinding): AnalyzedBindingKind = binding.kind
+proc variable*(binding: AnalyzedBinding): AnalyzedVariable =
+  assert binding.kind == abkVariable,
+    fmt"AnalyzedBinding.variable accessed but kind is {binding.kind}"
+  binding.variable
+proc variantField*(binding: AnalyzedBinding): AnalyzedVariantField =
+  assert binding.kind == abkVariantField,
+    fmt"AnalyzedBinding.variantField accessed but kind is {binding.kind}"
+  binding.variantField
+
+proc name*(binding: AnalyzedBinding): Identifier =
+  case binding.kind:
+  of abkVariable: binding.variable.name
+  of abkVariantField: binding.variantField.name
+
+proc argType*(binding: AnalyzedBinding): AnalyzedArgumentType =
+  case binding.kind:
+  of abkVariable: binding.variable.argType
+  of abkVariantField: binding.variantField.argType
+
+# proc baseArgType*(binding: AnalyzedBinding): AnalyzedArgumentType =
+#   case binding.kind:
+#   of abkVariable: binding.variable.argType
+#   of abkVariantField: binding.variantField.baseArgType
 
 # ============================================================
 # AnalyzedUnionPattern
@@ -41,6 +98,7 @@ proc newAnalyzedUnionPattern*(resolved: UnionPattern, variant: AnalyzedVariantDe
   AnalyzedUnionPattern(resolved: resolved, variant: variant, bindings: bindings)
 
 proc bindings*(pattern: AnalyzedUnionPattern): seq[AnalyzedBinding] = pattern.bindings
+proc variant*(pattern: AnalyzedUnionPattern): AnalyzedVariantDef = pattern.variant
 
 # ============================================================
 # AnalyzedCasePattern
@@ -66,6 +124,20 @@ proc newAnalyzedCasePattern*(integer: IntegerLiteral): AnalyzedCasePattern =
 
 proc newAnalyzedCasePattern*(variable: AnalyzedBinding): AnalyzedCasePattern =
   AnalyzedCasePattern(kind: acpkVariable, variable: variable)
+
+proc kind*(pattern: AnalyzedCasePattern): AnalyzedCasePatternKind = pattern.kind
+proc variant*(pattern: AnalyzedCasePattern): AnalyzedUnionPattern =
+  assert pattern.kind == acpkUnion,
+    fmt"AnalyzedCasePattern.variant accessed but kind is {pattern.kind}"
+  pattern.variant
+proc integer*(pattern: AnalyzedCasePattern): IntegerLiteral =
+  assert pattern.kind == acpkInteger,
+    fmt"AnalyzedCasePattern.integer accessed but kind is {pattern.kind}"
+  pattern.integer
+proc variable*(pattern: AnalyzedCasePattern): AnalyzedBinding =
+  assert pattern.kind == acpkVariable,
+    fmt"AnalyzedCasePattern.variable accessed but kind is {pattern.kind}"
+  pattern.variable
 
 proc bindings*(pattern: AnalyzedCasePattern): seq[AnalyzedBinding] =
   case pattern.kind:

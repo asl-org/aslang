@@ -40,7 +40,7 @@ proc writeFiles*(specs: openArray[FileSpec]): string =
   ## The first entry is treated as the entry point; its name is what
   ## the caller should pass as the rootPath to `parser.parse(...)`.
   inc dirCounter
-  let dir = getTempDir() / "asl_test_" & $getCurrentProcessId() & "_" & $dirCounter
+  let dir = getTempDir() / "aslest_" & $getCurrentProcessId() & "_" & $dirCounter
   removeDir(dir)
   createDir(dir)
   for spec in specs:
@@ -56,16 +56,16 @@ proc cleanupDir*(dir: string) =
 
 const StdVendorBase* = """
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public module String:
-  literal: "const char*"
+  literal: "string"
 
 public generic Any:
   func byte_size(items: u32): u64

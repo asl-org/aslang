@@ -19,6 +19,8 @@ proc newAnalyzedUserFunction*(def: AnalyzedDefUserFunction, statements: seq[Anal
   AnalyzedUserFunction(def: def, statements: statements)
 
 proc loc*(function: AnalyzedUserFunction): Location = function.def.loc
+proc name*(function: AnalyzedUserFunction): Identifier = function.def.def.name
+proc generics*(function: AnalyzedUserFunction): seq[ResolvedGeneric] = function.def.def.generics
 proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDef = function.def.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements
 proc entry(function: AnalyzedUserFunction): bool = function.def.entry
@@ -66,6 +68,11 @@ proc def*(function: AnalyzedFunction): AnalyzedFunctionDef =
   of afkExtern: def(function.extern)
   of afkUser: def(function.user)
   of afkGenerated: function.generated
+proc name*(function: AnalyzedFunction): Identifier =
+  case function.kind:
+  of afkExtern: function.extern.name
+  of afkUser: function.user.name
+  of afkGenerated: function.generated.name
 proc entry*(function: AnalyzedFunction): bool =
   case function.kind:
   of afkUser: function.user.entry

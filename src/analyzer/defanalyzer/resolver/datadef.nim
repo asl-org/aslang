@@ -25,17 +25,17 @@ type
 
 proc newResolvedLiteralDef*(literalDef: LiteralDef): Result[ResolvedLiteralDef, string] =
   case literalDef.content:
-  of "uint8_t": ok(ResolvedLiteralDef(kind: rltkU8, parsed: literalDef))
-  of "uint16_t": ok(ResolvedLiteralDef(kind: rltkU16, parsed: literalDef))
-  of "uint32_t": ok(ResolvedLiteralDef(kind: rltkU32, parsed: literalDef))
-  of "uint64_t": ok(ResolvedLiteralDef(kind: rltkU64, parsed: literalDef))
-  of "int8_t": ok(ResolvedLiteralDef(kind: rltkI8, parsed: literalDef))
-  of "int16_t": ok(ResolvedLiteralDef(kind: rltkI16, parsed: literalDef))
-  of "int32_t": ok(ResolvedLiteralDef(kind: rltkI32, parsed: literalDef))
-  of "int64_t": ok(ResolvedLiteralDef(kind: rltkI64, parsed: literalDef))
-  of "float": ok(ResolvedLiteralDef(kind: rltkF32, parsed: literalDef))
-  of "double": ok(ResolvedLiteralDef(kind: rltkF64, parsed: literalDef))
-  of "const char*": ok(ResolvedLiteralDef(kind: rltkString, parsed: literalDef))
+  of "uint8": ok(ResolvedLiteralDef(kind: rltkU8, parsed: literalDef))
+  of "uint16": ok(ResolvedLiteralDef(kind: rltkU16, parsed: literalDef))
+  of "uint32": ok(ResolvedLiteralDef(kind: rltkU32, parsed: literalDef))
+  of "uint64": ok(ResolvedLiteralDef(kind: rltkU64, parsed: literalDef))
+  of "int8": ok(ResolvedLiteralDef(kind: rltkI8, parsed: literalDef))
+  of "int16": ok(ResolvedLiteralDef(kind: rltkI16, parsed: literalDef))
+  of "int32": ok(ResolvedLiteralDef(kind: rltkI32, parsed: literalDef))
+  of "int64": ok(ResolvedLiteralDef(kind: rltkI64, parsed: literalDef))
+  of "float32": ok(ResolvedLiteralDef(kind: rltkF32, parsed: literalDef))
+  of "float64": ok(ResolvedLiteralDef(kind: rltkF64, parsed: literalDef))
+  of "string": ok(ResolvedLiteralDef(kind: rltkString, parsed: literalDef))
   else: err(fmt"{literalDef.loc} unsupported literal type encountered `{literalDef.content}`")
 
 proc kind*(literalDef: ResolvedLiteralDef): ResolvedLiteralDefKind = literalDef.kind

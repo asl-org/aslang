@@ -69,13 +69,16 @@ proc asl*(argType: AnalyzedArgumentType): string
 
 proc newAnalyzedImpl*(argType: AnalyzedArgumentType): AnalyzedImpl =
   AnalyzedImpl(argType: argType)
+
 proc newAnalyzedImpl*(argType: AnalyzedArgumentType, defs: seq[ResolvedFunctionDef]): AnalyzedImpl =
   AnalyzedImpl(argType: argType, defs: defs)
-proc argType*(impl: AnalyzedImpl): AnalyzedArgumentType = impl.argType
+
 proc loc*(impl: AnalyzedImpl): Location = impl.argType.loc
 proc hash*(impl: AnalyzedImpl): Hash = impl.argType.hash
 proc `==`*(a, b: AnalyzedImpl): bool = a.hash == b.hash
 proc asl*(impl: AnalyzedImpl): string = impl.argType.asl
+proc argType*(impl: AnalyzedImpl): AnalyzedArgumentType = impl.argType
+proc impls*(impl: AnalyzedImpl): AnalyzedImplMap = impl.impls
 
 # ---- AnalyzedGenericArgumentType accessors ----
 proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): AnalyzedGenericArgumentType =

@@ -89,6 +89,10 @@ proc findVariant*(union: AnalyzedUnionDef, name: Identifier): AnalyzedVariantDef
   assert(name in union.variantIndex, "UNREACHABLE: duplicate variant name must have been caught by resolver")
   union.variants[union.variantIndex[name]]
 
+proc findVariantId*(union: AnalyzedUnionDef, variant: AnalyzedVariantDef): int =
+  assert(variant.name in union.variantIndex, "UNREACHABLE: duplicate variant name must have been caught by resolver")
+  union.variantIndex[variant.name]
+
 # ---- AnalyzedDataDef ----
 # Tagged union over the three data-block kinds.
 

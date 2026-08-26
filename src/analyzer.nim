@@ -94,11 +94,7 @@ proc analyzeUnionCasePattern*(variantPattern: UnionPattern, union: AnalyzedUnion
   var bindings: seq[AnalyzedBinding]
   for field in variantPattern.fields:
     let fieldDef = ? variant.findField(field.name)
-    let analyzedFieldArgType = fieldDef.argType
-    # The variant field is typed against the union's slots; the subject
-    # type carries their concrete bindings ({Any: u8}) intrinsically.
-    let concreteFieldArgType = analyzedFieldArgType.concrete(subjectType.impls)
-    bindings.add(newAnalyzedBinding(field.binding, concreteFieldArgType))
+    bindings.add(newAnalyzedBinding(field.binding, fieldDef, subjectType.impls))
   ok(newAnalyzedUnionPattern(variantPattern, variant, bindings))
 
 proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCasePattern, string] =
@@ -134,14 +130,15 @@ proc analyzeGetter*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, fun
     of aatkGeneric:
       err(fmt"{getter.loc} expected `{getter.source.asl}` to be a module but found generic ")
     of aatkModule:
-      let sourceModule = fileCtx.findModule(sourceArgType.module.module)
+      let sourceModuleArgType = sourceArgType.module
+      let sourceModule = fileCtx.findModule(sourceModuleArgType.module)
       case sourceModule.dataOrFail.kind:
       of adkUnion: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct getter.block but found union")
       of adkLiteral: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct block getter.but found literal")
       of adkStruct:
         let struct = sourceModule.dataOrFail.struct
         let property = ? struct.findField(getter.property)
-        ok(newAnalyzedGetter(getter, sourceArgType, property))
+        ok(newAnalyzedGetter(getter, sourceModuleArgType, property))
 
 proc analyzeLiteralInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
   let argDefModule = fileCtx.findModule(init.argType.module)
@@ -469,16 +466,16 @@ proc analyzeUserFunction*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
   var funcCtx = newAnalyzedFunctionContext(function.def)
   assert(function.statements.len > 0, fmt"{function.loc} [BUG] empty user function must have been caught by the resolver")
 
-  var analyzedStatements: seq[AnalyzedStatement]
+  var statements: seq[AnalyzedStatement]
   for statement in function.statements:
-    let analyzedStatement = ? analyzeStatement(fileCtx, module, funcCtx, statement)
-    analyzedStatements.add(analyzedStatement)
-    funcCtx = funcCtx.update(analyzedStatement)
+    let statement = ? analyzeStatement(fileCtx, module, funcCtx, statement)
+    statements.add(statement)
+    funcCtx = funcCtx.update(statement)
 
-  if analyzedStatements[^1].argType != function.def.returns:
+  if statements[^1].argType != function.def.returns:
     err(fmt"{function.statements[^1].loc} function does not return the expected return type")
   else:
-    ok(newAnalyzedUserFunction(function, analyzedStatements))
+    ok(newAnalyzedUserFunction(function, statements))
 
 proc analyzeFunction(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: AnalyzedDefFunction): Result[AnalyzedFunction, string] =
   case function.kind:

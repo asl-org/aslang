@@ -19,30 +19,20 @@ import strformat, options
 import ./defanalyzer
 import pattern
 
-# ---- AnalyzedVariable (identifier bound to an argtype via scope) ----
-
-type AnalyzedVariable* = ref object
-  name: Identifier
-  argType: AnalyzedArgumentType
-
-proc newAnalyzedVariable*(name: Identifier, argType: AnalyzedArgumentType): AnalyzedVariable =
-  AnalyzedVariable(name: name, argType: argType)
-
-proc loc*(variable: AnalyzedVariable): Location = variable.name.loc
-proc argType*(variable: AnalyzedVariable): AnalyzedArgumentType = variable.argType
-
 # ---- AnalyzedGetter (resolved struct field access) ----
 
 type AnalyzedGetter* = ref object
   resolved: ResolvedGetter
-  source: AnalyzedArgumentType
+  source: AnalyzedModuleArgumentType
   property: AnalyzedArgumentDef
 
-proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedArgumentType, property: AnalyzedArgumentDef): AnalyzedGetter =
+proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedModuleArgumentType, property: AnalyzedArgumentDef): AnalyzedGetter =
   AnalyzedGetter(resolved: resolved, source: source, property: property)
 
 proc loc*(getter: AnalyzedGetter): Location = getter.resolved.loc
-proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType = getter.property.argType
+proc source*(getter: AnalyzedGetter): AnalyzedModuleArgumentType = getter.source
+proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType =
+  getter.property.argType.concrete(getter.source.impls)
 
 # ---- AnalyzedLiteralInitializer (a literal + the argtype it adopts) ----
 
@@ -54,7 +44,8 @@ proc newAnalyzedLiteralInitializer*(literal: Literal, argType: AnalyzedModuleArg
   AnalyzedLiteralInitializer(literal: literal, argType: argType)
 
 proc loc*(init: AnalyzedLiteralInitializer): Location = init.literal.loc
-proc argType*(init: AnalyzedLiteralInitializer): AnalyzedModuleArgumentType = init.argType
+proc argType*(init: AnalyzedLiteralInitializer): AnalyzedArgumentType = newAnalyzedArgumentType(init.argType)
+proc literal*(init: AnalyzedLiteralInitializer): Literal = init.literal
 
 # Mutually-recursive body-level cluster — every type that cycles
 # back to AnalyzedExpression / AnalyzedStatement must live here.
@@ -136,9 +127,8 @@ proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, localType: AnalyzedL
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
 proc localType*(fncall: AnalyzedFunctionCall): AnalyzedLocalType = fncall.localType
 proc funcDef*(fncall: AnalyzedFunctionCall): AnalyzedFunctionDef = fncall.funcDef
-# Return type = the matched funcDef's declared return concretized by
-# the bindings inferred from the call's arguments (`{T -> u8}` →
-# `T` becomes `u8`). Materialized on access, like the initializers.
+proc impls*(fncall: AnalyzedFunctionCall): AnalyzedImplMap = fncall.impls
+proc args*(fncall: AnalyzedFunctionCall): seq[AnalyzedExpression] = fncall.args
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType =
   fncall.funcDef.returns.concrete(fncall.impls)
 
@@ -149,15 +139,15 @@ proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: Analyze
 # generic + a concrete value binds that generic; a concrete field →
 # empty map). The initializer merges these across fields.
 proc impls*(kwarg: AnalyzedKeywordArgument): AnalyzedImplMap = kwarg.impls
+proc expression*(kwarg: AnalyzedKeywordArgument): AnalyzedExpression = kwarg.expression
+proc field*(kwarg: AnalyzedKeywordArgument): AnalyzedArgumentDef = kwarg.field
 
 
 proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: AnalyzedImplMap): AnalyzedStructInitializer =
   AnalyzedStructInitializer(def: def, kwargs: kwargs, impls: impls)
 
 proc loc*(init: AnalyzedStructInitializer): Location = init.def.loc
-# Result type = the receiver's def-side type (`Pair[T]`) concretized
-# by the cross-field bindings the kwargs produced (`{T -> u8}` →
-# `Pair[u8]`). Uncovered generics stay free.
+proc kwargs*(init: AnalyzedStructInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
 proc argType*(init: AnalyzedStructInitializer): AnalyzedModuleArgumentType =
   newAnalyzedArgumentType(init.def.structRef.argType).concrete(init.impls).module
 
@@ -165,10 +155,8 @@ proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[
   AnalyzedUnionInitializer(def: def, kwargs: kwargs, impls: impls)
 
 proc loc*(init: AnalyzedUnionInitializer): Location = init.def.loc
-# `impls` already covers every union slot in canonical order (bound or
-# defaulted to self), so it IS the result type's impl map — build the
-# module argtype straight from it rather than concretizing the ref's
-# argtype, whose own map is empty for a bare `Union.Variant {...}`.
+proc variant*(init: AnalyzedUnionInitializer): Identifier = init.def.variant
+proc kwargs*(init: AnalyzedUnionInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
 proc argType*(init: AnalyzedUnionInitializer): AnalyzedModuleArgumentType =
   let refArgType = init.def.unionRef.argType
   newAnalyzedModuleArgumentType(refArgType.resolved, refArgType.module, init.impls)
@@ -182,6 +170,11 @@ proc newAnalyzedInitializer*(union: AnalyzedUnionInitializer): AnalyzedInitializ
 proc newAnalyzedInitializer*(struct: AnalyzedStructInitializer): AnalyzedInitializer =
   AnalyzedInitializer(kind: aikStruct, struct: struct)
 
+proc kind*(init: AnalyzedInitializer): AnalyzedInitializerKind = init.kind
+proc literal*(init: AnalyzedInitializer): AnalyzedLiteralInitializer =
+  assert init.kind == aikLiteral,
+    fmt"AnalyzedInitializer.literal accessed but kind is {init.kind}"
+  init.literal
 proc union*(init: AnalyzedInitializer): AnalyzedUnionInitializer =
   assert init.kind == aikUnion,
     fmt"AnalyzedInitializer.union accessed but kind is {init.kind}"
@@ -207,6 +200,8 @@ proc newAnalyzedCaseBlock*(def: AnalyzedDefCase, pattern: AnalyzedCasePattern, s
   AnalyzedCaseBlock(def: def, pattern: pattern, statements: statements)
 
 proc loc*(caseBlock: AnalyzedCaseBlock): Location = caseBlock.def.resolved.loc
+proc pattern*(caseBlock: AnalyzedCaseBlock): AnalyzedCasePattern = caseBlock.pattern
+proc statements*(caseBlock: AnalyzedCaseBlock): seq[AnalyzedStatement] = caseBlock.statements
 
 proc argType*(caseBlock: AnalyzedCaseBlock): AnalyzedArgumentType =
   assert(caseBlock.statements.len > 0, "UNREACHABLE: should have been caught by resolver")
@@ -217,6 +212,8 @@ proc newAnalyzedMatchExpression*(def: AnalyzedDefMatch, subject: AnalyzedExpress
 
 proc loc*(m: AnalyzedMatchExpression): Location = m.def.resolved.loc
 proc returns*(m: AnalyzedMatchExpression): AnalyzedArgumentType = m.cases[0].argType
+proc subject*(m: AnalyzedMatchExpression): AnalyzedExpression = m.subject
+proc cases*(m: AnalyzedMatchExpression): seq[AnalyzedCaseBlock] = m.cases
 
 proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
   AnalyzedAssignment(def: def, expression: expression)
@@ -224,6 +221,7 @@ proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpr
 proc loc*(assignment: AnalyzedAssignment): Location = assignment.def.loc
 proc target*(assignment: AnalyzedAssignment): Identifier = assignment.def.target
 proc argType*(assignment: AnalyzedAssignment): AnalyzedArgumentType = assignment.expression.argType
+proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression= assignment.expression
 
 proc newAnalyzedSetter*(def: AnalyzedDefSetter, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedSetter =
   AnalyzedSetter(def: def, getter: getter, expression: expression)

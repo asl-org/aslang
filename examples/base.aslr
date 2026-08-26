@@ -1,5 +1,5 @@
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
   # binary
   @extern("u8_and_u8")
@@ -45,7 +45,7 @@ public module u8:
   public func from(a: u32): Status[u8]
 
 public module u16:
-  literal: "uint16_t"
+  literal: "uint16"
 
   # binary
   @extern("u16_and_u16")
@@ -87,7 +87,7 @@ public module u16:
   public func compare(a: u16, b: u16): i8
 
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
   # binary
   @extern("u32_and_u32")
@@ -161,7 +161,7 @@ public module u32:
         b
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
   # binary
   @extern("u64_and_u64")
@@ -232,7 +232,7 @@ public module u64:
         b
 
 public module i8:
-  literal: "int8_t"
+  literal: "int8"
 
   # binary
   @extern("i8_and_i8")
@@ -274,7 +274,7 @@ public module i8:
   public func compare(a: i8, b: i8): i8
 
 public module i16:
-  literal: "int16_t"
+  literal: "int16"
 
   # binary
   @extern("i16_and_i16")
@@ -316,7 +316,7 @@ public module i16:
   public func compare(a: i16, b: i16): i8
 
 public module i32:
-  literal: "int32_t"
+  literal: "int32"
 
   # binary
   @extern("i32_and_i32")
@@ -358,7 +358,7 @@ public module i32:
   public func compare(a: i32, b: i32): i8
 
 public module i64:
-  literal: "int64_t"
+  literal: "int64"
 
   # binary
   @extern("i64_and_i64")
@@ -438,7 +438,7 @@ public module i64:
 # and classifiers, both this module and the analyzer's parseFloat
 # helper should pick them up.
 public module f32:
-  literal: "float"
+  literal: "float32"
 
   # binary
   @extern("f32_and_f32")
@@ -483,7 +483,7 @@ public module f32:
 
 # See the TODO above f32 — the same special-value gap applies to f64.
 public module f64:
-  literal: "double"
+  literal: "float64"
 
   # binary
   @extern("f64_and_f64")
@@ -552,7 +552,7 @@ public module f64:
     f64.subtract(f64 0.0, x)
 
 public module string:
-  literal: "const char*"
+  literal: "string"
 
   # core
   @extern("string_init")

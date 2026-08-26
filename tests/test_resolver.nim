@@ -10,7 +10,7 @@ import tutils
 
 const Base = """
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
   @extern("u8_add")
   public func add(a: u8, b: u8): u8
@@ -19,13 +19,13 @@ public module u8:
   public func byte_size(items: u32): u64
 
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
   @extern("u32_byte_size")
   public func byte_size(items: u32): u64
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
   @extern("u64_compare")
   public func compare(a: u64, b: u64): u8
@@ -34,7 +34,7 @@ public module u64:
   public func byte_size(items: u32): u64
 
 public module String:
-  literal: "const char*"
+  literal: "string"
 
   @extern("string_byte_size")
   public func byte_size(items: u32): u64
@@ -68,10 +68,10 @@ suite "resolver — happy paths":
   test "literal-data module resolves":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 """)
     cleanupDir(dir)
     check r.isOk
@@ -178,10 +178,10 @@ module Pair:
     p
 
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 """)
     cleanupDir(dir)
     check r.isOk
@@ -194,16 +194,16 @@ public module u64:
     # u8 satisfies Any only through functions M can access.
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
   public func byte_size(items: u32): u64
     u64 1
 
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
 public module String:
-  literal: "const char*"
+  literal: "string"
 
   func byte_size(items: u32): u64
     u64 1
@@ -220,7 +220,7 @@ public generic Any:
   func byte_size(items: u32): u64
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public module Status:
   union:
@@ -241,10 +241,10 @@ module M:
     # analyzer's AnalyzedImplMap merge, not here.
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic K:
   func foo(): u8
@@ -263,10 +263,10 @@ public module Pair:
     # (ResolvedStructDef.generics).
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
   public func foo(): u8
     u8 0
@@ -289,10 +289,10 @@ module M:
   test "struct with two distinct generics in fields resolves":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic K:
   func foo(): u8
@@ -315,10 +315,10 @@ public module Pair:
     # via the analyzer's AnalyzedImplMap merge, not here.
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic K:
   func foo(): u8
@@ -334,10 +334,10 @@ public module Status:
   test "union with distinct generics across variants resolves":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic K:
   func foo(): u8
@@ -673,10 +673,10 @@ module M:
 """),
       ("other.asl", """
 module Hidden:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 """)
     ])
     cleanupDir(dir)
@@ -747,13 +747,13 @@ module M:
 """),
       ("other.asl", """
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 module Hidden:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 """)
     ])
     cleanupDir(dir)
@@ -769,7 +769,7 @@ public module u64:
 import "./base.aslr"
 
 module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 """),
       ("base.aslr", Base)
     ])
@@ -810,17 +810,17 @@ module M:
 """),
       ("a.asl", """
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 """),
       ("b.asl", """
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 """)
     ])
     cleanupDir(dir)
@@ -834,10 +834,10 @@ suite "resolver — generic signature rule":
     # defined. We define u8 in the same file.
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 generic Eq:
   func eq(a: Eq, b: Eq): u8
@@ -848,10 +848,10 @@ generic Eq:
   test "module reference inside a generic signature is allowed":
     let (r, dir) = resolveSingle("""
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 generic Sized:
   func size(s: Sized): u32
@@ -862,10 +862,10 @@ generic Sized:
   test "another generic referenced inside a generic block is rejected":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 generic Other:
   func id(x: Other): Other
@@ -912,10 +912,10 @@ suite "resolver — struct header constraints":
   # referenced from a `struct(...)` header.
   const StructHeaderPrelude = """
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic K:
   func foo(): u8
@@ -967,10 +967,10 @@ suite "resolver — extern in .asl":
   test "an extern function in an .asl module resolves":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public module Sys:
   @extern("sys_read")
@@ -982,10 +982,10 @@ public module Sys:
   test "an extern and a user function coexist in an .asl module":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public module Sys:
   @extern("sys_read")
@@ -1005,13 +1005,13 @@ suite "resolver — union param list":
 
   const UnionParamsPrelude = """
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic Any:
   func byte_size(items: u32): u64
@@ -1045,10 +1045,10 @@ suite "resolver — function visibility":
     # internal access, so the private compare counts.
     let (r, dir) = resolveSingle("""
 public module i32:
-  literal: "int32_t"
+  literal: "int32"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic Comparable:
   func compare(a: Comparable, b: Comparable): i32
@@ -1058,7 +1058,7 @@ module Pair:
     value: Comparable
 
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
   func compare(a: u8, b: u8): i32
     i32 0
@@ -1072,10 +1072,10 @@ public module u8:
   test "cross-module call to a private function is rejected":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 module A:
   func go(x: u8): u8
@@ -1092,10 +1092,10 @@ module B:
   test "same-module call to a private function resolves":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 module A:
   func go(x: u8): u8
@@ -1112,10 +1112,10 @@ suite "resolver — input-signature uniqueness":
   test "two functions with identical input signatures are rejected":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 module A:
   func go(x: u8): u8
@@ -1133,13 +1133,13 @@ module A:
     # could never disambiguate by arguments alone.
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 module A:
   func go(x: u8): u8
@@ -1155,10 +1155,10 @@ module A:
   test "duplicate funcDef inside a generic block is rejected":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic Eq:
   func eq(a: Eq, b: Eq): u8
@@ -1173,10 +1173,10 @@ suite "resolver — public modules require public generics":
   test "public module with an explicit-header private generic is rejected":
     let (r, dir) = resolveSingle("""
 public module u32:
-  literal: "uint32_t"
+  literal: "uint32"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 generic Any:
   func byte_size(items: u32): u32
@@ -1192,10 +1192,10 @@ public module Array:
   test "public module with an inferred private generic field is rejected":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 generic K:
   func foo(): u8
@@ -1211,10 +1211,10 @@ public module Box:
   test "private module may use a private generic":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 generic K:
   func foo(): u8
@@ -1229,10 +1229,10 @@ module Box:
   test "public module with a public generic is fine":
     let (r, dir) = resolveSingle("""
 public module u8:
-  literal: "uint8_t"
+  literal: "uint8"
 
 public module u64:
-  literal: "uint64_t"
+  literal: "uint64"
 
 public generic K:
   func foo(): u8
