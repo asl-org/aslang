@@ -69,36 +69,19 @@ proc newParser*(filepath: string, indentWidth: uint32, tokens: seq[
     Token]): Parser =
   Parser(filepath: filepath, indentWidth: indentWidth, tokens: tokens, index: 0, level: 0)
 
-proc done*(parser: Parser): bool =
+proc done(parser: Parser): bool =
   parser.index == parser.tokens.len
 
-proc loc*(parser: Parser): Location =
+proc loc(parser: Parser): Location =
   if parser.done(): parser.tokens[^1].loc
   else: parser.tokens[parser.index].loc
 
-
-
-# ============================================================
-# Token consumption
-# ============================================================
-
-proc peek*(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
+proc peek(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   if parser.done():
     let msg = fmt"expected {tokenRepr} but reached end of token stream"
     err(newParserError(msg, parser.loc))
   else:
     ok(parser.tokens[parser.index])
-
-# ============================================================
-# Token matchers — data-driven token consumption
-# ============================================================
-#
-# One `TokenMatcher` record + one `consume` dispatcher replaces the
-# family of `consume*` procs that were doing the same work with
-# different predicates (consumeTokenKind, consumePunctuation,
-# consumeExceptNewline, consumeSpace). Follows the tokenizer's
-# `TokenSpec` collapse — the variation (label + predicate) lives in
-# data; the shared control flow lives in one place.
 
 type
   TokenMatcher* = ref object
@@ -117,7 +100,7 @@ proc byKindExcept(kind: TokenKind, label: string): TokenMatcher =
   TokenMatcher(label: label,
     predicate: proc(t: Token): bool = t.kind != kind)
 
-proc consume*(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
+proc consume(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
   let token = ? parser.peek(matcher.label)
   if not matcher.predicate(token):
     let msg = fmt"expected {matcher.label} but found {token.repr}"
@@ -132,8 +115,8 @@ proc consume*(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError]
 
 type
   Spec*[T] = ref object
-    name*: string
-    parseFn*: proc(parser: Parser): Result[T, ParserError]
+    name: string
+    parseFn: proc(parser: Parser): Result[T, ParserError]
 
 proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   let indexCheckpoint = parser.index
@@ -144,26 +127,29 @@ proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
     parser.level = levelCheckpoint
   return maybeValue
 
-proc run*[T](parser: Parser, parseFn: proc(p: Parser): Result[T, ParserError]): Result[T, ParserError] =
-  ## Same checkpoint/restore semantics as the Spec[T] overload, but
-  ## accepts a plain parsing proc directly. Used when converting
-  ## `Spec[T]`-wrapped specs to top-level procs.
-  let indexCheckpoint = parser.index
-  let levelCheckpoint = parser.level
-  let maybeValue = parseFn(parser)
-  if maybeValue.isErr and not maybeValue.error.fatal:
-    parser.index = indexCheckpoint
-    parser.level = levelCheckpoint
-  return maybeValue
-
-proc runOptional[T](parser: Parser, parseFn: proc(p: Parser): Result[T, ParserError]): Result[Option[T], ParserError] =
-  ## Runs `parseFn` and returns `some(value)` on success, `none(T)` on
-  ## non-fatal failure, and propagates fatal errors. Mirrors the
-  ## `optional(spec)` combinator for plain parsing procs.
-  let maybeValue = parser.run(parseFn)
+proc runOptional[T](parser: Parser, spec: Spec[T]): Result[Option[T], ParserError] =
+  let maybeValue = parser.run(spec)
   if maybeValue.isOk: ok(some(maybeValue.get))
   elif maybeValue.error.fatal: err(maybeValue.error)
   else: ok(none(T))
+
+# proc run[T](parser: Parser, parseFn: proc(p: Parser): Result[T, ParserError]): Result[T, ParserError] =
+#   ## Same checkpoint/restore semantics as the Spec[T] overload, but
+#   ## accepts a plain parsing proc directly. Used when converting
+#   ## `Spec[T]`-wrapped specs to top-level procs.
+#   let indexCheckpoint = parser.index
+#   let levelCheckpoint = parser.level
+#   let maybeValue = parseFn(parser)
+#   if maybeValue.isErr and not maybeValue.error.fatal:
+#     parser.index = indexCheckpoint
+#     parser.level = levelCheckpoint
+#   return maybeValue
+
+# proc runOptional[T](parser: Parser, parseFn: proc(p: Parser): Result[T, ParserError]): Result[Option[T], ParserError] =
+#   let maybeValue = parser.run(parseFn)
+#   if maybeValue.isOk: ok(some(maybeValue.get))
+#   elif maybeValue.error.fatal: err(maybeValue.error)
+#   else: ok(none(T))
 
 # ============================================================
 # Combinators
@@ -404,25 +390,29 @@ proc parseComment(parser: Parser): Result[Location, ParserError] =
   discard parser.run(any(anyTokenExceptNewlineSpec("comment character")))
   ok(hashtag.loc)
 
+let commentSpec = Spec[Location](name: "comment", parseFn: parseComment)
+
 # space* comment? newline
-proc parseIgnorableLine(parser: Parser): Result[Location, ParserError] =
+proc parseEmptyLine(parser: Parser): Result[Location, ParserError] =
   let loc = parser.loc
   discard ? parser.run(ws0)
-  discard ? parser.runOptional(parseComment)
+  discard ? parser.runOptional(commentSpec)
   discard ? parser.run(newlineSpec)
   ok(loc)
+let emptyLineSpec = Spec[Location](name: "empty line", parseFn: parseEmptyLine)
 
 proc parseBlankLines(parser: Parser): Result[seq[Location], ParserError] =
   ## Zero-or-more blank / comment lines.
   var lines: seq[Location]
   while true:
-    let maybeLine = parser.run(parseIgnorableLine)
+    let maybeLine = parser.run(emptyLineSpec)
     if maybeLine.isErr:
       if maybeLine.error.fatal: return err(maybeLine.error)
       break
     lines.add(maybeLine.get)
   ok(lines)
 
+let emptyLinesSpec = Spec[seq[Location]](name: "empty lines", parseFn: parseBlankLines)
 
 # ============================================================
 # Separator helpers
@@ -464,6 +454,8 @@ proc parseIndentation(parser: Parser): Result[Space, ParserError] =
   else:
     ok(newSpace(count, loc))
 
+let indentationSpec = Spec[Space](name: "indentation", parseFn: parseIndentation)
+
 let identifierHeadCharSpec = oneOf("identifier_head", [
   underscoreSpec,
   alphabetSpec,
@@ -481,8 +473,10 @@ proc parseIdentifier(parser: Parser): Result[Identifier, ParserError] =
   for tail in tails: content.add(tail.value)
   newIdentifier(content, head.loc)
 
+let identifierSpec = Spec[Identifier](name: "identifier", parseFn: parseIdentifier)
+
 proc parseKeyword(parser: Parser, keyword: string): Result[Location, ParserError] =
-  let ident = ? parser.parseIdentifier()
+  let ident = ? parser.run(identifierSpec)
   if ident.value != keyword:
     let msg = fmt"expected keyword '{keyword}' but found '{ident.value}'"
     return err(newParserError(msg, ident.loc))
@@ -498,14 +492,15 @@ proc keywordSpec(keyword: string): Spec[Location] =
 # Spec adapter — `identifierSpec` is still consumed by
 # `parseStructRequires`'s `separatedBy(identifierSpec, ...)` combinator
 # chain (and by other `separatedBy(identifierSpec, ...)` sites).
-let identifierSpec* = Spec[Identifier](name: "identifier", parseFn: parseIdentifier)
 
 proc parseDecoratorLine(parser: Parser): Result[Decorator, ParserError] =
-  discard ? parser.parseIndentation()
+  discard ? parser.run(indentationSpec)
   discard ? parser.run(punctuationSpec("@"))
-  let ident = ? parser.parseIdentifier()
-  discard ? parser.run(parseIgnorableLine)
+  let ident = ? parser.run(identifierSpec)
+  discard ? parser.run(emptyLineSpec)
   ok(newDecorator(ident))
+
+let decoratorSpec = Spec[Decorator](name: "decorator", parseFn: parseDecoratorLine)
 
 proc parseDecoratorLines(parser: Parser): Result[seq[Decorator], ParserError] =
   ## Zero-or-more decorator lines (blank/comment lines between them
@@ -514,29 +509,32 @@ proc parseDecoratorLines(parser: Parser): Result[seq[Decorator], ParserError] =
   ## decorator).
   var decorators: seq[Decorator]
   while true:
-    let maybeDec = parser.run(parseDecoratorLine)
+    let maybeDec = parser.run(decoratorSpec)
     if maybeDec.isErr:
       if maybeDec.error.fatal: return err(maybeDec.error)
       break
     decorators.add(maybeDec.get)
   ok(decorators)
 
+let decoratorLinesSpec = Spec[seq[Decorator]](name: "decorator lines", parseFn: parseDecoratorLines)
 
-proc makeEscapedParser(character: string, charSpec: Spec[Token]):
-    proc(parser: Parser): Result[StringContent, ParserError] =
+
+proc makeEscapedParser(name: string, character: string, charSpec: Spec[Token]): Spec[StringContent] =
   ## Returns a parser proc for a single `\X` escape sequence.
-  result = proc(parser: Parser): Result[StringContent, ParserError] =
+  let parseFn = proc(parser: Parser): Result[StringContent, ParserError] =
     let backslash = ? parser.run(backslashSpec)
     let token = ? parser.run(charSpec)
     if token.value != character:
-      return err(newParserError(
-        fmt"expected '\\{character}' but found '\\{token.value}'", token.loc))
+      return err(newParserError(fmt"expected '\\{character}' but found '\\{token.value}'", token.loc))
     ok(newStringContent("\\" & character, backslash.loc))
 
-let parseEscapedBackslash = makeEscapedParser("\\", backslashSpec)
-let parseEscapedDoubleQuote = makeEscapedParser("\"", doubleQuoteSpec)
-let parseEscapedNewline = makeEscapedParser("n", alphabetSpec)
-let parseEscapedTab = makeEscapedParser("t", alphabetSpec)
+  Spec[StringContent](name: name, parseFn: parseFn)
+
+
+let parseEscapedBackslash = makeEscapedParser("string backslash character", "\\", backslashSpec)
+let parseEscapedDoubleQuote = makeEscapedParser("string double quote character", "\"", doubleQuoteSpec)
+let parseEscapedNewline = makeEscapedParser("string new line character", "n", alphabetSpec)
+let parseEscapedTab = makeEscapedParser("string tab character", "t", alphabetSpec)
 
 proc parseEscapedStringContent(parser: Parser): Result[StringContent, ParserError] =
   var errors: seq[ParserError]
@@ -554,6 +552,8 @@ proc parseEscapedStringContent(parser: Parser): Result[StringContent, ParserErro
   errors.add(maybeTab.error)
   err(max(errors))
 
+let escapedStringContentSpec = Spec[StringContent](name: "escaped string content", parseFn: parseEscapedStringContent)
+
 proc parseUnescapedStringContent(parser: Parser): Result[StringContent, ParserError] =
   let token = ? parser.run(anyTokenExceptNewlineSpec("unescaped string character"))
   if token.value == "\"" or token.value == "\\":
@@ -561,18 +561,22 @@ proc parseUnescapedStringContent(parser: Parser): Result[StringContent, ParserEr
       fmt"expected a valid string character but found '{token.value}'", token.loc))
   ok(newStringContent(token.value, token.loc))
 
+let unescapedStringContentSpec = Spec[StringContent](name: "unescaped string content", parseFn: parseUnescapedStringContent)
+
 proc parseStringContent(parser: Parser): Result[StringContent, ParserError] =
-  let maybeEscaped = parser.run(parseEscapedStringContent)
+  let maybeEscaped = parser.run(escapedStringContentSpec)
   if maybeEscaped.isOk: return maybeEscaped
-  let maybeUnescaped = parser.run(parseUnescapedStringContent)
+  let maybeUnescaped = parser.run(unescapedStringContentSpec)
   if maybeUnescaped.isOk: return maybeUnescaped
   err(max(@[maybeEscaped.error, maybeUnescaped.error]))
+
+let stringContentSpec = Spec[StringContent](name: "string content", parseFn: parseStringContent)
 
 proc parseStringLiteral(parser: Parser): Result[StringLiteral, ParserError] =
   let openQuote = ? parser.run(doubleQuoteSpec)
   var content: string
   while true:
-    let maybeChar = parser.run(parseStringContent)
+    let maybeChar = parser.run(stringContentSpec)
     if maybeChar.isErr:
       if maybeChar.error.fatal: return err(maybeChar.error)
       break
@@ -584,6 +588,9 @@ proc parseStringLiteral(parser: Parser): Result[StringLiteral, ParserError] =
 # combinator chains (import specs, literalTypeSpec, etc.).
 let stringLiteralSpec* = Spec[StringLiteral](name: "string_literal", parseFn: parseStringLiteral)
 
+# (+ | -) digit+
+let signSpec = oneOf("sign", [punctuationSpec("+"), punctuationSpec("-")])
+
 # digit+
 proc parseUnsignedIntegerLiteral(parser: Parser): Result[UnsignedIntegerLiteral, ParserError] =
   let loc = parser.loc
@@ -592,23 +599,27 @@ proc parseUnsignedIntegerLiteral(parser: Parser): Result[UnsignedIntegerLiteral,
   for d in digits: value.add(d.value)
   ok(newUnsignedIntegerLiteral(value, loc))
 
-# (+ | -) digit+
-let signSpec = oneOf("sign", [punctuationSpec("+"), punctuationSpec("-")])
+let unsignedIntegerLiteralSpec = Spec[UnsignedIntegerLiteral](name: "unsigned integer literal", parseFn: parseUnsignedIntegerLiteral)
+
 
 proc parseSignedIntegerLiteral(parser: Parser): Result[SignedIntegerLiteral, ParserError] =
   let sign = ? parser.run(signSpec)
-  let magnitude = ? parser.parseUnsignedIntegerLiteral()
+  let magnitude = ? parser.run(unsignedIntegerLiteralSpec)
   ok(newSignedIntegerLiteral(sign.value, magnitude, sign.loc))
+
+let signedIntegerLiteralSpec = Spec[SignedIntegerLiteral](name: "signed integer literal", parseFn: parseSignedIntegerLiteral)
 
 proc parseIntegerLiteral(parser: Parser): Result[IntegerLiteral, ParserError] =
   var errors: seq[ParserError]
-  let maybeSigned = parser.run(parseSignedIntegerLiteral)
+  let maybeSigned = parser.run(signedIntegerLiteralSpec)
   if maybeSigned.isOk: return ok(newIntegerLiteral(maybeSigned.get))
   errors.add(maybeSigned.error)
-  let maybeUnsigned = parser.run(parseUnsignedIntegerLiteral)
+  let maybeUnsigned = parser.run(unsignedIntegerLiteralSpec)
   if maybeUnsigned.isOk: return ok(newIntegerLiteral(maybeUnsigned.get))
   errors.add(maybeUnsigned.error)
   err(max(errors))
+
+let integerLiteralSpec = Spec[IntegerLiteral](name: "integer literal", parseFn: parseIntegerLiteral)
 
 # Float-literal is a three-way alternation over per-form parsers, each with a
 # single responsibility:
@@ -623,10 +634,12 @@ proc parseIntegerLiteral(parser: Parser): Result[IntegerLiteral, ParserError] =
 # rejected at parse time (the NaN sign bit exists in the hardware
 # representation but is rarely meaningful in source code).
 proc parseNanFloat(parser: Parser): Result[FloatLiteral, ParserError] =
-  let ident = ? parser.parseIdentifier()
+  let ident = ? parser.run(identifierSpec)
   if ident.value != "nan":
     return err(newParserError(fmt"expected 'nan' but found `{ident.value}`", ident.loc))
   ok(newFloatLiteral("nan", ident.loc))
+
+let nanFloatSpec = Spec[FloatLiteral](name: "nan float", parseFn: parseNanFloat)
 
 # `inf` — IEEE-754 infinity. Optional `+` / `-` sign prefix; the sign
 # folds into the stored literal value so downstream `analyzeFloatLiteral`
@@ -635,10 +648,12 @@ proc parseInfFloat(parser: Parser): Result[FloatLiteral, ParserError] =
   let loc = parser.loc
   let maybeSign = parser.run(signSpec)
   let signStr = if maybeSign.isOk: maybeSign.get.value else: ""
-  let ident = ? parser.parseIdentifier()
+  let ident = ? parser.run(identifierSpec)
   if ident.value != "inf":
     return err(newParserError(fmt"expected 'inf' but found `{ident.value}`", ident.loc))
   ok(newFloatLiteral(signStr & "inf", loc))
+
+let infFloatSpec = Spec[FloatLiteral](name: "inf float", parseFn: parseInfFloat)
 
 # (+|-)? digit+ ("." digit+)? ((e|E) (+|-)? digit+)?
 # Must have either decimal part or exponent to distinguish from integer
@@ -676,39 +691,46 @@ proc parseNumericFloat(parser: Parser): Result[FloatLiteral, ParserError] =
     return err(newParserError("expected '.' or 'e' for float literal", loc))
   ok(newFloatLiteral(value, loc))
 
+let numericFloatSpec = Spec[FloatLiteral](name: "numeric float", parseFn: parseNumericFloat)
+
 proc parseFloatLiteral(parser: Parser): Result[FloatLiteral, ParserError] =
   var errors: seq[ParserError]
-  let maybeNan = parser.run(parseNanFloat)
+  let maybeNan = parser.run(nanFloatSpec)
   if maybeNan.isOk: return maybeNan
   errors.add(maybeNan.error)
-  let maybeInf = parser.run(parseInfFloat)
+  let maybeInf = parser.run(infFloatSpec)
   if maybeInf.isOk: return maybeInf
   errors.add(maybeInf.error)
-  let maybeNum = parser.run(parseNumericFloat)
+  let maybeNum = parser.run(numericFloatSpec)
   if maybeNum.isOk: return maybeNum
   errors.add(maybeNum.error)
   err(max(errors))
 
+let floatLiteralSpec = Spec[FloatLiteral](name: "float literal", parseFn: parseFloatLiteral)
+
 proc parseLiteral(parser: Parser): Result[Literal, ParserError] =
   var errors: seq[ParserError]
-  let maybeString = parser.run(parseStringLiteral)
+  let maybeString = parser.run(stringLiteralSpec)
   if maybeString.isOk: return ok(newLiteral(maybeString.get))
   errors.add(maybeString.error)
-  let maybeFloat = parser.run(parseFloatLiteral)
+  let maybeFloat = parser.run(floatLiteralSpec)
   if maybeFloat.isOk: return ok(newLiteral(maybeFloat.get))
   errors.add(maybeFloat.error)
-  let maybeInt = parser.run(parseIntegerLiteral)
+  let maybeInt = parser.run(integerLiteralSpec)
   if maybeInt.isOk: return ok(newLiteral(maybeInt.get))
   errors.add(maybeInt.error)
   err(max(errors))
 
+let literalSpec = Spec[Literal](name: "literal spec", parseFn: parseLiteral)
+
 proc parseLiteralType(parser: Parser): Result[LiteralDef, ParserError] =
-  discard ? parser.parseIndentation()
-  let loc = ? parser.parseKeyword("literal")
+  discard ? parser.run(indentationSpec)
+  let loc = ? parser.run(keywordSpec("literal"))
   discard ? parser.run(colonWithSpacesSpec)
-  let strLit = ? parser.parseStringLiteral()
+  let strLit = ? parser.run(stringLiteralSpec)
   ok(newLiteralDef(strLit, loc))
 
+let literalDefSpec = Spec[LiteralDef](name: "literal def", parseFn: parseLiteralType)
 
 # Argument-type sugar: a trailing `!` on an argument type expands to
 # `Status[<argType>]`. Parsed uniformly here so every argument-type
@@ -737,27 +759,34 @@ proc parseLiteralType(parser: Parser): Result[LiteralDef, ParserError] =
 # `Map[String, List[Int]]` contain nested argument types. Nim's
 # `proc` declarations handle recursion natively (a proc body can call
 # the enclosing proc by name).
+
+let argumentTypeSpec = Spec[ArgumentType](name: "argument type")
+let argumentTypeImplsSpec = Spec[seq[ArgumentType]](name: "argument type impls")
+
+proc parseArgumentImpls(p: Parser): Result[seq[ArgumentType], ParserError] =
+  discard ? p.run(punctuationSpec("["))
+  discard ? p.run(ws0)
+  var params: seq[ArgumentType]
+  let firstAttempt = p.run(argumentTypeSpec)
+  if firstAttempt.isOk:
+    params.add(firstAttempt.get)
+    while true:
+      let sep = p.run(commaWithSpacesSpec)
+      if sep.isErr: break
+      let next = ? p.run(argumentTypeSpec)
+      params.add(next)
+  discard ? p.run(ws0)
+  discard ? p.run(punctuationSpec("]"))
+  ok(params)
+
+argumentTypeImplsSpec.parseFn = parseArgumentImpls
+
 proc parseArgumentType(parser: Parser): Result[ArgumentType, ParserError] =
-  let rootIdent = ? parser.parseIdentifier()
+  let rootIdent = ? parser.run(identifierSpec)
   # Optional `[T, U, ...]` type params — parseArgumentType recurses
   # into itself for each element.
-  let maybeImpls = ? parser.runOptional(proc(p: Parser): Result[seq[ArgumentType], ParserError] =
-    discard ? p.run(punctuationSpec("["))
-    discard ? p.run(ws0)
-    var params: seq[ArgumentType]
-    let firstAttempt = p.run(parseArgumentType)
-    if firstAttempt.isOk:
-      params.add(firstAttempt.get)
-      while true:
-        let sep = p.run(commaWithSpacesSpec)
-        if sep.isErr: break
-        let next = ? p.parseArgumentType()
-        params.add(next)
-    discard ? p.run(ws0)
-    discard ? p.run(punctuationSpec("]"))
-    ok(params))
-  let maybeBanged = ? parser.runOptional(proc(p: Parser): Result[Token, ParserError] =
-    p.run(bangSpec))
+  let maybeImpls = ? parser.runOptional(argumentTypeImplsSpec)
+  let maybeBanged = ? parser.runOptional(bangSpec)
 
   let argType =
     if maybeImpls.isSome:
@@ -771,10 +800,12 @@ proc parseArgumentType(parser: Parser): Result[ArgumentType, ParserError] =
   else:
     ok(argType)
 
+argumentTypeSpec.parseFn = parseArgumentType
+
 proc parseArgumentDef(parser: Parser): Result[ArgumentDef, ParserError] =
-  let name = ? parser.parseIdentifier()
+  let name = ? parser.run(identifierSpec)
   discard ? parser.run(colonWithSpacesSpec)
-  let argType = ? parser.parseArgumentType()
+  let argType = ? parser.run(argumentTypeSpec)
   ok(newArgumentDef(name, argType))
 
 # Spec adapter.
@@ -786,18 +817,22 @@ proc parseArgumentDefList(parser: Parser): Result[ArgumentDefList, ParserError] 
     separatedBy(argumentDefSpec, commaWithSpacesSpec), ")"))
   newArgumentDefList(argDefs, loc)
 
+let argumentDefListSpec = Spec[ArgumentDefList](name: "argument definition list", parseFn: parseArgumentDefList)
+
 
 # Variant pattern field: name [":" binding] — bare `name` is sugar for
 # `name: name`, mirroring the initializer kwarg shorthand. When the
 # binding suffix is absent the parser synthesizes a binding with the
 # same identifier (and the same source location).
 proc parseUnionPatternField(parser: Parser): Result[UnionPatternField, ParserError] =
-  let name = ? parser.parseIdentifier()
-  let maybeBinding = ? parser.runOptional(proc(p: Parser): Result[Identifier, ParserError] =
-    discard ? p.run(colonWithSpacesSpec)
-    p.parseIdentifier())
-  let binding = if maybeBinding.isSome: maybeBinding.get else: name
-  ok(newUnionPatternField(name, binding, name.loc))
+  let name = ? parser.run(identifierSpec)
+
+  let maybeColon = parser.run(colonWithSpacesSpec)
+  if maybeColon.isOk:
+    let binding = ? parser.run(identifierSpec)
+    ok(newUnionPatternField(name, binding, name.loc))
+  else:
+    ok(newUnionPatternField(name, name, name.loc))
 
 # Spec adapter.
 let unionPatternFieldSpec* = Spec[UnionPatternField](
@@ -805,35 +840,39 @@ let unionPatternFieldSpec* = Spec[UnionPatternField](
 
 # Variant pattern: VariantName { field: binding, field: binding }
 proc parseUnionPattern(parser: Parser): Result[UnionPattern, ParserError] =
-  let name = ? parser.parseIdentifier()
+  let name = ? parser.run(identifierSpec)
   discard ? parser.run(ws0)
   let fields = ? parser.run(contained("variant_fields", "{",
     separatedBy(unionPatternFieldSpec, commaWithSpacesSpec), "}"))
   newUnionPattern(name, fields)
 
+let unionPatternSpec = Spec[UnionPattern](name: "union pattern", parseFn: parseUnionPattern)
+
 proc parseCasePattern(parser: Parser): Result[CasePattern, ParserError] =
   var errors: seq[ParserError]
-  let maybeInt = parser.run(parseIntegerLiteral)
+  let maybeInt = parser.run(integerLiteralSpec)
   if maybeInt.isOk: return ok(newCasePattern(maybeInt.get))
   errors.add(maybeInt.error)
-  let maybeUnion = parser.run(parseUnionPattern)
+  let maybeUnion = parser.run(unionPatternSpec)
   if maybeUnion.isOk: return ok(newCasePattern(maybeUnion.get))
   errors.add(maybeUnion.error)
-  let maybeIdent = parser.run(parseIdentifier)
+  let maybeIdent = parser.run(identifierSpec)
   if maybeIdent.isOk: return ok(newCasePattern(maybeIdent.get))
   errors.add(maybeIdent.error)
   err(max(errors))
 
+let casePatternSpec = Spec[CasePattern](name: "case pattern", parseFn: parseCasePattern)
+
 # import { Name, Name } from "path"
 # identifier ("as" identifier)?
 proc parseImportedType(parser: Parser): Result[ImportedType, ParserError] =
-  let name = ? parser.parseIdentifier()
+  let name = ? parser.run(identifierSpec)
   let maybeAs = parser.run(ws1)
   if maybeAs.isOk:
     let maybeAsKeyword = parser.run(keywordSpec("as"))
     if maybeAsKeyword.isOk:
       discard ? parser.run(ws1)
-      let alias = ? parser.parseIdentifier()
+      let alias = ? parser.run(identifierSpec)
       ok(newImportedType(name, alias))
     else:
       ok(newImportedType(name))
@@ -922,15 +961,15 @@ proc toAbsPath*(parsedPath: ImportPath, importingFile: string,
 
 # Explicit form: `import { Name, Name as Alias } from "path"`.
 proc parseExplicitImportLine(parser: Parser): Result[Import, ParserError] =
-  let loc = ? parser.parseKeyword("import")
+  let loc = ? parser.run(keywordSpec("import"))
   discard ? parser.run(ws1)
   let names = ? parser.run(contained("import_names", "{",
     separatedBy(importedTypeSpec, commaWithSpacesSpec), "}"))
   discard ? parser.run(ws1)
-  discard ? parser.parseKeyword("from")
+  discard ? parser.run(keywordSpec("from"))
   discard ? parser.run(ws1)
-  let source = ? parser.parseStringLiteral()
-  discard ? parser.run(parseIgnorableLine)
+  let source = ? parser.run(stringLiteralSpec)
+  discard ? parser.run(emptyLineSpec)
   let parsedPath = ? toImportPath(source.value, source.loc)
   let maybePath = toAbsPath(parsedPath, parser.filepath, initTable[string, string]())
   if maybePath.isOk:
@@ -938,15 +977,17 @@ proc parseExplicitImportLine(parser: Parser): Result[Import, ParserError] =
   else:
     err(newParserError(maybePath.error, source.loc))
 
+let explicitImportLineSpec = Spec[Import](name: "explicit import", parseFn: parseExplicitImportLine)
+
 # Shorthand form: `import "path"` — brings every public defined
 # type from the target file into scope under each type's original
 # name. The names list is materialized by the resolver once the
 # target file's types are resolved.
 proc parseShorthandImportLine(parser: Parser): Result[Import, ParserError] =
-  let loc = ? parser.parseKeyword("import")
+  let loc = ? parser.run(keywordSpec("import"))
   discard ? parser.run(ws1)
-  let source = ? parser.parseStringLiteral()
-  discard ? parser.run(parseIgnorableLine)
+  let source = ? parser.run(stringLiteralSpec)
+  discard ? parser.run(emptyLineSpec)
   let parsedPath = ? toImportPath(source.value, source.loc)
   let maybePath = toAbsPath(parsedPath, parser.filepath, initTable[string, string]())
   if maybePath.isOk:
@@ -954,47 +995,59 @@ proc parseShorthandImportLine(parser: Parser): Result[Import, ParserError] =
   else:
     err(newParserError(maybePath.error, source.loc))
 
+let shorthandImportLineSpec = Spec[Import](name: "implicit import", parseFn: parseShorthandImportLine)
+
 # Try explicit first — the `{` after `import ` disambiguates
 # immediately; shorthand backtracks cleanly once explicit fails.
 proc parseImportLine(parser: Parser): Result[Import, ParserError] =
-  let maybeExplicit = parser.run(parseExplicitImportLine)
+  let maybeExplicit = parser.run(explicitImportLineSpec)
   if maybeExplicit.isOk: return maybeExplicit
-  let maybeShorthand = parser.run(parseShorthandImportLine)
+  let maybeShorthand = parser.run(shorthandImportLineSpec)
   if maybeShorthand.isOk: return maybeShorthand
   err(max(@[maybeExplicit.error, maybeShorthand.error]))
+
+let importLineSpec = Spec[Import](name: "import line", parseFn: parseImportLine)
 
 proc parseImport(parser: Parser): Result[Import, ParserError] =
   ## Skips leading blank / comment lines, then parses one import line
   ## (either explicit `import { A, B } from "path"` or shorthand
   ## `import "path"`).
-  discard ? parser.run(parseBlankLines)
-  parser.parseImportLine()
+  discard ? parser.run(emptyLinesSpec)
+  parser.run(importLineSpec)
+
+let importSpec = Spec[Import](name: "import", parseFn: parseImport)
 
 proc parseImports(parser: Parser): Result[seq[Import], ParserError] =
   ## Parses zero-or-more consecutive import lines. Stops at the first
   ## non-fatal parse failure (typically the start of a module block).
   var imports: seq[Import]
   while true:
-    let maybeImp = parser.run(parseImport)
+    let maybeImp = parser.run(importSpec)
     if maybeImp.isErr:
       if maybeImp.error.fatal: return err(maybeImp.error)
       break
     imports.add(maybeImp.get)
   ok(imports)
 
+let importsSpec = Spec[seq[Import]](name: "imports", parseFn: parseImports)
+
 
 proc parseGetter(parser: Parser): Result[Getter, ParserError] =
-  let target = ? parser.parseIdentifier()
+  let target = ? parser.run(identifierSpec)
   discard ? parser.run(punctuationSpec("."))
-  let field = ? parser.parseIdentifier()
+  let field = ? parser.run(identifierSpec)
   ok(newGetter(target, field, target.loc))
+
+let getterSpec = Spec[Getter](name: "getter", parseFn: parseGetter)
 
 # type literal
 proc parseLiteralInitializer(parser: Parser): Result[LiteralInitializer, ParserError] =
-  let argType = ? parser.parseArgumentType()
+  let argType = ? parser.run(argumentTypeSpec)
   discard ? parser.run(ws1)
-  let lit = ? parser.parseLiteral()
+  let lit = ? parser.run(literalSpec)
   ok(newLiteralInitializer(argType, lit))
+
+let literalInitSpec = Spec[LiteralInitializer](name: "literal initializer", parseFn: parseLiteralInitializer)
 
 # ============================================================
 # Body cluster — mutually recursive
@@ -1022,8 +1075,7 @@ proc parseStatementLine(parser: Parser): Result[Statement, ParserError]
 
 # Spec adapter — `expressionSpec` is still consumed by `parseArgumentList`'s
 # `separatedBy(expressionSpec, ...)` combinator chain.
-let expressionSpec* = Spec[Expression](name: "expression",
-  parseFn: proc(p: Parser): Result[Expression, ParserError] = parseExpression(p))
+let expressionSpec* = Spec[Expression](name: "expression", parseFn: parseExpression)
 
 proc parseArgumentList(parser: Parser): Result[ArgumentList, ParserError] =
   let loc = parser.loc
@@ -1031,26 +1083,27 @@ proc parseArgumentList(parser: Parser): Result[ArgumentList, ParserError] =
     separatedBy(expressionSpec, commaWithSpacesSpec), ")"))
   ok(newArgumentList(args, loc))
 
+let argumentListSpec = Spec[ArgumentList](name: "argument list", parseFn: parseArgumentList)
+
 proc parseFunctionCall(parser: Parser): Result[FunctionCall, ParserError] =
-  let target = ? parser.parseIdentifier()
+  let target = ? parser.run(identifierSpec)
   discard ? parser.run(punctuationSpec("."))
-  let method0 = ? parser.parseIdentifier()
+  let method0 = ? parser.run(identifierSpec)
   discard ? parser.run(ws0)
-  let args = ? parser.parseArgumentList()
+  let args = ? parser.run(argumentListSpec)
   ok(newFunctionCall(target, method0, args))
 
+let fncallSpec = Spec[FunctionCall](name: "function call", parseFn: parseFunctionCall)
+
+
 proc parseKwarg(parser: Parser): Result[KeywordArgument, ParserError] =
-  let name = ? parser.parseIdentifier()
-  let maybeExpr = ? parser.runOptional(proc(p: Parser): Result[Expression, ParserError] =
-    discard ? p.run(colonWithSpacesSpec)
-    p.parseExpression())
-  # Shorthand: `Struct { x }` is sugar for `Struct { x: x }`. When
-  # the `: expression` suffix is absent the value is synthesized as
-  # a bare Variable of the same name; the shorthand identifier's
-  # location carries through so diagnostics point at the source
-  # token the user actually wrote.
-  let expr = if maybeExpr.isSome: maybeExpr.get else: newExpression(name)
-  ok(newKeywordArgument(name, expr, name.loc))
+  let name = ? parser.run(identifierSpec)
+  let maybeColon = parser.run(colonWithSpacesSpec)
+  if maybeColon.isOk:
+    let expression = ? parser.run(expressionSpec)
+    ok(newKeywordArgument(name, expression, name.loc))
+  else:
+    ok(newKeywordArgument(name, newExpression(name), name.loc))
 
 # Spec adapter (kwargListSpec uses this via `separatedBy(kwargSpec, ...)`).
 let kwargSpec* = Spec[KeywordArgument](name: "keyword_argument", parseFn: parseKwarg)
@@ -1061,106 +1114,125 @@ proc parseKwargList(parser: Parser): Result[KeywordArgumentList, ParserError] =
     separatedBy(kwargSpec, commaWithSpacesSpec), "}"))
   newKeywordArgumentList(args, loc)
 
+let kwargListSpec = Spec[KeywordArgumentList](name: "keyword argument list", parseFn: parseKwargList)
+
 proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
-  let typeRef = ? parser.parseArgumentType()
+  let typeRef = ? parser.run(argumentTypeSpec)
   discard ? parser.run(punctuationSpec("."))
-  let variant = ? parser.parseIdentifier()
+  let variant = ? parser.run(identifierSpec)
   ok(newUnionRef(typeRef, variant))
+
+let unionRefSpec = Spec[UnionRef](name: "union ref", parseFn: parseUnionRef)
 
 # LocalType.Variant { fields } (bare — drives leave-as-is inference) or
 # LocalType[Impls].Variant { fields } (explicit-impls — escape hatch when
 # leave-as-is can't produce a fully-bound type). Both productions land
 # on the same UnionRef shape carrying an impls seq; empty means bare.
 proc parseUnionInitializer(parser: Parser): Result[UnionInitializer, ParserError] =
-  let unionRef = ? parser.parseUnionRef()
+  let unionRef = ? parser.run(unionRefSpec)
   discard ? parser.run(ws0)
-  let fields = ? parser.parseKwargList()
+  let fields = ? parser.run(kwargListSpec)
   ok(newUnionInitializer(unionRef, fields))
 
+let unionInitSpec = Spec[UnionInitializer](name: "union initializer", parseFn: parseUnionInitializer)
 
 # Either `LocalType { fields }` (bare) or `LocalType[Impls] { fields }` (explicit
 # impls, used for phantom-typed structs whose module declares a
 # `struct(A):` header). Both productions land on the same StructRef
 # shape carrying an impls seq; empty means bare.
 proc parseStructRef(parser: Parser): Result[StructRef, ParserError] =
-  let argType = ? parser.parseArgumentType()
+  let argType = ? parser.run(argumentTypeSpec)
   ok(newStructRef(argType))
 
+let structRefSpec = Spec[StructRef](name: "struct ref", parseFn: parseStructRef)
+
 proc parseStructInitializer(parser: Parser): Result[StructInitializer, ParserError] =
-  let structRef = ? parser.parseStructRef()
+  let structRef = ? parser.run(structRefSpec)
   discard ? parser.run(ws0)
-  let fields = ? parser.parseKwargList()
+  let fields = ? parser.run(kwargListSpec)
   ok(newStructInitializer(structRef, fields))
+
+let structInitSpec = Spec[StructInitializer](name: "struct initializer", parseFn: parseStructInitializer)
 
 proc parseInitializer(parser: Parser): Result[Initializer, ParserError] =
   var errors: seq[ParserError]
-  let maybeUnion = parser.run(parseUnionInitializer)
+  let maybeUnion = parser.run(unionInitSpec)
   if maybeUnion.isOk: return ok(newInitializer(maybeUnion.get))
   errors.add(maybeUnion.error)
-  let maybeStruct = parser.run(parseStructInitializer)
+  let maybeStruct = parser.run(structInitSpec)
   if maybeStruct.isOk: return ok(newInitializer(maybeStruct.get))
   errors.add(maybeStruct.error)
-  let maybeLit = parser.run(parseLiteralInitializer)
+  let maybeLit = parser.run(literalInitSpec)
   if maybeLit.isOk: return ok(newInitializer(maybeLit.get))
   errors.add(maybeLit.error)
   err(max(errors))
 
+let initSpec = Spec[Initializer](name: "initializer spec", parseFn: parseInitializer)
+
 proc parseExpression(parser: Parser): Result[Expression, ParserError] =
   var errors: seq[ParserError]
-  let maybeLit = parser.run(parseLiteral)
+  let maybeLit = parser.run(literalSpec)
   if maybeLit.isOk: return ok(newExpression(maybeLit.get))
   errors.add(maybeLit.error)
-  let maybeInit = parser.run(parseInitializer)
+  let maybeInit = parser.run(initSpec)
   if maybeInit.isOk: return ok(newExpression(maybeInit.get))
   errors.add(maybeInit.error)
-  let maybeCall = parser.run(parseFunctionCall)
+  let maybeCall = parser.run(fncallSpec)
   if maybeCall.isOk: return ok(newExpression(maybeCall.get))
   errors.add(maybeCall.error)
-  let maybeGetter = parser.run(parseGetter)
+  let maybeGetter = parser.run(getterSpec)
   if maybeGetter.isOk: return ok(newExpression(maybeGetter.get))
   errors.add(maybeGetter.error)
-  let maybeIdent = parser.run(parseIdentifier)
+  let maybeIdent = parser.run(identifierSpec)
   if maybeIdent.isOk: return ok(newExpression(maybeIdent.get))
   errors.add(maybeIdent.error)
   err(max(errors))
 
 proc parseAssignment(parser: Parser): Result[Assignment, ParserError] =
-  let target = ? parser.parseIdentifier()
+  let target = ? parser.run(identifierSpec)
   discard ? parser.run(equalsSeparatorSpec)
-  let expr = ? parser.parseExpression()
+  let expr = ? parser.run(expressionSpec)
   ok(newAssignment(target, expr, target.loc))
 
+let assignmentSpec = Spec[Assignment](name: "assignment", parseFn: parseAssignment)
+
 proc parseSetter(parser: Parser): Result[Setter, ParserError] =
-  let target = ? parser.parseGetter()
+  let target = ? parser.run(getterSpec)
   discard ? parser.run(equalsSeparatorSpec)
-  let expr = ? parser.parseExpression()
+  let expr = ? parser.run(expressionSpec)
   ok(newSetter(target, expr, target.loc))
+
+let setterSpec = Spec[Setter](name: "setter", parseFn: parseSetter)
 
 proc parseInlineStatement(parser: Parser): Result[Statement, ParserError] =
   var errors: seq[ParserError]
-  let maybeSet = parser.run(parseSetter)
+  let maybeSet = parser.run(setterSpec)
   if maybeSet.isOk: return ok(newStatement(maybeSet.get))
   errors.add(maybeSet.error)
-  let maybeAssign = parser.run(parseAssignment)
+  let maybeAssign = parser.run(assignmentSpec)
   if maybeAssign.isOk: return ok(newStatement(maybeAssign.get))
   errors.add(maybeAssign.error)
-  let maybeExpr = parser.run(parseExpression)
+  let maybeExpr = parser.run(expressionSpec)
   if maybeExpr.isOk: return ok(newStatement(maybeExpr.get))
   errors.add(maybeExpr.error)
   err(max(errors))
 
+let statementSpec = Spec[Statement](name: "statement", parseFn: parseInlineStatement)
+
 proc parseCaseLine(parser: Parser): Result[CasePattern, ParserError] =
-  discard ? parser.parseKeyword("case")
+  discard ? parser.run(keywordSpec("case"))
   discard ? parser.run(ws1)
-  let pat = ? parser.parseCasePattern()
+  let pat = ? parser.run(casePatternSpec)
   discard ? parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok(pat)
 
+let caseLineSpec = Spec[CasePattern](name: "case line", parseFn: parseCaseLine)
+
 proc parseCase(parser: Parser): Result[CaseBlock, ParserError] =
-  discard ? parser.parseIndentation()
-  let pat = ? parser.run(parseCaseLine)
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(indentationSpec)
+  let pat = ? parser.run(caseLineSpec)
+  discard ? parser.run(emptyLineSpec)
   parser.level += 1
   let bodyResult = parseStatementList(parser)
   parser.level -= 1
@@ -1169,16 +1241,18 @@ proc parseCase(parser: Parser): Result[CaseBlock, ParserError] =
     return err(bodyResult.error)
   ok(newCaseBlock(pat, bodyResult.get, pat.loc))
 
+let caseBlockSpec = Spec[CaseBlock](name: "case block", parseFn: parseCase)
+
 # Match body: parses "match" keyword + subject + ":" + newline + caseBlocks
 # Does NOT consume indentation — caller handles that
 proc parseMatch(parser: Parser): Result[MatchExpression, ParserError] =
-  let loc = ? parser.parseKeyword("match")
+  let loc = ? parser.run(keywordSpec("match"))
   discard ? parser.run(ws1)
   # Match expressions cannot be the subject of another match expression.
   # parseExpression intentionally excludes match (match is parsed separately
   # in parseStatementLine). This check guards against future changes that
   # might add match to parseExpression.
-  let subject = ? parser.parseExpression()
+  let subject = ? parser.run(expressionSpec)
   case subject.kind:
   of ekMatch:
     return err(newParserError(
@@ -1186,20 +1260,20 @@ proc parseMatch(parser: Parser): Result[MatchExpression, ParserError] =
   of ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable: discard
   discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(emptyLineSpec)
   parser.level += 1
   var cases: seq[CaseBlock]
   let firstCaseResult = block:
-    discard parser.run(parseBlankLines)
-    parser.run(parseCase)
+    discard parser.run(emptyLinesSpec)
+    parser.run(caseBlockSpec)
   if firstCaseResult.isErr:
     parser.level -= 1
     firstCaseResult.error.fatal = true
     return err(firstCaseResult.error)
   cases.add(firstCaseResult.get)
   while true:
-    discard parser.run(parseBlankLines)
-    let nextCase = parser.run(parseCase)
+    discard parser.run(emptyLinesSpec)
+    let nextCase = parser.run(caseBlockSpec)
     if nextCase.isErr:
       if nextCase.error.fatal:
         parser.level -= 1
@@ -1209,31 +1283,42 @@ proc parseMatch(parser: Parser): Result[MatchExpression, ParserError] =
   parser.level -= 1
   ok(newMatchExpression(subject, cases, loc))
 
+let matchSpec = Spec[MatchExpression](name: "match", parseFn: parseMatch)
+
+# identifier = match ...: — parsed atomically so a non-match assignment
+# (`x = expr`) or a bare expression statement backtracks cleanly instead
+# of committing to the match path on the leading identifier.
+proc parseMatchAssignment(parser: Parser): Result[Statement, ParserError] =
+  let target = ? parser.run(identifierSpec)
+  discard ? parser.run(equalsSeparatorSpec)
+  let matchExpr = ? parser.run(matchSpec)
+  ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
+
+let matchAssignmentSpec = Spec[Statement](name: "match assignment", parseFn: parseMatchAssignment)
+
 proc parseStatementLine(parser: Parser): Result[Statement, ParserError] =
-  discard parser.run(parseBlankLines)
-  discard ? parser.parseIndentation()
+  discard parser.run(emptyLinesSpec)
+  discard ? parser.run(indentationSpec)
   # Try match assignment: identifier = match ...:
-  let maybeMatchAssign = parser.run(proc(p: Parser): Result[Statement, ParserError] =
-    let target = ? p.parseIdentifier()
-    discard ? p.run(equalsSeparatorSpec)
-    let matchExpr = ? p.parseMatch()
-    ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc))))
+  let maybeMatchAssign = parser.run(matchAssignmentSpec)
   if maybeMatchAssign.isOk: return ok(maybeMatchAssign.get)
   # Try standalone match: match ...:
-  let maybeMatch = parser.run(parseMatch)
+  let maybeMatch = parser.run(matchSpec)
   if maybeMatch.isOk:
     return ok(newStatement(newExpression(maybeMatch.get)))
   # Inline statements: statement + newline
-  let statement = ? parser.run(parseInlineStatement)
-  discard ? parser.run(parseIgnorableLine)
+  let statement = ? parser.run(statementSpec)
+  discard ? parser.run(emptyLineSpec)
   ok(statement)
+
+let statementLineSpec = Spec[Statement](name: "statement line", parseFn: parseStatementLine)
 
 proc parseStatementList(parser: Parser): Result[StatementList, ParserError] =
   var stmts: seq[Statement]
-  let first = ? parser.run(parseStatementLine)
+  let first = ? parser.run(statementLineSpec)
   stmts.add(first)
   while true:
-    let maybeNext = parser.run(parseStatementLine)
+    let maybeNext = parser.run(statementLineSpec)
     if maybeNext.isErr:
       if maybeNext.error.fatal: return err(maybeNext.error)
       break
@@ -1249,30 +1334,34 @@ proc parseFunctionDef(parser: Parser): Result[FunctionDef, ParserError] =
   let public = ? parser.run(presence(keywordSpec("public")))
   if public: discard ? parser.run(ws1)
 
-  let funcLoc = ? parser.parseKeyword("func")
+  let funcLoc = ? parser.run(keywordSpec("func"))
   discard ? parser.run(ws1)
-  let funcName = ? parser.parseIdentifier()
+  let funcName = ? parser.run(identifierSpec)
   discard parser.run(ws0)
-  let argDefList = ? parser.parseArgumentDefList()
+  let argDefList = ? parser.run(argumentDefListSpec)
   discard ? parser.run(colonWithSpacesSpec)
-  let returnType = ? parser.parseArgumentType()
+  let returnType = ? parser.run(argumentTypeSpec)
   ok(newFunctionDef(public, funcName, argDefList, returnType, funcLoc))
+
+let functionDefSpec = Spec[FunctionDef](name: "function def", parseFn: parseFunctionDef)
 
 proc parseFunctionDefLine(parser: Parser): Result[FunctionDef, ParserError] =
   ## Indented single-line variant used by `parseFunctionDefs`.
-  discard ? parser.parseIndentation()
-  let def = ? parser.parseFunctionDef()
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(indentationSpec)
+  let def = ? parser.run(functionDefSpec)
+  discard ? parser.run(emptyLineSpec)
   ok(def)
+
+let funcDefLineSpec = Spec[FunctionDef](name: "function def line", parseFn: parseFunctionDefLine)
 
 proc parseFunctionDefs(parser: Parser): Result[seq[FunctionDef], ParserError] =
   ## Parses one-or-more function-definition lines. Used inside a
   ## `generic` block, which only carries signatures — no bodies.
   var defs: seq[FunctionDef]
-  let first = ? parser.run(parseFunctionDefLine)
+  let first = ? parser.run(funcDefLineSpec)
   defs.add(first)
   while true:
-    let maybeNext = parser.run(parseFunctionDefLine)
+    let maybeNext = parser.run(funcDefLineSpec)
     if maybeNext.isErr:
       if maybeNext.error.fatal: return err(maybeNext.error)
       break
@@ -1284,10 +1373,10 @@ proc parseUserFunction(parser: Parser): Result[UserFunction, ParserError] =
   ## function signature, then an indented statement-list body. Body
   ## failures are marked fatal — once past the header, the block can't
   ## be backtracked out of.
-  let decorators = ? parser.parseDecoratorLines()
-  discard ? parser.parseIndentation()
-  let h = ? parser.parseFunctionDef()
-  discard ? parser.run(parseIgnorableLine)
+  let decorators = ? parser.run(decoratorLinesSpec)
+  discard ? parser.run(indentationSpec)
+  let h = ? parser.run(functionDefSpec)
+  discard ? parser.run(emptyLineSpec)
   parser.level += 1
   let bodyResult = parseStatementList(parser)
   parser.level -= 1
@@ -1296,41 +1385,49 @@ proc parseUserFunction(parser: Parser): Result[UserFunction, ParserError] =
     return err(bodyResult.error)
   ok(newUserFunction(decorators, h, bodyResult.get))
 
+let userFuncSpec = Spec[UserFunction](name: "user function", parseFn: parseUserFunction)
+
 # @extern("symbol")
 # public func name(args): ReturnType
 proc parseExternFunction(parser: Parser): Result[ExternFunction, ParserError] =
-  discard ? parser.parseIndentation()
+  discard ? parser.run(indentationSpec)
   discard ? parser.run(punctuationSpec("@"))
-  discard ? parser.parseKeyword("extern")
+  discard ? parser.run(keywordSpec("extern"))
   discard parser.run(ws0)
   let loc = parser.loc
   let symbol = ? parser.run(contained("extern_symbol", "(", stringLiteralSpec, ")"))
-  discard ? parser.run(parseIgnorableLine)
-  discard ? parser.parseIndentation()
-  let def = ? parser.parseFunctionDef()
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(emptyLineSpec)
+  discard ? parser.run(indentationSpec)
+  let def = ? parser.run(functionDefSpec)
+  discard ? parser.run(emptyLineSpec)
   ok(newExternFunction(symbol.value, def, loc))
+
+let externFuncSpec = Spec[ExternFunction](name: "extern function", parseFn: parseExternFunction)
 
 proc parseFunction(parser: Parser): Result[Function, ParserError] =
   ## Parses one function block — skips leading blank lines, then tries
   ## the extern form; falls back to user function on non-fatal failure.
-  discard parser.run(parseBlankLines)
-  let f = parser.run(parseExternFunction)
+  discard parser.run(emptyLinesSpec)
+  let f = parser.run(externFuncSpec)
   if f.isOk: return ok(newFunction(f.get))
-  let u = ? parser.run(parseUserFunction)
+  let u = ? parser.run(userFuncSpec)
   ok(newFunction(u))
+
+let funcSpec = Spec[Function](name: "function", parseFn: parseFunction)
 
 proc parseFunctionList(parser: Parser): Result[FunctionList, ParserError] =
   ## Parses zero-or-more function blocks (extern or user), then wraps
   ## them into a FunctionList (which enforces name+arity uniqueness).
   var funcs: seq[Function]
   while true:
-    let maybeFn = parser.run(parseFunction)
+    let maybeFn = parser.run(funcSpec)
     if maybeFn.isErr:
       if maybeFn.error.fatal: return err(maybeFn.error)
       break
     funcs.add(maybeFn.get)
   newFunctionList(funcs)
+
+let functionListSpec = Spec[FunctionList](name: "function list", parseFn: parseFunctionList)
 
 proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
   ## Parses the `(A, B, C)` clause of a `struct(A, B, C):` header —
@@ -1340,10 +1437,12 @@ proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
     separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
   ok(generics)
 
+let requiredStructGenerics = Spec[seq[Identifier]](name: "required struct generics", parseFn: parseStructRequires)
+
 # struct: field+ (field is identifier ":" argumentType)
 proc parseStructHeader(parser: Parser): Result[StructDefHeader, ParserError] =
-  let loc = ? parser.parseKeyword("struct")
-  let maybeRequires = ? parser.runOptional(parseStructRequires)
+  let loc = ? parser.run(keywordSpec("struct"))
+  let maybeRequires = ? parser.runOptional(requiredStructGenerics)
   discard ? parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   let requires = if maybeRequires.isSome: maybeRequires.get else: @[]
@@ -1355,20 +1454,24 @@ proc parseStructHeader(parser: Parser): Result[StructDefHeader, ParserError] =
     headerResult.error.fatal = true
   headerResult
 
+let structHeaderSpec = Spec[StructDefHeader](name: "struct def header", parseFn: parseStructHeader)
+
 # Each field line: (blank lines) + indentation + argumentDef + newline
 proc parseArgumentDefLine(parser: Parser): Result[ArgumentDef, ParserError] =
-  discard ? parser.run(parseBlankLines)
-  discard ? parser.parseIndentation()
-  let def = ? parser.parseArgumentDef()
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(emptyLinesSpec)
+  discard ? parser.run(indentationSpec)
+  let def = ? parser.run(argumentDefSpec)
+  discard ? parser.run(emptyLineSpec)
   ok(def)
+
+let argDefLineSpec = Spec[ArgumentDef](name: "argument def", parseFn: parseArgumentDefLine)
 
 proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
   var fields: seq[ArgumentDef]
-  let first = ? parser.run(parseArgumentDefLine)
+  let first = ? parser.run(argDefLineSpec)
   fields.add(first)
   while true:
-    let maybeNext = parser.run(parseArgumentDefLine)
+    let maybeNext = parser.run(argDefLineSpec)
     if maybeNext.isErr:
       if maybeNext.error.fatal: return err(maybeNext.error)
       break
@@ -1376,9 +1479,9 @@ proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
   ok(fields)
 
 proc parseStruct(parser: Parser): Result[StructDef, ParserError] =
-  discard ? parser.parseIndentation()
-  let header = ? parser.run(parseStructHeader)
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(indentationSpec)
+  let header = ? parser.run(structHeaderSpec)
+  discard ? parser.run(emptyLineSpec)
   parser.level += 1
   let bodyResult = parseStructBody(parser)
   parser.level -= 1
@@ -1394,33 +1497,39 @@ proc parseStruct(parser: Parser): Result[StructDef, ParserError] =
     structResult.error.fatal = true
   structResult
 
+let structDefSpec = Spec[StructDef](name: "struct def", parseFn: parseStruct)
+
 # union: variant+ (variant is identifier space* "{" (argDef, argDef)* "}")
 # Braces are required — empty variants must be written `Timeout { }`. This
 # mirrors the case-pattern side (`case Timeout { }:`) so the two shapes
 # stay visually consistent and there's no bare `Timeout` form to confuse
 # with a variable-binding case pattern.
 proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
-  discard parser.run(parseBlankLines)
-  discard ? parser.parseIndentation()
-  let name = ? parser.parseIdentifier()
+  discard parser.run(emptyLinesSpec)
+  discard ? parser.run(indentationSpec)
+  let name = ? parser.run(identifierSpec)
   discard parser.run(ws0)
   let fields = ? parser.run(contained("variant_fields", "{",
     separatedBy(argumentDefSpec, commaWithSpacesSpec), "}"))
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(emptyLineSpec)
   newVariantDef(name, fields, name.loc)
 
+let variantDefLineSpec = Spec[VariantDef](name: "variant def line", parseFn: parseVariantDefLine)
+
 proc parseUnionHeader(parser: Parser): Result[Location, ParserError] =
-  let loc = ? parser.parseKeyword("union")
+  let loc = ? parser.run(keywordSpec("union"))
   discard ? parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok(loc)
 
+let unionHeaderSpec = Spec[Location](name: "union header", parseFn: parseUnionHeader)
+
 proc parseUnionBody(parser: Parser): Result[seq[VariantDef], ParserError] =
   var variants: seq[VariantDef]
-  let first = ? parser.run(parseVariantDefLine)
+  let first = ? parser.run(variantDefLineSpec)
   variants.add(first)
   while true:
-    let maybeNext = parser.run(parseVariantDefLine)
+    let maybeNext = parser.run(variantDefLineSpec)
     if maybeNext.isErr:
       if maybeNext.error.fatal: return err(maybeNext.error)
       break
@@ -1428,9 +1537,9 @@ proc parseUnionBody(parser: Parser): Result[seq[VariantDef], ParserError] =
   ok(variants)
 
 proc parseUnion(parser: Parser): Result[UnionDef, ParserError] =
-  discard ? parser.parseIndentation()
-  let loc = ? parser.run(parseUnionHeader)
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(indentationSpec)
+  let loc = ? parser.run(unionHeaderSpec)
+  discard ? parser.run(emptyLineSpec)
   parser.level += 1
   let bodyResult = parseUnionBody(parser)
   parser.level -= 1
@@ -1438,6 +1547,8 @@ proc parseUnion(parser: Parser): Result[UnionDef, ParserError] =
     bodyResult.error.fatal = true
     return err(bodyResult.error)
   newUnionDef(bodyResult.get, loc)
+
+let unionDefSpec = Spec[UnionDef](name: "union def", parseFn: parseUnion)
 
 proc parseData(parser: Parser): Result[DataDef, ParserError] =
   ## Parses a module's data block: literal, struct, or union. Tries
@@ -1447,37 +1558,41 @@ proc parseData(parser: Parser): Result[DataDef, ParserError] =
   ## point of no-return, its error must propagate rather than being
   ## swallowed by trying the next branch.
   var errors: seq[ParserError]
-  let maybeLiteral = parser.run(parseLiteralType)
+  let maybeLiteral = parser.run(literalDefSpec)
   if maybeLiteral.isOk: return ok(newDataDef(maybeLiteral.get))
   if maybeLiteral.error.fatal: return err(maybeLiteral.error)
   errors.add(maybeLiteral.error)
-  let maybeStruct = parser.run(parseStruct)
+  let maybeStruct = parser.run(structDefSpec)
   if maybeStruct.isOk: return ok(newDataDef(maybeStruct.get))
   if maybeStruct.error.fatal: return err(maybeStruct.error)
   errors.add(maybeStruct.error)
-  let maybeUnion = parser.run(parseUnion)
+  let maybeUnion = parser.run(unionDefSpec)
   if maybeUnion.isOk: return ok(newDataDef(maybeUnion.get))
   if maybeUnion.error.fatal: return err(maybeUnion.error)
   errors.add(maybeUnion.error)
   err(max(errors))
 
+let dataDefSpec = Spec[DataDef](name: "data def", parseFn: parseData)
+
 proc parseGenericHeader(parser: Parser): Result[GenericHeader, ParserError] =
   let public = ? parser.run(presence(keywordSpec("public")))
   if public: discard ? parser.run(ws1)
-  let loc = ? parser.parseKeyword("generic")
+  let loc = ? parser.run(keywordSpec("generic"))
   discard ? parser.run(ws1)
-  let nameIdent = ? parser.parseIdentifier()
+  let nameIdent = ? parser.run(identifierSpec)
   discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok(newGenericHeader(public, nameIdent, loc))
+
+let genericHeaderSpec = Spec[GenericHeader](name: "generic header", parseFn: parseGenericHeader)
 
 proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
   ## Parses a `[public] generic Name:` block followed by its function
   ## definitions. Body failures are marked fatal — once past the
   ## header, the block cannot be backtracked out of.
-  discard ? parser.parseIndentation()
-  let h = ? parser.run(parseGenericHeader)
-  discard ? parser.run(parseIgnorableLine)
+  discard ? parser.run(indentationSpec)
+  let h = ? parser.run(genericHeaderSpec)
+  discard ? parser.run(emptyLineSpec)
   parser.level += 1
   let bodyResult = parseFunctionDefs(parser)
   parser.level -= 1
@@ -1486,33 +1601,37 @@ proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
     return err(bodyResult.error)
   ok(newGeneric(@[], h.public, h.name, bodyResult.get, h.loc))
 
+let genericSpec = Spec[Generic](name: "generic", parseFn: parseGeneric)
 
 proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =
   let public = ? parser.run(presence(keywordSpec("public")))
   if public: discard ? parser.run(ws1)
 
-  let loc = ? parser.parseKeyword("module")
+  let loc = ? parser.run(keywordSpec("module"))
   discard ? parser.run(ws1)
-  let nameIdent = ? parser.parseIdentifier()
+  let nameIdent = ? parser.run(identifierSpec)
   discard parser.run(ws0)
   discard ? parser.run(punctuationSpec(":"))
   ok(newModuleHeader(public, nameIdent, loc))
 
+let moduleHeaderSpec = Spec[ModuleHeader](name: "module header", parseFn: parseModuleHeader)
 
 proc parseModuleBody(parser: Parser): Result[ModuleBody, ParserError] =
-  discard parser.run(parseBlankLines)
-  let data = ? parser.runOptional(parseData)
-  let funcList = ? parser.parseFunctionList()
+  discard parser.run(emptyLinesSpec)
+  let data = ? parser.runOptional(dataDefSpec)
+  let funcList = ? parser.run(functionListSpec)
   ok(newModuleBody(data, funcList))
+
+let moduleBodySpec = Spec[ModuleBody](name: "module body", parseFn: parseModuleBody)
 
 proc parseModule(parser: Parser): Result[Module, ParserError] =
   ## Parses a `[public] module Name:` block with optional decorator
   ## lines. Body failures are marked fatal — once past the header,
   ## the block cannot be backtracked out of.
-  let decorators = ? parser.parseDecoratorLines()
-  discard ? parser.parseIndentation()
-  let h = ? parser.run(parseModuleHeader)
-  discard ? parser.run(parseIgnorableLine)
+  let decorators = ? parser.run(decoratorLinesSpec)
+  discard ? parser.run(indentationSpec)
+  let h = ? parser.run(moduleHeaderSpec)
+  discard ? parser.run(emptyLineSpec)
   parser.level += 1
   let bodyResult = parseModuleBody(parser)
   parser.level -= 1
@@ -1522,6 +1641,7 @@ proc parseModule(parser: Parser): Result[Module, ParserError] =
   let b = bodyResult.get
   newModule(decorators, h.public, h.name, b.data, b.funcList, h.loc)
 
+let moduleSpec = Spec[Module](name: "module", parseFn: parseModule)
 
 
 proc parseType(parser: Parser): Result[LocalType, ParserError] =
@@ -1532,53 +1652,59 @@ proc parseType(parser: Parser): Result[LocalType, ParserError] =
   ## the point of no-return, its error must propagate rather than
   ## being swallowed by trying the next branch.
   var errors: seq[ParserError]
-  let maybeModule = parser.run(parseModule)
+  let maybeModule = parser.run(moduleSpec)
   if maybeModule.isOk: return ok(newLocalType(maybeModule.get))
   if maybeModule.error.fatal: return err(maybeModule.error)
   errors.add(maybeModule.error)
-  let maybeGeneric = parser.run(parseGeneric)
+  let maybeGeneric = parser.run(genericSpec)
   if maybeGeneric.isOk: return ok(newLocalType(maybeGeneric.get))
   if maybeGeneric.error.fatal: return err(maybeGeneric.error)
   errors.add(maybeGeneric.error)
   err(max(errors))
 
+let typeSpec = Spec[LocalType](name: "type", parseFn: parseType)
+
 proc parseDefinedType(parser: Parser): Result[LocalType, ParserError] =
   ## Skips leading blank / comment lines, then parses a module or
   ## generic block. Used at file level between top-level type blocks.
-  discard ? parser.run(parseBlankLines)
-  parser.parseType()
+  discard ? parser.run(emptyLinesSpec)
+  parser.run(typeSpec)
+
+let localTypeSpec = Spec[LocalType](name: "local type", parseFn: parseDefinedType)
 
 proc parseDefinedTypes(parser: Parser): Result[seq[LocalType], ParserError] =
   ## Parses one-or-more top-level `LocalType` blocks (module / generic),
   ## skipping blank lines between them. Fails if the first attempt
   ## does not yield a type.
   var items: seq[LocalType]
-  let first = ? parser.run(parseDefinedType)
+  let first = ? parser.run(localTypeSpec)
   items.add(first)
   while true:
-    let maybeNext = parser.run(parseDefinedType)
+    let maybeNext = parser.run(localTypeSpec)
     if maybeNext.isErr:
       if maybeNext.error.fatal: return err(maybeNext.error)
       break
     items.add(maybeNext.get)
   ok(items)
 
+let definedTypesSpec = Spec[seq[LocalType]](name: "defined types", parseFn: parseDefinedTypes)
+
 # aslFile: import* (module | generic)*  — user-authored source files.
 proc parseAslFile(parser: Parser, vendorRoots: VendorRoots): Result[File, ParserError] =
-  let imports = ? parser.parseImports()
-  let items = ? parser.parseDefinedTypes()
-  discard parser.run(parseBlankLines)
+  let imports = ? parser.run(importsSpec)
+  let items = ? parser.run(definedTypesSpec)
+  discard parser.run(emptyLinesSpec)
   # Force a parse attempt to get a specific error message
-  if not parser.done(): discard ? parseType(parser)
+  if not parser.done(): discard ? parser.run(typeSpec)
   newAslFile(parser.filepath, imports, items, vendorRoots)
 
 # aslrFile: (module | generic)*  — no imports section. Aslr files
 # are the runtime interface; they cannot reference other files.
 proc parseAslrFile(parser: Parser): Result[File, ParserError] =
-  let items = ? parser.parseDefinedTypes()
-  discard parser.run(parseBlankLines)
+  let items = ? parser.run(definedTypesSpec)
+  discard parser.run(emptyLinesSpec)
   # Force a parse attempt to get a specific error message
-  if not parser.done(): discard ? parseType(parser)
+  if not parser.done(): discard ? parser.run(typeSpec)
   newAslrFile(parser.filepath, items, @[])
 
 proc toStringErr(r: Result[File, ParserError]): Result[File, string] =
