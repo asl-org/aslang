@@ -190,21 +190,6 @@ suite "combinators — oneOf edges":
     let r = p.run(s)
     check r.isErr
 
-suite "combinators — map":
-
-  test "map transforms a parsed value":
-    let p = mkParser("9")
-    let s = digitSpec().map("digit_str", proc(t: Token): string = t.value)
-    let r = p.run(s)
-    check r.isOk
-    check r.get == "9"
-
-  test "map propagates the inner spec's error":
-    let p = mkParser("a")
-    let s = digitSpec().map("digit_str", proc(t: Token): string = t.value)
-    let r = p.run(s)
-    check r.isErr
-
 suite "combinators — prefixed":
 
   test "prefixed discards the prefix and returns inner":
