@@ -190,32 +190,6 @@ suite "combinators — oneOf edges":
     let r = p.run(s)
     check r.isErr
 
-suite "combinators — prefixed":
-
-  test "prefixed discards the prefix and returns inner":
-    let p = mkParser(" 5")
-    let s = prefixed(spaceSpec(), digitSpec())
-    let r = p.run(s)
-    check r.isOk
-    check r.get.kind == tkDigit
-    check r.get.value == "5"
-
-  test "prefixed fails and rolls back when the prefix is absent":
-    let p = mkParser("5")
-    let s = prefixed(spaceSpec(), digitSpec())
-    let r = p.run(s)
-    check r.isErr
-    check p.index == 0
-
-  test "prefixed fails and rolls back when inner is absent":
-    # Prefix matches but inner doesn't — parser.run wraps the whole
-    # composition, so the space that was consumed must be rewound.
-    let p = mkParser(" a")
-    let s = prefixed(spaceSpec(), digitSpec())
-    let r = p.run(s)
-    check r.isErr
-    check p.index == 0
-
 suite "combinators — suffixed":
 
   test "suffixed discards the suffix and returns inner":

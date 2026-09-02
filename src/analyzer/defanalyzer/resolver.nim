@@ -4,8 +4,8 @@ import results, strformat, tables, options
 ## resolved-side type PLUS the parser layer that resolver builds on
 ## (types, constructors, accessors, and the `parse*` entry point).
 ##
-## Parser combinators (Spec[T] machinery, oneOf / pair / prefixed /
-## etc.) stay private to the parser layer — analyzer, cli, and asl.nim
+## Parser combinators (Spec[T] machinery, oneOf / pair / etc.)
+## stay private to the parser layer — analyzer, cli, and asl.nim
 ## never touch them, and re-exporting them here would leak internal
 ## parser scaffolding through the resolver's API. Callers that need
 ## the combinator layer directly (parser tests) import

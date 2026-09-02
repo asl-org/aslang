@@ -1,4 +1,4 @@
-import strformat, strutils, unicode, results, options, tables, os
+import strformat, sequtils, strutils, unicode, results, options, tables, os
 
 # Location is re-exported so downstream layers (resolver, analyzer,
 # tests) can consume it via a single `import parser` — it's part of
@@ -8,7 +8,7 @@ import strformat, strutils, unicode, results, options, tables, os
 import ./parser/tokenizer
 export tokenizer.location
 
-# combinators.nim (Spec[T] + oneOf / any / pair / prefixed / ...) is
+# combinators.nim (Spec[T] + oneOf / any / pair / ...) is
 # imported but NOT re-exported. It's parser-internal scaffolding.
 # Downstream layers (resolver, analyzer, cli, asl.nim) consume the
 # parser through the AST types + `parse*` entry point below; the
@@ -119,25 +119,61 @@ type
   SpecKind = enum skOne, skAtLeastOne, skOneOf, skOptional
   Spec*[T] = ref object
     name: string
-    parseFn: Consumer[T]
+    consumer: Consumer[T]
 
 proc newSpec[T](name: string, consumer: Consumer): Spec[T] =
-  Spec[T](name: name, parseFn: consumer)
+  Spec[T](name: name, consumer: consumer)
 
-proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
+proc expect[T](parser: Parser, consumer: Consumer[T]): Result[T, ParserError] =
   let indexCheckpoint = parser.index
   let levelCheckpoint = parser.level
-  let maybeValue = spec.parseFn(parser)
+  let maybeValue = consumer(parser)
   if maybeValue.isErr and not maybeValue.error.fatal:
     parser.index = indexCheckpoint
     parser.level = levelCheckpoint
   return maybeValue
 
+proc expectOptional[T](parser: Parser, consumer: Consumer[T]): Result[Option[T], ParserError] =
+  let maybeItem = parser.expect(consumer)
+  if maybeItem.isErr:
+    if maybeItem.error.fatal:
+      err(maybeItem.error)
+    else:
+      ok(none(T))
+  else:
+    ok(some(maybeItem.get))
+
+proc expectAny[T](parser: Parser, consumer: Consumer[T]): Result[seq[T], ParserError] =
+  var items: seq[T]
+  var maybeItem = parser.expect(consumer)
+  while maybeItem.isOk:
+    items.add(maybeItem.get)
+    maybeItem = parser.expect(consumer)
+  if maybeItem.isErr and maybeItem.error.fatal:
+    err(maybeItem.error)
+  else:
+    ok(items)
+
+proc expectAtLeastOne[T](parser: Parser, consumer: Consumer[T]): Result[seq[T], ParserError] =
+  let first = ? parser.expect(consumer)
+  var items = @[first]
+  let rest = ? parser.expectAny(consumer)
+  items.add(rest)
+  ok(items)
+
+proc expectOneOf[T](parser: Parser, consumers: seq[Consumer[T]]): Result[T, ParserError] =
+  var errors: seq[ParserError]
+  for consumer in consumers:
+    let maybeValue = parser.expect(consumer)
+    if maybeValue.isOk: return maybeValue
+    errors.add(maybeValue.error)
+  err(max(errors))
+
+proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
+  parser.expect(spec.consumer)
+
 proc runOptional[T](parser: Parser, spec: Spec[T]): Result[Option[T], ParserError] =
-  let maybeValue = parser.run(spec)
-  if maybeValue.isOk: ok(some(maybeValue.get))
-  elif maybeValue.error.fatal: err(maybeValue.error)
-  else: ok(none(T))
+  parser.expectOptional(spec.consumer)
 
 # ============================================================
 # Combinators
@@ -146,45 +182,19 @@ proc runOptional[T](parser: Parser, spec: Spec[T]): Result[Option[T], ParserErro
 proc oneOf*[T](name: string, specs: openArray[Spec[T]]): Spec[T] =
   let captured = @specs
   assert captured.len > 0, "oneOf requires at least one alternative"
-  let consumer =
-    proc(parser: Parser): Result[T, ParserError] =
-      var errors: seq[ParserError]
-      for spec in captured:
-        let maybeValue = parser.run(spec)
-        if maybeValue.isOk: return maybeValue
-        errors.add(maybeValue.error)
-      err(max(errors))
+  let consumer = proc(parser: Parser): Result[T, ParserError] = parser.expectOneOf(captured.mapIt(it.consumer))
   newSpec[T](name, consumer)
 
 proc any*[T](spec: Spec[T]): Spec[seq[T]] =
-  let consumer =
-    proc(parser: Parser): Result[seq[T], ParserError] =
-      var items: seq[T]
-      while true:
-        let maybeValue = parser.run(spec)
-        if maybeValue.isErr:
-          if maybeValue.error.fatal: return err(maybeValue.error)
-          break
-        items.add(maybeValue.get)
-      ok(items)
+  let consumer = proc(parser: Parser): Result[seq[T], ParserError] = parser.expectAny(spec.consumer)
   newSpec[seq[T]](spec.name & "*", consumer)
 
 proc atLeastOne*[T](spec: Spec[T]): Spec[seq[T]] =
-  let consumer =
-    proc(parser: Parser): Result[seq[T], ParserError] =
-      let first = ? parser.run(spec)
-      var items = @[first]
-      let rest = ? parser.run(any(spec))
-      items.add(rest)
-      ok(items)
+  let consumer = proc(parser: Parser): Result[seq[T], ParserError] = parser.expectAtLeastOne(spec.consumer)
   newSpec[seq[T]](spec.name & "+", consumer)
 
 proc optional*[T](spec: Spec[T]): Spec[Option[T]] =
-  let consumer =
-    proc(parser: Parser): Result[Option[T], ParserError] =
-      let maybeValue = parser.run(spec)
-      if maybeValue.isErr: ok(none(T))
-      else: ok(some(maybeValue.get))
+  let consumer = proc(parser: Parser): Result[Option[T], ParserError] = parser.expectOptional(spec.consumer)
   newSpec[Option[T]](spec.name & "?", consumer)
 
 proc map*[T, U](spec: Spec[T], name: string, mapper: Mapper[T, U]): Spec[U] =
@@ -216,18 +226,9 @@ proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
 #
 # Small vocabulary that lets domain-type specs be built out of
 # existing `Spec[T]` values instead of hand-writing a
-# `Spec[T](name: ..., parseFn: proc(...): ...)` block every time.
+# `newSpec[T](name, proc(...): ...)` block every time.
 # Same "compose atoms into a grammar" pattern the tokenizer uses
 # for its per-kind matchers.
-
-proc prefixed*[P, T](prefix: Spec[P], inner: Spec[T]): Spec[T] =
-  ## Parse `prefix inner`; discard prefix, return inner's value.
-  ## Common shape: `= expression`, `. identifier`, `: expression`.
-  let consumer =
-    proc(parser: Parser): Result[T, ParserError] =
-      discard ? parser.run(prefix)
-      parser.run(inner)
-  newSpec[T](inner.name, consumer)
 
 proc suffixed*[T, S](inner: Spec[T], suffix: Spec[S]): Spec[T] =
   ## Parse `inner suffix`; discard suffix, return inner's value.
@@ -250,10 +251,14 @@ proc pair*[A, B](a: Spec[A], b: Spec[B]): Spec[(A, B)] =
 
 proc separated*[A, S, B](a: Spec[A], sep: Spec[S], b: Spec[B]): Spec[(A, B)] =
   ## Parse `a sep b`; discard the separator, return `(A, B)`. Reads
-  ## like the grammar rule "a separated-by sep from b". The
-  ## grammar-natural collapse of `pair(a, prefixed(sep, b))` — same
-  ## behaviour, one atom instead of two nested ones.
-  pair(a, prefixed(sep, b))
+  ## like the grammar rule "a separated-by sep from b". Pairs `a` with
+  ## a `sep`-then-`b` spec, so the separator is consumed but dropped.
+  let consumer =
+    proc(parser: Parser): Result[B, ParserError] =
+      discard ? parser.run(sep)
+      parser.run(b)
+  let rest = newSpec[B](b.name, consumer)
+  pair(a, rest)
 
 proc triple*[A, B, C](a: Spec[A], b: Spec[B], c: Spec[C]): Spec[(A, B, C)] =
   ## Parse `a b c`; return `(A, B, C)`. Chain with `.map` to lift.
@@ -334,10 +339,14 @@ proc contained*[T](name: string, open: string, inner: Spec[T],
     close: string): Spec[T] =
   ## Parse `open ws0 inner ws0 close`; return only inner. Grammar
   ## brackets tolerate whitespace on both sides of the content.
-  let composed = prefixed(
-    pair(punctuationSpec(open), any(spaceSpec)),
-    suffixed(inner, pair(any(spaceSpec), punctuationSpec(close))))
-  newSpec[T](name, composed.parseFn)
+  let head = pair(punctuationSpec(open), any(spaceSpec))
+  let tail = suffixed(inner, pair(any(spaceSpec), punctuationSpec(close)))
+
+  let consumer =
+    proc(parser: Parser): Result[T, ParserError] =
+      discard ? parser.run(head)
+      parser.run(tail)
+  newSpec[T](name, consumer)
 
 # ============================================================
 # Comment + ignorable line
@@ -367,7 +376,11 @@ let emptyLineSpec = newSpec[Location]("empty line", emptyLineConsumer)
 proc separatorSpec(sep: string): Spec[Token] =
   ## Parse `ws0 sep ws0`; return the sep token. Whitespace-tolerant
   ## on both sides of the punctuation.
-  prefixed(ws0, suffixed(punctuationSpec(sep), ws0))
+  let consumer =
+    proc(parser: Parser): Result[Token, ParserError] =
+      discard ? parser.run(ws0)
+      parser.run(suffixed(punctuationSpec(sep), ws0))
+  newSpec[Token](sep, consumer)
 
 let commaWithSpacesSpec* = separatorSpec(",")
 let colonWithSpacesSpec* = separatorSpec(":")
@@ -527,7 +540,7 @@ proc integerLiteralConsumer(parser: Parser): Result[IntegerLiteral, ParserError]
   errors.add(maybeUnsigned.error)
   err(max(errors))
 
-let integerLiteralSpec = Spec[IntegerLiteral](name: "integer literal", parseFn: integerLiteralConsumer)
+let integerLiteralSpec = newSpec[IntegerLiteral]("integer literal", integerLiteralConsumer)
 
 # Float-literal is a three-way alternation (`oneOf`) over per-form
 # consumers, each with a single responsibility:
@@ -941,7 +954,7 @@ proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
     separatedBy(expressionSpec, commaWithSpacesSpec), ")"))
   ok(newArgumentList(args, loc))
 
-let argumentListSpec = Spec[ArgumentList](name: "argument list", parseFn: argumentListConsumer)
+let argumentListSpec = newSpec[ArgumentList]("argument list", argumentListConsumer)
 
 proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
   let target = ? parser.run(identifierSpec)
@@ -951,7 +964,7 @@ proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
   let args = ? parser.run(argumentListSpec)
   ok(newFunctionCall(target, method0, args))
 
-let fncallSpec = Spec[FunctionCall](name: "function call", parseFn: functionCallConsumer)
+let fncallSpec = newSpec[FunctionCall]("function call", functionCallConsumer)
 
 
 proc kwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
@@ -964,7 +977,7 @@ proc kwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
     ok(newKeywordArgument(name, newExpression(name), name.loc))
 
 # Spec adapter (kwargListSpec uses this via `separatedBy(kwargSpec, ...)`).
-let kwargSpec* = Spec[KeywordArgument](name: "keyword_argument", parseFn: kwargConsumer)
+let kwargSpec* = newSpec[KeywordArgument]("keyword_argument", kwargConsumer)
 
 proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError] =
   let loc = parser.loc
@@ -972,7 +985,7 @@ proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError]
     separatedBy(kwargSpec, commaWithSpacesSpec), "}"))
   newKeywordArgumentList(args, loc)
 
-let kwargListSpec = Spec[KeywordArgumentList](name: "keyword argument list", parseFn: kwargListConsumer)
+let kwargListSpec = newSpec[KeywordArgumentList]("keyword argument list", kwargListConsumer)
 
 proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
   let typeRef = ? parser.run(argumentTypeSpec)
@@ -980,7 +993,7 @@ proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
   let variant = ? parser.run(identifierSpec)
   ok(newUnionRef(typeRef, variant))
 
-let unionRefSpec = Spec[UnionRef](name: "union ref", parseFn: parseUnionRef)
+let unionRefSpec = newSpec[UnionRef]("union ref", parseUnionRef)
 
 # LocalType.Variant { fields } (bare — drives leave-as-is inference) or
 # LocalType[Impls].Variant { fields } (explicit-impls — escape hatch when
@@ -992,7 +1005,7 @@ proc unionInitializerConsumer(parser: Parser): Result[UnionInitializer, ParserEr
   let fields = ? parser.run(kwargListSpec)
   ok(newUnionInitializer(unionRef, fields))
 
-let unionInitSpec = Spec[UnionInitializer](name: "union initializer", parseFn: unionInitializerConsumer)
+let unionInitSpec = newSpec[UnionInitializer]("union initializer", unionInitializerConsumer)
 
 # Either `LocalType { fields }` (bare) or `LocalType[Impls] { fields }` (explicit
 # impls, used for phantom-typed structs whose module declares a
@@ -1002,7 +1015,7 @@ proc parseStructRef(parser: Parser): Result[StructRef, ParserError] =
   let argType = ? parser.run(argumentTypeSpec)
   ok(newStructRef(argType))
 
-let structRefSpec = Spec[StructRef](name: "struct ref", parseFn: parseStructRef)
+let structRefSpec = newSpec[StructRef]("struct ref", parseStructRef)
 
 proc structInitializerConsumer(parser: Parser): Result[StructInitializer, ParserError] =
   let structRef = ? parser.run(structRefSpec)
@@ -1010,7 +1023,7 @@ proc structInitializerConsumer(parser: Parser): Result[StructInitializer, Parser
   let fields = ? parser.run(kwargListSpec)
   ok(newStructInitializer(structRef, fields))
 
-let structInitSpec = Spec[StructInitializer](name: "struct initializer", parseFn: structInitializerConsumer)
+let structInitSpec = newSpec[StructInitializer]("struct initializer", structInitializerConsumer)
 
 proc initializerConsumer(parser: Parser): Result[Initializer, ParserError] =
   var errors: seq[ParserError]
@@ -1025,7 +1038,7 @@ proc initializerConsumer(parser: Parser): Result[Initializer, ParserError] =
   errors.add(maybeLit.error)
   err(max(errors))
 
-let initSpec = Spec[Initializer](name: "initializer spec", parseFn: initializerConsumer)
+let initSpec = newSpec[Initializer]("initializer spec", initializerConsumer)
 
 proc expressionConsumer(parser: Parser): Result[Expression, ParserError] =
   var errors: seq[ParserError]
@@ -1052,7 +1065,7 @@ proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
   let expr = ? parser.run(expressionSpec)
   ok(newAssignment(target, expr, target.loc))
 
-let assignmentSpec = Spec[Assignment](name: "assignment", parseFn: assignmentConsumer)
+let assignmentSpec = newSpec[Assignment]("assignment", assignmentConsumer)
 
 proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
   let target = ? parser.run(getterSpec)
@@ -1060,7 +1073,7 @@ proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
   let expr = ? parser.run(expressionSpec)
   ok(newSetter(target, expr, target.loc))
 
-let setterSpec = Spec[Setter](name: "setter", parseFn: setterConsumer)
+let setterSpec = newSpec[Setter]("setter", setterConsumer)
 
 proc inlineStatementConsumer(parser: Parser): Result[Statement, ParserError] =
   var errors: seq[ParserError]
@@ -1075,7 +1088,7 @@ proc inlineStatementConsumer(parser: Parser): Result[Statement, ParserError] =
   errors.add(maybeExpr.error)
   err(max(errors))
 
-let statementSpec = Spec[Statement](name: "statement", parseFn: inlineStatementConsumer)
+let statementSpec = newSpec[Statement]("statement", inlineStatementConsumer)
 
 proc parseCaseLine(parser: Parser): Result[CasePattern, ParserError] =
   discard ? parser.run(keywordSpec("case"))
@@ -1085,7 +1098,7 @@ proc parseCaseLine(parser: Parser): Result[CasePattern, ParserError] =
   discard ? parser.run(punctuationSpec(":"))
   ok(pat)
 
-let caseLineSpec = Spec[CasePattern](name: "case line", parseFn: parseCaseLine)
+let caseLineSpec = newSpec[CasePattern]("case line", parseCaseLine)
 
 proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError] =
   discard ? parser.run(indentationSpec)
@@ -1099,7 +1112,7 @@ proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError] =
     return err(bodyResult.error)
   ok(newCaseBlock(pat, bodyResult.get, pat.loc))
 
-let caseBlockSpec = Spec[CaseBlock](name: "case block", parseFn: caseConsumer)
+let caseBlockSpec = newSpec[CaseBlock]("case block", caseConsumer)
 
 # Match body: parses "match" keyword + subject + ":" + newline + caseBlocks
 # Does NOT consume indentation — caller handles that
@@ -1141,7 +1154,7 @@ proc matchConsumer(parser: Parser): Result[MatchExpression, ParserError] =
   parser.level -= 1
   ok(newMatchExpression(subject, cases, loc))
 
-let matchSpec = Spec[MatchExpression](name: "match", parseFn: matchConsumer)
+let matchSpec = newSpec[MatchExpression]("match", matchConsumer)
 
 # identifier = match ...: — parsed atomically so a non-match assignment
 # (`x = expr`) or a bare expression statement backtracks cleanly instead
@@ -1152,7 +1165,7 @@ proc parseMatchAssignment(parser: Parser): Result[Statement, ParserError] =
   let matchExpr = ? parser.run(matchSpec)
   ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
 
-let matchAssignmentSpec = Spec[Statement](name: "match assignment", parseFn: parseMatchAssignment)
+let matchAssignmentSpec = newSpec[Statement]("match assignment", parseMatchAssignment)
 
 proc statementLineConsumer(parser: Parser): Result[Statement, ParserError] =
   discard parser.run(any(emptyLineSpec))
@@ -1169,7 +1182,7 @@ proc statementLineConsumer(parser: Parser): Result[Statement, ParserError] =
   discard ? parser.run(emptyLineSpec)
   ok(statement)
 
-let statementLineSpec = Spec[Statement](name: "statement line", parseFn: statementLineConsumer)
+let statementLineSpec = newSpec[Statement]("statement line", statementLineConsumer)
 
 proc statementListConsumer(parser: Parser): Result[StatementList, ParserError] =
   var stmts: seq[Statement]
@@ -1201,7 +1214,7 @@ proc parseFunctionDef(parser: Parser): Result[FunctionDef, ParserError] =
   let returnType = ? parser.run(argumentTypeSpec)
   ok(newFunctionDef(public, funcName, argDefList, returnType, funcLoc))
 
-let functionDefSpec = Spec[FunctionDef](name: "function def", parseFn: parseFunctionDef)
+let functionDefSpec = newSpec[FunctionDef]("function def", parseFunctionDef)
 
 proc parseFunctionDefLine(parser: Parser): Result[FunctionDef, ParserError] =
   ## Indented single-line variant used by `parseFunctionDefs`.
@@ -1210,7 +1223,7 @@ proc parseFunctionDefLine(parser: Parser): Result[FunctionDef, ParserError] =
   discard ? parser.run(emptyLineSpec)
   ok(def)
 
-let funcDefLineSpec = Spec[FunctionDef](name: "function def line", parseFn: parseFunctionDefLine)
+let funcDefLineSpec = newSpec[FunctionDef]("function def line", parseFunctionDefLine)
 
 proc parseFunctionDefs(parser: Parser): Result[seq[FunctionDef], ParserError] =
   ## Parses one-or-more function-definition lines. Used inside a
@@ -1243,7 +1256,7 @@ proc parseUserFunction(parser: Parser): Result[UserFunction, ParserError] =
     return err(bodyResult.error)
   ok(newUserFunction(decorators, h, bodyResult.get))
 
-let userFuncSpec = Spec[UserFunction](name: "user function", parseFn: parseUserFunction)
+let userFuncSpec = newSpec[UserFunction]("user function", parseUserFunction)
 
 # @extern("symbol")
 # public func name(args): ReturnType
@@ -1260,7 +1273,7 @@ proc parseExternFunction(parser: Parser): Result[ExternFunction, ParserError] =
   discard ? parser.run(emptyLineSpec)
   ok(newExternFunction(symbol.value, def, loc))
 
-let externFuncSpec = Spec[ExternFunction](name: "extern function", parseFn: parseExternFunction)
+let externFuncSpec = newSpec[ExternFunction]("extern function", parseExternFunction)
 
 proc parseFunction(parser: Parser): Result[Function, ParserError] =
   ## Parses one function block — skips leading blank lines, then tries
@@ -1271,7 +1284,7 @@ proc parseFunction(parser: Parser): Result[Function, ParserError] =
   let u = ? parser.run(userFuncSpec)
   ok(newFunction(u))
 
-let funcSpec = Spec[Function](name: "function", parseFn: parseFunction)
+let funcSpec = newSpec[Function]("function", parseFunction)
 
 proc parseFunctionList(parser: Parser): Result[FunctionList, ParserError] =
   ## Parses zero-or-more function blocks (extern or user), then wraps
@@ -1285,7 +1298,7 @@ proc parseFunctionList(parser: Parser): Result[FunctionList, ParserError] =
     funcs.add(maybeFn.get)
   newFunctionList(funcs)
 
-let functionListSpec = Spec[FunctionList](name: "function list", parseFn: parseFunctionList)
+let functionListSpec = newSpec[FunctionList]("function list", parseFunctionList)
 
 proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
   ## Parses the `(A, B, C)` clause of a `struct(A, B, C):` header —
@@ -1295,7 +1308,7 @@ proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
     separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
   ok(generics)
 
-let requiredStructGenerics = Spec[seq[Identifier]](name: "required struct generics", parseFn: parseStructRequires)
+let requiredStructGenerics = newSpec[seq[Identifier]]("required struct generics", parseStructRequires)
 
 # struct: field+ (field is identifier ":" argumentType)
 proc parseStructHeader(parser: Parser): Result[StructDefHeader, ParserError] =
@@ -1312,7 +1325,7 @@ proc parseStructHeader(parser: Parser): Result[StructDefHeader, ParserError] =
     headerResult.error.fatal = true
   headerResult
 
-let structHeaderSpec = Spec[StructDefHeader](name: "struct def header", parseFn: parseStructHeader)
+let structHeaderSpec = newSpec[StructDefHeader]("struct def header", parseStructHeader)
 
 # Each field line: (blank lines) + indentation + argumentDef + newline
 proc parseArgumentDefLine(parser: Parser): Result[ArgumentDef, ParserError] =
@@ -1322,7 +1335,7 @@ proc parseArgumentDefLine(parser: Parser): Result[ArgumentDef, ParserError] =
   discard ? parser.run(emptyLineSpec)
   ok(def)
 
-let argDefLineSpec = Spec[ArgumentDef](name: "argument def", parseFn: parseArgumentDefLine)
+let argDefLineSpec = newSpec[ArgumentDef]("argument def", parseArgumentDefLine)
 
 proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
   var fields: seq[ArgumentDef]
@@ -1355,7 +1368,7 @@ proc parseStruct(parser: Parser): Result[StructDef, ParserError] =
     structResult.error.fatal = true
   structResult
 
-let structDefSpec = Spec[StructDef](name: "struct def", parseFn: parseStruct)
+let structDefSpec = newSpec[StructDef]("struct def", parseStruct)
 
 # union: variant+ (variant is identifier space* "{" (argDef, argDef)* "}")
 # Braces are required — empty variants must be written `Timeout { }`. This
@@ -1372,7 +1385,7 @@ proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
   discard ? parser.run(emptyLineSpec)
   newVariantDef(name, fields, name.loc)
 
-let variantDefLineSpec = Spec[VariantDef](name: "variant def line", parseFn: parseVariantDefLine)
+let variantDefLineSpec = newSpec[VariantDef]("variant def line", parseVariantDefLine)
 
 proc parseUnionHeader(parser: Parser): Result[Location, ParserError] =
   let loc = ? parser.run(keywordSpec("union"))
@@ -1380,7 +1393,7 @@ proc parseUnionHeader(parser: Parser): Result[Location, ParserError] =
   discard ? parser.run(punctuationSpec(":"))
   ok(loc)
 
-let unionHeaderSpec = Spec[Location](name: "union header", parseFn: parseUnionHeader)
+let unionHeaderSpec = newSpec[Location]("union header", parseUnionHeader)
 
 proc parseUnionBody(parser: Parser): Result[seq[VariantDef], ParserError] =
   var variants: seq[VariantDef]
@@ -1406,7 +1419,7 @@ proc parseUnion(parser: Parser): Result[UnionDef, ParserError] =
     return err(bodyResult.error)
   newUnionDef(bodyResult.get, loc)
 
-let unionDefSpec = Spec[UnionDef](name: "union def", parseFn: parseUnion)
+let unionDefSpec = newSpec[UnionDef]("union def", parseUnion)
 
 proc parseData(parser: Parser): Result[DataDef, ParserError] =
   ## Parses a module's data block: literal, struct, or union. Tries
@@ -1430,7 +1443,7 @@ proc parseData(parser: Parser): Result[DataDef, ParserError] =
   errors.add(maybeUnion.error)
   err(max(errors))
 
-let dataDefSpec = Spec[DataDef](name: "data def", parseFn: parseData)
+let dataDefSpec = newSpec[DataDef]("data def", parseData)
 
 proc parseGenericHeader(parser: Parser): Result[GenericHeader, ParserError] =
   let public = ? parser.run(presence(keywordSpec("public")))
@@ -1442,7 +1455,7 @@ proc parseGenericHeader(parser: Parser): Result[GenericHeader, ParserError] =
   discard ? parser.run(punctuationSpec(":"))
   ok(newGenericHeader(public, nameIdent, loc))
 
-let genericHeaderSpec = Spec[GenericHeader](name: "generic header", parseFn: parseGenericHeader)
+let genericHeaderSpec = newSpec[GenericHeader]("generic header", parseGenericHeader)
 
 proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
   ## Parses a `[public] generic Name:` block followed by its function
@@ -1459,7 +1472,7 @@ proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
     return err(bodyResult.error)
   ok(newGeneric(@[], h.public, h.name, bodyResult.get, h.loc))
 
-let genericSpec = Spec[Generic](name: "generic", parseFn: parseGeneric)
+let genericSpec = newSpec[Generic]("generic", parseGeneric)
 
 proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =
   let public = ? parser.run(presence(keywordSpec("public")))
@@ -1472,7 +1485,7 @@ proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =
   discard ? parser.run(punctuationSpec(":"))
   ok(newModuleHeader(public, nameIdent, loc))
 
-let moduleHeaderSpec = Spec[ModuleHeader](name: "module header", parseFn: parseModuleHeader)
+let moduleHeaderSpec = newSpec[ModuleHeader]("module header", parseModuleHeader)
 
 proc parseModuleBody(parser: Parser): Result[ModuleBody, ParserError] =
   discard parser.run(any(emptyLineSpec))
@@ -1480,7 +1493,7 @@ proc parseModuleBody(parser: Parser): Result[ModuleBody, ParserError] =
   let funcList = ? parser.run(functionListSpec)
   ok(newModuleBody(data, funcList))
 
-let moduleBodySpec = Spec[ModuleBody](name: "module body", parseFn: parseModuleBody)
+let moduleBodySpec = newSpec[ModuleBody]("module body", parseModuleBody)
 
 proc parseModule(parser: Parser): Result[Module, ParserError] =
   ## Parses a `[public] module Name:` block with optional decorator
@@ -1499,7 +1512,7 @@ proc parseModule(parser: Parser): Result[Module, ParserError] =
   let b = bodyResult.get
   newModule(decorators, h.public, h.name, b.data, b.funcList, h.loc)
 
-let moduleSpec = Spec[Module](name: "module", parseFn: parseModule)
+let moduleSpec = newSpec[Module]("module", parseModule)
 
 
 proc parseType(parser: Parser): Result[LocalType, ParserError] =
@@ -1520,7 +1533,7 @@ proc parseType(parser: Parser): Result[LocalType, ParserError] =
   errors.add(maybeGeneric.error)
   err(max(errors))
 
-let typeSpec = Spec[LocalType](name: "type", parseFn: parseType)
+let typeSpec = newSpec[LocalType]("type", parseType)
 
 proc parseDefinedType(parser: Parser): Result[LocalType, ParserError] =
   ## Skips leading blank / comment lines, then parses a module or
@@ -1528,7 +1541,7 @@ proc parseDefinedType(parser: Parser): Result[LocalType, ParserError] =
   discard ? parser.run(any(emptyLineSpec))
   parser.run(typeSpec)
 
-let localTypeSpec = Spec[LocalType](name: "local type", parseFn: parseDefinedType)
+let localTypeSpec = newSpec[LocalType]("local type", parseDefinedType)
 
 proc parseDefinedTypes(parser: Parser): Result[seq[LocalType], ParserError] =
   ## Parses one-or-more top-level `LocalType` blocks (module / generic),
@@ -1545,7 +1558,7 @@ proc parseDefinedTypes(parser: Parser): Result[seq[LocalType], ParserError] =
     items.add(maybeNext.get)
   ok(items)
 
-let definedTypesSpec = Spec[seq[LocalType]](name: "defined types", parseFn: parseDefinedTypes)
+let definedTypesSpec = newSpec[seq[LocalType]]("defined types", parseDefinedTypes)
 
 # aslFile: import* (module | generic)*  — user-authored source files.
 proc parseAslFile(parser: Parser, vendorRoots: VendorRoots): Result[File, ParserError] =
