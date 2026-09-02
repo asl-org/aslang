@@ -230,15 +230,6 @@ proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
 # Same "compose atoms into a grammar" pattern the tokenizer uses
 # for its per-kind matchers.
 
-proc suffixed*[T, S](inner: Spec[T], suffix: Spec[S]): Spec[T] =
-  ## Parse `inner suffix`; discard suffix, return inner's value.
-  let consumer =
-    proc(parser: Parser): Result[T, ParserError] =
-      let v = ? parser.run(inner)
-      discard ? parser.run(suffix)
-      ok(v)
-  newSpec[T](inner.name, consumer)
-
 proc pair*[A, B](a: Spec[A], b: Spec[B]): Spec[(A, B)] =
   ## Parse `a b`; return `(A, B)`. Chain with `.map` to lift into
   ## a domain type.
@@ -340,12 +331,14 @@ proc contained*[T](name: string, open: string, inner: Spec[T],
   ## Parse `open ws0 inner ws0 close`; return only inner. Grammar
   ## brackets tolerate whitespace on both sides of the content.
   let head = pair(punctuationSpec(open), any(spaceSpec))
-  let tail = suffixed(inner, pair(any(spaceSpec), punctuationSpec(close)))
+  let tail = pair(any(spaceSpec), punctuationSpec(close))
 
   let consumer =
     proc(parser: Parser): Result[T, ParserError] =
       discard ? parser.run(head)
-      parser.run(tail)
+      let v = ? parser.run(inner)
+      discard ? parser.run(tail)
+      ok(v)
   newSpec[T](name, consumer)
 
 # ============================================================
@@ -379,7 +372,9 @@ proc separatorSpec(sep: string): Spec[Token] =
   let consumer =
     proc(parser: Parser): Result[Token, ParserError] =
       discard ? parser.run(ws0)
-      parser.run(suffixed(punctuationSpec(sep), ws0))
+      let v = ? parser.run(punctuationSpec(sep))
+      discard ? parser.run(ws0)
+      ok(v)
   newSpec[Token](sep, consumer)
 
 let commaWithSpacesSpec* = separatorSpec(",")

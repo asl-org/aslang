@@ -190,23 +190,6 @@ suite "combinators — oneOf edges":
     let r = p.run(s)
     check r.isErr
 
-suite "combinators — suffixed":
-
-  test "suffixed discards the suffix and returns inner":
-    let p = mkParser("5 ")
-    let s = suffixed(digitSpec(), spaceSpec())
-    let r = p.run(s)
-    check r.isOk
-    check r.get.kind == tkDigit
-    check r.get.value == "5"
-
-  test "suffixed fails and rolls back when the suffix is absent":
-    let p = mkParser("5a")
-    let s = suffixed(digitSpec(), spaceSpec())
-    let r = p.run(s)
-    check r.isErr
-    check p.index == 0
-
 suite "combinators — pair":
 
   test "pair returns both values as a tuple":
