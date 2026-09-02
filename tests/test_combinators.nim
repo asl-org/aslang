@@ -39,21 +39,21 @@ suite "combinators — oneOf":
 
   test "first matching alternative wins":
     let p = mkParser("9")
-    let s = oneOf("d_or_a", [digitSpec(), alphaSpec()])
+    let s = oneOf(@[digitSpec(), alphaSpec()])
     let r = p.run(s)
     check r.isOk
     check r.get.kind == tkDigit
 
   test "later alternative is tried after earlier ones fail":
     let p = mkParser("a")
-    let s = oneOf("d_or_a", [digitSpec(), alphaSpec()])
+    let s = oneOf(@[digitSpec(), alphaSpec()])
     let r = p.run(s)
     check r.isOk
     check r.get.kind == tkAlphabet
 
   test "all alternatives failing yields the deepest error":
     let p = mkParser("!")
-    let s = oneOf("d_or_a", [digitSpec(), alphaSpec()])
+    let s = oneOf(@[digitSpec(), alphaSpec()])
     let r = p.run(s)
     check r.isErr
 
@@ -179,14 +179,14 @@ suite "combinators — oneOf edges":
 
   test "single-alternative oneOf is degenerate but valid":
     let p = mkParser("9")
-    let s = oneOf("only_digit", [digitSpec()])
+    let s = oneOf(@[digitSpec()])
     let r = p.run(s)
     check r.isOk
     check r.get.kind == tkDigit
 
   test "single-alternative oneOf failure surfaces the inner error":
     let p = mkParser("a")
-    let s = oneOf("only_digit", [digitSpec()])
+    let s = oneOf(@[digitSpec()])
     let r = p.run(s)
     check r.isErr
 

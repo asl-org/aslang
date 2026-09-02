@@ -83,46 +83,7 @@ proc peek(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   else:
     ok(parser.tokens[parser.index])
 
-type
-  TokenMatcher* = ref object
-    label: string
-    predicate: proc(t: Token): bool
-
-proc byKind(kind: TokenKind, label: string): TokenMatcher =
-  TokenMatcher(label: label,
-    predicate: proc(t: Token): bool = t.kind == kind)
-
-proc byPunctuation(value: string): TokenMatcher =
-  TokenMatcher(label: "'" & value & "'",
-    predicate: proc(t: Token): bool = t.kind == tkPunctuation and t.value == value)
-
-proc byKindExcept(kind: TokenKind, label: string): TokenMatcher =
-  TokenMatcher(label: label,
-    predicate: proc(t: Token): bool = t.kind != kind)
-
-proc consume(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
-  let token = ? parser.peek(matcher.label)
-  if not matcher.predicate(token):
-    let msg = fmt"expected {matcher.label} but found {token.repr}"
-    err(newParserError(msg, parser.loc))
-  else:
-    parser.index += 1
-    ok(token)
-
-# ============================================================
-# Spec[T] — named, typed parser combinator
-# ============================================================
-
-type
-  Consumer[T] = proc(parser: Parser): Result[T, ParserError]
-  Mapper[T, U] = proc(value: T): Result[U, ParserError]
-  SpecKind = enum skOne, skAtLeastOne, skOneOf, skOptional
-  Spec*[T] = ref object
-    name: string
-    consumer: Consumer[T]
-
-proc newSpec[T](name: string, consumer: Consumer): Spec[T] =
-  Spec[T](name: name, consumer: consumer)
+type Consumer[T] = proc(parser: Parser): Result[T, ParserError]
 
 proc expect[T](parser: Parser, consumer: Consumer[T]): Result[T, ParserError] =
   let indexCheckpoint = parser.index
@@ -162,12 +123,69 @@ proc expectAtLeastOne[T](parser: Parser, consumer: Consumer[T]): Result[seq[T], 
   ok(items)
 
 proc expectOneOf[T](parser: Parser, consumers: seq[Consumer[T]]): Result[T, ParserError] =
+  assert(consumers.len > 0, "`oneOf` combinator expects at least one consumer")
   var errors: seq[ParserError]
   for consumer in consumers:
     let maybeValue = parser.expect(consumer)
     if maybeValue.isOk: return maybeValue
     errors.add(maybeValue.error)
   err(max(errors))
+
+type
+  TokenMatcher* = ref object
+    label: string
+    predicate: proc(t: Token): bool
+
+proc byKind(kind: TokenKind, label: string): TokenMatcher =
+  TokenMatcher(label: label,
+    predicate: proc(t: Token): bool = t.kind == kind)
+
+proc byPunctuation(value: string): TokenMatcher =
+  TokenMatcher(label: "'" & value & "'",
+    predicate: proc(t: Token): bool = t.kind == tkPunctuation and t.value == value)
+
+proc byKindExcept(kind: TokenKind, label: string): TokenMatcher =
+  TokenMatcher(label: label,
+    predicate: proc(t: Token): bool = t.kind != kind)
+
+proc consume(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
+  let token = ? parser.peek(matcher.label)
+  if not matcher.predicate(token):
+    let msg = fmt"expected {matcher.label} but found {token.repr}"
+    err(newParserError(msg, parser.loc))
+  else:
+    parser.index += 1
+    ok(token)
+
+# ============================================================
+# Spec[T] — named, typed parser combinator
+# ============================================================
+
+type
+  Mapper[T, U] = proc(value: T): Result[U, ParserError]
+  Spec*[T] = ref object
+    name: string
+    consumer: Consumer[T]
+
+proc newSpec[T](name: string, consumer: Consumer[T]): Spec[T] =
+  Spec[T](name: name, consumer: consumer)
+
+proc any*[T](spec: Spec[T]): Spec[seq[T]] =
+  let consumer = proc(parser: Parser): Result[seq[T], ParserError] = parser.expectAny(spec.consumer)
+  Spec[seq[T]](name: spec.name & "*", consumer: consumer)
+
+proc atLeastOne*[T](spec: Spec[T]): Spec[seq[T]] =
+  let consumer = proc(parser: Parser): Result[seq[T], ParserError] = parser.expectAtLeastOne(spec.consumer)
+  Spec[seq[T]](name: spec.name & "+", consumer: consumer)
+
+proc optional*[T](spec: Spec[T]): Spec[Option[T]] =
+  let consumer = proc(parser: Parser): Result[Option[T], ParserError] = parser.expectOptional(spec.consumer)
+  Spec[Option[T]](name: spec.name & "?", consumer: consumer)
+
+proc oneOf*[T](specs: seq[Spec[T]]): Spec[T] =
+  let name = specs.mapIt(it.name).join(" | ")
+  let consumer = proc(parser: Parser): Result[T, ParserError] = parser.expectOneOf(specs.mapIt(it.consumer))
+  Spec[T](name: name, consumer: consumer)
 
 proc run*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   parser.expect(spec.consumer)
@@ -178,24 +196,6 @@ proc runOptional[T](parser: Parser, spec: Spec[T]): Result[Option[T], ParserErro
 # ============================================================
 # Combinators
 # ============================================================
-
-proc oneOf*[T](name: string, specs: openArray[Spec[T]]): Spec[T] =
-  let captured = @specs
-  assert captured.len > 0, "oneOf requires at least one alternative"
-  let consumer = proc(parser: Parser): Result[T, ParserError] = parser.expectOneOf(captured.mapIt(it.consumer))
-  newSpec[T](name, consumer)
-
-proc any*[T](spec: Spec[T]): Spec[seq[T]] =
-  let consumer = proc(parser: Parser): Result[seq[T], ParserError] = parser.expectAny(spec.consumer)
-  newSpec[seq[T]](spec.name & "*", consumer)
-
-proc atLeastOne*[T](spec: Spec[T]): Spec[seq[T]] =
-  let consumer = proc(parser: Parser): Result[seq[T], ParserError] = parser.expectAtLeastOne(spec.consumer)
-  newSpec[seq[T]](spec.name & "+", consumer)
-
-proc optional*[T](spec: Spec[T]): Spec[Option[T]] =
-  let consumer = proc(parser: Parser): Result[Option[T], ParserError] = parser.expectOptional(spec.consumer)
-  newSpec[Option[T]](spec.name & "?", consumer)
 
 proc map*[T, U](spec: Spec[T], name: string, mapper: Mapper[T, U]): Spec[U] =
   let consumer = proc(parser: Parser): Result[U, ParserError] = mapper(? parser.run(spec))
@@ -409,12 +409,12 @@ proc indentationConsumer(parser: Parser): Result[Space, ParserError] =
 
 let indentationSpec = newSpec[Space]("indentation", indentationConsumer)
 
-let identifierHeadCharSpec = oneOf("identifier_head", [
+let identifierHeadCharSpec = oneOf(@[
   underscoreSpec,
   alphabetSpec,
 ])
 
-let identifierTailCharSpec = oneOf("identifier_tail", [
+let identifierTailCharSpec = oneOf(@[
   identifierHeadCharSpec,
   digitSpec,
 ])
@@ -465,7 +465,7 @@ proc makeEscapedParser(name: string, character: string, charSpec: Spec[Token]): 
   newSpec[StringContent](name, consumer)
 
 let escapedStringContentSpec =
-  oneOf("escaped string content", @[
+  oneOf(@[
     makeEscapedParser("string backslash character", "\\", backslashSpec),
     makeEscapedParser("string double quote character", "\"", doubleQuoteSpec),
     makeEscapedParser("string new line character", "n", alphabetSpec),
@@ -483,7 +483,7 @@ proc unescapedStringContentConsumer(parser: Parser): Result[StringContent, Parse
 let unescapedStringContentSpec = newSpec[StringContent]("unescaped string content", unescapedStringContentConsumer)
 
 let stringContentSpec =
-  oneOf("string content", @[
+  oneOf(@[
     escapedStringContentSpec,
     unescapedStringContentSpec,
   ])
@@ -505,7 +505,7 @@ proc stringLiteralConsumer(parser: Parser): Result[StringLiteral, ParserError] =
 let stringLiteralSpec* = newSpec[StringLiteral]("string_literal", stringLiteralConsumer)
 
 # (+ | -) digit+
-let signSpec = oneOf("sign", [punctuationSpec("+"), punctuationSpec("-")])
+let signSpec = oneOf(@[punctuationSpec("+"), punctuationSpec("-")])
 
 # digit+
 proc unsignedIntegerLiteralConsumer(parser: Parser): Result[UnsignedIntegerLiteral, ParserError] =
@@ -592,7 +592,7 @@ proc numericFloatConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
     for d in fracDigits: value.add(d.value)
   # Exponent part (optional)
   var hasExponent = false
-  let maybeE = parser.run(oneOf("exponent", [
+  let maybeE = parser.run(oneOf(@[
     alphabetSpec, alphabetSpec,
   ]))
   if maybeE.isOk and (maybeE.get.value == "e" or maybeE.get.value == "E"):
@@ -610,7 +610,7 @@ proc numericFloatConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
 let numericFloatSpec = newSpec[FloatLiteral]("numeric float", numericFloatConsumer)
 
 let floatLiteralSpec =
-  oneOf("float literal", @[
+  oneOf(@[
     nanFloatSpec,
     infFloatSpec,
     numericFloatSpec,
@@ -884,7 +884,7 @@ proc shorthandImportLineConsumer(parser: Parser): Result[Import, ParserError] =
 let shorthandImportLineSpec = newSpec[Import]("implicit import", shorthandImportLineConsumer)
 
 let importLineSpec =
-  oneOf("import line", @[
+  oneOf(@[
     explicitImportLineSpec,
     shorthandImportLineSpec,
   ])
