@@ -248,33 +248,6 @@ proc emptyLineConsumer(parser: Parser): Result[Location, ParserError] =
 
 let emptyLineSpec = newSpec[Location]("empty line", emptyLineConsumer)
 
-# ============================================================
-# Separator helpers
-# ============================================================
-
-# Each is `space* sep space*`, returning the sep token — whitespace-
-# tolerant on both sides of the punctuation.
-let commaWithSpacesSpec* = newSpec[Token](",",
-  proc(parser: Parser): Result[Token, ParserError] =
-    discard ? parser.expect(spaceSpec.any())
-    let v = ? parser.expect(newSpec(","))
-    discard ? parser.expect(spaceSpec.any())
-    ok(v))
-
-let colonWithSpacesSpec* = newSpec[Token](":",
-  proc(parser: Parser): Result[Token, ParserError] =
-    discard ? parser.expect(spaceSpec.any())
-    let v = ? parser.expect(newSpec(":"))
-    discard ? parser.expect(spaceSpec.any())
-    ok(v))
-
-let equalsSeparatorSpec* = newSpec[Token]("=",
-  proc(parser: Parser): Result[Token, ParserError] =
-    discard ? parser.expect(spaceSpec.any())
-    let v = ? parser.expect(newSpec("="))
-    discard ? parser.expect(spaceSpec.any())
-    ok(v))
-
 
 
 # ============================================================
@@ -528,7 +501,9 @@ let literalSpec = newSpec[Literal]("literal spec", literalConsumer)
 proc literalTypeConsumer(parser: Parser): Result[LiteralDef, ParserError] =
   discard ? parser.expect(indentationSpec)
   let loc = ? parser.expect(keywordSpec("literal"))
-  discard ? parser.expect(colonWithSpacesSpec)
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(spaceSpec.any())
   let strLit = ? parser.expect(stringLiteralSpec)
   ok(newLiteralDef(strLit, loc))
 
@@ -577,7 +552,15 @@ proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
     let first = parser.expect(argumentTypeSpec)
     if first.isOk:
       impls.add(first.get)
-      while parser.expect(commaWithSpacesSpec).isOk:
+      while true:
+        let indexCheckpoint = parser.index
+        let levelCheckpoint = parser.level
+        discard ? parser.expect(spaceSpec.any())
+        if parser.expect(newSpec(",")).isErr:
+          parser.index = indexCheckpoint
+          parser.level = levelCheckpoint
+          break
+        discard ? parser.expect(spaceSpec.any())
         impls.add(? parser.expect(argumentTypeSpec))
     discard ? parser.expect(spaceSpec.any())
     discard ? parser.expect(rightSquareBracketSpec)
@@ -597,7 +580,9 @@ proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
 
 proc argumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  discard ? parser.expect(colonWithSpacesSpec)
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(spaceSpec.any())
   let argType = ? parser.expect(argumentTypeSpec)
   ok(newArgumentDef(name, argType))
 
@@ -611,7 +596,15 @@ proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserErro
   let first = parser.expect(argumentDefSpec)
   if first.isOk:
     argDefs.add(first.get)
-    while parser.expect(commaWithSpacesSpec).isOk:
+    while true:
+      let indexCheckpoint = parser.index
+      let levelCheckpoint = parser.level
+      discard ? parser.expect(spaceSpec.any())
+      if parser.expect(newSpec(",")).isErr:
+        parser.index = indexCheckpoint
+        parser.level = levelCheckpoint
+        break
+      discard ? parser.expect(spaceSpec.any())
       argDefs.add(? parser.expect(argumentDefSpec))
   discard ? parser.expect(spaceSpec.any())
   discard ? parser.expect(rightParenthesisSpec)
@@ -627,11 +620,17 @@ let argumentDefListSpec = newSpec[ArgumentDefList]("argument definition list", a
 proc unionPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
   let name = ? parser.expect(identifierSpec)
 
-  let maybeColon = parser.expect(colonWithSpacesSpec)
+  let indexCheckpoint = parser.index
+  let levelCheckpoint = parser.level
+  discard ? parser.expect(spaceSpec.any())
+  let maybeColon = parser.expect(newSpec(":"))
   if maybeColon.isOk:
+    discard ? parser.expect(spaceSpec.any())
     let binding = ? parser.expect(identifierSpec)
     ok(newUnionPatternField(name, binding, name.loc))
   else:
+    parser.index = indexCheckpoint
+    parser.level = levelCheckpoint
     ok(newUnionPatternField(name, name, name.loc))
 
 # Spec adapter.
@@ -647,7 +646,15 @@ proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
   let first = parser.expect(unionPatternFieldSpec)
   if first.isOk:
     fields.add(first.get)
-    while parser.expect(commaWithSpacesSpec).isOk:
+    while true:
+      let indexCheckpoint = parser.index
+      let levelCheckpoint = parser.level
+      discard ? parser.expect(spaceSpec.any())
+      if parser.expect(newSpec(",")).isErr:
+        parser.index = indexCheckpoint
+        parser.level = levelCheckpoint
+        break
+      discard ? parser.expect(spaceSpec.any())
       fields.add(? parser.expect(unionPatternFieldSpec))
   discard ? parser.expect(spaceSpec.any())
   discard ? parser.expect(rightCurlyBracketSpec)
@@ -776,7 +783,15 @@ proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let first = parser.expect(importedTypeSpec)
   if first.isOk:
     names.add(first.get)
-    while parser.expect(commaWithSpacesSpec).isOk:
+    while true:
+      let indexCheckpoint = parser.index
+      let levelCheckpoint = parser.level
+      discard ? parser.expect(spaceSpec.any())
+      if parser.expect(newSpec(",")).isErr:
+        parser.index = indexCheckpoint
+        parser.level = levelCheckpoint
+        break
+      discard ? parser.expect(spaceSpec.any())
       names.add(? parser.expect(importedTypeSpec))
   discard ? parser.expect(spaceSpec.any())
   discard ? parser.expect(rightCurlyBracketSpec)
@@ -880,7 +895,15 @@ proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
   let first = parser.expect(expressionSpec)
   if first.isOk:
     args.add(first.get)
-    while parser.expect(commaWithSpacesSpec).isOk:
+    while true:
+      let indexCheckpoint = parser.index
+      let levelCheckpoint = parser.level
+      discard ? parser.expect(spaceSpec.any())
+      if parser.expect(newSpec(",")).isErr:
+        parser.index = indexCheckpoint
+        parser.level = levelCheckpoint
+        break
+      discard ? parser.expect(spaceSpec.any())
       args.add(? parser.expect(expressionSpec))
   discard ? parser.expect(spaceSpec.any())
   discard ? parser.expect(rightParenthesisSpec)
@@ -901,11 +924,17 @@ let fncallSpec = newSpec[FunctionCall]("function call", functionCallConsumer)
 
 proc kwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  let maybeColon = parser.expect(colonWithSpacesSpec)
+  let indexCheckpoint = parser.index
+  let levelCheckpoint = parser.level
+  discard ? parser.expect(spaceSpec.any())
+  let maybeColon = parser.expect(newSpec(":"))
   if maybeColon.isOk:
+    discard ? parser.expect(spaceSpec.any())
     let expression = ? parser.expect(expressionSpec)
     ok(newKeywordArgument(name, expression, name.loc))
   else:
+    parser.index = indexCheckpoint
+    parser.level = levelCheckpoint
     ok(newKeywordArgument(name, newExpression(name), name.loc))
 
 # `kwargSpec` is a named Spec because kwargListConsumer loops over it
@@ -920,7 +949,15 @@ proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError]
   let first = parser.expect(kwargSpec)
   if first.isOk:
     args.add(first.get)
-    while parser.expect(commaWithSpacesSpec).isOk:
+    while true:
+      let indexCheckpoint = parser.index
+      let levelCheckpoint = parser.level
+      discard ? parser.expect(spaceSpec.any())
+      if parser.expect(newSpec(",")).isErr:
+        parser.index = indexCheckpoint
+        parser.level = levelCheckpoint
+        break
+      discard ? parser.expect(spaceSpec.any())
       args.add(? parser.expect(kwargSpec))
   discard ? parser.expect(spaceSpec.any())
   discard ? parser.expect(rightCurlyBracketSpec)
@@ -1002,7 +1039,9 @@ proc expressionConsumer(parser: Parser): Result[Expression, ParserError] =
 
 proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
   let target = ? parser.expect(identifierSpec)
-  discard ? parser.expect(equalsSeparatorSpec)
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(newSpec("="))
+  discard ? parser.expect(spaceSpec.any())
   let expr = ? parser.expect(expressionSpec)
   ok(newAssignment(target, expr, target.loc))
 
@@ -1010,7 +1049,9 @@ let assignmentSpec = newSpec[Assignment]("assignment", assignmentConsumer)
 
 proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
   let target = ? parser.expect(getterSpec)
-  discard ? parser.expect(equalsSeparatorSpec)
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(newSpec("="))
+  discard ? parser.expect(spaceSpec.any())
   let expr = ? parser.expect(expressionSpec)
   ok(newSetter(target, expr, target.loc))
 
@@ -1102,7 +1143,9 @@ let matchSpec = newSpec[MatchExpression]("match", matchConsumer)
 # of committing to the match path on the leading identifier.
 proc parseMatchAssignment(parser: Parser): Result[Statement, ParserError] =
   let target = ? parser.expect(identifierSpec)
-  discard ? parser.expect(equalsSeparatorSpec)
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(newSpec("="))
+  discard ? parser.expect(spaceSpec.any())
   let matchExpr = ? parser.expect(matchSpec)
   ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
 
@@ -1151,7 +1194,9 @@ proc parseFunctionDef(parser: Parser): Result[FunctionDef, ParserError] =
   let funcName = ? parser.expect(identifierSpec)
   discard parser.expect(spaceSpec.any())
   let argDefList = ? parser.expect(argumentDefListSpec)
-  discard ? parser.expect(colonWithSpacesSpec)
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(spaceSpec.any())
   let returnType = ? parser.expect(argumentTypeSpec)
   ok(newFunctionDef(public, funcName, argDefList, returnType, funcLoc))
 
@@ -1255,7 +1300,15 @@ proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
   let first = parser.expect(identifierSpec)
   if first.isOk:
     generics.add(first.get)
-    while parser.expect(commaWithSpacesSpec).isOk:
+    while true:
+      let indexCheckpoint = parser.index
+      let levelCheckpoint = parser.level
+      discard ? parser.expect(spaceSpec.any())
+      if parser.expect(newSpec(",")).isErr:
+        parser.index = indexCheckpoint
+        parser.level = levelCheckpoint
+        break
+      discard ? parser.expect(spaceSpec.any())
       generics.add(? parser.expect(identifierSpec))
   discard ? parser.expect(spaceSpec.any())
   discard ? parser.expect(rightParenthesisSpec)
@@ -1339,7 +1392,15 @@ proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
   let first = parser.expect(argumentDefSpec)
   if first.isOk:
     fields.add(first.get)
-    while parser.expect(commaWithSpacesSpec).isOk:
+    while true:
+      let indexCheckpoint = parser.index
+      let levelCheckpoint = parser.level
+      discard ? parser.expect(spaceSpec.any())
+      if parser.expect(newSpec(",")).isErr:
+        parser.index = indexCheckpoint
+        parser.level = levelCheckpoint
+        break
+      discard ? parser.expect(spaceSpec.any())
       fields.add(? parser.expect(argumentDefSpec))
   discard ? parser.expect(spaceSpec.any())
   discard ? parser.expect(rightCurlyBracketSpec)
