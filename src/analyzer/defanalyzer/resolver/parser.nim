@@ -83,50 +83,60 @@ proc peek(parser: Parser, tokenRepr: string): Result[Token, ParserError] =
   else:
     ok(parser.tokens[parser.index])
 
-type
-  TokenMatcher* = ref object
-    label: string
-    predicate: proc(t: Token): bool
-
-proc byKind(kind: TokenKind, label: string): TokenMatcher =
-  TokenMatcher(label: label,
-    predicate: proc(t: Token): bool = t.kind == kind)
-
-proc byPunctuation(value: string): TokenMatcher =
-  TokenMatcher(label: "'" & value & "'",
-    predicate: proc(t: Token): bool = t.kind == tkPunctuation and t.value == value)
-
-proc byKindExcept(kind: TokenKind, label: string): TokenMatcher =
-  TokenMatcher(label: label,
-    predicate: proc(t: Token): bool = t.kind != kind)
-
-proc consume(parser: Parser, matcher: TokenMatcher): Result[Token, ParserError] =
-  let token = ? parser.peek(matcher.label)
-  if not matcher.predicate(token):
-    let msg = fmt"expected {matcher.label} but found {token.repr}"
-    err(newParserError(msg, parser.loc))
-  else:
-    parser.index += 1
-    ok(token)
-
 # ============================================================
 # Spec[T] — named, typed parser combinator
 # ============================================================
 
 type
   Consumer[T] = proc(parser: Parser): Result[T, ParserError]
+  Matcher = proc(token: Token): bool
   Mapper[T, U] = proc(value: T): Result[U, ParserError]
+  SpecKind = enum skDefault, skToken
   Spec*[T] = ref object
     name: string
-    consumer: Consumer[T]
+    case kind: SpecKind
+    of skDefault: consumer: Consumer[T]
+    of skToken: matcher: Matcher
 
 proc newSpec[T](name: string, consumer: Consumer[T]): Spec[T] =
-  Spec[T](name: name, consumer: consumer)
+  Spec[T](kind: skDefault, name: name, consumer: consumer)
+
+proc newSpec(name: string, matcher: Matcher): Spec[Token] =
+  Spec[Token](kind: skToken, name: name, matcher: matcher)
+
+proc newSpec*(name: string, kind: TokenKind): Spec[Token] =
+  newSpec(name, proc(t: Token): bool = t.kind == kind)
+
+proc newSpec*(value: string): Spec[Token] =
+  newSpec("'" & value & "'", proc(t: Token): bool = t.kind == tkPunctuation and t.value == value)
+
+# TODO: Remove it after fixing tokenizer
+proc anythingButNewlineSpec(name: string): Spec[Token] =
+  newSpec(name, proc(t: Token): bool = t.kind != tkNewline)
 
 proc expect*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   let indexCheckpoint = parser.index
   let levelCheckpoint = parser.level
-  let maybeValue = spec.consumer(parser)
+  let maybeValue =
+    case spec.kind:
+    of skDefault:
+      spec.consumer(parser)
+    of skToken:
+      # A skToken spec is only ever constructed as Spec[Token], so the
+      # token-matching arm is compiled only for that instantiation; the
+      # generic `expect[T]` (e.g. T = seq[Token] via `any`) never reaches
+      # skToken at runtime.
+      when T is Token:
+        let token = ? parser.peek(spec.name)
+        if not spec.matcher(token):
+          let msg = fmt"expected {spec.name} but found {token.repr}"
+          err(newParserError(msg, parser.loc))
+        else:
+          parser.index += 1
+          ok(token)
+      else:
+        raiseAssert("[BUG] - skToken spec must be Spec[Token]")
+
   if maybeValue.isErr:
     parser.index = indexCheckpoint
     parser.level = levelCheckpoint
@@ -144,14 +154,11 @@ proc expectOptional[T](parser: Parser, spec: Spec[T]): Result[Option[T], ParserE
 
 proc expectAny[T](parser: Parser, spec: Spec[T]): Result[seq[T], ParserError] =
   var items: seq[T]
-  var maybeItem = parser.expect(spec)
-  while maybeItem.isOk:
+  var maybeItem = ? parser.expectOptional(spec)
+  while maybeItem.isSome:
     items.add(maybeItem.get)
-    maybeItem = parser.expect(spec)
-  if maybeItem.isErr and maybeItem.error.fatal:
-    err(maybeItem.error)
-  else:
-    ok(items)
+    maybeItem = ? parser.expectOptional(spec)
+  ok(items)
 
 proc expectAtLeastOne[T](parser: Parser, spec: Spec[T]): Result[seq[T], ParserError] =
   let first = ? parser.expect(spec)
@@ -191,56 +198,34 @@ proc map*[T, U](spec: Spec[T], name: string, mapper: Mapper[T, U]): Spec[U] =
   newSpec[U](name, consumer)
 
 # ============================================================
-# Leaf token specs — one-line wrappers over `matcherSpec`
-# ============================================================
-#
-# Kept as named factories so grammar files read as `punctuationSpec(",")`
-# instead of the more verbose `matcherSpec(byPunctuation(","))`. Under
-# the hood all three delegate to the single `TokenMatcher` machinery
-# above.
-
-proc matcherSpec(matcher: TokenMatcher): Spec[Token] =
-  let consumer = proc(parser: Parser): Result[Token, ParserError] = parser.consume(matcher)
-  newSpec[Token](matcher.label, consumer)
-
-proc tokenSpec*(kind: TokenKind, tokenRepr: string): Spec[Token] =
-  matcherSpec(byKind(kind, tokenRepr))
-
-proc punctuationSpec*(value: string): Spec[Token] =
-  matcherSpec(byPunctuation(value))
-
-proc anyTokenExceptNewlineSpec(tokenRepr: string): Spec[Token] =
-  matcherSpec(byKindExcept(tkNewline, tokenRepr))
-
-# ============================================================
 # Static leaf specs (token-kind + common punctuation)
 # ============================================================
 #
-# Named singletons for grammar files. Backed by `matcherSpec` under
-# the hood; kept named because grammar code reads better as
-# `parser.expect(spaceSpec)` than `parser.expect(matcherSpec(byKind(...)))`.
+# Named singletons for grammar files, each a skToken `Spec` built via
+# `newSpec`; kept named because grammar code reads better as
+# `parser.expect(spaceSpec)` than `parser.expect(newSpec("space ' '", tkSpace))`.
 
-let spaceSpec* = tokenSpec(tkSpace, "space ' '")
-let newlineSpec* = tokenSpec(tkNewline, "newline '\\n'")
-let alphabetSpec* = tokenSpec(tkAlphabet, "alphabet [a-zA-Z]")
-let digitSpec* = tokenSpec(tkDigit, "digit [0-9]")
+let spaceSpec* = newSpec("space ' '", tkSpace)
+let newlineSpec* = newSpec("newline '\\n'", tkNewline)
+let alphabetSpec* = newSpec("alphabet [a-zA-Z]", tkAlphabet)
+let digitSpec* = newSpec("digit [0-9]", tkDigit)
 
-let underscoreSpec* = punctuationSpec("_")
-let hashSpec* = punctuationSpec("#")
-let backslashSpec* = punctuationSpec("\\")
-let doubleQuoteSpec* = punctuationSpec("\"")
-let bangSpec* = punctuationSpec("!")
-let atSpec* = punctuationSpec("@")
-let plusSpec* = punctuationSpec("+")
-let hyphenSpec* = punctuationSpec("-")
-let dotSpec* = punctuationSpec(".")
-let colonSpec* = punctuationSpec(":")
-let leftParenthesisSpec* = punctuationSpec("(")
-let rightParenthesisSpec* = punctuationSpec(")")
-let leftCurlyBracketSpec* = punctuationSpec("{")
-let rightCurlyBracketSpec* = punctuationSpec("}")
-let leftSquareBracketSpec* = punctuationSpec("[")
-let rightSquareBracketSpec* = punctuationSpec("]")
+let underscoreSpec* = newSpec("_")
+let hashSpec* = newSpec("#")
+let backslashSpec* = newSpec("\\")
+let doubleQuoteSpec* = newSpec("\"")
+let bangSpec* = newSpec("!")
+let atSpec* = newSpec("@")
+let plusSpec* = newSpec("+")
+let hyphenSpec* = newSpec("-")
+let dotSpec* = newSpec(".")
+let colonSpec* = newSpec(":")
+let leftParenthesisSpec* = newSpec("(")
+let rightParenthesisSpec* = newSpec(")")
+let leftCurlyBracketSpec* = newSpec("{")
+let rightCurlyBracketSpec* = newSpec("}")
+let leftSquareBracketSpec* = newSpec("[")
+let rightSquareBracketSpec* = newSpec("]")
 
 # ============================================================
 # Comment + ignorable line
@@ -248,7 +233,7 @@ let rightSquareBracketSpec* = punctuationSpec("]")
 
 proc commentConsumer(parser: Parser): Result[Location, ParserError] =
   let hashtag = ? parser.expect(hashSpec)
-  discard parser.expect(any(anyTokenExceptNewlineSpec("comment character")))
+  discard parser.expect(any(anythingButNewlineSpec("comment character")))
   ok(hashtag.loc)
 
 let commentSpec = newSpec[Location]("comment", commentConsumer)
@@ -273,7 +258,7 @@ proc separatorSpec(sep: string): Spec[Token] =
   let consumer =
     proc(parser: Parser): Result[Token, ParserError] =
       discard ? parser.expect(spaceSpec.any())
-      let v = ? parser.expect(punctuationSpec(sep))
+      let v = ? parser.expect(newSpec(sep))
       discard ? parser.expect(spaceSpec.any())
       ok(v)
   newSpec[Token](sep, consumer)
@@ -375,7 +360,7 @@ let escapedStringContentSpec =
 
 
 proc unescapedStringContentConsumer(parser: Parser): Result[StringContent, ParserError] =
-  let token = ? parser.expect(anyTokenExceptNewlineSpec("unescaped string character"))
+  let token = ? parser.expect(anythingButNewlineSpec("unescaped string character"))
   if token.value == "\"" or token.value == "\\":
     return err(newParserError(
       fmt"expected a valid string character but found '{token.value}'", token.loc))
@@ -578,7 +563,7 @@ proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
   # into itself for each element. A leading `[` commits to the bracketed
   # list; absence of `[` means no type params.
   var impls: seq[ArgumentType]
-  let hasImpls = parser.expect(punctuationSpec("[")).isOk
+  let hasImpls = parser.expect(newSpec("[")).isOk
   if hasImpls:
     discard ? parser.expect(spaceSpec.any())
     let first = parser.expect(argumentTypeSpec)
@@ -587,7 +572,7 @@ proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
       while parser.expect(commaWithSpacesSpec).isOk:
         impls.add(? parser.expect(argumentTypeSpec))
     discard ? parser.expect(spaceSpec.any())
-    discard ? parser.expect(punctuationSpec("]"))
+    discard ? parser.expect(newSpec("]"))
   let maybeBanged = ? parser.expect(bangSpec.optional())
 
   let argType =
@@ -612,7 +597,7 @@ let argumentDefSpec* = newSpec[ArgumentDef]("argument_definition", argumentDefCo
 
 proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserError] =
   let loc = parser.loc
-  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(newSpec("("))
   discard ? parser.expect(spaceSpec.any())
   var argDefs: seq[ArgumentDef]
   let first = parser.expect(argumentDefSpec)
@@ -621,7 +606,7 @@ proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserErro
     while parser.expect(commaWithSpacesSpec).isOk:
       argDefs.add(? parser.expect(argumentDefSpec))
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec(")"))
+  discard ? parser.expect(newSpec(")"))
   newArgumentDefList(argDefs, loc)
 
 let argumentDefListSpec = newSpec[ArgumentDefList]("argument definition list", argumentDefListConsumer)
@@ -648,7 +633,7 @@ let unionPatternFieldSpec* = newSpec[UnionPatternField]("variant_pattern_field",
 proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
   let name = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(newSpec("{"))
   discard ? parser.expect(spaceSpec.any())
   var fields: seq[UnionPatternField]
   let first = parser.expect(unionPatternFieldSpec)
@@ -657,7 +642,7 @@ proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
     while parser.expect(commaWithSpacesSpec).isOk:
       fields.add(? parser.expect(unionPatternFieldSpec))
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec("}"))
+  discard ? parser.expect(newSpec("}"))
   newUnionPattern(name, fields)
 
 let unionPatternSpec = newSpec[UnionPattern]("union pattern", unionPatternConsumer)
@@ -777,7 +762,7 @@ proc toAbsPath*(parsedPath: ImportPath, importingFile: string,
 proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.expect(keywordSpec("import"))
   discard ? parser.expect(spaceSpec.atLeastOne())
-  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(newSpec("{"))
   discard ? parser.expect(spaceSpec.any())
   var names: seq[ImportedType]
   let first = parser.expect(importedTypeSpec)
@@ -786,7 +771,7 @@ proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
     while parser.expect(commaWithSpacesSpec).isOk:
       names.add(? parser.expect(importedTypeSpec))
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec("}"))
+  discard ? parser.expect(newSpec("}"))
   discard ? parser.expect(spaceSpec.atLeastOne())
   discard ? parser.expect(keywordSpec("from"))
   discard ? parser.expect(spaceSpec.atLeastOne())
@@ -881,7 +866,7 @@ let expressionSpec* = newSpec[Expression]("expression", expressionConsumer)
 
 proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
   let loc = parser.loc
-  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(newSpec("("))
   discard ? parser.expect(spaceSpec.any())
   var args: seq[Expression]
   let first = parser.expect(expressionSpec)
@@ -890,7 +875,7 @@ proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
     while parser.expect(commaWithSpacesSpec).isOk:
       args.add(? parser.expect(expressionSpec))
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec(")"))
+  discard ? parser.expect(newSpec(")"))
   ok(newArgumentList(args, loc))
 
 let argumentListSpec = newSpec[ArgumentList]("argument list", argumentListConsumer)
@@ -921,7 +906,7 @@ let kwargSpec* = newSpec[KeywordArgument]("keyword_argument", kwargConsumer)
 
 proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError] =
   let loc = parser.loc
-  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(newSpec("{"))
   discard ? parser.expect(spaceSpec.any())
   var args: seq[KeywordArgument]
   let first = parser.expect(kwargSpec)
@@ -930,7 +915,7 @@ proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError]
     while parser.expect(commaWithSpacesSpec).isOk:
       args.add(? parser.expect(kwargSpec))
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec("}"))
+  discard ? parser.expect(newSpec("}"))
   newKeywordArgumentList(args, loc)
 
 let kwargListSpec = newSpec[KeywordArgumentList]("keyword argument list", kwargListConsumer)
@@ -1214,11 +1199,11 @@ proc parseExternFunction(parser: Parser): Result[ExternFunction, ParserError] =
   discard ? parser.expect(keywordSpec("extern"))
   discard parser.expect(spaceSpec.any())
   let loc = parser.loc
-  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(newSpec("("))
   discard ? parser.expect(spaceSpec.any())
   let symbol = ? parser.expect(stringLiteralSpec)
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec(")"))
+  discard ? parser.expect(newSpec(")"))
   discard ? parser.expect(emptyLineSpec)
   discard ? parser.expect(indentationSpec)
   let def = ? parser.expect(functionDefSpec)
@@ -1256,7 +1241,7 @@ proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
   ## Parses the `(A, B, C)` clause of a `struct(A, B, C):` header —
   ## a parenthesised comma-separated identifier list naming the
   ## struct's required generic impls.
-  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(newSpec("("))
   discard ? parser.expect(spaceSpec.any())
   var generics: seq[Identifier]
   let first = parser.expect(identifierSpec)
@@ -1265,7 +1250,7 @@ proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
     while parser.expect(commaWithSpacesSpec).isOk:
       generics.add(? parser.expect(identifierSpec))
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec(")"))
+  discard ? parser.expect(newSpec(")"))
   ok(generics)
 
 let requiredStructGenerics = newSpec[seq[Identifier]]("required struct generics", parseStructRequires)
@@ -1340,7 +1325,7 @@ proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
   discard ? parser.expect(indentationSpec)
   let name = ? parser.expect(identifierSpec)
   discard parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(newSpec("{"))
   discard ? parser.expect(spaceSpec.any())
   var fields: seq[ArgumentDef]
   let first = parser.expect(argumentDefSpec)
@@ -1349,7 +1334,7 @@ proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
     while parser.expect(commaWithSpacesSpec).isOk:
       fields.add(? parser.expect(argumentDefSpec))
   discard ? parser.expect(spaceSpec.any())
-  discard ? parser.expect(punctuationSpec("}"))
+  discard ? parser.expect(newSpec("}"))
   discard ? parser.expect(emptyLineSpec)
   newVariantDef(name, fields, name.loc)
 

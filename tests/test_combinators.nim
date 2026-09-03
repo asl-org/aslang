@@ -11,9 +11,9 @@ import tutils
 
 # A few tiny leaf specs we can compose into bigger tests without
 # leaning on the full grammar.
-proc digitSpec(): Spec[Token] = tokenSpec(tkDigit, "digit")
-proc alphaSpec(): Spec[Token] = tokenSpec(tkAlphabet, "alphabet")
-proc spaceSpec(): Spec[Token] = tokenSpec(tkSpace, "space ' '")
+proc digitSpec(): Spec[Token] = newSpec("digit", tkDigit)
+proc alphaSpec(): Spec[Token] = newSpec("alphabet", tkAlphabet)
+proc spaceSpec(): Spec[Token] = newSpec("space ' '", tkSpace)
 
 proc mkParser(source: string): Parser =
   let r = tokenizeStr(source, "synth.asl")
@@ -97,7 +97,7 @@ suite "combinators — any / atLeastOne":
     # Punctuation is NOT batched — each punctuation rune is its own
     # token. Use commas to exercise `any` consuming multiple tokens.
     let p = mkParser(",,,a")
-    let r = p.expect(any(punctuationSpec(",")))
+    let r = p.expect(any(newSpec(",")))
     check r.isOk
     check r.get.len == 3
     check p.index == 3
