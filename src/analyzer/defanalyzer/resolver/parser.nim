@@ -8,7 +8,7 @@ import strformat, sequtils, strutils, unicode, results, options, tables, os
 import ./parser/tokenizer
 export tokenizer.location
 
-# combinators.nim (Spec[T] + oneOf / any / pair / ...) is
+# combinators.nim (Spec[T] + oneOf / any / separatedBy / ...) is
 # imported but NOT re-exported. It's parser-internal scaffolding.
 # Downstream layers (resolver, analyzer, cli, asl.nim) consume the
 # parser through the AST types + `parse*` entry point below; the
@@ -212,47 +212,6 @@ proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
         items.add(rest)
       ok(items)
   newSpec[seq[T]](spec.name & "...", consumer)
-
-# ============================================================
-# Sequence-composition atoms
-# ============================================================
-#
-# Small vocabulary that lets domain-type specs be built out of
-# existing `Spec[T]` values instead of hand-writing a
-# `newSpec[T](name, proc(...): ...)` block every time.
-# Same "compose atoms into a grammar" pattern the tokenizer uses
-# for its per-kind matchers.
-
-proc pair*[A, B](a: Spec[A], b: Spec[B]): Spec[(A, B)] =
-  ## Parse `a b`; return `(A, B)`. Chain with `.map` to lift into
-  ## a domain type.
-  let consumer =
-    proc(parser: Parser): Result[(A, B), ParserError] =
-      let va = ? parser.expect(a)
-      let vb = ? parser.expect(b)
-      ok((va, vb))
-  newSpec[(A, B)](a.name & " + " & b.name, consumer)
-
-proc separated*[A, S, B](a: Spec[A], sep: Spec[S], b: Spec[B]): Spec[(A, B)] =
-  ## Parse `a sep b`; discard the separator, return `(A, B)`. Reads
-  ## like the grammar rule "a separated-by sep from b". Pairs `a` with
-  ## a `sep`-then-`b` spec, so the separator is consumed but dropped.
-  let consumer =
-    proc(parser: Parser): Result[B, ParserError] =
-      discard ? parser.expect(sep)
-      parser.expect(b)
-  let rest = newSpec[B](b.name, consumer)
-  pair(a, rest)
-
-proc triple*[A, B, C](a: Spec[A], b: Spec[B], c: Spec[C]): Spec[(A, B, C)] =
-  ## Parse `a b c`; return `(A, B, C)`. Chain with `.map` to lift.
-  let consumer =
-    proc(parser: Parser): Result[(A, B, C), ParserError] =
-      let va = ? parser.expect(a)
-      let vb = ? parser.expect(b)
-      let vc = ? parser.expect(c)
-      ok((va, vb, vc))
-  newSpec[(A, B, C)](a.name & " + " & b.name & " + " & c.name, consumer)
 
 # ============================================================
 # Leaf token specs — one-line wrappers over `matcherSpec`
