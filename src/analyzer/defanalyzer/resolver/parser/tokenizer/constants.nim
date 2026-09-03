@@ -39,9 +39,41 @@ const Punctuations*: string = "`~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?"
 const Space*: string = " "
 const Newline*: string = "\n"
 
-proc isUtf8*(r: Rune): bool = r.uint32 > AsciiMaxValue
-proc isSpace*(r: Rune): bool = $r == Space
-proc isNewline*(r: Rune): bool = $r == Newline
-proc isPunctuation*(r: Rune): bool = $r in Punctuations
-proc isAlphabet*(r: Rune): bool = (not r.isUtf8) and r.char.isAlphaAscii
-proc isDigit*(r: Rune): bool = (not r.isUtf8) and r.char.isDigit
+proc consumeUtf8*(source: seq[Rune], start: int): int =
+  var index = start
+  while index < source.len and source[index].uint32 > AsciiMaxValue:
+    index += 1
+  return index
+
+proc consumeSpace*(source: seq[Rune], start: int): int =
+  var index = start
+  while index < source.len and $(source[index]) == Space:
+    index += 1
+  return index
+
+proc consumeNewline*(source: seq[Rune], start: int): int =
+  var index = start
+  while index < source.len and $(source[index]) == Newline:
+    index += 1
+  return index
+
+proc consumePunctuation*(source: seq[Rune], start: int): int =
+  var index = start
+  if index < source.len and $(source[index]) in Punctuations:
+    index + 1
+  else:
+    index
+
+proc consumeAlphabet*(source: seq[Rune], start: int): int =
+  let isAlphabet = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isAlphaAscii
+  var index = start
+  while index < source.len and source[index].isAlphabet:
+    index += 1
+  return index
+
+proc consumeDigit*(source: seq[Rune], start: int): int =
+  let isDigit = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isDigit
+  var index = start
+  while index < source.len and source[index].isDigit:
+    index += 1
+  return index

@@ -1,4 +1,4 @@
-import strformat, hashes
+import strformat, hashes, unicode, constants
 
 type Location* = object
   filepath: string
@@ -10,13 +10,14 @@ proc newLocation(filepath: string, line, col: int): Location =
 proc newLocation*(filepath: string): Location = newLocation(filepath, 1, 1)
 proc newLocation*(): Location = newLocation("", 1, 1)
 
-proc advance*(loc: Location, isLine: bool): Location =
+proc advance*(loc: Location, content: seq[Rune]): Location =
   var location = loc
-  if isLine:
-    location.line += 1
-    location.col = 1
-  else:
-    location.col += 1
+  for head in content:
+    if $(head) == Newline:
+      location.line += 1
+      location.col = 1
+    else:
+      location.col += 1
   return location
 
 proc `$`*(loc: Location): string = fmt"{loc.filepath}:{loc.line}:{loc.col}"

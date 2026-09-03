@@ -8,6 +8,17 @@ import ./tokenizer/spec
 export location
 export token
 
+proc validate(head: Rune, loc: Location): Result[void, string] =
+  let codepoint = head.uint32
+  if codepoint in BidiCodepoints:
+    return err(fmt"{loc}: bidirectional control codepoint U+{codepoint:04X} encountered")
+  elif codepoint in ZeroWidthCodepoints:
+    return err(fmt"{loc}: zero-width codepoint U+{codepoint:04X} encountered")
+  elif codepoint in InvisibleCodepoints:
+    return err(fmt"{loc}: invisible control codepoint U+{codepoint:04X} encountered")
+  else:
+    ok()
+
 type Tokenizer = ref object
   filepath: string
   source: seq[Rune]
@@ -22,23 +33,12 @@ proc newTokenizer(filepath: string, source: string): Tokenizer =
 proc done(tokenizer: Tokenizer): bool = tokenizer.index >= tokenizer.source.len
 
 proc peek(tokenizer: Tokenizer): Result[Rune, string] =
-  if not tokenizer.done:
-    let head = tokenizer.source[tokenizer.index]
-    let codepoint = head.uint32
-    if codepoint in BidiCodepoints:
-      err(fmt"{tokenizer.loc}: bidirectional control codepoint U+{codepoint:04X} encountered")
-    elif codepoint in ZeroWidthCodepoints:
-      err(fmt"{tokenizer.loc}: zero-width codepoint U+{codepoint:04X} encountered")
-    elif codepoint in InvisibleCodepoints:
-      err(fmt"{tokenizer.loc}: invisible control codepoint U+{codepoint:04X} encountered")
-    else:
-      ok(head)
-  else:
+  if tokenizer.done:
     err("{tokenizer.loc}: tokenizer reached end of token stream")
-
-proc next(tokenizer: Tokenizer, head: Rune): void =
-  tokenizer.index += 1
-  tokenizer.loc = tokenizer.loc.advance(head.isNewline)
+  else:
+    let head = tokenizer.source[tokenizer.index]
+    ? head.validate(tokenizer.loc)
+    ok(head)
 
 proc pin(tokenizer: Tokenizer): Result[Location, string] =
   if tokenizer.checkpoint.isNone:
@@ -47,10 +47,14 @@ proc pin(tokenizer: Tokenizer): Result[Location, string] =
   else:
     err(fmt"{tokenizer.loc}: [UNREACHABLE] tokenizer is already pinned")
 
-proc commit(tokenizer: Tokenizer): Result[void, string] =
+proc commit(tokenizer: Tokenizer, updated: int): Result[string, string] =
   if tokenizer.checkpoint.isSome:
+    let content = tokenizer.source[tokenizer.index..<updated]
+    for head in content: ? head.validate(tokenizer.loc)
+    tokenizer.index = updated
+    tokenizer.loc = tokenizer.loc.advance(content)
     tokenizer.checkpoint = none((int, Location))
-    ok()
+    ok[string]($(content))
   else:
     err(fmt"{tokenizer.loc}: [UNREACHABLE] tokenizer is not pinned")
 
@@ -63,25 +67,15 @@ proc rollback(tokenizer: Tokenizer): Result[void, string] =
     err(fmt"{tokenizer.loc}: [UNREACHABLE] tokenizer is not pinned")
 
 proc tokenize(tokenizer: Tokenizer, spec: TokenSpec): Result[Token, string] =
-  var content: seq[Rune]
   let loc = ? tokenizer.pin()
+  let updated = spec.match(tokenizer.source, tokenizer.index)
 
-  var maybeHead = tokenizer.peek
-  while maybeHead.isOk and spec.match(maybeHead.get):
-    tokenizer.next(maybeHead.get)
-    content.add(maybeHead.get)
-    case spec.kind:
-    of tskIndividual: break
-    of tskCollective: maybeHead = tokenizer.peek
-
-  if content.len == 0:
+  if tokenizer.index == updated:
     ? tokenizer.rollback()
-    if maybeHead.isOk: err(fmt"{loc}: expected {spec.label}")
-    else: err(maybeHead.error)
+    err(fmt"{loc}: expected `{spec.label}`")
   else:
-    ? tokenizer.commit()
-    let token = newToken(spec.tokenKind, $content, loc)
-    results.ok(token)
+    let value = ? tokenizer.commit(updated)
+    ok(newToken(spec.kind, value, loc))
 
 proc tokenize(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string] =
   for spec in specs:
@@ -99,12 +93,12 @@ proc tokenize(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string
 
 proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   let specs = @[
-    newCollectiveTokenSpec("a utf8 character", tkUtf8, isUtf8),
-    newCollectiveTokenSpec("an alphabet", tkAlphabet, isAlphabet),
-    newCollectiveTokenSpec("a digit", tkDigit, isDigit),
-    newCollectiveTokenSpec("a space", tkSpace, isSpace),
-    newCollectiveTokenSpec("a new line", tkNewline, isNewline),
-    newIndividualTokenSpec("a punctuation", tkPunctuation, isPunctuation),
+    newTokenSpec("a utf8 character", tkUtf8, consumeUtf8),
+    newTokenSpec("an alphabet", tkAlphabet, consumeAlphabet),
+    newTokenSpec("a digit", tkDigit, consumeDigit),
+    newTokenSpec("a space", tkSpace, consumeSpace),
+    newTokenSpec("a new line", tkNewline, consumeNewline),
+    newTokenSpec("a punctuation", tkPunctuation, consumePunctuation),
   ]
 
   var tokens: seq[Token]
