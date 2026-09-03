@@ -1,5 +1,5 @@
 ## Tests for parser combinators (Spec[T] + oneOf / any / atLeastOne /
-## optional / contained) and the Parser checkpoint
+## optional) and the Parser checkpoint
 ## machinery. Each combinator is exercised against a synthetic token
 ## stream produced via `tokenize`.
 
@@ -116,35 +116,6 @@ suite "combinators — optional":
     check r.isOk
     check r.get.isNone
     check p.index == 0
-
-suite "combinators — contained":
-
-  test "wraps an inner spec in delimiters":
-    let p = mkParser("(9)")
-    let s = contained("paren_digit", "(", digitSpec(), ")")
-    let r = p.expect(s)
-    check r.isOk
-    check r.get.kind == tkDigit
-
-  test "missing close delimiter is a fatal-ish error":
-    let p = mkParser("(9")
-    let s = contained("paren_digit", "(", digitSpec(), ")")
-    let r = p.expect(s)
-    check r.isErr
-
-  test "container tolerates whitespace around the inner spec":
-    let p = mkParser("(  9  )")
-    let s = contained("paren_digit", "(", digitSpec(), ")")
-    let r = p.expect(s)
-    check r.isOk
-
-suite "combinators — contained edges":
-
-  test "missing open delimiter fails":
-    let p = mkParser("9)")
-    let s = contained("paren_digit", "(", digitSpec(), ")")
-    let r = p.expect(s)
-    check r.isErr
 
 suite "combinators — oneOf edges":
 

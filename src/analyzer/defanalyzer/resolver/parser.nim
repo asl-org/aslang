@@ -242,22 +242,6 @@ let rightCurlyBracketSpec* = punctuationSpec("}")
 let leftSquareBracketSpec* = punctuationSpec("[")
 let rightSquareBracketSpec* = punctuationSpec("]")
 
-
-proc contained*[T](name: string, open: string, inner: Spec[T],
-    close: string): Spec[T] =
-  ## Parse `open space* inner space* close`; return only inner. Grammar
-  ## brackets tolerate whitespace on both sides of the content.
-
-  let consumer =
-    proc(parser: Parser): Result[T, ParserError] =
-      discard ? parser.expect(punctuationSpec(open))
-      discard ? parser.expect(spaceSpec.any())
-      let v = ? parser.expect(inner)
-      discard ? parser.expect(spaceSpec.any())
-      discard ? parser.expect(punctuationSpec(close))
-      ok(v)
-  newSpec[T](name, consumer)
-
 # ============================================================
 # Comment + ignorable line
 # ============================================================
@@ -1230,7 +1214,11 @@ proc parseExternFunction(parser: Parser): Result[ExternFunction, ParserError] =
   discard ? parser.expect(keywordSpec("extern"))
   discard parser.expect(spaceSpec.any())
   let loc = parser.loc
-  let symbol = ? parser.expect(contained("extern_symbol", "(", stringLiteralSpec, ")"))
+  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(spaceSpec.any())
+  let symbol = ? parser.expect(stringLiteralSpec)
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec(")"))
   discard ? parser.expect(emptyLineSpec)
   discard ? parser.expect(indentationSpec)
   let def = ? parser.expect(functionDefSpec)
