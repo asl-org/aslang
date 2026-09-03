@@ -1,5 +1,5 @@
 ## Tests for parser combinators (Spec[T] + oneOf / any / atLeastOne /
-## optional / separatedBy / contained) and the Parser checkpoint
+## optional / contained) and the Parser checkpoint
 ## machinery. Each combinator is exercised against a synthetic token
 ## stream produced via `tokenize`.
 
@@ -116,35 +116,6 @@ suite "combinators — optional":
     check r.isOk
     check r.get.isNone
     check p.index == 0
-
-suite "combinators — separatedBy":
-
-  test "empty input yields empty list":
-    let p = mkParser("")
-    let r = p.expect(separatedBy(digitSpec(), spaceSpec()))
-    check r.isOk
-    check r.get.len == 0
-
-  test "single element with no separator":
-    let p = mkParser("9")
-    let r = p.expect(separatedBy(digitSpec(), spaceSpec()))
-    check r.isOk
-    check r.get.len == 1
-
-  test "multiple elements with separator":
-    let p = mkParser("1 2 3")
-    let r = p.expect(separatedBy(digitSpec(), spaceSpec()))
-    check r.isOk
-    check r.get.len == 3
-
-  test "trailing separator without element fails (atomic pair backtracks)":
-    # "1 " — second pair starts with space but has no digit after.
-    # The any() inside separatedBy should backtrack and accept the
-    # single element without consuming the trailing space.
-    let p = mkParser("1 ")
-    let r = p.expect(separatedBy(digitSpec(), spaceSpec()))
-    check r.isOk
-    check r.get.len == 1
 
 suite "combinators — contained":
 

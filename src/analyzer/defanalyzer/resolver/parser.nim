@@ -8,7 +8,7 @@ import strformat, sequtils, strutils, unicode, results, options, tables, os
 import ./parser/tokenizer
 export tokenizer.location
 
-# combinators.nim (Spec[T] + oneOf / any / separatedBy / ...) is
+# combinators.nim (Spec[T] + oneOf / any / optional / ...) is
 # imported but NOT re-exported. It's parser-internal scaffolding.
 # Downstream layers (resolver, analyzer, cli, asl.nim) consume the
 # parser through the AST types + `parse*` entry point below; the
@@ -191,29 +191,6 @@ proc map*[T, U](spec: Spec[T], name: string, mapper: Mapper[T, U]): Spec[U] =
   newSpec[U](name, consumer)
 
 # ============================================================
-# Combinators
-# ============================================================
-
-proc separatedBy*[T, S](spec: Spec[T], sep: Spec[S]): Spec[seq[T]] =
-  let pairConsumer =
-    proc(parser: Parser): Result[T, ParserError] =
-      discard ? parser.expect(sep)
-      let elem = ? parser.expect(spec)
-      ok(elem)
-  let pairSpec = newSpec[T](spec.name & "_pair", pairConsumer)
-
-  let consumer =
-    proc(parser: Parser): Result[seq[T], ParserError] =
-      var items: seq[T]
-      let first = parser.expect(spec)
-      if first.isOk:
-        items.add(first.get)
-        let rest = ? parser.expect(any(pairSpec))
-        items.add(rest)
-      ok(items)
-  newSpec[seq[T]](spec.name & "...", consumer)
-
-# ============================================================
 # Leaf token specs — one-line wrappers over `matcherSpec`
 # ============================================================
 #
@@ -380,9 +357,9 @@ proc keywordSpec(keyword: string): Spec[Location] =
   let consumer = proc(parser: Parser): Result[Location, ParserError] = parser.parseKeyword(keyword)
   newSpec[Location]("'" & keyword & "'", consumer)
 
-# Spec adapter — `identifierSpec` is still consumed by
-# `parseStructRequires`'s `separatedBy(identifierSpec, ...)` combinator
-# chain (and by other `separatedBy(identifierSpec, ...)` sites).
+# `identifierSpec` is a named Spec because several consumers loop over
+# it directly via `parser.expect(identifierSpec)` (struct requires,
+# argument-type impls, and other comma-separated identifier lists).
 
 proc decoratorConsumer(parser: Parser): Result[Decorator, ParserError] =
   discard ? parser.expect(indentationSpec)
@@ -614,14 +591,24 @@ let argumentTypeSpec = newSpec[ArgumentType]("argument type", argumentTypeConsum
 proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
   let rootIdent = ? parser.expect(identifierSpec)
   # Optional `[T, U, ...]` type params — argumentTypeConsumer recurses
-  # into itself for each element.
-  let argTypeImpls = contained("argument_impl_list", "[", separatedBy(argumentTypeSpec, commaWithSpacesSpec), "]")
-  let maybeImpls = ? parser.expect(argTypeImpls.optional())
+  # into itself for each element. A leading `[` commits to the bracketed
+  # list; absence of `[` means no type params.
+  var impls: seq[ArgumentType]
+  let hasImpls = parser.expect(punctuationSpec("[")).isOk
+  if hasImpls:
+    discard ? parser.expect(spaceSpec.any())
+    let first = parser.expect(argumentTypeSpec)
+    if first.isOk:
+      impls.add(first.get)
+      while parser.expect(commaWithSpacesSpec).isOk:
+        impls.add(? parser.expect(argumentTypeSpec))
+    discard ? parser.expect(spaceSpec.any())
+    discard ? parser.expect(punctuationSpec("]"))
   let maybeBanged = ? parser.expect(bangSpec.optional())
 
   let argType =
-    if maybeImpls.isSome:
-      newArgumentType(rootIdent, maybeImpls.get)
+    if hasImpls:
+      newArgumentType(rootIdent, impls)
     else:
       newArgumentType(rootIdent)
 
@@ -641,8 +628,16 @@ let argumentDefSpec* = newSpec[ArgumentDef]("argument_definition", argumentDefCo
 
 proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserError] =
   let loc = parser.loc
-  let argDefs = ? parser.expect(contained("argument_definition_list", "(",
-    separatedBy(argumentDefSpec, commaWithSpacesSpec), ")"))
+  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(spaceSpec.any())
+  var argDefs: seq[ArgumentDef]
+  let first = parser.expect(argumentDefSpec)
+  if first.isOk:
+    argDefs.add(first.get)
+    while parser.expect(commaWithSpacesSpec).isOk:
+      argDefs.add(? parser.expect(argumentDefSpec))
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec(")"))
   newArgumentDefList(argDefs, loc)
 
 let argumentDefListSpec = newSpec[ArgumentDefList]("argument definition list", argumentDefListConsumer)
@@ -669,8 +664,16 @@ let unionPatternFieldSpec* = newSpec[UnionPatternField]("variant_pattern_field",
 proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
   let name = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.any())
-  let fields = ? parser.expect(contained("variant_fields", "{",
-    separatedBy(unionPatternFieldSpec, commaWithSpacesSpec), "}"))
+  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(spaceSpec.any())
+  var fields: seq[UnionPatternField]
+  let first = parser.expect(unionPatternFieldSpec)
+  if first.isOk:
+    fields.add(first.get)
+    while parser.expect(commaWithSpacesSpec).isOk:
+      fields.add(? parser.expect(unionPatternFieldSpec))
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec("}"))
   newUnionPattern(name, fields)
 
 let unionPatternSpec = newSpec[UnionPattern]("union pattern", unionPatternConsumer)
@@ -790,8 +793,16 @@ proc toAbsPath*(parsedPath: ImportPath, importingFile: string,
 proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let loc = ? parser.expect(keywordSpec("import"))
   discard ? parser.expect(spaceSpec.atLeastOne())
-  let names = ? parser.expect(contained("import_names", "{",
-    separatedBy(importedTypeSpec, commaWithSpacesSpec), "}"))
+  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(spaceSpec.any())
+  var names: seq[ImportedType]
+  let first = parser.expect(importedTypeSpec)
+  if first.isOk:
+    names.add(first.get)
+    while parser.expect(commaWithSpacesSpec).isOk:
+      names.add(? parser.expect(importedTypeSpec))
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec("}"))
   discard ? parser.expect(spaceSpec.atLeastOne())
   discard ? parser.expect(keywordSpec("from"))
   discard ? parser.expect(spaceSpec.atLeastOne())
@@ -880,14 +891,22 @@ proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError]
 proc matchConsumer(parser: Parser): Result[MatchExpression, ParserError]
 proc statementLineConsumer(parser: Parser): Result[Statement, ParserError]
 
-# Spec adapter — `expressionSpec` is still consumed by `argumentListConsumer`'s
-# `separatedBy(expressionSpec, ...)` combinator chain.
+# `expressionSpec` is a named Spec because argumentListConsumer loops
+# over it directly via `parser.expect(expressionSpec)`.
 let expressionSpec* = newSpec[Expression]("expression", expressionConsumer)
 
 proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
   let loc = parser.loc
-  let args = ? parser.expect(contained("argument_list", "(",
-    separatedBy(expressionSpec, commaWithSpacesSpec), ")"))
+  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(spaceSpec.any())
+  var args: seq[Expression]
+  let first = parser.expect(expressionSpec)
+  if first.isOk:
+    args.add(first.get)
+    while parser.expect(commaWithSpacesSpec).isOk:
+      args.add(? parser.expect(expressionSpec))
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec(")"))
   ok(newArgumentList(args, loc))
 
 let argumentListSpec = newSpec[ArgumentList]("argument list", argumentListConsumer)
@@ -912,13 +931,22 @@ proc kwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
   else:
     ok(newKeywordArgument(name, newExpression(name), name.loc))
 
-# Spec adapter (kwargListSpec uses this via `separatedBy(kwargSpec, ...)`).
+# `kwargSpec` is a named Spec because kwargListConsumer loops over it
+# directly via `parser.expect(kwargSpec)`.
 let kwargSpec* = newSpec[KeywordArgument]("keyword_argument", kwargConsumer)
 
 proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError] =
   let loc = parser.loc
-  let args = ? parser.expect(contained("keyword_argument_list", "{",
-    separatedBy(kwargSpec, commaWithSpacesSpec), "}"))
+  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(spaceSpec.any())
+  var args: seq[KeywordArgument]
+  let first = parser.expect(kwargSpec)
+  if first.isOk:
+    args.add(first.get)
+    while parser.expect(commaWithSpacesSpec).isOk:
+      args.add(? parser.expect(kwargSpec))
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec("}"))
   newKeywordArgumentList(args, loc)
 
 let kwargListSpec = newSpec[KeywordArgumentList]("keyword argument list", kwargListConsumer)
@@ -1240,8 +1268,16 @@ proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
   ## Parses the `(A, B, C)` clause of a `struct(A, B, C):` header —
   ## a parenthesised comma-separated identifier list naming the
   ## struct's required generic impls.
-  let generics = ? parser.expect(contained("struct_requires_generics", "(",
-    separatedBy(identifierSpec, commaWithSpacesSpec), ")"))
+  discard ? parser.expect(punctuationSpec("("))
+  discard ? parser.expect(spaceSpec.any())
+  var generics: seq[Identifier]
+  let first = parser.expect(identifierSpec)
+  if first.isOk:
+    generics.add(first.get)
+    while parser.expect(commaWithSpacesSpec).isOk:
+      generics.add(? parser.expect(identifierSpec))
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec(")"))
   ok(generics)
 
 let requiredStructGenerics = newSpec[seq[Identifier]]("required struct generics", parseStructRequires)
@@ -1316,8 +1352,16 @@ proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
   discard ? parser.expect(indentationSpec)
   let name = ? parser.expect(identifierSpec)
   discard parser.expect(spaceSpec.any())
-  let fields = ? parser.expect(contained("variant_fields", "{",
-    separatedBy(argumentDefSpec, commaWithSpacesSpec), "}"))
+  discard ? parser.expect(punctuationSpec("{"))
+  discard ? parser.expect(spaceSpec.any())
+  var fields: seq[ArgumentDef]
+  let first = parser.expect(argumentDefSpec)
+  if first.isOk:
+    fields.add(first.get)
+    while parser.expect(commaWithSpacesSpec).isOk:
+      fields.add(? parser.expect(argumentDefSpec))
+  discard ? parser.expect(spaceSpec.any())
+  discard ? parser.expect(punctuationSpec("}"))
   discard ? parser.expect(emptyLineSpec)
   newVariantDef(name, fields, name.loc)
 
