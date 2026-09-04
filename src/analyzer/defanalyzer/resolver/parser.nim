@@ -111,9 +111,6 @@ proc newSpec*(value: string): Spec[Token] =
   newSpec("'" & value & "'", proc(t: Token): bool = t.value == value)
 
 # TODO: Remove it after fixing tokenizer
-proc anythingButNewlineSpec(name: string): Spec[Token] =
-  newSpec(name, proc(t: Token): bool = t.kind != tkNewline)
-
 proc expect*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   let indexCheckpoint = parser.index
   let levelCheckpoint = parser.level
@@ -211,7 +208,6 @@ let alphabetSpec* = newSpec("alphabet [a-zA-Z]", tkAlphabet)
 let digitSpec* = newSpec("digit [0-9]", tkDigit)
 
 let underscoreSpec* = newSpec("_")
-let hashSpec* = newSpec("#")
 let bangSpec* = newSpec("!")
 let atSpec* = newSpec("@")
 let plusSpec* = newSpec("+")
@@ -230,9 +226,10 @@ let rightSquareBracketSpec* = newSpec("]")
 # ============================================================
 
 proc commentConsumer(parser: Parser): Result[Location, ParserError] =
-  let hashtag = ? parser.expect(hashSpec)
-  discard parser.expect(any(anythingButNewlineSpec("comment character")))
-  ok(hashtag.loc)
+  # The tokenizer scans `#`…end-of-line into one tkComment token; the
+  # content is discarded, only the location flows on.
+  let token = ? parser.expect(newSpec("comment", tkComment))
+  ok(token.loc)
 
 let commentSpec = newSpec[Location]("comment", commentConsumer)
 

@@ -99,6 +99,7 @@ proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
     newTokenSpec("a space", tkSpace, consumeSpace),
     newTokenSpec("a new line", tkNewline, consumeNewline),
     newTokenSpec("a string", tkString, consumeString),
+    newTokenSpec("a comment", tkComment, consumeComment),
     newTokenSpec("a punctuation", tkPunctuation, consumePunctuation),
   ]
 

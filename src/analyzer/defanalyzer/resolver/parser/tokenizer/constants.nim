@@ -35,15 +35,17 @@ const InvisibleCodepoints*: array[18, uint32] = [
 ]
 
 const AsciiMaxValue*: uint32 = 0x7F
-# `"` is intentionally excluded — it opens a string literal (handled by
-# `consumeString`, tried before punctuation), so it is never a standalone
-# punctuation token.
-const Punctuations*: string = "`~!@#$%^&*()-_=+[]{}\\|;:',<.>/?"
+# `"` and `#` are intentionally excluded — they open a string literal and
+# a comment respectively (handled by `consumeString` / `consumeComment`,
+# tried before punctuation), so neither is ever a standalone punctuation
+# token.
+const Punctuations*: string = "`~!@$%^&*()-_=+[]{}\\|;:',<.>/?"
 const Space*: string = " "
 const Newline*: string = "\n"
 
 const DoubleQuote*: string = "\""
 const Backslash*: string = "\\"
+const Hash*: string = "#"
 # The `\X` escapes ASL recognises inside a string literal. Frozen to
 # this set (all also valid, identically-meaning C escapes), so a string
 # token can carry its escapes verbatim through to codegen.
@@ -110,3 +112,13 @@ proc consumeString*(source: seq[Rune], start: int): Result[int, string] =
     else:
       index += 1
   return err("unterminated string literal")
+
+# `#` then everything up to (but not including) the newline. A comment
+# runs to the newline or EOF and is never malformed.
+proc consumeComment*(source: seq[Rune], start: int): Result[int, string] =
+  if start >= source.len or $(source[start]) != Hash:
+    return ok(start)                               # not a comment → no match
+  var index = start + 1
+  while index < source.len and $(source[index]) != Newline:
+    index += 1
+  ok(index)

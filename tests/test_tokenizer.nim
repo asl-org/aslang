@@ -44,9 +44,9 @@ suite "tokenizer — happy paths":
     check toks[6].kind == tkNewline
 
   test "all defined punctuation characters are accepted":
-    # `"` is omitted: it now opens a string literal rather than being a
-    # standalone punctuation token (a lone `"` is an unterminated string).
-    const all = "`~!@#$%^&*()-_=+[]{}\\|;:',<.>/?"
+    # `"` and `#` are omitted: they open a string literal and a comment
+    # respectively, so neither is a standalone punctuation token.
+    const all = "`~!@$%^&*()-_=+[]{}\\|;:',<.>/?"
     let r = tokenizeStr(all)
     check r.isOk
     let toks = r.get
@@ -329,3 +329,38 @@ suite "tokenizer — strings":
     let r = tokenizeStr("\"a\\xb\"")
     check r.isErr
     check errorContains(r.error, "invalid string escape")
+
+suite "tokenizer — comments":
+
+  test "a comment is one tkComment token from # to end of line":
+    let r = tokenizeStr("# a comment\n")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkComment
+    check toks[0].value == "# a comment"
+    check toks[1].kind == tkNewline
+
+  test "a comment stops at the newline, which stays a separate token":
+    let r = tokenizeStr("# hi\nx")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkComment and toks[0].value == "# hi"
+    check toks[1].kind == tkNewline
+    check toks[2].kind == tkAlphabet and toks[2].value == "x"
+
+  test "a comment runs to EOF when the line has no newline":
+    let r = tokenizeStr("# trailing")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkComment and toks[0].value == "# trailing"
+    check toks[1].kind == tkNewline   # synthetic trailing
+
+  test "a bare # is a comment token":
+    let r = tokenizeStr("#")
+    check r.isOk
+    check r.get[0].kind == tkComment and r.get[0].value == "#"
+
+  test "a Trojan-Source codepoint hidden in a comment is still rejected":
+    let r = tokenizeStr("# ‮evil")
+    check r.isErr
+    check errorContains(r.error, "bidirectional")
