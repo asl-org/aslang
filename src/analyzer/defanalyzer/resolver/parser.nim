@@ -206,6 +206,7 @@ let spaceSpec* = newSpec("space ' '", tkSpace)
 let newlineSpec* = newSpec("newline '\\n'", tkNewline)
 let alphabetSpec* = newSpec("alphabet [a-zA-Z]", tkAlphabet)
 let integerSpec* = newSpec("integer", tkInteger)
+let floatSpec* = newSpec("float", tkFloat)
 
 let underscoreSpec* = newSpec("_")
 let bangSpec* = newSpec("!")
@@ -363,32 +364,10 @@ let infFloatSpec = newSpec[FloatLiteral]("inf float", infFloatConsumer)
 # (+|-)? digit+ ("." digit+)? ((e|E) (+|-)? digit+)?
 # Must have either decimal part or exponent to distinguish from integer
 proc numericFloatConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
-  let loc = parser.loc
-  var value: string
-  # Integer part (required) — one tkInteger token, sign folded in already.
-  let intPart = ? parser.expect(integerSpec)
-  value.add(intPart.value)
-  # Decimal part (optional)
-  var hasDecimal = false
-  let maybeDot = parser.expect(dotSpec)
-  if maybeDot.isOk:
-    hasDecimal = true
-    value.add(".")
-    let frac = ? parser.expect(integerSpec)
-    value.add(frac.value)
-  # Exponent part (optional) — `(e|E)` then a tkInteger whose token already
-  # carries the optional exponent sign.
-  var hasExponent = false
-  let maybeE = parser.expect(alphabetSpec)
-  if maybeE.isOk and (maybeE.get.value == "e" or maybeE.get.value == "E"):
-    hasExponent = true
-    value.add(maybeE.get.value)
-    let exp = ? parser.expect(integerSpec)
-    value.add(exp.value)
-  # Must have at least decimal or exponent to be a float
-  if not hasDecimal and not hasExponent:
-    return err(newParserError("expected '.' or 'e' for float literal", loc))
-  ok(newFloatLiteral(value, loc))
+  # The tokenizer scans the whole `(+|-)?digit+(.digit+)?((e|E)(+|-)?digit+)?`
+  # into one tkFloat token.
+  let token = ? parser.expect(floatSpec)
+  ok(newFloatLiteral(token.value, token.loc))
 
 let numericFloatSpec = newSpec[FloatLiteral]("numeric float", numericFloatConsumer)
 

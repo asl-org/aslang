@@ -84,6 +84,7 @@ proc consumeAlphabet*(source: seq[Rune], start: int): Result[int, string] =
 
 const Plus*: string = "+"
 const Hyphen*: string = "-"
+const Dot*: string = "."
 
 # `(+|-)? digit+` — an integer literal with an optional leading sign. The
 # sign binds only when digits follow (so `+inf` leaves `+` for
@@ -99,6 +100,43 @@ proc consumeInteger*(source: seq[Rune], start: int): Result[int, string] =
   if index == digitsStart:
     return ok(start)                        # no digits → not an integer
   ok(index)
+
+# `(+|-)? digit+ ("." digit+)? ((e|E) (+|-)? digit+)?` — a numeric float.
+# A `.` fraction or an `(e|E)` exponent is required; without either it is a
+# plain integer (so consumeFloat is tried before consumeInteger and rolls
+# back to no-match here). The sign folds in like consumeInteger.
+proc consumeFloat*(source: seq[Rune], start: int): Result[int, string] =
+  let isDigit = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isDigit
+  var index = start
+  if index < source.len and ($(source[index]) == Plus or $(source[index]) == Hyphen):
+    index += 1
+  let intStart = index
+  while index < source.len and source[index].isDigit:
+    index += 1
+  if index == intStart:
+    return ok(start)                        # no leading digit → not a float
+  var isFloat = false
+  # Fraction: `.` digit+ (a `.` with no digits is not consumed).
+  if index < source.len and $(source[index]) == Dot:
+    var j = index + 1
+    let fracStart = j
+    while j < source.len and source[j].isDigit:
+      j += 1
+    if j > fracStart:
+      index = j
+      isFloat = true
+  # Exponent: (e|E) (+|-)? digit+.
+  if index < source.len and ($(source[index]) == "e" or $(source[index]) == "E"):
+    var j = index + 1
+    if j < source.len and ($(source[j]) == Plus or $(source[j]) == Hyphen):
+      j += 1
+    let expStart = j
+    while j < source.len and source[j].isDigit:
+      j += 1
+    if j > expStart:
+      index = j
+      isFloat = true
+  if isFloat: ok(index) else: ok(start)     # no `.`/`e` → leave for integer
 
 # `"` content* `"` where content is an unescaped rune (not `"`, `\`, or
 # newline) or one of the `\X` escapes in StringEscapes. Returns the index

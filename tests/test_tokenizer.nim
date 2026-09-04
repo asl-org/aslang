@@ -394,3 +394,35 @@ suite "tokenizer — integers":
     let toks = r.get
     check toks[0].kind == tkInteger and toks[0].value == "1"
     check toks[1].kind == tkInteger and toks[1].value == "-2"
+
+suite "tokenizer — floats":
+
+  test "fraction and exponent forms are single tkFloat tokens":
+    for s in ["1.5", "0.1", "-1.5", "+2.0", "1e10", "1.5e3", "-1.5e-3", "1.0e400"]:
+      let r = tokenizeStr(s)
+      check r.isOk
+      let toks = r.get
+      check toks[0].kind == tkFloat and toks[0].value == s
+      check toks[1].kind == tkNewline   # nothing left over
+
+  test "a bare integer is not a float":
+    let r = tokenizeStr("123")
+    check r.isOk
+    check r.get[0].kind == tkInteger
+
+  test "a trailing dot with no fraction is an integer then a dot":
+    let r = tokenizeStr("12.")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkInteger and toks[0].value == "12"
+    check toks[1].kind == tkPunctuation and toks[1].value == "."
+
+  test "a method call on an integer is not swallowed as a float":
+    # `u32.add` — the `.add` must stay a getter/dot, not a float fraction.
+    let r = tokenizeStr("u32.add")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkAlphabet and toks[0].value == "u"
+    check toks[1].kind == tkInteger and toks[1].value == "32"
+    check toks[2].kind == tkPunctuation and toks[2].value == "."
+    check toks[3].kind == tkAlphabet and toks[3].value == "add"
