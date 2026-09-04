@@ -22,10 +22,10 @@ suite "tokenizer — happy paths":
     let r = tokenizeStr("abc")
     check r.isOk
     let toks = r.get
-    # Consecutive alphabet runes batch into ONE tkAlphabet token
+    # Consecutive alphabet runes batch into ONE tkIdentifier token
     # (whole run in .value) + the trailing synthetic newline.
     check toks.len == 2
-    check toks[0].kind == tkAlphabet
+    check toks[0].kind == tkIdentifier
     check toks[0].value == "abc"
     check toks[1].kind == tkNewline
 
@@ -35,7 +35,7 @@ suite "tokenizer — happy paths":
     let toks = r.get
     # a, space, 1, newline, !, é (utf8), trailing newline
     check toks.len == 7
-    check toks[0].kind == tkAlphabet
+    check toks[0].kind == tkIdentifier
     check toks[1].kind == tkSpace
     check toks[2].kind == tkInteger
     check toks[3].kind == tkNewline
@@ -44,9 +44,9 @@ suite "tokenizer — happy paths":
     check toks[6].kind == tkNewline
 
   test "all defined punctuation characters are accepted":
-    # `"` and `#` are omitted: they open a string literal and a comment
-    # respectively, so neither is a standalone punctuation token.
-    const all = "`~!@$%^&*()-_=+[]{}\\|;:',<.>/?"
+    # `"`, `#` and `_` are omitted: they open a string, a comment, and an
+    # identifier respectively, so none is a standalone punctuation token.
+    const all = "`~!@$%^&*()-=+[]{}\\|;:',<.>/?"
     let r = tokenizeStr(all)
     check r.isOk
     let toks = r.get
@@ -222,9 +222,9 @@ suite "tokenizer — UTF-8 happy path":
     check r.isOk
     let toks = r.get
     check toks.len == 4   # a, 文, b, trailing \n
-    check toks[0].kind == tkAlphabet
+    check toks[0].kind == tkIdentifier
     check toks[1].kind == tkUtf8
-    check toks[2].kind == tkAlphabet
+    check toks[2].kind == tkIdentifier
     check toks[3].kind == tkNewline
 
   test "high-codepoint UTF-8 is accepted (BMP supplemental)":
@@ -311,7 +311,7 @@ suite "tokenizer — strings":
     let r = tokenizeStr("ab\"cd\"12")
     check r.isOk
     let toks = r.get
-    check toks[0].kind == tkAlphabet and toks[0].value == "ab"
+    check toks[0].kind == tkIdentifier and toks[0].value == "ab"
     check toks[1].kind == tkString and toks[1].value == "\"cd\""
     check toks[2].kind == tkInteger and toks[2].value == "12"
 
@@ -346,7 +346,7 @@ suite "tokenizer — comments":
     let toks = r.get
     check toks[0].kind == tkComment and toks[0].value == "# hi"
     check toks[1].kind == tkNewline
-    check toks[2].kind == tkAlphabet and toks[2].value == "x"
+    check toks[2].kind == tkIdentifier and toks[2].value == "x"
 
   test "a comment runs to EOF when the line has no newline":
     let r = tokenizeStr("# trailing")
@@ -385,7 +385,7 @@ suite "tokenizer — integers":
     check r.isOk
     let toks = r.get
     check toks[0].kind == tkPunctuation and toks[0].value == "-"
-    check toks[1].kind == tkAlphabet and toks[1].value == "abc"
+    check toks[1].kind == tkIdentifier and toks[1].value == "abc"
 
   test "a sign only binds the immediately following number":
     # "1-2" is 1, then a signed -2 (no infix subtraction in the grammar).
@@ -417,12 +417,42 @@ suite "tokenizer — floats":
     check toks[0].kind == tkInteger and toks[0].value == "12"
     check toks[1].kind == tkPunctuation and toks[1].value == "."
 
-  test "a method call on an integer is not swallowed as a float":
+  test "a method call is not swallowed as a float":
     # `u32.add` — the `.add` must stay a getter/dot, not a float fraction.
     let r = tokenizeStr("u32.add")
     check r.isOk
     let toks = r.get
-    check toks[0].kind == tkAlphabet and toks[0].value == "u"
-    check toks[1].kind == tkInteger and toks[1].value == "32"
-    check toks[2].kind == tkPunctuation and toks[2].value == "."
-    check toks[3].kind == tkAlphabet and toks[3].value == "add"
+    check toks[0].kind == tkIdentifier and toks[0].value == "u32"
+    check toks[1].kind == tkPunctuation and toks[1].value == "."
+    check toks[2].kind == tkIdentifier and toks[2].value == "add"
+
+suite "tokenizer — identifiers":
+
+  test "letters, digits and underscores form one tkIdentifier":
+    for s in ["abc", "u32", "problem001", "snake_case", "_x", "_", "a1b2"]:
+      let r = tokenizeStr(s)
+      check r.isOk
+      let toks = r.get
+      check toks[0].kind == tkIdentifier and toks[0].value == s
+      check toks[1].kind == tkNewline   # nothing left over
+
+  test "a keyword is just an identifier at the token level":
+    let r = tokenizeStr("module")
+    check r.isOk
+    check r.get[0].kind == tkIdentifier and r.get[0].value == "module"
+
+  test "an identifier stops before a signed number (no separator needed)":
+    # `a-5` is identifier `a` then the signed integer `-5`; the identifier
+    # scanner stops at `-`, which is not an identifier character.
+    let r = tokenizeStr("a-5")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkIdentifier and toks[0].value == "a"
+    check toks[1].kind == tkInteger and toks[1].value == "-5"
+
+  test "a digit-led run is a number, not an identifier":
+    let r = tokenizeStr("32abc")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkInteger and toks[0].value == "32"
+    check toks[1].kind == tkIdentifier and toks[1].value == "abc"

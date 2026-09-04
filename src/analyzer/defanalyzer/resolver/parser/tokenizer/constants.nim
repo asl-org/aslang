@@ -35,11 +35,10 @@ const InvisibleCodepoints*: array[18, uint32] = [
 ]
 
 const AsciiMaxValue*: uint32 = 0x7F
-# `"` and `#` are intentionally excluded — they open a string literal and
-# a comment respectively (handled by `consumeString` / `consumeComment`,
-# tried before punctuation), so neither is ever a standalone punctuation
-# token.
-const Punctuations*: string = "`~!@$%^&*()-_=+[]{}\\|;:',<.>/?"
+# `"`, `#` and `_` are intentionally excluded — `"` opens a string, `#` a
+# comment, and `_` starts an identifier (all handled by their own specs,
+# tried before punctuation), so none is ever a standalone punctuation token.
+const Punctuations*: string = "`~!@$%^&*()-=+[]{}\\|;:',<.>/?"
 const Space*: string = " "
 const Newline*: string = "\n"
 
@@ -75,10 +74,18 @@ proc consumePunctuation*(source: seq[Rune], start: int): Result[int, string] =
   else:
     ok(start)
 
-proc consumeAlphabet*(source: seq[Rune], start: int): Result[int, string] =
-  let isAlphabet = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isAlphaAscii
-  var index = start
-  while index < source.len and source[index].isAlphabet:
+# `[A-Za-z_] [A-Za-z0-9_]*` — an identifier. The head is a letter or
+# underscore; tails add digits. Naming rules (length, reserved prefixes)
+# are enforced later by `newIdentifier`, not here.
+proc consumeIdentifier*(source: seq[Rune], start: int): Result[int, string] =
+  let isHead = proc (r: Rune): bool =
+    r.uint32 <= AsciiMaxValue and (r.char.isAlphaAscii or r.char == '_')
+  let isTail = proc (r: Rune): bool =
+    isHead(r) or (r.uint32 <= AsciiMaxValue and r.char.isDigit)
+  if start >= source.len or not isHead(source[start]):
+    return ok(start)                        # not an identifier → no match
+  var index = start + 1
+  while index < source.len and isTail(source[index]):
     index += 1
   ok(index)
 

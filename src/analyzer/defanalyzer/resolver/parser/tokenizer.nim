@@ -94,14 +94,17 @@ proc expectOneOf(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, str
 proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   let specs = @[
     newTokenSpec("a utf8 character", tkUtf8, consumeUtf8),
-    newTokenSpec("an alphabet", tkAlphabet, consumeAlphabet),
+    newTokenSpec("an identifier", tkIdentifier, consumeIdentifier),
+    # `float` MUST precede `integer`: they share the `(+|-)?digit+` prefix
+    # and `consumeFloat` rolls back to a no-match when there is no `.`/`e`,
+    # letting `consumeInteger` take a plain integer.
     newTokenSpec("a float", tkFloat, consumeFloat),
     newTokenSpec("an integer", tkInteger, consumeInteger),
-    newTokenSpec("a space", tkSpace, consumeSpace),
-    newTokenSpec("a new line", tkNewline, consumeNewline),
     newTokenSpec("a string", tkString, consumeString),
     newTokenSpec("a comment", tkComment, consumeComment),
     newTokenSpec("a punctuation", tkPunctuation, consumePunctuation),
+    newTokenSpec("a space", tkSpace, consumeSpace),
+    newTokenSpec("a new line", tkNewline, consumeNewline),
   ]
 
   var tokens: seq[Token]

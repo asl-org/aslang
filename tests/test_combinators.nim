@@ -12,7 +12,7 @@ import tutils
 # A few tiny leaf specs we can compose into bigger tests without
 # leaning on the full grammar.
 proc digitSpec(): Spec[Token] = newSpec("digit", tkInteger)
-proc alphaSpec(): Spec[Token] = newSpec("alphabet", tkAlphabet)
+proc alphaSpec(): Spec[Token] = newSpec("alphabet", tkIdentifier)
 proc spaceSpec(): Spec[Token] = newSpec("space ' '", tkSpace)
 
 proc mkParser(source: string): Parser =
@@ -49,7 +49,7 @@ suite "combinators — oneOf":
     let s = oneOf(@[digitSpec(), alphaSpec()])
     let r = p.expect(s)
     check r.isOk
-    check r.get.kind == tkAlphabet
+    check r.get.kind == tkIdentifier
 
   test "all alternatives failing yields the deepest error":
     let p = mkParser("!")

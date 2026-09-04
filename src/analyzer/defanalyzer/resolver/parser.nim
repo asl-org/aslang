@@ -204,11 +204,10 @@ proc map*[T, U](spec: Spec[T], name: string, mapper: Mapper[T, U]): Spec[U] =
 
 let spaceSpec* = newSpec("space ' '", tkSpace)
 let newlineSpec* = newSpec("newline '\\n'", tkNewline)
-let alphabetSpec* = newSpec("alphabet [a-zA-Z]", tkAlphabet)
+let identifierTokenSpec* = newSpec("identifier", tkIdentifier)
 let integerSpec* = newSpec("integer", tkInteger)
 let floatSpec* = newSpec("float", tkFloat)
 
-let underscoreSpec* = newSpec("_")
 let bangSpec* = newSpec("!")
 let atSpec* = newSpec("@")
 let plusSpec* = newSpec("+")
@@ -272,22 +271,12 @@ proc indentationConsumer(parser: Parser): Result[Space, ParserError] =
 
 let indentationSpec = newSpec[Space]("indentation", indentationConsumer)
 
-let identifierHeadCharSpec = oneOf(@[
-  underscoreSpec,
-  alphabetSpec,
-])
-
-let identifierTailCharSpec = oneOf(@[
-  identifierHeadCharSpec,
-  integerSpec,
-])
-
 proc identifierConsumer(parser: Parser): Result[Identifier, ParserError] =
-  let head = ? parser.expect(identifierHeadCharSpec)
-  let tails = ? parser.expect(any(identifierTailCharSpec))
-  var content = head.value
-  for tail in tails: content.add(tail.value)
-  newIdentifier(content, head.loc)
+  # The tokenizer scans `[A-Za-z_][A-Za-z0-9_]*` into one tkIdentifier
+  # token; newIdentifier enforces the naming rules (length, reserved
+  # prefixes). Keywords are ordinary identifiers matched later by value.
+  let token = ? parser.expect(identifierTokenSpec)
+  newIdentifier(token.value, token.loc)
 
 let identifierSpec = newSpec[Identifier]("identifier", identifierConsumer)
 
