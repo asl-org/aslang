@@ -10,14 +10,13 @@ proc newLocation(filepath: string, line, col: int): Location =
 proc newLocation*(filepath: string): Location = newLocation(filepath, 1, 1)
 proc newLocation*(): Location = newLocation("", 1, 1)
 
-proc advance*(loc: Location, content: seq[Rune]): Location =
+proc advance*(loc: Location, head: Rune): Location =
   var location = loc
-  for head in content:
-    if $(head) == Newline:
-      location.line += 1
-      location.col = 1
-    else:
-      location.col += 1
+  if $(head) == Newline:
+    location.line += 1
+    location.col = 1
+  else:
+    location.col += 1
   return location
 
 proc `$`*(loc: Location): string = fmt"{loc.filepath}:{loc.line}:{loc.col}"

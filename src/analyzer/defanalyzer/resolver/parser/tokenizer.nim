@@ -32,14 +32,6 @@ proc newTokenizer(filepath: string, source: string): Tokenizer =
 
 proc done(tokenizer: Tokenizer): bool = tokenizer.index >= tokenizer.source.len
 
-proc peek(tokenizer: Tokenizer): Result[Rune, string] =
-  if tokenizer.done:
-    err("{tokenizer.loc}: tokenizer reached end of token stream")
-  else:
-    let head = tokenizer.source[tokenizer.index]
-    ? head.validate(tokenizer.loc)
-    ok(head)
-
 proc pin(tokenizer: Tokenizer): Result[Location, string] =
   if tokenizer.checkpoint.isNone:
     tokenizer.checkpoint = some((tokenizer.index, tokenizer.loc))
@@ -50,9 +42,11 @@ proc pin(tokenizer: Tokenizer): Result[Location, string] =
 proc commit(tokenizer: Tokenizer, updated: int): Result[string, string] =
   if tokenizer.checkpoint.isSome:
     let content = tokenizer.source[tokenizer.index..<updated]
-    for head in content: ? head.validate(tokenizer.loc)
+    for head in content:
+      ? head.validate(tokenizer.loc)
+      tokenizer.loc = tokenizer.loc.advance(head)
+
     tokenizer.index = updated
-    tokenizer.loc = tokenizer.loc.advance(content)
     tokenizer.checkpoint = none((int, Location))
     ok[string]($(content))
   else:
@@ -66,20 +60,20 @@ proc rollback(tokenizer: Tokenizer): Result[void, string] =
   else:
     err(fmt"{tokenizer.loc}: [UNREACHABLE] tokenizer is not pinned")
 
-proc tokenize(tokenizer: Tokenizer, spec: TokenSpec): Result[Token, string] =
+proc expect(tokenizer: Tokenizer, spec: TokenSpec): Result[Token, string] =
   let loc = ? tokenizer.pin()
-  let updated = spec.match(tokenizer.source, tokenizer.index)
+  let index = spec.match(tokenizer.source, tokenizer.index)
 
-  if tokenizer.index == updated:
+  if tokenizer.index == index:
     ? tokenizer.rollback()
     err(fmt"{loc}: expected `{spec.label}`")
   else:
-    let value = ? tokenizer.commit(updated)
+    let value = ? tokenizer.commit(index)
     ok(newToken(spec.kind, value, loc))
 
-proc tokenize(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string] =
+proc expectOneOf(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string] =
   for spec in specs:
-    let maybeToken = tokenizer.tokenize(spec)
+    let maybeToken = tokenizer.expect(spec)
     if maybeToken.isOk: return maybeToken
 
   # Peek the current position for a compiler-safety violation before
@@ -88,8 +82,12 @@ proc tokenize(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string
   # rollback path and surface as a generic "unknown token" error —
   # losing the specific Trojan-Source-defense message peek produces.
   # When peek errs on a safety issue, propagate that error verbatim.
-  let head = ? tokenizer.peek
-  err(fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`")
+  if tokenizer.done:
+    err("{tokenizer.loc}: tokenizer reached end of token stream")
+  else:
+    let head = tokenizer.source[tokenizer.index]
+    ? head.validate(tokenizer.loc)
+    err(fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`")
 
 proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   let specs = @[
@@ -104,7 +102,7 @@ proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   var tokens: seq[Token]
   var tokenizer = newTokenizer(filepath, source)
   while not tokenizer.done:
-    let token = ? tokenizer.tokenize(specs)
+    let token = ? tokenizer.expectOneOf(specs)
     tokens.add(token)
 
   # Normalize trailing newline character handling
