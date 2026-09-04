@@ -30,18 +30,20 @@ suite "tokenizer — happy paths":
     check toks[1].kind == tkNewline
 
   test "every TokenKind appears in mixed input":
-    let r = tokenizeStr("a 1\n!é")
+    let r = tokenizeStr("a 1 2.5 \"s\" # c\n!")
     check r.isOk
     let toks = r.get
-    # a, space, 1, newline, !, é (utf8), trailing newline
-    check toks.len == 7
+    # a, sp, 1, sp, 2.5, sp, "s", sp, "# c", newline, !, trailing newline
+    check toks.len == 12
     check toks[0].kind == tkIdentifier
     check toks[1].kind == tkSpace
     check toks[2].kind == tkInteger
-    check toks[3].kind == tkNewline
-    check toks[4].kind == tkPunctuation
-    check toks[5].kind == tkUtf8
-    check toks[6].kind == tkNewline
+    check toks[4].kind == tkFloat
+    check toks[6].kind == tkString
+    check toks[8].kind == tkComment
+    check toks[9].kind == tkNewline
+    check toks[10].kind == tkPunctuation
+    check toks[11].kind == tkNewline
 
   test "all defined punctuation characters are accepted":
     # `"`, `#` and `_` are omitted: they open a string, a comment, and an
@@ -214,24 +216,26 @@ suite "tokenizer — invisible codepoints":
       check r.isErr
       check errorContains(r.error, "invisible")
 
-suite "tokenizer — UTF-8 happy path":
+suite "tokenizer — non-ASCII outside strings":
 
-  test "non-dangerous multi-byte UTF-8 produces tkUtf8 tokens":
-    # 文 is U+6587, well outside any danger list. Should pass.
+  test "a bare multi-byte UTF-8 char is unsupported outside a string":
+    # 文 is U+6587 (safe), but identifiers/numbers are ASCII-only, so a
+    # bare non-ASCII rune is an unsupported token.
     let r = tokenizeStr("a文b")
-    check r.isOk
-    let toks = r.get
-    check toks.len == 4   # a, 文, b, trailing \n
-    check toks[0].kind == tkIdentifier
-    check toks[1].kind == tkUtf8
-    check toks[2].kind == tkIdentifier
-    check toks[3].kind == tkNewline
+    check r.isErr
+    check errorContains(r.error, "unsupported")
 
-  test "high-codepoint UTF-8 is accepted (BMP supplemental)":
-    # Hiragana あ (U+3042) — clearly safe.
+  test "a bare high-codepoint UTF-8 char is unsupported":
     let r = tokenizeStr("あ")
+    check r.isErr
+    check errorContains(r.error, "unsupported")
+
+  test "non-ASCII is allowed inside a string literal":
+    # Inside a string the bytes are carried in the tkString token and
+    # validated for safety by commit — 文 is safe, so this is accepted.
+    let r = tokenizeStr("\"a文b\"")
     check r.isOk
-    check r.get[0].kind == tkUtf8
+    check r.get[0].kind == tkString and r.get[0].value == "\"a文b\""
 
 suite "tokenizer — locations across multiple lines":
 

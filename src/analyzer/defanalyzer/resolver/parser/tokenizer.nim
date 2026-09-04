@@ -33,13 +33,14 @@ proc newTokenizer(filepath: string, source: string): Tokenizer =
 proc done(tokenizer: Tokenizer): bool = tokenizer.index >= tokenizer.source.len
 
 proc unsupported(tokenizer: Tokenizer): string =
-  ## The head matched no spec — an ASCII control char (TAB, CR, …) that
-  ## is neither space/newline/punctuation nor alphanumeric. No safety
-  ## re-check is needed: every Trojan-Source codepoint is > ASCII, so it
-  ## is consumed by the utf8 spec and rejected in `commit` before ever
-  ## reaching here.
+  ## The head matched no spec. If it is a Trojan-Source codepoint, surface
+  ## the specific safety message; otherwise it is an unsupported character —
+  ## an ASCII control char (TAB, CR, …), or a non-ASCII rune outside a
+  ## string/comment (identifiers and numbers are ASCII-only).
   assert(not tokenizer.done, fmt"{tokenizer.loc}: tokenizer reached end of token stream")
   let head = tokenizer.source[tokenizer.index]
+  let safety = head.validate(tokenizer.loc)
+  if safety.isErr: return safety.error
   fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`"
 
 proc pin(tokenizer: Tokenizer): void =
@@ -93,7 +94,6 @@ proc expectOneOf(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, str
 
 proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   let specs = @[
-    newTokenSpec("a utf8 character", tkUtf8, consumeUtf8),
     newTokenSpec("an identifier", tkIdentifier, consumeIdentifier),
     # `float` MUST precede `integer`: they share the `(+|-)?digit+` prefix
     # and `consumeFloat` rolls back to a no-match when there is no `.`/`e`,

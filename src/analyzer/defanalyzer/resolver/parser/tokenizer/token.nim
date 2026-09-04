@@ -3,7 +3,7 @@ import strformat
 import ./location
 
 type TokenKind* = enum
-  tkPunctuation, tkSpace, tkNewline, tkIdentifier, tkInteger, tkFloat, tkUtf8, tkString, tkComment
+  tkPunctuation, tkSpace, tkNewline, tkIdentifier, tkInteger, tkFloat, tkString, tkComment
 
 type Token* = ref object
   kind: TokenKind

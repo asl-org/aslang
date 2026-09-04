@@ -50,12 +50,6 @@ const Hash*: string = "#"
 # token can carry its escapes verbatim through to codegen.
 const StringEscapes*: array[4, string] = [Backslash, DoubleQuote, "n", "t"]
 
-proc consumeUtf8*(source: seq[Rune], start: int): Result[int, string] =
-  var index = start
-  while index < source.len and source[index].uint32 > AsciiMaxValue:
-    index += 1
-  ok(index)
-
 proc consumeSpace*(source: seq[Rune], start: int): Result[int, string] =
   var index = start
   while index < source.len and $(source[index]) == Space:
