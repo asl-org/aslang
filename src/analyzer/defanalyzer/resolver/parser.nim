@@ -212,8 +212,6 @@ let digitSpec* = newSpec("digit [0-9]", tkDigit)
 
 let underscoreSpec* = newSpec("_")
 let hashSpec* = newSpec("#")
-let backslashSpec* = newSpec("\\")
-let doubleQuoteSpec* = newSpec("\"")
 let bangSpec* = newSpec("!")
 let atSpec* = newSpec("@")
 let plusSpec* = newSpec("+")
@@ -308,52 +306,13 @@ proc decoratorConsumer(parser: Parser): Result[Decorator, ParserError] =
 
 let decoratorSpec = newSpec[Decorator]("decorator", decoratorConsumer)
 
-proc makeEscapedParser(name: string, character: string, charSpec: Spec[Token]): Spec[StringContent] =
-  ## Returns a `Spec` for a single `\X` escape sequence.
-  let consumer = proc(parser: Parser): Result[StringContent, ParserError] =
-    let backslash = ? parser.expect(backslashSpec)
-    let token = ? parser.expect(charSpec)
-    if token.value != character:
-      return err(newParserError(fmt"expected '\\{character}' but found '\\{token.value}'", token.loc))
-    ok(newStringContent("\\" & character, backslash.loc))
-
-  newSpec[StringContent](name, consumer)
-
-let escapedStringContentSpec =
-  oneOf(@[
-    makeEscapedParser("string backslash character", "\\", backslashSpec),
-    makeEscapedParser("string double quote character", "\"", doubleQuoteSpec),
-    makeEscapedParser("string new line character", "n", alphabetSpec),
-    makeEscapedParser("string tab character", "t", alphabetSpec)
-  ])
-
-
-proc unescapedStringContentConsumer(parser: Parser): Result[StringContent, ParserError] =
-  let token = ? parser.expect(anythingButNewlineSpec("unescaped string character"))
-  if token.value == "\"" or token.value == "\\":
-    return err(newParserError(
-      fmt"expected a valid string character but found '{token.value}'", token.loc))
-  ok(newStringContent(token.value, token.loc))
-
-let unescapedStringContentSpec = newSpec[StringContent]("unescaped string content", unescapedStringContentConsumer)
-
-let stringContentSpec =
-  oneOf(@[
-    escapedStringContentSpec,
-    unescapedStringContentSpec,
-  ])
-
 proc stringLiteralConsumer(parser: Parser): Result[StringLiteral, ParserError] =
-  let openQuote = ? parser.expect(doubleQuoteSpec)
-  var content: string
-  while true:
-    let maybeChar = parser.expect(stringContentSpec)
-    if maybeChar.isErr:
-      if maybeChar.error.fatal: return err(maybeChar.error)
-      break
-    content.add(maybeChar.get.content)
-  discard ? parser.expect(doubleQuoteSpec)
-  ok(newStringLiteral(content, openQuote.loc))
+  # The tokenizer scans a whole string literal into one `tkString` token
+  # whose value is the raw `"…"` slice (quotes + verbatim escapes); strip
+  # the surrounding quotes to get the content.
+  let token = ? parser.expect(newSpec("string literal", tkString))
+  let content = token.value[1 .. ^2]
+  ok(newStringLiteral(content, token.loc))
 
 # Spec adapter for stringLiteralSpec — still consumed by remaining
 # combinator chains (import specs, literalDefSpec, etc.).

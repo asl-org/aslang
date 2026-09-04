@@ -69,13 +69,21 @@ proc expect(tokenizer: Tokenizer, spec: TokenSpec): Result[Option[Token], string
   # (e.g. a Trojan-Source codepoint), which must propagate immediately
   # rather than being retried against the remaining specs.
   tokenizer.pin()
-  let index = spec.match(tokenizer.source, tokenizer.index)
-  if tokenizer.index == index:
+  let maybeMatch = spec.match(tokenizer.source, tokenizer.index)
+  if maybeMatch.isErr:
+    # The spec matched its opening but the content is malformed (e.g. an
+    # unterminated string); surface it with the token-start location.
+    let message = fmt"{tokenizer.loc}: {maybeMatch.error}"
     tokenizer.rollback(spec.label)
-    ok(none(Token))
+    err(message)
   else:
-    let token = ? tokenizer.commit(index, spec.kind)
-    ok(some(token))
+    let index = maybeMatch.get
+    if tokenizer.index == index:
+      tokenizer.rollback(spec.label)
+      ok(none(Token))
+    else:
+      let token = ? tokenizer.commit(index, spec.kind)
+      ok(some(token))
 
 proc expectOneOf(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, string] =
   for spec in specs:
@@ -90,6 +98,7 @@ proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
     newTokenSpec("a digit", tkDigit, consumeDigit),
     newTokenSpec("a space", tkSpace, consumeSpace),
     newTokenSpec("a new line", tkNewline, consumeNewline),
+    newTokenSpec("a string", tkString, consumeString),
     newTokenSpec("a punctuation", tkPunctuation, consumePunctuation),
   ]
 

@@ -44,7 +44,9 @@ suite "tokenizer — happy paths":
     check toks[6].kind == tkNewline
 
   test "all defined punctuation characters are accepted":
-    const all = "`~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?"
+    # `"` is omitted: it now opens a string literal rather than being a
+    # standalone punctuation token (a lone `"` is an unterminated string).
+    const all = "`~!@#$%^&*()-_=+[]{}\\|;:',<.>/?"
     let r = tokenizeStr(all)
     check r.isOk
     let toks = r.get
@@ -281,3 +283,49 @@ suite "tokenizer — error reporting":
     let r = tokenizeStr("a\x00b")
     check r.isErr
     check errorContains(r.error, "unsupported token")
+
+suite "tokenizer — strings":
+
+  test "a string literal is one tkString token carrying the raw quoted slice":
+    let r = tokenizeStr("\"hello\"")
+    check r.isOk
+    let toks = r.get
+    check toks.len == 2   # the string + trailing newline
+    check toks[0].kind == tkString
+    check toks[0].value == "\"hello\""
+
+  test "escapes are kept verbatim inside the token value":
+    let r = tokenizeStr("\"a\\nb\\t\\\"\\\\\"")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkString
+    check toks[0].value == "\"a\\nb\\t\\\"\\\\\""
+
+  test "empty string is a single tkString token":
+    let r = tokenizeStr("\"\"")
+    check r.isOk
+    check r.get[0].kind == tkString
+    check r.get[0].value == "\"\""
+
+  test "a string splits cleanly from surrounding tokens":
+    let r = tokenizeStr("ab\"cd\"12")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkAlphabet and toks[0].value == "ab"
+    check toks[1].kind == tkString and toks[1].value == "\"cd\""
+    check toks[2].kind == tkDigit and toks[2].value == "12"
+
+  test "an unterminated string is rejected":
+    let r = tokenizeStr("\"abc")
+    check r.isErr
+    check errorContains(r.error, "unterminated string literal")
+
+  test "a raw newline inside a string is an unterminated string":
+    let r = tokenizeStr("\"ab\ncd\"")
+    check r.isErr
+    check errorContains(r.error, "unterminated string literal")
+
+  test "an invalid escape is rejected":
+    let r = tokenizeStr("\"a\\xb\"")
+    check r.isErr
+    check errorContains(r.error, "invalid string escape")

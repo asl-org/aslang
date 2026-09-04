@@ -1,4 +1,4 @@
-import unicode, strutils
+import unicode, strutils, strformat, results
 
 const BidiCodepoints*: array[11, uint32] = [
   0x200E, # LRM
@@ -35,45 +35,78 @@ const InvisibleCodepoints*: array[18, uint32] = [
 ]
 
 const AsciiMaxValue*: uint32 = 0x7F
-const Punctuations*: string = "`~!@#$%^&*()-_=+[]{}\\|;:'\",<.>/?"
+# `"` is intentionally excluded — it opens a string literal (handled by
+# `consumeString`, tried before punctuation), so it is never a standalone
+# punctuation token.
+const Punctuations*: string = "`~!@#$%^&*()-_=+[]{}\\|;:',<.>/?"
 const Space*: string = " "
 const Newline*: string = "\n"
 
-proc consumeUtf8*(source: seq[Rune], start: int): int =
+const DoubleQuote*: string = "\""
+const Backslash*: string = "\\"
+# The `\X` escapes ASL recognises inside a string literal. Frozen to
+# this set (all also valid, identically-meaning C escapes), so a string
+# token can carry its escapes verbatim through to codegen.
+const StringEscapes*: array[4, string] = [Backslash, DoubleQuote, "n", "t"]
+
+proc consumeUtf8*(source: seq[Rune], start: int): Result[int, string] =
   var index = start
   while index < source.len and source[index].uint32 > AsciiMaxValue:
     index += 1
-  return index
+  ok(index)
 
-proc consumeSpace*(source: seq[Rune], start: int): int =
+proc consumeSpace*(source: seq[Rune], start: int): Result[int, string] =
   var index = start
   while index < source.len and $(source[index]) == Space:
     index += 1
-  return index
+  ok(index)
 
-proc consumeNewline*(source: seq[Rune], start: int): int =
+proc consumeNewline*(source: seq[Rune], start: int): Result[int, string] =
   var index = start
   while index < source.len and $(source[index]) == Newline:
     index += 1
-  return index
+  ok(index)
 
-proc consumePunctuation*(source: seq[Rune], start: int): int =
-  var index = start
-  if index < source.len and $(source[index]) in Punctuations:
-    index + 1
+proc consumePunctuation*(source: seq[Rune], start: int): Result[int, string] =
+  if start < source.len and $(source[start]) in Punctuations:
+    ok(start + 1)
   else:
-    index
+    ok(start)
 
-proc consumeAlphabet*(source: seq[Rune], start: int): int =
+proc consumeAlphabet*(source: seq[Rune], start: int): Result[int, string] =
   let isAlphabet = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isAlphaAscii
   var index = start
   while index < source.len and source[index].isAlphabet:
     index += 1
-  return index
+  ok(index)
 
-proc consumeDigit*(source: seq[Rune], start: int): int =
+proc consumeDigit*(source: seq[Rune], start: int): Result[int, string] =
   let isDigit = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isDigit
   var index = start
   while index < source.len and source[index].isDigit:
     index += 1
-  return index
+  ok(index)
+
+# `"` content* `"` where content is an unescaped rune (not `"`, `\`, or
+# newline) or one of the `\X` escapes in StringEscapes. Returns the index
+# past the closing quote; errs on an unterminated or badly-escaped string.
+proc consumeString*(source: seq[Rune], start: int): Result[int, string] =
+  if start >= source.len or $(source[start]) != DoubleQuote:
+    return ok(start)                               # not a string → no match
+  var index = start + 1
+  while index < source.len:
+    let head = $(source[index])
+    if head == DoubleQuote:
+      return ok(index + 1)                         # closing quote
+    elif head == Backslash:
+      if index + 1 >= source.len:
+        return err("unterminated string literal")
+      let escape = $(source[index + 1])
+      if escape notin StringEscapes:
+        return err(fmt"invalid string escape `\{escape}`")
+      index += 2
+    elif head == Newline:
+      return err("unterminated string literal")
+    else:
+      index += 1
+  return err("unterminated string literal")
