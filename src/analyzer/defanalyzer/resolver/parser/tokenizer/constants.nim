@@ -82,11 +82,22 @@ proc consumeAlphabet*(source: seq[Rune], start: int): Result[int, string] =
     index += 1
   ok(index)
 
-proc consumeDigit*(source: seq[Rune], start: int): Result[int, string] =
+const Plus*: string = "+"
+const Hyphen*: string = "-"
+
+# `(+|-)? digit+` — an integer literal with an optional leading sign. The
+# sign binds only when digits follow (so `+inf` leaves `+` for
+# punctuation); a lone sign consumes nothing.
+proc consumeInteger*(source: seq[Rune], start: int): Result[int, string] =
   let isDigit = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isDigit
   var index = start
+  if index < source.len and ($(source[index]) == Plus or $(source[index]) == Hyphen):
+    index += 1
+  let digitsStart = index
   while index < source.len and source[index].isDigit:
     index += 1
+  if index == digitsStart:
+    return ok(start)                        # no digits → not an integer
   ok(index)
 
 # `"` content* `"` where content is an unescaped rune (not `"`, `\`, or

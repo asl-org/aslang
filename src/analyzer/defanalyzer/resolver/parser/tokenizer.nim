@@ -95,7 +95,7 @@ proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   let specs = @[
     newTokenSpec("a utf8 character", tkUtf8, consumeUtf8),
     newTokenSpec("an alphabet", tkAlphabet, consumeAlphabet),
-    newTokenSpec("a digit", tkDigit, consumeDigit),
+    newTokenSpec("an integer", tkInteger, consumeInteger),
     newTokenSpec("a space", tkSpace, consumeSpace),
     newTokenSpec("a new line", tkNewline, consumeNewline),
     newTokenSpec("a string", tkString, consumeString),

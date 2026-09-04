@@ -205,7 +205,7 @@ proc map*[T, U](spec: Spec[T], name: string, mapper: Mapper[T, U]): Spec[U] =
 let spaceSpec* = newSpec("space ' '", tkSpace)
 let newlineSpec* = newSpec("newline '\\n'", tkNewline)
 let alphabetSpec* = newSpec("alphabet [a-zA-Z]", tkAlphabet)
-let digitSpec* = newSpec("digit [0-9]", tkDigit)
+let integerSpec* = newSpec("integer", tkInteger)
 
 let underscoreSpec* = newSpec("_")
 let bangSpec* = newSpec("!")
@@ -278,7 +278,7 @@ let identifierHeadCharSpec = oneOf(@[
 
 let identifierTailCharSpec = oneOf(@[
   identifierHeadCharSpec,
-  digitSpec,
+  integerSpec,
 ])
 
 proc identifierConsumer(parser: Parser): Result[Identifier, ParserError] =
@@ -318,33 +318,11 @@ let stringLiteralSpec* = newSpec[StringLiteral]("string_literal", stringLiteralC
 # (+ | -) digit+
 let signSpec = oneOf(@[plusSpec, hyphenSpec])
 
-# digit+
-proc unsignedIntegerLiteralConsumer(parser: Parser): Result[UnsignedIntegerLiteral, ParserError] =
-  let loc = parser.loc
-  let digits = ? parser.expect(atLeastOne(digitSpec))
-  var value: string
-  for d in digits: value.add(d.value)
-  ok(newUnsignedIntegerLiteral(value, loc))
-
-let unsignedIntegerLiteralSpec = newSpec[UnsignedIntegerLiteral]("unsigned integer literal", unsignedIntegerLiteralConsumer)
-
-
-proc signedIntegerLiteralConsumer(parser: Parser): Result[SignedIntegerLiteral, ParserError] =
-  let sign = ? parser.expect(signSpec)
-  let magnitude = ? parser.expect(unsignedIntegerLiteralSpec)
-  ok(newSignedIntegerLiteral(sign.value, magnitude, sign.loc))
-
-let signedIntegerLiteralSpec = newSpec[SignedIntegerLiteral]("signed integer literal", signedIntegerLiteralConsumer)
-
+# The tokenizer scans `(+|-)?digit+` into one tkInteger token;
+# newIntegerLiteral splits its optional leading sign into signed/unsigned.
 proc integerLiteralConsumer(parser: Parser): Result[IntegerLiteral, ParserError] =
-  var errors: seq[ParserError]
-  let maybeSigned = parser.expect(signedIntegerLiteralSpec)
-  if maybeSigned.isOk: return ok(newIntegerLiteral(maybeSigned.get))
-  errors.add(maybeSigned.error)
-  let maybeUnsigned = parser.expect(unsignedIntegerLiteralSpec)
-  if maybeUnsigned.isOk: return ok(newIntegerLiteral(maybeUnsigned.get))
-  errors.add(maybeUnsigned.error)
-  err(max(errors))
+  let token = ? parser.expect(integerSpec)
+  ok(newIntegerLiteral(token.value, token.loc))
 
 let integerLiteralSpec = newSpec[IntegerLiteral]("integer literal", integerLiteralConsumer)
 
@@ -387,32 +365,26 @@ let infFloatSpec = newSpec[FloatLiteral]("inf float", infFloatConsumer)
 proc numericFloatConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
   let loc = parser.loc
   var value: string
-  # Optional sign
-  let maybeSign = parser.expect(signSpec)
-  if maybeSign.isOk: value.add(maybeSign.get.value)
-  # Integer part (required)
-  let intDigits = ? parser.expect(atLeastOne(digitSpec))
-  for d in intDigits: value.add(d.value)
+  # Integer part (required) — one tkInteger token, sign folded in already.
+  let intPart = ? parser.expect(integerSpec)
+  value.add(intPart.value)
   # Decimal part (optional)
   var hasDecimal = false
   let maybeDot = parser.expect(dotSpec)
   if maybeDot.isOk:
     hasDecimal = true
     value.add(".")
-    let fracDigits = ? parser.expect(atLeastOne(digitSpec))
-    for d in fracDigits: value.add(d.value)
-  # Exponent part (optional)
+    let frac = ? parser.expect(integerSpec)
+    value.add(frac.value)
+  # Exponent part (optional) — `(e|E)` then a tkInteger whose token already
+  # carries the optional exponent sign.
   var hasExponent = false
-  let maybeE = parser.expect(oneOf(@[
-    alphabetSpec, alphabetSpec,
-  ]))
+  let maybeE = parser.expect(alphabetSpec)
   if maybeE.isOk and (maybeE.get.value == "e" or maybeE.get.value == "E"):
     hasExponent = true
     value.add(maybeE.get.value)
-    let maybeExpSign = parser.expect(signSpec)
-    if maybeExpSign.isOk: value.add(maybeExpSign.get.value)
-    let expDigits = ? parser.expect(atLeastOne(digitSpec))
-    for d in expDigits: value.add(d.value)
+    let exp = ? parser.expect(integerSpec)
+    value.add(exp.value)
   # Must have at least decimal or exponent to be a float
   if not hasDecimal and not hasExponent:
     return err(newParserError("expected '.' or 'e' for float literal", loc))

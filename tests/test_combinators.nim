@@ -11,7 +11,7 @@ import tutils
 
 # A few tiny leaf specs we can compose into bigger tests without
 # leaning on the full grammar.
-proc digitSpec(): Spec[Token] = newSpec("digit", tkDigit)
+proc digitSpec(): Spec[Token] = newSpec("digit", tkInteger)
 proc alphaSpec(): Spec[Token] = newSpec("alphabet", tkAlphabet)
 proc spaceSpec(): Spec[Token] = newSpec("space ' '", tkSpace)
 
@@ -42,7 +42,7 @@ suite "combinators — oneOf":
     let s = oneOf(@[digitSpec(), alphaSpec()])
     let r = p.expect(s)
     check r.isOk
-    check r.get.kind == tkDigit
+    check r.get.kind == tkInteger
 
   test "later alternative is tried after earlier ones fail":
     let p = mkParser("a")
@@ -67,7 +67,7 @@ suite "combinators — any / atLeastOne":
     check p.index == 0   # nothing consumed
 
   test "any consumes a maximal run":
-    # The tokenizer batches a consecutive digit run into ONE tkDigit
+    # The tokenizer batches a consecutive digit run into ONE tkInteger
     # token whose value carries the whole run. `any(digitSpec)` on
     # "123a" therefore returns a single token — but its .value is
     # the full "123" run, which is what "maximal" means at the
@@ -85,7 +85,7 @@ suite "combinators — any / atLeastOne":
     check r.isErr
 
   test "atLeastOne returns one or more":
-    # Same batching note as above — "12" is one tkDigit token whose
+    # Same batching note as above — "12" is one tkInteger token whose
     # value is "12", so atLeastOne succeeds with a single-token seq.
     let p = mkParser("12")
     let r = p.expect(atLeastOne(digitSpec()))
@@ -124,7 +124,7 @@ suite "combinators — oneOf edges":
     let s = oneOf(@[digitSpec()])
     let r = p.expect(s)
     check r.isOk
-    check r.get.kind == tkDigit
+    check r.get.kind == tkInteger
 
   test "single-alternative oneOf failure surfaces the inner error":
     let p = mkParser("a")

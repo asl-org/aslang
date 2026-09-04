@@ -74,6 +74,15 @@ proc newIntegerLiteral*(signed: SignedIntegerLiteral): IntegerLiteral =
 proc newIntegerLiteral*(unsigned: UnsignedIntegerLiteral): IntegerLiteral =
   IntegerLiteral(kind: ilkUnsigned, unsigned: unsigned)
 
+proc newIntegerLiteral*(value: string, loc: Location): IntegerLiteral =
+  # `value` is the raw tokenized `(+|-)?digit+`; a leading sign makes it
+  # signed, otherwise it is an unsigned magnitude.
+  if value.len > 0 and (value[0] == '+' or value[0] == '-'):
+    let magnitude = newUnsignedIntegerLiteral(value[1 .. ^1], loc)
+    newIntegerLiteral(newSignedIntegerLiteral($value[0], magnitude, loc))
+  else:
+    newIntegerLiteral(newUnsignedIntegerLiteral(value, loc))
+
 
 proc signed*(il: IntegerLiteral): SignedIntegerLiteral =
   assert il.kind == ilkSigned,

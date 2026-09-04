@@ -37,7 +37,7 @@ suite "tokenizer — happy paths":
     check toks.len == 7
     check toks[0].kind == tkAlphabet
     check toks[1].kind == tkSpace
-    check toks[2].kind == tkDigit
+    check toks[2].kind == tkInteger
     check toks[3].kind == tkNewline
     check toks[4].kind == tkPunctuation
     check toks[5].kind == tkUtf8
@@ -55,13 +55,13 @@ suite "tokenizer — happy paths":
     for i in 0..<all.len:
       check toks[i].kind == tkPunctuation
 
-  test "consecutive digits batch into a single tkDigit token":
+  test "consecutive digits batch into a single tkInteger token":
     let r = tokenizeStr("0123456789")
     check r.isOk
     let toks = r.get
     # One batched digit token + trailing synthetic newline.
     check toks.len == 2
-    check toks[0].kind == tkDigit
+    check toks[0].kind == tkInteger
     check toks[0].value == "0123456789"
     check toks[1].kind == tkNewline
 
@@ -313,7 +313,7 @@ suite "tokenizer — strings":
     let toks = r.get
     check toks[0].kind == tkAlphabet and toks[0].value == "ab"
     check toks[1].kind == tkString and toks[1].value == "\"cd\""
-    check toks[2].kind == tkDigit and toks[2].value == "12"
+    check toks[2].kind == tkInteger and toks[2].value == "12"
 
   test "an unterminated string is rejected":
     let r = tokenizeStr("\"abc")
@@ -364,3 +364,33 @@ suite "tokenizer — comments":
     let r = tokenizeStr("# ‮evil")
     check r.isErr
     check errorContains(r.error, "bidirectional")
+
+suite "tokenizer — integers":
+
+  test "a bare integer is one tkInteger token":
+    let r = tokenizeStr("12345")
+    check r.isOk
+    check r.get[0].kind == tkInteger and r.get[0].value == "12345"
+
+  test "a leading sign is folded into the integer token":
+    for s in ["-123", "+7", "-0"]:
+      let r = tokenizeStr(s)
+      check r.isOk
+      let toks = r.get
+      check toks[0].kind == tkInteger and toks[0].value == s
+      check toks[1].kind == tkNewline   # nothing left over
+
+  test "a sign not followed by digits stays punctuation":
+    let r = tokenizeStr("-abc")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkPunctuation and toks[0].value == "-"
+    check toks[1].kind == tkAlphabet and toks[1].value == "abc"
+
+  test "a sign only binds the immediately following number":
+    # "1-2" is 1, then a signed -2 (no infix subtraction in the grammar).
+    let r = tokenizeStr("1-2")
+    check r.isOk
+    let toks = r.get
+    check toks[0].kind == tkInteger and toks[0].value == "1"
+    check toks[1].kind == tkInteger and toks[1].value == "-2"
