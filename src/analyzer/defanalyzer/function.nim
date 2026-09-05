@@ -8,7 +8,7 @@
 
 import strformat, strutils, sequtils, hashes, sets
 
-import resolver/index as resolver
+import ../resolver/index as resolver
 import argtype
 import statement
 

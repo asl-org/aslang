@@ -12,7 +12,7 @@
 
 import results, strformat, strutils, tables, hashes, sets, sequtils
 
-import ./resolver/index as resolver
+import ../resolver/index as resolver
 
 # Mutually-recursive cluster: AnalyzedModuleArgumentType's impls
 # field references AnalyzedArgumentType, which case-dispatches back

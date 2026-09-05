@@ -6,7 +6,7 @@
 
 import results, strformat, hashes, tables
 
-import ./resolver/index as resolver
+import ../resolver/index as resolver
 import ./importdef
 
 # ============================================================
