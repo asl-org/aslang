@@ -5,7 +5,7 @@ import strformat, sequtils, strutils, unicode, results, options, tables, os
 # the parser's public surface (every AST node carries one). The rest
 # of the tokenizer (Token, TokenKind, tokenize) stays private to the
 # parser layer.
-import ./parser/tokenizer
+import ./parser/tokenizer/index as tokenizer
 export tokenizer.location
 
 # combinators.nim (Spec[T] + oneOf / any / optional / ...) is

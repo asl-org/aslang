@@ -1,6 +1,6 @@
 import strformat, strutils, results, hashes
 
-import ./tokenizer
+import ./tokenizer/index
 import ./error
 
 # ============================================================

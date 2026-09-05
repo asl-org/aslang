@@ -1,9 +1,9 @@
 import results, strformat, unicode, options
 
-import ./tokenizer/constants
-import ./tokenizer/location
-import ./tokenizer/token
-import ./tokenizer/spec
+import ./constants
+import ./location
+import ./token
+import ./spec
 
 export location
 export token
@@ -39,9 +39,7 @@ proc unsupported(tokenizer: Tokenizer): string =
   ## string/comment (identifiers and numbers are ASCII-only).
   assert(not tokenizer.done, fmt"{tokenizer.loc}: tokenizer reached end of token stream")
   let head = tokenizer.source[tokenizer.index]
-  let safety = head.validate(tokenizer.loc)
-  if safety.isErr: return safety.error
-  fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`"
+  head.validate(tokenizer.loc).errorOr(fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`")
 
 proc pin(tokenizer: Tokenizer): void =
   assert(tokenizer.checkpoint.isNone, fmt"{tokenizer.loc}: [UNREACHABLE] tokenizer is already pinned")
