@@ -6,7 +6,7 @@
 
 import results, strformat, options, tables, hashes, sequtils
 
-import parser/index as parser
+import ../parser/index as parser
 import argtype
 import datadef
 import function

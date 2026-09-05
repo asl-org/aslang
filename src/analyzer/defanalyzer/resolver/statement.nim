@@ -15,7 +15,7 @@
 
 import results, strformat, options, tables
 
-import parser/index as parser
+import ../parser/index as parser
 import argtype
 import refs
 

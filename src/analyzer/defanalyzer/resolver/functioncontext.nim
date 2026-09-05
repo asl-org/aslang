@@ -12,7 +12,7 @@
 
 import options, results, strformat, tables
 
-import parser/index as parser
+import ../parser/index as parser
 import argtype
 import function
 import statement

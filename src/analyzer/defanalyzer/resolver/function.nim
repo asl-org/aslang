@@ -5,7 +5,7 @@
 
 import strformat, strutils, hashes
 
-import parser/index as parser
+import ../parser/index as parser
 import argtype
 import argtype
 import statement
