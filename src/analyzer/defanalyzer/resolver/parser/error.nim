@@ -1,6 +1,6 @@
 import strformat
 
-import ./tokenizer/index
+import ../tokenizer/index
 
 # ============================================================
 # Parser Error

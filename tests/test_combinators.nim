@@ -5,7 +5,7 @@
 
 import unittest, options, results
 
-import analyzer/defanalyzer/resolver/parser/tokenizer/index
+import analyzer/defanalyzer/resolver/tokenizer/index
 import analyzer
 import tutils
 

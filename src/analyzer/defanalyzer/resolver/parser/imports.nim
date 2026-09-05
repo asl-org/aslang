@@ -1,6 +1,6 @@
 import strformat, strutils, options, sequtils, tables, results
 
-import ./tokenizer/index
+import ../tokenizer/index
 import ./error
 
 import ./identifiers

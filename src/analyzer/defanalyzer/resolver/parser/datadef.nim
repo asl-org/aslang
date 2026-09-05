@@ -6,7 +6,7 @@
 
 import strformat, strutils, sequtils, tables, results
 
-import ./tokenizer/index
+import ../tokenizer/index
 import ./error
 
 import ./identifiers
