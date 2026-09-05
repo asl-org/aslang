@@ -4,7 +4,7 @@
 
 import strformat, strutils, sequtils, options, tables, results, hashes
 
-import ../tokenizer/index
+import ../tokenizer/index as tokenizer
 import ./error
 
 import ./identifiers

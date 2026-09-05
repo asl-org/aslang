@@ -7,7 +7,7 @@
 
 import options, results, sequtils, strformat, tables, hashes
 
-import ../tokenizer/index
+import ../tokenizer/index as tokenizer
 import ../parser/index as parser
 import ../resolver/index as resolver
 import ./argtype

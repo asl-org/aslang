@@ -4,7 +4,7 @@
 
 import strformat
 
-import ../tokenizer/index
+import ../tokenizer/index as tokenizer
 import ../parser/index as parser
 import ../resolver/index as resolver
 import ../defanalyzer/index as defanalyzer

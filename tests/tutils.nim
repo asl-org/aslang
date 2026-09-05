@@ -2,7 +2,7 @@
 
 import os, results, strutils, tables
 
-import tokenizer/index
+import tokenizer/index as tokenizer
 import parser/index as parser
 import resolver/index as resolver
 import analyzer/index as analyzer

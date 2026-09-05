@@ -7,7 +7,7 @@
 
 import unittest, options, results, strutils
 
-import tokenizer/index
+import tokenizer/index as tokenizer
 import parser/index as parser
 import analyzer/index as analyzer
 import tutils

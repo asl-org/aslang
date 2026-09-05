@@ -6,7 +6,7 @@
 
 import results, strformat, options, tables, hashes, sequtils
 
-import ../tokenizer/index
+import ../tokenizer/index as tokenizer
 import ../parser/index as parser
 import argtype
 import datadef
