@@ -11,7 +11,7 @@
 
 import results, strformat
 
-import parser
+import parser/index as parser
 import argtype
 
 type ResolvedStructRef* = ref object

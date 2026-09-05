@@ -7,7 +7,7 @@
 
 import results, sequtils, strformat, hashes, tables
 
-import parser
+import parser/index as parser
 import types
 import imports
 

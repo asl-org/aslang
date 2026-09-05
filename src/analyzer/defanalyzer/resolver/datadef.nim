@@ -5,7 +5,7 @@
 
 import results, sequtils, sets, strformat, tables
 
-import parser
+import parser/index as parser
 import indexing
 import argtype  # ResolvedGenericArgumentType lives here
 import argtype

@@ -5,7 +5,7 @@ import strformat, sequtils, strutils, unicode, results, options, tables, os
 # the parser's public surface (every AST node carries one). The rest
 # of the tokenizer (Token, TokenKind, tokenize) stays private to the
 # parser layer.
-import ./tokenizer/index as tokenizer
+import ../tokenizer/index as tokenizer
 export tokenizer.location
 
 # combinators.nim (Spec[T] + oneOf / any / optional / ...) is
@@ -13,43 +13,43 @@ export tokenizer.location
 # Downstream layers (resolver, analyzer, cli, asl.nim) consume the
 # parser through the AST types + `parse*` entry point below; the
 # combinator machinery has no callers outside the parser layer.
-# Parser tests that need it import `./parser/combinators` directly.
+# Parser tests that need it import `./combinators` directly.
 
-import ./parser/identifiers
+import ./identifiers
 export identifiers
 
-import ./parser/literals
+import ./literals
 export literals
 
-import ./parser/imports
+import ./imports
 export imports
 
-import ./parser/argtype
+import ./argtype
 export argtype
 
-import ./parser/refs
+import ./refs
 export refs
 
-import ./parser/datadef
+import ./datadef
 export datadef
 
-import ./parser/statement
+import ./statement
 export statement
 
-import ./parser/function
+import ./function
 export function
 
-import ./parser/types
+import ./types
 export types
 
-import ./parser/app
+import ./app
 export app
 
-# import ./parser/combinators
+# import ./combinators
 # export combinators
-import ./parser/error
-import ./parser/decorator
-import ./parser/utils
+import ./error
+import ./decorator
+import ./utils
 
 type File = app.File
 

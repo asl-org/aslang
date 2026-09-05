@@ -11,7 +11,7 @@ import results, strformat, tables, options
 ## the combinator layer directly (parser tests) import
 ## `resolver/parser/combinators` explicitly.
 
-import ./resolver/parser
+import ./resolver/parser/index as parser
 export parser
 
 import ./resolver/indexing

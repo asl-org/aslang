@@ -10,7 +10,7 @@
 
 import strformat, strutils, hashes, tables, sets
 
-import parser
+import parser/index as parser
 
 type
   ResolvedGenericArgumentType* = ref object

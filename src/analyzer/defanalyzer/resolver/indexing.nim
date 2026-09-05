@@ -6,7 +6,7 @@
 
 import tables
 
-import parser
+import parser/index as parser
 
 proc indexByName*[T](items: seq[T]): Table[Identifier, int] =
   mixin name
