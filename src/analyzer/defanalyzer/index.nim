@@ -8,35 +8,35 @@
 
 import options, results, sequtils, strformat, tables
 
-import ./resolver/index as resolver
+import ../resolver/index as resolver
 export resolver
 
-import ./defanalyzer/context
+import ./context
 export context
 
-import ./defanalyzer/argtype
+import ./argtype
 export argtype
 
 
-import ./defanalyzer/datadef
+import ./datadef
 export datadef
 
-import ./defanalyzer/refs
+import ./refs
 export refs
 
-import ./defanalyzer/statement
+import ./statement
 export statement
 
-import ./defanalyzer/function
+import ./function
 export function
 
-import ./defanalyzer/types
+import ./types
 export types
 
-import ./defanalyzer/app
+import ./app
 export app
 
-import ./defanalyzer/importdef
+import ./importdef
 export importdef
 
 # The argtype cluster carries a ResolvedTypeContext for exactly one

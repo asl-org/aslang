@@ -7,7 +7,7 @@
 
 import results, sets, strformat, options
 
-import ./defanalyzer
+import ./defanalyzer/index as defanalyzer
 
 # ============================================================
 # AnalyzedBinding

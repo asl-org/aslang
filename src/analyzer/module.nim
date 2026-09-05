@@ -3,7 +3,7 @@
 
 import tables, options
 
-import defanalyzer
+import defanalyzer/index as defanalyzer
 import function
 
 type AnalyzedModule* = ref object

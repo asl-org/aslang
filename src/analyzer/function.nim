@@ -4,7 +4,7 @@
 
 import strformat
 
-import ./defanalyzer
+import ./defanalyzer/index as defanalyzer
 import statement
 
 # ---- AnalyzedUserFunction ----

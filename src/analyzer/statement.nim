@@ -16,7 +16,7 @@
 
 import strformat, options
 
-import ./defanalyzer
+import ./defanalyzer/index as defanalyzer
 import pattern
 
 # ---- AnalyzedGetter (resolved struct field access) ----
