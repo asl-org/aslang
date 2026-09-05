@@ -13,7 +13,7 @@
 
 import strformat, tables
 
-import ./defanalyzer/index as defanalyzer
+import ../defanalyzer/index as defanalyzer
 import ./imports
 
 type AnalyzedFileContext* = Table[ResolvedLocalType, AnalyzedLocalType]

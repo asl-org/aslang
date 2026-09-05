@@ -11,7 +11,7 @@
 
 import options, strformat, tables
 
-import ./defanalyzer/index as defanalyzer
+import ../defanalyzer/index as defanalyzer
 import ./statement
 import ./pattern
 

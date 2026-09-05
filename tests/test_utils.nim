@@ -7,7 +7,7 @@
 
 import unittest, results, strutils, tables
 
-import analyzer/parser/utils
+import parser/utils
 
 # --- bfs helpers ----------------------------------------------------
 # `bfs[T, V]` needs a `process(node): Result[V, string]` and a

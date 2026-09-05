@@ -6,7 +6,7 @@
 
 import options, results, sequtils, strformat, strutils, tables
 
-import ./analyzer/defanalyzer/index as defanalyzer
+import ./defanalyzer/index as defanalyzer
 export defanalyzer
 
 import ./analyzer/pattern

@@ -5,7 +5,7 @@
 
 import strformat, tables
 
-import ./defanalyzer/index as defanalyzer
+import ../defanalyzer/index as defanalyzer
 import app
 
 type AnalyzedAppContext* = ref object
