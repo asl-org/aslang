@@ -1,6 +1,6 @@
 import argparse, strformat, results, os, tables, strutils
 
-import analyzer
+import analyzer/index as analyzer
 
 const Usage = """Usage: asl <command> [options]
 

@@ -8,7 +8,7 @@
 import unittest, strutils, results
 
 import tutils
-import analyzer
+import analyzer/index as analyzer
 
 # A trim Base — defines u8 / u32 / u64 / String / Any / Status /
 # Array — kept small enough that each analyzer test can be diffed

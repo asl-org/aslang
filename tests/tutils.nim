@@ -3,7 +3,7 @@
 import os, results, strutils, tables
 
 import tokenizer/index
-import analyzer
+import analyzer/index as analyzer
 
 type FileSpec* = tuple[name: string, content: string]
 

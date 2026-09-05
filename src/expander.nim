@@ -1,6 +1,6 @@
 import options, tables, strformat, strutils, sequtils, strformat
 
-import analyzer
+import analyzer/index as analyzer
 import codegen
 
 type

@@ -7,7 +7,7 @@
 
 import unittest, os, strutils, results, tables
 
-import analyzer
+import analyzer/index as analyzer
 import tutils
 
 suite "loader — successful multi-file BFS":

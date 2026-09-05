@@ -6,30 +6,30 @@
 
 import options, results, sequtils, strformat, strutils, tables
 
-import ./defanalyzer/index as defanalyzer
+import ../defanalyzer/index as defanalyzer
 export defanalyzer
 
-import ./analyzer/pattern
+import ./pattern
 export pattern
 
-import ./analyzer/statement
+import ./statement
 export statement
 
-import ./analyzer/function
+import ./function
 export function
 
-import ./analyzer/module
+import ./module
 export module
 
-import ./analyzer/imports
+import ./imports
 export imports
 
-import ./analyzer/app
+import ./app
 export app
 
-import ./analyzer/funccontext
-import ./analyzer/filecontext
-import ./analyzer/appcontext
+import ./funccontext
+import ./filecontext
+import ./appcontext
 
 # ============================================================
 # ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT

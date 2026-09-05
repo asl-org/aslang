@@ -1,6 +1,7 @@
 import os, results, strformat
 
-import cli, analyzer
+import cli
+import analyzer/index as analyzer
 # import lifetime
 import expander
 

@@ -7,7 +7,7 @@
 
 import unittest, results, strutils
 
-import analyzer
+import analyzer/index as analyzer
 import tutils
 
 suite "grammar — modules":
