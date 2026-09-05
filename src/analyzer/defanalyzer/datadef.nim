@@ -6,7 +6,7 @@
 
 import results, strformat, tables
 
-import ./resolver
+import ./resolver/index as resolver
 import ./argtype
 
 # ---- AnalyzedLiteralDef ----

@@ -5,7 +5,7 @@
 ## from the module. Produced by `analyzeDefStructRef` / `analyzeDefUnionRef`
 ## during the phase-A body walk.
 
-import resolver
+import resolver/index as resolver
 import argtype
 
 type AnalyzedStructRef* = ref object

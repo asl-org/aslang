@@ -7,7 +7,7 @@
 
 import options, results, sequtils, strformat, tables, hashes
 
-import ./resolver
+import ./resolver/index as resolver
 import ./argtype
 import ./datadef
 import ./function

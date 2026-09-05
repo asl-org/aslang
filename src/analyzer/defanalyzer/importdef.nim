@@ -4,7 +4,7 @@
 ## types + the source-file back-ref). Produced by the facade and
 ## consumed by phase-A `AnalyzedDefFile` and phase-B `AnalyzedFile`.
 
-import ./resolver
+import ./resolver/index as resolver
 
 # ---- AnalyzedDefImportedType ----
 # Carries the source's ResolvedFile (`impFile`) so the constraint hop

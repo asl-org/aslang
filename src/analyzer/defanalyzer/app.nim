@@ -6,7 +6,7 @@
 
 import sequtils, strformat, tables
 
-import ./resolver
+import ./resolver/index as resolver
 import ./context
 import ./types
 import ./importdef

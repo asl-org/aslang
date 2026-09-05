@@ -11,41 +11,41 @@ import results, strformat, tables, options
 ## the combinator layer directly (parser tests) import
 ## `resolver/parser/combinators` explicitly.
 
-import ./parser/index as parser
+import ../parser/index as parser
 export parser
 
-import ./resolver/indexing
+import ./indexing
 export indexing
 
 # ---- argument-type cluster (mutually-recursive tagged union) ----
-import ./resolver/functioncontext
+import ./functioncontext
 export functioncontext
 
-import ./resolver/argtype
+import ./argtype
 export argtype
 
 # ---- function-def cluster ----
 # ---- data-block cluster ----
-import ./resolver/datadef
+import ./datadef
 export datadef
 
 # ---- body cluster: leaf nodes ----
-import ./resolver/refs
+import ./refs
 export refs
 
 # ---- body cluster: mutually-recursive statement/expression web ----
-import ./resolver/statement
+import ./statement
 export statement
 
-import ./resolver/function
+import ./function
 export function
 
 # ---- module / generic / type umbrella ----
-import ./resolver/types
+import ./types
 export types
 
-import ./resolver/imports
-import ./resolver/app
+import ./imports
+import ./app
 export imports, app
 
 

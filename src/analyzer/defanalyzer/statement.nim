@@ -8,7 +8,7 @@
 
 import strformat
 
-import resolver
+import resolver/index as resolver
 import argtype
 import refs
 

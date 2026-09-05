@@ -8,7 +8,7 @@
 
 import options, results, sequtils, strformat, tables
 
-import ./defanalyzer/resolver
+import ./defanalyzer/resolver/index as resolver
 export resolver
 
 import ./defanalyzer/context
