@@ -12,6 +12,8 @@
 
 import results, strformat, strutils, tables, hashes, sets, sequtils
 
+import ../tokenizer/index
+import ../parser/index as parser
 import ../resolver/index as resolver
 
 # Mutually-recursive cluster: AnalyzedModuleArgumentType's impls

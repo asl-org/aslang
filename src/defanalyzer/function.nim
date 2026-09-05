@@ -8,6 +8,8 @@
 
 import strformat, strutils, sequtils, hashes, sets
 
+import ../tokenizer/index
+import ../parser/index as parser
 import ../resolver/index as resolver
 import argtype
 import statement

@@ -9,6 +9,7 @@
 ## ResolvedFile (app.nim) keys its name table on.
 import hashes
 
+import ../tokenizer/index
 import ../parser/index as parser
 import types
 

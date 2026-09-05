@@ -13,6 +13,8 @@
 
 import strformat, tables
 
+import ../parser/index as parser
+import ../resolver/index as resolver
 import ../defanalyzer/index as defanalyzer
 import ./imports
 

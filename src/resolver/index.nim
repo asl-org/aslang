@@ -1,18 +1,12 @@
 import results, strformat, tables, options
 
 ## Package façade. Consumers say `import resolver` to get every
-## resolved-side type PLUS the parser layer that resolver builds on
-## (types, constructors, accessors, and the `parse*` entry point).
-##
-## Parser combinators (Spec[T] machinery, oneOf / any / etc.)
-## stay private to the parser layer — analyzer, cli, and asl.nim
-## never touch them, and re-exporting them here would leak internal
-## parser scaffolding through the resolver's API. Callers that need
-## the combinator layer directly (parser tests) import
-## `resolver/parser/combinators` explicitly.
+## resolved-side type (types, constructors, accessors, and the
+## `resolve*` entry point). It does NOT re-export the parser layer it
+## builds on: parser is a sibling package under src/, so a consumer
+## that also needs parser types imports `parser/index` directly.
 
 import ../parser/index as parser
-export parser
 
 import ./indexing
 export indexing

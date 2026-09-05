@@ -15,6 +15,7 @@
 
 import results, strformat, options, tables
 
+import ../tokenizer/index
 import ../parser/index as parser
 import argtype
 import refs

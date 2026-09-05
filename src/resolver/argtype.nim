@@ -10,6 +10,7 @@
 
 import strformat, strutils, hashes, tables, sets
 
+import ../tokenizer/index
 import ../parser/index as parser
 
 type

@@ -5,6 +5,7 @@
 
 import strformat, strutils, hashes
 
+import ../tokenizer/index
 import ../parser/index as parser
 import argtype
 import argtype

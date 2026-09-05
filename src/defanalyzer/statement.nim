@@ -8,6 +8,8 @@
 
 import strformat
 
+import ../tokenizer/index
+import ../parser/index as parser
 import ../resolver/index as resolver
 import argtype
 import refs

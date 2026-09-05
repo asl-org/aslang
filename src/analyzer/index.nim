@@ -1,13 +1,16 @@
 ## Body-analysis barrel — phase B of the two-pass analyzer, and the
-## top of the compiler stack. Consumers say `import analyzer` to get
-## everything: the body walkers + public `analyze*` entry here, plus
-## the defanalyzer layer beneath (which transitively re-exports
-## resolver -> parser -> Location).
+## top of the compiler stack. Re-exports its own body walkers plus the
+## public `analyze*` entry here. It does NOT re-export the layers below
+## (defanalyzer / resolver / parser / tokenizer): every layer is a
+## sibling under src/, so a consumer imports each layer whose types it
+## actually uses, directly.
 
 import options, results, sequtils, strformat, strutils, tables
 
+import ../tokenizer/index
+import ../parser/index as parser
+import ../resolver/index as resolver
 import ../defanalyzer/index as defanalyzer
-export defanalyzer
 
 import ./pattern
 export pattern

@@ -1,15 +1,14 @@
 ## Definition-analysis barrel — phase A of the two-pass analyzer.
 ## Hosts the def-level analyze* procs (analyzeDefGenericArgumentType
-## through analyzeDefApp) and re-exports every def-level
-## analyzed type plus the resolver layer beneath, so the body layer
-## (src/analyzer.nim + src/analyzer/) says `import ./defanalyzer`
-## once. Nesting convention: parser ⊂ resolver ⊂ defanalyzer ⊂
-## analyzer.
+## through analyzeDefApp) and re-exports every def-level analyzed type.
+## It does NOT re-export the resolver / parser / tokenizer layers
+## beneath: they are sibling packages under src/, so a consumer imports
+## each layer whose types it uses, directly.
 
 import options, results, sequtils, strformat, tables
 
+import ../parser/index as parser
 import ../resolver/index as resolver
-export resolver
 
 import ./context
 export context

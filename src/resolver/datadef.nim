@@ -5,6 +5,7 @@
 
 import results, sequtils, sets, strformat, tables
 
+import ../tokenizer/index
 import ../parser/index as parser
 import indexing
 import argtype  # ResolvedGenericArgumentType lives here

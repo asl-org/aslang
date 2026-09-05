@@ -7,6 +7,7 @@
 
 import unittest, os, strutils, results, tables
 
+import parser/index as parser
 import analyzer/index as analyzer
 import tutils
 
