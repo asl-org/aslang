@@ -1,11 +1,11 @@
 import strformat, strutils, tables, results, hashes, sequtils
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
-import ./identifiers
-import ./imports
-import ./types
+import identifiers
+import imports
+import types
 
 # ============================================================
 # File

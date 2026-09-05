@@ -1,9 +1,9 @@
 import strformat, sequtils, strutils, tables, results
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
-import ./identifiers
+import identifiers
 
 # ============================================================
 # ArgumentType (self-recursive: List[Map[String, Int]])

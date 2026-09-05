@@ -12,41 +12,41 @@ import ../tokenizer/index as tokenizer
 # combinator machinery has no callers outside the parser layer.
 # Parser tests that need it import `./combinators` directly.
 
-import ./identifiers
+import identifiers
 export identifiers
 
-import ./literals
+import literals
 export literals
 
-import ./imports
+import imports
 export imports
 
-import ./argtype
+import argtype
 export argtype
 
-import ./refs
+import refs
 export refs
 
-import ./datadef
+import datadef
 export datadef
 
-import ./statement
+import statement
 export statement
 
-import ./function
+import function
 export function
 
-import ./types
+import types
 export types
 
-import ./app
+import app
 export app
 
 # import ./combinators
 # export combinators
-import ./error
-import ./decorator
-import ./utils
+import error
+import decorator
+import utils
 
 type File = app.File
 

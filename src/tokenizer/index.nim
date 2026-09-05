@@ -1,9 +1,9 @@
 import results, strformat, unicode, options
 
-import ./constants
-import ./location
-import ./token
-import ./spec
+import constants
+import location
+import token
+import spec
 
 export location
 export token

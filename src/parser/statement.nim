@@ -1,11 +1,11 @@
 import strformat, strutils, sequtils, tables, results
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
-import ./identifiers
-import ./literals
-import ./refs
+import identifiers
+import literals
+import refs
 
 # ============================================================
 # Getter

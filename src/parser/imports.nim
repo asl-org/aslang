@@ -1,9 +1,9 @@
 import strformat, strutils, options, sequtils, tables, results
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
-import ./identifiers
+import identifiers
 
 # ============================================================
 # ImportPath

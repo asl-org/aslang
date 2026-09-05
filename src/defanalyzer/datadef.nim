@@ -9,7 +9,7 @@ import results, strformat, tables
 import ../tokenizer/index as tokenizer
 import ../parser/index as parser
 import ../resolver/index as resolver
-import ./argtype
+import argtype
 
 # ---- AnalyzedLiteralDef ----
 # Thin wrapper around a ResolvedLiteralDef. Literal blocks carry no

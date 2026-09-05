@@ -5,12 +5,12 @@
 import strformat, strutils, sequtils, tables, results
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
-import ./identifiers
-import ./argtype
-import ./decorator
-import ./statement
+import identifiers
+import argtype
+import decorator
+import statement
 
 # ============================================================
 # FunctionDef (signature only, no body)

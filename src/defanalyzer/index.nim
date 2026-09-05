@@ -10,32 +10,32 @@ import options, results, sequtils, strformat, tables
 import ../parser/index as parser
 import ../resolver/index as resolver
 
-import ./context
+import context
 export context
 
-import ./argtype
+import argtype
 export argtype
 
 
-import ./datadef
+import datadef
 export datadef
 
-import ./refs
+import refs
 export refs
 
-import ./statement
+import statement
 export statement
 
-import ./function
+import function
 export function
 
-import ./types
+import types
 export types
 
-import ./app
+import app
 export app
 
-import ./importdef
+import importdef
 export importdef
 
 # The argtype cluster carries a ResolvedTypeContext for exactly one

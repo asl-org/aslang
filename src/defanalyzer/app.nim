@@ -8,9 +8,9 @@ import sequtils, strformat, tables
 
 import ../parser/index as parser
 import ../resolver/index as resolver
-import ./context
-import ./types
-import ./importdef
+import context
+import types
+import importdef
 
 # ============================================================
 # AnalyzedDefFile

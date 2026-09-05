@@ -2,8 +2,8 @@ import strformat, strutils, sequtils
 
 import ../tokenizer/index as tokenizer
 
-import ./identifiers
-import ./argtype
+import identifiers
+import argtype
 
 # ----------------- StructRef -----------------
 # Wraps the receiver arg-type: module root plus a (possibly empty)

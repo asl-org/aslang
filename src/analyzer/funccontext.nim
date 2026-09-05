@@ -13,8 +13,8 @@ import options, strformat, tables
 
 import ../parser/index as parser
 import ../defanalyzer/index as defanalyzer
-import ./statement
-import ./pattern
+import statement
+import pattern
 
 # Stores the (name, argType) binding per variable. The generic
 # bindings a match on a variable needs are intrinsic to its argType

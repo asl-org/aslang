@@ -5,12 +5,12 @@
 import strformat, strutils, sequtils, options, tables, results, hashes
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
-import ./identifiers
-import ./decorator
-import ./function
-import ./datadef
+import identifiers
+import decorator
+import function
+import datadef
 
 # ============================================================
 # Generic

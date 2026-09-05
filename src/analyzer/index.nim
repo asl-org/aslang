@@ -12,27 +12,27 @@ import ../parser/index as parser
 import ../resolver/index as resolver
 import ../defanalyzer/index as defanalyzer
 
-import ./pattern
+import pattern
 export pattern
 
-import ./statement
+import statement
 export statement
 
-import ./function
+import function
 export function
 
-import ./module
+import module
 export module
 
-import ./imports
+import imports
 export imports
 
-import ./app
+import app
 export app
 
-import ./funccontext
-import ./filecontext
-import ./appcontext
+import funccontext
+import filecontext
+import appcontext
 
 # ============================================================
 # ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT

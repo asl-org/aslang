@@ -7,11 +7,11 @@
 import strformat, strutils, sequtils, tables, results
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
-import ./identifiers
-import ./argtype
-import ./literals
+import identifiers
+import argtype
+import literals
 
 # Shared field name→position index with duplicate detection — used by
 # both StructDef and VariantDef.

@@ -1,7 +1,7 @@
 import strformat, strutils, results, hashes
 
 import ../tokenizer/index as tokenizer
-import ./error
+import error
 
 # ============================================================
 # Identifier

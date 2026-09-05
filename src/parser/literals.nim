@@ -1,8 +1,8 @@
 import results, strformat, strutils, options, strscans, parseutils, math
 
 import ../tokenizer/index as tokenizer
-import ./identifiers
-import ./argtype
+import identifiers
+import argtype
 
 # ============================================================
 # StringContent (internal — one character of a string literal)

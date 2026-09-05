@@ -1,6 +1,6 @@
 import strformat
 
-import ./identifiers
+import identifiers
 
 # ============================================================
 # Decorator

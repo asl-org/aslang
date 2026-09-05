@@ -1,6 +1,6 @@
 import unicode, results
 
-import ./token
+import token
 
 type
   # Returns the index one past the match (== start ⇒ no match), or an

@@ -8,38 +8,38 @@ import results, strformat, tables, options
 
 import ../parser/index as parser
 
-import ./indexing
+import indexing
 export indexing
 
 # ---- argument-type cluster (mutually-recursive tagged union) ----
-import ./functioncontext
+import functioncontext
 export functioncontext
 
-import ./argtype
+import argtype
 export argtype
 
 # ---- function-def cluster ----
 # ---- data-block cluster ----
-import ./datadef
+import datadef
 export datadef
 
 # ---- body cluster: leaf nodes ----
-import ./refs
+import refs
 export refs
 
 # ---- body cluster: mutually-recursive statement/expression web ----
-import ./statement
+import statement
 export statement
 
-import ./function
+import function
 export function
 
 # ---- module / generic / type umbrella ----
-import ./types
+import types
 export types
 
-import ./imports
-import ./app
+import imports
+import app
 export imports, app
 
 
