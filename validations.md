@@ -23,24 +23,30 @@ Source: `tests/test_tokenizer.nim`.
 - The token stream **always ends in a synthetic `tkNewline`**, even
   for empty input or input already ending in a newline (the trailing
   synthetic is a separate token from any trailing literal newlines).
-- **Consecutive same-kind runes batch into one collective token** for
-  every "collective" spec kind. The four collective kinds are:
-  `tkAlphabet`, `tkDigit`, `tkSpace`, `tkNewline`. In every case the
-  whole run lives in `.value` and `.value.len` is recoverable as the
-  rune count of the run. Concretely:
-  - `tkAlphabet` — `"abc"` → one token, `.value == "abc"`.
-  - `tkDigit` — `"0123456789"` → one token, `.value == "0123456789"`.
+- The tokenizer emits whole lexemes. The two run-batched
+  ("collective") kinds are `tkSpace` and `tkNewline`; the whole-lexeme
+  kinds (`tkIdentifier`, `tkInteger`, `tkFloat`, `tkString`,
+  `tkComment`) are matched greedily into one token. In each case the
+  whole run/lexeme lives in `.value`. Concretely:
   - `tkSpace` — four spaces → one token, `.value.len == 4`. The
     parser's `indentationSpec` relies on this count for level
     checks.
   - `tkNewline` — three literal newlines → one token,
     `.value.len == 3`. Blank-line grammar rules count runs off this.
-- **Runs of different collective kinds do NOT merge.** `"  \n\n"`
-  yields `tkSpace("  ")` then `tkNewline("\n\n")` then the trailing
-  synthetic newline — batching is per-kind, not cross-kind.
-- Every defined punctuation character (`` `~!@#$%^&*()-_=+[]{}\|;:'",<.>/?``)
-  produces exactly one `tkPunctuation` token — punctuation is
-  individual, never collective.
+  - `tkIdentifier` — `"abc"` → one token, `.value == "abc"` (an
+    identifier is `[_A-Za-z][_A-Za-z0-9]*`).
+  - `tkInteger` — `"0123456789"` → one token,
+    `.value == "0123456789"`.
+  - `tkFloat` — a numeric float, or a special value `nan` / `inf` /
+    `+inf` / `-inf`, is one token.
+- **Runs of different kinds do NOT merge.** `"  \n\n"` yields
+  `tkSpace("  ")` then `tkNewline("\n\n")` then the trailing synthetic
+  newline — batching is per-kind, not cross-kind.
+- Each defined punctuation character (`!@,()=[]{}:.`) produces exactly
+  one `tkPunctuation` token — punctuation is individual, never
+  collective. `+` and `-` are NOT punctuation: a sign is consumed as
+  part of a number (`-5`) or an inf literal (`-inf`), and a lone sign
+  followed by neither digits nor `inf` is an unsupported token.
 
 ### 1.2 Trojan Source defense
 
@@ -77,10 +83,11 @@ with an "unsupported token" error:
 
 ### 1.4 UTF-8
 
-Non-dangerous multi-byte UTF-8 is accepted as `tkUtf8` tokens. High-
-codepoint BMP characters (e.g. Hiragana `あ` = `U+3042`) are accepted.
-Only the Trojan-Source / invisible-codepoint classes above are
-rejected.
+Identifiers and numbers are ASCII-only. A bare multi-byte UTF-8 rune
+outside a string or comment (e.g. Hiragana `あ` = `U+3042`) is an
+"unsupported token" error — there is no `tkUtf8` kind. Non-ASCII text
+is valid only inside a string literal or a comment, where it is still
+swept for the Trojan-Source / invisible-codepoint classes above.
 
 ### 1.5 Error location
 
@@ -286,10 +293,15 @@ name" idiom.
 
 ### 4.10 A-normal form expansion (post-parse AST normalization)
 
-Not a validation — a *transformation* that runs after every
-`StatementList` parse (`statementListSpec.parseFn` in
-`resolver/parser/body.nim` invokes `.expand()` on its result).
-Downstream (resolver, analyzer) sees only the normalized AST.
+Not a validation — a *transformation* that normalizes nested calls into
+A-normal form. The `expand*` procs live in `src/parser/statement.nim`.
+
+Status: currently NOT wired into parsing — `statementListConsumer`
+(`src/parser/index.nim`) builds the `StatementList` without expanding,
+and the `expand*` procs are kept as reference pending a post-analysis
+expander (see `plans/plan_post_analysis_expansion.md`). When re-enabled,
+expansion runs after the AST is built so downstream (resolver,
+analyzer) sees only the normalized form.
 
 **Invariants the transformation establishes:**
 
@@ -587,7 +599,7 @@ analyzer checks the value fits the target type:
 - **Special IEEE-754 values** (`nan`, `inf`, `+inf`, `-inf`) — accepted
   unconditionally for both `f32` and `f64`. The analyzer's fit-check
   and exact-representability warning short-circuit for these forms
-  (`analyzer/body.nim:analyzeFloatLiteral`). Numeric literals that
+  (`validateFloat` in `src/parser/literals.nim`). Numeric literals that
   overflow to infinity or produce NaN via computation are still
   rejected as out-of-range — the special-value short-circuit only
   fires when the source literal was written as the special-value
@@ -638,7 +650,8 @@ Concrete-position wiring:
   struct's outer generic parameters are **not** inferred from bare-
   literal kwarg values on the bare init path: the `GenericImplMap`
   returned by the field-vs-value check is currently discarded (see
-  the `discard ?` and TODO at `analyzer/body.nim:673`). The kwarg-
+  the `discard ?` and TODO in `analyzeBareLiteral`,
+  `src/analyzer/index.nim`). The kwarg-
   level generic-default still fires — `Holder { value: 42 }` where
   `value: Any` picks up i32 for the kwarg — but the struct's result
   type stays impl-less. Union kwargs (below) accumulate; struct

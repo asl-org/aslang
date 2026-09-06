@@ -203,7 +203,11 @@ Identifier: [_a-zA-Z][_a-zA-Z0-9]*
 # `module` / `func` / `import` etc. as Identifiers) is a
 # parser-level concern, not encoded in this regex — as are the
 # 256-character length cap and the reserved `__asl` prefix
-# (compiler-generated identifiers only).
+# (compiler-generated identifiers only). Exceptions: `inf` and `nan`
+# match this regex but are reserved at the TOKENIZER level (whole-word)
+# and always lex as `tkFloat`, so — unlike `module` / `func` / `import`
+# — they can never be Identifiers; `infinity` / `nano` / `info` remain
+# ordinary identifiers.
 ```
 
 ## Design decisions worth preserving
@@ -309,10 +313,9 @@ contributors can find the *why* alongside the *what*.
 
 ## Relationship to the layer types
 
-Each pipeline phase's type module
-(`src/analyzer/defanalyzer/resolver/parser/*`,
-`src/analyzer/defanalyzer/resolver/*`, `src/analyzer/defanalyzer/*`,
-`src/analyzer/*`) is expected to trace back to this grammar. Renames
+Each pipeline phase's type module (`src/parser/*`, `src/resolver/*`,
+`src/defanalyzer/*`, `src/analyzer/*`) is expected to trace back to this
+grammar. Renames
 land here first; then the code catches up. When a type appears in two
 layers (e.g. `Struct` at parser level, `ResolvedStruct` at resolver
 level), both are recognizable projections of the same grammar rule —

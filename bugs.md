@@ -24,25 +24,25 @@
 
 ### Parser bugs
 
-- [ ] **Blank line after `struct:` / `union:` bypasses `atLeastOne` in blockSpec** (`src/parser/decls.nim` + `src/parser/identifiers.nim`) [medium] — `struct:` followed by a blank line then `func` compiles as a module with only a function (struct silently discarded). `blockSpec` with `atLeastOne(fieldLineSpec)` should reject zero fields, but the blank line causes a backtrack that drops the struct entirely. `newStruct` has a defense-in-depth guard (`fields.len == 0` check) but it's never reached because `blockSpec` backtracks before calling the combine function. Needs investigation into how `blockSpec` handles empty bodies after header success.
+- [ ] **Blank line after `struct:` / `union:` bypasses `atLeastOne` in blockSpec** (`src/parser/index.nim` + `src/parser/identifiers.nim`) [medium] — `struct:` followed by a blank line then `func` compiles as a module with only a function (struct silently discarded). `blockSpec` with `atLeastOne(fieldLineSpec)` should reject zero fields, but the blank line causes a backtrack that drops the struct entirely. `newStruct` has a defense-in-depth guard (`fields.len == 0` check) but it's never reached because `blockSpec` backtracks before calling the combine function. Needs investigation into how `blockSpec` handles empty bodies after header success.
 
 ### Parser cleanup (round 2)
 
 - [ ] **PSR-15: Remove `StringContent` AST type** (`src/parser/literals.nim`) [low] — Only used internally by string parsing specs, never appears in any AST node that leaves the parser. Simplify to return `string` or `Token` directly.
 
-- [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser/{body, decls}.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
+- [ ] **PSR-16: Unwrap `StatementList` and `FunctionList`** (`src/parser/statement.nim` + `src/parser/index.nim`) [low] — Thin wrappers around `seq[Statement]` / `seq[Function]` with no extra fields. Replace with raw `seq` types in `Function` and `Module`.
 
-- [ ] **PSR-17: Unwrap `ArgumentDefList` and `ArgumentList`** (`src/parser/{argtypes, body}.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDef` and `FunctionCall`.
+- [ ] **PSR-17: Unwrap `ArgumentDefList` and `ArgumentList`** (`src/parser/argtype.nim` + `src/parser/statement.nim`) [low] — Wrappers around `seq` + `loc`, but `loc` is only the position of `(` which isn't used downstream. Replace with raw `seq` types in `FunctionDef` and `FunctionCall`.
 
-- [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser/helpers.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
+- [ ] **PSR-18: Remove `EmptyLine` and `Comment` AST types** (`src/parser/index.nim`) [low] — Parsed but never stored. `ignorableLineSpec` maps them to `Location` which callers discard. The specs can return `Location` or `void` directly without dedicated types.
 
-- [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser/combinators.nim`) [low] — `importBlockSpec`, `typeBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
+- [ ] **PSR-19: Add `withLeadingLines(spec)` combinator** (`src/parser/index.nim`) [low] — `importBlockSpec`, `typeBlockSpec`, and `funcBlockSpec` all follow the same pattern: `skip any(ignorableLineSpec) + parse spec`. Extract into a reusable combinator.
 
 ### Other
 
 - [ ] **`except CatchableError:` is still broad** (`src/cli.nim:105`) [low] — Narrow to the exact exception types thrown by `argparse` (e.g., `UsageError`, `ValueError`) once those are confirmed.
-- [ ] **`Token` is `ref object`** (`src/tokenizer/tokenizer.nim:72`) [low] — Each token is heap-allocated. For a tokenizer producing thousands of tokens, a plain `object` in `seq[Token]` avoids GC pressure since tokens are small (enum + string + two ints).
-- [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`src/parser/decls.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context.
+- [ ] **`Token` is `ref object`** (`src/tokenizer/token.nim`) [low] — Each token is heap-allocated. For a tokenizer producing thousands of tokens, a plain `object` in `seq[Token]` avoids GC pressure since tokens are small (enum + string + two ints).
+- [ ] **Empty list `loc` falls back to `newLocation()` which is incorrect** (`src/parser/index.nim`) [medium] — `FunctionList.loc` returns `1:1` for empty lists instead of the actual source position. Needs proper location propagation from the parent context.
 - [x] **`readFileSafe` crashes on missing files** (`src/parser/loader.nim`) — Caught only `IOError`, but on macOS `getFileSize` throws `OSError` for a missing file — the parser propagated an unhandled exception. Fixed by calling `fileExists` up front and catching `CatchableError` for everything else. Surfaced while building the `examples/errors/missing_file.asl` fixture.
 
 ## Resolved

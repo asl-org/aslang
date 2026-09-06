@@ -316,7 +316,7 @@ vs reconstruct. See Q4.
 
 ### API
 
-New file `src/analyzer/resolver/parser/uplift.nim`:
+New file `src/parser/uplift.nim`:
 
 ```nim
 proc newSyntheticIdentifier*(name: string, loc: Location): Identifier
@@ -654,13 +654,13 @@ Grouping may reduce to 6-7 if commits combine cleanly.
 
 | Concern | File |
 |---|---|
-| `try` keyword reservation | `src/analyzer/resolver/parser/tokenizer/*.nim` (wherever keywords live) |
-| `ekTry` AST variant | `src/analyzer/resolver/parser/statement.nim` |
-| `tryPrefixSpec` | `src/analyzer/resolver/parser/statement.nim` |
-| `newSyntheticIdentifier` | `src/analyzer/resolver/parser/identifiers.nim` |
-| Uplifter | `src/analyzer/resolver/parser/uplift.nim` (new) |
-| Try expansion (validation + rewrite) | `src/analyzer/resolver/parser/try_expand.nim` (new) |
-| Wiring in function-body construction | `src/analyzer/resolver/parser/statement.nim` or `function.nim` |
+| `try` keyword reservation | `src/tokenizer/*.nim` (wherever keywords live) |
+| `ekTry` AST variant | `src/parser/statement.nim` |
+| `tryPrefixSpec` | `src/parser/statement.nim` |
+| `newSyntheticIdentifier` | `src/parser/identifiers.nim` |
+| Uplifter | `src/parser/uplift.nim` (new) |
+| Try expansion (validation + rewrite) | `src/parser/try_expand.nim` (new) |
+| Wiring in function-body construction | `src/parser/statement.nim` or `function.nim` |
 | Grammar doc | `grammar.md` |
 | Validation doc | `validations.md` |
 | Lesson entry | `lessons.md` |

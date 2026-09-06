@@ -99,11 +99,11 @@ B. `analyzer/definedtype.nim` — `AnalyzedDefinedTypeScope = Table[
 ## Root cause in the code
 
 ```nim
-# src/analyzer/resolver/parser/identifiers.nim
+# src/parser/identifiers.nim
 proc hash*(id: Identifier): Hash = hash(id.value)
 proc `==`*(id: Identifier, other: Identifier): bool = hash(id) == hash(other)
 
-# src/analyzer/resolver/parser/modules.nim
+# src/parser/modules.nim
 proc hash*(m: Module): Hash = m.loc.hash
 proc `==`*(a, b: Module): bool = a.hash == b.hash
 ```
