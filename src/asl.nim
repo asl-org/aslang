@@ -1,9 +1,9 @@
 import os, results, strformat
 
 import cli
-import parser/index as parser
-import resolver/index as resolver
-import analyzer/index as analyzer
+import parser/main as parser
+import resolver/main as resolver
+import analyzer/main as analyzer
 # import lifetime
 import expander
 

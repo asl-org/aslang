@@ -8,9 +8,9 @@
 
 import strformat, strutils, sequtils, hashes, sets
 
-import ../tokenizer/index as tokenizer
-import ../parser/index as parser
-import ../resolver/index as resolver
+import ../tokenizer/main as tokenizer
+import ../parser/main as parser
+import ../resolver/main as resolver
 import argtype
 import statement
 

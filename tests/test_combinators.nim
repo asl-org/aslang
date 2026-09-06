@@ -5,9 +5,9 @@
 
 import unittest, options, results
 
-import tokenizer/index as tokenizer
-import parser/index as parser
-import analyzer/index as analyzer
+import tokenizer/main as tokenizer
+import parser/main as parser
+import analyzer/main as analyzer
 import tutils
 
 # A few tiny leaf specs we can compose into bigger tests without

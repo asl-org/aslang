@@ -1,6 +1,6 @@
 import results, tables, strformat
 
-import analyzer/index as analyzer
+import analyzer/main as analyzer
 
 type
   SourceKind = enum

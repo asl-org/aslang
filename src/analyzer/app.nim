@@ -13,7 +13,7 @@
 
 import results, strformat, tables
 
-import ../defanalyzer/index as defanalyzer
+import ../defanalyzer/main as defanalyzer
 import module
 import imports
 import function

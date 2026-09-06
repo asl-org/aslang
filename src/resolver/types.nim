@@ -6,8 +6,8 @@
 
 import results, strformat, options, tables, hashes, sequtils
 
-import ../tokenizer/index as tokenizer
-import ../parser/index as parser
+import ../tokenizer/main as tokenizer
+import ../parser/main as parser
 import argtype
 import datadef
 import function

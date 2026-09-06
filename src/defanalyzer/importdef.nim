@@ -4,8 +4,8 @@
 ## types + the source-file back-ref). Produced by the facade and
 ## consumed by phase-A `AnalyzedDefFile` and phase-B `AnalyzedFile`.
 
-import ../parser/index as parser
-import ../resolver/index as resolver
+import ../parser/main as parser
+import ../resolver/main as resolver
 
 # ---- AnalyzedDefImportedType ----
 # Carries the source's ResolvedFile (`impFile`) so the constraint hop

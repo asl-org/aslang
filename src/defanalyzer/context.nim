@@ -6,8 +6,8 @@
 
 import results, strformat, hashes, tables
 
-import ../parser/index as parser
-import ../resolver/index as resolver
+import ../parser/main as parser
+import ../resolver/main as resolver
 import importdef
 
 # ============================================================

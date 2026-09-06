@@ -4,9 +4,9 @@ import results, strformat, tables, options
 ## resolved-side type (types, constructors, accessors, and the
 ## `resolve*` entry point). It does NOT re-export the parser layer it
 ## builds on: parser is a sibling package under src/, so a consumer
-## that also needs parser types imports `parser/index` directly.
+## that also needs parser types imports `parser/main` directly.
 
-import ../parser/index as parser
+import ../parser/main as parser
 
 import indexing
 export indexing

@@ -94,26 +94,10 @@ proc expectOneOf(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, str
   err(tokenizer.unsupported())
 
 proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
-  let specs = @[
-    # `float` MUST precede `identifier` and `integer`. It owns the special
-    # values `nan` / `inf` / `+inf` / `-inf` (which would otherwise scan as
-    # an identifier), and it shares the `(+|-)?digit+` prefix with integer —
-    # `consumeFloat` rolls back to a no-match when there is neither a special
-    # value nor a `.`/`e`, letting the later specs take the token.
-    newTokenSpec("a float", tkFloat, consumeFloat),
-    newTokenSpec("an identifier", tkIdentifier, consumeIdentifier),
-    newTokenSpec("an integer", tkInteger, consumeInteger),
-    newTokenSpec("a string", tkString, consumeString),
-    newTokenSpec("a comment", tkComment, consumeComment),
-    newTokenSpec("a punctuation", tkPunctuation, consumePunctuation),
-    newTokenSpec("a space", tkSpace, consumeSpace),
-    newTokenSpec("a new line", tkNewline, consumeNewline),
-  ]
-
   var tokens: seq[Token]
   var tokenizer = newTokenizer(filepath, source)
   while not tokenizer.done:
-    let token = ? tokenizer.expectOneOf(specs)
+    let token = ? tokenizer.expectOneOf(TOKEN_SPECS)
     tokens.add(token)
 
   # Normalize trailing newline character handling

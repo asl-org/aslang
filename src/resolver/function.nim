@@ -5,8 +5,8 @@
 
 import strformat, strutils, hashes
 
-import ../tokenizer/index as tokenizer
-import ../parser/index as parser
+import ../tokenizer/main as tokenizer
+import ../parser/main as parser
 import argtype
 import argtype
 import statement

@@ -7,10 +7,10 @@
 
 import options, results, sequtils, strformat, strutils, tables
 
-import ../tokenizer/index as tokenizer
-import ../parser/index as parser
-import ../resolver/index as resolver
-import ../defanalyzer/index as defanalyzer
+import ../tokenizer/main as tokenizer
+import ../parser/main as parser
+import ../resolver/main as resolver
+import ../defanalyzer/main as defanalyzer
 
 import pattern
 export pattern

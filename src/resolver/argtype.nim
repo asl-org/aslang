@@ -10,8 +10,8 @@
 
 import strformat, strutils, hashes, tables, sets
 
-import ../tokenizer/index as tokenizer
-import ../parser/index as parser
+import ../tokenizer/main as tokenizer
+import ../parser/main as parser
 
 type
   ResolvedGenericArgumentType* = ref object

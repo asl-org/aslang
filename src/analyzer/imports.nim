@@ -3,7 +3,7 @@
 ## `import` statement's imported types). Produced by `analyzeImport` on
 ## the body barrel and consumed by `newAnalyzedFileContext`.
 
-import ../defanalyzer/index as defanalyzer
+import ../defanalyzer/main as defanalyzer
 
 # ---- AnalyzedImportedType ----
 

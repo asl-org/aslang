@@ -12,9 +12,9 @@
 
 import results, strformat, strutils, tables, hashes, sets, sequtils
 
-import ../tokenizer/index as tokenizer
-import ../parser/index as parser
-import ../resolver/index as resolver
+import ../tokenizer/main as tokenizer
+import ../parser/main as parser
+import ../resolver/main as resolver
 
 # Mutually-recursive cluster: AnalyzedModuleArgumentType's impls
 # field references AnalyzedArgumentType, which case-dispatches back

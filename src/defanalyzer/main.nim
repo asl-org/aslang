@@ -7,8 +7,8 @@
 
 import options, results, sequtils, strformat, tables
 
-import ../parser/index as parser
-import ../resolver/index as resolver
+import ../parser/main as parser
+import ../resolver/main as resolver
 
 import context
 export context

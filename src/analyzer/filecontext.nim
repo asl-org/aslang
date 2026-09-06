@@ -13,9 +13,9 @@
 
 import strformat, tables
 
-import ../parser/index as parser
-import ../resolver/index as resolver
-import ../defanalyzer/index as defanalyzer
+import ../parser/main as parser
+import ../resolver/main as resolver
+import ../defanalyzer/main as defanalyzer
 import imports
 
 type AnalyzedFileContext* = Table[ResolvedLocalType, AnalyzedLocalType]

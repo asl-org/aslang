@@ -2,8 +2,8 @@ import strformat, sequtils, strutils, unicode, results, options, tables, os
 
 # The parser consumes Location (every AST node carries one) from the
 # tokenizer, a sibling package. It is NOT re-exported: downstream
-# layers that need Location import `tokenizer/index` directly.
-import ../tokenizer/index as tokenizer
+# layers that need Location import `tokenizer/main` directly.
+import ../tokenizer/main as tokenizer
 
 # combinators.nim (Spec[T] + oneOf / any / optional / ...) is
 # imported but NOT re-exported. It's parser-internal scaffolding.

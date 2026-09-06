@@ -1,9 +1,9 @@
 import options, tables, strformat, strutils, sequtils, strformat
 
-import analyzer/index as analyzer
-import parser/index as parser
-import resolver/index as resolver
-import defanalyzer/index as defanalyzer
+import analyzer/main as analyzer
+import parser/main as parser
+import resolver/main as resolver
+import defanalyzer/main as defanalyzer
 import codegen
 
 type

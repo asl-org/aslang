@@ -12,8 +12,8 @@
 
 import options, results, strformat, tables
 
-import ../tokenizer/index as tokenizer
-import ../parser/index as parser
+import ../tokenizer/main as tokenizer
+import ../parser/main as parser
 import argtype
 import function
 import statement

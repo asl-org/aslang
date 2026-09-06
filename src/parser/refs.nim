@@ -1,6 +1,6 @@
 import strformat, strutils, sequtils
 
-import ../tokenizer/index as tokenizer
+import ../tokenizer/main as tokenizer
 
 import identifiers
 import argtype
