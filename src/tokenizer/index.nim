@@ -8,14 +8,14 @@ import spec
 export location
 export token
 
-proc validate(head: Rune, loc: Location): Result[void, string] =
+proc validate(head: Rune): Result[void, string] =
   let codepoint = head.uint32
   if codepoint in BidiCodepoints:
-    return err(fmt"{loc}: bidirectional control codepoint U+{codepoint:04X} encountered")
+    return err(fmt"bidirectional control codepoint U+{codepoint:04X} encountered")
   elif codepoint in ZeroWidthCodepoints:
-    return err(fmt"{loc}: zero-width codepoint U+{codepoint:04X} encountered")
+    return err(fmt"zero-width codepoint U+{codepoint:04X} encountered")
   elif codepoint in InvisibleCodepoints:
-    return err(fmt"{loc}: invisible control codepoint U+{codepoint:04X} encountered")
+    return err(fmt"invisible control codepoint U+{codepoint:04X} encountered")
   else:
     ok()
 
@@ -39,7 +39,9 @@ proc unsupported(tokenizer: Tokenizer): string =
   ## string/comment (identifiers and numbers are ASCII-only).
   assert(not tokenizer.done, fmt"{tokenizer.loc}: tokenizer reached end of token stream")
   let head = tokenizer.source[tokenizer.index]
-  head.validate(tokenizer.loc).errorOr(fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`")
+  let maybeValid = validate(head)
+  if maybeValid.isErr: fmt"{tokenizer.loc}: {maybeValid.error}"
+  else: fmt"{tokenizer.loc} unsupported token encountered `U+{head.uint32:04X}`"
 
 proc pin(tokenizer: Tokenizer): void =
   assert(tokenizer.checkpoint.isNone, fmt"{tokenizer.loc}: [UNREACHABLE] tokenizer is already pinned")
@@ -50,8 +52,9 @@ proc commit(tokenizer: Tokenizer, updated: int, kind: TokenKind): Result[Token, 
   assert(tokenizer.checkpoint.isSome, fmt"{start}: [UNREACHABLE] tokenizer is not pinned")
   let content = tokenizer.source[tokenizer.index..<updated]
   for head in content:
-    ? head.validate(tokenizer.loc)
-    tokenizer.loc = tokenizer.loc.advance(head)
+    let maybeValid = validate(head)
+    if maybeValid.isErr: return err(fmt"{tokenizer.loc}: {maybeValid.error}")
+    else: tokenizer.loc = tokenizer.loc.advance(head)
 
   tokenizer.index = updated
   tokenizer.checkpoint = none((int, Location))
