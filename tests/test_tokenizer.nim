@@ -412,6 +412,33 @@ suite "tokenizer — floats":
       check toks[0].kind == tkFloat and toks[0].value == s
       check toks[1].kind == tkNewline   # nothing left over
 
+  test "nan and inf (with optional sign) are single tkFloat tokens":
+    for s in ["nan", "inf", "+inf", "-inf"]:
+      let r = tokenizeStr(s)
+      check r.isOk
+      let toks = r.get
+      check toks[0].kind == tkFloat and toks[0].value == s
+      check toks[1].kind == tkNewline   # nothing left over
+
+  test "inf and nan are reserved — never an identifier":
+    # Unlike `module` (a plain identifier at the token level), `inf` and
+    # `nan` are reserved as float literals: the tokenizer always lexes
+    # them as tkFloat, so they can't be used as identifiers.
+    for s in ["inf", "nan"]:
+      let r = tokenizeStr(s)
+      check r.isOk
+      check r.get[0].kind == tkFloat
+
+  test "only whole-word inf/nan is reserved; longer names stay identifiers":
+    # The reservation is exact: an identifier that merely starts with
+    # `inf`/`nan` (or appends to it) is still one tkIdentifier.
+    for s in ["infinity", "nano", "info", "nans", "inf_", "nan1"]:
+      let r = tokenizeStr(s)
+      check r.isOk
+      let toks = r.get
+      check toks[0].kind == tkIdentifier and toks[0].value == s
+      check toks[1].kind == tkNewline
+
   test "a bare integer is not a float":
     let r = tokenizeStr("123")
     check r.isOk
