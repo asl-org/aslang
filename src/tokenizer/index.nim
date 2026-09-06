@@ -92,11 +92,13 @@ proc expectOneOf(tokenizer: Tokenizer, specs: seq[TokenSpec]): Result[Token, str
 
 proc tokenize*(source: string, filepath: string): Result[seq[Token], string] =
   let specs = @[
-    newTokenSpec("an identifier", tkIdentifier, consumeIdentifier),
-    # `float` MUST precede `integer`: they share the `(+|-)?digit+` prefix
-    # and `consumeFloat` rolls back to a no-match when there is no `.`/`e`,
-    # letting `consumeInteger` take a plain integer.
+    # `float` MUST precede `identifier` and `integer`. It owns the special
+    # values `nan` / `inf` / `+inf` / `-inf` (which would otherwise scan as
+    # an identifier), and it shares the `(+|-)?digit+` prefix with integer —
+    # `consumeFloat` rolls back to a no-match when there is neither a special
+    # value nor a `.`/`e`, letting the later specs take the token.
     newTokenSpec("a float", tkFloat, consumeFloat),
+    newTokenSpec("an identifier", tkIdentifier, consumeIdentifier),
     newTokenSpec("an integer", tkInteger, consumeInteger),
     newTokenSpec("a string", tkString, consumeString),
     newTokenSpec("a comment", tkComment, consumeComment),

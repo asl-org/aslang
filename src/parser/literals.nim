@@ -285,8 +285,8 @@ proc isExactlyRepresentable*(text: string, mantissaBits: int): bool =
 # representable value in every finite case.
 #
 # Numeric float parse only. Special IEEE-754 values (`nan`, `inf`,
-# `+inf`, `-inf`) are handled upstream: the parser accepts them via
-# `specialFloatSpec`, and `validateFloat` (below) short-circuits them
+# `+inf`, `-inf`) are handled upstream: the tokenizer emits them as
+# tkFloat tokens, and `validateFloat` (below) short-circuits them
 # before reaching this proc.
 # So the inf/nan rejection here catches ONLY the case a numeric input
 # overflows to infinity or produces NaN — which is a genuine

@@ -46,9 +46,11 @@ suite "tokenizer — happy paths":
     check toks[11].kind == tkNewline
 
   test "all defined punctuation characters are accepted":
-    # `"`, `#` and `_` are omitted: they open a string, a comment, and an
-    # identifier respectively, so none is a standalone punctuation token.
-    const all = "`~!@$%^&*()-=+[]{}\\|;:',<.>/?"
+    # The punctuation set is deliberately small — only the delimiters the
+    # grammar uses. `"`, `#` and `_` open a string / comment / identifier,
+    # and `+` / `-` belong to number and inf literals, so none of those is a
+    # standalone punctuation token.
+    const all = "!@,()=[]{}:."
     let r = tokenizeStr(all)
     check r.isOk
     let toks = r.get
@@ -384,12 +386,13 @@ suite "tokenizer — integers":
       check toks[0].kind == tkInteger and toks[0].value == s
       check toks[1].kind == tkNewline   # nothing left over
 
-  test "a sign not followed by digits stays punctuation":
+  test "a lone sign (not a number or inf) is unsupported":
+    # `-` is not a punctuation token; it only appears inside a number
+    # (`-5`) or an inf literal (`-inf`). Followed by a bare identifier it
+    # forms no valid token, so tokenization fails.
     let r = tokenizeStr("-abc")
-    check r.isOk
-    let toks = r.get
-    check toks[0].kind == tkPunctuation and toks[0].value == "-"
-    check toks[1].kind == tkIdentifier and toks[1].value == "abc"
+    check r.isErr
+    check errorContains(r.error, "unsupported")
 
   test "a sign only binds the immediately following number":
     # "1-2" is 1, then a signed -2 (no infix subtraction in the grammar).

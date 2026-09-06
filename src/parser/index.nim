@@ -207,8 +207,6 @@ let floatSpec* = newSpec("float", tkFloat)
 
 let bangSpec* = newSpec("!")
 let atSpec* = newSpec("@")
-let plusSpec* = newSpec("+")
-let hyphenSpec* = newSpec("-")
 let dotSpec* = newSpec(".")
 let colonSpec* = newSpec(":")
 let leftParenthesisSpec* = newSpec("(")
@@ -302,9 +300,6 @@ proc stringLiteralConsumer(parser: Parser): Result[StringLiteral, ParserError] =
 # combinator chains (import specs, literalDefSpec, etc.).
 let stringLiteralSpec* = newSpec[StringLiteral]("string_literal", stringLiteralConsumer)
 
-# (+ | -) digit+
-let signSpec = oneOf(@[plusSpec, hyphenSpec])
-
 # The tokenizer scans `(+|-)?digit+` into one tkInteger token;
 # newIntegerLiteral splits its optional leading sign into signed/unsigned.
 proc integerLiteralConsumer(parser: Parser): Result[IntegerLiteral, ParserError] =
@@ -313,56 +308,16 @@ proc integerLiteralConsumer(parser: Parser): Result[IntegerLiteral, ParserError]
 
 let integerLiteralSpec = newSpec[IntegerLiteral]("integer literal", integerLiteralConsumer)
 
-# Float-literal is a three-way alternation (`oneOf`) over per-form
-# consumers, each with a single responsibility:
-#   `nanFloatConsumer`     — matches the bare token `nan` (no sign allowed).
-#   `infFloatConsumer`     — matches `inf` with an optional `+` / `-` prefix.
-#   `numericFloatConsumer` — matches the digit-starting numeric form.
-# Special-value forms are listed first because they start with identifier
-# tokens; the numeric form couldn't reach them anyway (it requires a
-# leading digit or sign+digit).
-
-# `nan` — IEEE-754 quiet NaN. Unsigned only: `+nan` / `-nan` are
-# rejected at parse time (the NaN sign bit exists in the hardware
-# representation but is rarely meaningful in source code).
-proc nanFloatConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
-  let ident = ? parser.expect(identifierSpec)
-  if ident.value != "nan":
-    return err(newParserError(fmt"expected 'nan' but found `{ident.value}`", ident.loc))
-  ok(newFloatLiteral("nan", ident.loc))
-
-let nanFloatSpec = newSpec[FloatLiteral]("nan float", nanFloatConsumer)
-
-# `inf` — IEEE-754 infinity. Optional `+` / `-` sign prefix; the sign
-# folds into the stored literal value so downstream `analyzeFloatLiteral`
-# can distinguish `+inf` from `-inf`.
-proc infFloatConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
-  let loc = parser.loc
-  let maybeSign = parser.expect(signSpec)
-  let signStr = if maybeSign.isOk: maybeSign.get.value else: ""
-  let ident = ? parser.expect(identifierSpec)
-  if ident.value != "inf":
-    return err(newParserError(fmt"expected 'inf' but found `{ident.value}`", ident.loc))
-  ok(newFloatLiteral(signStr & "inf", loc))
-
-let infFloatSpec = newSpec[FloatLiteral]("inf float", infFloatConsumer)
-
-# (+|-)? digit+ ("." digit+)? ((e|E) (+|-)? digit+)?
-# Must have either decimal part or exponent to distinguish from integer
-proc numericFloatConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
-  # The tokenizer scans the whole `(+|-)?digit+(.digit+)?((e|E)(+|-)?digit+)?`
-  # into one tkFloat token.
+# Every float form is a single tkFloat token: the tokenizer scans the
+# numeric form `(+|-)?digit+(.digit+)?((e|E)(+|-)?digit+)?` and the special
+# IEEE-754 values `nan` / `inf` / `+inf` / `-inf` (the sign folds into the
+# token so downstream `analyzeFloatLiteral` can tell `+inf` from `-inf`).
+# So one consumer covers them all — no per-form alternation.
+proc floatLiteralConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
   let token = ? parser.expect(floatSpec)
   ok(newFloatLiteral(token.value, token.loc))
 
-let numericFloatSpec = newSpec[FloatLiteral]("numeric float", numericFloatConsumer)
-
-let floatLiteralSpec =
-  oneOf(@[
-    nanFloatSpec,
-    infFloatSpec,
-    numericFloatSpec,
-  ])
+let floatLiteralSpec = newSpec[FloatLiteral]("float literal", floatLiteralConsumer)
 
 proc literalConsumer(parser: Parser): Result[Literal, ParserError] =
   var errors: seq[ParserError]

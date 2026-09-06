@@ -38,13 +38,13 @@ const AsciiMaxValue*: uint32 = 0x7F
 # `"`, `#` and `_` are intentionally excluded — `"` opens a string, `#` a
 # comment, and `_` starts an identifier (all handled by their own specs,
 # tried before punctuation), so none is ever a standalone punctuation token.
-const Punctuations*: string = "`~!@$%^&*()-=+[]{}\\|;:',<.>/?"
+const Punctuations*: seq[string] = @["!", "@", ",", "(", ")", "=", "[", "]", "{", "}", ":", "."]
 const Space*: string = " "
 const Newline*: string = "\n"
-
 const DoubleQuote*: string = "\""
 const Backslash*: string = "\\"
 const Hash*: string = "#"
+
 # The `\X` escapes ASL recognises inside a string literal. Frozen to
 # this set (all also valid, identically-meaning C escapes), so a string
 # token can carry its escapes verbatim through to codegen.
@@ -108,14 +108,32 @@ proc consumeInteger*(source: seq[Rune], start: int): Result[int, string] =
 # back to no-match here). The sign folds in like consumeInteger.
 proc consumeFloat*(source: seq[Rune], start: int): Result[int, string] =
   let isDigit = proc (r: Rune): bool = r.uint32 <= AsciiMaxValue and r.char.isDigit
+  let isIdentTail = proc (r: Rune): bool =
+    r.uint32 <= AsciiMaxValue and (r.char.isAlphaNumeric or r.char == '_')
+  # `matchesWord` matches `word` at `idx` only as a whole token: the rune
+  # right after it must not be an identifier-tail char, so `inf` matches
+  # but `infinity` does not.
+  let matchesWord = proc (idx: int, word: string): bool =
+    if idx + word.len > source.len: return false
+    for k in 0 ..< word.len:
+      if source[idx + k].uint32 > AsciiMaxValue or source[idx + k].char != word[k]:
+        return false
+    idx + word.len >= source.len or not isIdentTail(source[idx + word.len])
   var index = start
   if index < source.len and ($(source[index]) == Plus or $(source[index]) == Hyphen):
     index += 1
+  # Special IEEE-754 values: `(+|-)?inf` and bare `nan`. `nan` takes no
+  # sign (`+nan` / `-nan` are not float literals), so it only matches when
+  # no sign was consumed (index still at start).
+  if matchesWord(index, "inf"):
+    return ok(index + "inf".len)
+  if index == start and matchesWord(index, "nan"):
+    return ok(index + "nan".len)
   let intStart = index
   while index < source.len and source[index].isDigit:
     index += 1
   if index == intStart:
-    return ok(start)                        # no leading digit → not a float
+    return ok(start)                        # no leading digit and not inf/nan → not a float
   var isFloat = false
   # Fraction: `.` digit+ (a `.` with no digits is not consumed).
   if index < source.len and $(source[index]) == Dot:
