@@ -1,6 +1,10 @@
 import results, strformat, strutils, options, strscans, parseutils, math
 
 import ../tokenizer/main as tokenizer
+
+import parser
+import error
+
 import identifiers
 import argtype
 
@@ -18,6 +22,17 @@ proc newStringLiteral*(value: string, loc: Location): StringLiteral =
 proc loc*(strLit: StringLiteral): Location = strLit.loc
 proc content*(strLit: StringLiteral): string = strLit.value[1..^2]
 proc asl*(strLit: StringLiteral): string = "\"" & strLit.content & "\""
+
+proc stringLiteralConsumer(parser: Parser): Result[StringLiteral, ParserError] =
+  # The tokenizer scans a whole string literal into one `tkString` token
+  # whose value is the raw `"…"` slice (quotes + verbatim escapes); strip
+  # the surrounding quotes to get the content.
+  let token = ? parser.expect(newSpec("string literal", tkString))
+  ok(newStringLiteral(token.value, token.loc))
+
+# Spec adapter for stringLiteralSpec — still consumed by remaining
+# combinator chains (import specs, literalDefSpec, etc.).
+let stringLiteralSpec* = newSpec("string_literal", stringLiteralConsumer)
 
 # ============================================================
 # Integer literals
@@ -90,6 +105,14 @@ proc asl*(intLit: IntegerLiteral): string =
   of ilkSigned: asl(intLit.signed)
   of ilkUnsigned: asl(intLit.unsigned)
 
+# The tokenizer scans `(+|-)?digit+` into one tkInteger token;
+# newIntegerLiteral splits its optional leading sign into signed/unsigned.
+proc integerLiteralConsumer(parser: Parser): Result[IntegerLiteral, ParserError] =
+  let token = ? parser.expect(newSpec("integer", tkInteger))
+  ok(newIntegerLiteral(token.value, token.loc))
+
+let integerLiteralSpec* = newSpec("integer literal", integerLiteralConsumer)
+
 # ============================================================
 # FloatLiteral
 # ============================================================
@@ -102,6 +125,17 @@ proc newFloatLiteral*(value: string, loc: Location): FloatLiteral =
   FloatLiteral(value: value, loc: loc)
 
 proc asl*(floatLit: FloatLiteral): string = floatLit.value
+
+# Every float form is a single tkFloat token: the tokenizer scans the
+# numeric form `(+|-)?digit+(.digit+)?((e|E)(+|-)?digit+)?` and the special
+# IEEE-754 values `nan` / `inf` / `+inf` / `-inf` (the sign folds into the
+# token so downstream `analyzeFloatLiteral` can tell `+inf` from `-inf`).
+# So one consumer covers them all — no per-form alternation.
+proc floatLiteralConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
+  let token = ? parser.expect(newSpec("float", tkFloat))
+  ok(newFloatLiteral(token.value, token.loc))
+
+let floatLiteralSpec = newSpec("float literal", floatLiteralConsumer)
 
 # ============================================================
 # Literal (umbrella over string / integer / float)
@@ -163,6 +197,12 @@ proc defaultType*(literal: Literal): Identifier =
   let maybeId = newIdentifier(module, literal.loc)
   assert(maybeId.isOk, fmt"BUG: default literal type name `{module}` should always be a valid identifier")
   return maybeId.get
+
+let literalSpec* = oneOf("literal", @[
+  map(stringLiteralSpec, newLiteral),
+  map(floatLiteralSpec, newLiteral),
+  map(integerLiteralSpec, newLiteral),
+])
 
 # True iff the syntactically-validated decimal float literal `text`
 # is exactly representable as `mantissa * 2^k` for some non-negative
@@ -376,6 +416,17 @@ proc asl*(l: LiteralDef, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)
   @[fmt"{indent}literal: {asl(l.value)}"]
 
+proc literalDefConsumer(parser: Parser): Result[LiteralDef, ParserError] =
+  discard ? parser.expect(indentationSpec)
+  let literalKeyword = ? parser.expect(newSpec("literal"))
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(spaceSpec.optional())
+  let strLit = ? parser.expect(stringLiteralSpec)
+  ok(newLiteralDef(strLit, literalKeyword.loc))
+
+let literalDefSpec* = newSpec[LiteralDef]("literal def", literalDefConsumer)
+
 # ============================================================
 # LiteralInitializer
 # ============================================================
@@ -394,3 +445,11 @@ proc value*(init: LiteralInitializer): Literal = init.value
 
 proc asl*(init: LiteralInitializer): string =
   fmt"{init.argType.asl} {init.value.asl}"
+
+proc literalInitializerConsumer(parser: Parser): Result[LiteralInitializer, ParserError] =
+  let argType = ? parser.expect(argumentTypeSpec)
+  discard ? parser.expect(spaceSpec.atLeastOne())
+  let lit = ? parser.expect(literalSpec)
+  ok(newLiteralInitializer(argType, lit))
+
+let literalInitSpec* = newSpec[LiteralInitializer]("literal initializer", literalInitializerConsumer)

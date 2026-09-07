@@ -1,4 +1,7 @@
-import strformat
+import strformat, results
+
+import parser
+import error
 
 import identifiers
 
@@ -14,3 +17,12 @@ proc newDecorator*(name: Identifier): Decorator =
 
 proc asl*(decorator: Decorator): string =
   fmt"@{decorator.name.asl}"
+
+proc decoratorConsumer(parser: Parser): Result[Decorator, ParserError] =
+  discard ? parser.expect(indentationSpec)
+  discard ? parser.expect(atSpec)
+  let ident = ? parser.expect(identifierSpec)
+  discard ? parser.expect(emptyLineSpec)
+  ok(newDecorator(ident))
+
+let decoratorSpec* = newSpec("decorator", decoratorConsumer)

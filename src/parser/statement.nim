@@ -1,6 +1,8 @@
 import strformat, strutils, sequtils, tables, results
 
 import ../tokenizer/main as tokenizer
+
+import parser
 import error
 
 import identifiers
@@ -26,6 +28,14 @@ proc loc*(g: Getter): Location = g.loc
 proc asl*(getter: Getter): string =
   fmt"{asl(getter.source)}.{asl(getter.property)}"
 
+proc getterConsumer(parser: Parser): Result[Getter, ParserError] =
+  let target = ? parser.expect(identifierSpec)
+  discard ? parser.expect(dotSpec)
+  let field = ? parser.expect(identifierSpec)
+  ok(newGetter(target, field, target.loc))
+
+let getterSpec* = newSpec[Getter]("getter", getterConsumer)
+
 # ============================================================
 # UnionPatternField
 # ============================================================
@@ -44,6 +54,27 @@ proc binding*(field: UnionPatternField): Identifier = field.binding
 
 proc asl(field: UnionPatternField): string =
   fmt"{asl(field.name)}: {asl(field.binding)}"
+
+proc unionExplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
+  let name = ? parser.expect(identifierSpec)
+  discard ? parser.expect(spaceSpec.optional())
+  let maybeColon = parser.expect(newSpec(":"))
+  discard ? parser.expect(spaceSpec.optional())
+  let binding = ? parser.expect(identifierSpec)
+  ok(newUnionPatternField(name, binding, name.loc))
+
+let unionExplicitPatternFieldSpec = newSpec("union explicit pattern field", unionExplicitPatternFieldConsumer)
+
+proc unionImplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
+  let name = ? parser.expect(identifierSpec)
+  ok(newUnionPatternField(name, name, name.loc))
+
+let unionImplicitPatternFieldSpec = newSpec("union implicit pattern field", unionImplicitPatternFieldConsumer)
+
+let unionPatternFieldSpec* = oneOf("union pattern field", @[
+  unionExplicitPatternFieldSpec,
+  unionImplicitPatternFieldSpec
+])
 
 # ============================================================
 # UnionPattern
@@ -92,6 +123,32 @@ proc asl(vp: UnionPattern): string =
   let inner = vp.fields.mapIt(asl(it)).join(", ")
   content.add(fmt"{asl(vp.variant)} {{ {inner} }}")
   content
+
+# Variant pattern: VariantName { field: binding, field: binding }
+proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
+  let name = ? parser.expect(identifierSpec)
+  discard ? parser.expect(spaceSpec.optional())
+
+  discard ? parser.expect(leftCurlyBracketSpec)
+  discard ? parser.expect(spaceSpec.optional())
+
+  var fields: seq[UnionPatternField]
+  let maybeField = parser.expect(unionPatternFieldSpec)
+  if maybeField.isOk:
+    fields.add(maybeField.get)
+    discard ? parser.expect(spaceSpec.optional())
+    var maybeComma = parser.expect(commaSpec)
+    while maybeComma.isOk:
+      discard ? parser.expect(spaceSpec.optional())
+      let field = ? parser.expect(unionPatternFieldSpec)
+      fields.add(field)
+      discard ? parser.expect(spaceSpec.optional())
+      maybeComma = parser.expect(commaSpec)
+
+  discard ? parser.expect(rightCurlyBracketSpec)
+  newUnionPattern(name, fields)
+
+let unionPatternSpec* = newSpec[UnionPattern]("union pattern", unionPatternConsumer)
 
 # ============================================================
 # CasePattern
@@ -142,6 +199,13 @@ proc asl*(pattern: CasePattern): string =
   of cpkInteger: asl(pattern.intLit)
   of cpkVariable: asl(pattern.variable)
   of cpkUnion: asl(pattern.variant)
+
+let casePatternSpec* = oneOf("case pattern", @[
+  map(integerLiteralSpec, newCasePattern),
+  map(unionPatternSpec, newCasePattern),
+  map(identifierSpec, newCasePattern),
+])
+
 
 # ============================================================
 # Body cluster (mutually recursive)

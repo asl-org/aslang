@@ -1,6 +1,8 @@
-import strformat, sequtils, strutils, tables, results
+import strformat, sequtils, strutils, tables, results, options
 
 import ../tokenizer/main as tokenizer
+
+import parser
 import error
 
 import identifiers
@@ -29,6 +31,78 @@ proc asl*(argType: ArgumentType): string =
   if impls != "": content.add(fmt"[{impls}]")
   return content
 
+# Argument-type sugar: a trailing `!` on an argument type expands to
+# `Status[<argType>]`. Parsed uniformly here so every argument-type
+# position picks it up — function args, return types, kwarg field
+# types, and the initializer type prefix all route through this parser.
+#
+# Nesting binds tight: `!` attaches to the type it immediately follows.
+#   T!            -> Status[T]
+#   Array[u32]!   -> Status[Array[u32]]
+#   Array[u32!]   -> Array[Status[u32]]
+#   Status[u32]!  -> Status[Status[u32]]     (syntactically legal)
+#
+# The sugar collapses at parse time. Downstream (resolver, analyzer)
+# sees a plain `Status[...]` ArgumentType — no distinct AST variant,
+# no separate handling.
+#
+# When updating this sugar (different suffix, different wrapper type,
+# arity checks, additional post-fix operators, etc.), touch:
+#   - The `maybeBanged` block below.
+#   - grammar.md — the ArgumentType production.
+#   - validations.md — §4.8 (argument-type shorthand).
+#   - tests/test_grammar.nim — the "argument type shorthand" suite.
+#   - tests/test_analyzer.nim — end-to-end sugar tests.
+#
+# `argumentTypeConsumer` is self-referential: type params like
+# `Map[String, List[Int]]` contain nested argument types. Nim's
+# `proc` declarations handle recursion natively (a proc body can call
+# the enclosing proc by name).
+
+proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError]
+let argumentTypeSpec* = newSpec[ArgumentType]("argument type", argumentTypeConsumer)
+
+proc argumentImplListConsumer(parser: Parser): Result[seq[ArgumentType], ParserError] =
+  discard ? parser.expect(leftSquareBracketSpec)
+  discard ? parser.expect(spaceSpec.optional())
+  var impls: seq[ArgumentType]
+
+  let firstImpl = ? parser.expect(argumentTypeSpec)
+  impls.add(firstImpl)
+  discard ? parser.expect(spaceSpec.optional())
+  var maybeComma = parser.expect(commaSpec)
+  while maybeComma.isOk:
+    discard ? parser.expect(spaceSpec.optional())
+    let impl = ? parser.expect(argumentTypeSpec)
+    impls.add(impl)
+    discard ? parser.expect(spaceSpec.optional())
+    maybeComma = parser.expect(commaSpec)
+
+  discard ? parser.expect(rightSquareBracketSpec)
+  ok(impls)
+
+let argumentImplListSpec = newSpec("argument impl list", argumentImplListConsumer)
+
+proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
+  let rootIdent = ? parser.expect(identifierSpec)
+  # Optional `[T, U, ...]` type params — argumentTypeConsumer recurses
+  # into itself for each element. A leading `[` commits to the bracketed
+  # list; absence of `[` means no type params.
+  let maybeImpls = ? parser.expect(argumentImplListSpec.optional())
+  let maybeBanged = ? parser.expect(bangSpec.optional())
+
+  let argType =
+    if maybeImpls.isSome:
+      newArgumentType(rootIdent, maybeImpls.get)
+    else:
+      newArgumentType(rootIdent)
+
+  if maybeBanged.isSome:
+    let statusIdent = ? newIdentifier("Status", maybeBanged.get.loc)
+    ok(newArgumentType(statusIdent, @[argType]))
+  else:
+    ok(argType)
+
 # ============================================================
 # ArgumentDef (name: ArgumentType)
 # ============================================================
@@ -47,6 +121,16 @@ proc argType*(argDef: ArgumentDef): ArgumentType = argDef.argType
 
 proc asl*(argDef: ArgumentDef): string =
   fmt"{argDef.name.asl}: {argDef.argType.asl}"
+
+proc argumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserError] =
+  let name = ? parser.expect(identifierSpec)
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(spaceSpec.optional())
+  let argType = ? parser.expect(argumentTypeSpec)
+  ok(newArgumentDef(name, argType))
+
+let argumentDefSpec* = newSpec[ArgumentDef]("argument_definition", argumentDefConsumer)
 
 # ============================================================
 # ArgumentDefList ((name: T, name: T, ...))
@@ -78,3 +162,25 @@ proc arity*(argDefList: ArgumentDefList): int = argDefList.argDefs.len
 proc asl*(argDefList: ArgumentDefList): string =
   let content = argDefList.argDefs.mapIt(asl(it)).join(", ")
   return fmt"({content})"
+
+proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserError] =
+  let leftParen = ? parser.expect(leftParenthesisSpec)
+  discard ? parser.expect(spaceSpec.optional())
+
+  var argDefs: seq[ArgumentDef]
+  let maybeArgDef = parser.expect(argumentDefSpec)
+  if maybeArgDef.isOk:
+    argDefs.add(maybeArgDef.get)
+    discard ? parser.expect(spaceSpec.optional())
+    var maybeComma = parser.expect(commaSpec)
+    while maybeComma.isOk:
+      discard ? parser.expect(spaceSpec.optional())
+      let argDef = ? parser.expect(argumentDefSpec)
+      argDefs.add(argDef)
+      discard ? parser.expect(spaceSpec.optional())
+      maybeComma = parser.expect(commaSpec)
+
+  discard ? parser.expect(rightParenthesisSpec)
+  newArgumentDefList(argDefs, leftParen.loc)
+
+let argumentDefListSpec* = newSpec[ArgumentDefList]("argument definition list", argumentDefListConsumer)
