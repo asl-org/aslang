@@ -394,52 +394,48 @@ proc argumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserError] =
 let argumentDefSpec* = newSpec[ArgumentDef]("argument_definition", argumentDefConsumer)
 
 proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserError] =
-  let loc = parser.loc
-  discard ? parser.expect(leftParenthesisSpec)
+  let leftParen = ? parser.expect(leftParenthesisSpec)
   discard ? parser.expect(spaceSpec.optional())
+
   var argDefs: seq[ArgumentDef]
-  let first = parser.expect(argumentDefSpec)
-  if first.isOk:
-    argDefs.add(first.get)
-    while true:
-      let indexCheckpoint = parser.index
-      let levelCheckpoint = parser.level
+  let maybeArgDef = parser.expect(argumentDefSpec)
+  if maybeArgDef.isOk:
+    argDefs.add(maybeArgDef.get)
+    discard ? parser.expect(spaceSpec.optional())
+    var maybeComma = parser.expect(newSpec(","))
+    while maybeComma.isOk:
       discard ? parser.expect(spaceSpec.optional())
-      if parser.expect(newSpec(",")).isErr:
-        parser.index = indexCheckpoint
-        parser.level = levelCheckpoint
-        break
+      let argDef = ? parser.expect(argumentDefSpec)
+      argDefs.add(argDef)
       discard ? parser.expect(spaceSpec.optional())
-      argDefs.add(? parser.expect(argumentDefSpec))
-  discard ? parser.expect(spaceSpec.optional())
+      maybeComma = parser.expect(newSpec(","))
+
   discard ? parser.expect(rightParenthesisSpec)
-  newArgumentDefList(argDefs, loc)
+  newArgumentDefList(argDefs, leftParen.loc)
 
 let argumentDefListSpec = newSpec[ArgumentDefList]("argument definition list", argumentDefListConsumer)
 
-
-# Variant pattern field: name [":" binding] — bare `name` is sugar for
-# `name: name`, mirroring the initializer kwarg shorthand. When the
-# binding suffix is absent the parser synthesizes a binding with the
-# same identifier (and the same source location).
-proc unionPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
+proc unionExplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
   let name = ? parser.expect(identifierSpec)
-
-  let indexCheckpoint = parser.index
-  let levelCheckpoint = parser.level
   discard ? parser.expect(spaceSpec.optional())
   let maybeColon = parser.expect(newSpec(":"))
-  if maybeColon.isOk:
-    discard ? parser.expect(spaceSpec.optional())
-    let binding = ? parser.expect(identifierSpec)
-    ok(newUnionPatternField(name, binding, name.loc))
-  else:
-    parser.index = indexCheckpoint
-    parser.level = levelCheckpoint
-    ok(newUnionPatternField(name, name, name.loc))
+  discard ? parser.expect(spaceSpec.optional())
+  let binding = ? parser.expect(identifierSpec)
+  ok(newUnionPatternField(name, binding, name.loc))
 
-# Spec adapter.
-let unionPatternFieldSpec* = newSpec[UnionPatternField]("variant_pattern_field", unionPatternFieldConsumer)
+let unionExplicitPatternFieldSpec = newSpec("union explicit pattern field", unionExplicitPatternFieldConsumer)
+
+proc unionImplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
+  let name = ? parser.expect(identifierSpec)
+  ok(newUnionPatternField(name, name, name.loc))
+
+let unionImplicitPatternFieldSpec = newSpec("union implicit pattern field", unionImplicitPatternFieldConsumer)
+
+
+let unionPatternFieldSpec* = oneOf("union pattern field", @[
+  unionExplicitPatternFieldSpec,
+  unionImplicitPatternFieldSpec
+])
 
 # Variant pattern: VariantName { field: binding, field: binding }
 proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
