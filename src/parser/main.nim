@@ -294,12 +294,17 @@ proc statementLineConsumer(parser: Parser): Result[Statement, ParserError] =
   discard parser.expect(any(emptyLineSpec))
   discard ? parser.expect(indentationSpec)
   # Try match assignment: identifier = match ...:
+  # A FATAL error means the match committed (keyword + subject + `:`) but its
+  # body is malformed — propagate it rather than masking it with the
+  # plain-statement fallback below, which would report a misleading location.
   let maybeMatchAssign = parser.expect(matchAssignmentSpec)
   if maybeMatchAssign.isOk: return ok(maybeMatchAssign.get)
+  if maybeMatchAssign.error.fatal: return err(maybeMatchAssign.error)
   # Try standalone match: match ...:
   let maybeMatch = parser.expect(matchSpec)
   if maybeMatch.isOk:
     return ok(newStatement(newExpression(maybeMatch.get)))
+  if maybeMatch.error.fatal: return err(maybeMatch.error)
   # Inline statements: statement + newline
   let statement = ? parser.expect(statementSpec)
   discard ? parser.expect(emptyLineSpec)
