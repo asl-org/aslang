@@ -62,38 +62,17 @@ proc asl*(argType: ArgumentType): string =
 proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError]
 let argumentTypeSpec* = newSpec[ArgumentType]("argument type", argumentTypeConsumer)
 
-proc argumentImplListConsumer(parser: Parser): Result[seq[ArgumentType], ParserError] =
-  discard ? parser.expect(leftSquareBracketSpec)
-  discard ? parser.expect(spaceSpec.optional())
-  var impls: seq[ArgumentType]
-
-  let firstImpl = ? parser.expect(argumentTypeSpec)
-  impls.add(firstImpl)
-  discard ? parser.expect(spaceSpec.optional())
-  var maybeComma = parser.expect(commaSpec)
-  while maybeComma.isOk:
-    discard ? parser.expect(spaceSpec.optional())
-    let impl = ? parser.expect(argumentTypeSpec)
-    impls.add(impl)
-    discard ? parser.expect(spaceSpec.optional())
-    maybeComma = parser.expect(commaSpec)
-
-  discard ? parser.expect(rightSquareBracketSpec)
-  ok(impls)
-
-let argumentImplListSpec = newSpec("argument impl list", argumentImplListConsumer)
-
 proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
   let rootIdent = ? parser.expect(identifierSpec)
   # Optional `[T, U, ...]` type params — argumentTypeConsumer recurses
   # into itself for each element. A leading `[` commits to the bracketed
   # list; absence of `[` means no type params.
-  let maybeImpls = ? parser.expect(argumentImplListSpec.optional())
+  let maybeImpls = ? parser.expect(argumentTypeSpec.squareBracketList(allowEmpty = false).optional())
   let maybeBanged = ? parser.expect(bangSpec.optional())
 
   let argType =
     if maybeImpls.isSome:
-      newArgumentType(rootIdent, maybeImpls.get)
+      newArgumentType(rootIdent, maybeImpls.get[0])
     else:
       newArgumentType(rootIdent)
 
@@ -164,23 +143,7 @@ proc asl*(argDefList: ArgumentDefList): string =
   return fmt"({content})"
 
 proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserError] =
-  let leftParen = ? parser.expect(leftParenthesisSpec)
-  discard ? parser.expect(spaceSpec.optional())
-
-  var argDefs: seq[ArgumentDef]
-  let maybeArgDef = parser.expect(argumentDefSpec)
-  if maybeArgDef.isOk:
-    argDefs.add(maybeArgDef.get)
-    discard ? parser.expect(spaceSpec.optional())
-    var maybeComma = parser.expect(commaSpec)
-    while maybeComma.isOk:
-      discard ? parser.expect(spaceSpec.optional())
-      let argDef = ? parser.expect(argumentDefSpec)
-      argDefs.add(argDef)
-      discard ? parser.expect(spaceSpec.optional())
-      maybeComma = parser.expect(commaSpec)
-
-  discard ? parser.expect(rightParenthesisSpec)
-  newArgumentDefList(argDefs, leftParen.loc)
+  let (argDefs, loc) = ? parser.expect(argumentDefSpec.parenthesisList())
+  newArgumentDefList(argDefs, loc)
 
 let argumentDefListSpec* = newSpec[ArgumentDefList]("argument definition list", argumentDefListConsumer)

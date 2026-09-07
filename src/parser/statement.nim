@@ -128,24 +128,7 @@ proc asl(vp: UnionPattern): string =
 proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
   let name = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
-
-  discard ? parser.expect(leftCurlyBracketSpec)
-  discard ? parser.expect(spaceSpec.optional())
-
-  var fields: seq[UnionPatternField]
-  let maybeField = parser.expect(unionPatternFieldSpec)
-  if maybeField.isOk:
-    fields.add(maybeField.get)
-    discard ? parser.expect(spaceSpec.optional())
-    var maybeComma = parser.expect(commaSpec)
-    while maybeComma.isOk:
-      discard ? parser.expect(spaceSpec.optional())
-      let field = ? parser.expect(unionPatternFieldSpec)
-      fields.add(field)
-      discard ? parser.expect(spaceSpec.optional())
-      maybeComma = parser.expect(commaSpec)
-
-  discard ? parser.expect(rightCurlyBracketSpec)
+  let (fields, _) = ? parser.expect(unionPatternFieldSpec.curlyBracketList())
   newUnionPattern(name, fields)
 
 let unionPatternSpec* = newSpec[UnionPattern]("union pattern", unionPatternConsumer)

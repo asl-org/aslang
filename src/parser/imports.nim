@@ -265,19 +265,7 @@ proc toAbsPath*(parsedPath: ImportPath, importingFile: string,
 proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let importKeyword = ? parser.expect(newSpec("import"))
   discard ? parser.expect(spaceSpec)
-  discard ? parser.expect(leftCurlyBracketSpec)
-  discard ? parser.expect(spaceSpec.optional())
-
-  var names = @[? parser.expect(importedTypeSpec)]
-  discard ? parser.expect(spaceSpec.optional())
-  var maybeComma = parser.expect(commaSpec)
-  while maybeComma.isOk:
-    discard ? parser.expect(spaceSpec.optional())
-    names.add(? parser.expect(importedTypeSpec))
-    discard ? parser.expect(spaceSpec.optional())
-    maybeComma = parser.expect(commaSpec)
-
-  discard ? parser.expect(rightCurlyBracketSpec)
+  let (names, _)  = ? parser.expect(importedTypeSpec.curlyBracketList(allowEmpty = false))
   discard ? parser.expect(spaceSpec)
   discard ? parser.expect(newSpec("from"))
   discard ? parser.expect(spaceSpec)

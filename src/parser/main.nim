@@ -63,14 +63,11 @@ proc expressionConsumer(parser: Parser): Result[Expression, ParserError]
 proc statementListConsumer(parser: Parser): Result[StatementList, ParserError]
 proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError]
 proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError]
-proc kwargConsumer(parser: Parser): Result[KeywordArgument, ParserError]
 proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError]
 proc unionInitializerConsumer(parser: Parser): Result[UnionInitializer, ParserError]
 proc structInitializerConsumer(parser: Parser): Result[StructInitializer, ParserError]
-proc initializerConsumer(parser: Parser): Result[Initializer, ParserError]
 proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError]
 proc setterConsumer(parser: Parser): Result[Setter, ParserError]
-proc inlineStatementConsumer(parser: Parser): Result[Statement, ParserError]
 proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError]
 proc matchConsumer(parser: Parser): Result[MatchExpression, ParserError]
 proc statementLineConsumer(parser: Parser): Result[Statement, ParserError]
@@ -80,25 +77,7 @@ proc statementLineConsumer(parser: Parser): Result[Statement, ParserError]
 let expressionSpec* = newSpec[Expression]("expression", expressionConsumer)
 
 proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
-  let loc = parser.loc
-  discard ? parser.expect(leftParenthesisSpec)
-  discard ? parser.expect(spaceSpec.optional())
-  var args: seq[Expression]
-  let first = parser.expect(expressionSpec)
-  if first.isOk:
-    args.add(first.get)
-    while true:
-      let indexCheckpoint = parser.index
-      let levelCheckpoint = parser.level
-      discard ? parser.expect(spaceSpec.optional())
-      if parser.expect(commaSpec).isErr:
-        parser.index = indexCheckpoint
-        parser.level = levelCheckpoint
-        break
-      discard ? parser.expect(spaceSpec.optional())
-      args.add(? parser.expect(expressionSpec))
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(rightParenthesisSpec)
+  let (args, loc) = ? parser.expect(expressionSpec.parenthesisList())
   ok(newArgumentList(args, loc))
 
 let argumentListSpec = newSpec[ArgumentList]("argument list", argumentListConsumer)
@@ -113,46 +92,31 @@ proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
 
 let fncallSpec = newSpec[FunctionCall]("function call", functionCallConsumer)
 
-
-proc kwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
+proc explicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  let indexCheckpoint = parser.index
-  let levelCheckpoint = parser.level
   discard ? parser.expect(spaceSpec.optional())
-  let maybeColon = parser.expect(newSpec(":"))
-  if maybeColon.isOk:
-    discard ? parser.expect(spaceSpec.optional())
-    let expression = ? parser.expect(expressionSpec)
-    ok(newKeywordArgument(name, expression, name.loc))
-  else:
-    parser.index = indexCheckpoint
-    parser.level = levelCheckpoint
-    ok(newKeywordArgument(name, newExpression(name), name.loc))
+  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(spaceSpec.optional())
+  let expression = ? parser.expect(expressionSpec)
+  ok(newKeywordArgument(name, expression, name.loc))
+
+let explicitKwargSpec = newSpec("explicit keyword argument", explicitKwargConsumer)
+
+proc implicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
+  let name = ? parser.expect(identifierSpec)
+  ok(newKeywordArgument(name, newExpression(name), name.loc))
+
+let implicitKwargSpec = newSpec("implicit keyword argument", implicitKwargConsumer)
 
 # `kwargSpec` is a named Spec because kwargListConsumer loops over it
 # directly via `parser.expect(kwargSpec)`.
-let kwargSpec* = newSpec[KeywordArgument]("keyword_argument", kwargConsumer)
+let kwargSpec* = oneOf("keyword_argument", @[
+  explicitKwargSpec,
+  implicitKwargSpec,
+])
 
 proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError] =
-  let loc = parser.loc
-  discard ? parser.expect(leftCurlyBracketSpec)
-  discard ? parser.expect(spaceSpec.optional())
-  var args: seq[KeywordArgument]
-  let first = parser.expect(kwargSpec)
-  if first.isOk:
-    args.add(first.get)
-    while true:
-      let indexCheckpoint = parser.index
-      let levelCheckpoint = parser.level
-      discard ? parser.expect(spaceSpec.optional())
-      if parser.expect(commaSpec).isErr:
-        parser.index = indexCheckpoint
-        parser.level = levelCheckpoint
-        break
-      discard ? parser.expect(spaceSpec.optional())
-      args.add(? parser.expect(kwargSpec))
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(rightCurlyBracketSpec)
+  let (args, loc) = ? parser.expect(kwargSpec.curlyBracketList())
   newKeywordArgumentList(args, loc)
 
 let kwargListSpec = newSpec[KeywordArgumentList]("keyword argument list", kwargListConsumer)
@@ -195,20 +159,12 @@ proc structInitializerConsumer(parser: Parser): Result[StructInitializer, Parser
 
 let structInitSpec = newSpec[StructInitializer]("struct initializer", structInitializerConsumer)
 
-proc initializerConsumer(parser: Parser): Result[Initializer, ParserError] =
-  var errors: seq[ParserError]
-  let maybeUnion = parser.expect(unionInitSpec)
-  if maybeUnion.isOk: return ok(newInitializer(maybeUnion.get))
-  errors.add(maybeUnion.error)
-  let maybeStruct = parser.expect(structInitSpec)
-  if maybeStruct.isOk: return ok(newInitializer(maybeStruct.get))
-  errors.add(maybeStruct.error)
-  let maybeLit = parser.expect(literalInitSpec)
-  if maybeLit.isOk: return ok(newInitializer(maybeLit.get))
-  errors.add(maybeLit.error)
-  err(max(errors))
 
-let initSpec = newSpec[Initializer]("initializer spec", initializerConsumer)
+let initSpec = oneOf("initializer spec", @[
+  map(unionInitSpec, newInitializer),
+  map(structInitSpec, newInitializer),
+  map(literalInitSpec, newInitializer),
+])
 
 proc expressionConsumer(parser: Parser): Result[Expression, ParserError] =
   var errors: seq[ParserError]
@@ -249,20 +205,11 @@ proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
 
 let setterSpec = newSpec[Setter]("setter", setterConsumer)
 
-proc inlineStatementConsumer(parser: Parser): Result[Statement, ParserError] =
-  var errors: seq[ParserError]
-  let maybeSet = parser.expect(setterSpec)
-  if maybeSet.isOk: return ok(newStatement(maybeSet.get))
-  errors.add(maybeSet.error)
-  let maybeAssign = parser.expect(assignmentSpec)
-  if maybeAssign.isOk: return ok(newStatement(maybeAssign.get))
-  errors.add(maybeAssign.error)
-  let maybeExpr = parser.expect(expressionSpec)
-  if maybeExpr.isOk: return ok(newStatement(maybeExpr.get))
-  errors.add(maybeExpr.error)
-  err(max(errors))
-
-let statementSpec = newSpec[Statement]("statement", inlineStatementConsumer)
+let statementSpec = oneOf("statement", @[
+  map(setterSpec, newStatement),
+  map(assignmentSpec, newStatement),
+  map(expressionSpec, newStatement),
+])
 
 proc parseCaseLine(parser: Parser): Result[CasePattern, ParserError] =
   discard ? parser.expect(newSpec("case"))
@@ -483,27 +430,7 @@ proc parseFunctionList(parser: Parser): Result[FunctionList, ParserError] =
 let functionListSpec = newSpec[FunctionList]("function list", parseFunctionList)
 
 proc parseStructRequires(parser: Parser): Result[seq[Identifier], ParserError] =
-  ## Parses the `(A, B, C)` clause of a `struct(A, B, C):` header —
-  ## a parenthesised comma-separated identifier list naming the
-  ## struct's required generic impls.
-  discard ? parser.expect(leftParenthesisSpec)
-  discard ? parser.expect(spaceSpec.optional())
-  var generics: seq[Identifier]
-  let first = parser.expect(identifierSpec)
-  if first.isOk:
-    generics.add(first.get)
-    while true:
-      let indexCheckpoint = parser.index
-      let levelCheckpoint = parser.level
-      discard ? parser.expect(spaceSpec.optional())
-      if parser.expect(commaSpec).isErr:
-        parser.index = indexCheckpoint
-        parser.level = levelCheckpoint
-        break
-      discard ? parser.expect(spaceSpec.optional())
-      generics.add(? parser.expect(identifierSpec))
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(rightParenthesisSpec)
+  let (generics, _) = ? parser.expect(identifierSpec.parenthesisList(allowEmpty = false))
   ok(generics)
 
 let requiredStructGenerics = newSpec[seq[Identifier]]("required struct generics", parseStructRequires)
@@ -578,24 +505,7 @@ proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
   discard ? parser.expect(indentationSpec)
   let name = ? parser.expect(identifierSpec)
   discard parser.expect(spaceSpec.optional())
-  discard ? parser.expect(leftCurlyBracketSpec)
-  discard ? parser.expect(spaceSpec.optional())
-  var fields: seq[ArgumentDef]
-  let first = parser.expect(argumentDefSpec)
-  if first.isOk:
-    fields.add(first.get)
-    while true:
-      let indexCheckpoint = parser.index
-      let levelCheckpoint = parser.level
-      discard ? parser.expect(spaceSpec.optional())
-      if parser.expect(commaSpec).isErr:
-        parser.index = indexCheckpoint
-        parser.level = levelCheckpoint
-        break
-      discard ? parser.expect(spaceSpec.optional())
-      fields.add(? parser.expect(argumentDefSpec))
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(rightCurlyBracketSpec)
+  let (fields, _) = ? parser.expect(argumentDefSpec.curlyBracketList())
   discard ? parser.expect(emptyLineSpec)
   newVariantDef(name, fields, name.loc)
 

@@ -123,7 +123,7 @@ proc expectOneOf[T](parser: Parser, specs: seq[Spec[T]]): Result[T, ParserError]
   var errors: seq[ParserError]
   for spec in specs:
     let maybeValue = parser.expect(spec)
-    if maybeValue.isOk: return maybeValue
+    if maybeValue.isOk or maybeValue.error.fatal: return maybeValue
     errors.add(maybeValue.error)
   err(max(errors))
 
@@ -198,3 +198,43 @@ proc indentationConsumer(parser: Parser): Result[Location, ParserError] =
     ok(loc)
 
 let indentationSpec* = newSpec("indentation", indentationConsumer)
+
+proc wrappedList[O, I, C](opener: Spec[O], item: Spec[I], closer: Spec[C], allowEmpty: bool): Spec[(seq[I], Location)] =
+  let listType = if allowEmpty: "list" else: "non-empty list"
+  let specName = fmt"comma separated {listType} of {item.name} wrapped in {opener.name} and {closer.name}"
+  let consumer =
+    proc(parser: Parser): Result[(seq[I], Location), ParserError] =
+      let start = ? parser.expect(opener)
+      discard ? parser.expect(spaceSpec.optional())
+      var items: seq[I]
+
+      let maybeFirstItem = parser.expect(item)
+      if maybeFirstItem.isErr:
+        if allowEmpty:
+          discard ? parser.expect(closer)
+          ok((items, start.loc))
+        else:
+          err(maybeFirstItem.error)
+      else:
+        items.add(maybeFirstItem.get)
+        discard ? parser.expect(spaceSpec.optional())
+        var maybeComma = parser.expect(commaSpec)
+        while maybeComma.isOk:
+          discard ? parser.expect(spaceSpec.optional())
+          let item = ? parser.expect(item)
+          items.add(item)
+          discard ? parser.expect(spaceSpec.optional())
+          maybeComma = parser.expect(commaSpec)
+
+        discard ? parser.expect(closer)
+        ok((items, start.loc))
+  newSpec(specName, consumer)
+
+proc squareBracketList*[T](itemSpec: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
+  wrappedList(leftSquareBracketSpec, itemSpec, rightSquareBracketSpec, allowEmpty)
+
+proc curlyBracketList*[T](itemSpec: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
+  wrappedList(leftCurlyBracketSpec, itemSpec, rightCurlyBracketSpec, allowEmpty)
+
+proc parenthesisList*[T](itemSpec: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
+  wrappedList(leftParenthesisSpec, itemSpec, rightParenthesisSpec, allowEmpty)
