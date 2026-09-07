@@ -5,32 +5,18 @@ import identifiers
 import argtype
 
 # ============================================================
-# StringContent (internal — one character of a string literal)
-# ============================================================
-
-type StringContent* = ref object
-  content: string
-  loc: Location
-
-proc newStringContent*(content: string,
-    loc: Location): StringContent =
-  StringContent(content: content, loc: loc)
-
-proc content*(sc: StringContent): string = sc.content
-
-# ============================================================
 # StringLiteral
 # ============================================================
 
 type StringLiteral* = ref object
-  content: string
+  value: string
   loc: Location
 
-proc newStringLiteral*(content: string, loc: Location): StringLiteral =
-  StringLiteral(content: content, loc: loc)
+proc newStringLiteral*(value: string, loc: Location): StringLiteral =
+  StringLiteral(value: value, loc: loc)
 
 proc loc*(strLit: StringLiteral): Location = strLit.loc
-proc value*(strLit: StringLiteral): string = strLit.content
+proc content*(strLit: StringLiteral): string = strLit.value[1..^2]
 proc asl*(strLit: StringLiteral): string = "\"" & strLit.content & "\""
 
 # ============================================================
