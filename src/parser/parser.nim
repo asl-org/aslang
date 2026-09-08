@@ -256,3 +256,7 @@ proc indentedBody*[T](parser: Parser, body: Consumer[T]): Result[T, ParserError]
   result = body(parser)
   parser.level -= 1
   if result.isErr: result.error.fatal = true
+
+proc indentedBody*[T](parser: Parser, body: Spec[T]): Result[T, ParserError] =
+  ## Spec form of `indentedBody` — expects `body` one indent level deeper.
+  parser.indentedBody(proc(parser: Parser): Result[T, ParserError] = parser.expect(body))

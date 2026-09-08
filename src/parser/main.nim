@@ -293,15 +293,7 @@ proc statementLineConsumer(parser: Parser): Result[Statement, ParserError] =
 let statementLineSpec = newSpec[Statement]("statement line", statementLineConsumer)
 
 proc statementListConsumer(parser: Parser): Result[StatementList, ParserError] =
-  var stmts: seq[Statement]
-  let first = ? parser.expect(statementLineSpec)
-  stmts.add(first)
-  while true:
-    let maybeNext = parser.expect(statementLineSpec)
-    if maybeNext.isErr:
-      if maybeNext.error.fatal: return err(maybeNext.error)
-      break
-    stmts.add(maybeNext.get)
+  let stmts = ? parser.expect(statementLineSpec.atLeastOne())
   ok(newStatementList(stmts))
 
 # TODO(post-analysis-expander): re-wire expansion after the analyzer once the
@@ -325,21 +317,6 @@ proc parseFunctionDef(parser: Parser): Result[FunctionDef, ParserError] =
   ok(newFunctionDef(public, funcName, argDefList, returnType, funcKeyword.loc))
 
 let functionDefSpec = newSpec[FunctionDef]("function def", parseFunctionDef)
-
-proc parseFunctionDefs(parser: Parser): Result[seq[FunctionDef], ParserError] =
-  ## Parses one-or-more function-definition lines. Used inside a
-  ## `generic` block, which only carries signatures — no bodies.
-  let funcDefLineSpec = functionDefSpec.indentedLine()
-  var defs: seq[FunctionDef]
-  let first = ? parser.expect(funcDefLineSpec)
-  defs.add(first)
-  while true:
-    let maybeNext = parser.expect(funcDefLineSpec)
-    if maybeNext.isErr:
-      if maybeNext.error.fatal: return err(maybeNext.error)
-      break
-    defs.add(maybeNext.get)
-  ok(defs)
 
 proc parseUserFunction(parser: Parser): Result[UserFunction, ParserError] =
   ## Parses a user function block: optional decorator lines, then the
@@ -428,21 +405,9 @@ proc parseArgumentDefLine(parser: Parser): Result[ArgumentDef, ParserError] =
 
 let argDefLineSpec = newSpec[ArgumentDef]("argument def", parseArgumentDefLine)
 
-proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
-  var fields: seq[ArgumentDef]
-  let first = ? parser.expect(argDefLineSpec)
-  fields.add(first)
-  while true:
-    let maybeNext = parser.expect(argDefLineSpec)
-    if maybeNext.isErr:
-      if maybeNext.error.fatal: return err(maybeNext.error)
-      break
-    fields.add(maybeNext.get)
-  ok(fields)
-
 proc parseStruct(parser: Parser): Result[StructDef, ParserError] =
   let header = ? parser.expect(structHeaderSpec.indentedLine())
-  let body = ? parser.indentedBody(parseStructBody)
+  let body = ? parser.indentedBody(argDefLineSpec.atLeastOne())
   # newStructDef validation errors (duplicate generic in header,
   # duplicate field name) must also be fatal — we're past the header,
   # so an outer expectOptional shouldn't swallow the failure and treat
@@ -478,21 +443,9 @@ proc parseUnionHeader(parser: Parser): Result[Location, ParserError] =
 
 let unionHeaderSpec = newSpec[Location]("union header", parseUnionHeader)
 
-proc parseUnionBody(parser: Parser): Result[seq[VariantDef], ParserError] =
-  var variants: seq[VariantDef]
-  let first = ? parser.expect(variantDefLineSpec)
-  variants.add(first)
-  while true:
-    let maybeNext = parser.expect(variantDefLineSpec)
-    if maybeNext.isErr:
-      if maybeNext.error.fatal: return err(maybeNext.error)
-      break
-    variants.add(maybeNext.get)
-  ok(variants)
-
 proc parseUnion(parser: Parser): Result[UnionDef, ParserError] =
   let loc = ? parser.expect(unionHeaderSpec.indentedLine())
-  let body = ? parser.indentedBody(parseUnionBody)
+  let body = ? parser.indentedBody(variantDefLineSpec.atLeastOne())
   newUnionDef(body, loc)
 
 let unionDefSpec = newSpec[UnionDef]("union def", parseUnion)
@@ -538,7 +491,7 @@ proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
   ## definitions. Body failures are marked fatal — once past the
   ## header, the block cannot be backtracked out of.
   let h = ? parser.expect(genericHeaderSpec.indentedLine())
-  let body = ? parser.indentedBody(parseFunctionDefs)
+  let body = ? parser.indentedBody(functionDefSpec.indentedLine().atLeastOne())
   ok(newGeneric(@[], h.public, h.name, body, h.loc))
 
 let genericSpec = newSpec[Generic]("generic", parseGeneric)
