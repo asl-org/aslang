@@ -260,3 +260,14 @@ proc indentedBody*[T](parser: Parser, body: Consumer[T]): Result[T, ParserError]
 proc indentedBody*[T](parser: Parser, body: Spec[T]): Result[T, ParserError] =
   ## Spec form of `indentedBody` — expects `body` one indent level deeper.
   parser.indentedBody(proc(parser: Parser): Result[T, ParserError] = parser.expect(body))
+
+proc indentedBlock*[H, B](parser: Parser, header: Spec[H], body: Consumer[B]): Result[(H, B), ParserError] =
+  ## A block: a `header` line, then its `body` indented one level deeper
+  ## (indentedLine for the header, indentedBody for the body).
+  let h = ? parser.expect(header.indentedLine())
+  let b = ? parser.indentedBody(body)
+  ok((h, b))
+
+proc indentedBlock*[H, B](parser: Parser, header: Spec[H], body: Spec[B]): Result[(H, B), ParserError] =
+  ## Spec-body form of `indentedBlock`.
+  parser.indentedBlock(header, proc(parser: Parser): Result[B, ParserError] = parser.expect(body))
