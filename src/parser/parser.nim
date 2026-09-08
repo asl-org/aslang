@@ -93,6 +93,8 @@ proc expect*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
     parser.level = levelCheckpoint
   return maybeValue
 
+proc expect*(parser: Parser, value: string): Result[Token, ParserError] = parser.expect(newSpec(value))
+
 proc expectOptional[T](parser: Parser, spec: Spec[T]): Result[Option[T], ParserError] =
   let maybeItem = parser.expect(spec)
   if maybeItem.isErr:
@@ -144,13 +146,19 @@ proc oneOf*[T](name: string, specs: seq[Spec[T]]): Spec[T] =
   let consumer = proc(parser: Parser): Result[T, ParserError] = parser.expectOneOf(specs)
   newSpec[T](name & ": " & variants, consumer)
 
-proc map*[T, U](spec: Spec[T], name: string, mapper: ResultMapper[T, U]): Spec[U] =
+proc map*[T, U](spec: Spec[T], mapper: ResultMapper[T, U]): Spec[U] =
   let consumer = proc(parser: Parser): Result[U, ParserError] = mapper(? parser.expect(spec))
   newSpec[U](spec.name, consumer)
 
 proc map*[T, U](spec: Spec[T], mapper: Mapper[T, U]): Spec[U] =
   let consumer = proc(parser: Parser): Result[U, ParserError] = ok(mapper(? parser.expect(spec)))
   newSpec[U](spec.name, consumer)
+
+proc newSpec*[T](name: string, kind: TokenKind, mapper: ResultMapper[Token, T]): Spec[T] =
+  newSpec(name, kind).map(mapper)
+
+proc newSpec*[T](name: string, kind: TokenKind, mapper: Mapper[Token, T]): Spec[T] =
+  newSpec(name, kind).map(mapper)
 
 # ============================================================
 # Static leaf specs (token-kind + common punctuation)
@@ -165,10 +173,6 @@ let newlineSpec* = newSpec("newline '\\n'", tkNewline)
 let commentSpec* = newSpec("comment", tkComment)
 
 let bangSpec* = newSpec("!")
-let atSpec* = newSpec("@")
-let dotSpec* = newSpec(".")
-let colonSpec* = newSpec(":")
-let commaSpec* = newSpec(",")
 let leftParenthesisSpec* = newSpec("(")
 let rightParenthesisSpec* = newSpec(")")
 let leftCurlyBracketSpec* = newSpec("{")
@@ -218,13 +222,13 @@ proc wrappedList[O, I, C](opener: Spec[O], item: Spec[I], closer: Spec[C], allow
       else:
         items.add(maybeFirstItem.get)
         discard ? parser.expect(spaceSpec.optional())
-        var maybeComma = parser.expect(commaSpec)
+        var maybeComma = parser.expect(",")
         while maybeComma.isOk:
           discard ? parser.expect(spaceSpec.optional())
           let item = ? parser.expect(item)
           items.add(item)
           discard ? parser.expect(spaceSpec.optional())
-          maybeComma = parser.expect(commaSpec)
+          maybeComma = parser.expect(",")
 
         discard ? parser.expect(closer)
         ok((items, start.loc))

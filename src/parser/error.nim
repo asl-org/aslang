@@ -12,8 +12,8 @@ type
     msg*: string
     fatal*: bool
 
-proc newParserError*(msg: string, loc: Location): ParserError =
-  ParserError(msg: msg, loc: loc)
+proc newParserError*(msg: string, loc: Location, fatal: bool = false): ParserError =
+  ParserError(msg: msg, loc: loc, fatal: fatal)
 
 proc `<`*(err1: ParserError, err2: ParserError): bool =
   err1.loc < err2.loc

@@ -75,46 +75,42 @@ proc statementLineConsumer(parser: Parser): Result[Statement, ParserError]
 # recurses back through it).
 let expressionSpec* = newSpec[Expression]("expression", expressionConsumer)
 
-let argumentListSpec = map(expressionSpec.parenthesisList(),
-  proc(items: (seq[Expression], Location)): ArgumentList =
-    newArgumentList(items[0], items[1]))
+proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
+  let (args, loc) = ? parser.expect(expressionSpec.parenthesisList())
+  ok(newArgumentList(args, loc))
+let argumentListSpec = newSpec("argument list", argumentListConsumer)
 
 proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
   let target = ? parser.expect(identifierSpec)
-  discard ? parser.expect(dotSpec)
-  let method0 = ? parser.expect(identifierSpec)
+  discard ? parser.expect(".")
+  let function = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
   let args = ? parser.expect(argumentListSpec)
-  ok(newFunctionCall(target, method0, args))
+  ok(newFunctionCall(target, function, args))
 
 let fncallSpec = newSpec[FunctionCall]("function call", functionCallConsumer)
 
 proc explicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
   let name = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
   let expression = ? parser.expect(expressionSpec)
   ok(newKeywordArgument(name, expression, name.loc))
 
 let explicitKwargSpec = newSpec("explicit keyword argument", explicitKwargConsumer)
-
-let implicitKwargSpec = map(identifierSpec,
-  proc(name: Identifier): KeywordArgument =
-    newKeywordArgument(name, newExpression(name), name.loc))
+let implicitKwargSpec = identifierSpec.map(newKeywordArgument)
 
 let kwargSpec* = oneOf("keyword_argument", @[
   explicitKwargSpec,
   implicitKwargSpec,
 ])
 
-let kwargListSpec = map(kwargSpec.curlyBracketList(), "keyword argument list",
-  proc(items: (seq[KeywordArgument], Location)): Result[KeywordArgumentList, ParserError] =
-    newKeywordArgumentList(items[0], items[1]))
+let kwargListSpec = kwargSpec.curlyBracketList().map(newKeywordArgumentList)
 
 proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
   let typeRef = ? parser.expect(argumentTypeSpec)
-  discard ? parser.expect(dotSpec)
+  discard ? parser.expect(".")
   let variant = ? parser.expect(identifierSpec)
   ok(newUnionRef(typeRef, variant))
 
@@ -175,17 +171,17 @@ proc expressionConsumer(parser: Parser): Result[Expression, ParserError] =
 proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
   let target = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(newSpec("="))
+  discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
-  let expr = ? parser.expect(expressionSpec)
-  ok(newAssignment(target, expr, target.loc))
+  let expression = ? parser.expect(expressionSpec)
+  ok(newAssignment(target, expression, target.loc))
 
 let assignmentSpec = newSpec[Assignment]("assignment", assignmentConsumer)
 
 proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
   let target = ? parser.expect(getterSpec)
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(newSpec("="))
+  discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
   let expr = ? parser.expect(expressionSpec)
   ok(newSetter(target, expr, target.loc))
@@ -199,11 +195,11 @@ let statementSpec = oneOf("statement", @[
 ])
 
 proc parseCaseLine(parser: Parser): Result[CasePattern, ParserError] =
-  discard ? parser.expect(newSpec("case"))
-  discard ? parser.expect(spaceSpec.atLeastOne())
+  discard ? parser.expect("case")
+  discard ? parser.expect(spaceSpec)
   let pat = ? parser.expect(casePatternSpec)
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(colonSpec)
+  discard ? parser.expect(":")
   ok(pat)
 
 let caseLineSpec = newSpec[CasePattern]("case line", parseCaseLine)
@@ -217,42 +213,24 @@ let caseBlockSpec = newSpec[CaseBlock]("case block", caseConsumer)
 # Match body: parses "match" keyword + subject + ":" + newline + caseBlocks
 # Does NOT consume indentation — caller handles that
 proc matchConsumer(parser: Parser): Result[MatchExpression, ParserError] =
-  let matchKeyword = ? parser.expect(newSpec("match"))
-  discard ? parser.expect(spaceSpec.atLeastOne())
+  let loc = parser.loc
+  discard ? parser.expect("match")
+  discard ? parser.expect(spaceSpec)
   # Match expressions cannot be the subject of another match expression.
   # expressionConsumer intentionally excludes match (match is parsed separately
   # in statementLineConsumer). This check guards against future changes that
   # might add match to expressionConsumer.
   let subject = ? parser.expect(expressionSpec)
   case subject.kind:
-  of ekMatch:
-    return err(newParserError(
-      "match expression cannot be the subject of another match", matchKeyword.loc))
-  of ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable: discard
-  discard parser.expect(spaceSpec.optional())
-  discard ? parser.expect(colonSpec)
-  discard ? parser.expect(emptyLineSpec)
-  parser.level += 1
-  var cases: seq[CaseBlock]
-  let firstCaseResult = block:
-    discard parser.expect(any(emptyLineSpec))
-    parser.expect(caseBlockSpec)
-  if firstCaseResult.isErr:
+  of ekMatch: err(newParserError("match expression cannot be the subject of another match", loc))
+  of ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable:
+    discard parser.expect(spaceSpec.optional())
+    discard ? parser.expect(":")
+    discard ? parser.expect(emptyLineSpec)
+    parser.level += 1
+    let cases = ? parser.expect(caseBlockSpec.atLeastOne())
     parser.level -= 1
-    firstCaseResult.error.fatal = true
-    return err(firstCaseResult.error)
-  cases.add(firstCaseResult.get)
-  while true:
-    discard parser.expect(any(emptyLineSpec))
-    let nextCase = parser.expect(caseBlockSpec)
-    if nextCase.isErr:
-      if nextCase.error.fatal:
-        parser.level -= 1
-        return err(nextCase.error)
-      break
-    cases.add(nextCase.get)
-  parser.level -= 1
-  ok(newMatchExpression(subject, cases, matchKeyword.loc))
+    ok(newMatchExpression(subject, cases, loc))
 
 let matchSpec = newSpec[MatchExpression]("match", matchConsumer)
 
@@ -262,7 +240,7 @@ let matchSpec = newSpec[MatchExpression]("match", matchConsumer)
 proc parseMatchAssignment(parser: Parser): Result[Statement, ParserError] =
   let target = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(newSpec("="))
+  discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
   let matchExpr = ? parser.expect(matchSpec)
   ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
@@ -281,8 +259,7 @@ proc statementLineConsumer(parser: Parser): Result[Statement, ParserError] =
   if maybeMatchAssign.error.fatal: return err(maybeMatchAssign.error)
   # Try standalone match: match ...:
   let maybeMatch = parser.expect(matchSpec)
-  if maybeMatch.isOk:
-    return ok(newStatement(newExpression(maybeMatch.get)))
+  if maybeMatch.isOk: return ok(newStatement(newExpression(maybeMatch.get)))
   if maybeMatch.error.fatal: return err(maybeMatch.error)
   # Inline statements: statement + newline
   let statement = ? parser.expect(statementSpec)
@@ -301,16 +278,16 @@ proc statementListConsumer(parser: Parser): Result[StatementList, ParserError] =
 
 
 proc parseFunctionDef(parser: Parser): Result[FunctionDef, ParserError] =
-  let public = parser.expect(newSpec("public")).isOk
-  if public: discard ? parser.expect(spaceSpec.atLeastOne())
+  let public = parser.expect("public").isOk
+  if public: discard ? parser.expect(spaceSpec)
 
-  let funcKeyword = ? parser.expect(newSpec("func"))
-  discard ? parser.expect(spaceSpec.atLeastOne())
+  let funcKeyword = ? parser.expect("func")
+  discard ? parser.expect(spaceSpec)
   let funcName = ? parser.expect(identifierSpec)
   discard parser.expect(spaceSpec.optional())
   let argDefList = ? parser.expect(argumentDefListSpec)
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
   let returnType = ? parser.expect(argumentTypeSpec)
   ok(newFunctionDef(public, funcName, argDefList, returnType, funcKeyword.loc))
@@ -322,7 +299,7 @@ proc parseUserFunction(parser: Parser): Result[UserFunction, ParserError] =
   ## function signature, then an indented statement-list body. Body
   ## failures are marked fatal — once past the header, the block can't
   ## be backtracked out of.
-  let decorators = ? parser.expect(any(decoratorSpec))
+  let decorators = ? parser.expect(decoratorSpec.any())
   let (h, body) = ? parser.indentedBlock(functionDefSpec, statementListConsumer)
   ok(newUserFunction(decorators, h, body))
 
@@ -332,8 +309,8 @@ let userFuncSpec = newSpec[UserFunction]("user function", parseUserFunction)
 # public func name(args): ReturnType
 proc parseExternFunction(parser: Parser): Result[ExternFunction, ParserError] =
   discard ? parser.expect(indentationSpec)
-  discard ? parser.expect(atSpec)
-  discard ? parser.expect(newSpec("extern"))
+  discard ? parser.expect("@")
+  discard ? parser.expect("extern")
   discard parser.expect(spaceSpec.optional())
   let loc = parser.loc
   discard ? parser.expect(leftParenthesisSpec)
@@ -380,18 +357,14 @@ let requiredStructGenerics = newSpec[seq[Identifier]]("required struct generics"
 
 # struct: field+ (field is identifier ":" argumentType)
 proc parseStructHeader(parser: Parser): Result[StructDefHeader, ParserError] =
-  let structKeyword = ? parser.expect(newSpec("struct"))
+  let structKeyword = ? parser.expect("struct")
+
   let maybeRequires = ? parser.expect(requiredStructGenerics.optional())
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(colonSpec)
   let requires = if maybeRequires.isSome: maybeRequires.get else: @[]
-  # newStructDefHeader validation errors (duplicate generic in header)
-  # must be fatal — we're past `struct(...)` so an outer expectOptional
-  # shouldn't swallow the failure and treat the whole struct as absent.
-  let headerResult = newStructDefHeader(requires, structKeyword.loc)
-  if headerResult.isErr:
-    headerResult.error.fatal = true
-  headerResult
+
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(":")
+  newStructDefHeader(requires, structKeyword.loc)
 
 let structHeaderSpec = newSpec[StructDefHeader]("struct def header", parseStructHeader)
 
@@ -433,9 +406,9 @@ proc parseVariantDefLine(parser: Parser): Result[VariantDef, ParserError] =
 let variantDefLineSpec = newSpec[VariantDef]("variant def line", parseVariantDefLine)
 
 proc parseUnionHeader(parser: Parser): Result[Location, ParserError] =
-  let unionKeyword = ? parser.expect(newSpec("union"))
+  let unionKeyword = ? parser.expect("union")
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(colonSpec)
+  discard ? parser.expect(":")
   ok(unionKeyword.loc)
 
 let unionHeaderSpec = newSpec[Location]("union header", parseUnionHeader)
@@ -471,13 +444,13 @@ proc parseData(parser: Parser): Result[DataDef, ParserError] =
 let dataDefSpec = newSpec[DataDef]("data def", parseData)
 
 proc parseGenericHeader(parser: Parser): Result[GenericHeader, ParserError] =
-  let public = parser.expect(newSpec("public")).isOk
+  let public = parser.expect("public").isOk
   if public: discard ? parser.expect(spaceSpec.atLeastOne())
-  let genericKeyword = ? parser.expect(newSpec("generic"))
-  discard ? parser.expect(spaceSpec.atLeastOne())
+  let genericKeyword = ? parser.expect("generic")
+  discard ? parser.expect(spaceSpec)
   let nameIdent = ? parser.expect(identifierSpec)
   discard parser.expect(spaceSpec.optional())
-  discard ? parser.expect(colonSpec)
+  discard ? parser.expect(":")
   ok(newGenericHeader(public, nameIdent, genericKeyword.loc))
 
 let genericHeaderSpec = newSpec[GenericHeader]("generic header", parseGenericHeader)
@@ -492,14 +465,14 @@ proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
 let genericSpec = newSpec[Generic]("generic", parseGeneric)
 
 proc parseModuleHeader(parser: Parser): Result[ModuleHeader, ParserError] =
-  let public = parser.expect(newSpec("public")).isOk
-  if public: discard ? parser.expect(spaceSpec.atLeastOne())
+  let public = parser.expect("public").isOk
+  if public: discard ? parser.expect(spaceSpec)
 
-  let moduleKeyword = ? parser.expect(newSpec("module"))
-  discard ? parser.expect(spaceSpec.atLeastOne())
+  let moduleKeyword = ? parser.expect("module")
+  discard ? parser.expect(spaceSpec)
   let nameIdent = ? parser.expect(identifierSpec)
   discard parser.expect(spaceSpec.optional())
-  discard ? parser.expect(colonSpec)
+  discard ? parser.expect(":")
   ok(newModuleHeader(public, nameIdent, moduleKeyword.loc))
 
 let moduleHeaderSpec = newSpec[ModuleHeader]("module header", parseModuleHeader)

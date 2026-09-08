@@ -104,7 +104,7 @@ proc asl*(argDef: ArgumentDef): string =
 proc argumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserError] =
   let name = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
   let argType = ? parser.expect(argumentTypeSpec)
   ok(newArgumentDef(name, argType))
@@ -130,10 +130,12 @@ proc buildArgumentNameIndex(argDefs: seq[ArgumentDef]): Result[Table[Identifier,
     argNameIndex[argDef.name] = index
   ok(argNameIndex)
 
-proc newArgumentDefList*(argDefs: seq[ArgumentDef],
-    loc: Location): Result[ArgumentDefList, ParserError] =
+proc newArgumentDefList*(argDefs: seq[ArgumentDef], loc: Location): Result[ArgumentDefList, ParserError] =
   let argNameIndex = ? buildArgumentNameIndex(argDefs)
   ok(ArgumentDefList(argDefs: argDefs, argNameIndex: argNameIndex, loc: loc))
+
+proc newArgumentDefList*(items: (seq[ArgumentDef], Location)): Result[ArgumentDefList, ParserError] =
+  newArgumentDefList(items[0], items[1])
 
 proc argDefs*(argDefList: ArgumentDefList): seq[ArgumentDef] = argDefList.argDefs
 proc arity*(argDefList: ArgumentDefList): int = argDefList.argDefs.len
@@ -142,6 +144,4 @@ proc asl*(argDefList: ArgumentDefList): string =
   let content = argDefList.argDefs.mapIt(asl(it)).join(", ")
   return fmt"({content})"
 
-let argumentDefListSpec* = map(argumentDefSpec.parenthesisList(), "argument definition list",
-  proc(items: (seq[ArgumentDef], Location)): Result[ArgumentDefList, ParserError] =
-    newArgumentDefList(items[0], items[1]))
+let argumentDefListSpec* = argumentDefSpec.parenthesisList().map(newArgumentDefList)

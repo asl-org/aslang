@@ -30,7 +30,7 @@ proc asl*(getter: Getter): string =
 
 proc getterConsumer(parser: Parser): Result[Getter, ParserError] =
   let target = ? parser.expect(identifierSpec)
-  discard ? parser.expect(dotSpec)
+  discard ? parser.expect(".")
   let field = ? parser.expect(identifierSpec)
   ok(newGetter(target, field, target.loc))
 
@@ -58,7 +58,7 @@ proc asl(field: UnionPatternField): string =
 proc unionExplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
   let name = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
-  let maybeColon = parser.expect(newSpec(":"))
+  discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
   let binding = ? parser.expect(identifierSpec)
   ok(newUnionPatternField(name, binding, name.loc))
@@ -269,6 +269,7 @@ type
     statements: seq[Statement]
 
 # Forward declarations for mutually-recursive asl procs.
+proc newExpression*(variable: Identifier): Expression
 proc asl(expr: Expression): string
 proc asl*(stmt: Statement): string
 proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string]
@@ -305,6 +306,9 @@ proc newKeywordArgument*(name: Identifier, expression: Expression,
     loc: Location): KeywordArgument =
   KeywordArgument(name: name, expression: expression, loc: loc)
 
+proc newKeywordArgument*(name: Identifier): KeywordArgument =
+  newKeywordArgument(name, newExpression(name), name.loc)
+
 proc name*(kwarg: KeywordArgument): Identifier = kwarg.name
 proc expression*(kwarg: KeywordArgument): Expression = kwarg.expression
 proc loc*(kwarg: KeywordArgument): Location = kwarg.loc
@@ -332,6 +336,9 @@ proc newKeywordArgumentList*(args: seq[KeywordArgument], loc: Location): Result[
   ## empty to be legal so `Variant {}` on a zero-field variant works.
   ? validateKeyNameConflict(args)
   ok(KeywordArgumentList(args: args, loc: loc))
+
+proc newKeywordArgumentList*(items: (seq[KeywordArgument], Location)): Result[KeywordArgumentList, ParserError] =
+  newKeywordArgumentList(items[0], items[1])
 
 proc newGeneratedKeywordArgumentList(args: seq[KeywordArgument], loc: Location): KeywordArgumentList =
   let maybeSuccess = validateKeyNameConflict(args)

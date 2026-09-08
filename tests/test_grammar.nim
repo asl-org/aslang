@@ -254,6 +254,23 @@ module M:
 """)
     check r.isOk
 
+  test "explicit union pattern field requires a colon":
+    # `value v` (no colon) is not a valid explicit `name: binding` field;
+    # only `value: v` (explicit) or bare `value` (shorthand) are.
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+
+module M:
+  func go(s: Status[u8]): u8
+    _ = match s:
+      case Ok { value v }:
+        v
+    u8 0
+""")
+    check r.isErr
+
   test "case pattern with empty braces parses":
     # Zero-field variants are matched with `case Timeout { }:` —
     # the same braces-required rule that governs variant definitions

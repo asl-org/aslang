@@ -19,6 +19,9 @@ type StringLiteral* = ref object
 proc newStringLiteral*(value: string, loc: Location): StringLiteral =
   StringLiteral(value: value, loc: loc)
 
+proc newStringLiteral(token: Token): StringLiteral =
+  newStringLiteral(token.value, token.loc)
+
 proc loc*(strLit: StringLiteral): Location = strLit.loc
 proc content*(strLit: StringLiteral): string = strLit.value[1..^2]
 proc asl*(strLit: StringLiteral): string = "\"" & strLit.content & "\""
@@ -26,8 +29,7 @@ proc asl*(strLit: StringLiteral): string = "\"" & strLit.content & "\""
 # The tokenizer scans a whole string literal into one `tkString` token
 # whose value is the raw `"…"` slice (quotes + verbatim escapes);
 # newStringLiteral keeps the raw value and strips the quotes on access.
-let stringLiteralSpec* = map(newSpec("string literal", tkString),
-  proc(token: Token): StringLiteral = newStringLiteral(token.value, token.loc))
+let stringLiteralSpec* = newSpec[StringLiteral]("string", tkString, newStringLiteral)
 
 # ============================================================
 # Integer literals
@@ -79,6 +81,8 @@ proc newIntegerLiteral*(value: string, loc: Location): IntegerLiteral =
   else:
     newIntegerLiteral(newUnsignedIntegerLiteral(value, loc))
 
+proc newIntegerLiteral(token: Token): IntegerLiteral =
+  newIntegerLiteral(token.value, token.loc)
 
 proc signed*(il: IntegerLiteral): SignedIntegerLiteral =
   assert il.kind == ilkSigned,
@@ -102,8 +106,7 @@ proc asl*(intLit: IntegerLiteral): string =
 
 # The tokenizer scans `(+|-)?digit+` into one tkInteger token;
 # newIntegerLiteral splits its optional leading sign into signed/unsigned.
-let integerLiteralSpec* = map(newSpec("integer", tkInteger),
-  proc(token: Token): IntegerLiteral = newIntegerLiteral(token.value, token.loc))
+let integerLiteralSpec* = newSpec[IntegerLiteral]("integer", tkInteger, newIntegerLiteral)
 
 # ============================================================
 # FloatLiteral
@@ -116,6 +119,9 @@ type FloatLiteral* = ref object
 proc newFloatLiteral*(value: string, loc: Location): FloatLiteral =
   FloatLiteral(value: value, loc: loc)
 
+proc newFloatLiteral(token: Token): FloatLiteral =
+  newFloatLiteral(token.value, token.loc)
+
 proc asl*(floatLit: FloatLiteral): string = floatLit.value
 
 # Every float form is a single tkFloat token: the tokenizer scans the
@@ -123,8 +129,7 @@ proc asl*(floatLit: FloatLiteral): string = floatLit.value
 # IEEE-754 values `nan` / `inf` / `+inf` / `-inf` (the sign folds into the
 # token so downstream `analyzeFloatLiteral` can tell `+inf` from `-inf`).
 # So one consumer covers them all — no per-form alternation.
-let floatLiteralSpec = map(newSpec("float", tkFloat),
-  proc(token: Token): FloatLiteral = newFloatLiteral(token.value, token.loc))
+let floatLiteralSpec = newSpec("float", tkFloat, newFloatLiteral)
 
 # ============================================================
 # Literal (umbrella over string / integer / float)
@@ -407,9 +412,9 @@ proc asl*(l: LiteralDef, level: int, indentWidth: uint32): seq[string] =
 
 proc literalDefConsumer(parser: Parser): Result[LiteralDef, ParserError] =
   discard ? parser.expect(indentationSpec)
-  let literalKeyword = ? parser.expect(newSpec("literal"))
+  let literalKeyword = ? parser.expect("literal")
   discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(newSpec(":"))
+  discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
   let strLit = ? parser.expect(stringLiteralSpec)
   ok(newLiteralDef(strLit, literalKeyword.loc))
@@ -437,7 +442,7 @@ proc asl*(init: LiteralInitializer): string =
 
 proc literalInitializerConsumer(parser: Parser): Result[LiteralInitializer, ParserError] =
   let argType = ? parser.expect(argumentTypeSpec)
-  discard ? parser.expect(spaceSpec.atLeastOne())
+  discard ? parser.expect(spaceSpec)
   let lit = ? parser.expect(literalSpec)
   ok(newLiteralInitializer(argType, lit))
 

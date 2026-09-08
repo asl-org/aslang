@@ -20,7 +20,7 @@ proc asl*(decorator: Decorator): string =
 
 proc decoratorConsumer(parser: Parser): Result[Decorator, ParserError] =
   discard ? parser.expect(indentationSpec)
-  discard ? parser.expect(atSpec)
+  discard ? parser.expect("@")
   let ident = ? parser.expect(identifierSpec)
   discard ? parser.expect(emptyLineSpec)
   ok(newDecorator(ident))

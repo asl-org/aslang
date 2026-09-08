@@ -21,6 +21,9 @@ proc newIdentifier*(value: string, loc: Location): Result[Identifier, ParserErro
   else:
     ok(Identifier(value: value, loc: loc))
 
+proc newIdentifier(token: Token): Result[Identifier, ParserError] =
+  newIdentifier(token.value, token.loc)
+
 # NOTE: This function will be used for auto generated identifier names.
 proc newGeneratedIdentifier*(counter: int, loc: Location): Identifier =
   Identifier(value: fmt"__asl_arg_{counter}", loc: loc)
@@ -36,6 +39,4 @@ proc asl*(identifier: Identifier): string = identifier.value
 # The tokenizer scans `[A-Za-z_][A-Za-z0-9_]*` into one tkIdentifier
 # token; newIdentifier enforces the naming rules (length, reserved
 # prefixes). Keywords are ordinary identifiers matched later by value.
-let identifierSpec* = map(newSpec("identifier", tkIdentifier), "identifier",
-  proc(token: Token): Result[Identifier, ParserError] =
-    newIdentifier(token.value, token.loc))
+let identifierSpec* = newSpec("identifier", tkIdentifier, newIdentifier)

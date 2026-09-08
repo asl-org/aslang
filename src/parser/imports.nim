@@ -93,7 +93,7 @@ proc asl*(importedType: ImportedType): string =
 proc explicitImportedTypeConsumer(parser: Parser): Result[ImportedType, ParserError] =
   let name = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec)
-  discard ? parser.expect(newSpec("as"))
+  discard ? parser.expect("as")
   discard ? parser.expect(spaceSpec)
   let alias = ? parser.expect(identifierSpec)
   ok(newImportedType(name, alias))
@@ -260,11 +260,11 @@ proc toAbsPath*(parsedPath: ImportPath, importingFile: string,
 
 # Explicit form: `import { Name, Name as Alias } from "path"`.
 proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
-  let importKeyword = ? parser.expect(newSpec("import"))
+  let importKeyword = ? parser.expect("import")
   discard ? parser.expect(spaceSpec)
   let (names, _)  = ? parser.expect(importedTypeSpec.curlyBracketList(allowEmpty = false))
   discard ? parser.expect(spaceSpec)
-  discard ? parser.expect(newSpec("from"))
+  discard ? parser.expect("from")
   discard ? parser.expect(spaceSpec)
   let source = ? parser.expect(stringLiteralSpec)
   discard ? parser.expect(emptyLineSpec)
@@ -282,8 +282,8 @@ let explicitImportLineSpec = newSpec[Import]("explicit import", explicitImportLi
 # name. The names list is materialized by the resolver once the
 # target file's types are resolved.
 proc shorthandImportLineConsumer(parser: Parser): Result[Import, ParserError] =
-  let importKeyword = ? parser.expect(newSpec("import"))
-  discard ? parser.expect(spaceSpec.atLeastOne())
+  let importKeyword = ? parser.expect("import")
+  discard ? parser.expect(spaceSpec)
   let source = ? parser.expect(stringLiteralSpec)
   discard ? parser.expect(emptyLineSpec)
   let parsedPath = ? toImportPath(source.content, source.loc)

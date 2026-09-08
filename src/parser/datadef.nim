@@ -35,7 +35,7 @@ proc validateRequiresNameConflict(requires: seq[Identifier]): Result[void, Parse
     if required in requiresIndex:
       let prev = requires[requiresIndex[required]]
       let msg = fmt"duplicate generic encountered, see previous declaration at {prev.loc}"
-      return err(newParserError(msg, required.loc))
+      return err(newParserError(msg, required.loc, fatal = true))
     requiresIndex[required] = index
   ok()
 
