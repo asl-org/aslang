@@ -247,3 +247,12 @@ proc indentedLine*[T](item: Spec[T]): Spec[T] =
       discard ? parser.expect(emptyLineSpec.atLeastOne())
       ok(val)
   newSpec(fmt"indented {item.name}", consumer)
+
+proc indentedBody*[T](parser: Parser, body: Consumer[T]): Result[T, ParserError] =
+  ## Run a block body one indent level deeper. The level is always
+  ## restored, and a body failure is marked fatal — once the header has
+  ## committed the block, it cannot be backtracked out of.
+  parser.level += 1
+  result = body(parser)
+  parser.level -= 1
+  if result.isErr: result.error.fatal = true

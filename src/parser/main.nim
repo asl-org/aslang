@@ -210,13 +210,8 @@ let caseLineSpec = newSpec[CasePattern]("case line", parseCaseLine)
 
 proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError] =
   let pat = ? parser.expect(caseLineSpec.indentedLine())
-  parser.level += 1
-  let bodyResult = statementListConsumer(parser)
-  parser.level -= 1
-  if bodyResult.isErr:
-    bodyResult.error.fatal = true
-    return err(bodyResult.error)
-  ok(newCaseBlock(pat, bodyResult.get, pat.loc))
+  let body = ? parser.indentedBody(statementListConsumer)
+  ok(newCaseBlock(pat, body, pat.loc))
 
 let caseBlockSpec = newSpec[CaseBlock]("case block", caseConsumer)
 
@@ -353,13 +348,8 @@ proc parseUserFunction(parser: Parser): Result[UserFunction, ParserError] =
   ## be backtracked out of.
   let decorators = ? parser.expect(any(decoratorSpec))
   let h = ? parser.expect(functionDefSpec.indentedLine())
-  parser.level += 1
-  let bodyResult = statementListConsumer(parser)
-  parser.level -= 1
-  if bodyResult.isErr:
-    bodyResult.error.fatal = true
-    return err(bodyResult.error)
-  ok(newUserFunction(decorators, h, bodyResult.get))
+  let body = ? parser.indentedBody(statementListConsumer)
+  ok(newUserFunction(decorators, h, body))
 
 let userFuncSpec = newSpec[UserFunction]("user function", parseUserFunction)
 
@@ -452,17 +442,12 @@ proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
 
 proc parseStruct(parser: Parser): Result[StructDef, ParserError] =
   let header = ? parser.expect(structHeaderSpec.indentedLine())
-  parser.level += 1
-  let bodyResult = parseStructBody(parser)
-  parser.level -= 1
-  if bodyResult.isErr:
-    bodyResult.error.fatal = true
-    return err(bodyResult.error)
+  let body = ? parser.indentedBody(parseStructBody)
   # newStructDef validation errors (duplicate generic in header,
   # duplicate field name) must also be fatal — we're past the header,
   # so an outer expectOptional shouldn't swallow the failure and treat
   # the whole struct as absent.
-  let structResult = newStructDef(header, bodyResult.get)
+  let structResult = newStructDef(header, body)
   if structResult.isErr:
     structResult.error.fatal = true
   structResult
@@ -507,13 +492,8 @@ proc parseUnionBody(parser: Parser): Result[seq[VariantDef], ParserError] =
 
 proc parseUnion(parser: Parser): Result[UnionDef, ParserError] =
   let loc = ? parser.expect(unionHeaderSpec.indentedLine())
-  parser.level += 1
-  let bodyResult = parseUnionBody(parser)
-  parser.level -= 1
-  if bodyResult.isErr:
-    bodyResult.error.fatal = true
-    return err(bodyResult.error)
-  newUnionDef(bodyResult.get, loc)
+  let body = ? parser.indentedBody(parseUnionBody)
+  newUnionDef(body, loc)
 
 let unionDefSpec = newSpec[UnionDef]("union def", parseUnion)
 
@@ -558,13 +538,8 @@ proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
   ## definitions. Body failures are marked fatal — once past the
   ## header, the block cannot be backtracked out of.
   let h = ? parser.expect(genericHeaderSpec.indentedLine())
-  parser.level += 1
-  let bodyResult = parseFunctionDefs(parser)
-  parser.level -= 1
-  if bodyResult.isErr:
-    bodyResult.error.fatal = true
-    return err(bodyResult.error)
-  ok(newGeneric(@[], h.public, h.name, bodyResult.get, h.loc))
+  let body = ? parser.indentedBody(parseFunctionDefs)
+  ok(newGeneric(@[], h.public, h.name, body, h.loc))
 
 let genericSpec = newSpec[Generic]("generic", parseGeneric)
 
@@ -595,13 +570,7 @@ proc parseModule(parser: Parser): Result[Module, ParserError] =
   ## the block cannot be backtracked out of.
   let decorators = ? parser.expect(any(decoratorSpec))
   let h = ? parser.expect(moduleHeaderSpec.indentedLine())
-  parser.level += 1
-  let bodyResult = parseModuleBody(parser)
-  parser.level -= 1
-  if bodyResult.isErr:
-    bodyResult.error.fatal = true
-    return err(bodyResult.error)
-  let b = bodyResult.get
+  let b = ? parser.indentedBody(parseModuleBody)
   newModule(decorators, h.public, h.name, b.data, b.funcList, h.loc)
 
 let moduleSpec = newSpec[Module]("module", parseModule)
