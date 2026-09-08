@@ -142,8 +142,6 @@ proc asl*(argDefList: ArgumentDefList): string =
   let content = argDefList.argDefs.mapIt(asl(it)).join(", ")
   return fmt"({content})"
 
-proc argumentDefListConsumer(parser: Parser): Result[ArgumentDefList, ParserError] =
-  let (argDefs, loc) = ? parser.expect(argumentDefSpec.parenthesisList())
-  newArgumentDefList(argDefs, loc)
-
-let argumentDefListSpec* = newSpec[ArgumentDefList]("argument definition list", argumentDefListConsumer)
+let argumentDefListSpec* = map(argumentDefSpec.parenthesisList(), "argument definition list",
+  proc(items: (seq[ArgumentDef], Location)): Result[ArgumentDefList, ParserError] =
+    newArgumentDefList(items[0], items[1]))

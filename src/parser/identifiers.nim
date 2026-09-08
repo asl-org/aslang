@@ -33,11 +33,9 @@ proc `==`*(id: Identifier, other: Identifier): bool = hash(id) == hash(other)
 
 proc asl*(identifier: Identifier): string = identifier.value
 
-proc identifierConsumer(parser: Parser): Result[Identifier, ParserError] =
-  # The tokenizer scans `[A-Za-z_][A-Za-z0-9_]*` into one tkIdentifier
-  # token; newIdentifier enforces the naming rules (length, reserved
-  # prefixes). Keywords are ordinary identifiers matched later by value.
-  let token = ? parser.expect(newSpec("identifier", tkIdentifier))
-  newIdentifier(token.value, token.loc)
-
-let identifierSpec* = newSpec("identifier", identifierConsumer)
+# The tokenizer scans `[A-Za-z_][A-Za-z0-9_]*` into one tkIdentifier
+# token; newIdentifier enforces the naming rules (length, reserved
+# prefixes). Keywords are ordinary identifiers matched later by value.
+let identifierSpec* = map(newSpec("identifier", tkIdentifier), "identifier",
+  proc(token: Token): Result[Identifier, ParserError] =
+    newIdentifier(token.value, token.loc))

@@ -100,11 +100,8 @@ proc explicitImportedTypeConsumer(parser: Parser): Result[ImportedType, ParserEr
 
 let explicitImportedTypeSpec = newSpec("explicit imported type", explicitImportedTypeConsumer)
 
-proc implicitImportedTypeConsumer(parser: Parser): Result[ImportedType, ParserError] =
-  let name = ? parser.expect(identifierSpec)
-  ok(newImportedType(name))
-
-let implicitImportedTypeSpec = newSpec("implicit imported type", implicitImportedTypeConsumer)
+let implicitImportedTypeSpec = map(identifierSpec,
+  proc(name: Identifier): ImportedType = newImportedType(name))
 
 
 let importedTypeSpec* = oneOf("imported type", @[

@@ -65,11 +65,8 @@ proc unionExplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField
 
 let unionExplicitPatternFieldSpec = newSpec("union explicit pattern field", unionExplicitPatternFieldConsumer)
 
-proc unionImplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
-  let name = ? parser.expect(identifierSpec)
-  ok(newUnionPatternField(name, name, name.loc))
-
-let unionImplicitPatternFieldSpec = newSpec("union implicit pattern field", unionImplicitPatternFieldConsumer)
+let unionImplicitPatternFieldSpec = map(identifierSpec,
+  proc(name: Identifier): UnionPatternField = newUnionPatternField(name, name, name.loc))
 
 let unionPatternFieldSpec* = oneOf("union pattern field", @[
   unionExplicitPatternFieldSpec,

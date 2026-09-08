@@ -61,9 +61,7 @@ type File = app.File
 # implemented later in this section.
 proc expressionConsumer(parser: Parser): Result[Expression, ParserError]
 proc statementListConsumer(parser: Parser): Result[StatementList, ParserError]
-proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError]
 proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError]
-proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError]
 proc unionInitializerConsumer(parser: Parser): Result[UnionInitializer, ParserError]
 proc structInitializerConsumer(parser: Parser): Result[StructInitializer, ParserError]
 proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError]
@@ -72,15 +70,14 @@ proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError]
 proc matchConsumer(parser: Parser): Result[MatchExpression, ParserError]
 proc statementLineConsumer(parser: Parser): Result[Statement, ParserError]
 
-# `expressionSpec` is a named Spec because argumentListConsumer loops
-# over it directly via `parser.expect(expressionSpec)`.
+# `expressionSpec` is a named Spec because argumentListSpec references it
+# directly via `expressionSpec.parenthesisList()` (and the body cluster
+# recurses back through it).
 let expressionSpec* = newSpec[Expression]("expression", expressionConsumer)
 
-proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
-  let (args, loc) = ? parser.expect(expressionSpec.parenthesisList())
-  ok(newArgumentList(args, loc))
-
-let argumentListSpec = newSpec[ArgumentList]("argument list", argumentListConsumer)
+let argumentListSpec = map(expressionSpec.parenthesisList(),
+  proc(items: (seq[Expression], Location)): ArgumentList =
+    newArgumentList(items[0], items[1]))
 
 proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
   let target = ? parser.expect(identifierSpec)
@@ -102,24 +99,18 @@ proc explicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError]
 
 let explicitKwargSpec = newSpec("explicit keyword argument", explicitKwargConsumer)
 
-proc implicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
-  let name = ? parser.expect(identifierSpec)
-  ok(newKeywordArgument(name, newExpression(name), name.loc))
+let implicitKwargSpec = map(identifierSpec,
+  proc(name: Identifier): KeywordArgument =
+    newKeywordArgument(name, newExpression(name), name.loc))
 
-let implicitKwargSpec = newSpec("implicit keyword argument", implicitKwargConsumer)
-
-# `kwargSpec` is a named Spec because kwargListConsumer loops over it
-# directly via `parser.expect(kwargSpec)`.
 let kwargSpec* = oneOf("keyword_argument", @[
   explicitKwargSpec,
   implicitKwargSpec,
 ])
 
-proc kwargListConsumer(parser: Parser): Result[KeywordArgumentList, ParserError] =
-  let (args, loc) = ? parser.expect(kwargSpec.curlyBracketList())
-  newKeywordArgumentList(args, loc)
-
-let kwargListSpec = newSpec[KeywordArgumentList]("keyword argument list", kwargListConsumer)
+let kwargListSpec = map(kwargSpec.curlyBracketList(), "keyword argument list",
+  proc(items: (seq[KeywordArgument], Location)): Result[KeywordArgumentList, ParserError] =
+    newKeywordArgumentList(items[0], items[1]))
 
 proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
   let typeRef = ? parser.expect(argumentTypeSpec)
@@ -145,11 +136,7 @@ let unionInitSpec = newSpec[UnionInitializer]("union initializer", unionInitiali
 # impls, used for phantom-typed structs whose module declares a
 # `struct(A):` header). Both productions land on the same StructRef
 # shape carrying an impls seq; empty means bare.
-proc parseStructRef(parser: Parser): Result[StructRef, ParserError] =
-  let argType = ? parser.expect(argumentTypeSpec)
-  ok(newStructRef(argType))
-
-let structRefSpec = newSpec[StructRef]("struct ref", parseStructRef)
+let structRefSpec = map(argumentTypeSpec, newStructRef)
 
 proc structInitializerConsumer(parser: Parser): Result[StructInitializer, ParserError] =
   let structRef = ? parser.expect(structRefSpec)
@@ -344,15 +331,10 @@ proc parseFunctionDef(parser: Parser): Result[FunctionDef, ParserError] =
 
 let functionDefSpec = newSpec[FunctionDef]("function def", parseFunctionDef)
 
-proc parseFunctionDefLine(parser: Parser): Result[FunctionDef, ParserError] =
-  let def = ? parser.expect(functionDefSpec.indentedLine())
-  ok(def)
-
-let funcDefLineSpec = newSpec[FunctionDef]("function def line", parseFunctionDefLine)
-
 proc parseFunctionDefs(parser: Parser): Result[seq[FunctionDef], ParserError] =
   ## Parses one-or-more function-definition lines. Used inside a
   ## `generic` block, which only carries signatures — no bodies.
+  let funcDefLineSpec = functionDefSpec.indentedLine()
   var defs: seq[FunctionDef]
   let first = ? parser.expect(funcDefLineSpec)
   defs.add(first)

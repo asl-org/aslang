@@ -23,16 +23,11 @@ proc loc*(strLit: StringLiteral): Location = strLit.loc
 proc content*(strLit: StringLiteral): string = strLit.value[1..^2]
 proc asl*(strLit: StringLiteral): string = "\"" & strLit.content & "\""
 
-proc stringLiteralConsumer(parser: Parser): Result[StringLiteral, ParserError] =
-  # The tokenizer scans a whole string literal into one `tkString` token
-  # whose value is the raw `"…"` slice (quotes + verbatim escapes); strip
-  # the surrounding quotes to get the content.
-  let token = ? parser.expect(newSpec("string literal", tkString))
-  ok(newStringLiteral(token.value, token.loc))
-
-# Spec adapter for stringLiteralSpec — still consumed by remaining
-# combinator chains (import specs, literalDefSpec, etc.).
-let stringLiteralSpec* = newSpec("string_literal", stringLiteralConsumer)
+# The tokenizer scans a whole string literal into one `tkString` token
+# whose value is the raw `"…"` slice (quotes + verbatim escapes);
+# newStringLiteral keeps the raw value and strips the quotes on access.
+let stringLiteralSpec* = map(newSpec("string literal", tkString),
+  proc(token: Token): StringLiteral = newStringLiteral(token.value, token.loc))
 
 # ============================================================
 # Integer literals
@@ -107,11 +102,8 @@ proc asl*(intLit: IntegerLiteral): string =
 
 # The tokenizer scans `(+|-)?digit+` into one tkInteger token;
 # newIntegerLiteral splits its optional leading sign into signed/unsigned.
-proc integerLiteralConsumer(parser: Parser): Result[IntegerLiteral, ParserError] =
-  let token = ? parser.expect(newSpec("integer", tkInteger))
-  ok(newIntegerLiteral(token.value, token.loc))
-
-let integerLiteralSpec* = newSpec("integer literal", integerLiteralConsumer)
+let integerLiteralSpec* = map(newSpec("integer", tkInteger),
+  proc(token: Token): IntegerLiteral = newIntegerLiteral(token.value, token.loc))
 
 # ============================================================
 # FloatLiteral
@@ -131,11 +123,8 @@ proc asl*(floatLit: FloatLiteral): string = floatLit.value
 # IEEE-754 values `nan` / `inf` / `+inf` / `-inf` (the sign folds into the
 # token so downstream `analyzeFloatLiteral` can tell `+inf` from `-inf`).
 # So one consumer covers them all — no per-form alternation.
-proc floatLiteralConsumer(parser: Parser): Result[FloatLiteral, ParserError] =
-  let token = ? parser.expect(newSpec("float", tkFloat))
-  ok(newFloatLiteral(token.value, token.loc))
-
-let floatLiteralSpec = newSpec("float literal", floatLiteralConsumer)
+let floatLiteralSpec = map(newSpec("float", tkFloat),
+  proc(token: Token): FloatLiteral = newFloatLiteral(token.value, token.loc))
 
 # ============================================================
 # Literal (umbrella over string / integer / float)
