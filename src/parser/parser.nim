@@ -230,11 +230,20 @@ proc wrappedList[O, I, C](opener: Spec[O], item: Spec[I], closer: Spec[C], allow
         ok((items, start.loc))
   newSpec(specName, consumer)
 
-proc squareBracketList*[T](itemSpec: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
-  wrappedList(leftSquareBracketSpec, itemSpec, rightSquareBracketSpec, allowEmpty)
+proc squareBracketList*[T](item: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
+  wrappedList(leftSquareBracketSpec, item, rightSquareBracketSpec, allowEmpty)
 
-proc curlyBracketList*[T](itemSpec: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
-  wrappedList(leftCurlyBracketSpec, itemSpec, rightCurlyBracketSpec, allowEmpty)
+proc curlyBracketList*[T](item: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
+  wrappedList(leftCurlyBracketSpec, item, rightCurlyBracketSpec, allowEmpty)
 
-proc parenthesisList*[T](itemSpec: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
-  wrappedList(leftParenthesisSpec, itemSpec, rightParenthesisSpec, allowEmpty)
+proc parenthesisList*[T](item: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
+  wrappedList(leftParenthesisSpec, item, rightParenthesisSpec, allowEmpty)
+
+proc indentedLine*[T](item: Spec[T]): Spec[T] =
+  let consumer =
+    proc (parser: Parser): Result[T, ParserError] =
+      discard ? parser.expect(indentationSpec)
+      let val = ? parser.expect(item)
+      discard ? parser.expect(emptyLineSpec.atLeastOne())
+      ok(val)
+  newSpec(fmt"indented {item.name}", consumer)

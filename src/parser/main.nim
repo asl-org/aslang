@@ -222,9 +222,7 @@ proc parseCaseLine(parser: Parser): Result[CasePattern, ParserError] =
 let caseLineSpec = newSpec[CasePattern]("case line", parseCaseLine)
 
 proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError] =
-  discard ? parser.expect(indentationSpec)
-  let pat = ? parser.expect(caseLineSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let pat = ? parser.expect(caseLineSpec.indentedLine())
   parser.level += 1
   let bodyResult = statementListConsumer(parser)
   parser.level -= 1
@@ -347,10 +345,7 @@ proc parseFunctionDef(parser: Parser): Result[FunctionDef, ParserError] =
 let functionDefSpec = newSpec[FunctionDef]("function def", parseFunctionDef)
 
 proc parseFunctionDefLine(parser: Parser): Result[FunctionDef, ParserError] =
-  ## Indented single-line variant used by `parseFunctionDefs`.
-  discard ? parser.expect(indentationSpec)
-  let def = ? parser.expect(functionDefSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let def = ? parser.expect(functionDefSpec.indentedLine())
   ok(def)
 
 let funcDefLineSpec = newSpec[FunctionDef]("function def line", parseFunctionDefLine)
@@ -375,9 +370,7 @@ proc parseUserFunction(parser: Parser): Result[UserFunction, ParserError] =
   ## failures are marked fatal — once past the header, the block can't
   ## be backtracked out of.
   let decorators = ? parser.expect(any(decoratorSpec))
-  discard ? parser.expect(indentationSpec)
-  let h = ? parser.expect(functionDefSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let h = ? parser.expect(functionDefSpec.indentedLine())
   parser.level += 1
   let bodyResult = statementListConsumer(parser)
   parser.level -= 1
@@ -402,9 +395,7 @@ proc parseExternFunction(parser: Parser): Result[ExternFunction, ParserError] =
   discard ? parser.expect(spaceSpec.optional())
   discard ? parser.expect(rightParenthesisSpec)
   discard ? parser.expect(emptyLineSpec)
-  discard ? parser.expect(indentationSpec)
-  let def = ? parser.expect(functionDefSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let def = ? parser.expect(functionDefSpec.indentedLine())
   ok(newExternFunction(symbol.content, def, loc))
 
 let externFuncSpec = newSpec[ExternFunction]("extern function", parseExternFunction)
@@ -460,9 +451,7 @@ let structHeaderSpec = newSpec[StructDefHeader]("struct def header", parseStruct
 # Each field line: (blank lines) + indentation + argumentDef + newline
 proc parseArgumentDefLine(parser: Parser): Result[ArgumentDef, ParserError] =
   discard ? parser.expect(any(emptyLineSpec))
-  discard ? parser.expect(indentationSpec)
-  let def = ? parser.expect(argumentDefSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let def = ? parser.expect(argumentDefSpec.indentedLine())
   ok(def)
 
 let argDefLineSpec = newSpec[ArgumentDef]("argument def", parseArgumentDefLine)
@@ -480,9 +469,7 @@ proc parseStructBody(parser: Parser): Result[seq[ArgumentDef], ParserError] =
   ok(fields)
 
 proc parseStruct(parser: Parser): Result[StructDef, ParserError] =
-  discard ? parser.expect(indentationSpec)
-  let header = ? parser.expect(structHeaderSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let header = ? parser.expect(structHeaderSpec.indentedLine())
   parser.level += 1
   let bodyResult = parseStructBody(parser)
   parser.level -= 1
@@ -537,9 +524,7 @@ proc parseUnionBody(parser: Parser): Result[seq[VariantDef], ParserError] =
   ok(variants)
 
 proc parseUnion(parser: Parser): Result[UnionDef, ParserError] =
-  discard ? parser.expect(indentationSpec)
-  let loc = ? parser.expect(unionHeaderSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let loc = ? parser.expect(unionHeaderSpec.indentedLine())
   parser.level += 1
   let bodyResult = parseUnionBody(parser)
   parser.level -= 1
@@ -590,9 +575,7 @@ proc parseGeneric(parser: Parser): Result[Generic, ParserError] =
   ## Parses a `[public] generic Name:` block followed by its function
   ## definitions. Body failures are marked fatal — once past the
   ## header, the block cannot be backtracked out of.
-  discard ? parser.expect(indentationSpec)
-  let h = ? parser.expect(genericHeaderSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let h = ? parser.expect(genericHeaderSpec.indentedLine())
   parser.level += 1
   let bodyResult = parseFunctionDefs(parser)
   parser.level -= 1
@@ -629,9 +612,7 @@ proc parseModule(parser: Parser): Result[Module, ParserError] =
   ## lines. Body failures are marked fatal — once past the header,
   ## the block cannot be backtracked out of.
   let decorators = ? parser.expect(any(decoratorSpec))
-  discard ? parser.expect(indentationSpec)
-  let h = ? parser.expect(moduleHeaderSpec)
-  discard ? parser.expect(emptyLineSpec)
+  let h = ? parser.expect(moduleHeaderSpec.indentedLine())
   parser.level += 1
   let bodyResult = parseModuleBody(parser)
   parser.level -= 1
