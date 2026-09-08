@@ -21,7 +21,7 @@ proc buildNameIndex(fields: seq[ArgumentDef]): Result[Table[Identifier, int], Pa
     if field.name in fieldIndex:
       let prev = fields[fieldIndex[field.name]]
       let msg = fmt"duplicate field encountered, see previous declaration at {prev.loc}"
-      return err(newParserError(msg, field.loc))
+      return err(newParserError(msg, field.loc, fatal = true))
     fieldIndex[field.name] = index
   ok(fieldIndex)
 
@@ -67,7 +67,7 @@ type StructDef* = ref object
 
 proc newStructDef*(header: StructDefHeader, fields: seq[ArgumentDef]): Result[StructDef, ParserError] =
   if fields.len == 0:
-    err(newParserError("struct must have at least one field", header.loc))
+    err(newParserError("struct must have at least one field", header.loc, fatal = true))
   else:
     let fieldIndex = ? buildNameIndex(fields)
     ok(StructDef(header: header, fields: fields, fieldIndex: fieldIndex))
