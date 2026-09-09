@@ -241,6 +241,15 @@ type
     body: StatementList
     loc: Location
 
+  MatchHeaderKind* = enum
+    mhkAssigned, mhkDefault
+  MatchHeader* = ref object
+    loc: Location
+    subject: Expression
+    case kind: MatchHeaderKind
+    of mhkAssigned: target: Identifier
+    of mhkDefault: discard
+
   MatchExpression* = ref object
     subject: Expression
     cases: seq[CaseBlock]
@@ -460,6 +469,25 @@ proc asl(caseBlock: CaseBlock, level: int, indentWidth: uint32): seq[string] =
       lines.add(line)
   lines
 
+# ----------------- MatchHeader -----------------
+proc newMatchHeader*(target: Identifier, subject: Expression, loc: Location): Result[MatchHeader, ParserError] =
+  case subject.kind:
+  of ekMatch: err(newParserError(fmt"match expression subject can not be another match block", loc))
+  else: ok(MatchHeader(kind: mhkAssigned, loc: loc, target: target, subject: subject))
+
+proc newMatchHeader*(subject: Expression, loc: Location): Result[MatchHeader, ParserError] =
+  case subject.kind:
+  of ekMatch: err(newParserError(fmt"match expression subject can not be another match block", loc))
+  else: ok(MatchHeader(kind: mhkDefault, loc: loc, subject: subject))
+
+proc kind*(header: MatchHeader): MatchHeaderKind = header.kind
+proc subject*(header: MatchHeader): Expression = header.subject
+proc loc*(header: MatchHeader): Location = header.loc
+proc target*(header: MatchHeader): Identifier =
+  assert header.kind == mhkDefault,
+    fmt"MatchHeader.target accessed but kind is {header.kind}"
+  header.target
+
 # ----------------- MatchExpression -----------------
 proc newMatchExpression*(subject: Expression, cases: seq[CaseBlock],
     loc: Location): MatchExpression =
@@ -560,6 +588,12 @@ proc newStatement*(expression: Expression): Statement =
 
 proc newStatement*(setter: Setter): Statement =
   Statement(kind: skSetter, setter: setter)
+
+# TODO: Cleanup after proper break down of Expression
+proc newStatement*(header: MatchHeader, cases: seq[CaseBlock]): Statement =
+  case header.kind:
+  of mhkDefault: newStatement(newExpression(newMatchExpression(header.subject, cases, header.loc)))
+  of mhkAssigned: newStatement(newAssignment(header.target, newExpression(newMatchExpression(header.subject, cases, header.loc)), header.loc))
 
 proc kind*(s: Statement): StatementKind = s.kind
 

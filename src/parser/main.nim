@@ -60,13 +60,13 @@ type File = app.File
 # Nim's forward declarations resolve the cycle; each proc below is
 # implemented later in this section.
 
-# `expressionSpec` is a named Spec because argumentListSpec references it
-# directly via `expressionSpec.parenthesisList()` (and the body cluster
+# `inlineExpressionSpec` is a named Spec because argumentListSpec references it
+# directly via `inlineExpressionSpec.parenthesisList()` (and the body cluster
 # recurses back through it).
-var expressionSpec*: Spec[Expression]
+var inlineExpressionSpec*: Spec[Expression]
 
 proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
-  let (args, loc) = ? parser.expect(expressionSpec.parenthesisList())
+  let (args, loc) = ? parser.expect(inlineExpressionSpec.parenthesisList())
   ok(newArgumentList(args, loc))
 let argumentListSpec = newSpec("argument list", argumentListConsumer)
 
@@ -85,7 +85,7 @@ proc explicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError]
   discard ? parser.expect(spaceSpec.optional())
   discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
-  let expression = ? parser.expect(expressionSpec)
+  let expression = ? parser.expect(inlineExpressionSpec)
   ok(newKeywordArgument(name, expression, name.loc))
 
 let explicitKwargSpec = newSpec("explicit keyword argument", explicitKwargConsumer)
@@ -98,13 +98,13 @@ let kwargSpec* = oneOf("keyword_argument", @[
 
 let kwargListSpec = kwargSpec.curlyBracketList().map(newKeywordArgumentList)
 
-proc parseUnionRef(parser: Parser): Result[UnionRef, ParserError] =
+proc unionRefConsumer(parser: Parser): Result[UnionRef, ParserError] =
   let typeRef = ? parser.expect(argumentTypeSpec)
   discard ? parser.expect(".")
   let variant = ? parser.expect(identifierSpec)
   ok(newUnionRef(typeRef, variant))
 
-let unionRefSpec = newSpec[UnionRef]("union ref", parseUnionRef)
+let unionRefSpec = newSpec[UnionRef]("union ref", unionRefConsumer)
 
 # LocalType.Variant { fields } (bare — drives leave-as-is inference) or
 # LocalType[Impls].Variant { fields } (explicit-impls — escape hatch when
@@ -139,7 +139,7 @@ let initSpec = oneOf("initializer spec", @[
   map(literalInitSpec, newInitializer),
 ])
 
-expressionSpec = oneOf("expression", @[
+inlineExpressionSpec = oneOf("expression", @[
   literalSpec.map(newExpression),
   initSpec.map(newExpression),
   fncallSpec.map(newExpression),
@@ -152,7 +152,7 @@ proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
   discard ? parser.expect(spaceSpec.optional())
   discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
-  let expression = ? parser.expect(expressionSpec)
+  let expression = ? parser.expect(inlineExpressionSpec)
   ok(newAssignment(target, expression, target.loc))
 
 let assignmentSpec = newSpec[Assignment]("assignment", assignmentConsumer)
@@ -162,15 +162,15 @@ proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
   discard ? parser.expect(spaceSpec.optional())
   discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
-  let expr = ? parser.expect(expressionSpec)
+  let expr = ? parser.expect(inlineExpressionSpec)
   ok(newSetter(target, expr, target.loc))
 
 let setterSpec = newSpec[Setter]("setter", setterConsumer)
 
-let statementSpec = oneOf("statement", @[
+let inlineStatementSpec = oneOf("statement", @[
   map(setterSpec, newStatement),
   map(assignmentSpec, newStatement),
-  map(expressionSpec, newStatement),
+  map(inlineExpressionSpec, newStatement),
 ])
 
 proc caseHeaderConsumer(parser: Parser): Result[CasePattern, ParserError] =
@@ -181,74 +181,53 @@ proc caseHeaderConsumer(parser: Parser): Result[CasePattern, ParserError] =
   discard ? parser.expect(":")
   ok(pat)
 
-let caseLineSpec = newSpec[CasePattern]("case line", caseHeaderConsumer)
+let caseHeaderSpec = newSpec[CasePattern]("case header", caseHeaderConsumer)
 
 var statementListSpec*: Spec[StatementList]
 
 proc caseConsumer(parser: Parser): Result[CaseBlock, ParserError] =
-  let (pat, body) = ? parser.indentedBlock(caseLineSpec, statementListSpec)
+  let (pat, body) = ? parser.indentedBlock(caseHeaderSpec, statementListSpec)
   ok(newCaseBlock(pat, body, pat.loc))
 
 let caseBlockSpec = newSpec[CaseBlock]("case block", caseConsumer)
 
-# Match body: parses "match" keyword + subject + ":" + newline + caseBlocks
-# Does NOT consume indentation — caller handles that
-proc matchConsumer(parser: Parser): Result[MatchExpression, ParserError] =
-  let loc = parser.loc
-  discard ? parser.expect("match")
+proc defaultMatchHeaderConsumer(parser: Parser): Result[MatchHeader, ParserError] =
+  let matchKeyword = ? parser.expect("match")
   discard ? parser.expect(spaceSpec)
-  # Match expressions cannot be the subject of another match expression.
-  # expressionConsumer intentionally excludes match (match is parsed separately
-  # in statementLineConsumer). This check guards against future changes that
-  # might add match to expressionConsumer.
-  let subject = ? parser.expect(expressionSpec)
-  case subject.kind:
-  of ekMatch: err(newParserError("match expression cannot be the subject of another match", loc))
-  of ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable:
-    discard parser.expect(spaceSpec.optional())
-    discard ? parser.expect(":")
-    discard ? parser.expect(emptyLineSpec)
-    parser.level += 1
-    let cases = ? parser.expect(caseBlockSpec.atLeastOne())
-    parser.level -= 1
-    ok(newMatchExpression(subject, cases, loc))
+  let subject = ? parser.expect(inlineExpressionSpec)
+  discard parser.expect(spaceSpec.optional())
+  discard ? parser.expect(":")
+  newMatchHeader(subject, matchKeyword.loc)
 
-let matchSpec = newSpec[MatchExpression]("match", matchConsumer)
+let defaultMatchHeaderSpec = newSpec("match header", defaultMatchHeaderConsumer)
 
-# identifier = match ...: — parsed atomically so a non-match assignment
-# (`x = expr`) or a bare expression statement backtracks cleanly instead
-# of committing to the match path on the leading identifier.
-proc assignedMatchConsumer(parser: Parser): Result[Statement, ParserError] =
+proc assignedMatchHeaderConsumer(parser: Parser): Result[MatchHeader, ParserError] =
   let target = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
   discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
-  let matchExpr = ? parser.expect(matchSpec)
-  ok(newStatement(newAssignment(target, newExpression(matchExpr), target.loc)))
+  let matchHeader = ? parser.expect(defaultMatchHeaderSpec)
+  newMatchHeader(target, matchHeader.subject, matchHeader.loc)
 
-let matchAssignmentSpec = newSpec[Statement]("match assignment", assignedMatchConsumer)
+let assignedMatchHeaderSpec = newSpec("assigned match header", assignedMatchHeaderConsumer)
 
-proc statementLineConsumer(parser: Parser): Result[Statement, ParserError] =
-  discard parser.expect(any(emptyLineSpec))
-  discard ? parser.expect(indentationSpec)
-  # Try match assignment: identifier = match ...:
-  # A FATAL error means the match committed (keyword + subject + `:`) but its
-  # body is malformed — propagate it rather than masking it with the
-  # plain-statement fallback below, which would report a misleading location.
-  let maybeMatchAssign = parser.expect(matchAssignmentSpec)
-  if maybeMatchAssign.isOk: return ok(maybeMatchAssign.get)
-  if maybeMatchAssign.error.fatal: return err(maybeMatchAssign.error)
-  # Try standalone match: match ...:
-  let maybeMatch = parser.expect(matchSpec)
-  if maybeMatch.isOk: return ok(newStatement(newExpression(maybeMatch.get)))
-  if maybeMatch.error.fatal: return err(maybeMatch.error)
-  # Inline statements: statement + newline
-  let statement = ? parser.expect(statementSpec)
-  discard ? parser.expect(emptyLineSpec)
-  ok(statement)
+let matchHeaderSpec = oneOf("match header", @[
+  defaultMatchHeaderSpec,
+  assignedMatchHeaderSpec,
+])
 
-let statementLineSpec = newSpec[Statement]("statement line", statementLineConsumer)
-statementListSpec = statementLineSpec.atLeastOne().map(newStatementList)
+proc matchBlockConsumer(parser: Parser): Result[Statement, ParserError] =
+  let (header, cases) = ? parser.indentedBlock(matchHeaderSpec, caseBlockSpec.atLeastOne())
+  ok(newStatement(header, cases))
+
+let matchBlockSpec = newSpec("match block", matchBlockConsumer)
+
+let statementSpec = oneOf("statement", @[
+  matchBlockSpec,
+  inlineStatementSpec.indentedLine(),
+])
+
+statementListSpec = statementSpec.atLeastOne().map(newStatementList)
 
 # TODO(post-analysis-expander): re-wire expansion after the analyzer once the
 # post-analysis expander lands (see plans/plan_post_analysis_expansion.md).
@@ -347,7 +326,7 @@ proc indentedArgumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserErro
 let argDefLineSpec = newSpec[ArgumentDef]("argument def", indentedArgumentDefConsumer)
 
 proc structDefConsumer(parser: Parser): Result[StructDef, ParserError] =
-  let (header, body) = ? parser.indentedBlock(structHeaderSpec, argDefLineSpec.atLeastOne())
+  let (header, body) = ? parser.indentedBlock(structHeaderSpec, argumentDefSpec.indentedLine().atLeastOne())
   newStructDef(header, body)
 
 let structDefSpec = newSpec[StructDef]("struct def", structDefConsumer)
