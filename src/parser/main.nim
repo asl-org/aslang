@@ -37,6 +37,11 @@ export statement
 import function
 export function
 
+# Parser-level ANF expansion (expand*). Reference code, not yet wired
+# into the pipeline — imported here so it stays in the compile graph.
+import expansion
+export expansion
+
 import types
 export types
 
