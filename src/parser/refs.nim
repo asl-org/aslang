@@ -1,6 +1,9 @@
-import strformat, strutils, sequtils
+import strformat, strutils, sequtils, results
 
 import ../tokenizer/main as tokenizer
+
+import parser
+import error
 
 import identifiers
 import argtype
@@ -29,6 +32,12 @@ proc asl*(s: StructRef): string =
     let inner = s.impls.mapIt(asl(it)).join(", ")
     fmt"{asl(s.module)}[{inner}]"
 
+# Either `LocalType { fields }` (bare) or `LocalType[Impls] { fields }` (explicit
+# impls, used for phantom-typed structs whose module declares a
+# `struct(A):` header). Both productions land on the same StructRef
+# shape carrying an impls seq; empty means bare.
+let structRefSpec* = map(argumentTypeSpec, newStructRef)
+
 # ----------------- UnionRef -----------------
 # The receiver arg-type (module root + possibly-empty impls) plus the
 # variant name — the `LocalType[.Impls].Variant` production. Empty impls
@@ -52,3 +61,11 @@ proc asl*(u: UnionRef): string =
   else:
     let inner = u.impls.mapIt(asl(it)).join(", ")
     fmt"{asl(u.module)}[{inner}].{u.variant.asl}"
+
+proc unionRefConsumer(parser: Parser): Result[UnionRef, ParserError] =
+  let typeRef = ? parser.expect(argumentTypeSpec)
+  discard ? parser.expect(".")
+  let variant = ? parser.expect(identifierSpec)
+  ok(newUnionRef(typeRef, variant))
+
+let unionRefSpec* = newSpec[UnionRef]("union ref", unionRefConsumer)

@@ -5,8 +5,10 @@
 import strformat, strutils, sequtils, tables, results
 
 import ../tokenizer/main as tokenizer
+import parser
 import error
 
+import literals
 import identifiers
 import argtype
 import decorator
@@ -51,6 +53,23 @@ proc filter*(defs: seq[FunctionDef], access: FunctionAccess): seq[FunctionDef] =
   of faAll: defs
   of faPublic: defs.filterIt(it.public)
 
+proc functionDefConsumer(parser: Parser): Result[FunctionDef, ParserError] =
+  let public = parser.expect("public").isOk
+  if public: discard ? parser.expect(spaceSpec)
+
+  let funcKeyword = ? parser.expect("func")
+  discard ? parser.expect(spaceSpec)
+  let funcName = ? parser.expect(identifierSpec)
+  discard parser.expect(spaceSpec.optional())
+  let argDefList = ? parser.expect(argumentDefListSpec)
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(":")
+  discard ? parser.expect(spaceSpec.optional())
+  let returnType = ? parser.expect(argumentTypeSpec)
+  ok(newFunctionDef(public, funcName, argDefList, returnType, funcKeyword.loc))
+
+let functionDefSpec* = newSpec[FunctionDef]("function def", functionDefConsumer)
+
 # ============================================================
 # ExternFunction
 # ============================================================
@@ -75,6 +94,25 @@ proc asl*(fn: ExternFunction, level: int, indentWidth: uint32): seq[string] =
     fmt"{indent}@extern(""{fn.ffi}"")",
     fmt"{indent}{asl(fn.def)}",
   ]
+
+# @extern("symbol")
+# public func name(args): ReturnType
+proc externFunctionConsumer(parser: Parser): Result[ExternFunction, ParserError] =
+  discard ? parser.expect(indentationSpec)
+  discard ? parser.expect("@")
+  discard ? parser.expect("extern")
+  discard parser.expect(spaceSpec.optional())
+  let loc = parser.loc
+  discard ? parser.expect(leftParenthesisSpec)
+  discard ? parser.expect(spaceSpec.optional())
+  let symbol = ? parser.expect(stringLiteralSpec)
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(rightParenthesisSpec)
+  discard ? parser.expect(emptyLineSpec)
+  let def = ? parser.expect(functionDefSpec.indentedLine())
+  ok(newExternFunction(symbol.content, def, loc))
+
+let externFuncSpec* = newSpec[ExternFunction]("extern function", externFunctionConsumer)
 
 # ============================================================
 # UserFunction
@@ -107,6 +145,17 @@ proc asl*(fn: UserFunction, level: int, indentWidth: uint32): seq[string] =
     for line in asl(stmt, level + 1, indentWidth):
       lines.add(line)
   lines
+
+proc userFunctionConsumer(parser: Parser): Result[UserFunction, ParserError] =
+  ## Parses a user function block: optional decorator lines, then the
+  ## function signature, then an indented statement-list body. Body
+  ## failures are marked fatal — once past the header, the block can't
+  ## be backtracked out of.
+  let decorators = ? parser.expect(decoratorSpec.any())
+  let (h, body) = ? parser.indentedBlock(functionDefSpec, statementListSpec)
+  ok(newUserFunction(decorators, h, body))
+
+let userFuncSpec* = newSpec[UserFunction]("user function", userFunctionConsumer)
 
 # ============================================================
 # Function (user | extern)
@@ -194,6 +243,17 @@ proc byteSizeBuiltinFunction*(loc: Location): Function =
   let funcDef = newFunctionDef(true, name, argDefList, returnType, loc)
   return newFunction(funcDef)
 
+proc functionConsumer(parser: Parser): Result[Function, ParserError] =
+  ## Parses one function block — skips leading blank lines, then tries
+  ## the extern form; falls back to user function on non-fatal failure.
+  discard parser.expect(any(emptyLineSpec))
+  let f = parser.expect(externFuncSpec)
+  if f.isOk: return ok(newFunction(f.get))
+  let u = ? parser.expect(userFuncSpec)
+  ok(newFunction(u))
+
+let funcSpec* = newSpec[Function]("function", functionConsumer)
+
 # ============================================================
 # FunctionList
 # ============================================================
@@ -221,3 +281,9 @@ proc add*(fnlist: FunctionList, function: Function): Result[FunctionList, Parser
   var functions = fnlist.functions
   functions.add(function)
   newFunctionList(functions)
+
+proc functionListConsumer(parser: Parser): Result[FunctionList, ParserError] =
+  let funcs = ? parser.expect(funcSpec.any())
+  newFunctionList(funcs)
+
+let functionListSpec* = newSpec[FunctionList]("function list", functionListConsumer)

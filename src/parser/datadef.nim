@@ -4,9 +4,10 @@
 ## defs. (`LiteralDef` itself lives with the literal value types in
 ## ./literals.)
 
-import strformat, strutils, sequtils, tables, results
+import strformat, strutils, sequtils, tables, results, options
 
 import ../tokenizer/main as tokenizer
+import parser
 import error
 
 import identifiers
@@ -56,6 +57,25 @@ proc asl*(s: StructDefHeader): string =
     let impls = s.requires.mapIt(it.asl).join(", ")
     fmt"struct({impls}):"
 
+proc structRequiresConsumer(parser: Parser): Result[seq[Identifier], ParserError] =
+  let (generics, _) = ? parser.expect(identifierSpec.parenthesisList(allowEmpty = false))
+  ok(generics)
+
+let requiredStructGenerics* = newSpec[seq[Identifier]]("required struct generics", structRequiresConsumer)
+
+# struct: field+ (field is identifier ":" argumentType)
+proc structHeaderConsumer(parser: Parser): Result[StructDefHeader, ParserError] =
+  let structKeyword = ? parser.expect("struct")
+
+  let maybeRequires = ? parser.expect(requiredStructGenerics.optional())
+  let requires = if maybeRequires.isSome: maybeRequires.get else: @[]
+
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(":")
+  newStructDefHeader(requires, structKeyword.loc)
+
+let structHeaderSpec* = newSpec[StructDefHeader]("struct def header", structHeaderConsumer)
+
 # ============================================================
 # StructDef
 # ============================================================
@@ -92,6 +112,20 @@ proc findFieldId*(struct: StructDef, name: Identifier): Result[int, string] =
   else:
     ok(struct.fieldIndex[name])
 
+# Each field line: (blank lines) + indentation + argumentDef + newline
+proc indentedArgumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserError] =
+  discard ? parser.expect(any(emptyLineSpec))
+  let def = ? parser.expect(argumentDefSpec.indentedLine())
+  ok(def)
+
+let argDefLineSpec* = newSpec[ArgumentDef]("argument def", indentedArgumentDefConsumer)
+
+proc structDefConsumer(parser: Parser): Result[StructDef, ParserError] =
+  let (header, body) = ? parser.indentedBlock(structHeaderSpec, argumentDefSpec.indentedLine().atLeastOne())
+  newStructDef(header, body)
+
+let structDefSpec* = newSpec[StructDef]("struct def", structDefConsumer)
+
 # ============================================================
 # VariantDef
 # ============================================================
@@ -124,6 +158,19 @@ proc findFieldId*(variant: VariantDef, name: Identifier): Result[int, string] =
     err(fmt"{name.loc} field `{name.asl}` does not exist in union variant `{variant.name.asl}`")
   else:
     ok(variant.fieldIndex[name])
+
+# union: variant+ (variant is identifier space* "{" (argDef, argDef)* "}")
+# Braces are required — empty variants must be written `Timeout { }`. This
+# mirrors the case-pattern side (`case Timeout { }:`) so the two shapes
+# stay visually consistent and there's no bare `Timeout` form to confuse
+# with a variable-binding case pattern.
+proc variantDefConsumer(parser: Parser): Result[VariantDef, ParserError] =
+  let name = ? parser.expect(identifierSpec)
+  discard parser.expect(spaceSpec.optional())
+  let (fields, _) = ? parser.expect(argumentDefSpec.curlyBracketList())
+  newVariantDef(name, fields, name.loc)
+
+let variantDefSpec* = newSpec[VariantDef]("variant def line", variantDefConsumer)
 
 # ============================================================
 # UnionDef
@@ -165,6 +212,20 @@ proc findVariant*(union: UnionDef, variant: Identifier): Result[VariantDef, stri
     err(fmt"{variant.loc} variant `{variant.asl}` does not exist in union")
   else:
     ok(union.variants[union.variantIndex[variant]])
+
+proc unionDefHeaderConsumer(parser: Parser): Result[Location, ParserError] =
+  let unionKeyword = ? parser.expect("union")
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(":")
+  ok(unionKeyword.loc)
+
+let unionDefHeaderSpec* = newSpec[Location]("union header", unionDefHeaderConsumer)
+
+proc unionDefConsumer(parser: Parser): Result[UnionDef, ParserError] =
+  let (loc, body) = ? parser.indentedBlock(unionDefHeaderSpec, variantDefSpec.indentedLine().atLeastOne())
+  newUnionDef(body, loc)
+
+let unionDefSpec* = newSpec[UnionDef]("union def", unionDefConsumer)
 
 # ============================================================
 # DataDef
@@ -210,3 +271,9 @@ proc asl*(db: DataDef, level: int, indentWidth: uint32): seq[string] =
   of ddkLiteral: db.literal.asl(level, indentWidth)
   of ddkStruct: db.struct.asl(level, indentWidth)
   of ddkUnion: db.union.asl(level, indentWidth)
+
+let dataDefSpec* = oneOf("data block", @[
+  literalDefSpec.map(newDataDef),
+  structDefSpec.map(newDataDef),
+  unionDefSpec.map(newDataDef),
+])
