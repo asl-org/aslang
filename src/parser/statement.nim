@@ -694,8 +694,10 @@ proc newStatementList*(statements: seq[Statement]): StatementList =
 
 proc statements*(sl: StatementList): seq[Statement] = sl.statements
 
-proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int)
-proc expand(expression: InlineExpression, start: int, replace: bool = true): (seq[Statement], InlineExpression, int)
+proc expand(expression: Expression, start: int, replace: bool): (seq[Statement], Expression, int)
+proc expand(expression: Expression, start: int): (seq[Statement], Expression, int)
+proc expand(expression: InlineExpression, start: int, replace: bool): (seq[Statement], InlineExpression, int)
+proc expand(expression: InlineExpression, start: int): (seq[Statement], InlineExpression, int)
 proc expand(statement: Statement, start: int): (seq[Statement], int)
 
 proc expand(fncall: FunctionCall, start: int): (seq[Statement], FunctionCall, int) =
@@ -789,7 +791,7 @@ proc replace(expression: Expression, start: int): (Statement, Expression, int) =
   let generatedAssignment = newAssignment(generatedTarget, expression, expression.loc)
   (newStatement(generatedAssignment), newExpression(generatedTarget), start + 1)
 
-proc expand(expression: InlineExpression, start: int, replace: bool = true): (seq[Statement], InlineExpression, int) =
+proc expand(expression: InlineExpression, start: int, replace: bool): (seq[Statement], InlineExpression, int) =
   case expression.kind:
   of iekLiteral, iekVariable:
     # Literals and variables are already terminal — no sub-expressions
@@ -797,8 +799,8 @@ proc expand(expression: InlineExpression, start: int, replace: bool = true): (se
     # a literal at a value position needs to reach `analyzeBareLiteral`
     # with its expected context intact (Approach C's concrete-adopt);
     # a variable is already a named binding, so wrapping in another
-    # temp would just add noise. Return as-is regardless of `replace`.
-    return (@[], expression, start)
+    # temp would just add noise. Left as-is regardless of `replace`.
+    (@[], expression, start)
   of iekGetter:
     # A Getter has no sub-expressions to lift (source and property are
     # both Identifiers), but at a value position we still want to bind
@@ -828,7 +830,10 @@ proc expand(expression: InlineExpression, start: int, replace: bool = true): (se
     else:
       (expandedStmts, expandedInitializer.newInlineExpression(), counter)
 
-proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int) =
+proc expand(expression: InlineExpression, start: int): (seq[Statement], InlineExpression, int) =
+  expand(expression, start, true)
+
+proc expand(expression: Expression, start: int, replace: bool): (seq[Statement], Expression, int) =
   case expression.kind:
   of ekInline:
     var (expandedStmts, expandedInlineExpr, counter) = expression.inline.expand(start, replace)
@@ -841,6 +846,9 @@ proc expand(expression: Expression, start: int, replace: bool = true): (seq[Stat
       (expandedStmts, replacedExpr, replacedCounter)
     else:
       (expandedStmts, newExpression(expandedMatchExpr), counter)
+
+proc expand(expression: Expression, start: int): (seq[Statement], Expression, int) =
+  expand(expression, start, true)
 
 proc expand(assignment: Assignment, start: int): (seq[Statement], Assignment, int) =
   let (expandedStmts, expandedExpr, counter) = assignment.expression.expand(start, replace = false)
