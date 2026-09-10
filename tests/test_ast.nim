@@ -589,24 +589,18 @@ module M:
 suite "ast — MatchHeader accessor invariants":
 
   test "assigned header exposes target and subject":
-    let hr = newMatchHeader(id("y"), newExpression(id("x")), newLocation())
+    let hr = newMatchHeader(id("y"), newInlineExpression(id("x")), newLocation())
     check hr.isOk
     let header = hr.get
     check header.kind == mhkAssigned
     check header.target.value == "y"
-    check header.subject.kind == ekInline
+    check header.subject.kind == iekVariable
 
   test "default header carries no target; reading it is a defect":
-    let hr = newMatchHeader(newExpression(id("x")), newLocation())
+    let hr = newMatchHeader(newInlineExpression(id("x")), newLocation())
     check hr.isOk
     let header = hr.get
     check header.kind == mhkDefault
     expect AssertionDefect:
       discard header.target
-
-  test "a match-expression subject is rejected by both constructors":
-    let subject = newExpression(newMatchExpression(newExpression(id("x")),
-        newSeq[CaseBlock](), newLocation()))
-    check newMatchHeader(id("y"), subject, newLocation()).isErr
-    check newMatchHeader(subject, newLocation()).isErr
 

@@ -197,7 +197,7 @@ proc defaultMatchHeaderConsumer(parser: Parser): Result[MatchHeader, ParserError
   let subject = ? parser.expect(inlineExpressionSpec)
   discard parser.expect(spaceSpec.optional())
   discard ? parser.expect(":")
-  newMatchHeader(subject.newExpression(), matchKeyword.loc)
+  newMatchHeader(subject, matchKeyword.loc)
 
 let defaultMatchHeaderSpec = newSpec("match header", defaultMatchHeaderConsumer)
 

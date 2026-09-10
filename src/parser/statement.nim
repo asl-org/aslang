@@ -245,13 +245,13 @@ type
     mhkAssigned, mhkDefault
   MatchHeader* = ref object
     loc: Location
-    subject: Expression
+    subject: InlineExpression
     case kind: MatchHeaderKind
     of mhkAssigned: target: Identifier
     of mhkDefault: discard
 
   MatchExpression* = ref object
-    subject: Expression
+    subject: InlineExpression
     cases: seq[CaseBlock]
     loc: Location
 
@@ -478,18 +478,14 @@ proc asl(caseBlock: CaseBlock, level: int, indentWidth: uint32): seq[string] =
   lines
 
 # ----------------- MatchHeader -----------------
-proc newMatchHeader*(target: Identifier, subject: Expression, loc: Location): Result[MatchHeader, ParserError] =
-  case subject.kind:
-  of ekMatch: err(newParserError(fmt"match expression subject can not be another match block", loc))
-  else: ok(MatchHeader(kind: mhkAssigned, loc: loc, target: target, subject: subject))
+proc newMatchHeader*(target: Identifier, subject: InlineExpression, loc: Location): Result[MatchHeader, ParserError] =
+  ok(MatchHeader(kind: mhkAssigned, loc: loc, target: target, subject: subject))
 
-proc newMatchHeader*(subject: Expression, loc: Location): Result[MatchHeader, ParserError] =
-  case subject.kind:
-  of ekMatch: err(newParserError(fmt"match expression subject can not be another match block", loc))
-  else: ok(MatchHeader(kind: mhkDefault, loc: loc, subject: subject))
+proc newMatchHeader*(subject: InlineExpression, loc: Location): Result[MatchHeader, ParserError] =
+  ok(MatchHeader(kind: mhkDefault, loc: loc, subject: subject))
 
 proc kind*(header: MatchHeader): MatchHeaderKind = header.kind
-proc subject*(header: MatchHeader): Expression = header.subject
+proc subject*(header: MatchHeader): InlineExpression = header.subject
 proc loc*(header: MatchHeader): Location = header.loc
 proc target*(header: MatchHeader): Identifier =
   assert header.kind == mhkAssigned,
@@ -497,7 +493,7 @@ proc target*(header: MatchHeader): Identifier =
   header.target
 
 # ----------------- MatchExpression -----------------
-proc newMatchExpression*(subject: Expression, cases: seq[CaseBlock],
+proc newMatchExpression*(subject: InlineExpression, cases: seq[CaseBlock],
     loc: Location): MatchExpression =
   # TODO: case pattern can be either integer or variable (with at max 1 variable pattern that too last)
   # TODO: for integer case pattern all integer values must be unique
@@ -505,7 +501,7 @@ proc newMatchExpression*(subject: Expression, cases: seq[CaseBlock],
   # TODO: for integer case pattern all variants must be unique
   MatchExpression(subject: subject, cases: cases, loc: loc)
 
-proc subject*(match: MatchExpression): Expression = match.subject
+proc subject*(match: MatchExpression): InlineExpression = match.subject
 proc cases*(match: MatchExpression): seq[CaseBlock] = match.cases
 proc loc*(match: MatchExpression): Location = match.loc
 

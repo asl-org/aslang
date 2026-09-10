@@ -314,7 +314,7 @@ proc resolveCaseBlock(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionC
   ok(newResolvedCaseBlock(caseBlock, resolvedCasePattern, resolvedStatements))
 
 proc resolveMatchExpression(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, match: MatchExpression): Result[ResolvedMatchExpression, string] =
-  let resolvedSubject = ? resolveExpression(file, ctxType, funcCtx, match.subject)
+  let resolvedSubject = ? resolveInlineExpression(file, ctxType, funcCtx, match.subject)
   var resolvedCaseBlocks: seq[ResolvedCaseBlock]
   for caseBlock in match.cases:
     let resolvedCaseBlock = ? resolveCaseBlock(file, ctxType, funcCtx, caseBlock)
