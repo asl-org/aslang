@@ -255,15 +255,21 @@ type
     cases: seq[CaseBlock]
     loc: Location
 
+  InlineExpressionKind* = enum
+    iekLiteral, iekFnCall, iekGetter, iekInitializer, iekVariable
+  InlineExpression* = ref object
+    case kind: InlineExpressionKind
+    of iekLiteral: literal: Literal
+    of iekFnCall: fncall: FunctionCall
+    of iekGetter: getter: Getter
+    of iekInitializer: initializer: Initializer
+    of iekVariable: variable: Identifier
+
   ExpressionKind* = enum
-    ekLiteral, ekFnCall, ekGetter, ekInitializer, ekVariable, ekMatch
+    ekInline, ekMatch
   Expression* = ref object
     case kind: ExpressionKind
-    of ekLiteral: literal: Literal
-    of ekFnCall: fncall: FunctionCall
-    of ekGetter: getter: Getter
-    of ekInitializer: initializer: Initializer
-    of ekVariable: variable: Identifier
+    of ekInline: inline: InlineExpression
     of ekMatch: match: MatchExpression
 
   StatementKind* = enum
@@ -279,7 +285,7 @@ type
 
 # Forward declarations for mutually-recursive asl procs.
 proc newExpression*(variable: Identifier): Expression
-proc asl(expr: Expression): string
+proc asl(expression: Expression): string
 proc asl*(stmt: Statement): string
 proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string]
 
@@ -484,7 +490,7 @@ proc kind*(header: MatchHeader): MatchHeaderKind = header.kind
 proc subject*(header: MatchHeader): Expression = header.subject
 proc loc*(header: MatchHeader): Location = header.loc
 proc target*(header: MatchHeader): Identifier =
-  assert header.kind == mhkDefault,
+  assert header.kind == mhkAssigned,
     fmt"MatchHeader.target accessed but kind is {header.kind}"
   header.target
 
@@ -511,50 +517,80 @@ proc asl(matchExpr: MatchExpression, level: int, indentWidth: uint32): seq[strin
   lines
 
 # ----------------- Expression -----------------
-proc newExpression*(literal: Literal): Expression =
-  Expression(kind: ekLiteral, literal: literal)
+proc newInlineExpression*(literal: Literal): InlineExpression =
+  InlineExpression(kind: iekLiteral, literal: literal)
 
-proc newExpression*(fncall: FunctionCall): Expression =
-  Expression(kind: ekFnCall, fncall: fncall)
+proc newInlineExpression*(fncall: FunctionCall): InlineExpression =
+  InlineExpression(kind: iekFnCall, fncall: fncall)
 
-proc newExpression*(getter: Getter): Expression =
-  Expression(kind: ekGetter, getter: getter)
+proc newInlineExpression*(getter: Getter): InlineExpression =
+  InlineExpression(kind: iekGetter, getter: getter)
 
-proc newExpression*(initializer: Initializer): Expression =
-  Expression(kind: ekInitializer, initializer: initializer)
+proc newInlineExpression*(initializer: Initializer): InlineExpression =
+  InlineExpression(kind: iekInitializer, initializer: initializer)
 
-proc newExpression*(variable: Identifier): Expression =
-  Expression(kind: ekVariable, variable: variable)
+proc newInlineExpression*(variable: Identifier): InlineExpression =
+  InlineExpression(kind: iekVariable, variable: variable)
+
+proc kind*(e: InlineExpression): InlineExpressionKind = e.kind
+
+proc literal*(e: InlineExpression): Literal =
+  assert e.kind == iekLiteral,
+    fmt"InlineExpression.literal accessed but kind is {e.kind}"
+  e.literal
+
+proc fncall*(e: InlineExpression): FunctionCall =
+  assert e.kind == iekFnCall,
+    fmt"InlineExpression.fncall accessed but kind is {e.kind}"
+  e.fncall
+
+proc getter*(e: InlineExpression): Getter =
+  assert e.kind == iekGetter,
+    fmt"InlineExpression.getter accessed but kind is {e.kind}"
+  e.getter
+
+proc initializer*(e: InlineExpression): Initializer =
+  assert e.kind == iekInitializer,
+    fmt"InlineExpression.initializer accessed but kind is {e.kind}"
+  e.initializer
+
+proc variable*(e: InlineExpression): Identifier =
+  assert e.kind == iekVariable,
+    fmt"InlineExpression.variable accessed but kind is {e.kind}"
+  e.variable
+
+proc loc*(expression: InlineExpression): Location =
+  case expression.kind:
+  of iekFnCall: expression.fncall.loc
+  of iekGetter: expression.getter.loc
+  of iekInitializer: expression.initializer.loc
+  of iekLiteral: expression.literal.loc
+  of iekVariable: expression.variable.loc
+
+proc asl(expression: InlineExpression): string =
+  case expression.kind:
+  of iekLiteral: asl(expression.literal)
+  of iekFnCall: asl(expression.fncall)
+  of iekGetter: asl(expression.getter)
+  of iekInitializer: asl(expression.initializer)
+  of iekVariable: asl(expression.variable)
+
+# ----------------- Expression -----------------
+proc newExpression*(inline: InlineExpression): Expression =
+  Expression(kind: ekInline, inline: inline)
 
 proc newExpression*(match: MatchExpression): Expression =
   Expression(kind: ekMatch, match: match)
 
+proc newExpression*(variable: Identifier): Expression =
+  variable.newInlineExpression().newExpression()
+
 proc kind*(e: Expression): ExpressionKind = e.kind
 
-proc literal*(e: Expression): Literal =
-  assert e.kind == ekLiteral,
-    fmt"Expression.literal accessed but kind is {e.kind}"
-  e.literal
-
-proc fncall*(e: Expression): FunctionCall =
-  assert e.kind == ekFnCall,
-    fmt"Expression.fncall accessed but kind is {e.kind}"
-  e.fncall
-
-proc getter*(e: Expression): Getter =
-  assert e.kind == ekGetter,
-    fmt"Expression.getter accessed but kind is {e.kind}"
-  e.getter
-
-proc initializer*(e: Expression): Initializer =
-  assert e.kind == ekInitializer,
-    fmt"Expression.initializer accessed but kind is {e.kind}"
-  e.initializer
-
-proc variable*(e: Expression): Identifier =
-  assert e.kind == ekVariable,
-    fmt"Expression.variable accessed but kind is {e.kind}"
-  e.variable
+proc inline*(e: Expression): InlineExpression =
+  assert e.kind == ekInline,
+    fmt"Expression.inline accessed but kind is {e.kind}"
+  e.inline
 
 proc match*(e: Expression): MatchExpression =
   assert e.kind == ekMatch,
@@ -563,20 +599,12 @@ proc match*(e: Expression): MatchExpression =
 
 proc loc*(expression: Expression): Location =
   case expression.kind:
-  of ekFnCall: expression.fncall.loc
-  of ekGetter: expression.getter.loc
-  of ekInitializer: expression.initializer.loc
-  of ekLiteral: expression.literal.loc
+  of ekInline: expression.inline.loc
   of ekMatch: expression.match.loc
-  of ekVariable: expression.variable.loc
 
-proc asl(expr: Expression): string =
-  case expr.kind:
-  of ekLiteral: asl(expr.literal)
-  of ekFnCall: asl(expr.fncall)
-  of ekGetter: asl(expr.getter)
-  of ekInitializer: asl(expr.initializer)
-  of ekVariable: asl(expr.variable)
+proc asl(expression: Expression): string =
+  case expression.kind:
+  of ekInline: expression.inline.asl
   of ekMatch: "" # match is a block expression, use asl(stmt, level, indentWidth)
 
 # ----------------- Statement -----------------
@@ -585,6 +613,9 @@ proc newStatement*(assignment: Assignment): Statement =
 
 proc newStatement*(expression: Expression): Statement =
   Statement(kind: skExpr, expression: expression)
+
+proc newStatement*(expression: InlineExpression): Statement =
+  Statement(kind: skExpr, expression: expression.newExpression())
 
 proc newStatement*(setter: Setter): Statement =
   Statement(kind: skSetter, setter: setter)
@@ -752,42 +783,45 @@ proc replace(expression: Expression, start: int): (Statement, Expression, int) =
 
 proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int) =
   case expression.kind:
-  of ekLiteral, ekVariable:
-    # Literals and variables are already terminal — no sub-expressions
-    # to lift and no useful transformation from binding them to a temp:
-    # a literal at a value position needs to reach `analyzeBareLiteral`
-    # with its expected context intact (Approach C's concrete-adopt);
-    # a variable is already a named binding, so wrapping in another
-    # temp would just add noise. Return as-is regardless of `replace`.
-    return (@[], expression, start)
-  of ekGetter:
-    # A Getter has no sub-expressions to lift (source and property are
-    # both Identifiers), but at a value position we still want to bind
-    # its read result to a temp so the ANF invariant holds: every
-    # value-position expression downstream is a Variable or a Literal.
-    # The `replace = false` path (assignment / setter RHS) leaves it
-    # alone because the enclosing construct is already the binding.
-    if replace:
-      var (replacedStmt, replacedExpr, replacedCounter) = expression.replace(start)
-      (@[replacedStmt], replacedExpr, replacedCounter)
-    else:
-      (@[], expression, start)
-  of ekFnCall:
-    var (expandedStmts, expandedFncall, counter) = expression.fncall.expand(start)
-    if replace:
-      var (replacedStmt, replacedExpr, replacedCounter) = expandedFncall.newExpression.replace(counter)
-      expandedStmts.add(replacedStmt)
-      (expandedStmts, replacedExpr, replacedCounter)
-    else:
-      (expandedStmts, newExpression(expandedFncall), counter)
-  of ekInitializer:
-    var (expandedStmts, expandedInitializer, counter) = expression.initializer.expand(start)
-    if replace:
-      var (replacedStmt, replacedExpr, replacedCounter) = expandedInitializer.newExpression.replace(counter)
-      expandedStmts.add(replacedStmt)
-      (expandedStmts, replacedExpr, replacedCounter)
-    else:
-      (expandedStmts, newExpression(expandedInitializer), counter)
+  of ekInline:
+    let expression = expression.inline
+    case expression.kind:
+    of iekLiteral, iekVariable:
+      # Literals and variables are already terminal — no sub-expressions
+      # to lift and no useful transformation from binding them to a temp:
+      # a literal at a value position needs to reach `analyzeBareLiteral`
+      # with its expected context intact (Approach C's concrete-adopt);
+      # a variable is already a named binding, so wrapping in another
+      # temp would just add noise. Return as-is regardless of `replace`.
+      return (@[], newExpression(expression), start)
+    of iekGetter:
+      # A Getter has no sub-expressions to lift (source and property are
+      # both Identifiers), but at a value position we still want to bind
+      # its read result to a temp so the ANF invariant holds: every
+      # value-position expression downstream is a Variable or a Literal.
+      # The `replace = false` path (assignment / setter RHS) leaves it
+      # alone because the enclosing construct is already the binding.
+      if replace:
+        var (replacedStmt, replacedExpr, replacedCounter) = newExpression(expression).replace(start)
+        (@[replacedStmt], replacedExpr, replacedCounter)
+      else:
+        (@[], newExpression(expression), start)
+    of iekFnCall:
+      var (expandedStmts, expandedFncall, counter) = expression.fncall.expand(start)
+      if replace:
+        var (replacedStmt, replacedExpr, replacedCounter) = expandedFncall.newInlineExpression().newExpression().replace(counter)
+        expandedStmts.add(replacedStmt)
+        (expandedStmts, replacedExpr, replacedCounter)
+      else:
+        (expandedStmts, expandedFncall.newInlineExpression().newExpression(), counter)
+    of iekInitializer:
+      var (expandedStmts, expandedInitializer, counter) = expression.initializer.expand(start)
+      if replace:
+        var (replacedStmt, replacedExpr, replacedCounter) = expandedInitializer.newInlineExpression().newExpression().replace(counter)
+        expandedStmts.add(replacedStmt)
+        (expandedStmts, replacedExpr, replacedCounter)
+      else:
+        (expandedStmts, expandedInitializer.newInlineExpression().newExpression(), counter)
   of ekMatch:
     var (expandedStmts, expandedMatchExpr, counter) = expression.match.expand(start)
     if replace:
