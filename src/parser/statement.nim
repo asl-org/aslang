@@ -233,7 +233,7 @@ type
 
   Setter* = ref object
     target: Getter
-    expression: Expression
+    expression: InlineExpression
     loc: Location
 
   CaseBlock* = ref object
@@ -284,7 +284,6 @@ type
     statements: seq[Statement]
 
 # Forward declarations for mutually-recursive asl procs.
-proc newExpression*(variable: Identifier): Expression
 proc newExpression*(inline: InlineExpression): Expression
 proc newInlineExpression*(variable: Identifier): InlineExpression
 proc asl(expression: InlineExpression): string
@@ -449,12 +448,12 @@ proc asl(assignment: Assignment): string =
   fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
 
 # ----------------- Setter -----------------
-proc newSetter*(target: Getter, expression: Expression,
+proc newSetter*(target: Getter, expression: InlineExpression,
     loc: Location): Setter =
   Setter(target: target, expression: expression, loc: loc)
 
 proc target*(setter: Setter): Getter = setter.target
-proc expression*(setter: Setter): Expression = setter.expression
+proc expression*(setter: Setter): InlineExpression = setter.expression
 proc loc*(setter: Setter): Location = setter.loc
 
 proc asl(setter: Setter): string =

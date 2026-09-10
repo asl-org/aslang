@@ -223,6 +223,31 @@ public module u64:
     cleanupDir(dir)
     check r.isOk
 
+  test "setter value can be a non-trivial inline expression":
+    # The setter RHS is a getter, not a bare variable, driving
+    # resolveSetter -> resolveInlineExpression(iekGetter). Setter values
+    # were narrowed to InlineExpression (direct match assignment to a
+    # setter is intentionally not supported yet), so the inline path
+    # needs its own coverage.
+    let (r, dir) = resolveSingle("""
+module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  func copyB(p: Pair): Pair
+    p.a = p.b
+    p
+
+public module u8:
+  literal: "uint8"
+
+public module u64:
+  literal: "uint64"
+""")
+    cleanupDir(dir)
+    check r.isOk
+
   test "module with implicit (inferred) generic field resolves":
     # Status has no `struct(Any):` header but uses Any as a variant field;
     # the resolver must infer Any as a type parameter so Status[u8]

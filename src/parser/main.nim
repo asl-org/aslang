@@ -163,7 +163,7 @@ proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
   discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
   let expression = ? parser.expect(inlineExpressionSpec)
-  ok(newSetter(target, expression.newExpression(), target.loc))
+  ok(newSetter(target, expression, target.loc))
 
 let setterSpec = newSpec[Setter]("setter", setterConsumer)
 

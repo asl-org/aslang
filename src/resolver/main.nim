@@ -353,7 +353,7 @@ proc resolveAssignment(file: ResolvedFile, ctxType: LocalType, funcCtx: Function
 
 proc resolveSetter(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, setter: Setter): Result[ResolvedSetter, string] =
   let resolvedGetter = ? resolveGetter(funcCtx, setter.target)
-  let resolvedExpression = ? resolveExpression(file, ctxType, funcCtx, setter.expression)
+  let resolvedExpression = ? resolveInlineExpression(file, ctxType, funcCtx, setter.expression)
   ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
 proc resolveStatement(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string] =
