@@ -114,6 +114,25 @@ public module Calc:
     cleanupDir(dir)
     check r.isOk
 
+  test "nested function call as an argument resolves":
+    # The first argument to the outer u8.add is itself a call, so this
+    # drives resolveFunctionCall -> resolveInlineExpression(iekFnCall)
+    # -> back into resolveFunctionCall. That arg path was split out of
+    # resolveExpression when call arguments were narrowed to
+    # InlineExpression, so it needs its own coverage.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8 } from "./base.aslr"
+
+public module Calc:
+  public func go(x: u8): u8
+    u8.add(u8.add(x, x), x)
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
   test "match expression with integer + variable patterns resolves":
     let (r, dir) = resolveFiles([
       ("entry.asl", """

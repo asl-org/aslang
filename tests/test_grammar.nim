@@ -426,6 +426,22 @@ module M:
 """)
     check r.isOk
 
+  test "a match result reaches a call by binding it to a temp first":
+    # A match is a block expression and cannot be a function-call
+    # argument (arguments are InlineExpression). The idiom is to bind
+    # the match to a name and pass the name — this parses.
+    let r = parseStr("""
+module M:
+  func go(x: u8): u8
+    y = match x:
+      case 0:
+        u8 1
+      case _:
+        u8 0
+    u8.add(y, y)
+""")
+    check r.isOk
+
 suite "grammar — setter statement":
 
   test "setter assigns into a getter target":

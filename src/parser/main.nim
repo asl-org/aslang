@@ -63,7 +63,7 @@ type File = app.File
 # `inlineExpressionSpec` is a named Spec because argumentListSpec references it
 # directly via `inlineExpressionSpec.parenthesisList()` (and the body cluster
 # recurses back through it).
-var inlineExpressionSpec*: Spec[Expression]
+var inlineExpressionSpec*: Spec[InlineExpression]
 
 proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
   let (args, loc) = ? parser.expect(inlineExpressionSpec.parenthesisList())
@@ -86,7 +86,7 @@ proc explicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError]
   discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
   let expression = ? parser.expect(inlineExpressionSpec)
-  ok(newKeywordArgument(name, expression, name.loc))
+  ok(newKeywordArgument(name, expression.newExpression(), name.loc))
 
 let explicitKwargSpec = newSpec("explicit keyword argument", explicitKwargConsumer)
 let implicitKwargSpec = identifierSpec.map(newKeywordArgument)
@@ -140,11 +140,11 @@ let initSpec = oneOf("initializer spec", @[
 ])
 
 inlineExpressionSpec = oneOf("expression", @[
-  literalSpec.map(newExpression),
-  initSpec.map(newExpression),
-  fncallSpec.map(newExpression),
-  getterSpec.map(newExpression),
-  identifierSpec.map(newExpression),
+  literalSpec.map(newInlineExpression),
+  initSpec.map(newInlineExpression),
+  fncallSpec.map(newInlineExpression),
+  getterSpec.map(newInlineExpression),
+  identifierSpec.map(newInlineExpression),
 ])
 
 proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
@@ -153,7 +153,7 @@ proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
   discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
   let expression = ? parser.expect(inlineExpressionSpec)
-  ok(newAssignment(target, expression, target.loc))
+  ok(newAssignment(target, newExpression(expression), target.loc))
 
 let assignmentSpec = newSpec[Assignment]("assignment", assignmentConsumer)
 
@@ -162,8 +162,8 @@ proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
   discard ? parser.expect(spaceSpec.optional())
   discard ? parser.expect("=")
   discard ? parser.expect(spaceSpec.optional())
-  let expr = ? parser.expect(inlineExpressionSpec)
-  ok(newSetter(target, expr, target.loc))
+  let expression = ? parser.expect(inlineExpressionSpec)
+  ok(newSetter(target, expression.newExpression(), target.loc))
 
 let setterSpec = newSpec[Setter]("setter", setterConsumer)
 
@@ -197,7 +197,7 @@ proc defaultMatchHeaderConsumer(parser: Parser): Result[MatchHeader, ParserError
   let subject = ? parser.expect(inlineExpressionSpec)
   discard parser.expect(spaceSpec.optional())
   discard ? parser.expect(":")
-  newMatchHeader(subject, matchKeyword.loc)
+  newMatchHeader(subject.newExpression(), matchKeyword.loc)
 
 let defaultMatchHeaderSpec = newSpec("match header", defaultMatchHeaderConsumer)
 

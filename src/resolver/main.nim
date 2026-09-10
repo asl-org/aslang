@@ -197,6 +197,7 @@ proc resolveGetter(scope: FunctionContext, getter: Getter): Result[ResolvedGette
 
 # resolveExpression / resolveStatement form the body-cluster cycle.
 proc resolveExpression(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string]
+proc resolveInlineExpression(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, expression: InlineExpression): Result[ResolvedExpression, string]
 proc resolveStatement(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string]
 
 proc resolveFunctionCall(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, fncall: FunctionCall): Result[ResolvedFunctionCall, string] =
@@ -205,7 +206,7 @@ proc resolveFunctionCall(file: ResolvedFile, ctxType: LocalType, funcCtx: Functi
   assert(defs.len > 0, "[BUG] - findFunctionDefs never returns an empty overload list")
   var resolvedArgs: seq[ResolvedExpression]
   for arg in fncall.args:
-    let resolvedArg = ? resolveExpression(file, ctxType, funcCtx, arg)
+    let resolvedArg = ? resolveInlineExpression(file, ctxType, funcCtx, arg)
     resolvedArgs.add(resolvedArg)
   ok(newResolvedFunctionCall(fncall, typ, resolvedArgs))
 
@@ -320,23 +321,28 @@ proc resolveMatchExpression(file: ResolvedFile, ctxType: LocalType, funcCtx: Fun
     resolvedCaseBlocks.add(resolvedCaseBlock)
   ok(newResolvedMatchExpression(match, resolvedSubject, resolvedCaseBlocks))
 
-proc resolveExpression(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string] =
+proc resolveInlineExpression(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, expression: InlineExpression): Result[ResolvedExpression, string] =
   case expression.kind:
-  of ekLiteral:
+  of iekLiteral:
     let resolvedLiteral = ? resolveLiteral(file, expression.literal)
     ok(newResolvedExpression(resolvedLiteral))
-  of ekGetter:
+  of iekGetter:
     let resolvedGetter = ? resolveGetter(funcCtx, expression.getter)
     ok(newResolvedExpression(resolvedGetter))
-  of ekVariable:
+  of iekVariable:
     let resolvedVariable = ? resolveVariable(funcCtx, expression.variable)
     ok(newResolvedExpression(resolvedVariable))
-  of ekFnCall:
+  of iekFnCall:
     let resolvedFunctionCall = ? resolveFunctionCall(file, ctxType, funcCtx, expression.fncall)
     ok(newResolvedExpression(resolvedFunctionCall))
-  of ekInitializer:
+  of iekInitializer:
     let resolvedInitializer = ? resolveInitializer(file, ctxType, funcCtx, expression.initializer)
     ok(newResolvedExpression(resolvedInitializer))
+
+proc resolveExpression(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionContext, expression: Expression): Result[ResolvedExpression, string] =
+  case expression.kind:
+  of ekInline:
+    resolveInlineExpression(file, ctxType, funcCtx, expression.inline)
   of ekMatch:
     let resolvedMatchExpr = ? resolveMatchExpression(file, ctxType, funcCtx, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))

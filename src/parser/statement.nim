@@ -193,7 +193,7 @@ let casePatternSpec* = oneOf("case pattern", @[
 
 type
   ArgumentList* = ref object
-    args: seq[Expression]
+    args: seq[InlineExpression]
     loc: Location
 
   FunctionCall* = ref object
@@ -285,12 +285,14 @@ type
 
 # Forward declarations for mutually-recursive asl procs.
 proc newExpression*(variable: Identifier): Expression
+proc newExpression*(inline: InlineExpression): Expression
+proc asl(expression: InlineExpression): string
 proc asl(expression: Expression): string
 proc asl*(stmt: Statement): string
 proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string]
 
 # ----------------- ArgumentList -----------------
-proc newArgumentList*(args: seq[Expression], loc: Location): ArgumentList =
+proc newArgumentList*(args: seq[InlineExpression], loc: Location): ArgumentList =
   ArgumentList(args: args, loc: loc)
 
 proc arity(argList: ArgumentList): int = argList.args.len
@@ -310,7 +312,7 @@ proc loc*(fncall: FunctionCall): Location = fncall.root.loc
 
 proc root*(fncall: FunctionCall): Identifier = fncall.root
 proc name*(fncall: FunctionCall): Identifier = fncall.name
-proc args*(fncall: FunctionCall): seq[Expression] = fncall.argList.args
+proc args*(fncall: FunctionCall): seq[InlineExpression] = fncall.argList.args
 proc arity*(fncall: FunctionCall): int = fncall.argList.arity
 
 proc asl(fncall: FunctionCall): string =
@@ -693,11 +695,12 @@ proc newStatementList*(statements: seq[Statement]): StatementList =
 proc statements*(sl: StatementList): seq[Statement] = sl.statements
 
 proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int)
+proc expand(expression: InlineExpression, start: int, replace: bool = true): (seq[Statement], InlineExpression, int)
 proc expand(statement: Statement, start: int): (seq[Statement], int)
 
 proc expand(fncall: FunctionCall, start: int): (seq[Statement], FunctionCall, int) =
   var expandedStmts: seq[Statement]
-  var expandedArgs: seq[Expression]
+  var expandedArgs: seq[InlineExpression]
   var counter = start
 
   for arg in fncall.argList.args:
@@ -776,56 +779,64 @@ proc expand(match: MatchExpression, start: int): (seq[Statement], MatchExpressio
   let expandedMatchExpr = newMatchExpression(expandedSubjectExpr, expandedCases, match.loc)
   (expandedStmts, expandedMatchExpr, counter)
 
+proc replace(expression: InlineExpression, start: int): (Statement, InlineExpression, int) =
+  let generatedTarget = newGeneratedIdentifier(start, expression.loc)
+  let generatedAssignment = newAssignment(generatedTarget, newExpression(expression), expression.loc)
+  (newStatement(generatedAssignment), newInlineExpression(generatedTarget), start + 1)
+
 proc replace(expression: Expression, start: int): (Statement, Expression, int) =
   let generatedTarget = newGeneratedIdentifier(start, expression.loc)
   let generatedAssignment = newAssignment(generatedTarget, expression, expression.loc)
   (newStatement(generatedAssignment), newExpression(generatedTarget), start + 1)
 
+proc expand(expression: InlineExpression, start: int, replace: bool = true): (seq[Statement], InlineExpression, int) =
+  case expression.kind:
+  of iekLiteral, iekVariable:
+    # Literals and variables are already terminal — no sub-expressions
+    # to lift and no useful transformation from binding them to a temp:
+    # a literal at a value position needs to reach `analyzeBareLiteral`
+    # with its expected context intact (Approach C's concrete-adopt);
+    # a variable is already a named binding, so wrapping in another
+    # temp would just add noise. Return as-is regardless of `replace`.
+    return (@[], expression, start)
+  of iekGetter:
+    # A Getter has no sub-expressions to lift (source and property are
+    # both Identifiers), but at a value position we still want to bind
+    # its read result to a temp so the ANF invariant holds: every
+    # value-position expression downstream is a Variable or a Literal.
+    # The `replace = false` path (assignment / setter RHS) leaves it
+    # alone because the enclosing construct is already the binding.
+    if replace:
+      var (replacedStmt, replacedExpr, replacedCounter) = expression.replace(start)
+      (@[replacedStmt], replacedExpr, replacedCounter)
+    else:
+      (@[], expression, start)
+  of iekFnCall:
+    var (expandedStmts, expandedFncall, counter) = expression.fncall.expand(start)
+    if replace:
+      var (replacedStmt, replacedExpr, replacedCounter) = expandedFncall.newInlineExpression().replace(counter)
+      expandedStmts.add(replacedStmt)
+      (expandedStmts, replacedExpr, replacedCounter)
+    else:
+      (expandedStmts, expandedFncall.newInlineExpression(), counter)
+  of iekInitializer:
+    var (expandedStmts, expandedInitializer, counter) = expression.initializer.expand(start)
+    if replace:
+      var (replacedStmt, replacedExpr, replacedCounter) = expandedInitializer.newInlineExpression().replace(counter)
+      expandedStmts.add(replacedStmt)
+      (expandedStmts, replacedExpr, replacedCounter)
+    else:
+      (expandedStmts, expandedInitializer.newInlineExpression(), counter)
+
 proc expand(expression: Expression, start: int, replace: bool = true): (seq[Statement], Expression, int) =
   case expression.kind:
   of ekInline:
-    let expression = expression.inline
-    case expression.kind:
-    of iekLiteral, iekVariable:
-      # Literals and variables are already terminal — no sub-expressions
-      # to lift and no useful transformation from binding them to a temp:
-      # a literal at a value position needs to reach `analyzeBareLiteral`
-      # with its expected context intact (Approach C's concrete-adopt);
-      # a variable is already a named binding, so wrapping in another
-      # temp would just add noise. Return as-is regardless of `replace`.
-      return (@[], newExpression(expression), start)
-    of iekGetter:
-      # A Getter has no sub-expressions to lift (source and property are
-      # both Identifiers), but at a value position we still want to bind
-      # its read result to a temp so the ANF invariant holds: every
-      # value-position expression downstream is a Variable or a Literal.
-      # The `replace = false` path (assignment / setter RHS) leaves it
-      # alone because the enclosing construct is already the binding.
-      if replace:
-        var (replacedStmt, replacedExpr, replacedCounter) = newExpression(expression).replace(start)
-        (@[replacedStmt], replacedExpr, replacedCounter)
-      else:
-        (@[], newExpression(expression), start)
-    of iekFnCall:
-      var (expandedStmts, expandedFncall, counter) = expression.fncall.expand(start)
-      if replace:
-        var (replacedStmt, replacedExpr, replacedCounter) = expandedFncall.newInlineExpression().newExpression().replace(counter)
-        expandedStmts.add(replacedStmt)
-        (expandedStmts, replacedExpr, replacedCounter)
-      else:
-        (expandedStmts, expandedFncall.newInlineExpression().newExpression(), counter)
-    of iekInitializer:
-      var (expandedStmts, expandedInitializer, counter) = expression.initializer.expand(start)
-      if replace:
-        var (replacedStmt, replacedExpr, replacedCounter) = expandedInitializer.newInlineExpression().newExpression().replace(counter)
-        expandedStmts.add(replacedStmt)
-        (expandedStmts, replacedExpr, replacedCounter)
-      else:
-        (expandedStmts, expandedInitializer.newInlineExpression().newExpression(), counter)
+    var (expandedStmts, expandedInlineExpr, counter) = expression.inline.expand(start, replace)
+    (expandedStmts, newExpression(expandedInlineExpr), counter)
   of ekMatch:
     var (expandedStmts, expandedMatchExpr, counter) = expression.match.expand(start)
     if replace:
-      var (replacedStmt, replacedExpr, replacedCounter) = expandedMatchExpr.newExpression.replace(counter)
+      var (replacedStmt, replacedExpr, replacedCounter) = expandedMatchExpr.newExpression().replace(counter)
       expandedStmts.add(replacedStmt)
       (expandedStmts, replacedExpr, replacedCounter)
     else:
