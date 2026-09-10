@@ -235,7 +235,7 @@ proc resolveKeywordArguments(file: ResolvedFile, ctxType: LocalType, funcCtx: Fu
   ## the initializer constructors (one shape serves struct + union).
   var resolvedKwargs: seq[ResolvedKeywordArgument]
   for kwarg in kwargList.items:
-    let resolvedExpression = ? resolveExpression(file, ctxType, funcCtx, kwarg.expression)
+    let resolvedExpression = ? resolveInlineExpression(file, ctxType, funcCtx, kwarg.expression)
     resolvedKwargs.add(newResolvedKeywordArgument(kwarg, resolvedExpression))
   ok(resolvedKwargs)
 

@@ -185,6 +185,24 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
+  test "initializer field value can be a nested call":
+    # The kwarg value is itself a function call, driving
+    # resolveKeywordArguments -> resolveInlineExpression(iekFnCall).
+    # That path was split out when initializer field values were
+    # narrowed to InlineExpression, so it needs its own coverage.
+    let (r, dir) = resolveFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+public module M:
+  public func ok_sum(x: u8): Status[u8]
+    Status.Ok { value: u8.add(x, x) }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
   test "setter statement resolves":
     let (r, dir) = resolveSingle("""
 module Pair:

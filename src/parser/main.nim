@@ -86,7 +86,7 @@ proc explicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError]
   discard ? parser.expect(":")
   discard ? parser.expect(spaceSpec.optional())
   let expression = ? parser.expect(inlineExpressionSpec)
-  ok(newKeywordArgument(name, expression.newExpression(), name.loc))
+  ok(newKeywordArgument(name, expression, name.loc))
 
 let explicitKwargSpec = newSpec("explicit keyword argument", explicitKwargConsumer)
 let implicitKwargSpec = identifierSpec.map(newKeywordArgument)

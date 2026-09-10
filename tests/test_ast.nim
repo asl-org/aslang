@@ -211,18 +211,18 @@ suite "ast — KeywordArgumentList invariants":
 
   test "newKeywordArgumentList rejects duplicate kwarg names":
     let kw1 = newKeywordArgument(id("a"),
-      newExpression(id("x")), newLocation())
+      newInlineExpression(id("x")), newLocation())
     let kw2 = newKeywordArgument(id("a"),
-      newExpression(id("y")), newLocation())
+      newInlineExpression(id("y")), newLocation())
     let r = newKeywordArgumentList(@[kw1, kw2], newLocation())
     check r.isErr
     check errorContains(r.error.msg, "duplicate")
 
   test "newKeywordArgumentList accepts unique kwarg names":
     let kw1 = newKeywordArgument(id("a"),
-      newExpression(id("x")), newLocation())
+      newInlineExpression(id("x")), newLocation())
     let kw2 = newKeywordArgument(id("b"),
-      newExpression(id("y")), newLocation())
+      newInlineExpression(id("y")), newLocation())
     let r = newKeywordArgumentList(@[kw1, kw2], newLocation())
     check r.isOk
 

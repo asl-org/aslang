@@ -203,7 +203,7 @@ type
 
   KeywordArgument* = ref object
     name: Identifier
-    expression: Expression
+    expression: InlineExpression
     loc: Location
 
   KeywordArgumentList* = ref object
@@ -286,6 +286,7 @@ type
 # Forward declarations for mutually-recursive asl procs.
 proc newExpression*(variable: Identifier): Expression
 proc newExpression*(inline: InlineExpression): Expression
+proc newInlineExpression*(variable: Identifier): InlineExpression
 proc asl(expression: InlineExpression): string
 proc asl(expression: Expression): string
 proc asl*(stmt: Statement): string
@@ -319,15 +320,15 @@ proc asl(fncall: FunctionCall): string =
   fmt"{asl(fncall.root)}.{asl(fncall.name)}{asl(fncall.argList)}"
 
 # ----------------- KeywordArgument -----------------
-proc newKeywordArgument*(name: Identifier, expression: Expression,
+proc newKeywordArgument*(name: Identifier, expression: InlineExpression,
     loc: Location): KeywordArgument =
   KeywordArgument(name: name, expression: expression, loc: loc)
 
 proc newKeywordArgument*(name: Identifier): KeywordArgument =
-  newKeywordArgument(name, newExpression(name), name.loc)
+  newKeywordArgument(name, newInlineExpression(name), name.loc)
 
 proc name*(kwarg: KeywordArgument): Identifier = kwarg.name
-proc expression*(kwarg: KeywordArgument): Expression = kwarg.expression
+proc expression*(kwarg: KeywordArgument): InlineExpression = kwarg.expression
 proc loc*(kwarg: KeywordArgument): Location = kwarg.loc
 
 proc asl(kwarg: KeywordArgument): string =
