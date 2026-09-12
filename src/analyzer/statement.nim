@@ -289,7 +289,7 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
 # the map a match/case pattern uses to concretize a variant field
 # pulled from the subject. It is simply the result type's own impl map:
 # every AnalyzedModuleArgumentType carries the slot→impl bindings of its
-# instantiation (`Status[u8]` → {Any: u8}), so the map a consumer needs
+# instantiation (`Status[u8, Error]` → {Any: u8, Failure: Error}), so the map a consumer needs
 # is intrinsic to the type, whatever expression produced it.
 proc impls*(expression: AnalyzedExpression): AnalyzedImplMap =
   expression.argType.impls

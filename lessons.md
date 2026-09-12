@@ -1,5 +1,54 @@
 # Lessons Learned
 
+## 2026-09-13 — `Status` becomes two-parameter `Status[Value, Error]`; `T!` follows
+
+Turned the concrete `Error` type into a `Failure` generic (an interface
+of `code(): i32` + `message(): string`), kept `Error` as its default
+concrete implementer, and changed `Status.Err` to hold `error: Failure`.
+That makes `Status` a two-parameter type — `Status[Any, Failure]` — the
+value slot and the error slot, Rust's `Result<T, E>` shape. The `T!`
+sugar became binary to match: `Value!Error` sets both, `Value!` defaults
+the error to `Error`. Migrated `base.aslr`, every example, the unit-test
+fixtures, and the docs.
+
+Supersedes the 2026-07-13 entry below: `T!` now desugars to
+`Status[T, Error]`, not `Status[T]`.
+
+Things worth remembering:
+
+- **Adding a generic to one variant re-arities the whole union.** Making
+  `Err`'s field the `Failure` generic silently gave `Status` a *second*
+  type parameter, so every existing `Status[T]` across the stdlib and
+  examples became under-applied ("expects 2 impls but found 1"). A
+  one-line union change fanned out to nearly every `Status[...]` site in
+  the codebase. Count the generics a union actually mentions before
+  assuming its arity.
+
+- **Bare inferred initializers don't survive an arity bump.**
+  `Status.Ok { value: v }` binds only the value slot (`Any`); it used to
+  unify with a sibling `Status[T].Err` arm, but once the error arm
+  became `Status[T, Error]` (two impls) the two arms had different types
+  ("case block return types are not same"). The fix was to make every
+  construction explicit through the sugar — `T!.Ok` / `T!.Err` — so both
+  slots are pinned uniformly. Inference that leaves a slot open is only
+  safe while *every* sibling leaves the *same* slot open; the moment one
+  arm pins it, they all must.
+
+- **Put the default where it removes a parameter at the call site, not
+  where it adds one to the type.** Keeping `Status[T]` single-parameter
+  (error inferred like `Any`) was tempting, but the sugar plus the
+  intended `try` contract (callee and enclosing function both return
+  `Status`, error must be `Failure`-shaped) are cleaner with an explicit
+  second parameter that has a default. `T!` hides the error parameter
+  syntactically while keeping it real in the type — the ergonomics of a
+  one-parameter alias with the precision of two.
+
+- **`!` has to nest inside type params.** Parsing impls with a
+  non-sugar spec broke `Array[u32!]`; the impl list must route through
+  the full argument-type spec so the sugar composes
+  (`Array[u32!]` = `Array[Status[u32, Error]]`). A postfix sugar is only
+  as uniform as the most deeply-nested position that can reach it.
+
 ## 2026-07-15 — C-style special float literals (`nan`, `inf`, `+inf`, `-inf`)
 
 Extended `floatLiteralSpec` to accept the four IEEE-754 special-value

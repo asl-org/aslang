@@ -19,7 +19,7 @@ import pattern
 # Stores the (name, argType) binding per variable. The generic
 # bindings a match on a variable needs are intrinsic to its argType
 # (every module argtype carries its slot→impl map) — a function arg's
-# `Status[u8]` already carries {Any: u8} — so nothing extra rides here.
+# `Status[u8, Error]` already carries {Any: u8, Failure: Error} — so nothing extra rides here.
 type AnalyzedFunctionContext* = Table[Identifier, AnalyzedBinding]
 
 proc newAnalyzedFunctionContext*(def: AnalyzedFunctionDef): AnalyzedFunctionContext =

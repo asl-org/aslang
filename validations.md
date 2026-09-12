@@ -245,26 +245,29 @@ Source: `tests/test_grammar.nim` and `tests/test_ast.nim`.
   Other decorator names parse but currently produce a "todo: resolve
   decorators" error at the resolver.
 
-### 4.8 Argument-type shorthand — `T!` = `Status[T]`
+### 4.8 Argument-type shorthand — `T!` = `Status[T, Error]`
 
-A trailing `!` on an argument type is sugar for `Status[<argType>]`.
-Parsed once at `argumentTypeSpec`, so every argument-type position —
-function args, return types, kwarg field types, initializer type
-prefixes — picks it up uniformly.
+A `!` on an argument type is sugar for the two-parameter
+`Status[Value, Error]` (the value type and the error type). `Value!Error`
+sets both; `Value!` defaults the error to the built-in `Error`. Parsed
+once at `argumentTypeSpec`, so every argument-type position — function
+args, return types, kwarg field types, initializer type prefixes —
+picks it up uniformly.
 
 - **Binding is tight.** `!` attaches to the type it immediately
   follows:
-  - `u8!` → `Status[u8]`
-  - `Array[u32]!` → `Status[Array[u32]]`
-  - `Array[u32!]` → `Array[Status[u32]]`
-  - `Status[u32]!` → `Status[Status[u32]]` (syntactically legal)
+  - `u8!` → `Status[u8, Error]`
+  - `u8!MyError` → `Status[u8, MyError]`
+  - `Array[u32]!` → `Status[Array[u32], Error]`
+  - `Array[u32!]` → `Array[Status[u32, Error]]`
+  - `Status[u32]!` → `Status[Status[u32], Error]` (syntactically legal)
 - **AST is unchanged.** The sugar collapses at parse time. Downstream
   (resolver, analyzer) sees a plain `Status[...]` ArgumentType — no
   distinct variant.
 - **Downstream constraint checks still fire.** Whatever satisfiability
-  rules apply to `Status[T]` (Ok's generic being Any-compatible)
-  apply identically to `T!`. The sugar does not relax type-system
-  invariants.
+  rules apply to `Status[T, E]` (Ok's value being `Any`-compatible,
+  the error being `Failure`-compatible) apply identically to `T!`. The
+  sugar does not relax type-system invariants.
 
 Locked in by `grammar — argument type shorthand` (test_grammar.nim,
 6 tests) and `analyzer — argument type shorthand end-to-end`
@@ -659,9 +662,10 @@ Concrete-position wiring:
 - **Union kwargs** — the field's declared type, first concretized
   through the current `GenericImplMap`, is `expected`. Free-generic
   fields on the bare path fall through to the default rule and
-  contribute to the impl map. `Status.Ok { value: 42 }` with `value:
-  Any` produces `Status[i32]` — i32 is picked as the default AND
-  bound as the impl.
+  contribute to the impl map. `i32!.Ok { value: 42 }` with `value:
+  Any` produces `Status[i32, Error]` — i32 is picked as the value
+  default AND bound as the impl (the error slot is `Error`, from the
+  `!` sugar's default).
 - **Setter RHS** — the getter's field type is `expected`.
 
 Defaults are looked up in the file scope. Every `.asl` file gets `@std`

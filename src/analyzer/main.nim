@@ -366,7 +366,7 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
 
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
   # Auto-inference: the ref may or may not carry explicit impls. Seed
-  # the map with the ref's own impls (`Status[u8].Ok {...}` → {Any: u8})
+  # the map with the ref's own impls (`u8!.Ok {...}` → {Any: u8, Failure: Error})
   # so a kwarg value contradicting them is caught by merge; a bare ref
   # (`Status.Ok {...}`) seeds empty and the kwargs infer the slots.
   var impls = init.unionRef.argType.impls

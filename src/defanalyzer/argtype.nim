@@ -34,8 +34,8 @@ type
   # types it relates, because it IS a concrete parameterized type's
   # impls: each of the module's require slots (a ResolvedGeneric) bound
   # to the impl sitting in that position, kept in slot order. Every
-  # AnalyzedModuleArgumentType's `impls` IS this map — `Status[u8]` is
-  # {Any: u8} — so the positional impls are its values (in order) and a
+  # AnalyzedModuleArgumentType's `impls` IS this map — `Status[u8, Error]`
+  # is {Any: u8, Failure: Error} — so the positional impls are its values (in order) and a
   # consumer (a match subject, say) reads the generic bindings straight
   # off the type instead of re-deriving them from a file context. The
   # `merge` / `concrete` operations live in the sibling
