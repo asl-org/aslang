@@ -1362,6 +1362,122 @@ module M:
     cleanupDir(dir)
     check r.isOk
 
+suite "analyzer — `try` operator":
+  # `try f(...)` unwraps the callee's `Status[Value, Error]` to `Value`
+  # and propagates `Err` as the enclosing function's own error. The
+  # analyzer checks: callee returns a Status, enclosing function returns
+  # a Status, and their error slots match. See §8.7 of validations.md.
+  # All fixtures use the two-parameter Status from `Base`.
+
+  test "try on a Status-returning call inside a Status function analyzes":
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+module M:
+  func make(): u8!
+    u8!.Ok { value: u8 1 }
+
+  public func go(): u8!
+    x = try M.make()
+    u8!.Ok { value: x }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "try binds the unwrapped value type (Value, not Status)":
+    # `x = try M.make()` where `make(): u8!` must bind `x: u8`. If `x`
+    # were the whole `u8!` Status, feeding it to `u8.add` (which takes
+    # `u8` args) would be rejected. Clean analysis proves the unwrap.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+module M:
+  func make(): u8!
+    u8!.Ok { value: u8 1 }
+
+  public func go(): u8!
+    x = try M.make()
+    sum = u8.add(x, x)
+    u8!.Ok { value: sum }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isOk
+
+  test "try on a non-Status-returning call is rejected":
+    # `u8.add` returns a bare `u8`, not a `Status`; `try` has nothing to
+    # unwrap.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+module M:
+  public func go(): u8!
+    x = try u8.add(u8 1, u8 2)
+    u8!.Ok { value: x }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
+  test "try inside a non-Status-returning function is rejected":
+    # The enclosing `go(): u8` cannot receive a propagated `Err`, so a
+    # `try` in its body is rejected.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, Status, Any, Error } from "./base.aslr"
+
+module M:
+  func make(): u8!
+    u8!.Ok { value: u8 1 }
+
+  public func go(): u8
+    x = try M.make()
+    x
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
+  test "try error-type mismatch is rejected":
+    # `make(): u8!MyError` propagates `MyError`, but `go(): u8!` (default
+    # `Error`) expects `Error` in its error slot. MyError satisfies the
+    # Failure contract, so the only failure is the error-slot mismatch.
+    let (r, dir) = analyzeFiles([
+      ("entry.asl", """
+import { u8, u32, String, Status, Any, Error } from "./base.aslr"
+
+module MyError:
+  struct:
+    code: u32
+    message: String
+
+  public func code(e: MyError): u32
+    e.code
+
+  public func message(e: MyError): String
+    e.message
+
+module M:
+  func make(): u8!MyError
+    u8!MyError.Ok { value: u8 1 }
+
+  public func go(): u8!
+    x = try M.make()
+    u8!.Ok { value: x }
+"""),
+      ("base.aslr", Base)
+    ])
+    cleanupDir(dir)
+    check r.isErr
+
 suite "analyzer — deep constraint satisfaction":
 
   test "impl with matching signature satisfies the required generic":
