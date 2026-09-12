@@ -6,7 +6,7 @@ import strformat, strutils, sequtils, tables, results
 
 import parser
 
-import literals
+import scalars
 import identifiers
 import argtype
 import decorator

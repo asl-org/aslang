@@ -4,12 +4,9 @@ import parser
 
 import identifiers
 
-# ImportPath (relative vs vendor), VendorRoots, and the path-resolution
-# logic (toImportPath / toAbsPath) were extracted to importpath.nim;
-# re-exported so `import imports` and the parser/main barrel still
-# surface them.
+# ImportPath (relative vs vendor) and its parse spec live in
+# importpath.nim; imported here for Import.parsedPath and the line specs.
 import importpath
-export importpath
 
 # ============================================================
 # ImportedType

@@ -9,7 +9,7 @@ import strformat, strutils, sequtils, tables, results
 import parser
 
 import identifiers
-import literals
+import scalars
 
 # ============================================================
 # UnionPatternField

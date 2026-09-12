@@ -3,6 +3,7 @@ import strformat, strutils, tables, results, hashes, sequtils
 import parser
 
 import identifiers
+import importpath
 import imports
 import types
 

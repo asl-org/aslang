@@ -11,8 +11,17 @@ export parser
 import identifiers
 export identifiers
 
+import scalars
+export scalars
+
 import literals
 export literals
+
+import getter
+export getter
+
+import importpath
+export importpath
 
 import imports
 export imports
@@ -26,16 +35,20 @@ export refs
 import datadef
 export datadef
 
+import pattern
+export pattern
+
 import statement
 export statement
 
 import function
 export function
 
-# Parser-level ANF expansion (expand*). Reference code, not yet wired
-# into the pipeline — imported here so it stays in the compile graph.
-import expansion
-export expansion
+import generic
+export generic
+
+import module
+export module
 
 import types
 export types

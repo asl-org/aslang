@@ -7,7 +7,7 @@ import strformat, strutils, results
 
 import parser
 
-import literals
+import scalars
 
 # ============================================================
 # ImportPath

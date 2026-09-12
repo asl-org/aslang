@@ -10,9 +10,7 @@ import refs
 # (they are non-recursive leaves of the body cluster); re-exported so
 # `import statement` still surfaces them.
 import getter
-export getter
 import pattern
-export pattern
 
 type
   ArgumentList* = ref object

@@ -10,7 +10,6 @@ import argtype
 # still surfaces StringLiteral / IntegerLiteral / FloatLiteral and their
 # constructors.
 import scalars
-export scalars
 
 # ============================================================
 # Literal (umbrella over string / integer / float)

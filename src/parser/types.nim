@@ -14,9 +14,7 @@ import function
 # were extracted to generic.nim / module.nim; re-exported so
 # `import types` and the parser/main barrel still surface them.
 import generic
-export generic
 import module
-export module
 
 # ============================================================
 # LocalType (module | generic)
