@@ -1,4 +1,4 @@
-import strformat, sequtils, strutils, unicode, results, options, tables, os
+import strformat, strutils, unicode, results, options, tables, sets, os
 
 # The parser consumes Location (every AST node carries one) from the
 # tokenizer, a sibling package. It is NOT re-exported: downstream
@@ -51,104 +51,15 @@ export app
 # import ./combinators
 # export combinators
 import error
-import decorator
-import utils
 
 type File = app.File
-
-# The body-cluster specs (expressions, statements, matches, functions, data
-# defs) live with their types in statement.nim / function.nim / datadef.nim /
-# refs.nim. What remains here is the top-level file structure: generics,
-# modules, and the file/vendor entry points.
-
-proc genericHeaderConsumer(parser: Parser): Result[GenericHeader, ParserError] =
-  let public = parser.expect("public").isOk
-  if public: discard ? parser.expect(spaceSpec)
-  let genericKeyword = ? parser.expect("generic")
-  discard ? parser.expect(spaceSpec)
-  let nameIdent = ? parser.expect(identifierSpec)
-  discard parser.expect(spaceSpec.optional())
-  discard ? parser.expect(":")
-  ok(newGenericHeader(public, nameIdent, genericKeyword.loc))
-
-let genericHeaderSpec = newSpec[GenericHeader]("generic header", genericHeaderConsumer)
-
-proc genericConsumer(parser: Parser): Result[Generic, ParserError] =
-  ## Parses a `[public] generic Name:` block followed by its function
-  ## definitions. Body failures are marked fatal — once past the
-  ## header, the block cannot be backtracked out of.
-  let (h, body) = ? parser.indentedBlock(genericHeaderSpec, functionDefSpec.indentedLine().atLeastOne())
-  ok(newGeneric(@[], h.public, h.name, body, h.loc))
-
-let genericSpec = newSpec[Generic]("generic", genericConsumer)
-
-proc moduleHeaderConsumer(parser: Parser): Result[ModuleHeader, ParserError] =
-  let public = parser.expect("public").isOk
-  if public: discard ? parser.expect(spaceSpec)
-
-  let moduleKeyword = ? parser.expect("module")
-  discard ? parser.expect(spaceSpec)
-  let nameIdent = ? parser.expect(identifierSpec)
-  discard parser.expect(spaceSpec.optional())
-  discard ? parser.expect(":")
-  ok(newModuleHeader(public, nameIdent, moduleKeyword.loc))
-
-let moduleHeaderSpec = newSpec[ModuleHeader]("module header", moduleHeaderConsumer)
-
-proc moduleBodyConsumer(parser: Parser): Result[ModuleBody, ParserError] =
-  discard parser.expect(any(emptyLineSpec))
-  let data = ? parser.expect(dataDefSpec.optional())
-  let funcList = ? parser.expect(functionListSpec)
-  ok(newModuleBody(data, funcList))
-
-let moduleBodySpec = newSpec[ModuleBody]("module body", moduleBodyConsumer)
-
-proc moduleConsumer(parser: Parser): Result[Module, ParserError] =
-  ## Parses a `[public] module Name:` block with optional decorator
-  ## lines. Body failures are marked fatal — once past the header,
-  ## the block cannot be backtracked out of.
-  let decorators = ? parser.expect(any(decoratorSpec))
-  let (h, b) = ? parser.indentedBlock(moduleHeaderSpec, moduleBodySpec)
-  newModule(decorators, h.public, h.name, b.data, b.funcList, h.loc)
-
-let moduleSpec = newSpec[Module]("module", moduleConsumer)
-
-let typeSpec = oneOf("type", @[
-  moduleSpec.map(newLocalType),
-  genericSpec.map(newLocalType),
-])
-
-proc parseDefinedType(parser: Parser): Result[LocalType, ParserError] =
-  ## Skips leading blank / comment lines, then parses a module or
-  ## generic block. Used at file level between top-level type blocks.
-  discard ? parser.expect(any(emptyLineSpec))
-  parser.expect(typeSpec)
-
-let localTypeSpec = newSpec[LocalType]("local type", parseDefinedType)
-
-proc parseDefinedTypes(parser: Parser): Result[seq[LocalType], ParserError] =
-  ## Parses one-or-more top-level `LocalType` blocks (module / generic),
-  ## skipping blank lines between them. Fails if the first attempt
-  ## does not yield a type.
-  var items: seq[LocalType]
-  let first = ? parser.expect(localTypeSpec)
-  items.add(first)
-  while true:
-    let maybeNext = parser.expect(localTypeSpec)
-    if maybeNext.isErr:
-      if maybeNext.error.fatal: return err(maybeNext.error)
-      break
-    items.add(maybeNext.get)
-  ok(items)
-
-let definedTypesSpec = newSpec[seq[LocalType]]("defined types", parseDefinedTypes)
 
 # aslFile: import* (module | generic)*  — user-authored source files.
 proc parseAslFile(parser: Parser, vendorRoots: VendorRoots): Result[File, ParserError] =
   discard ? parser.expect(emptyLineSpec.any())
   let imports = ? parser.expect(importSpec.any())
   discard ? parser.expect(emptyLineSpec.any())
-  let items = ? parser.expect(localTypeSpec.atLeastOne())
+  let items = ? parser.expect(typeSpec.atLeastOne())
   discard ? parser.expect(emptyLineSpec.any())
   # Force a parse attempt to get a specific error message
   if not parser.done(): discard ? parser.expect(typeSpec)
@@ -158,11 +69,11 @@ proc parseAslFile(parser: Parser, vendorRoots: VendorRoots): Result[File, Parser
 # are the runtime interface; they cannot reference other files.
 proc parseAslrFile(parser: Parser): Result[File, ParserError] =
   discard ? parser.expect(emptyLineSpec.any())
-  let items = ? parser.expect(localTypeSpec.atLeastOne())
+  let types = ? parser.expect(typeSpec.atLeastOne())
   discard ? parser.expect(emptyLineSpec.any())
   # Force a parse attempt to get a specific error message
   if not parser.done(): discard ? parser.expect(typeSpec)
-  newAslrFile(parser.filepath, items, @[])
+  newAslrFile(parser.filepath, types)
 
 proc toStringErr(r: Result[File, ParserError]): Result[File, string] =
   if r.isOk: ok(r.get) else: err(fmt"{r.error}")
@@ -211,29 +122,41 @@ proc loadFile(filepath: string, indentWidth: uint32,
   parser.parseFile(vendorRoots)
 
 proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool, vendorRoots: VendorRoots): Result[App, string] =
-  ## BFS through imports, tokenize + parse each file.
-  ## Returns App with files in topological order: leaves first, root last.
-  ## `vendorRoots` threads through every `parseFile` call so the
-  ## per-file `aslFileSpec` can hand it to `newAslFile` (which uses
-  ## it to auto-inject `import "@std"` in W10).
+  ## Loads the root file and everything it transitively imports in a
+  ## single depth-first walk, returning an App whose files are in
+  ## dependency order — each file's imports precede it (leaves first,
+  ## root last), which is the order the resolver consumes.
   ##
-  ## `imp.absPath` was already resolved when the importing file was
-  ## parsed (toAbsPath ran inside the import-line spec).
-  ## Both the BFS walk and the topoSort reuse it directly through
-  ## `importPaths` — re-resolving would produce the same value and
-  ## slow down parsing unnecessarily.
-  let parsed = ? bfs(
-    rootPath,
-    proc(path: string): Result[File, string] =
-      loadFile(path, indentWidth, dumpTokens, vendorRoots),
-    importPaths)
+  ## The walk doubles as cycle detection. `visiting` is the current
+  ## recursion stack: re-entering a path already on it is a cyclic
+  ## import, reported as the offending chain. `visited` records files
+  ## already emitted, so a file imported by several others is loaded
+  ## and parsed exactly once, and the DFS terminates on a diamond.
+  ##
+  ## `imp.absPath` was resolved when the importing file was parsed
+  ## (toAbsPath ran inside the import-line spec), so `importPaths`
+  ## reuses it directly rather than re-resolving. `vendorRoots` threads
+  ## through every `loadFile` so the per-file `aslFileSpec` can hand it
+  ## to `newAslFile` (which auto-injects `import "@std"` in W10).
+  var visiting: seq[string]      # DFS recursion stack: membership + cycle-path report
+  var visited: HashSet[string]   # files already walked and emitted
+  var ordered: seq[File]         # dependency order: leaves first, root last
 
-  # Topological sort with cycle detection (leaves first, root last)
-  let sortedPaths = ? topoSort(rootPath, proc(path: string): seq[string] =
-    if parsed.hasKey(path): importPaths(parsed[path])
-    else: @[])
+  proc walk(path: string): Result[void, string] =
+    if path in visited: return ok()
+    if path in visiting:
+      let chain = (visiting[visiting.find(path) .. ^1] & path).join(" -> ")
+      return err(fmt"cyclic dependency detected: {chain}")
 
-  var files: seq[File]
-  for path in sortedPaths:
-    files.add(parsed[path])
-  ok(newApp(files))
+    visiting.add(path)
+    let file = ? loadFile(path, indentWidth, dumpTokens, vendorRoots)
+    for importPath in file.importPaths:
+      ? walk(importPath)
+    discard visiting.pop()
+
+    visited.incl(path)
+    ordered.add(file)
+    ok()
+
+  ? walk(rootPath)
+  ok(newApp(ordered))

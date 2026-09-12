@@ -5,6 +5,7 @@
 import strformat, strutils, sequtils, options, tables, results, hashes
 
 import ../tokenizer/main as tokenizer
+import parser
 import error
 
 import identifiers
@@ -15,6 +16,30 @@ import datadef
 # ============================================================
 # Generic
 # ============================================================
+
+type GenericHeader* = ref object
+  public: bool
+  name: Identifier
+  loc: Location
+
+proc newGenericHeader*(public: bool, name: Identifier, loc: Location): GenericHeader =
+  GenericHeader(public: public, name: name, loc: loc)
+
+proc public*(header: GenericHeader): bool = header.public
+proc name*(header: GenericHeader): Identifier = header.name
+proc loc*(header: GenericHeader): Location = header.loc
+
+proc genericHeaderConsumer(parser: Parser): Result[GenericHeader, ParserError] =
+  let public = parser.expect("public").isOk
+  if public: discard ? parser.expect(spaceSpec)
+  let genericKeyword = ? parser.expect("generic")
+  discard ? parser.expect(spaceSpec)
+  let nameIdent = ? parser.expect(identifierSpec)
+  discard parser.expect(spaceSpec.optional())
+  discard ? parser.expect(":")
+  ok(newGenericHeader(public, nameIdent, genericKeyword.loc))
+
+let genericHeaderSpec = newSpec[GenericHeader]("generic header", genericHeaderConsumer)
 
 proc buildNameArityIndex(defs: seq[FunctionDef]): Table[Identifier, Table[int, seq[int]]] =
   var nameArityIndex: Table[Identifier, Table[int, seq[int]]]
@@ -65,17 +90,59 @@ proc findFunctionDefs*(generic: Generic, name: Identifier, arity: int): Result[s
     let defIds = generic.funcDefArityIndex[name][arity]
     ok(defIds.mapIt(generic.defs[it]))
 
-type GenericHeader* = ref object
+proc genericConsumer(parser: Parser): Result[Generic, ParserError] =
+  ## Parses a `[public] generic Name:` block followed by its function
+  ## definitions. Body failures are marked fatal — once past the
+  ## header, the block cannot be backtracked out of.
+  let (h, body) = ? parser.indentedBlock(genericHeaderSpec, functionDefSpec.indentedLine().atLeastOne())
+  ok(newGeneric(@[], h.public, h.name, body, h.loc))
+
+let genericSpec* = newSpec[Generic]("generic", genericConsumer)
+
+type ModuleHeader* = ref object
   public: bool
   name: Identifier
   loc: Location
 
-proc newGenericHeader*(public: bool, name: Identifier, loc: Location): GenericHeader =
-  GenericHeader(public: public, name: name, loc: loc)
+proc newModuleHeader*(public: bool, name: Identifier, loc: Location): ModuleHeader =
+  ModuleHeader(public: public, name: name, loc: loc)
 
-proc public*(header: GenericHeader): bool = header.public
-proc name*(header: GenericHeader): Identifier = header.name
-proc loc*(header: GenericHeader): Location = header.loc
+proc public*(header: ModuleHeader): bool = header.public
+proc name*(header: ModuleHeader): Identifier = header.name
+proc loc*(header: ModuleHeader): Location = header.loc
+
+proc moduleHeaderConsumer(parser: Parser): Result[ModuleHeader, ParserError] =
+  let public = parser.expect("public").isOk
+  if public: discard ? parser.expect(spaceSpec)
+
+  let moduleKeyword = ? parser.expect("module")
+  discard ? parser.expect(spaceSpec)
+  let nameIdent = ? parser.expect(identifierSpec)
+  discard parser.expect(spaceSpec.optional())
+  discard ? parser.expect(":")
+  ok(newModuleHeader(public, nameIdent, moduleKeyword.loc))
+
+let moduleHeaderSpec = newSpec[ModuleHeader]("module header", moduleHeaderConsumer)
+
+
+# Module body: optional data block + function list
+type ModuleBody* = ref object
+  data: Option[DataDef]
+  funcList: FunctionList
+
+proc newModuleBody*(data: Option[DataDef], funcList: FunctionList): ModuleBody =
+  ModuleBody(data: data, funcList: funcList)
+
+proc data*(body: ModuleBody): Option[DataDef] = body.data
+proc funcList*(body: ModuleBody): FunctionList = body.funcList
+
+proc moduleBodyConsumer(parser: Parser): Result[ModuleBody, ParserError] =
+  discard parser.expect(any(emptyLineSpec))
+  let data = ? parser.expect(dataDefSpec.optional())
+  let funcList = ? parser.expect(functionListSpec)
+  ok(newModuleBody(data, funcList))
+
+let moduleBodySpec = newSpec[ModuleBody]("module body", moduleBodyConsumer)
 
 # ============================================================
 # Module
@@ -147,28 +214,15 @@ proc findFunctionDefs*(module: Module, name: Identifier, arity: int, access: Fun
     if defs.len > 0: ok(defs)
     else: err(fmt"{name.loc} function `{name.asl}` of module `{module.name.asl}` is not public")
 
-type ModuleHeader* = ref object
-  public: bool
-  name: Identifier
-  loc: Location
+proc moduleConsumer(parser: Parser): Result[Module, ParserError] =
+  ## Parses a `[public] module Name:` block with optional decorator
+  ## lines. Body failures are marked fatal — once past the header,
+  ## the block cannot be backtracked out of.
+  let decorators = ? parser.expect(any(decoratorSpec))
+  let (h, b) = ? parser.indentedBlock(moduleHeaderSpec, moduleBodySpec)
+  newModule(decorators, h.public, h.name, b.data, b.funcList, h.loc)
 
-proc newModuleHeader*(public: bool, name: Identifier, loc: Location): ModuleHeader =
-  ModuleHeader(public: public, name: name, loc: loc)
-
-proc public*(header: ModuleHeader): bool = header.public
-proc name*(header: ModuleHeader): Identifier = header.name
-proc loc*(header: ModuleHeader): Location = header.loc
-
-# Module body: optional data block + function list
-type ModuleBody* = ref object
-  data: Option[DataDef]
-  funcList: FunctionList
-
-proc newModuleBody*(data: Option[DataDef], funcList: FunctionList): ModuleBody =
-  ModuleBody(data: data, funcList: funcList)
-
-proc data*(body: ModuleBody): Option[DataDef] = body.data
-proc funcList*(body: ModuleBody): FunctionList = body.funcList
+let moduleSpec* = newSpec[Module]("module", moduleConsumer)
 
 # ============================================================
 # LocalType (module | generic)
@@ -256,3 +310,16 @@ proc findFunctionDefs*(typ: LocalType, name: Identifier, arity: int, context: Lo
   # Generic funcDefs are implicitly public per the grammar — no
   # access filter to apply.
   of ltkGeneric: typ.generic.findFunctionDefs(name, arity)
+
+proc typeConsumer(parser: Parser): Result[LocalType, ParserError] =
+  ## Skips leading blank / comment lines, then parses a module or
+  ## generic block. Used at file level between top-level type blocks so
+  ## `typeSpec.atLeastOne()` collects every definition across the blank
+  ## lines that separate them (not just the first block).
+  discard ? parser.expect(any(emptyLineSpec))
+  parser.expect(oneOf("type", @[
+    moduleSpec.map(newLocalType),
+    genericSpec.map(newLocalType),
+  ]))
+
+let typeSpec* = newSpec[LocalType]("type", typeConsumer)

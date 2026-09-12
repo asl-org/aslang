@@ -104,11 +104,7 @@ proc newAslFile*(path: string, imports: seq[Import], types: seq[LocalType],
   ? validateTypeNameConflict(importedNameIndex, typeNameIndex)
   ok(File(kind: fkAsl, path: path, imports: allImports, types: types, typeIndex: typeNameIndex, importedNameIndex: importedNameIndex))
 
-proc newAslrFile*(path: string, types: seq[LocalType], imports: seq[Import]): Result[File, ParserError] =
-  ## Builds an `fkAslr` File: the runtime interface — no imports
-  ## (structurally — the variant has no imports field), modules may
-  ## host extern functions freely.
-  ? validateNoImports(imports)
+proc newAslrFile*(path: string, types: seq[LocalType]): Result[File, ParserError] =
   var typeIndex = ? buildTypeNameIndex(types)
   ok(File(kind: fkAslr, path: path, types: types, typeIndex: typeIndex))
 
