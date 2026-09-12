@@ -1,9 +1,6 @@
 import results, strformat, strutils, options, strscans, parseutils, math
 
-import ../tokenizer/main as tokenizer
-
 import parser
-import error
 
 import identifiers
 import argtype

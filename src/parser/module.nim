@@ -4,9 +4,7 @@
 
 import strformat, strutils, sequtils, options, tables, results, hashes
 
-import ../tokenizer/main as tokenizer
 import parser
-import error
 
 import identifiers
 import decorator

@@ -4,9 +4,7 @@
 
 import strformat, results
 
-import ../tokenizer/main as tokenizer
 import parser
-import error
 
 import identifiers
 

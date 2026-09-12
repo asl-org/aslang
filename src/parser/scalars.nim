@@ -5,7 +5,6 @@
 
 import results, strformat
 
-import ../tokenizer/main as tokenizer
 import parser
 
 # ============================================================

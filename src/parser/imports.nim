@@ -1,9 +1,6 @@
 import strformat, strutils, options, sequtils, tables, results, os
 
-import ../tokenizer/main as tokenizer
-
 import parser
-import error
 
 import identifiers
 

@@ -6,9 +6,7 @@
 
 import strformat, strutils, sequtils, tables, results
 
-import ../tokenizer/main as tokenizer
 import parser
-import error
 
 import identifiers
 import literals

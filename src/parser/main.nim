@@ -1,10 +1,5 @@
 import strformat, strutils, unicode, results, options, sets, os
 
-# The parser consumes Location (every AST node carries one) from the
-# tokenizer, a sibling package. It is NOT re-exported: downstream
-# layers that need Location import `tokenizer/main` directly.
-import ../tokenizer/main as tokenizer
-
 # parser.nim (Parser + Spec[T] + oneOf / any / optional / ...) holds the
 # combinator scaffolding. It is re-exported so the parser tests can drive
 # the machinery (newParser, newSpec, expect, …) through the `parser/main`
@@ -47,10 +42,6 @@ export types
 
 import app
 export app
-
-# import ./combinators
-# export combinators
-import error
 
 type File = app.File
 

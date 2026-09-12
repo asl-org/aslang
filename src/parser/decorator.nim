@@ -1,7 +1,6 @@
 import strformat, results
 
 import parser
-import error
 
 import identifiers
 

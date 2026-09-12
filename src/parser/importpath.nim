@@ -5,9 +5,7 @@
 
 import strformat, strutils, results
 
-import ../tokenizer/main as tokenizer
 import parser
-import error
 
 import literals
 

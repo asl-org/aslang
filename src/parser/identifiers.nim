@@ -1,9 +1,6 @@
 import strformat, strutils, results, hashes
 
-import ../tokenizer/main as tokenizer
-
 import parser
-import error
 
 # ============================================================
 # Identifier

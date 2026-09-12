@@ -1,10 +1,30 @@
 import strformat, sequtils, strutils, unicode, results, options, tables
 
 # The parser consumes Location (every AST node carries one) from the
-# tokenizer, a sibling package. It is NOT re-exported: downstream
-# layers that need Location import `tokenizer/main` directly.
+# tokenizer, a sibling package, and re-exports it so `import parser`
+# brings Location along with the combinator scaffolding — parser
+# submodules no longer import `tokenizer/main` separately.
 import ../tokenizer/main as tokenizer
-import error
+export tokenizer
+
+# ============================================================
+# Parser Error
+# ============================================================
+
+type
+  ParserError* = ref object
+    loc*: Location
+    msg*: string
+    fatal*: bool
+
+proc newParserError*(msg: string, loc: Location, fatal: bool = false): ParserError =
+  ParserError(msg: msg, loc: loc, fatal: fatal)
+
+proc `<`*(err1: ParserError, err2: ParserError): bool =
+  err1.loc < err2.loc
+
+proc `$`*(error: ParserError): string =
+  fmt"{error.loc} {error.msg}"
 
 # ============================================================
 # Parser

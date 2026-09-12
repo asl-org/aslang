@@ -1,7 +1,6 @@
 import strformat, strutils, tables, results, hashes, sequtils
 
-import ../tokenizer/main as tokenizer
-import error
+import parser
 
 import identifiers
 import imports
