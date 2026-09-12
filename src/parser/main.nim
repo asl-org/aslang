@@ -1,4 +1,4 @@
-import strformat, strutils, unicode, results, options, tables, sets, os
+import strformat, strutils, unicode, results, options, sets, os
 
 # The parser consumes Location (every AST node carries one) from the
 # tokenizer, a sibling package. It is NOT re-exported: downstream

@@ -1,4 +1,4 @@
-import strformat, strutils, options, sequtils, tables, results
+import strformat, strutils, options, sequtils, tables, results, os
 
 import ../tokenizer/main as tokenizer
 
@@ -6,7 +6,6 @@ import parser
 import error
 
 import identifiers
-import literals
 
 # ImportPath (relative vs vendor), VendorRoots, and the path-resolution
 # logic (toImportPath / toAbsPath) were extracted to importpath.nim;
@@ -63,6 +62,77 @@ let importedTypeSpec* = oneOf("imported type", @[
 # Import
 # ============================================================
 
+
+# ============================================================
+# VendorRoots
+# ============================================================
+#
+# A vendor name → absolute path table, built by the CLI from
+# repeated `--vendor="<name>:<path>"` flags (plus the default
+# `std → examples/base.aslr` when not user-supplied). Threaded
+# through `parse*` → `aslFileSpec` → `newAslFile` so that auto-
+# injected `import "@std"` and any user-written `import "@<name>"`
+# resolve via the same lookup.
+
+type VendorRoots* = Table[string, string]
+
+proc toAbsPath(parsedPath: ImportPath, importingFile: string,
+    vendorRoots: VendorRoots): Result[string, string] =
+  ## Resolves an import path to an absolute file path.
+  ##
+  ## - `ipkRelative`: resolves the relative source against the
+  ##   importing file's directory. Rejects paths that escape to a
+  ##   parent directory (normalized so tricks like
+  ##   `./sub/../../escape` are caught). The `.asl` / `.aslr`
+  ##   suffix is *optional* on the source: if the source ends in
+  ##   `.asl` or `.aslr` the resolved path is used as-is; otherwise
+  ##   the compiler tries the resolved path as typed, then falls
+  ##   back to `<source>.asl` and finally `<source>.aslr`. `.asl`
+  ##   is tried before `.aslr` because user code overwhelmingly
+  ##   imports other user code; the runtime-interface case is a
+  ##   belt-and-braces last attempt (most runtime imports flow
+  ##   through `@<vendor>` paths anyway). Only if none of the
+  ##   candidates exist is an error raised.
+  ## - `ipkVendor`: looks up the vendor name in `vendorRoots` (the
+  ##   table populated from `--vendor="<name>:<path>"` CLI flags
+  ##   plus the default `std`). The registered target path is
+  ##   already absolute. Missing vendor → diagnostic listing the
+  ##   known ones.
+  case parsedPath.kind:
+  of ipkRelative:
+    let source = parsedPath.relativeSource
+    let (_, _, ext) = source.splitFile()
+    let dir = normalizedPath(importingFile.parentDir)
+    let baseResolved = normalizedPath((dir / source).absolutePath)
+    let dirPrefix = if dir.endsWith($DirSep): dir else: dir & $DirSep
+    if not baseResolved.startsWith(dirPrefix):
+      return err(fmt"{importingFile}: import path '{source}' escapes to parent directory — imports must be from adjacent files or subdirectories")
+    if ext == ".asl" or ext == ".aslr":
+      # Explicit extension — defer file-existence to the loader
+      # (matching prior behaviour for typed paths).
+      return ok(baseResolved)
+    # Extensionless (or unrecognized-extension) source: try the bare
+    # path first, then `<source>.asl`, then `<source>.aslr`. Loader
+    # emits the natural "file not found" if none exist.
+    if fileExists(baseResolved):
+      return ok(baseResolved)
+    let withAsl = baseResolved & ".asl"
+    if fileExists(withAsl):
+      return ok(withAsl)
+    let withAslr = baseResolved & ".aslr"
+    if fileExists(withAslr):
+      return ok(withAslr)
+    err(fmt"{importingFile}: import path '{source}' not found (also tried '{source}.asl' and '{source}.aslr')")
+  of ipkVendor:
+    let name = parsedPath.vendorName
+    if name in vendorRoots:
+      return ok(vendorRoots[name])
+    var knownNames: seq[string]
+    for vendorName in vendorRoots.keys:
+      knownNames.add(vendorName)
+    let knownDesc = if knownNames.len == 0: "(no vendors registered)" else: knownNames.join(", ")
+    err(fmt"{importingFile}: unknown vendor '@{name}' — known vendors: {knownDesc}")
+
 proc validateTypeNameConflict(importedTypes: seq[ImportedType]): Result[void, ParserError] =
   var nameIndex: Table[Identifier, int]
   for index, importType in importedTypes:
@@ -84,6 +154,11 @@ proc validateBindingNameConflict(importedTypes: seq[ImportedType]): Result[void,
     else:
       bindingIndex[binding] = index
   ok()
+
+proc validateAbsolutePath(importPath: ImportPath, importingFile: string, vendorRoots: VendorRoots): Result[string, ParserError] =
+  let maybePath = toAbsPath(importPath, importingFile, vendorRoots) # initTable[string, string]()
+  if maybePath.isOk: ok(maybePath.get)
+  else: err(newParserError(maybePath.error, importPath.loc))
 
 type
   ImportKind* = enum
@@ -131,22 +206,19 @@ proc asl*(imp: Import): string =
     content.add(fmt"import ""{asl(imp.parsedPath)}""")
   content
 
+
 # Explicit form: `import { Name, Name as Alias } from "path"`.
 proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let importKeyword = ? parser.expect("import")
   discard ? parser.expect(spaceSpec)
-  let (names, _)  = ? parser.expect(importedTypeSpec.curlyBracketList(allowEmpty = false))
+  let (importedTypes, _)  = ? parser.expect(importedTypeSpec.curlyBracketList(allowEmpty = false))
   discard ? parser.expect(spaceSpec)
   discard ? parser.expect("from")
   discard ? parser.expect(spaceSpec)
-  let source = ? parser.expect(stringLiteralSpec)
+  let importPath = ? parser.expect(importPathSpec)
   discard ? parser.expect(emptyLineSpec)
-  let parsedPath = ? toImportPath(source.content, source.loc)
-  let maybePath = toAbsPath(parsedPath, parser.filepath, initTable[string, string]())
-  if maybePath.isOk:
-    newImport(names, parsedPath, maybePath.get, importKeyword.loc)
-  else:
-    err(newParserError(maybePath.error, source.loc))
+  let absPath = ? validateAbsolutePath(importPath, parser.filepath, initTable[string, string]())
+  newImport(importedTypes, importPath, absPath, importKeyword.loc)
 
 let explicitImportLineSpec = newSpec[Import]("explicit import", explicitImportLineConsumer)
 
@@ -157,14 +229,10 @@ let explicitImportLineSpec = newSpec[Import]("explicit import", explicitImportLi
 proc shorthandImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let importKeyword = ? parser.expect("import")
   discard ? parser.expect(spaceSpec)
-  let source = ? parser.expect(stringLiteralSpec)
+  let importPath = ? parser.expect(importPathSpec)
   discard ? parser.expect(emptyLineSpec)
-  let parsedPath = ? toImportPath(source.content, source.loc)
-  let maybePath = toAbsPath(parsedPath, parser.filepath, initTable[string, string]())
-  if maybePath.isOk:
-    newImport(parsedPath, maybePath.get, importKeyword.loc)
-  else:
-    err(newParserError(maybePath.error, source.loc))
+  let absPath = ? validateAbsolutePath(importPath, parser.filepath, initTable[string, string]())
+  newImport(importPath, absPath, importKeyword.loc)
 
 let shorthandImportLineSpec = newSpec[Import]("implicit import", shorthandImportLineConsumer)
 

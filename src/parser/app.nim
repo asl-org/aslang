@@ -20,7 +20,7 @@ proc insertStdImport(imports: seq[Import], vendors: VendorRoots): Result[seq[Imp
   ## distinguish them from a user-written line.
   var augmentedImports: seq[Import]
   if "std" in vendors:
-    let stdPath = newVendorImportPath("std")
+    let stdPath = newVendorImportPath("std", newLocation())
     let stdImport = ? newImport(stdPath, vendors["std"], newLocation())
     augmentedImports.add(stdImport)
   augmentedImports.add(imports)
