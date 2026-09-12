@@ -709,6 +709,27 @@ constrain future refactors:
 - Extern functions inside `.aslr` files.
 - Public function calling an imported module method.
 
+### 8.7 `try` operator
+
+`try f(...)` is a `FunctionCall` variant (§ grammar `fckTry`); the analyzer
+types it as the callee's unwrapped `Ok` value and checks the propagated
+`Err` is well-typed. Source: `tests/test_analyzer.nim` under "analyzer —
+`try` operator".
+
+- **The callee must return a `Status`.** `try` on a call whose return type
+  is a non-`Status` module (e.g. `u32`) is rejected ("requires a call that
+  returns a Status"); likewise a call whose concretized return is a bare
+  generic.
+- **The enclosing function must return a `Status`.** A `try` inside a
+  function returning a non-`Status` type (e.g. `i32`) is rejected ("can
+  only appear in a function returning a Status").
+- **Error slots must match.** The callee's `Error` type must equal the
+  enclosing function's `Error` type; a mismatch (e.g. `try` a `u32!MyError`
+  inside a `u32!` function) is rejected ("error-type mismatch").
+- **On success the expression types as the value slot.** `x = try f()`
+  where `f(): u32!` binds `x: u32` (not `u32!`), so downstream use sees the
+  unwrapped value.
+
 ---
 
 ## 9. CLI validations

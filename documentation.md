@@ -626,26 +626,40 @@ match status:
 
 ### Idiomatic error propagation
 
-`Status` + `match` replaces try/catch. The idiomatic shape is a
-tower of nested `match … case Ok { value: v } / case Err { error: e }`
-arms:
+`Status` + `match` replaces try/catch. The explicit shape is a tower of
+nested `match … case Ok { value: v } / case Err { error: e }` arms:
 
 ```asl
-func div_ceil(a: u32, b: u32): Status[u32]
+func div_ceil(a: u32, b: u32): u32!
   match u32.add(a, b):
     case Ok { value: val1 }:
       match u32.subtract(val1, 1):
         case Ok { value: val2 }:
-          Status.Ok { value: u32.quotient(val2, b) }
+          u32!.Ok { value: u32.quotient(val2, b) }
         case Err { error: err2 }:
-          Status[u32].Err { error: err2 }
+          u32!.Err { error: err2 }
     case Err { error: err1 }:
-      Status[u32].Err { error: err1 }
+      u32!.Err { error: err1 }
 ```
 
-This is verbose by design — every fallible call's error path is
-locally visible. There is no syntactic sugar for `?`-style propagation
-today.
+When an arm only unwraps the `Ok` value and re-wraps the `Err`
+unchanged, the `try` operator says the same thing in one line: `try f(...)`
+evaluates to the unwrapped `Ok` value and short-circuits the enclosing
+function with the `Err` otherwise. The tower above collapses to:
+
+```asl
+func div_ceil(a: u32, b: u32): u32!
+  val1 = try u32.add(a, b)
+  val2 = try u32.subtract(val1, 1)
+  u32!.Ok { value: u32.quotient(val2, b) }
+```
+
+`try` only applies to a call whose return type is a `Status[Value, Error]`,
+and it requires the enclosing function to return a `Status` whose error
+type matches the callee's `Error` — the propagated `Err` must be well-typed
+at the return site. Keep the explicit `match` when an arm does more than
+propagate: recovers in the `Err` case, inspects a non-`Status` subject, or
+transforms the error.
 
 ---
 
@@ -703,8 +717,10 @@ These features are intentionally listed so readers know not to expect
 them. Some are planned; others are explicitly out of scope for the
 current design.
 
-- **Exceptions / throw / try.** All fallibility flows through
-  `Status[T]`.
+- **Exceptions / throw / catch.** All fallibility flows through
+  `Status[Value, Error]`. The `try` operator (see *Idiomatic error
+  propagation*) is Status-based Ok-unwrapping propagation, not
+  exception unwinding — there is no `throw`/`catch`.
 - **`return` keyword.** A function's trailing expression is its return
   value.
 - **Closures / first-class functions.** Functions are not values.

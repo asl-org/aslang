@@ -1,5 +1,39 @@
 # Lessons Learned
 
+## 2026-09-13 — `try` operator: a call variant, and threading the return type to a leaf
+
+Added `try f(...)`: it unwraps the callee's `Status[Value, Error]` to
+`Value` and propagates `Err` as the enclosing function's own error. The
+analyzer types and checks it (short-circuit lowering stays deferred to
+codegen). Things worth remembering:
+
+- **Model `try` as a `FunctionCall` variant, not a new expression node.**
+  A leading `try` becomes `fckTry` on the existing `FunctionCall`
+  (carrying `tryLoc`), mirrored as `afckTry` on `AnalyzedFunctionCall`
+  (carrying the unwrapped `tryValue`). The whole parse→resolve→analyze
+  pipeline already threads calls; a `case kind` on the node reused all of
+  it, and the `returns` accessor just yields `tryValue` for `afckTry`
+  instead of the callee's declared return. A separate expression node
+  would have forced every cluster proc to grow a new arm for nothing.
+
+- **A leaf check that needs caller context means threading a parameter
+  through the whole cluster.** The error-slot match (callee's `Error`
+  must equal the enclosing function's `Error`) lives in
+  `analyzeFunctionCall`, but the enclosing function's declared return
+  type is only known at `analyzeUserFunction`. Getting it there meant
+  adding a `returns: AnalyzedArgumentType` parameter to *every* proc in
+  the mutually-recursive body cluster (statement → expression →
+  initializers/kwargs → match/cases/caseBlock → functionCall). No
+  shortcut: a value the deepest proc needs has to be carried by every
+  proc between it and the source. Kept the convention uniform — `returns`
+  immediately after `funcCtx` in each signature.
+
+- **Read the two type slots by declaration order, not by name.** The
+  `impls` map keeps require-slot order (value first, error second), so
+  `statusSlots` just takes `slots[0]`/`slots[1]` after confirming there
+  are two. Fully-parameterized `Status` is guaranteed two impls by the
+  `!` sugar; a shorter list means an under-applied Status and is an error.
+
 ## 2026-09-13 — `Status` becomes two-parameter `Status[Value, Error]`; `T!` follows
 
 Turned the concrete `Error` type into a `Failure` generic (an interface

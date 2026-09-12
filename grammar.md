@@ -145,7 +145,15 @@ KeywordArgument: VarName Expression?
 # `Struct { x: x }`. Mirrors the `KeywordArgumentPattern: Field
 # Binding?` sugar on the case-pattern side.
 
-FunctionCall: FunctionRef Expression*
+FunctionCall: 'try'? FunctionRef Expression*
+# A leading `try` marks the call for Ok-unwrapping error propagation.
+# `try f(...)` requires the callee to return a `Status[Value, Error]`;
+# the expression evaluates to the unwrapped `Value`, and an `Err` short-
+# circuits out of the enclosing function — which must therefore itself
+# return a `Status` whose error type matches the callee's `Error`. The
+# `try` is a `FunctionCall` variant (not a separate expression), so it
+# rides the same call machinery; only calls — not arbitrary expressions —
+# can be `try`'d. See §8.7 of validations.md.
 Getter: Source Property
 Setter: Getter Expression
 Source: Identifier
