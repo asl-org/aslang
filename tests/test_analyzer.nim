@@ -38,10 +38,25 @@ public module String:
 public generic Any:
   func byte_size(items: u32): u64
 
+public generic Failure:
+  func code(f: Failure): u32
+  func message(f: Failure): String
+
+public module Error:
+  struct:
+    code: u32
+    message: String
+
+  public func code(e: Error): u32
+    e.code
+
+  public func message(e: Error): String
+    e.message
+
 public module Status:
   union:
     Ok { value: Any }
-    Err { value: u8 }
+    Err { error: Failure }
 
 public module Array:
   struct(Any):
@@ -827,7 +842,7 @@ public module Helper:
 import { u8, Status, Any, Error } from "./base.aslr"
 
 module M:
-  func go(s: Status[u8]): u8
+  func go(s: u8!): u8
     _ = match s:
       case Ok { value: v }:
         v
@@ -1287,20 +1302,21 @@ module M:
     check r.isOk
 
 suite "analyzer — argument type shorthand end-to-end":
-  # `T!` is sugar for `Status[T]`. Verified by running programs that
-  # would fail if the sugar didn't desugar to `Status[...]` — e.g.,
-  # returning a `Status.Ok { value }` from a `func go(): u8!` signature.
-  # Uses the parametric-Status shape from `Base` (Ok has `value: Any`,
-  # Err has `value: u8`); the `!` sugar targets Base's Status directly.
+  # `T!` is sugar for `Status[T, Error]` (value type T, default error
+  # type Error). Verified by running programs that would fail if the
+  # sugar didn't desugar to a two-parameter `Status[...]` — e.g.,
+  # returning a `T!.Ok { value }` from a `func go(): T!` signature.
+  # Uses the two-parameter Status from `Base` (Ok has `value: Any`,
+  # Err has `error: Failure`, with Error the default concrete Failure).
 
-  test "banged return type analyzes (u8! == Status[u8])":
+  test "banged return type analyzes (u8! == Status[u8, Error])":
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8, Status, Any } from "./base.aslr"
+import { u8, Status, Any, Error } from "./base.aslr"
 
 module M:
   public func go(): u8!
-    Status.Ok { value: u8 42 }
+    u8!.Ok { value: u8 42 }
 """),
       ("base.aslr", Base)
     ])
@@ -1308,13 +1324,13 @@ module M:
     check r.isOk
 
   test "banged argument type analyzes":
-    # `u8!` as an argument type. If `!` didn't desugar to `Status[u8]`
-    # the analyzer would fail to resolve the arg type; the fact that
-    # the function body compiles proves the sugar produced a valid
-    # ArgumentType downstream.
+    # `u8!` as an argument type. If `!` didn't desugar to
+    # `Status[u8, Error]` the analyzer would fail to resolve the arg
+    # type; the fact that the function body compiles proves the sugar
+    # produced a valid ArgumentType downstream.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8, Status, Any } from "./base.aslr"
+import { u8, Status, Any, Error } from "./base.aslr"
 
 module M:
   public func consume(s: u8!): u8
@@ -1326,19 +1342,20 @@ module M:
     check r.isOk
 
   test "banged and explicit forms compose cleanly":
-    # A function returning `u8!` and another returning `Status[u8]` —
-    # if `!` truly desugars to `Status[u8]`, both signatures produce the
-    # same AnalyzedArgumentType and can be used interchangeably.
+    # A function returning `u8!` and another returning
+    # `Status[u8, Error]` — if `!` truly desugars to `Status[u8, Error]`,
+    # both signatures produce the same AnalyzedArgumentType and can be
+    # used interchangeably.
     let (r, dir) = analyzeFiles([
       ("entry.asl", """
-import { u8, Status, Any } from "./base.aslr"
+import { u8, Status, Any, Error } from "./base.aslr"
 
 module M:
   public func with_bang(): u8!
-    Status.Ok { value: u8 1 }
+    u8!.Ok { value: u8 1 }
 
-  public func with_explicit(): Status[u8]
-    Status.Ok { value: u8 2 }
+  public func with_explicit(): Status[u8, Error]
+    Status[u8, Error].Ok { value: u8 2 }
 """),
       ("base.aslr", Base)
     ])

@@ -650,12 +650,13 @@ module M:
     check r.isOk
 
 suite "grammar — argument type shorthand":
-  # `T!` is sugar for `Status[T]`. Parsed at the argument-type spec so
-  # every argument-type position — function args, return types, kwarg
-  # field types, initializer type prefixes — picks it up uniformly.
-  # Nesting binds tight: `Array[u32!]` = `Array[Status[u32]]`;
-  # `Array[u32]!` = `Status[Array[u32]]`; `Status[u32]!` =
-  # `Status[Status[u32]]`. Downstream sees a plain `Status[...]`
+  # `T!` is sugar for `Status[T, Error]` (`T!E` for `Status[T, E]`).
+  # Parsed at the argument-type spec so every argument-type position —
+  # function args, return types, kwarg field types, initializer type
+  # prefixes — picks it up uniformly. Nesting binds tight:
+  # `Array[u32!]` = `Array[Status[u32, Error]]`; `Array[u32]!` =
+  # `Status[Array[u32], Error]`; `Status[u32]!` =
+  # `Status[Status[u32], Error]`. Downstream sees a plain `Status[...]`
   # ArgumentType — no separate variant.
 
   test "banged return type parses":
@@ -699,7 +700,7 @@ module Holder:
 
   test "bang after impls parses (Array[u32]!)":
     # `Array[u32]!` — `!` binds to the fully-parsed `Array[u32]`,
-    # producing `Status[Array[u32]]`.
+    # producing `Status[Array[u32], Error]`.
     let r = parseStr("""
 public module Status:
   union:
@@ -721,7 +722,7 @@ module M:
 
   test "bang inside impls parses (Array[u32!])":
     # `Array[u32!]` — inner `!` binds to `u32`, producing
-    # `Array[Status[u32]]`.
+    # `Array[Status[u32, Error]]`.
     let r = parseStr("""
 public module Status:
   union:

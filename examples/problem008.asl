@@ -11,7 +11,7 @@ public module Solver:
       case _:
         b
 
-  func solve(str: string, index: u32, count: u32, ans: u32): Status[u32]
+  func solve(str: string, index: u32, count: u32, ans: u32): u32!
     match u32.compare(count, 0):
       case 1:
         match string.get(str, index):
@@ -27,19 +27,19 @@ public module Solver:
                           case Ok { value: next_count }:
                             Solver.solve(str, next_index, next_count, next_ans)
                           case Err { error: err1 }:
-                            Status[u32].Err { error: err1 }
+                            u32!.Err { error: err1 }
                       case Err { error: err2 }:
-                        Status[u32].Err { error: err2 }
+                        u32!.Err { error: err2 }
                   case Err { error: err3 }:
-                    Status[u32].Err { error: err3 }
+                    u32!.Err { error: err3 }
               case Err { error: err4 }:
-                Status[u32].Err { error: err4 }
+                u32!.Err { error: err4 }
           case Err { error: err5 }:
-            Status[u32].Err { error: err5 }
+            u32!.Err { error: err5 }
       case _:
-        Status[u32].Ok { value: ans }
+        u32!.Ok { value: ans }
 
-  func solve(str: string, index: u32, ans: u32): Status[u32]
+  func solve(str: string, index: u32, ans: u32): u32!
     match string.get(str, index):
       case Ok { value: ascii }:
         match Solver.solve(str, index, 13, 1):
@@ -49,13 +49,13 @@ public module Solver:
               case Ok { value: next_index }:
                 Solver.solve(str, next_index, max_ans)
               case Err { error: err2 }:
-                Status[u32].Err { error: err2 }
+                u32!.Err { error: err2 }
           case Err { error: err1 }:
-            Status[u32].Err { error: err1 }
+            u32!.Err { error: err1 }
       case _:
-        Status[u32].Ok { value: ans }
+        u32!.Ok { value: ans }
 
-  func solve(value: string, ans: u32): Status[u32]
+  func solve(value: string, ans: u32): u32!
     Solver.solve(value, 0, ans)
 
   public func start(): i32

@@ -4,27 +4,27 @@
 # i64.subtract, i64.multiply), local-variable assignments, and a
 # primitive literal initializer (U8 0).
 public module Solver:
-  func sum(a: i64): Status[i64]
+  func sum(a: i64): i64!
     match i64.add(a, 1):
       case Ok { value: b }:
         match i64.multiply(a, b):
           case Ok { value: c }:
             i64.quotient(c, 2)
           case Err { error: err2 }:
-            Status[i64].Err { error: err2 }
+            i64!.Err { error: err2 }
       case Err { error: err1 }:
-        Status[i64].Err { error: err1 }
+        i64!.Err { error: err1 }
 
-  func count(a: i64, b: i64): Status[i64]
+  func count(a: i64, b: i64): i64!
     match i64.quotient(a, b):
       case Ok { value: c }:
         match Solver.sum(c):
           case Ok { value: d }:
             i64.multiply(b, d)
           case Err { error: err2 }:
-            Status[i64].Err { error: err2 }
+            i64!.Err { error: err2 }
       case Err { error: err1 }:
-        Status[i64].Err { error: err1 }
+        i64!.Err { error: err1 }
 
   public func start(): i32
     match Solver.count(999, 3):

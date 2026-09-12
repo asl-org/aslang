@@ -22,16 +22,16 @@ public module u8:
 
   # arithematic
   @extern("u8_add_u8")
-  public func add(a: u8, b: u8): Status[u8]
+  public func add(a: u8, b: u8): u8!
 
   @extern("u8_subtract_u8")
-  public func subtract(a: u8, b: u8): Status[u8]
+  public func subtract(a: u8, b: u8): u8!
 
   @extern("u8_multiply_u8")
-  public func multiply(a: u8, b: u8): Status[u8]
+  public func multiply(a: u8, b: u8): u8!
 
   @extern("u8_quotient_u8")
-  public func quotient(a: u8, b: u8): Status[u8]
+  public func quotient(a: u8, b: u8): u8!
 
   @extern("u8_remainder_u8")
   public func remainder(a: u8, b: u8): u8
@@ -42,7 +42,7 @@ public module u8:
 
   # conversions
   @extern("u8_from_u32")
-  public func from(a: u32): Status[u8]
+  public func from(a: u32): u8!
 
 public module u16:
   literal: "uint16"
@@ -68,16 +68,16 @@ public module u16:
 
   # arithematic
   @extern("u16_add_u16")
-  public func add(a: u16, b: u16): Status[u16]
+  public func add(a: u16, b: u16): u16!
 
   @extern("u16_subtract_u16")
-  public func subtract(a: u16, b: u16): Status[u16]
+  public func subtract(a: u16, b: u16): u16!
 
   @extern("u16_multiply_u16")
-  public func multiply(a: u16, b: u16): Status[u16]
+  public func multiply(a: u16, b: u16): u16!
 
   @extern("u16_quotient_u16")
-  public func quotient(a: u16, b: u16): Status[u16]
+  public func quotient(a: u16, b: u16): u16!
 
   @extern("u16_remainder_u16")
   public func remainder(a: u16, b: u16): u16
@@ -110,13 +110,13 @@ public module u32:
 
   # arithematic
   @extern("u32_add_u32")
-  public func add(a: u32, b: u32): Status[u32]
+  public func add(a: u32, b: u32): u32!
 
   @extern("u32_subtract_u32")
-  public func subtract(a: u32, b: u32): Status[u32]
+  public func subtract(a: u32, b: u32): u32!
 
   @extern("u32_multiply_u32")
-  public func multiply(a: u32, b: u32): Status[u32]
+  public func multiply(a: u32, b: u32): u32!
 
   @extern("u32_quotient_u32")
   public func quotient(a: u32, b: u32): u32
@@ -133,25 +133,25 @@ public module u32:
   public func from(a: u8): u32
 
   @extern("u32_from_f32")
-  public func from(a: f32): Status[u32]
+  public func from(a: f32): u32!
 
   @extern("u32_from_f64")
-  public func from(a: f64): Status[u32]
+  public func from(a: f64): u32!
 
   @extern("u32_from_i64")
-  public func from(a: i64): Status[u32]
+  public func from(a: i64): u32!
 
   # user functions
-  public func div_ceil(a: u32, b: u32): Status[u32]
+  public func div_ceil(a: u32, b: u32): u32!
     match u32.add(a, b):
       case Ok { value: val1 }:
         match u32.subtract(val1, 1):
           case Ok { value: val2 }:
-            Status.Ok { value: u32.quotient(val2, b) }
+            u32!.Ok { value: u32.quotient(val2, b) }
           case Err { error: err2 }:
-            Status[u32].Err { error: err2 }
+            u32!.Err { error: err2 }
       case Err { error: err1 }:
-        Status[u32].Err { error: err1 }
+        u32!.Err { error: err1 }
 
   public func max(a: u32, b: u32): u32
     match u32.compare(a, b):
@@ -184,19 +184,19 @@ public module u64:
 
   # arithematic
   @extern("u64_add_u64")
-  public func add(a: u64, b: u64): Status[u64]
+  public func add(a: u64, b: u64): u64!
 
   @extern("u64_subtract_u64")
-  public func subtract(a: u64, b: u64): Status[u64]
+  public func subtract(a: u64, b: u64): u64!
 
   @extern("u64_multiply_u64")
-  public func multiply(a: u64, b: u64): Status[u64]
+  public func multiply(a: u64, b: u64): u64!
 
   @extern("u64_quotient_u64")
-  public func quotient(a: u64, b: u64): Status[u64]
+  public func quotient(a: u64, b: u64): u64!
 
   @extern("u64_remainder_u64")
-  public func remainder(a: u64, b: u64): Status[u64]
+  public func remainder(a: u64, b: u64): u64!
 
   # branching
   @extern("u64_compare_u64")
@@ -210,19 +210,19 @@ public module u64:
   public func from(a: u32): u64
 
   @extern("u64_from_f64")
-  public func from(a: f64): Status[u64]
+  public func from(a: f64): u64!
 
   # user functions
-  public func div_ceil(a: u64, b: u64): Status[u64]
+  public func div_ceil(a: u64, b: u64): u64!
     match u64.add(a, b):
       case Ok { value: val1 }:
         match u64.subtract(val1, 1):
           case Ok { value: val2 }:
             u64.quotient(val2, b)
           case Err { error: err2 }:
-            Status[u64].Err { error: err2 }
+            u64!.Err { error: err2 }
       case Err { error: err1 }:
-        Status[u64].Err { error: err1 }
+        u64!.Err { error: err1 }
 
   public func max(a: u64, b: u64): u64
     match u64.compare(a, b):
@@ -255,16 +255,16 @@ public module i8:
 
   # arithematic
   @extern("i8_add_i8")
-  public func add(a: i8, b: i8): Status[i8]
+  public func add(a: i8, b: i8): i8!
 
   @extern("i8_subtract_i8")
-  public func subtract(a: i8, b: i8): Status[i8]
+  public func subtract(a: i8, b: i8): i8!
 
   @extern("i8_multiply_i8")
-  public func multiply(a: i8, b: i8): Status[i8]
+  public func multiply(a: i8, b: i8): i8!
 
   @extern("i8_quotient_i8")
-  public func quotient(a: i8, b: i8): Status[i8]
+  public func quotient(a: i8, b: i8): i8!
 
   @extern("i8_remainder_i8")
   public func remainder(a: i8, b: i8): i8
@@ -297,16 +297,16 @@ public module i16:
 
   # arithematic
   @extern("i16_add_i16")
-  public func add(a: i16, b: i16): Status[i16]
+  public func add(a: i16, b: i16): i16!
 
   @extern("i16_subtract_i16")
-  public func subtract(a: i16, b: i16): Status[i16]
+  public func subtract(a: i16, b: i16): i16!
 
   @extern("i16_multiply_i16")
-  public func multiply(a: i16, b: i16): Status[i16]
+  public func multiply(a: i16, b: i16): i16!
 
   @extern("i16_quotient_i16")
-  public func quotient(a: i16, b: i16): Status[i16]
+  public func quotient(a: i16, b: i16): i16!
 
   @extern("i16_remainder_i16")
   public func remainder(a: i16, b: i16): i16
@@ -339,16 +339,16 @@ public module i32:
 
   # arithematic
   @extern("i32_add_i32")
-  public func add(a: i32, b: i32): Status[i32]
+  public func add(a: i32, b: i32): i32!
 
   @extern("i32_subtract_i32")
-  public func subtract(a: i32, b: i32): Status[i32]
+  public func subtract(a: i32, b: i32): i32!
 
   @extern("i32_multiply_i32")
-  public func multiply(a: i32, b: i32): Status[i32]
+  public func multiply(a: i32, b: i32): i32!
 
   @extern("i32_quotient_i32")
-  public func quotient(a: i32, b: i32): Status[i32]
+  public func quotient(a: i32, b: i32): i32!
 
   @extern("i32_remainder_i32")
   public func remainder(a: i32, b: i32): i32
@@ -381,16 +381,16 @@ public module i64:
 
   # arithematic
   @extern("i64_add_i64")
-  public func add(a: i64, b: i64): Status[i64]
+  public func add(a: i64, b: i64): i64!
 
   @extern("i64_subtract_i64")
-  public func subtract(a: i64, b: i64): Status[i64]
+  public func subtract(a: i64, b: i64): i64!
 
   @extern("i64_multiply_i64")
-  public func multiply(a: i64, b: i64): Status[i64]
+  public func multiply(a: i64, b: i64): i64!
 
   @extern("i64_quotient_i64")
-  public func quotient(a: i64, b: i64): Status[i64]
+  public func quotient(a: i64, b: i64): i64!
 
   @extern("i64_remainder_i64")
   public func remainder(a: i64, b: i64): i64
@@ -426,7 +426,7 @@ public module i64:
       case _:
         x
 
-  public func negate(x: i64): Status[i64]
+  public func negate(x: i64): i64!
     i64.subtract(i64 0, x)
 
 # TODO(float-special-values): f32 / f64 modules do not yet expose
@@ -455,16 +455,16 @@ public module f32:
 
   # arithematic
   @extern("f32_add_f32")
-  public func add(a: f32, b: f32): Status[f32]
+  public func add(a: f32, b: f32): f32!
 
   @extern("f32_subtract_f32")
-  public func subtract(a: f32, b: f32): Status[f32]
+  public func subtract(a: f32, b: f32): f32!
 
   @extern("f32_multiply_f32")
-  public func multiply(a: f32, b: f32): Status[f32]
+  public func multiply(a: f32, b: f32): f32!
 
   @extern("f32_quotient_f32")
-  public func quotient(a: f32, b: f32): Status[f32]
+  public func quotient(a: f32, b: f32): f32!
 
   @extern("f32_remainder_f32")
   public func remainder(a: f32, b: f32): f32
@@ -500,16 +500,16 @@ public module f64:
 
   # arithematic
   @extern("f64_add_f64")
-  public func add(a: f64, b: f64): Status[f64]
+  public func add(a: f64, b: f64): f64!
 
   @extern("f64_subtract_f64")
-  public func subtract(a: f64, b: f64): Status[f64]
+  public func subtract(a: f64, b: f64): f64!
 
   @extern("f64_multiply_f64")
-  public func multiply(a: f64, b: f64): Status[f64]
+  public func multiply(a: f64, b: f64): f64!
 
   @extern("f64_quotient_f64")
-  public func quotient(a: f64, b: f64): Status[f64]
+  public func quotient(a: f64, b: f64): f64!
 
   @extern("f64_remainder_f64")
   public func remainder(a: f64, b: f64): f64
@@ -548,7 +548,7 @@ public module f64:
       case _:
         x
 
-  public func negate(x: f64): Status[f64]
+  public func negate(x: f64): f64!
     f64.subtract(f64 0.0, x)
 
 public module string:
@@ -559,7 +559,7 @@ public module string:
   public func init(value: string): string
 
   @extern("string_get")
-  public func get(str: string, index: u32): Status[u8]
+  public func get(str: string, index: u32): u8!
 
   # casting
   @extern("string_from_u8")
@@ -598,15 +598,25 @@ public module string:
 public generic Any:
   func byte_size(): u64
 
+public generic Failure:
+  func code(failure: Failure): i32
+  func message(failure: Failure): string
+
 public module Error:
   struct:
     code: i32
     message: string
 
+  public func code(err: Error): i32
+    err.code
+
+  public func message(err: Error): string
+    err.message
+
 public module Status:
   union:
     Ok { value: Any }
-    Err { error: Error }
+    Err { error: Failure }
 
 public module System:
   @extern("System_print")
@@ -620,25 +630,25 @@ public module Array:
     size: u32
 
   @extern("array_get")
-  public func get(arr: Array[Any], index: u32): Status[Any]
+  public func get(arr: Array[Any], index: u32): Any!
 
   @extern("array_set")
-  public func set(arr: Array[Any], index: u32, item: Any): Status[Array[Any]]
+  public func set(arr: Array[Any], index: u32, item: Any): Array[Any]!
 
 public module Bitset:
   struct:
     bits: Array[u32]
 
-  public func init(size: u32): Status[Bitset]
+  public func init(size: u32): Bitset!
     match u32.add(size, 31):
       case Ok { value: val1 }:
         size = u32.quotient(val1, 32)
         bits = Array[u32] { size: size }
-        Status.Ok { value: Bitset { bits: bits } }
+        Bitset!.Ok { value: Bitset { bits: bits } }
       case Err { error: err1 }:
-        Status[Bitset].Err { error: err1 }
+        Bitset!.Err { error: err1 }
 
-  public func get(bitset: Bitset, index: u32): Status[u8]
+  public func get(bitset: Bitset, index: u32): u8!
     index = u32.quotient(index, 32)
     match Array.get(bitset.bits, index):
       case Ok { value: value }:
@@ -647,9 +657,9 @@ public module Bitset:
         bit_value = u32.and(1, shifted)
         u8.from(bit_value)
       case Err { error: error }:
-        Status[u8].Err { error: error }
+        u8!.Err { error: error }
 
-  public func set(bitset: Bitset, index: u32): Status[Bitset]
+  public func set(bitset: Bitset, index: u32): Bitset!
     index = u32.quotient(index, 32)
     match Array.get(bitset.bits, index):
       case Ok { value: value }:
@@ -659,8 +669,8 @@ public module Bitset:
         match Array.set(bitset.bits, index, bit_value):
           case Ok { value: updated_bits }:
             bitset.bits = updated_bits
-            Status.Ok { value: bitset }
+            Bitset!.Ok { value: bitset }
           case Err { error: error }:
-            Status[Bitset].Err { error: error }
+            Bitset!.Err { error: error }
       case Err { error: error }:
-        Status[Bitset].Err { error: error }
+        Bitset!.Err { error: error }

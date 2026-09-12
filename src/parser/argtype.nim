@@ -28,16 +28,19 @@ proc asl*(argType: ArgumentType): string =
   if impls != "": content.add(fmt"[{impls}]")
   return content
 
-# Argument-type sugar: a trailing `!` on an argument type expands to
-# `Status[<argType>]`. Parsed uniformly here so every argument-type
-# position picks it up — function args, return types, kwarg field
-# types, and the initializer type prefix all route through this parser.
+# Argument-type sugar: a `!` on an argument type expands to the
+# two-parameter `Status[Value, Error]` (value type + error type).
+# `Value!Error` sets both; `Value!` defaults the error to the built-in
+# `Error`. Parsed uniformly here so every argument-type position picks
+# it up — function args, return types, kwarg field types, and the
+# initializer type prefix all route through this parser.
 #
 # Nesting binds tight: `!` attaches to the type it immediately follows.
-#   T!            -> Status[T]
-#   Array[u32]!   -> Status[Array[u32]]
-#   Array[u32!]   -> Array[Status[u32]]
-#   Status[u32]!  -> Status[Status[u32]]     (syntactically legal)
+#   T!            -> Status[T, Error]
+#   T!E           -> Status[T, E]
+#   Array[u32]!   -> Status[Array[u32], Error]
+#   Array[u32!]   -> Array[Status[u32, Error]]
+#   Status[u32]!  -> Status[Status[u32], Error]  (syntactically legal)
 #
 # The sugar collapses at parse time. Downstream (resolver, analyzer)
 # sees a plain `Status[...]` ArgumentType — no distinct AST variant,
@@ -45,39 +48,57 @@ proc asl*(argType: ArgumentType): string =
 #
 # When updating this sugar (different suffix, different wrapper type,
 # arity checks, additional post-fix operators, etc.), touch:
-#   - The `maybeBanged` block below.
+#   - The statusType* consumers below (with / without explicit error).
 #   - grammar.md — the ArgumentType production.
 #   - validations.md — §4.8 (argument-type shorthand).
 #   - tests/test_grammar.nim — the "argument type shorthand" suite.
 #   - tests/test_analyzer.nim — end-to-end sugar tests.
 #
-# `argumentTypeConsumer` is self-referential: type params like
-# `Map[String, List[Int]]` contain nested argument types. Nim's
-# `proc` declarations handle recursion natively (a proc body can call
-# the enclosing proc by name).
+# The argument-type specs are mutually recursive: type params like
+# `Map[String, List[Int]]` (and `Array[u32!]`) contain nested argument
+# types, so `basicArgumentTypeConsumer` parses each impl via the
+# forward-declared `argumentTypeSpec`.
 
-proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError]
-let argumentTypeSpec* = newSpec[ArgumentType]("argument type", argumentTypeConsumer)
+var argumentTypeSpec*: Spec[ArgumentType]
 
-proc argumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
+proc basicArgumentTypeConsumer(parser: Parser): Result[ArgumentType, ParserError] =
   let rootIdent = ? parser.expect(identifierSpec)
-  # Optional `[T, U, ...]` type params — argumentTypeConsumer recurses
-  # into itself for each element. A leading `[` commits to the bracketed
+  # Optional `[T, U, ...]` type params. Each element is a full argument
+  # type (via `argumentTypeSpec`, forward-declared above), so the `!`
+  # Status sugar nests inside type params too — `Array[u32!]` parses as
+  # `Array[Status[u32, Error]]`. A leading `[` commits to the bracketed
   # list; absence of `[` means no type params.
   let maybeImpls = ? parser.expect(argumentTypeSpec.squareBracketList(allowEmpty = false).optional())
-  let maybeBanged = ? parser.expect(bangSpec.optional())
-
-  let argType =
-    if maybeImpls.isSome:
-      newArgumentType(rootIdent, maybeImpls.get[0])
-    else:
-      newArgumentType(rootIdent)
-
-  if maybeBanged.isSome:
-    let statusIdent = ? newIdentifier("Status", maybeBanged.get.loc)
-    ok(newArgumentType(statusIdent, @[argType]))
+  if maybeImpls.isSome:
+    ok(newArgumentType(rootIdent, maybeImpls.get[0]))
   else:
-    ok(argType)
+    ok(newArgumentType(rootIdent))
+
+let basicArgumentTypeSpec = newSpec[ArgumentType]("basic argument type", basicArgumentTypeConsumer)
+
+proc statusTypeWithErrorConsumer(parser: Parser): Result[ArgumentType, ParserError] =
+  let valueType = ? parser.expect(basicArgumentTypeSpec)
+  let bangToken = ? parser.expect("!")
+  let errorType = ? parser.expect(basicArgumentTypeSpec)
+  let statusIdent = ? newIdentifier("Status", bangToken.loc)
+  ok(newArgumentType(statusIdent, @[valueType, errorType]))
+
+let statusTypeWithErrorSpec = newSpec("Value!Error", statusTypeWithErrorConsumer)
+
+proc statusTypeWithoutErrorConsumer(parser: Parser): Result[ArgumentType, ParserError] =
+  let valueType = ? parser.expect(basicArgumentTypeSpec)
+  let bangToken = ? parser.expect("!")
+  let statusIdent = ? newIdentifier("Status", bangToken.loc)
+  let errorIdent = ? newIdentifier("Error", bangToken.loc)
+  ok(newArgumentType(statusIdent, @[valueType, newArgumentType(errorIdent)]))
+
+let statusTypeWithoutErrorSpec = newSpec("Value!", statusTypeWithoutErrorConsumer)
+
+argumentTypeSpec = oneOf("argument type", @[
+  statusTypeWithErrorSpec,
+  statusTypeWithoutErrorSpec,
+  basicArgumentTypeSpec,
+])
 
 # ============================================================
 # ArgumentDef (name: ArgumentType)

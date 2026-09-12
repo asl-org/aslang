@@ -3,7 +3,7 @@
 # loops via function recursion, and primitive literal initializers
 # with named types (u8 1, u8 0).
 public module Example:
-  func is_palindrome_loop(original: u64, acc: u64, remaining: u64): Status[u8]
+  func is_palindrome_loop(original: u64, acc: u64, remaining: u64): u8!
     match u64.compare(remaining, 0):
       case 1:
         match u64.multiply(acc, 10):
@@ -16,24 +16,24 @@ public module Example:
                       case Ok { value: dividend }:
                         Example.is_palindrome_loop(original, new_acc, dividend)
                       case Err { error: err4 }:
-                        Status[u8].Err { error: err4 }
+                        u8!.Err { error: err4 }
                   case Err { error: err2 }:
-                    Status[u8].Err { error: err2 }
+                    u8!.Err { error: err2 }
               case Err { error: err3 }:
-                Status[u8].Err { error: err3 }
+                u8!.Err { error: err3 }
           case Err { error: err1 }:
-            Status[u8].Err { error: err1 }
+            u8!.Err { error: err1 }
       case _:
         match u64.compare(original, acc):
           case 0:
-            Status.Ok { value: u8 1 }
+            u8!.Ok { value: u8 1 }
           case _:
-            Status.Ok { value: u8 0 }
+            u8!.Ok { value: u8 0 }
 
-  func is_palindrome(num: u64): Status[u8]
+  func is_palindrome(num: u64): u8!
     Example.is_palindrome_loop(num, 0, num)
 
-  func update_ans(value: u64, ans: u64): Status[u64]
+  func update_ans(value: u64, ans: u64): u64!
     match Example.is_palindrome(value):
       case Ok { value: comparison }:
         new_ans = match comparison:
@@ -41,9 +41,9 @@ public module Example:
             u64.max(value, ans)
           case _:
             ans
-        Status[u64].Ok { value: new_ans }
+        u64!.Ok { value: new_ans }
       case Err { error: err1 }:
-        Status[u64].Err { error: err1 }
+        u64!.Err { error: err1 }
 
   func loop_inner(num: u64, j: u64, k: u64, l: u64): u64
     match u64.compare(j, l):

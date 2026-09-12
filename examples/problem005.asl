@@ -3,29 +3,29 @@
 # (case -1), mutually-calling functions within a module, and
 # tail-recursive loops.
 public module Example:
-  func gcd(a: u64, b: u64): Status[u64]
+  func gcd(a: u64, b: u64): u64!
     match u64.compare(b, 0):
       case 0:
-        Status.Ok { value: a }
+        u64!.Ok { value: a }
       case _:
         match u64.remainder(a, b):
           case Ok { value: c }:
             Example.gcd(b, c)
           case Err { error: error }:
-            Status[u64].Err { error: error }
+            u64!.Err { error: error }
 
-  func lcm(a: u64, b: u64): Status[u64]
+  func lcm(a: u64, b: u64): u64!
     match u64.multiply(a, b):
       case Ok { value: c }:
         match Example.gcd(a, b):
           case Ok { value: d }:
             u64.quotient(c, d)
           case Err { error: err2 }:
-            Status[u64].Err { error: err2 }
+            u64!.Err { error: err2 }
       case Err { error: err1 }:
-        Status[u64].Err { error: err1 }
+        u64!.Err { error: err1 }
 
-  func solve(i: u64, n: u64, j: u64): Status[u64]
+  func solve(i: u64, n: u64, j: u64): u64!
     op = u64.compare(i, n)
     _ = match op:
       case -1:
@@ -35,11 +35,11 @@ public module Example:
               case Ok { value: next_j }:
                 Example.solve(next_i, n, next_j)
               case Err { error: err2 }:
-                Status[u64].Err { error: err2 }
+                u64!.Err { error: err2 }
           case Err { error: err1 }:
-            Status[u64].Err { error: err1 }
+            u64!.Err { error: err1 }
       case _:
-        Status.Ok { value: j }
+        u64!.Ok { value: j }
 
   public func start(): i32
     Example.solve(2, 20, 1)

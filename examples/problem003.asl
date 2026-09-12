@@ -1,19 +1,19 @@
 
 # Project Euler #3 style exercise — heavy union-variant matching.
 # Exercises struct data block (Bitset holding Array[Any]), union
-# initializers via Status.Ok / Status.Err (impls inferred), variant
+# initializers via the `T!` Status sugar (e.g. u32!.Ok / u32!.Err), variant
 # patterns with field bindings (case Ok { value: value }), nested
 # match expressions, and module-method calls.
 public module Solver:
-  func mark_non_prime(bitset: Bitset, num: u32, offset: u32): Status[u8]
+  func mark_non_prime(bitset: Bitset, num: u32, offset: u32): u8!
     _ = Bitset.set(bitset, num)
     match u32.add(num, offset):
       case Ok { value: next_num }:
         Solver.mark_non_prime(bitset, next_num, offset)
       case Err { error: err }:
-        Status[u8].Err { error: err }
+        u8!.Err { error: err }
 
-  func update_ans(maybe_prime: u32, ans: u32): Status[u32]
+  func update_ans(maybe_prime: u32, ans: u32): u32!
     maybe_prime_u64 = u64.from(maybe_prime)
     match u64.remainder(600851475143, maybe_prime_u64):
       case Ok { value: val }:
@@ -22,11 +22,11 @@ public module Solver:
             u32.max(ans, maybe_prime)
           case _:
             ans
-        Status[u32].Ok { value: new_ans }
+        u32!.Ok { value: new_ans }
       case Err { error: err1 }:
-        Status[u32].Err { error: err1 }
+        u32!.Err { error: err1 }
 
-  func solve(bitset: Bitset, num: u32, ans: u32): Status[u32]
+  func solve(bitset: Bitset, num: u32, ans: u32): u32!
     match Bitset.get(bitset, num):
       case Ok { value: flag }:
         match u32.add(num, 1):
@@ -39,15 +39,15 @@ public module Solver:
                       case Ok { value: new_ans }:
                         Solver.solve(bitset, next_num, new_ans)
                       case _:
-                        Status.Ok { value: ans }
+                        u32!.Ok { value: ans }
                   case _:
-                    Status.Ok { value: ans }
+                    u32!.Ok { value: ans }
               case _:
                 Solver.solve(bitset, next_num, ans)
           case _:
-            Status.Ok { value: ans }
+            u32!.Ok { value: ans }
       case _:
-        Status.Ok { value: ans }
+        u32!.Ok { value: ans }
 
   public func start(): i32
     match Bitset.init(1000001):
