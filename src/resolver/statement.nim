@@ -267,6 +267,7 @@ proc newResolvedFunctionCall*(parsed: FunctionCall,
 proc loc*(fncall: ResolvedFunctionCall): Location = fncall.parsed.loc
 proc name*(fncall: ResolvedFunctionCall): Identifier = fncall.parsed.name
 proc arity*(fncall: ResolvedFunctionCall): int = fncall.parsed.arity
+proc kind*(fncall: ResolvedFunctionCall): FunctionCallKind = fncall.parsed.kind
 proc typ*(fncall: ResolvedFunctionCall): parser.LocalType = fncall.typ
 proc args*(fncall: ResolvedFunctionCall): seq[ResolvedExpression] = fncall.args
 

@@ -17,10 +17,15 @@ type
     args: seq[InlineExpression]
     loc: Location
 
+  FunctionCallKind* = enum
+    fckDefault, fckTry
   FunctionCall* = ref object
     root: Identifier
     name: Identifier
     argList: ArgumentList
+    case kind: FunctionCallKind
+    of fckDefault: discard
+    of fckTry: tryLoc: Location
 
   KeywordArgument* = ref object
     name: Identifier
@@ -99,12 +104,18 @@ proc argumentListConsumer(parser: Parser): Result[ArgumentList, ParserError] =
 let argumentListSpec* = newSpec("argument list", argumentListConsumer)
 
 # ----------------- FunctionCall -----------------
-proc newFunctionCall*(root: Identifier, name: Identifier,
-    argList: ArgumentList): FunctionCall =
-  FunctionCall(root: root, name: name, argList: argList)
+proc newFunctionCall*(root: Identifier, name: Identifier, argList: ArgumentList): FunctionCall =
+  FunctionCall(kind: fckDefault, root: root, name: name, argList: argList)
 
-proc loc*(fncall: FunctionCall): Location = fncall.root.loc
+proc newFunctionCall*(tryLoc: Location, fncall: FunctionCall): FunctionCall =
+  FunctionCall(kind: fckTry, tryLoc: tryLoc, root: fncall.root, name: fncall.name, argList: fncall.argList)
 
+proc loc*(fncall: FunctionCall): Location =
+  case fncall.kind:
+  of fckDefault: fncall.root.loc
+  of fckTry: fncall.tryLoc
+
+proc kind*(fncall: FunctionCall): FunctionCallKind = fncall.kind
 proc root*(fncall: FunctionCall): Identifier = fncall.root
 proc name*(fncall: FunctionCall): Identifier = fncall.name
 proc argList*(fncall: FunctionCall): ArgumentList = fncall.argList
@@ -112,9 +123,12 @@ proc args*(fncall: FunctionCall): seq[InlineExpression] = fncall.argList.args
 proc arity*(fncall: FunctionCall): int = fncall.argList.arity
 
 proc asl(fncall: FunctionCall): string =
-  fmt"{asl(fncall.root)}.{asl(fncall.name)}{asl(fncall.argList)}"
+  let default = fmt"{asl(fncall.root)}.{asl(fncall.name)}{asl(fncall.argList)}"
+  case fncall.kind:
+  of fckDefault: default
+  of fckTry: fmt"try {default}"
 
-proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
+proc defaultFunctionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
   let target = ? parser.expect(identifierSpec)
   discard ? parser.expect(".")
   let function = ? parser.expect(identifierSpec)
@@ -122,7 +136,20 @@ proc functionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
   let args = ? parser.expect(argumentListSpec)
   ok(newFunctionCall(target, function, args))
 
-let fncallSpec* = newSpec[FunctionCall]("function call", functionCallConsumer)
+let defaultFunctionCallSpec* = newSpec[FunctionCall]("default function call", defaultFunctionCallConsumer)
+
+proc tryFunctionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
+  let tryKeyword = ? parser.expect("try")
+  discard ? parser.expect(spaceSpec)
+  let fncall = ? parser.expect(defaultFunctionCallSpec)
+  ok(newFunctionCall(tryKeyword.loc, fncall))
+
+let tryFunctionCallSpec = newSpec[FunctionCall]("try function call", tryFunctionCallConsumer)
+
+let fncallSpec* = oneOf("function call", @[
+  defaultFunctionCallSpec,
+  tryFunctionCallSpec,
+])
 
 # ----------------- KeywordArgument -----------------
 proc newKeywordArgument*(name: Identifier, expression: InlineExpression,

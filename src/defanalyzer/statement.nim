@@ -169,6 +169,7 @@ proc newAnalyzedDefFunctionCall*(resolved: ResolvedFunctionCall, typ: ResolvedLo
 proc loc*(fncall: AnalyzedDefFunctionCall): Location = fncall.resolved.loc
 proc name*(fncall: AnalyzedDefFunctionCall): Identifier = fncall.resolved.name
 proc arity*(fncall: AnalyzedDefFunctionCall): int = fncall.resolved.arity
+proc kind*(fncall: AnalyzedDefFunctionCall): FunctionCallKind = fncall.resolved.kind
 proc resolved*(fncall: AnalyzedDefFunctionCall): ResolvedFunctionCall = fncall.resolved
 proc typ*(fncall: AnalyzedDefFunctionCall): ResolvedLocalType = fncall.typ
 proc args*(fncall: AnalyzedDefFunctionCall): seq[AnalyzedDefExpression] = fncall.args

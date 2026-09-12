@@ -53,12 +53,21 @@ proc literal*(init: AnalyzedLiteralInitializer): Literal = init.literal
 # Mutually-recursive body-level cluster — every type that cycles
 # back to AnalyzedExpression / AnalyzedStatement must live here.
 type
+  AnalyzedFunctionCallKind* = enum
+    afckDefault, afckTry
   AnalyzedFunctionCall* = ref object
     def: AnalyzedDefFunctionCall
     localType: AnalyzedLocalType
     funcDef: AnalyzedFunctionDef
     args: seq[AnalyzedExpression]
     impls: AnalyzedImplMap
+    # A plain call (afckDefault) evaluates to the callee's return type
+    # concretized with `impls`. A `try f()` call (afckTry) evaluates to
+    # the unwrapped `Ok` value type of the callee's `Status[Value, Error]`
+    # return, carried in `tryValue` (see `returns`).
+    case kind*: AnalyzedFunctionCallKind
+    of afckDefault: discard
+    of afckTry: tryValue: AnalyzedArgumentType
 
   AnalyzedKeywordArgument* = ref object
     def: AnalyzedDefKeywordArgument
@@ -125,7 +134,12 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
 
 proc newAnalyzedFunctionCall*(def: AnalyzedDefFunctionCall, localType: AnalyzedLocalType, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], impls: AnalyzedImplMap): AnalyzedFunctionCall =
-  AnalyzedFunctionCall(def: def, localType: localType, funcDef: funcDef, args: args, impls: impls)
+  AnalyzedFunctionCall(kind: afckDefault, def: def, localType: localType, funcDef: funcDef, args: args, impls: impls)
+
+proc newAnalyzedTryFunctionCall*(def: AnalyzedDefFunctionCall, localType: AnalyzedLocalType, funcDef: AnalyzedFunctionDef, args: seq[AnalyzedExpression], impls: AnalyzedImplMap, tryValue: AnalyzedArgumentType): AnalyzedFunctionCall =
+  ## A `try f()` call: `tryValue` is the callee's `Status` value type,
+  ## which becomes this call's result type (see `returns`).
+  AnalyzedFunctionCall(kind: afckTry, def: def, localType: localType, funcDef: funcDef, args: args, impls: impls, tryValue: tryValue)
 
 proc loc*(fncall: AnalyzedFunctionCall): Location = fncall.def.resolved.loc
 proc localType*(fncall: AnalyzedFunctionCall): AnalyzedLocalType = fncall.localType
@@ -133,7 +147,11 @@ proc funcDef*(fncall: AnalyzedFunctionCall): AnalyzedFunctionDef = fncall.funcDe
 proc impls*(fncall: AnalyzedFunctionCall): AnalyzedImplMap = fncall.impls
 proc args*(fncall: AnalyzedFunctionCall): seq[AnalyzedExpression] = fncall.args
 proc returns*(fncall: AnalyzedFunctionCall): AnalyzedArgumentType =
-  fncall.funcDef.returns.concrete(fncall.impls)
+  case fncall.kind:
+  of afckDefault: fncall.funcDef.returns.concrete(fncall.impls)
+  # `try f()` yields the unwrapped Ok value; analyzeFunctionCall proved
+  # the callee returns a Status and stashed that value type here.
+  of afckTry: fncall.tryValue
 
 proc newAnalyzedKeywordArgument*(def: AnalyzedDefKeywordArgument, field: AnalyzedArgumentDef, expression: AnalyzedExpression, impls: AnalyzedImplMap): AnalyzedKeywordArgument =
   AnalyzedKeywordArgument(def: def, field: field, expression: expression, impls: impls)
