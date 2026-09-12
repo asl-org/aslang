@@ -7,24 +7,18 @@
 public module Solver:
   func mark_non_prime(bitset: Bitset, num: u32, offset: u32): u8!
     _ = Bitset.set(bitset, num)
-    match u32.add(num, offset):
-      case Ok { value: next_num }:
-        Solver.mark_non_prime(bitset, next_num, offset)
-      case Err { error: err }:
-        u8!.Err { error: err }
+    next_num = try u32.add(num, offset)
+    Solver.mark_non_prime(bitset, next_num, offset)
 
   func update_ans(maybe_prime: u32, ans: u32): u32!
     maybe_prime_u64 = u64.from(maybe_prime)
-    match u64.remainder(600851475143, maybe_prime_u64):
-      case Ok { value: val }:
-        new_ans = match val:
-          case 0:
-            u32.max(ans, maybe_prime)
-          case _:
-            ans
-        u32!.Ok { value: new_ans }
-      case Err { error: err1 }:
-        u32!.Err { error: err1 }
+    val = try u64.remainder(600851475143, maybe_prime_u64)
+    new_ans = match val:
+      case 0:
+        u32.max(ans, maybe_prime)
+      case _:
+        ans
+    u32!.Ok { value: new_ans }
 
   func solve(bitset: Bitset, num: u32, ans: u32): u32!
     match Bitset.get(bitset, num):

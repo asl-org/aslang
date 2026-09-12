@@ -14,44 +14,23 @@ public module Solver:
   func solve(str: string, index: u32, count: u32, ans: u32): u32!
     match u32.compare(count, 0):
       case 1:
-        match string.get(str, index):
-          case Ok { value: ascii }:
-            match u8.subtract(ascii, 48):
-              case Ok { value: digit }:
-                digit_u32 = u32.from(digit)
-                match u32.multiply(ans, digit_u32):
-                  case Ok { value: next_ans }:
-                    match u32.add(index, 1):
-                      case Ok { value: next_index }:
-                        match u32.subtract(count, 1):
-                          case Ok { value: next_count }:
-                            Solver.solve(str, next_index, next_count, next_ans)
-                          case Err { error: err1 }:
-                            u32!.Err { error: err1 }
-                      case Err { error: err2 }:
-                        u32!.Err { error: err2 }
-                  case Err { error: err3 }:
-                    u32!.Err { error: err3 }
-              case Err { error: err4 }:
-                u32!.Err { error: err4 }
-          case Err { error: err5 }:
-            u32!.Err { error: err5 }
+        ascii = try string.get(str, index)
+        digit = try u8.subtract(ascii, 48)
+        digit_u32 = u32.from(digit)
+        next_ans = try u32.multiply(ans, digit_u32)
+        next_index = try u32.add(index, 1)
+        next_count = try u32.subtract(count, 1)
+        Solver.solve(str, next_index, next_count, next_ans)
       case _:
         u32!.Ok { value: ans }
 
   func solve(str: string, index: u32, ans: u32): u32!
     match string.get(str, index):
       case Ok { value: ascii }:
-        match Solver.solve(str, index, 13, 1):
-          case Ok { value: result }:
-            max_ans = u32.max(ans, result)
-            match u32.add(index, 1):
-              case Ok { value: next_index }:
-                Solver.solve(str, next_index, max_ans)
-              case Err { error: err2 }:
-                u32!.Err { error: err2 }
-          case Err { error: err1 }:
-            u32!.Err { error: err1 }
+        result = try Solver.solve(str, index, 13, 1)
+        max_ans = u32.max(ans, result)
+        next_index = try u32.add(index, 1)
+        Solver.solve(str, next_index, max_ans)
       case _:
         u32!.Ok { value: ans }
 

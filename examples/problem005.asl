@@ -8,36 +8,21 @@ public module Example:
       case 0:
         u64!.Ok { value: a }
       case _:
-        match u64.remainder(a, b):
-          case Ok { value: c }:
-            Example.gcd(b, c)
-          case Err { error: error }:
-            u64!.Err { error: error }
+        c = try u64.remainder(a, b)
+        Example.gcd(b, c)
 
   func lcm(a: u64, b: u64): u64!
-    match u64.multiply(a, b):
-      case Ok { value: c }:
-        match Example.gcd(a, b):
-          case Ok { value: d }:
-            u64.quotient(c, d)
-          case Err { error: err2 }:
-            u64!.Err { error: err2 }
-      case Err { error: err1 }:
-        u64!.Err { error: err1 }
+    c = try u64.multiply(a, b)
+    d = try Example.gcd(a, b)
+    u64.quotient(c, d)
 
   func solve(i: u64, n: u64, j: u64): u64!
     op = u64.compare(i, n)
     _ = match op:
       case -1:
-        match u64.add(i, 1):
-          case Ok { value: next_i }:
-            match Example.lcm(i, j):
-              case Ok { value: next_j }:
-                Example.solve(next_i, n, next_j)
-              case Err { error: err2 }:
-                u64!.Err { error: err2 }
-          case Err { error: err1 }:
-            u64!.Err { error: err1 }
+        next_i = try u64.add(i, 1)
+        next_j = try Example.lcm(i, j)
+        Example.solve(next_i, n, next_j)
       case _:
         u64!.Ok { value: j }
 

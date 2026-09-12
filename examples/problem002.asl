@@ -17,15 +17,9 @@ public module Solver:
         i64!.Ok { value: d }
       case _:
         e = i64.remainder(a, 2)
-        match Solver.apply(a, d, e):
-          case Ok { value: f }:
-            match i64.add(a, b):
-              case Ok { value: g }:
-                Solver.solve(b, g, c, f)
-              case Err { error: err2 }:
-                i64!.Err { error: err2 }
-          case Err { error: err1 }:
-            i64!.Err { error: err1 }
+        f = try Solver.apply(a, d, e)
+        g = try i64.add(a, b)
+        Solver.solve(b, g, c, f)
 
   public func start(): i32
     match Solver.solve(1, 2, 4000000, 0):

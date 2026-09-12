@@ -6,23 +6,11 @@ public module Example:
   func is_palindrome_loop(original: u64, acc: u64, remaining: u64): u8!
     match u64.compare(remaining, 0):
       case 1:
-        match u64.multiply(acc, 10):
-          case Ok { value: num_10x }:
-            match u64.remainder(remaining, 10):
-              case Ok { value: unit_digit }:
-                match u64.add(num_10x, unit_digit):
-                  case Ok { value: new_acc }:
-                    match u64.quotient(remaining, 10):
-                      case Ok { value: dividend }:
-                        Example.is_palindrome_loop(original, new_acc, dividend)
-                      case Err { error: err4 }:
-                        u8!.Err { error: err4 }
-                  case Err { error: err2 }:
-                    u8!.Err { error: err2 }
-              case Err { error: err3 }:
-                u8!.Err { error: err3 }
-          case Err { error: err1 }:
-            u8!.Err { error: err1 }
+        num_10x = try u64.multiply(acc, 10)
+        unit_digit = try u64.remainder(remaining, 10)
+        new_acc = try u64.add(num_10x, unit_digit)
+        dividend = try u64.quotient(remaining, 10)
+        Example.is_palindrome_loop(original, new_acc, dividend)
       case _:
         match u64.compare(original, acc):
           case 0:
@@ -34,16 +22,13 @@ public module Example:
     Example.is_palindrome_loop(num, 0, num)
 
   func update_ans(value: u64, ans: u64): u64!
-    match Example.is_palindrome(value):
-      case Ok { value: comparison }:
-        new_ans = match comparison:
-          case 1:
-            u64.max(value, ans)
-          case _:
-            ans
-        u64!.Ok { value: new_ans }
-      case Err { error: err1 }:
-        u64!.Err { error: err1 }
+    comparison = try Example.is_palindrome(value)
+    new_ans = match comparison:
+      case 1:
+        u64.max(value, ans)
+      case _:
+        ans
+    u64!.Ok { value: new_ans }
 
   func loop_inner(num: u64, j: u64, k: u64, l: u64): u64
     match u64.compare(j, l):

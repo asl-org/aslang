@@ -6,57 +6,33 @@
 # (i64 -1).
 public module Example:
   func mark_non_prime(primes: Bitset, j: u32, i: u32): Bitset!
-    match Bitset.set(primes, j):
-      case Ok { value: primes }:
-        match u32.add(j, i):
-          case Ok { value: k }:
-            Example.mark_non_prime(primes, k, i)
-          case Err { error: err2 }:
-            Bitset!.Err { error: err2 }
-      case Err { error: err1 }:
-        Bitset!.Err { error: err1 }
+    primes = try Bitset.set(primes, j)
+    k = try u32.add(j, i)
+    Example.mark_non_prime(primes, k, i)
 
   func check_count(primes: Bitset, i: u32, c: u32): u32!
     match u32.compare(c, 10000):
       case 0:
         u32!.Ok { value: i }
       case _:
-        match u32.add(c, 1):
-          case Ok { value: next_c }:
-            match u32.add(i, 1):
-              case Ok { value: next_i }:
-                Example.solve(primes, next_i, next_c)
-              case Err { error: err2 }:
-                u32!.Err { error: err2 }
-          case Err { error: err1 }:
-            u32!.Err { error: err1 }
+        next_c = try u32.add(c, 1)
+        next_i = try u32.add(i, 1)
+        Example.solve(primes, next_i, next_c)
 
   func handle_prime(primes: Bitset, i: u32, c: u32): u32!
-    match Bitset.get(primes, i):
-      case Ok { value: op }:
-        match op:
-          case 0:
-            match u32.multiply(i, 2):
-              case Ok { value: j }:
-                Example.mark_non_prime(primes, j, i)
-                Example.check_count(primes, i, c)
-              case Err { error: err2 }:
-                u32!.Err { error: err2 }
-          case _:
-            match u32.add(i, 1):
-              case Ok { value: next_i }:
-                Example.solve(primes, next_i, c)
-              case Err { error: err2 }:
-                u32!.Err { error: err2 }
-      case Err { error: err1 }:
-        u32!.Err { error: err1 }
+    op = try Bitset.get(primes, i)
+    match op:
+      case 0:
+        j = try u32.multiply(i, 2)
+        Example.mark_non_prime(primes, j, i)
+        Example.check_count(primes, i, c)
+      case _:
+        next_i = try u32.add(i, 1)
+        Example.solve(primes, next_i, c)
 
   func solve(primes: Bitset, i: u32, c: u32): u32!
-    match Bitset.get(primes, i):
-      case Ok { value: op }:
-        Example.handle_prime(primes, i, c)
-      case Err { error: err }:
-        u32!.Err { error: err }
+    _ = try Bitset.get(primes, i)
+    Example.handle_prime(primes, i, c)
 
   public func start(): i32
     match Bitset.init(1000001):

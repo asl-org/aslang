@@ -6,38 +6,20 @@
 # embedded inside union variants.
 public module Solver:
   func mark_non_prime(bitset: Bitset, j: u32, i: u32): u8!
-    match Bitset.set(bitset, j):
-      case Ok { value: _ }:
-        match u32.add(j, i):
-          case Ok { value: k }:
-            Solver.mark_non_prime(bitset, k, i)
-          case Err { error: err2 }:
-            u8!.Err { error: err2 }
-      case Err { error: err1 }:
-        u8!.Err { error: err1 }
+    _ = try Bitset.set(bitset, j)
+    k = try u32.add(j, i)
+    Solver.mark_non_prime(bitset, k, i)
 
   func solve(bitset: Bitset, start: u32, ans: u32): u32!
-    match Bitset.get(bitset, start):
-      case Ok { value: value }:
-        match u32.add(start, 1):
-          case Ok { value: next_start }:
-            match value:
-              case 0:
-                match Solver.mark_non_prime(bitset, start, start):
-                  case Ok { value: _ }:
-                    match u32.add(ans, start):
-                      case Ok { value: new_ans }:
-                        Solver.solve(bitset, next_start, new_ans)
-                      case Err { error: err4 }:
-                        u32!.Err { error: err4 }
-                  case Err { error: err3 }:
-                    u32!.Err { error: err3 }
-              case _:
-                Solver.solve(bitset, next_start, ans)
-          case Err { error: err2 }:
-            u32!.Err { error: err2 }
-      case Err { error: err1 }:
-        u32!.Err { error: err1 }
+    value = try Bitset.get(bitset, start)
+    next_start = try u32.add(start, 1)
+    match value:
+      case 0:
+        _ = try Solver.mark_non_prime(bitset, start, start)
+        new_ans = try u32.add(ans, start)
+        Solver.solve(bitset, next_start, new_ans)
+      case _:
+        Solver.solve(bitset, next_start, ans)
 
   public func start(): i32
     match Bitset.init(2000001):

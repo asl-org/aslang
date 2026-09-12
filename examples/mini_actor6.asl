@@ -107,52 +107,31 @@ module EventRing:
       case 0:
         EvtPush!.Ok { value: EvtPush.Full {} }
       case _:
-        match u8.add(ring.head, ring.count):
-          case Ok { value: sum }:
-            idx = u8.remainder(sum, Config.eventCap())
-            match Array.set(ring.buf, u32.from(idx), v):
-              case Ok { value: newBuf }:
-                match u8.add(ring.count, u8 1):
-                  case Ok { value: newCount }:
-                    ring.buf = newBuf
-                    ring.count = newCount
-                    EvtPush!.Ok { value: EvtPush.Pushed { ring: ring } }
-                  case Err { error: e }:
-                    EvtPush!.Err { error: e }
-              case Err { error: e }:
-                EvtPush!.Err { error: e }
-          case Err { error: e }:
-            EvtPush!.Err { error: e }
+        sum = try u8.add(ring.head, ring.count)
+        idx = u8.remainder(sum, Config.eventCap())
+        newBuf = try Array.set(ring.buf, u32.from(idx), v)
+        newCount = try u8.add(ring.count, u8 1)
+        ring.buf = newBuf
+        ring.count = newCount
+        EvtPush!.Ok { value: EvtPush.Pushed { ring: ring } }
 
   public func peek(ring: EventRing): EvtPeek!
     match u8.compare(ring.count, u8 0):
       case 1:
-        match Array.get(ring.buf, u32.from(ring.head)):
-          case Ok { value: v }:
-            EvtPeek!.Ok { value: EvtPeek.Found { value: v } }
-          case Err { error: e }:
-            EvtPeek!.Err { error: e }
+        v = try Array.get(ring.buf, u32.from(ring.head))
+        EvtPeek!.Ok { value: EvtPeek.Found { value: v } }
       case _:
         EvtPeek!.Ok { value: EvtPeek.Empty {} }
 
   public func pop(ring: EventRing): EvtPop!
     match u8.compare(ring.count, u8 0):
       case 1:
-        match Array.get(ring.buf, u32.from(ring.head)):
-          case Ok { value: v }:
-            match u8.add(ring.head, u8 1):
-              case Ok { value: sum }:
-                match u8.subtract(ring.count, u8 1):
-                  case Ok { value: newCount }:
-                    ring.head = u8.remainder(sum, Config.eventCap())
-                    ring.count = newCount
-                    EvtPop!.Ok { value: EvtPop.Popped { value: v, ring: ring } }
-                  case Err { error: e }:
-                    EvtPop!.Err { error: e }
-              case Err { error: e }:
-                EvtPop!.Err { error: e }
-          case Err { error: e }:
-            EvtPop!.Err { error: e }
+        v = try Array.get(ring.buf, u32.from(ring.head))
+        sum = try u8.add(ring.head, u8 1)
+        newCount = try u8.subtract(ring.count, u8 1)
+        ring.head = u8.remainder(sum, Config.eventCap())
+        ring.count = newCount
+        EvtPop!.Ok { value: EvtPop.Popped { value: v, ring: ring } }
       case _:
         EvtPop!.Ok { value: EvtPop.Empty {} }
 
@@ -171,52 +150,31 @@ module CtrlRing:
       case 0:
         CtlPush!.Ok { value: CtlPush.Full {} }
       case _:
-        match u8.add(ring.head, ring.count):
-          case Ok { value: sum }:
-            idx = u8.remainder(sum, Config.ctrlCap())
-            match Array.set(ring.buf, u32.from(idx), v):
-              case Ok { value: newBuf }:
-                match u8.add(ring.count, u8 1):
-                  case Ok { value: newCount }:
-                    ring.buf = newBuf
-                    ring.count = newCount
-                    CtlPush!.Ok { value: CtlPush.Pushed { ring: ring } }
-                  case Err { error: e }:
-                    CtlPush!.Err { error: e }
-              case Err { error: e }:
-                CtlPush!.Err { error: e }
-          case Err { error: e }:
-            CtlPush!.Err { error: e }
+        sum = try u8.add(ring.head, ring.count)
+        idx = u8.remainder(sum, Config.ctrlCap())
+        newBuf = try Array.set(ring.buf, u32.from(idx), v)
+        newCount = try u8.add(ring.count, u8 1)
+        ring.buf = newBuf
+        ring.count = newCount
+        CtlPush!.Ok { value: CtlPush.Pushed { ring: ring } }
 
   public func peek(ring: CtrlRing): CtlPeek!
     match u8.compare(ring.count, u8 0):
       case 1:
-        match Array.get(ring.buf, u32.from(ring.head)):
-          case Ok { value: v }:
-            CtlPeek!.Ok { value: CtlPeek.Found { value: v } }
-          case Err { error: e }:
-            CtlPeek!.Err { error: e }
+        v = try Array.get(ring.buf, u32.from(ring.head))
+        CtlPeek!.Ok { value: CtlPeek.Found { value: v } }
       case _:
         CtlPeek!.Ok { value: CtlPeek.Empty {} }
 
   public func pop(ring: CtrlRing): CtlPop!
     match u8.compare(ring.count, u8 0):
       case 1:
-        match Array.get(ring.buf, u32.from(ring.head)):
-          case Ok { value: v }:
-            match u8.add(ring.head, u8 1):
-              case Ok { value: sum }:
-                match u8.subtract(ring.count, u8 1):
-                  case Ok { value: newCount }:
-                    ring.head = u8.remainder(sum, Config.ctrlCap())
-                    ring.count = newCount
-                    CtlPop!.Ok { value: CtlPop.Popped { value: v, ring: ring } }
-                  case Err { error: e }:
-                    CtlPop!.Err { error: e }
-              case Err { error: e }:
-                CtlPop!.Err { error: e }
-          case Err { error: e }:
-            CtlPop!.Err { error: e }
+        v = try Array.get(ring.buf, u32.from(ring.head))
+        sum = try u8.add(ring.head, u8 1)
+        newCount = try u8.subtract(ring.count, u8 1)
+        ring.head = u8.remainder(sum, Config.ctrlCap())
+        ring.count = newCount
+        CtlPop!.Ok { value: CtlPop.Popped { value: v, ring: ring } }
       case _:
         CtlPop!.Ok { value: CtlPop.Empty {} }
 
@@ -235,41 +193,23 @@ module UrgentRing:
       case 0:
         UrgPush!.Ok { value: UrgPush.Full {} }
       case _:
-        match u8.add(ring.head, ring.count):
-          case Ok { value: sum }:
-            idx = u8.remainder(sum, Config.urgentCap())
-            match Array.set(ring.buf, u32.from(idx), v):
-              case Ok { value: newBuf }:
-                match u8.add(ring.count, u8 1):
-                  case Ok { value: newCount }:
-                    ring.buf = newBuf
-                    ring.count = newCount
-                    UrgPush!.Ok { value: UrgPush.Pushed { ring: ring } }
-                  case Err { error: e }:
-                    UrgPush!.Err { error: e }
-              case Err { error: e }:
-                UrgPush!.Err { error: e }
-          case Err { error: e }:
-            UrgPush!.Err { error: e }
+        sum = try u8.add(ring.head, ring.count)
+        idx = u8.remainder(sum, Config.urgentCap())
+        newBuf = try Array.set(ring.buf, u32.from(idx), v)
+        newCount = try u8.add(ring.count, u8 1)
+        ring.buf = newBuf
+        ring.count = newCount
+        UrgPush!.Ok { value: UrgPush.Pushed { ring: ring } }
 
   public func pop(ring: UrgentRing): UrgPop!
     match u8.compare(ring.count, u8 0):
       case 1:
-        match Array.get(ring.buf, u32.from(ring.head)):
-          case Ok { value: v }:
-            match u8.add(ring.head, u8 1):
-              case Ok { value: sum }:
-                match u8.subtract(ring.count, u8 1):
-                  case Ok { value: newCount }:
-                    ring.head = u8.remainder(sum, Config.urgentCap())
-                    ring.count = newCount
-                    UrgPop!.Ok { value: UrgPop.Popped { value: v, ring: ring } }
-                  case Err { error: e }:
-                    UrgPop!.Err { error: e }
-              case Err { error: e }:
-                UrgPop!.Err { error: e }
-          case Err { error: e }:
-            UrgPop!.Err { error: e }
+        v = try Array.get(ring.buf, u32.from(ring.head))
+        sum = try u8.add(ring.head, u8 1)
+        newCount = try u8.subtract(ring.count, u8 1)
+        ring.head = u8.remainder(sum, Config.urgentCap())
+        ring.count = newCount
+        UrgPop!.Ok { value: UrgPop.Popped { value: v, ring: ring } }
       case _:
         UrgPop!.Ok { value: UrgPop.Empty {} }
 
@@ -302,77 +242,53 @@ module Mailbox:
   # edges: post an event, stamped with the arrival seq (which then advances).
   # A full ring is a capacity-design error for this bounded demo -> loud Err.
   public func postEvent(mbox: Mailbox, m: Msg): Mailbox!
-    match EventRing.push(mbox.evt, SeqMsg { seq: mbox.nextSeq, m: m }):
-      case Ok { value: pout }:
-        match pout:
-          case Pushed { ring: newEvt }:
-            mbox.evt = newEvt
-            match u64.add(mbox.nextSeq, u64 1):
-              case Ok { value: newSeq }:
-                mbox.nextSeq = newSeq
-                Mailbox!.Ok { value: mbox }
-              case Err { error: e }:
-                Mailbox!.Err { error: e }
-          case Full {}:
-            Mailbox!.Err { error: Error { code: i32 1, message: string "event ring full" } }
-      case Err { error: e }:
-        Mailbox!.Err { error: e }
+    pout = try EventRing.push(mbox.evt, SeqMsg { seq: mbox.nextSeq, m: m })
+    match pout:
+      case Pushed { ring: newEvt }:
+        mbox.evt = newEvt
+        newSeq = try u64.add(mbox.nextSeq, u64 1)
+        mbox.nextSeq = newSeq
+        Mailbox!.Ok { value: mbox }
+      case Full {}:
+        Mailbox!.Err { error: Error { code: i32 1, message: string "event ring full" } }
 
   # graceful control: stamped like an event so it merges in arrival order.
   public func postCtrl(mbox: Mailbox, c: Ctrl): Mailbox!
-    match CtrlRing.push(mbox.ctl, SeqCtrl { seq: mbox.nextSeq, c: c }):
-      case Ok { value: pout }:
-        match pout:
-          case Pushed { ring: newCtl }:
-            mbox.ctl = newCtl
-            match u64.add(mbox.nextSeq, u64 1):
-              case Ok { value: newSeq }:
-                mbox.nextSeq = newSeq
-                Mailbox!.Ok { value: mbox }
-              case Err { error: e }:
-                Mailbox!.Err { error: e }
-          case Full {}:
-            Mailbox!.Err { error: Error { code: i32 2, message: string "ctrl ring full" } }
-      case Err { error: e }:
-        Mailbox!.Err { error: e }
+    pout = try CtrlRing.push(mbox.ctl, SeqCtrl { seq: mbox.nextSeq, c: c })
+    match pout:
+      case Pushed { ring: newCtl }:
+        mbox.ctl = newCtl
+        newSeq = try u64.add(mbox.nextSeq, u64 1)
+        mbox.nextSeq = newSeq
+        Mailbox!.Ok { value: mbox }
+      case Full {}:
+        Mailbox!.Err { error: Error { code: i32 2, message: string "ctrl ring full" } }
 
   # forced control: NO seq bump — it is not part of arrival order.
   public func postUrgent(mbox: Mailbox, c: Ctrl): Mailbox!
-    match UrgentRing.push(mbox.urg, c):
-      case Ok { value: pout }:
-        match pout:
-          case Pushed { ring: newUrg }:
-            mbox.urg = newUrg
-            Mailbox!.Ok { value: mbox }
-          case Full {}:
-            Mailbox!.Err { error: Error { code: i32 3, message: string "urgent ring full" } }
-      case Err { error: e }:
-        Mailbox!.Err { error: e }
+    pout = try UrgentRing.push(mbox.urg, c)
+    match pout:
+      case Pushed { ring: newUrg }:
+        mbox.urg = newUrg
+        Mailbox!.Ok { value: mbox }
+      case Full {}:
+        Mailbox!.Err { error: Error { code: i32 3, message: string "urgent ring full" } }
 
   # take: urgent first; else the OLDEST of {graceful ctrl, event} by seq.
   public func take(mbox: Mailbox): TakeOut!
-    match UrgentRing.pop(mbox.urg):
-      case Ok { value: uout }:
-        match uout:
-          case Popped { value: uc, ring: newUrg }:
-            mbox.urg = newUrg
-            TakeOut!.Ok { value: TakeOut.Took { item: Item.CtrlItem { c: uc, forced: Bool.True {} }, mbox: mbox } }
-          case Empty {}:
-            Mailbox.takeMerged(mbox)
-      case Err { error: e }:
-        TakeOut!.Err { error: e }
+    uout = try UrgentRing.pop(mbox.urg)
+    match uout:
+      case Popped { value: uc, ring: newUrg }:
+        mbox.urg = newUrg
+        TakeOut!.Ok { value: TakeOut.Took { item: Item.CtrlItem { c: uc, forced: Bool.True {} }, mbox: mbox } }
+      case Empty {}:
+        Mailbox.takeMerged(mbox)
 
   # no urgent traffic: merge graceful ctrl and events by arrival seq.
   public func takeMerged(mbox: Mailbox): TakeOut!
-    match CtrlRing.peek(mbox.ctl):
-      case Ok { value: cpeek }:
-        match EventRing.peek(mbox.evt):
-          case Ok { value: mpeek }:
-            Mailbox.decide(mbox, cpeek, mpeek)
-          case Err { error: e }:
-            TakeOut!.Err { error: e }
-      case Err { error: e }:
-        TakeOut!.Err { error: e }
+    cpeek = try CtrlRing.peek(mbox.ctl)
+    mpeek = try EventRing.peek(mbox.evt)
+    Mailbox.decide(mbox, cpeek, mpeek)
 
   public func decide(mbox: Mailbox, cpeek: CtlPeek, mpeek: EvtPeek): TakeOut!
     match cpeek:
@@ -398,30 +314,24 @@ module Mailbox:
             TakeOut!.Ok { value: TakeOut.Idle {} }
 
   public func takeCtrl(mbox: Mailbox): TakeOut!
-    match CtrlRing.pop(mbox.ctl):
-      case Ok { value: pout }:
-        match pout:
-          case Popped { value: sc, ring: newCtl }:
-            mbox.ctl = newCtl
-            inner = sc.c
-            TakeOut!.Ok { value: TakeOut.Took { item: Item.CtrlItem { c: inner, forced: Bool.False {} }, mbox: mbox } }
-          case Empty {}:
-            TakeOut!.Ok { value: TakeOut.Idle {} }
-      case Err { error: e }:
-        TakeOut!.Err { error: e }
+    pout = try CtrlRing.pop(mbox.ctl)
+    match pout:
+      case Popped { value: sc, ring: newCtl }:
+        mbox.ctl = newCtl
+        inner = sc.c
+        TakeOut!.Ok { value: TakeOut.Took { item: Item.CtrlItem { c: inner, forced: Bool.False {} }, mbox: mbox } }
+      case Empty {}:
+        TakeOut!.Ok { value: TakeOut.Idle {} }
 
   public func takeEvent(mbox: Mailbox): TakeOut!
-    match EventRing.pop(mbox.evt):
-      case Ok { value: pout }:
-        match pout:
-          case Popped { value: sm, ring: newEvt }:
-            mbox.evt = newEvt
-            inner = sm.m
-            TakeOut!.Ok { value: TakeOut.Took { item: Item.EventItem { m: inner }, mbox: mbox } }
-          case Empty {}:
-            TakeOut!.Ok { value: TakeOut.Idle {} }
-      case Err { error: e }:
-        TakeOut!.Err { error: e }
+    pout = try EventRing.pop(mbox.evt)
+    match pout:
+      case Popped { value: sm, ring: newEvt }:
+        mbox.evt = newEvt
+        inner = sm.m
+        TakeOut!.Ok { value: TakeOut.Took { item: Item.EventItem { m: inner }, mbox: mbox } }
+      case Empty {}:
+        TakeOut!.Ok { value: TakeOut.Idle {} }
 
 # ---- Actor: a summer. state is the running sum; exitCode tracks it. ----
 module Actor:
@@ -436,17 +346,14 @@ module Actor:
 
   # one loop iteration: take an item and apply it.
   public func step(actor: Actor): Actor!
-    match Mailbox.take(actor.mbox):
-      case Ok { value: tout }:
-        match tout:
-          case Idle {}:
-            actor.done = Bool.True {}
-            Actor!.Ok { value: actor }
-          case Took { item: it, mbox: newMbox }:
-            actor.mbox = newMbox
-            Actor.apply(actor, it)
-      case Err { error: e }:
-        Actor!.Err { error: e }
+    tout = try Mailbox.take(actor.mbox)
+    match tout:
+      case Idle {}:
+        actor.done = Bool.True {}
+        Actor!.Ok { value: actor }
+      case Took { item: it, mbox: newMbox }:
+        actor.mbox = newMbox
+        Actor.apply(actor, it)
 
   public func apply(actor: Actor, it: Item): Actor!
     match it:
@@ -463,13 +370,10 @@ module Actor:
       case EventItem { m: m }:
         match i32.compare(m.tag, Config.tagAdd()):
           case 0:
-            match i32.add(actor.sum, m.val):
-              case Ok { value: newSum }:
-                actor.sum = newSum
-                actor.exitCode = newSum
-                Actor!.Ok { value: actor }
-              case Err { error: e }:
-                Actor!.Err { error: e }
+            newSum = try i32.add(actor.sum, m.val)
+            actor.sum = newSum
+            actor.exitCode = newSum
+            Actor!.Ok { value: actor }
           case _:
             Actor!.Ok { value: actor }
 
@@ -479,11 +383,8 @@ module Actor:
       case True {}:
         Actor!.Ok { value: actor }
       case False {}:
-        match Actor.step(actor):
-          case Ok { value: stepped }:
-            Actor.run(stepped)
-          case Err { error: e }:
-            Actor!.Err { error: e }
+        stepped = try Actor.step(actor)
+        Actor.run(stepped)
 
 # ---- deep equals (structural, recursive) for testing worlds ----
 module Eq:
@@ -529,31 +430,13 @@ module Driver:
   # preload the whole scenario: events 1..3, graceful STAT, events 4..5,
   # then a STOP (urgent if forced, else graceful). Arrival order is fixed.
   public func buildBacklog(forced: Bool): Mailbox!
-    match Mailbox.postEvent(Mailbox.empty(), Msg { tag: Config.tagAdd(), val: i32 1 }):
-      case Ok { value: m1 }:
-        match Mailbox.postEvent(m1, Msg { tag: Config.tagAdd(), val: i32 2 }):
-          case Ok { value: m2 }:
-            match Mailbox.postEvent(m2, Msg { tag: Config.tagAdd(), val: i32 3 }):
-              case Ok { value: m3 }:
-                match Mailbox.postCtrl(m3, Ctrl { kind: Config.ctrlStat(), arg: i32 0 }):
-                  case Ok { value: m4 }:
-                    match Mailbox.postEvent(m4, Msg { tag: Config.tagAdd(), val: i32 4 }):
-                      case Ok { value: m5 }:
-                        match Mailbox.postEvent(m5, Msg { tag: Config.tagAdd(), val: i32 5 }):
-                          case Ok { value: m6 }:
-                            Driver.postStop(m6, forced)
-                          case Err { error: e }:
-                            Mailbox!.Err { error: e }
-                      case Err { error: e }:
-                        Mailbox!.Err { error: e }
-                  case Err { error: e }:
-                    Mailbox!.Err { error: e }
-              case Err { error: e }:
-                Mailbox!.Err { error: e }
-          case Err { error: e }:
-            Mailbox!.Err { error: e }
-      case Err { error: e }:
-        Mailbox!.Err { error: e }
+    m1 = try Mailbox.postEvent(Mailbox.empty(), Msg { tag: Config.tagAdd(), val: i32 1 })
+    m2 = try Mailbox.postEvent(m1, Msg { tag: Config.tagAdd(), val: i32 2 })
+    m3 = try Mailbox.postEvent(m2, Msg { tag: Config.tagAdd(), val: i32 3 })
+    m4 = try Mailbox.postCtrl(m3, Ctrl { kind: Config.ctrlStat(), arg: i32 0 })
+    m5 = try Mailbox.postEvent(m4, Msg { tag: Config.tagAdd(), val: i32 4 })
+    m6 = try Mailbox.postEvent(m5, Msg { tag: Config.tagAdd(), val: i32 5 })
+    Driver.postStop(m6, forced)
 
   public func postStop(mbox: Mailbox, forced: Bool): Mailbox!
     match forced:
@@ -566,15 +449,9 @@ module Driver:
   #   graceful (forced = False) drains all 5 events -> 15
   #   forced   (forced = True)  jumps the backlog   -> 0
   public func runScenario(forced: Bool): i32!
-    match Driver.buildBacklog(forced):
-      case Ok { value: mbox }:
-        match Actor.run(Actor.fresh(mbox)):
-          case Ok { value: final }:
-            i32!.Ok { value: final.sum }
-          case Err { error: e }:
-            i32!.Err { error: e }
-      case Err { error: e }:
-        i32!.Err { error: e }
+    mbox = try Driver.buildBacklog(forced)
+    final = try Actor.run(Actor.fresh(mbox))
+    i32!.Ok { value: final.sum }
 
   # entry point: exercise both stop semantics; return the graceful sum (15).
   public func start(): i32

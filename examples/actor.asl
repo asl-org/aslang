@@ -96,22 +96,13 @@ module AslActor:
       case 0:
         PushOut!.Ok { value: PushOut.Full {} }
       case _:
-        match u8.add(actor.head, actor.count):
-          case Ok { value: sum }:
-            idx = u8.remainder(sum, Config.mboxCap())
-            match Array.set(actor.mbox, u32.from(idx), m):
-              case Ok { value: newMbox }:
-                match u8.add(actor.count, u8 1):
-                  case Ok { value: newCount }:
-                    actor.mbox = newMbox
-                    actor.count = newCount
-                    PushOut!.Ok { value: PushOut.Pushed { actor: actor } }
-                  case Err { error: e }:
-                    PushOut!.Err { error: e }
-              case Err { error: e }:
-                PushOut!.Err { error: e }
-          case Err { error: e }:
-            PushOut!.Err { error: e }
+        sum = try u8.add(actor.head, actor.count)
+        idx = u8.remainder(sum, Config.mboxCap())
+        newMbox = try Array.set(actor.mbox, u32.from(idx), m)
+        newCount = try u8.add(actor.count, u8 1)
+        actor.mbox = newMbox
+        actor.count = newCount
+        PushOut!.Ok { value: PushOut.Pushed { actor: actor } }
 
   # push a SYSTEM message (Stop / Down) to the back of the system ring (FIFO).
   # Full should be UNREACHABLE when sysCap = Behavior.capacity + 1.
@@ -120,56 +111,29 @@ module AslActor:
       case 0:
         PushOut!.Ok { value: PushOut.Full {} }
       case _:
-        match u8.add(actor.sysHead, actor.sysCount):
-          case Ok { value: sum }:
-            idx = u8.remainder(sum, actor.sysCap)
-            match Array.set(actor.sysMbox, u32.from(idx), m):
-              case Ok { value: newSys }:
-                match u8.add(actor.sysCount, u8 1):
-                  case Ok { value: newCount }:
-                    actor.sysMbox = newSys
-                    actor.sysCount = newCount
-                    PushOut!.Ok { value: PushOut.Pushed { actor: actor } }
-                  case Err { error: e }:
-                    PushOut!.Err { error: e }
-              case Err { error: e }:
-                PushOut!.Err { error: e }
-          case Err { error: e }:
-            PushOut!.Err { error: e }
+        sum = try u8.add(actor.sysHead, actor.sysCount)
+        idx = u8.remainder(sum, actor.sysCap)
+        newSys = try Array.set(actor.sysMbox, u32.from(idx), m)
+        newCount = try u8.add(actor.sysCount, u8 1)
+        actor.sysMbox = newSys
+        actor.sysCount = newCount
+        PushOut!.Ok { value: PushOut.Pushed { actor: actor } }
 
   public func pop(actor: AslActor): PopResult!
-    match Array.get(actor.mbox, u32.from(actor.head)):
-      case Ok { value: m }:
-        match u8.add(actor.head, u8 1):
-          case Ok { value: sum }:
-            match u8.subtract(actor.count, u8 1):
-              case Ok { value: newCount }:
-                actor.head = u8.remainder(sum, Config.mboxCap())
-                actor.count = newCount
-                PopResult!.Ok { value: PopResult { msg: m, actor: actor } }
-              case Err { error: e }:
-                PopResult!.Err { error: e }
-          case Err { error: e }:
-            PopResult!.Err { error: e }
-      case Err { error: e }:
-        PopResult!.Err { error: e }
+    m = try Array.get(actor.mbox, u32.from(actor.head))
+    sum = try u8.add(actor.head, u8 1)
+    newCount = try u8.subtract(actor.count, u8 1)
+    actor.head = u8.remainder(sum, Config.mboxCap())
+    actor.count = newCount
+    PopResult!.Ok { value: PopResult { msg: m, actor: actor } }
 
   public func popSys(actor: AslActor): PopResult!
-    match Array.get(actor.sysMbox, u32.from(actor.sysHead)):
-      case Ok { value: m }:
-        match u8.add(actor.sysHead, u8 1):
-          case Ok { value: sum }:
-            match u8.subtract(actor.sysCount, u8 1):
-              case Ok { value: newCount }:
-                actor.sysHead = u8.remainder(sum, actor.sysCap)
-                actor.sysCount = newCount
-                PopResult!.Ok { value: PopResult { msg: m, actor: actor } }
-              case Err { error: e }:
-                PopResult!.Err { error: e }
-          case Err { error: e }:
-            PopResult!.Err { error: e }
-      case Err { error: e }:
-        PopResult!.Err { error: e }
+    m = try Array.get(actor.sysMbox, u32.from(actor.sysHead))
+    sum = try u8.add(actor.sysHead, u8 1)
+    newCount = try u8.subtract(actor.sysCount, u8 1)
+    actor.sysHead = u8.remainder(sum, actor.sysCap)
+    actor.sysCount = newCount
+    PopResult!.Ok { value: PopResult { msg: m, actor: actor } }
 
   public func wake(actor: AslActor): AslActor
     match actor.status:
@@ -238,46 +202,34 @@ module AslWorld:
   # supervision loss, so it surfaces as Err rather than a silent no-op.
   # An out-of-range parent index is impossible → also Err (loud).
   public func notifyParent(world: AslWorld, parentId: u8, childId: u8, code: i32): AslWorld!
-    match AslWorld.getActor(world, parentId):
-      case Ok { value: parent }:
-        match AslWorld.alive(parent):
-          case True {}:
-            down = AslMsg { kind: MsgKind.Down {}, sender: childId, tag: code, val: i32 0 }
-            match AslActor.pushSys(parent, down):
-              case Ok { value: pushed }:
-                match pushed:
-                  case Pushed { actor: parent1 }:
-                    awoken = AslActor.wake(parent1)
-                    AslWorld.setActor(world, parentId, awoken)
-                  case Full {}:
-                    # UNREACHABLE by the capacity theorem: sysCap = capacity+1
-                    # guarantees one DOWN slot per declared child. A Full here
-                    # means fan-out exceeded the declared capacity — a real
-                    # invariant violation, surfaced loudly, never dropped.
-                    AslWorld!.Err { error: Error { code: i32 5, message: string "system ring overflow: fan-out exceeded capacity" } }
-              case Err { error: e }:
-                AslWorld!.Err { error: e }
-          case False {}:
-            AslWorld!.Ok { value: world }
-      case Err { error: e }:
-        AslWorld!.Err { error: e }
+    parent = try AslWorld.getActor(world, parentId)
+    match AslWorld.alive(parent):
+      case True {}:
+        down = AslMsg { kind: MsgKind.Down {}, sender: childId, tag: code, val: i32 0 }
+        pushed = try AslActor.pushSys(parent, down)
+        match pushed:
+          case Pushed { actor: parent1 }:
+            awoken = AslActor.wake(parent1)
+            AslWorld.setActor(world, parentId, awoken)
+          case Full {}:
+            # UNREACHABLE by the capacity theorem: sysCap = capacity+1
+            # guarantees one DOWN slot per declared child. A Full here
+            # means fan-out exceeded the declared capacity — a real
+            # invariant violation, surfaced loudly, never dropped.
+            AslWorld!.Err { error: Error { code: i32 5, message: string "system ring overflow: fan-out exceeded capacity" } }
+      case False {}:
+        AslWorld!.Ok { value: world }
 
   public func terminate(world: AslWorld, id: u8, code: i32): AslWorld!
-    match AslWorld.getActor(world, id):
-      case Ok { value: actor }:
-        actor.status = ActorStatus.Term {}
-        actor.exitCode = code
-        match AslWorld.setActor(world, id, actor):
-          case Ok { value: world1 }:
-            match u8.compare(actor.parent, u8 0):
-              case 0:
-                AslWorld!.Ok { value: world1 }
-              case _:
-                AslWorld.notifyParent(world1, actor.parent, id, code)
-          case Err { error: e }:
-            AslWorld!.Err { error: e }
-      case Err { error: e }:
-        AslWorld!.Err { error: e }
+    actor = try AslWorld.getActor(world, id)
+    actor.status = ActorStatus.Term {}
+    actor.exitCode = code
+    world1 = try AslWorld.setActor(world, id, actor)
+    match u8.compare(actor.parent, u8 0):
+      case 0:
+        AslWorld!.Ok { value: world1 }
+      case _:
+        AslWorld.notifyParent(world1, actor.parent, id, code)
 
   # ---- spawn: scan for the first FREE slot (recursive) ----
   # A full table is the TableFull variant (legit); an in-range index /
@@ -290,28 +242,16 @@ module AslWorld:
   func spawnFrom(world: AslWorld, parent: u8, init: AslState, sysCap: u8, slot: u8): SpawnOut!
     match u8.compare(slot, Config.maxActors()):
       case -1:
-        match Array.get(world.actors, u32.from(slot)):
-          case Ok { value: actor }:
-            match actor.status:
-              case Free {}:
-                fresh = AslActor { state: init, status: ActorStatus.Ready {}, exitCode: i32 0, parent: parent, mbox: Array[AslMsg] { size: u32.from(Config.mboxCap()) }, head: u8 0, count: u8 0, sysMbox: Array[AslMsg] { size: u32.from(sysCap) }, sysHead: u8 0, sysCount: u8 0, sysCap: sysCap }
-                match u8.add(slot, u8 1):
-                  case Ok { value: id }:
-                    match AslWorld.setActor(world, id, fresh):
-                      case Ok { value: world1 }:
-                        SpawnOut!.Ok { value: SpawnOut.Spawned { world: world1, id: id } }
-                      case Err { error: e }:
-                        SpawnOut!.Err { error: e }
-                  case Err { error: e }:
-                    SpawnOut!.Err { error: e }
-              case _:
-                match u8.add(slot, u8 1):
-                  case Ok { value: next }:
-                    AslWorld.spawnFrom(world, parent, init, sysCap, next)
-                  case Err { error: e }:
-                    SpawnOut!.Err { error: e }
-          case Err { error: e }:
-            SpawnOut!.Err { error: e }
+        actor = try Array.get(world.actors, u32.from(slot))
+        match actor.status:
+          case Free {}:
+            fresh = AslActor { state: init, status: ActorStatus.Ready {}, exitCode: i32 0, parent: parent, mbox: Array[AslMsg] { size: u32.from(Config.mboxCap()) }, head: u8 0, count: u8 0, sysMbox: Array[AslMsg] { size: u32.from(sysCap) }, sysHead: u8 0, sysCount: u8 0, sysCap: sysCap }
+            id = try u8.add(slot, u8 1)
+            world1 = try AslWorld.setActor(world, id, fresh)
+            SpawnOut!.Ok { value: SpawnOut.Spawned { world: world1, id: id } }
+          case _:
+            next = try u8.add(slot, u8 1)
+            AslWorld.spawnFrom(world, parent, init, sysCap, next)
       case _:
         SpawnOut!.Ok { value: SpawnOut.TableFull { world: world } }
 
@@ -335,25 +275,16 @@ module AslWorld:
   public func send(world: AslWorld, from: u8, to: u8, tag: i32, val: i32): SendResult!
     match AslWorld.validTarget(world, to):
       case True {}:
-        match AslWorld.getActor(world, to):
-          case Ok { value: actor }:
-            m = AslMsg { kind: MsgKind.User {}, sender: from, tag: tag, val: val }
-            match AslActor.pushBack(actor, m):
-              case Ok { value: pushed }:
-                match pushed:
-                  case Pushed { actor: actor1 }:
-                    awoken = AslActor.wake(actor1)
-                    match AslWorld.setActor(world, to, awoken):
-                      case Ok { value: world1 }:
-                        SendResult!.Ok { value: SendResult { world: world1, ok: Bool.True {} } }
-                      case Err { error: e }:
-                        SendResult!.Err { error: e }
-                  case Full {}:
-                    SendResult!.Ok { value: SendResult { world: world, ok: Bool.False {} } }
-              case Err { error: e }:
-                SendResult!.Err { error: e }
-          case Err { error: e }:
-            SendResult!.Err { error: e }
+        actor = try AslWorld.getActor(world, to)
+        m = AslMsg { kind: MsgKind.User {}, sender: from, tag: tag, val: val }
+        pushed = try AslActor.pushBack(actor, m)
+        match pushed:
+          case Pushed { actor: actor1 }:
+            awoken = AslActor.wake(actor1)
+            world1 = try AslWorld.setActor(world, to, awoken)
+            SendResult!.Ok { value: SendResult { world: world1, ok: Bool.True {} } }
+          case Full {}:
+            SendResult!.Ok { value: SendResult { world: world, ok: Bool.False {} } }
       case False {}:
         SendResult!.Ok { value: SendResult { world: world, ok: Bool.False {} } }
 
@@ -362,21 +293,15 @@ module AslWorld:
   public func stop(world: AslWorld, id: u8): AslWorld!
     match AslWorld.validTarget(world, id):
       case True {}:
-        match AslWorld.getActor(world, id):
-          case Ok { value: actor }:
-            m = AslMsg { kind: MsgKind.Stop {}, sender: u8 0, tag: i32 0, val: i32 0 }
-            match AslActor.pushSys(actor, m):
-              case Ok { value: pushed }:
-                match pushed:
-                  case Pushed { actor: actor1 }:
-                    awoken = AslActor.wake(actor1)
-                    AslWorld.setActor(world, id, awoken)
-                  case Full {}:
-                    AslWorld!.Err { error: Error { code: i32 5, message: string "system ring overflow: fan-out exceeded capacity" } }
-              case Err { error: e }:
-                AslWorld!.Err { error: e }
-          case Err { error: e }:
-            AslWorld!.Err { error: e }
+        actor = try AslWorld.getActor(world, id)
+        m = AslMsg { kind: MsgKind.Stop {}, sender: u8 0, tag: i32 0, val: i32 0 }
+        pushed = try AslActor.pushSys(actor, m)
+        match pushed:
+          case Pushed { actor: actor1 }:
+            awoken = AslActor.wake(actor1)
+            AslWorld.setActor(world, id, awoken)
+          case Full {}:
+            AslWorld!.Err { error: Error { code: i32 5, message: string "system ring overflow: fan-out exceeded capacity" } }
       case False {}:
         AslWorld!.Ok { value: world }
 
@@ -396,24 +321,15 @@ module AslWorld:
   public func findReady(world: AslWorld, start: u8, k: u8): FindOut!
     match u8.compare(k, Config.maxActors()):
       case -1:
-        match u8.add(start, k):
-          case Ok { value: sum }:
-            i = u8.remainder(sum, Config.maxActors())
-            match Array.get(world.actors, u32.from(i)):
-              case Ok { value: actor }:
-                match actor.status:
-                  case Ready {}:
-                    FindOut!.Ok { value: FindOut.Found { slot: i } }
-                  case _:
-                    match u8.add(k, u8 1):
-                      case Ok { value: nextK }:
-                        AslWorld.findReady(world, start, nextK)
-                      case Err { error: e }:
-                        FindOut!.Err { error: e }
-              case Err { error: e }:
-                FindOut!.Err { error: e }
-          case Err { error: e }:
-            FindOut!.Err { error: e }
+        sum = try u8.add(start, k)
+        i = u8.remainder(sum, Config.maxActors())
+        actor = try Array.get(world.actors, u32.from(i))
+        match actor.status:
+          case Ready {}:
+            FindOut!.Ok { value: FindOut.Found { slot: i } }
+          case _:
+            nextK = try u8.add(k, u8 1)
+            AslWorld.findReady(world, start, nextK)
       case _:
         FindOut!.Ok { value: FindOut.NoneReady {} }
 
@@ -448,87 +364,54 @@ module Runtime:
   # spawn an actor whose system ring is sized by this behavior's declared
   # fan-out: sysCap = capacity + 1 (one DOWN slot per child, one for Stop).
   public func spawn(rt: Runtime[Behavior], parent: u8, init: AslState): SpawnOut!
-    match u8.add(Behavior.capacity(), u8 1):
-      case Ok { value: sysCap }:
-        AslWorld.spawn(rt.world, parent, init, sysCap)
-      case Err { error: e }:
-        SpawnOut!.Err { error: e }
+    sysCap = try u8.add(Behavior.capacity(), u8 1)
+    AslWorld.spawn(rt.world, parent, init, sysCap)
 
   # apply one pure step result to actor `id`, then keep stepping.
   func applyStep(rt: Runtime[Behavior], id: u8, actor: AslActor, m: AslMsg, has: Bool, steps: u8): Runtime[Behavior]!
     match Behavior.step(actor.state, m, has):
       case Continue { next: n }:
         actor.state = n
-        match AslWorld.setActor(rt.world, id, actor):
-          case Ok { value: world1 }:
-            rt.world = world1
-            match u8.subtract(steps, u8 1):
-              case Ok { value: rem }:
-                Runtime.runSteps(rt, id, rem)
-              case Err { error: e }:
-                Runtime[Behavior]!.Err { error: e }
-          case Err { error: e }:
-            Runtime[Behavior]!.Err { error: e }
+        world1 = try AslWorld.setActor(rt.world, id, actor)
+        rt.world = world1
+        rem = try u8.subtract(steps, u8 1)
+        Runtime.runSteps(rt, id, rem)
       case Waiting { next: n }:
         actor.state = n
         match AslActor.hasWork(actor):
           case True {}:
             actor.status = ActorStatus.Ready {}
-            match AslWorld.setActor(rt.world, id, actor):
-              case Ok { value: world1 }:
-                rt.world = world1
-                Runtime[Behavior]!.Ok { value: rt }
-              case Err { error: e }:
-                Runtime[Behavior]!.Err { error: e }
+            world1 = try AslWorld.setActor(rt.world, id, actor)
+            rt.world = world1
+            Runtime[Behavior]!.Ok { value: rt }
           case False {}:
             actor.status = ActorStatus.Waiting {}
-            match AslWorld.setActor(rt.world, id, actor):
-              case Ok { value: world1 }:
-                rt.world = world1
-                Runtime[Behavior]!.Ok { value: rt }
-              case Err { error: e }:
-                Runtime[Behavior]!.Err { error: e }
+            world1 = try AslWorld.setActor(rt.world, id, actor)
+            rt.world = world1
+            Runtime[Behavior]!.Ok { value: rt }
       case Done { code: c }:
-        match AslWorld.setActor(rt.world, id, actor):
-          case Ok { value: world1 }:
-            match AslWorld.terminate(world1, id, c):
-              case Ok { value: world2 }:
-                rt.world = world2
-                Runtime[Behavior]!.Ok { value: rt }
-              case Err { error: e }:
-                Runtime[Behavior]!.Err { error: e }
-          case Err { error: e }:
-            Runtime[Behavior]!.Err { error: e }
+        world1 = try AslWorld.setActor(rt.world, id, actor)
+        world2 = try AslWorld.terminate(world1, id, c)
+        rt.world = world2
+        Runtime[Behavior]!.Ok { value: rt }
       case Fail { code: c }:
-        match AslWorld.setActor(rt.world, id, actor):
-          case Ok { value: world1 }:
-            match AslWorld.terminate(world1, id, c):
-              case Ok { value: world2 }:
-                rt.world = world2
-                Runtime[Behavior]!.Ok { value: rt }
-              case Err { error: e }:
-                Runtime[Behavior]!.Err { error: e }
-          case Err { error: e }:
-            Runtime[Behavior]!.Err { error: e }
+        world1 = try AslWorld.setActor(rt.world, id, actor)
+        world2 = try AslWorld.terminate(world1, id, c)
+        rt.world = world2
+        Runtime[Behavior]!.Ok { value: rt }
 
   # pop a message and apply one step. System ring drains first (priority);
   # then the user ring; else a message-less step (has = False).
   func runOne(rt: Runtime[Behavior], id: u8, actor: AslActor, steps: u8): Runtime[Behavior]!
     match u8.compare(actor.sysCount, u8 0):
       case 1:
-        match AslActor.popSys(actor):
-          case Ok { value: pr }:
-            Runtime.applyStep(rt, id, pr.actor, pr.msg, Bool.True {}, steps)
-          case Err { error: e }:
-            Runtime[Behavior]!.Err { error: e }
+        pr = try AslActor.popSys(actor)
+        Runtime.applyStep(rt, id, pr.actor, pr.msg, Bool.True {}, steps)
       case _:
         match u8.compare(actor.count, u8 0):
           case 1:
-            match AslActor.pop(actor):
-              case Ok { value: pr }:
-                Runtime.applyStep(rt, id, pr.actor, pr.msg, Bool.True {}, steps)
-              case Err { error: e }:
-                Runtime[Behavior]!.Err { error: e }
+            pr = try AslActor.pop(actor)
+            Runtime.applyStep(rt, id, pr.actor, pr.msg, Bool.True {}, steps)
           case _:
             emptyMsg = AslMsg { kind: MsgKind.User {}, sender: u8 0, tag: i32 0, val: i32 0 }
             Runtime.applyStep(rt, id, actor, emptyMsg, Bool.False {}, steps)
@@ -539,52 +422,37 @@ module Runtime:
       case 0:
         Runtime[Behavior]!.Ok { value: rt }
       case _:
-        match AslWorld.getActor(rt.world, id):
-          case Ok { value: actor }:
-            match actor.status:
-              case Ready {}:
-                Runtime.runOne(rt, id, actor, steps)
-              case _:
-                Runtime[Behavior]!.Ok { value: rt }
-          case Err { error: e }:
-            Runtime[Behavior]!.Err { error: e }
+        actor = try AslWorld.getActor(rt.world, id)
+        match actor.status:
+          case Ready {}:
+            Runtime.runOne(rt, id, actor, steps)
+          case _:
+            Runtime[Behavior]!.Ok { value: rt }
 
   # one quantum: pick the next READY actor round-robin, run <= K steps.
   # A findReady Err means "no READY actor" — a legit idle fixed point (Ok).
   public func runQuantum(rt: Runtime[Behavior]): Runtime[Behavior]!
     world = rt.world
-    match AslWorld.findReady(world, world.rr, u8 0):
-      case Ok { value: found }:
-        match found:
-          case Found { slot: slot }:
-            match u8.add(slot, u8 1):
-              case Ok { value: id }:
-                rt.world = AslWorld.setRr(rt.world, id)
-                Runtime.runSteps(rt, id, Config.quantum())
-              case Err { error: e }:
-                Runtime[Behavior]!.Err { error: e }
-          case NoneReady {}:
-            Runtime[Behavior]!.Ok { value: rt }
-      case Err { error: e }:
-        Runtime[Behavior]!.Err { error: e }
+    found = try AslWorld.findReady(world, world.rr, u8 0)
+    match found:
+      case Found { slot: slot }:
+        id = try u8.add(slot, u8 1)
+        rt.world = AslWorld.setRr(rt.world, id)
+        Runtime.runSteps(rt, id, Config.quantum())
+      case NoneReady {}:
+        Runtime[Behavior]!.Ok { value: rt }
 
   # run quanta until a fixed point (no READY actor) or the budget runs out.
   public func runToIdle(rt: Runtime[Behavior], maxQuanta: u32): Runtime[Behavior]!
     match u32.compare(maxQuanta, u32 0):
       case 1:
-        match Runtime.runQuantum(rt):
-          case Ok { value: next }:
-            match Eq.world(rt.world, next.world):
-              case True {}:
-                Runtime[Behavior]!.Ok { value: next }
-              case False {}:
-                match u32.subtract(maxQuanta, u32 1):
-                  case Ok { value: rem }:
-                    Runtime.runToIdle(next, rem)
-                  case Err { error: e }:
-                    Runtime[Behavior]!.Err { error: e }
-          case Err { error: e }:
-            Runtime[Behavior]!.Err { error: e }
+        next = try Runtime.runQuantum(rt)
+        match Eq.world(rt.world, next.world):
+          case True {}:
+            Runtime[Behavior]!.Ok { value: next }
+          case False {}:
+            rem = try u32.subtract(maxQuanta, u32 1)
+            Runtime.runToIdle(next, rem)
       case _:
         Runtime[Behavior]!.Ok { value: rt }
 
