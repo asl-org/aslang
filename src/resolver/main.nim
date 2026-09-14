@@ -438,7 +438,7 @@ proc resolveExplicitImport(imp: Import, importedFile: ResolvedFile): Result[seq[
   ok(importedTypes)
 
 proc resolveImport(app: ResolvedApp, imp: Import): Result[ResolvedImport, string] =
-  let importedFile = app.findImportedFile(imp.absPath)
+  let importedFile = app.findFile(imp.absPath)
   let importedTypes =
     case imp.kind:
     of ikShorthand: importedFile.exportedTypes
@@ -459,7 +459,7 @@ proc resolveFile(app: ResolvedApp, fileId: int, file: parser.File): Result[Resol
   ok(resolvedFile)
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
-  let resolvedApp = newResolvedApp(app)
+  let resolvedApp = newResolvedApp()
   for index, file in app.files:
     let resolvedFile = ? resolveFile(resolvedApp, index, file)
     resolvedApp.add(resolvedFile)

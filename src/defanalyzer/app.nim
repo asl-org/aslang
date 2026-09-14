@@ -103,7 +103,7 @@ proc files*(appCtx: ResolvedAppContext): seq[ResolvedFile] = appCtx.resolved.fil
 proc fileDefs*(appCtx: ResolvedAppContext): seq[AnalyzedDefFile] = appCtx.fileDefs
 
 proc findFile*(appCtx: ResolvedAppContext, file: parser.File): ResolvedFile =
-  appCtx.resolved.findFile(file)
+  appCtx.resolved.findFile(file.path)
 
 proc add*(appCtx: ResolvedAppContext, fileDef: AnalyzedDefFile) =
   assert(fileDef.path notin appCtx.fileDefIndex, fmt"[BUG] - duplicate file def `{fileDef.path}` in the app context")
