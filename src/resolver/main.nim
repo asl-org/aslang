@@ -161,17 +161,17 @@ proc resolveDataDef(file: ResolvedFile, ctxType: LocalType, data: DataDef): Resu
     let resolvedUnionDef = ? resolveUnionDef(file, ctxType, data.union)
     ok(newResolvedDataDef(resolvedUnionDef))
 
-proc resolveFunctionDef(file: ResolvedFile, ctxType: LocalType, def: FunctionDef): Result[ResolvedFunctionDef, string] =
+proc resolveFunctionDef(file: ResolvedFile, typeId: int, ctxType: LocalType, functionId: int, def: FunctionDef): Result[ResolvedFunctionDef, string] =
   var resolvedArgDefs: seq[ResolvedArgumentDef]
   for argDef in def.args:
     let resolvedArgDef = ? resolveArgumentDef(file, ctxType, argDef)
     resolvedArgDefs.add(resolvedArgDef)
 
   let resolvedReturnType = ? resolveArgumentType(file, ctxType, def.returns)
-  ok(newResolvedFunctionDef(def, resolvedArgDefs, resolvedReturnType))
+  ok(newResolvedFunctionDef(file.id, typeId, functionId, def, resolvedArgDefs, resolvedReturnType))
 
-proc resolveExternFunction(file: ResolvedFile, ctxType: LocalType, function: ExternFunction): Result[ResolvedExternFunction, string] =
-  let resolvedFunctionDef = ? resolveFunctionDef(file, ctxType, function.def)
+proc resolveExternFunction(file: ResolvedFile, typeId: int, ctxType: LocalType, functionId: int, function: ExternFunction): Result[ResolvedExternFunction, string] =
+  let resolvedFunctionDef = ? resolveFunctionDef(file, typeId, ctxType, functionId, function.def)
   ok(newResolvedExternFunction(function, resolvedFunctionDef))
 
 proc resolveLiteral(file: ResolvedFile, literal: Literal): Result[ResolvedLiteral, string] =
@@ -368,8 +368,8 @@ proc resolveStatement(file: ResolvedFile, ctxType: LocalType, funcCtx: FunctionC
     let resolvedMutation = ? resolveSetter(file, ctxType, funcCtx, statement.setter)
     ok(newResolvedStatement(resolvedMutation))
 
-proc resolveUserFunction(file: ResolvedFile, ctxType: LocalType, function: UserFunction): Result[ResolvedUserFunction, string] =
-  let resolvedFuncDef = ? resolveFunctionDef(file, ctxType, function.def)
+proc resolveUserFunction(file: ResolvedFile, typeId: int, ctxType: LocalType, functionId: int, function: UserFunction): Result[ResolvedUserFunction, string] =
+  let resolvedFuncDef = ? resolveFunctionDef(file, typeId, ctxType, functionId, function.def)
 
   var funcCtx = ? newFunctionContext(resolvedFuncDef)
   var resolvedStmts: seq[ResolvedStatement]
@@ -380,19 +380,19 @@ proc resolveUserFunction(file: ResolvedFile, ctxType: LocalType, function: UserF
 
   ok(newResolvedUserFunction(function, resolvedFuncDef, resolvedStmts))
 
-proc resolveFunction(file: ResolvedFile, ctxType: LocalType, function: Function): Result[ResolvedFunction, string] =
+proc resolveFunction(file: ResolvedFile, typeId: int, ctxType: LocalType, functionId: int, function: Function): Result[ResolvedFunction, string] =
   case function.kind:
   of fkUser:
-    let userFunc = ? resolveUserFunction(file, ctxType, function.user)
+    let userFunc = ? resolveUserFunction(file, typeId, ctxType, functionId, function.user)
     ok(newResolvedFunction(userFunc))
   of fkExtern:
-    let externFunc = ? resolveExternFunction(file, ctxType, function.extern)
+    let externFunc = ? resolveExternFunction(file, typeId, ctxType, functionId, function.extern)
     ok(newResolvedFunction(externFunc))
   of fkGenerated:
-    let generatedFunc = ? resolveFunctionDef(file, ctxType, function.generated)
+    let generatedFunc = ? resolveFunctionDef(file, typeId, ctxType, functionId, function.generated)
     ok(newResolvedFunction(generatedFunc))
 
-proc resolveModule(file: ResolvedFile, module: Module): Result[ResolvedModule, string] =
+proc resolveModule(file: ResolvedFile, moduleId: int, module: Module): Result[ResolvedModule, string] =
   let ctxType = newLocalType(module)
   let resolvedData =
     if module.data.isSome:
@@ -402,32 +402,32 @@ proc resolveModule(file: ResolvedFile, module: Module): Result[ResolvedModule, s
       none(ResolvedDataDef)
 
   var resolvedFunctions: seq[ResolvedFunction]
-  for function in module.functions:
-    let resolvedFunction = ? resolveFunction(file, ctxType, function)
+  for index, function in module.functions:
+    let resolvedFunction = ? resolveFunction(file, moduleId, ctxType, index, function)
     resolvedFunctions.add(resolvedFunction)
 
   # Construction invariants (input-signature uniqueness, public
   # modules require public generics) live on the constructor.
-  newResolvedModule(module, resolvedData, resolvedFunctions)
+  newResolvedModule(file.id, moduleId, module, resolvedData, resolvedFunctions)
 
-proc resolveGeneric(file: ResolvedFile, generic: Generic): Result[ResolvedGeneric, string] =
+proc resolveGeneric(file: ResolvedFile, genericId: int, generic: Generic): Result[ResolvedGeneric, string] =
   let ctxType = newLocalType(generic)
   var resolvedFuncDefs: seq[ResolvedFunctionDef]
-  for def in generic.defs:
-    let resolvedFuncDef = ? resolveFunctionDef(file, ctxType, def)
+  for index, def in generic.defs:
+    let resolvedFuncDef = ? resolveFunctionDef(file, genericId, ctxType, index, def)
     resolvedFuncDefs.add(resolvedFuncDef)
 
   # Input-signature uniqueness lives on the constructor.
-  newResolvedGeneric(generic, resolvedFuncDefs)
+  newResolvedGeneric(file.id, genericId, generic, resolvedFuncDefs)
 
-proc resolveType(file: ResolvedFile, typ: LocalType): Result[ResolvedLocalType, string] =
+proc resolveType(file: ResolvedFile, typeId: int, typ: LocalType): Result[ResolvedLocalType, string] =
   assert(typ.decorators.len == 0, fmt"{typ.loc} types do not support decorators")
   case typ.kind:
   of ltkGeneric:
-    let resolvedGeneric = ? resolveGeneric(file, typ.generic)
+    let resolvedGeneric = ? resolveGeneric(file, typeId, typ.generic)
     ok(newResolvedLocalType(resolvedGeneric))
   of ltkModule:
-    let resolvedModule = ? resolveModule(file, typ.module)
+    let resolvedModule = ? resolveModule(file, typeId, typ.module)
     ok(newResolvedLocalType(resolvedModule))
 
 proc resolveExplicitImport(imp: Import, importedFile: ResolvedFile): Result[seq[ResolvedImportedType], string] =
@@ -445,22 +445,22 @@ proc resolveImport(app: ResolvedApp, imp: Import): Result[ResolvedImport, string
     of ikExplicit: ? resolveExplicitImport(imp, importedFile)
   ok(newResolvedImport(imp, importedFile.parsed, importedTypes))
 
-proc resolveFile(app: ResolvedApp, file: parser.File): Result[ResolvedFile, string] =
-  var resolvedFile = ? newResolvedFile(file)
+proc resolveFile(app: ResolvedApp, fileId: int, file: parser.File): Result[ResolvedFile, string] =
+  var resolvedFile = ? newResolvedFile(fileId, file)
 
   for imp in file.imports:
     let resolvedImport = ? resolveImport(app, imp)
     resolvedFile = ? resolvedFile.add(resolvedImport)
 
-  for typ in file.types:
-    let resolvedType = ? resolveType(resolvedFile, typ)
+  for index, typ in file.types:
+    let resolvedType = ? resolveType(resolvedFile, index, typ)
     resolvedFile = ? resolvedFile.add(resolvedType)
 
   ok(resolvedFile)
 
 proc resolve*(app: App): Result[ResolvedApp, string] =
   let resolvedApp = newResolvedApp(app)
-  for file in app.files:
-    let resolvedFile = ? resolveFile(resolvedApp, file)
+  for index, file in app.files:
+    let resolvedFile = ? resolveFile(resolvedApp, index, file)
     resolvedApp.add(resolvedFile)
   ok(resolvedApp)

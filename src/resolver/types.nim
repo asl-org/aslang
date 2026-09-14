@@ -19,6 +19,8 @@ import function
 # data block + the module's fully-resolved function set with indices.
 
 type ResolvedModule* = ref object
+  fileId: int
+  id: int
   parsed: Module
   data: Option[ResolvedDataDef]
   funcDefIndex: Table[ResolvedFunctionDef, int]
@@ -49,7 +51,7 @@ proc validatePublicRequires(parsed: Module, data: ResolvedDataDef): Result[void,
       return err(fmt"{requirement.loc} public module `{parsed.name.asl}` requires non-public generic `{requirement.generic.name.asl}` — a generic named in a public module's type parameters must be public")
   ok()
 
-proc newResolvedModule*(parsed: Module, data: Option[ResolvedDataDef], functions: seq[ResolvedFunction]): Result[ResolvedModule, string] =
+proc newResolvedModule*(fileId: int, id: int, parsed: Module, data: Option[ResolvedDataDef], functions: seq[ResolvedFunction]): Result[ResolvedModule, string] =
   ## Front-door: owns the module's construction invariants —
   ## input-signature uniqueness (two functions may not share name +
   ## input types; ResolvedFunctionDef hashes by exactly that, returns
@@ -68,7 +70,7 @@ proc newResolvedModule*(parsed: Module, data: Option[ResolvedDataDef], functions
   if parsed.public and data.isSome:
     ? validatePublicRequires(parsed, data.get)
 
-  ok(ResolvedModule(parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions))
+  ok(ResolvedModule(fileId: fileId, id: id, parsed: parsed, data: data, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs), functions: functions))
 
 proc public*(module: ResolvedModule): bool = module.parsed.public
 proc parsed*(module: ResolvedModule): Module = module.parsed
@@ -154,12 +156,14 @@ proc findFunctionDefs*(module: ResolvedModule, name: Identifier, arity: int, acc
 # generic is implicitly public (per grammar), so no public filter.
 
 type ResolvedGeneric* = ref object
+  fileId: int
+  id: int
   parsed: Generic
   funcDefs: seq[ResolvedFunctionDef]
   funcDefIndex: Table[ResolvedFunctionDef, int]
   funcNameArityIndex: Table[Identifier, Table[int, seq[int]]]
 
-proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): Result[ResolvedGeneric, string] =
+proc newResolvedGeneric*(fileId: int, id: int, parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): Result[ResolvedGeneric, string] =
   ## Front-door: owns input-signature uniqueness for the generic's
   ## funcDefs (same rule as newResolvedModule), then computes the
   ## lookup indices.
@@ -169,7 +173,7 @@ proc newResolvedGeneric*(parsed: Generic, funcDefs: seq[ResolvedFunctionDef]): R
       let prevLoc = funcDefs[funcDefIndex[funcDef]].loc
       return err(fmt"{funcDef.loc} duplicate function `{funcDef.name.asl}` with the same input signature encountered, see previous declaration at {prevLoc}")
     funcDefIndex[funcDef] = id
-  ok(ResolvedGeneric(parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs)))
+  ok(ResolvedGeneric(fileId: fileId, id: id, parsed: parsed, funcDefs: funcDefs, funcDefIndex: funcDefIndex, funcNameArityIndex: buildFuncNameArityIndex(funcDefs)))
 
 proc public*(generic: ResolvedGeneric): bool = generic.parsed.public
 proc parsed*(generic: ResolvedGeneric): Generic = generic.parsed

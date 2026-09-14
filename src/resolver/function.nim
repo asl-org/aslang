@@ -15,14 +15,15 @@ import statement
 # A resolved function signature (arg defs + return type).
 
 type ResolvedFunctionDef* = ref object
+  fileId: int
+  typeId: int
+  id: int
   parsed: FunctionDef
   args: seq[ResolvedArgumentDef]
   returns: ResolvedArgumentType
 
-proc newResolvedFunctionDef*(parsed: FunctionDef,
-    args: seq[ResolvedArgumentDef],
-    returns: ResolvedArgumentType): ResolvedFunctionDef =
-  ResolvedFunctionDef(parsed: parsed, args: args, returns: returns)
+proc newResolvedFunctionDef*(fileId: int, typeId: int, id: int, parsed: FunctionDef, args: seq[ResolvedArgumentDef], returns: ResolvedArgumentType): ResolvedFunctionDef =
+  ResolvedFunctionDef(fileId: fileId, typeId: typeId, id: id, parsed: parsed, args: args, returns: returns)
 
 proc args*(funcDef: ResolvedFunctionDef): seq[ResolvedArgumentDef] = funcDef.args
 proc returns*(funcDef: ResolvedFunctionDef): ResolvedArgumentType = funcDef.returns
@@ -51,7 +52,7 @@ proc concrete*(funcDef: ResolvedFunctionDef, subst: ResolvedImplMap): ResolvedFu
   for arg in funcDef.args:
     concreteArgs.add(arg.concrete(subst))
   let concreteReturns = funcDef.returns.concrete(subst)
-  newResolvedFunctionDef(funcDef.parsed, concreteArgs, concreteReturns)
+  newResolvedFunctionDef(funcDef.fileId, funcDef.typeId, funcDef.id,  funcDef.parsed, concreteArgs, concreteReturns)
 
 # ---- ResolvedExternFunction ----
 # A function whose body lives in FFI-land, wrapping a resolved signature.

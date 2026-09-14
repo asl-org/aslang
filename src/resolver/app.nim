@@ -22,6 +22,7 @@ import imports
 # binding carrying the source file's LocalType.
 
 type ResolvedFile* = ref object
+  id: int
   parsed: parser.File
   imports: seq[ResolvedImport]
   importedTypeIndex: Table[LocalType, ResolvedLocalType]
@@ -37,8 +38,8 @@ proc insert(file: ResolvedFile, name: Identifier, typ: Type): Result[ResolvedFil
     file.typeIndex[name] = typ
     ok(file)
 
-proc newResolvedFile*(parsed: parser.File): Result[ResolvedFile, string] =
-  var file = ResolvedFile(parsed: parsed)
+proc newResolvedFile*(id: int, parsed: parser.File): Result[ResolvedFile, string] =
+  var file = ResolvedFile(id: id, parsed: parsed)
   for typ in parsed.types:
     file = ? file.insert(typ.name, newType(typ))
   ok(file)
@@ -58,6 +59,7 @@ proc add*(file: ResolvedFile, localType: ResolvedLocalType): Result[ResolvedFile
     file.localTypes.add(localType)
     ok(file)
 
+proc id*(file: ResolvedFile): int = file.id
 proc path*(file: ResolvedFile): string = file.parsed.path
 proc parsed*(file: ResolvedFile): parser.File = file.parsed
 proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
