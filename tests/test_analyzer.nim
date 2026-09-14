@@ -1196,7 +1196,7 @@ public module M:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "i32")
-    check errorContains(r.error, "scope")
+    check errorContains(r.error, "is not defined in file")
 
   test "bare literal in a position expecting a struct is rejected":
     # If a function arg expects a struct-typed module (`Pair`) and the

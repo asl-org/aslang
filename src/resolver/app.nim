@@ -11,15 +11,54 @@ import ../parser/main as parser
 import types
 import imports
 
+type FileContext* = ref object
+  app: App
+  id: int
+  file: parser.File
+  importedTypeIndex: Table[Identifier, LocalType]
+
+proc newFileContext*(app: App, id: int, file: parser.File): FileContext =
+  FileContext(app: app, id: id, file: file)
+
+proc id*(context: FileContext): int = context.id
+
+proc findType*(context: FileContext, name: Identifier): Result[LocalType, string] =
+  let maybeLocalType = context.file.findType(name)
+  if maybeLocalType.isOk:
+    ok(maybeLocalType.get)
+  elif name in context.importedTypeIndex:
+    ok(context.importedTypeIndex[name])
+  else:
+    err(fmt"{name.loc} type `{name.asl}` is not defined in file `{context.file.path}`")
+
+proc add*(context: FileContext, imp: ResolvedImport): Result[FileContext, string] =
+  for impType in imp.importedTypes:
+    let maybeType = context.findType(impType.binding)
+    if maybeType.isOk:
+      return err(fmt"{impType.binding.loc} duplicate type declaration encountered, see previous declaration at {maybeType.get.loc}")
+    context.importedTypeIndex[impType.binding] = impType.localType.parsed
+  ok(context)
+
+proc findModule*(context: FileContext, name: Identifier): Result[Module, string] =
+  let typ = ? context.findType(name)
+  case typ.kind:
+  of ltkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
+  of ltkModule: ok(typ.module)
+
+proc findGeneric*(context: FileContext, name: Identifier): Result[Generic, string] =
+  let typ = ? context.findType(name)
+  case typ.kind:
+  of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
+  of ltkGeneric: ok(typ.generic)
+
 # ============================================================
 # ResolvedFile
 # ============================================================
-# Per-file resolver scope: the name -> scope-entry table (`Type`, the
-# Local | Imported union defined in imports.nim) plus the file's
-# resolved imports and local types with an identity index — populated
-# by `insert` / `add` as the resolver walks the file. A `Type` entry
-# resolves either to a type declared in this file or to a LINKED import
-# binding carrying the source file's LocalType.
+# A file's resolved result: its resolved imports and local types, each
+# kept behind an identity index (hash-by-loc) so later phases can look a
+# type up by the parsed LocalType the resolver bound it to. Built in one
+# shot from the fully-resolved imports + local types (see newResolvedFile);
+# name-based scope resolution during the resolve pass lives on FileContext.
 
 type ResolvedFile* = ref object
   id: int
@@ -28,36 +67,18 @@ type ResolvedFile* = ref object
   importedTypeIndex: Table[LocalType, ResolvedLocalType]
   localTypes: seq[ResolvedLocalType]
   localTypeIndex: Table[LocalType, int]
-  typeIndex: Table[Identifier, Type]
 
-proc insert(file: ResolvedFile, name: Identifier, typ: Type): Result[ResolvedFile, string] =
-  if name in file.typeIndex:
-    let loc = file.typeIndex[name].loc
-    err(fmt"{name.loc} duplicate type declaration encountered, see previous declaration at {loc}")
-  else:
-    file.typeIndex[name] = typ
-    ok(file)
+proc newResolvedFile*(id: int, parsed: parser.File, imports: seq[ResolvedImport], localTypes: seq[ResolvedLocalType]): Result[ResolvedFile, string] =
+  var importedTypeIndex: Table[LocalType, ResolvedLocalType]
+  for imp in imports:
+    for impType in imp.importedTypes:
+      importedTypeIndex[impType.localType.parsed] = impType.localType
 
-proc newResolvedFile*(id: int, parsed: parser.File): Result[ResolvedFile, string] =
-  var file = ResolvedFile(id: id, parsed: parsed)
-  for typ in parsed.types:
-    file = ? file.insert(typ.name, newType(typ))
-  ok(file)
-
-proc add*(file: ResolvedFile, imp: ResolvedImport): Result[ResolvedFile, string] =
-  file.imports.add(imp)
-  for impType in imp.importedTypes:
-    discard ? file.insert(impType.binding, newType(impType))
-    file.importedTypeIndex[impType.localType.parsed] = impType.localType
-  ok(file)
-
-proc add*(file: ResolvedFile, localType: ResolvedLocalType): Result[ResolvedFile, string] =
-  if localType.parsed in file.localTypeIndex:
-    err(fmt"[BUG] - {localType.loc} duplicate local type `{localType.name.asl}` in the resolved file")
-  else:
-    file.localTypeIndex[localType.parsed] = file.localTypes.len
-    file.localTypes.add(localType)
-    ok(file)
+  var localTypeIndex: Table[LocalType, int]
+  for index, localType in localTypes:
+    assert(localType.parsed notin localTypeIndex, fmt"[BUG] - {localType.loc} duplicate local type `{localType.name.asl}` in the resolved file")
+    localTypeIndex[localType.parsed] = index
+  ok(ResolvedFile(id: id, parsed: parsed, imports: imports, importedTypeIndex: importedTypeIndex, localTypes: localTypes, localTypeIndex: localTypeIndex))
 
 proc id*(file: ResolvedFile): int = file.id
 proc path*(file: ResolvedFile): string = file.parsed.path
@@ -67,22 +88,6 @@ proc imports*(file: ResolvedFile): seq[ResolvedImport] = file.imports
 proc exportedTypes*(file: ResolvedFile): seq[ResolvedImportedType] =
   file.localTypes.filterIt(it.public).mapIt(newResolvedImportedType(it))
 proc localTypes*(file: ResolvedFile): seq[ResolvedLocalType] = file.localTypes
-
-proc findLocalType*(file: ResolvedFile, name: Identifier): Result[LocalType, string] =
-  if name in file.typeIndex: ok(file.typeIndex[name].localType)
-  else: err(fmt"{name.loc} type `{name.asl}` does not exist in the scope")
-
-proc findModule*(file: ResolvedFile, name: Identifier): Result[Module, string] =
-  let initType = ? file.findLocalType(name)
-  case initType.kind:
-  of ltkGeneric: err(fmt"{name.loc} type `{name.asl}` is a generic and not a module")
-  of ltkModule: ok(initType.module)
-
-proc findGeneric*(file: ResolvedFile, name: Identifier): Result[Generic, string] =
-  let initType = ? file.findLocalType(name)
-  case initType.kind:
-  of ltkModule: err(fmt"{name.loc} type `{name.asl}` is a module but expected generic")
-  of ltkGeneric: ok(initType.generic)
 
 # Identity lookups — every key handed to these was bound by the
 # resolver against this same file, so a miss (or a kind mismatch) is
@@ -119,11 +124,13 @@ proc findGenericInScope*(file: ResolvedFile, generic: Generic): ResolvedGeneric 
 # (analyzer) wrap it in turn.
 
 type ResolvedApp* = ref object
+  parsed: App
   files: seq[ResolvedFile]
   fileIndex: Table[string, int]
 
-proc newResolvedApp*(): ResolvedApp = ResolvedApp()
+proc newResolvedApp*(parsed: App): ResolvedApp = ResolvedApp(parsed: parsed)
 
+proc parsed*(app: ResolvedApp): App = app.parsed
 proc files*(app: ResolvedApp): seq[ResolvedFile] = app.files
 
 proc add*(app: ResolvedApp, file: ResolvedFile) =

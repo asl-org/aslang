@@ -456,7 +456,7 @@ module M:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "NoSuchType")
-    check errorContains(r.error, "does not exist in the scope")
+    check errorContains(r.error, "is not defined in file")
 
   test "variable not in scope is reported":
     let (r, dir) = resolveFiles([
@@ -821,7 +821,7 @@ public module u64:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "Hidden")
-    check errorContains(r.error, "does not exist in the scope")
+    check errorContains(r.error, "is not defined in file")
 
   test "shorthand import vs locally-defined type rejects":
     # The shorthand brings `u8` from base.aslr; the entry file also
