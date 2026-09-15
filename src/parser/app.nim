@@ -33,6 +33,15 @@ proc validateNoSelfImport(imports: seq[Import], path: string): Result[void, Pars
       return err(newParserError(msg, imp.loc))
   ok()
 
+proc validateNoDuplicateImport(imports: seq[Import]): Result[void, ParserError] =
+  var seen: Table[string, Location]
+  for imp in imports:
+    if imp.absPath in seen:
+      let msg = fmt"duplicate import — this file is already imported at {seen[imp.absPath]}"
+      return err(newParserError(msg, imp.loc))
+    seen[imp.absPath] = imp.loc
+  ok()
+
 proc buildImportedTypeNameIndex(imports: seq[Import]): Result[Table[Identifier, ImportedType], ParserError] =
   ## Parser-time index build: only ikExplicit imports contribute
   ## names. ikShorthand imports have no names until the resolver
@@ -99,6 +108,7 @@ proc newAslFile*(path: string, imports: seq[Import], types: seq[LocalType],
   # this very file would otherwise smuggle a self-import past the
   # check.
   ? validateNoSelfImport(allImports, path)
+  ? validateNoDuplicateImport(allImports)
   let importedNameIndex = ? buildImportedTypeNameIndex(imports)
   let typeNameIndex = ? buildTypeNameIndex(types)
   ? validateTypeNameConflict(importedNameIndex, typeNameIndex)

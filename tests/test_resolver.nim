@@ -839,25 +839,6 @@ module u8:
     check r.isErr
     check errorContains(r.error, "duplicate type declaration")
 
-  test "shorthand import vs explicit import of same name rejects":
-    # Importing the same name explicitly and via shorthand from the
-    # same file collides — the explicit `{ u8 }` and the shorthand's
-    # `u8` resolve to the same binding.
-    let (r, dir) = resolveFiles([
-      ("entry.asl", """
-import { u8 } from "./base.aslr"
-import "./base.aslr"
-
-module M:
-  struct:
-    b: u8
-"""),
-      ("base.aslr", Base)
-    ])
-    cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "duplicate type declaration")
-
   test "two shorthand imports with overlapping public sets reject":
     # Two files with overlapping public names imported via shorthand
     # from one entry — the overlapping name (u8) collides.

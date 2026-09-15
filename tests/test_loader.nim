@@ -217,14 +217,12 @@ public module Runtime:
     cleanupDir(dir)
     check r.isOk
 
-  test "diamond dedup: bare and .asl forms of same import resolve to one file":
-    # `entry.asl` imports `./helper` (bare, resolves via fallback).
-    # `entry.asl` also imports `./helper.asl` (explicit). Both
-    # forms must resolve to the same absolute path so the BFS
-    # loader deduplicates them and parses `helper.asl` exactly
-    # once — verified indirectly by the analyzer accepting the
-    # program (double-import of the same file with different
-    # aliases is allowed; double-parse would show as an error).
+  test "importing the same file twice (bare + .asl forms) is rejected as duplicate":
+    # `./helper` (bare, fallback-resolved) and `./helper.asl` name the
+    # SAME absolute path, so importing both is a duplicate import — a file
+    # may import each source path at most once. (This also pins that the
+    # two path forms normalize to one absPath. True BFS dedup across
+    # DIFFERENT importers is covered by the diamond test above.)
     let (r, dir) = parseFiles([
       ("entry.asl", """
 import { Helper as First } from "./helper"
@@ -241,10 +239,8 @@ public module Helper:
 """)
     ])
     cleanupDir(dir)
-    check r.isOk
-    # Both import lines resolve to the same absPath — App should
-    # contain only 2 files (entry + helper), not 3.
-    check r.get.files.len == 2
+    check r.isErr
+    check errorContains(r.error, "duplicate import")
 
   test "unknown vendor import is rejected":
     # `toImportPath` accepts the `@`-prefix syntactically, but
