@@ -24,9 +24,6 @@ export function
 import module
 export module
 
-import imports
-export imports
-
 import app
 export app
 
@@ -540,30 +537,25 @@ proc analyzeModule*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule): Re
     analyzedFunctions.add(analyzedFunction)
   ok(newAnalyzedModule(module, analyzedFunctions))
 
-proc analyzeImportedType*(impFile: AnalyzedDefFile, impType: AnalyzedDefImportedType): Result[AnalyzedImportedType, string] =
-  let analyzedImpType = impFile.findType(impType.typ)
-  ok(newAnalyzedImportedType(impType, analyzedImpType))
-
-proc analyzeImport*(appDef: AnalyzedDefApp, imp: AnalyzedDefImport): Result[AnalyzedImport, string] =
+proc analyzeImport*(appDef: AnalyzedDefApp, imp: AnalyzedDefImport): Result[seq[AnalyzedLocalType], string] =
   let impFile = appDef.findFileDef(imp.path)
-  var analyzedImpTypes: seq[AnalyzedImportedType]
+  var analyzedLocalTypes: seq[AnalyzedLocalType]
   for impType in imp.importedTypes:
-    let analyzedImportedType = ? analyzeImportedType(impFile, impType)
-    analyzedImpTypes.add(analyzedImportedType)
-  ok(newAnalyzedImport(imp, analyzedImpTypes))
+    let analyzedLocalType = impFile.findType(impType.typ)
+    analyzedLocalTypes.add(analyzedLocalType)
+  ok(analyzedLocalTypes)
 
 proc analyzeFile(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile): Result[AnalyzedFile, string] =
-  var analyzedImports: seq[AnalyzedImport]
+  var importedTypes: seq[AnalyzedLocalType]
   for imp in fileDef.imports:
-    let analyzedImport = ? analyzeImport(appDef, imp)
-    analyzedImports.add(analyzedImport)
+    importedTypes.add(? analyzeImport(appDef, imp))
 
-  let fileCtx = newAnalyzedFileContext(analyzedImports, fileDef.types)
+  let fileCtx = newAnalyzedFileContext(importedTypes & fileDef.types)
   var analyzedModules: seq[AnalyzedModule]
   for module in fileDef.modules:
     let analyzedModule = ? analyzeModule(fileCtx, module)
     analyzedModules.add(analyzedModule)
-  ok(newAnalyzedFile(fileDef, analyzedImports, analyzedModules))
+  ok(newAnalyzedFile(fileDef, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
   let appDef = ? analyzeDefApp(app)

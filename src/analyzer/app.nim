@@ -15,20 +15,20 @@ import results, strformat, tables
 
 import ../defanalyzer/main as defanalyzer
 import module
-import imports
 import function
 
 # ---- AnalyzedFile ----
-# Per-file result of the analyzer pass: the file's imports and modules
-# alongside the resolver-side back-ref.
+# Per-file result of the analyzer pass: the file's analyzed modules
+# alongside the resolver-side back-ref. Imports need no analyzed form of
+# their own — an imported type's analyzed twin is fetched from its source
+# file's def bundle and folded straight into the file context.
 
 type AnalyzedFile* = ref object
   def: AnalyzedDefFile
-  imports: seq[AnalyzedImport]
   modules: seq[AnalyzedModule]
 
-proc newAnalyzedFile*(def: AnalyzedDefFile, imports: seq[AnalyzedImport], modules: seq[AnalyzedModule]): AnalyzedFile =
-  AnalyzedFile(def: def, imports: imports, modules: modules)
+proc newAnalyzedFile*(def: AnalyzedDefFile, modules: seq[AnalyzedModule]): AnalyzedFile =
+  AnalyzedFile(def: def, modules: modules)
 
 proc path*(f: AnalyzedFile): string = f.def.path
 proc generics*(f: AnalyzedFile): seq[AnalyzedGeneric] = f.def.generics

@@ -579,12 +579,12 @@ Three phase-A invariants worth naming:
   `analyzeDefArgumentType` (reused by phase B for synthetic argument
   types); every other walker is private to the barrel.
 
-**Pass B — bodies.** The per-file `analyzeFile` walk first lifts
-each phase-A import def to its body form (`analyzeImport` — each
-imported type resolves to the source file's `AnalyzedLocalType`
-via that file's fileDef), builds the per-file `AnalyzedFileContext`
-spanning imports + local types, and then analyzes each module's
-function bodies against it. Call sites read pre-analyzed funcDef
+**Pass B — bodies.** The per-file `analyzeFile` walk first collects
+each import's analyzed types (`analyzeImport` — each imported type's
+`AnalyzedLocalType` twin, fetched from the source file's fileDef; it
+returns a plain `seq[AnalyzedLocalType]`, no wrapper), merges them with
+this file's defs into the per-file `AnalyzedFileContext`, and then
+analyzes each module's function bodies against it. Call sites read pre-analyzed funcDef
 signatures via `fileCtx.findType(typ).findFunctionDefs(...)` — no
 re-analysis of arg types or return types per call site. Body-level
 analyzed types back-reference the phase-A defs that produced them
@@ -629,8 +629,9 @@ their `AnalyzedFunctionDef`). Scope:
   `analyzeDefApp` / `analyzeDefFile` and
   `analyzeDefImport`'s `app.findFile`). Phase B never sees
   it. `fileDef.findType` stays local-only by design —
-  `analyzeImportedType` uses it to verify an imported name is
-  DEFINED in its source file, not merely visible there.
+  `analyzeImport` fetches an imported type's analyzed twin through it
+  (from the source file's fileDef), so the name must be DEFINED there,
+  not merely visible.
 
 - **Overload selection** — at each function-call site, every
   candidate funcDef is unified against the call's argument types
@@ -753,8 +754,8 @@ src/
 
   analyzer/            Phase 5B — body analysis, top of the stack.
     index.nim          phase-B body walkers + public two-pass `analyze*`
-    pattern.nim statement.nim function.nim module.nim imports.nim app.nim
-    funccontext.nim filecontext.nim appcontext.nim
+    pattern.nim statement.nim function.nim module.nim app.nim
+    funccontext.nim filecontext.nim
                        body-level analyzed types + per-scope contexts
 
 examples/

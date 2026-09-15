@@ -1,41 +1,33 @@
 ## AnalyzedFileContext — per-file identity-keyed lookup (ResolvedLocalType
-## -> AnalyzedLocalType), spanning imports + local defined types. Keys
-## hash by source location, so the same type imported under two
-## bindings (`import { Solver as First }` + `{ Solver as Second }`)
-## lands on one key and aliased imports can never miss.
+## -> AnalyzedLocalType), spanning imports + local defined types. The
+## caller hands `newAnalyzedFileContext` one merged `AnalyzedLocalType`
+## seq (imported twins ++ this file's defs); there is no separate imported
+## form. Keys hash by source location, so the same type imported under two
+## bindings (`import { Solver as First }` + `{ Solver as Second }`) lands
+## on one key and aliased imports can never miss.
 ##
 ## Name resolution (user-typed name -> ResolvedLocalType) happens at
 ## resolve time against the resolver's name-keyed ResolvedFile — by the
 ## time the analyzer runs, every reference already carries its
 ## ResolvedLocalType identity. Binding-name collisions are also caught
 ## there; construction here only rejects a genuinely different
-## entry under an existing key (see `update`).
+## entry under an existing key (an idempotent same-identity re-insert
+## is allowed — see the assert in newAnalyzedFileContext).
 
 import strformat, tables
 
 import ../parser/main as parser
 import ../resolver/main as resolver
 import ../defanalyzer/main as defanalyzer
-import imports
 
 type AnalyzedFileContext* = Table[ResolvedLocalType, AnalyzedLocalType]
 
-proc update(fileCtx: var AnalyzedFileContext, resolved: ResolvedLocalType, analyzed: AnalyzedLocalType) =
-  ## Same-identity re-insert (the same type imported under a second
-  ## binding) is idempotent — keys hash by source location, so both
-  ## bindings land here with an equal AnalyzedLocalType. A genuinely
-  ## different entry under an existing key is a compiler bug — the
-  ## resolver's name-keyed ResolvedFile already rejected duplicate
-  ## declarations.
-  assert(resolved notin fileCtx or fileCtx[resolved] == analyzed, fmt"[BUG] - {resolved.loc} conflicting entries for type `{resolved.name.asl}` in the file context")
-  fileCtx[resolved] = analyzed
-
-proc newAnalyzedFileContext*(imports: seq[AnalyzedImport], types: seq[AnalyzedLocalType]): AnalyzedFileContext =
-  for imp in imports:
-    for impType in imp.importedTypes:
-      result.update(impType.typ.resolved, impType.typ)
+proc newAnalyzedFileContext*(types: seq[AnalyzedLocalType]): AnalyzedFileContext =
+  var fileCtx: AnalyzedFileContext
   for typ in types:
-    result.update(typ.resolved, typ)
+    assert(typ.resolved notin fileCtx or fileCtx[typ.resolved] == typ, fmt"[BUG] - {typ.resolved.loc} conflicting entries for type `{typ.resolved.name.asl}` in the file context")
+    fileCtx[typ.resolved] = typ
+  return fileCtx
 
 # Identity lookups — phase A analyzed every ResolvedLocalType in this
 # file, so a miss (or a kind mismatch) is a compiler bug, never a
