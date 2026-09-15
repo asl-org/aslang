@@ -4,8 +4,9 @@ import cli
 import parser/main as parser
 import resolver/main as resolver
 import analyzer/main as analyzer
+
 # import lifetime
-import expander
+# import expander
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath

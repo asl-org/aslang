@@ -32,7 +32,6 @@ export app
 
 import funccontext
 import filecontext
-import appcontext
 
 # ============================================================
 # ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
@@ -545,18 +544,18 @@ proc analyzeImportedType*(impFile: AnalyzedDefFile, impType: AnalyzedDefImported
   let analyzedImpType = impFile.findType(impType.typ)
   ok(newAnalyzedImportedType(impType, analyzedImpType))
 
-proc analyzeImport*(appCtx: AnalyzedAppContext, imp: AnalyzedDefImport): Result[AnalyzedImport, string] =
-  let impFile = appCtx.findFileDef(imp.path)
+proc analyzeImport*(appDef: AnalyzedDefApp, imp: AnalyzedDefImport): Result[AnalyzedImport, string] =
+  let impFile = appDef.findFileDef(imp.path)
   var analyzedImpTypes: seq[AnalyzedImportedType]
   for impType in imp.importedTypes:
     let analyzedImportedType = ? analyzeImportedType(impFile, impType)
     analyzedImpTypes.add(analyzedImportedType)
   ok(newAnalyzedImport(imp, analyzedImpTypes))
 
-proc analyzeFile(appCtx: AnalyzedAppContext, fileDef: AnalyzedDefFile): Result[AnalyzedFile, string] =
+proc analyzeFile(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile): Result[AnalyzedFile, string] =
   var analyzedImports: seq[AnalyzedImport]
   for imp in fileDef.imports:
-    let analyzedImport = ? analyzeImport(appCtx, imp)
+    let analyzedImport = ? analyzeImport(appDef, imp)
     analyzedImports.add(analyzedImport)
 
   let fileCtx = newAnalyzedFileContext(analyzedImports, fileDef.types)
@@ -568,9 +567,9 @@ proc analyzeFile(appCtx: AnalyzedAppContext, fileDef: AnalyzedDefFile): Result[A
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
   let appDef = ? analyzeDefApp(app)
-  let appCtx = newAnalyzedAppContext(appDef)
-  for fileDef in appCtx.fileDefs:
-    let analyzedFile = ? analyzeFile(appCtx, fileDef)
-    appCtx.add(analyzedFile)
-  ok(newAnalyzedApp(appDef, appCtx.files))
+  var files: seq[AnalyzedFile]
+  for fileDef in appDef.fileDefs:
+    let file = ? analyzeFile(appDef, fileDef)
+    files.add(file)
+  ok(newAnalyzedApp(appDef, files))
 

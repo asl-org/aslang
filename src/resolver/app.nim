@@ -120,8 +120,8 @@ proc findGenericInScope*(file: ResolvedFile, generic: Generic): ResolvedGeneric 
 # ResolvedApp
 # ============================================================
 # The app-level result AND accumulator. The rung-1 base of the app
-# ladder — ResolvedAppContext (def analyzer) and AnalyzedAppContext
-# (analyzer) wrap it in turn.
+# ladder — the def analyzer's ResolvedAppContext wraps it; phase B walks
+# the AnalyzedDefApp directly (no analyzer-side app context).
 
 type ResolvedApp* = ref object
   parsed: App
