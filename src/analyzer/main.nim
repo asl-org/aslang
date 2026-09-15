@@ -27,8 +27,7 @@ export module
 import app
 export app
 
-import funccontext
-import filecontext
+import context
 
 # ============================================================
 # ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
@@ -114,33 +113,29 @@ proc analyzeCasePattern*(pattern: ResolvedCasePattern, subjectType: AnalyzedArgu
   of rcpkVariable:
     ok(newAnalyzedCasePattern(newAnalyzedBinding(pattern.variable, subjectType)))
 
-proc analyzeVariable*(scope: AnalyzedFunctionContext, variable: Identifier): Result[AnalyzedVariable, string] =
-  if variable in scope:
-    let binding = scope[variable]
-    ok(newAnalyzedVariable(variable, binding.argType))
-  else: err(fmt"{variable.loc} variable `{variable.asl}` does not exist in scope")
+proc analyzeVariable*(funcCtx: AnalyzedUserFunctionContext, variable: Identifier): Result[AnalyzedVariable, string] =
+  let binding = ? funcCtx.get(variable)
+  ok(newAnalyzedVariable(variable, binding.argType))
 
-proc analyzeGetter*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
-  if getter.source notin funcCtx:
-    err(fmt"{getter.loc} variable `{getter.source.asl}` is not present in scope")
-  else:
-    let sourceArgType = funcCtx[getter.source].argType
-    case sourceArgType.kind:
-    of aatkGeneric:
-      err(fmt"{getter.loc} expected `{getter.source.asl}` to be a module but found generic ")
-    of aatkModule:
-      let sourceModuleArgType = sourceArgType.module
-      let sourceModule = fileCtx.findModule(sourceModuleArgType.module)
-      case sourceModule.dataOrFail.kind:
-      of adkUnion: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct getter.block but found union")
-      of adkLiteral: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct block getter.but found literal")
-      of adkStruct:
-        let struct = sourceModule.dataOrFail.struct
-        let property = ? struct.findField(getter.property)
-        ok(newAnalyzedGetter(getter, sourceModuleArgType, property))
+proc analyzeGetter*(funcCtx: AnalyzedUserFunctionContext, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
+  let binding = ? funcCtx.get(getter.source)
+  let sourceArgType = binding.argType
+  case sourceArgType.kind:
+  of aatkGeneric:
+    err(fmt"{getter.loc} expected `{getter.source.asl}` to be a module but found generic ")
+  of aatkModule:
+    let sourceModuleArgType = sourceArgType.module
+    let sourceModule = funcCtx.findModule(sourceModuleArgType.module)
+    case sourceModule.dataOrFail.kind:
+    of adkUnion: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct getter.block but found union")
+    of adkLiteral: err(fmt"{getter.loc} expected module `{sourceModule.name.asl}` to have a struct block getter.but found literal")
+    of adkStruct:
+      let struct = sourceModule.dataOrFail.struct
+      let property = ? struct.findField(getter.property)
+      ok(newAnalyzedGetter(getter, sourceModuleArgType, property))
 
-proc analyzeLiteralInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, init: AnalyzedDefLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
-  let argDefModule = fileCtx.findModule(init.argType.module)
+proc analyzeLiteralInitializer*(funcCtx: AnalyzedUserFunctionContext, init: AnalyzedDefLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
+  let argDefModule = funcCtx.findModule(init.argType.module)
   case argDefModule.dataOrFail.kind:
   of adkStruct: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
   of adkUnion: err(fmt"{init.loc} statement expects a literal initializer `{argDefModule.name.asl}`")
@@ -153,10 +148,10 @@ proc analyzeLiteralInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDe
 # through the whole body walk so a `try f()` call can check that the
 # callee's Status error type matches the function's own (both must be
 # `Status[_, E]` with the same `E`).
-proc analyzeExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
-proc analyzeStatement*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string]
+proc analyzeExpression*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string]
+proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string]
 
-proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDef): Result[AnalyzedImplMap, string] =
+proc analyzeArgumentList*(funcCtx: AnalyzedUserFunctionContext, argValues: seq[AnalyzedExpression], analyzedFuncDef: AnalyzedFunctionDef): Result[AnalyzedImplMap, string] =
   # Reads pre-analyzed args directly from the AnalyzedFunctionDef
   # — no lookup, no re-analysis. Every analyzed expression carries a
   # concrete argType post-Approach C; bare literals adopt the caller's
@@ -167,11 +162,11 @@ proc analyzeArgumentList*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
     fmt"BUG: analyzeArgumentList arity mismatch — funcDef has {analyzedFuncDef.args.len} args, call site passed {argValues.len}. zip would silently truncate; fix by erroring (or relying on resolver / overload selection).")
   var genericImplMap: AnalyzedImplMap
   for (analyzedArgDef, argValue) in zip(analyzedFuncDef.args, argValues):
-    let argAnalyzedImplMap = ? analyzeValueTypeAgainstDefType(module, analyzedArgDef.argType, argValue.argType, argValue.loc)
+    let argAnalyzedImplMap = ? analyzeValueTypeAgainstDefType(funcCtx.module, analyzedArgDef.argType, argValue.argType, argValue.loc)
     genericImplMap = ? genericImplMap.merge(argAnalyzedImplMap)
   ok(genericImplMap)
 
-proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, fncall: AnalyzedDefFunctionCall, funcDefs: seq[AnalyzedFunctionDef]): Result[(AnalyzedFunctionDef, seq[AnalyzedExpression], AnalyzedImplMap), string] =
+proc analyzeArgumentList(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, fncall: AnalyzedDefFunctionCall, funcDefs: seq[AnalyzedFunctionDef]): Result[(AnalyzedFunctionDef, seq[AnalyzedExpression], AnalyzedImplMap), string] =
   # Per-candidate analysis over pre-analyzed AnalyzedFunctionDef
   # candidates: for each candidate, walk the call's raw arguments and
   # analyze each with the candidate's declared arg type (pre-analyzed)
@@ -187,7 +182,7 @@ proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule
     var analyzedArgs: seq[AnalyzedExpression]
     var candidateErr = ""
     for (actualArg, expectedArg) in zip(fncall.args, analyzedFuncDef.args):
-      let maybeAnalyzed = analyzeExpression(fileCtx, module, funcCtx, returns, actualArg, some(expectedArg.argType))
+      let maybeAnalyzed = analyzeExpression(funcCtx, returns, actualArg, some(expectedArg.argType))
       if maybeAnalyzed.isErr:
         candidateErr = maybeAnalyzed.error
         break
@@ -196,7 +191,7 @@ proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule
       errors.add(fmt"[{index + 1}] - {candidateErr}")
       errors.add("\t" & fmt"{analyzedFuncDef.loc}: {analyzedFuncDef.asl}")
       continue
-    let maybeAnalyzedImplMap = analyzeArgumentList(fileCtx, module, funcCtx, analyzedArgs, analyzedFuncDef)
+    let maybeAnalyzedImplMap = analyzeArgumentList(funcCtx, analyzedArgs, analyzedFuncDef)
     if maybeAnalyzedImplMap.isOk:
       matches.add((analyzedFuncDef, analyzedArgs, maybeAnalyzedImplMap.get))
     else:
@@ -214,7 +209,7 @@ proc analyzeArgumentList(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule
     message.add(errors)
     err(message.join("\n"))
 
-proc analyzeBareLiteral(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, literal: AnalyzedDefLiteral, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
+proc analyzeBareLiteral(funcCtx: AnalyzedUserFunctionContext, literal: AnalyzedDefLiteral, expected: Option[AnalyzedArgumentType]): Result[AnalyzedLiteralInitializer, string] =
   ## Approach C — pick a concrete type for the bare literal.
   ##   - `expected = some(module)`  → adopt the module type. If the
   ##     module's data def is struct/union the caller wrote a literal
@@ -232,7 +227,7 @@ proc analyzeBareLiteral(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule,
     else:
       literal.default
 
-  let argDefModule = fileCtx.findModule(literalArgType.module)
+  let argDefModule = funcCtx.findModule(literalArgType.module)
   case argDefModule.dataOrFail.kind:
   of adkStruct: err(fmt"{literal.loc} expected a struct initializer of type `{argDefModule.name.asl}` but found bare literal")
   of adkUnion: err(fmt"{literal.loc} expected a union initializer of type `{argDefModule.name.asl}` but found bare literal")
@@ -253,19 +248,19 @@ proc statusSlots(status: AnalyzedModuleArgumentType, loc: Location): Result[(Ana
   else:
     ok((slots[0], slots[1]))
 
-proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, fncall: AnalyzedDefFunctionCall): Result[AnalyzedFunctionCall, string] =
-  let localType = fileCtx.findType(fncall.typ)
+proc analyzeFunctionCall*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, fncall: AnalyzedDefFunctionCall): Result[AnalyzedFunctionCall, string] =
+  let localType = funcCtx.findType(fncall.typ)
   let access =
     case localType.kind:
     of altkGeneric:
       faPublic
     of altkModule:
-      if module == localType.module: faAll else: faPublic
+      if funcCtx.module == localType.module: faAll else: faPublic
   let maybeFuncDefs = localType.findFunctionDefs(fncall.name, fncall.arity, access)
   assert(maybeFuncDefs.isOk, "[BUG] - Resolver validates every call target (name, arity, access) at resolve time")
   let funcDefs = maybeFuncDefs.get
 
-  let (matchingFuncDef, analyzedArgs, genericImpls) = ? analyzeArgumentList(fileCtx, module, funcCtx, returns, fncall, funcDefs)
+  let (matchingFuncDef, analyzedArgs, genericImpls) = ? analyzeArgumentList(funcCtx, returns, fncall, funcDefs)
   # The impl map inferred from the arguments rides on the call node;
   # the `returns` accessor concretizes the funcDef's return type from
   # it on access (matching the initializers).
@@ -298,7 +293,7 @@ proc analyzeFunctionCall*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
           return err(fmt"{fncall.loc} `try` error-type mismatch: `{fncall.name.asl}` propagates `{calleeError.asl}` but the enclosing function's error type is `{fnError.asl}`")
         return ok(newAnalyzedTryFunctionCall(fncall, localType, matchingFuncDef, analyzedArgs, genericImpls, calleeValue))
 
-proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCaseBlock, string] =
+proc analyzeCaseBlock*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef): Result[AnalyzedCaseBlock, string] =
   var caseCtx = funcCtx
 
   let analyzedCasePattern = ? analyzeCasePattern(caseBlock.pattern, subjectType, union)
@@ -306,12 +301,12 @@ proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, 
 
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in caseBlock.statements:
-    let analyzedStatement = ? analyzeStatement(fileCtx, module, caseCtx, returns, statement)
+    let analyzedStatement = ? analyzeStatement(caseCtx, returns, statement)
     analyzedStatements.add(analyzedStatement)
     caseCtx = caseCtx.update(analyzedStatement)
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
 
-proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType): Result[AnalyzedCaseBlock, string] =
+proc analyzeCaseBlock*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, caseBlock: AnalyzedDefCase, subjectType: AnalyzedArgumentType): Result[AnalyzedCaseBlock, string] =
   var caseCtx = funcCtx
 
   let analyzedCasePattern = ? analyzeCasePattern(caseBlock.pattern, subjectType)
@@ -319,7 +314,7 @@ proc analyzeCaseBlock*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, 
 
   var analyzedStatements: seq[AnalyzedStatement]
   for statement in caseBlock.statements:
-    let analyzedStatement = ? analyzeStatement(fileCtx, module, caseCtx, returns, statement)
+    let analyzedStatement = ? analyzeStatement(caseCtx, returns, statement)
     analyzedStatements.add(analyzedStatement)
     caseCtx = caseCtx.update(analyzedStatement)
   ok(newAnalyzedCaseBlock(caseBlock, analyzedCasePattern, analyzedStatements))
@@ -331,7 +326,7 @@ proc verifyUniformReturnType(cases: seq[AnalyzedCaseBlock]): Result[void, string
       return err(fmt"{c.loc} todo: return an error message telling that the case block return types are not same")
   ok()
 
-proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, cases: seq[AnalyzedDefCase], subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, cases: seq[AnalyzedDefCase], subjectType: AnalyzedArgumentType, union: AnalyzedUnionDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = newAnalyzedUnionPatternScope(cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
@@ -342,12 +337,12 @@ proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, func
 
   var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
   for caseBlock in cases:
-    let analyzedCaseBlock = ? analyzeCaseBlock(fileCtx, module, funcCtx, returns, caseBlock, subjectType, union)
+    let analyzedCaseBlock = ? analyzeCaseBlock(funcCtx, returns, caseBlock, subjectType, union)
     analyzedCaseBlocks.add(analyzedCaseBlock)
   ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
-proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, cases: seq[AnalyzedDefCase], subjectType: AnalyzedArgumentType, literal: AnalyzedLiteralDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
+proc analyzeCases*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, cases: seq[AnalyzedDefCase], subjectType: AnalyzedArgumentType, literal: AnalyzedLiteralDef, loc: Location): Result[seq[AnalyzedCaseBlock], string] =
   var patternScope = ? newAnalyzedLiteralPatternScope(literal, cases.len)
   for id, caseBlock in cases:
     patternScope = ? patternScope.update(id, caseBlock.pattern)
@@ -358,49 +353,49 @@ proc analyzeCases*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, func
 
   var analyzedCaseBlocks: seq[AnalyzedCaseBlock]
   for caseBlock in cases:
-    let analyzedCaseBlock = ? analyzeCaseBlock(fileCtx, module, funcCtx, returns, caseBlock, subjectType)
+    let analyzedCaseBlock = ? analyzeCaseBlock(funcCtx, returns, caseBlock, subjectType)
     analyzedCaseBlocks.add(analyzedCaseBlock)
   ? verifyUniformReturnType(analyzedCaseBlocks)
   ok(analyzedCaseBlocks)
 
-proc analyzeMatchExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, match: AnalyzedDefMatch): Result[AnalyzedMatchExpression, string] =
-  let subjectExpr = ? analyzeExpression(fileCtx, module, funcCtx, returns, match.subject, none(AnalyzedArgumentType))
+proc analyzeMatchExpression*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, match: AnalyzedDefMatch): Result[AnalyzedMatchExpression, string] =
+  let subjectExpr = ? analyzeExpression(funcCtx, returns, match.subject, none(AnalyzedArgumentType))
   let subjectArgType = subjectExpr.argType
   case subjectArgType.kind:
   of aatkGeneric:
     err(fmt"{match.subject.loc} expected subject expression to return a module but found generic")
   of aatkModule:
-    let subjectDataModule = fileCtx.findModule(subjectArgType.module.module)
+    let subjectDataModule = funcCtx.findModule(subjectArgType.module.module)
     case subjectDataModule.dataOrFail.kind:
     of adkStruct:
       err(fmt"{match.loc} match block only supports literal and union types but subject expression returns `{subjectArgType.name.asl}` a struct type")
     of adkLiteral:
       assert(match.cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
-      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, returns, match.cases, subjectArgType, subjectDataModule.dataOrFail.literal, match.loc)
+      let analyzedCases = ? analyzeCases(funcCtx, returns, match.cases, subjectArgType, subjectDataModule.dataOrFail.literal, match.loc)
       ok(newAnalyzedMatchExpression(match, subjectExpr, analyzedCases))
     of adkUnion:
       assert(match.cases.len > 0, "UNREACHABLE: zero-case match should have been caught by the resolver")
-      let analyzedCases = ? analyzeCases(fileCtx, module, funcCtx, returns, match.cases, subjectArgType, subjectDataModule.dataOrFail.union, match.loc)
+      let analyzedCases = ? analyzeCases(funcCtx, returns, match.cases, subjectArgType, subjectDataModule.dataOrFail.union, match.loc)
       ok(newAnalyzedMatchExpression(match, subjectExpr, analyzedCases))
 
-proc analyzeKeywordArgument*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, kwarg: AnalyzedDefKeywordArgument, analyzedField: AnalyzedArgumentDef): Result[AnalyzedKeywordArgument, string] =
+proc analyzeKeywordArgument*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, kwarg: AnalyzedDefKeywordArgument, analyzedField: AnalyzedArgumentDef): Result[AnalyzedKeywordArgument, string] =
   # Field's declared type is the expected context — bare literals in
   # kwarg values adapt when concrete, default when generic. The
   # value-vs-field check yields the bindings this kwarg contributes
   # (field `value: T` + a `u8` value binds `T -> u8`); they ride on
   # the kwarg node so the initializer can merge them across fields.
-  let analyzedExpression = ? analyzeExpression(fileCtx, module, funcCtx, returns, kwarg.expression, some(analyzedField.argType))
-  let impls = ? analyzeValueTypeAgainstDefType(module, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
+  let analyzedExpression = ? analyzeExpression(funcCtx, returns, kwarg.expression, some(analyzedField.argType))
+  let impls = ? analyzeValueTypeAgainstDefType(funcCtx.module, analyzedField.argType, analyzedExpression.argType, analyzedExpression.loc)
   ok(newAnalyzedKeywordArgument(kwarg, analyzedField, analyzedExpression, impls))
 
-proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, init: AnalyzedDefUnionInitializer): Result[AnalyzedUnionInitializer, string] =
+proc analyzeUnionInitializer*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, init: AnalyzedDefUnionInitializer): Result[AnalyzedUnionInitializer, string] =
   ## Walks the variant's kwargs, checking each value against its field
   ## type and accumulating the generic bindings each kwarg contributes
   ## (carried on `AnalyzedKeywordArgument.impls`). Merging across
   ## fields enforces that kwargs binding the same generic agree — e.g.
   ## a variant `Ok { a: T, b: T }` with `a: u8, b: String` is rejected
   ## here. TODO: consume the merged map to concretize the result type.
-  let unionModule = fileCtx.findModule(init.unionRef.module)
+  let unionModule = funcCtx.findModule(init.unionRef.module)
   let unionDef = unionModule.dataOrFail.union
   let variantDef = unionDef.findVariant(init.variant)
 
@@ -412,7 +407,7 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
   var impls = init.unionRef.argType.impls
   for kwarg in init.kwargs:
     let field = ? variantDef.findField(kwarg.name)
-    let analyzedKwarg = ? analyzeKeywordArgument(fileCtx, module, funcCtx, returns, kwarg, field)
+    let analyzedKwarg = ? analyzeKeywordArgument(funcCtx, returns, kwarg, field)
     impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
 
@@ -427,13 +422,13 @@ proc analyzeUnionInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefM
 
   ok(newAnalyzedUnionInitializer(init, analyzedKwargs, completeImpls))
 
-proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, init: AnalyzedDefStructInitializer): Result[AnalyzedStructInitializer, string] =
+proc analyzeStructInitializer*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, init: AnalyzedDefStructInitializer): Result[AnalyzedStructInitializer, string] =
   ## Walks the struct's kwargs, checking each value against its field
   ## type and accumulating the generic bindings each kwarg contributes
   ## (carried on `AnalyzedKeywordArgument.impls`). Merging across
   ## fields enforces that kwargs binding the same generic agree.
   ## TODO: consume the merged map to concretize the result type.
-  let structModule = fileCtx.findModule(init.structRef.module)
+  let structModule = funcCtx.findModule(init.structRef.module)
   let structDef = structModule.dataOrFail.struct
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
   # Auto-inference: the ref may or may not carry explicit impls. Seed
@@ -443,75 +438,76 @@ proc analyzeStructInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDef
   var impls = init.structRef.argType.impls
   for kwarg in init.kwargs:
     let field = ? structDef.findField(kwarg.name)
-    let analyzedKwarg = ? analyzeKeywordArgument(fileCtx, module, funcCtx, returns, kwarg, field)
+    let analyzedKwarg = ? analyzeKeywordArgument(funcCtx, returns, kwarg, field)
     impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
   ok(newAnalyzedStructInitializer(init, analyzedKwargs, impls))
 
-proc analyzeInitializer*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, init: AnalyzedDefInitializer): Result[AnalyzedInitializer, string] =
+proc analyzeInitializer*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, init: AnalyzedDefInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
   of adikLiteral:
-    let literalInit = ? analyzeLiteralInitializer(fileCtx, module, funcCtx, init.literal)
+    let literalInit = ? analyzeLiteralInitializer(funcCtx, init.literal)
     ok(newAnalyzedInitializer(literalInit))
   of adikStruct:
-    let structInit = ? analyzeStructInitializer(fileCtx, module, funcCtx, returns, init.struct)
+    let structInit = ? analyzeStructInitializer(funcCtx, returns, init.struct)
     ok(newAnalyzedInitializer(structInit))
   of adikUnion:
-    let unionInit = ? analyzeUnionInitializer(fileCtx, module, funcCtx, returns, init.union)
+    let unionInit = ? analyzeUnionInitializer(funcCtx, returns, init.union)
     ok(newAnalyzedInitializer(unionInit))
 
-proc analyzeExpression*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
+proc analyzeExpression*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, expression: AnalyzedDefExpression, expected: Option[AnalyzedArgumentType]): Result[AnalyzedExpression, string] =
   case expression.kind:
   of adekLiteral:
-    let bareLit = ? analyzeBareLiteral(fileCtx, module, funcCtx, expression.literal, expected)
+    let bareLit = ? analyzeBareLiteral(funcCtx, expression.literal, expected)
     ok(newAnalyzedExpression(newAnalyzedInitializer(bareLit)))
   of adekVariable:
     let analyzedVariable = ? analyzeVariable(funcCtx, expression.variable)
     ok(newAnalyzedExpression(analyzedVariable))
   of adekGetter:
-    let analyzedGetter = ? analyzeGetter(fileCtx, module, funcCtx, expression.getter)
+    let analyzedGetter = ? analyzeGetter(funcCtx, expression.getter)
     ok(newAnalyzedExpression(analyzedGetter))
   of adekInitializer:
-    let analyzedInit = ? analyzeInitializer(fileCtx, module, funcCtx, returns, expression.init)
+    let analyzedInit = ? analyzeInitializer(funcCtx, returns, expression.init)
     ok(newAnalyzedExpression(analyzedInit))
   of adekFunctionCall:
-    let analyzedFunctionCall = ? analyzeFunctionCall(fileCtx, module, funcCtx, returns, expression.fncall)
+    let analyzedFunctionCall = ? analyzeFunctionCall(funcCtx, returns, expression.fncall)
     ok(newAnalyzedExpression(analyzedFunctionCall))
   of adekMatchExpr:
-    let analyzedMatchExpr = ? analyzeMatchExpression(fileCtx, module, funcCtx, returns, expression.match)
+    let analyzedMatchExpr = ? analyzeMatchExpression(funcCtx, returns, expression.match)
     ok(newAnalyzedExpression(analyzedMatchExpr))
 
-proc analyzeAssignment*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, assignment: AnalyzedDefAssignment): Result[AnalyzedAssignment, string] =
-  let analyzedExpr = ? analyzeExpression(fileCtx, module, funcCtx, returns, assignment.expression, none(AnalyzedArgumentType))
+proc analyzeAssignment*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, assignment: AnalyzedDefAssignment): Result[AnalyzedAssignment, string] =
+  let analyzedExpr = ? analyzeExpression(funcCtx, returns, assignment.expression, none(AnalyzedArgumentType))
   ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
-proc analyzeSetter*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, setter: AnalyzedDefSetter): Result[AnalyzedSetter, string] =
-  let analyzedGetter = ? analyzeGetter(fileCtx, module, funcCtx, setter.getter)
-  let analyzedExpression = ? analyzeExpression(fileCtx, module, funcCtx, returns, setter.expression, some(analyzedGetter.argType))
+proc analyzeSetter*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, setter: AnalyzedDefSetter): Result[AnalyzedSetter, string] =
+  let analyzedGetter = ? analyzeGetter(funcCtx, setter.getter)
+  let analyzedExpression = ? analyzeExpression(funcCtx, returns, setter.expression, some(analyzedGetter.argType))
   if analyzedGetter.argType != analyzedExpression.argType:
     err(fmt"{setter.loc} argument type mismatch") # TODO: improve error message
   else:
     ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
 
-proc analyzeStatement*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, funcCtx: AnalyzedFunctionContext, returns: AnalyzedArgumentType, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string] =
+proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, returns: AnalyzedArgumentType, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
   of adskExpr:
-    let analyzedExpr = ? analyzeExpression(fileCtx, module, funcCtx, returns, statement.expression, none(AnalyzedArgumentType))
+    let analyzedExpr = ? analyzeExpression(funcCtx, returns, statement.expression, none(AnalyzedArgumentType))
     ok(newAnalyzedStatement(analyzedExpr))
   of adskAssignment:
-    let analyzedAssignment = ? analyzeAssignment(fileCtx, module, funcCtx, returns, statement.assignment)
+    let analyzedAssignment = ? analyzeAssignment(funcCtx, returns, statement.assignment)
     ok(newAnalyzedStatement(analyzedAssignment))
   of adskSetter:
-    let analyzedMutation = ? analyzeSetter(fileCtx, module, funcCtx, returns, statement.setter)
+    let analyzedMutation = ? analyzeSetter(funcCtx, returns, statement.setter)
     ok(newAnalyzedStatement(analyzedMutation))
 
-proc analyzeUserFunction*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: AnalyzedDefUserFunction): Result[AnalyzedUserFunction, string] =
-  var funcCtx = newAnalyzedFunctionContext(function.def)
+proc analyzeUserFunction*(moduleCtx: AnalyzedModuleContext, function: AnalyzedDefUserFunction): Result[AnalyzedUserFunction, string] =
+  var funcCtx = newAnalyzedUserFunctionContext(moduleCtx, function)
   assert(function.statements.len > 0, fmt"{function.loc} [BUG] empty user function must have been caught by the resolver")
 
   var statements: seq[AnalyzedStatement]
   for statement in function.statements:
-    let statement = ? analyzeStatement(fileCtx, module, funcCtx, function.def.returns, statement)
+
+    let statement = ? analyzeStatement(funcCtx, function.def.returns, statement)
     statements.add(statement)
     funcCtx = funcCtx.update(statement)
 
@@ -520,46 +516,35 @@ proc analyzeUserFunction*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModul
   else:
     ok(newAnalyzedUserFunction(function, statements))
 
-proc analyzeFunction(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule, function: AnalyzedDefFunction): Result[AnalyzedFunction, string] =
+proc analyzeFunction(moduleCtx: AnalyzedModuleContext, function: AnalyzedDefFunction): Result[AnalyzedFunction, string] =
   case function.kind:
   of adfkExtern:
     ok(newAnalyzedFunction(function.extern))
   of adfkUser:
-    let userFunc = ? analyzeUserFunction(fileCtx, module, function.user)
+    let userFunc = ? analyzeUserFunction(moduleCtx, function.user)
     ok(newAnalyzedFunction(userFunc))
   of adfkGenerated:
     ok(newAnalyzedFunction(function.generated))
 
 proc analyzeModule*(fileCtx: AnalyzedFileContext, module: AnalyzedDefModule): Result[AnalyzedModule, string] =
   var analyzedFunctions: seq[AnalyzedFunction]
+  let moduleCtx = newAnalyzedModuleContext(fileCtx, module)
   for function in module.functions:
-    let analyzedFunction = ? analyzeFunction(fileCtx, module, function)
+    let analyzedFunction = ? analyzeFunction(moduleCtx, function)
     analyzedFunctions.add(analyzedFunction)
   ok(newAnalyzedModule(module, analyzedFunctions))
 
-proc analyzeImport*(appDef: AnalyzedDefApp, imp: AnalyzedDefImport): Result[seq[AnalyzedLocalType], string] =
-  let impFile = appDef.findFileDef(imp.path)
-  var analyzedLocalTypes: seq[AnalyzedLocalType]
-  for impType in imp.importedTypes:
-    let analyzedLocalType = impFile.findType(impType.typ)
-    analyzedLocalTypes.add(analyzedLocalType)
-  ok(analyzedLocalTypes)
-
 proc analyzeFile(appDef: AnalyzedDefApp, fileDef: AnalyzedDefFile): Result[AnalyzedFile, string] =
-  var importedTypes: seq[AnalyzedLocalType]
-  for imp in fileDef.imports:
-    importedTypes.add(? analyzeImport(appDef, imp))
-
-  let fileCtx = newAnalyzedFileContext(importedTypes & fileDef.types)
   var analyzedModules: seq[AnalyzedModule]
+  let fileCtx = newAnalyzedFileContext(appDef, fileDef)
   for module in fileDef.modules:
     let analyzedModule = ? analyzeModule(fileCtx, module)
     analyzedModules.add(analyzedModule)
   ok(newAnalyzedFile(fileDef, analyzedModules))
 
 proc analyze*(app: ResolvedApp): Result[AnalyzedApp, string] =
-  let appDef = ? analyzeDefApp(app)
   var files: seq[AnalyzedFile]
+  let appDef = ? analyzeDefApp(app)
   for fileDef in appDef.fileDefs:
     let file = ? analyzeFile(appDef, fileDef)
     files.add(file)

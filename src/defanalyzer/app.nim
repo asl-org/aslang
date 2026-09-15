@@ -85,6 +85,14 @@ proc findFileDef*(appDef: AnalyzedDefApp, path: string): AnalyzedDefFile =
   assert(path in appDef.fileDefIndex, fmt"[BUG] - file `{path}` missing from the app def")
   appDef.fileDefs[appDef.fileDefIndex[path]]
 
+proc importedTypes*(appDef: AnalyzedDefApp, imp: AnalyzedDefImport): seq[AnalyzedLocalType] =
+  let impFile = appDef.findFileDef(imp.path)
+  var analyzedLocalTypes: seq[AnalyzedLocalType]
+  for impType in imp.importedTypes:
+    let analyzedLocalType = impFile.findType(impType.typ)
+    analyzedLocalTypes.add(analyzedLocalType)
+  return analyzedLocalTypes
+
 # ============================================================
 # ResolvedAppContext
 # ============================================================
