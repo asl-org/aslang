@@ -71,20 +71,30 @@ proc newAnalyzedUserFunctionContext*(module: AnalyzedModuleContext, function: An
   AnalyzedUserFunctionContext(module: module, function: function, scope: scope)
 
 proc module*(context: AnalyzedUserFunctionContext): AnalyzedDefModule = context.module.module
+proc returns*(context: AnalyzedUserFunctionContext): AnalyzedArgumentType = context.function.def.returns
+
 proc findType*(context: AnalyzedUserFunctionContext, resolved: ResolvedLocalType): AnalyzedLocalType = context.module.findType(resolved)
 proc findModule*(context: AnalyzedUserFunctionContext, module: ResolvedModule): AnalyzedDefModule = context.module.findModule(module)
 
-proc update*(funcCtx: AnalyzedUserFunctionContext, statement: AnalyzedStatement): AnalyzedUserFunctionContext =
+proc update*(context: AnalyzedUserFunctionContext, statement: AnalyzedStatement): AnalyzedUserFunctionContext =
   if statement.arg.isSome:
     let arg = statement.arg.get
-    funcCtx.scope[arg.name] = arg
-  return funcCtx
+    context.scope[arg.name] = arg
+  return context
 
-proc update*(funcCtx: AnalyzedUserFunctionContext, pattern: AnalyzedCasePattern): AnalyzedUserFunctionContext =
+proc update*(context: AnalyzedUserFunctionContext, pattern: AnalyzedCasePattern): AnalyzedUserFunctionContext =
   for binding in pattern.bindings:
-    funcCtx.scope[binding.name] = binding
-  return funcCtx
+    context.scope[binding.name] = binding
+  return context
 
-proc get*(funcCtx: AnalyzedUserFunctionContext, name: Identifier): Result[AnalyzedBinding, string] =
-  if name in funcCtx.scope: ok(funcCtx.scope[name])
+proc get*(context: AnalyzedUserFunctionContext, name: Identifier): Result[AnalyzedBinding, string] =
+  if name in context.scope: ok(context.scope[name])
   else: err(fmt"{name.loc} variable `{name.asl}` does not exist in scope")
+
+proc branch*(context: AnalyzedUserFunctionContext): AnalyzedUserFunctionContext =
+  ## A child scope for a nested block (a case arm): shares the module and
+  ## function but takes its OWN copy of the variable scope (Table is a value
+  ## type), so bindings added inside the block — pattern bindings and
+  ## statement assignments — do not leak into the parent, sibling case arms,
+  ## or the code after the match.
+  AnalyzedUserFunctionContext(module: context.module, function: context.function, scope: context.scope)
