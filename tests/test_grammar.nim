@@ -294,6 +294,94 @@ module M:
 """)
     check r.isOk
 
+  test "variant match with a trailing variable (catch-all) pattern is allowed":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func go(s: Status[u8]): u8
+    _ = match s:
+      case Ok { value: v }:
+        v
+      case _:
+        u8 0
+    u8 0
+""")
+    check r.isOk
+
+  # newMatchExpression's pattern validations (uniqueness, no-mixing,
+  # variable-last) return non-fatal ParserErrors, so when a match block
+  # fails one the parser backtracks and the surface error is a generic
+  # downstream one rather than the validation message (same masking caveat
+  # as the import-path tests in test_loader.nim). These tests therefore
+  # assert only that the parse fails — the constructor invariant is what we
+  # care about. Making these errors fatal (so the message surfaces) belongs
+  # to the planned parsing-spec cleanup.
+  test "duplicate integer case value is rejected":
+    let r = parseStr("""
+module M:
+  func go(x: u8): u8
+    _ = match x:
+      case 0:
+        u8 1
+      case 0:
+        u8 2
+    u8 0
+""")
+    check r.isErr
+
+  test "duplicate variant case is rejected":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func go(s: Status[u8]): u8
+    _ = match s:
+      case Ok { value: v }:
+        v
+      case Ok { value: w }:
+        w
+    u8 0
+""")
+    check r.isErr
+
+  test "mixing integer and variant patterns is rejected":
+    let r = parseStr("""
+public module Status:
+  union:
+    Ok { value: u8 }
+    Err { error: u8 }
+
+module M:
+  func go(s: Status[u8]): u8
+    _ = match s:
+      case 0:
+        u8 1
+      case Ok { value: v }:
+        v
+    u8 0
+""")
+    check r.isErr
+
+  test "a variable pattern before the last case is rejected":
+    let r = parseStr("""
+module M:
+  func go(x: u8): u8
+    _ = match x:
+      case _:
+        u8 0
+      case 1:
+        u8 2
+    u8 0
+""")
+    check r.isErr
+
 suite "grammar — expressions":
 
   test "function call expression":

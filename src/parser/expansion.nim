@@ -98,8 +98,9 @@ proc expand(match: MatchExpression, start: int): (seq[Statement], MatchExpressio
     expandedCases.add(expandedCase)
     counter = updatedCounter
 
-  let expandedMatchExpr = newMatchExpression(expandedSubjectExpr, expandedCases, match.loc)
-  (expandedStmts, expandedMatchExpr, counter)
+  let maybeExpandedMatchExpr = newMatchExpression(expandedSubjectExpr, expandedCases, match.loc)
+  assert(maybeExpandedMatchExpr.isOk, "[BUG] - expansion rewrites the subject and statements, not the case patterns, so a match that validated when first parsed stays valid after expansion")
+  (expandedStmts, maybeExpandedMatchExpr.get, counter)
 
 proc replace(expression: InlineExpression, start: int): (Statement, InlineExpression, int) =
   let generatedTarget = newGeneratedIdentifier(start, expression.loc)

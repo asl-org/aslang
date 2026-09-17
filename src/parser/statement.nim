@@ -4,6 +4,7 @@ import parser
 
 import identifiers
 import literals
+import scalars
 import refs
 
 # Getter and the case-pattern grammar were extracted to their own files
@@ -422,7 +423,13 @@ type
     of mhkAssigned: target: Identifier
     of mhkDefault: discard
 
+  MatchExpressionKind* = enum
+    mekInteger, mekVariant
   MatchExpression* = ref object
+    # TODO: `kind` is set here at parse time but not yet consumed. Read it
+    # in the resolver to drive integer-vs-variant match handling instead of
+    # re-deriving the classification from the subject type.
+    kind: MatchExpressionKind
     subject: InlineExpression
     cases: seq[CaseBlock]
     loc: Location
@@ -447,7 +454,7 @@ type
 
 # Forward declarations for mutually-recursive asl procs.
 proc newExpression*(inline: InlineExpression): Expression
-proc newStatement*(header: MatchHeader, cases: seq[CaseBlock]): Statement
+proc newStatement*(header: MatchHeader, cases: seq[CaseBlock]): Result[Statement, ParserError]
 proc asl(expression: Expression): string
 proc asl*(stmt: Statement): string
 proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string]
@@ -539,14 +546,66 @@ let matchHeaderSpec* = oneOf("match header", @[
   assignedMatchHeaderSpec,
 ])
 
+proc validateIntegerCasePatterns(cases: seq[CaseBlock]): Result[void, ParserError] =
+  # Uniqueness is keyed on the parsed value's canonical form (`value`),
+  # not the raw spelling, so `0`/`00`/`+0` collapse to one key and only a
+  # genuinely repeated value is rejected.
+  var values: Table[string, Location]
+  for index, caseBlock in cases:
+    case caseBlock.pattern.kind:
+    of cpkInteger:
+      if caseBlock.pattern.intLit.value in values:
+        let prev = values[caseBlock.pattern.intLit.value]
+        let msg = fmt"{caseBlock.pattern.loc} duplicate value encountered previously being matched at {prev}"
+        return err(newParserError(msg, caseBlock.pattern.loc))
+      else:
+        values[caseBlock.pattern.intLit.value] = caseBlock.pattern.loc
+    of cpkUnion:
+      let msg = fmt"{caseBlock.pattern.loc} variant pattern can not be mixed with integer patterns"
+      return err(newParserError(msg, caseBlock.pattern.loc))
+    of cpkVariable:
+      if index < cases.len - 1:
+        let msg = fmt"{caseBlock.pattern.loc} variable pattern is only allowed in last case block"
+        return err(newParserError(msg, caseBlock.pattern.loc))
+  ok()
+
+proc validateVariantCasePatterns(cases: seq[CaseBlock]): Result[void, ParserError] =
+  var variants: Table[Identifier, Location]
+  for index, caseBlock in cases:
+    case caseBlock.pattern.kind:
+    of cpkUnion:
+      if caseBlock.pattern.variant.name in variants:
+        let prev = variants[caseBlock.pattern.variant.name]
+        let msg = fmt"{caseBlock.pattern.loc} duplicate variant encountered previously being matched at {prev}"
+        return err(newParserError(msg, caseBlock.pattern.loc))
+      else:
+        variants[caseBlock.pattern.variant.name] = caseBlock.pattern.loc
+    of cpkInteger:
+      let msg = fmt"{caseBlock.pattern.loc} integer pattern can not be mixed with variant patterns"
+      return err(newParserError(msg, caseBlock.pattern.loc))
+    of cpkVariable:
+      if index < cases.len - 1:
+        let msg = fmt"{caseBlock.pattern.loc} variable pattern is only allowed in last case block"
+        return err(newParserError(msg, caseBlock.pattern.loc))
+  ok()
+
 # ----------------- MatchExpression -----------------
 proc newMatchExpression*(subject: InlineExpression, cases: seq[CaseBlock],
-    loc: Location): MatchExpression =
-  # TODO: case pattern can be either integer or variable (with at max 1 variable pattern that too last)
-  # TODO: for integer case pattern all integer values must be unique
-  # TODO: case pattern can be either variant or variable (with at max 1 variable pattern that too last)
-  # TODO: for integer case pattern all variants must be unique
-  MatchExpression(subject: subject, cases: cases, loc: loc)
+    loc: Location): Result[MatchExpression, ParserError] =
+  var errors: seq[ParserError]
+  let maybeIntegerMatchExpr = validateIntegerCasePatterns(cases)
+  if maybeIntegerMatchExpr.isOk:
+    return ok(MatchExpression(kind: mekInteger, subject: subject, cases: cases, loc: loc))
+  else:
+    errors.add(maybeIntegerMatchExpr.error)
+
+  let maybeVariantMatchExpr = validateVariantCasePatterns(cases)
+  if maybeVariantMatchExpr.isOk:
+    return ok(MatchExpression(kind: mekVariant, subject: subject, cases: cases, loc: loc))
+  else:
+    errors.add(maybeVariantMatchExpr.error)
+
+  err(errors.max())
 
 proc subject*(match: MatchExpression): InlineExpression = match.subject
 proc cases*(match: MatchExpression): seq[CaseBlock] = match.cases
@@ -563,7 +622,7 @@ proc asl(matchExpr: MatchExpression, level: int, indentWidth: uint32): seq[strin
 
 proc matchBlockConsumer(parser: Parser): Result[Statement, ParserError] =
   let (header, cases) = ? parser.indentedBlock(matchHeaderSpec, caseBlockSpec.atLeastOne())
-  ok(newStatement(header, cases))
+  newStatement(header, cases)
 
 let matchBlockSpec* = newSpec("match block", matchBlockConsumer)
 
@@ -613,10 +672,11 @@ proc newStatement*(setter: Setter): Statement =
   Statement(kind: skSetter, setter: setter)
 
 # TODO: Cleanup after proper break down of Expression
-proc newStatement*(header: MatchHeader, cases: seq[CaseBlock]): Statement =
+proc newStatement*(header: MatchHeader, cases: seq[CaseBlock]): Result[Statement, ParserError] =
+  let matchExpr = ? newMatchExpression(header.subject, cases, header.loc)
   case header.kind:
-  of mhkDefault: newStatement(newExpression(newMatchExpression(header.subject, cases, header.loc)))
-  of mhkAssigned: newStatement(newAssignment(header.target, newExpression(newMatchExpression(header.subject, cases, header.loc)), header.loc))
+  of mhkDefault: ok(newStatement(newExpression(matchExpr)))
+  of mhkAssigned: ok(newStatement(newAssignment(header.target, newExpression(matchExpr), header.loc)))
 
 proc kind*(s: Statement): StatementKind = s.kind
 
