@@ -5,7 +5,7 @@
 ##
 ##   ResolvedKeywordArgument, ResolvedStructInitializer,
 ##   ResolvedUnionInitializer, ResolvedInitializer,
-##   ResolvedFunctionCall, ResolvedAssignment, ResolvedSetter,
+##   ResolvedFunctionCall, ResolvedAssignment,
 ##   ResolvedCaseBlock, ResolvedMatchExpression,
 ##   ResolvedExpression, ResolvedStatement
 ##
@@ -140,11 +140,6 @@ type
     of rakGetter: getter: ResolvedGetter
     of rakDefault: discard
 
-  ResolvedSetter* = ref object
-    parsed: Setter
-    getter: ResolvedGetter
-    expression: ResolvedExpression
-
   ResolvedCaseBlock* = ref object
     parsed: CaseBlock
     pattern: ResolvedCasePattern
@@ -167,12 +162,8 @@ type
     of rekGetter: getter: ResolvedGetter
     of rekMatchExpr: match: ResolvedMatchExpression
 
-  ResolvedStatementKind* = enum
-    rskAssignment, rskSetter
   ResolvedStatement* = ref object
-    case kind: ResolvedStatementKind
-    of rskAssignment: assignment: ResolvedAssignment
-    of rskSetter: setter: ResolvedSetter
+    assignment: ResolvedAssignment
 
 # ---- ResolvedKeywordArgument ----
 
@@ -300,16 +291,6 @@ proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignmen
 proc loc*(assignment: ResolvedAssignment): Location = assignment.parsed.loc
 proc target*(assignment: ResolvedAssignment): Option[Identifier] = assignment.parsed.target
 
-# ---- ResolvedSetter ----
-
-proc newResolvedSetter*(parsed: Setter, getter: ResolvedGetter,
-    expression: ResolvedExpression): ResolvedSetter =
-  ResolvedSetter(parsed: parsed, getter: getter, expression: expression)
-
-proc getter*(setter: ResolvedSetter): ResolvedGetter = setter.getter
-proc expression*(setter: ResolvedSetter): ResolvedExpression = setter.expression
-proc loc*(setter: ResolvedSetter): Location = setter.parsed.loc
-
 # ---- ResolvedCaseBlock ----
 
 proc newResolvedCaseBlock*(parsed: CaseBlock, pattern: ResolvedCasePattern,
@@ -388,28 +369,12 @@ proc loc*(expression: ResolvedExpression): Location =
 # ---- ResolvedStatement ----
 
 proc newResolvedStatement*(assignment: ResolvedAssignment): ResolvedStatement =
-  ResolvedStatement(kind: rskAssignment, assignment: assignment)
+  ResolvedStatement(assignment: assignment)
 
-proc newResolvedStatement*(setter: ResolvedSetter): ResolvedStatement =
-  ResolvedStatement(kind: rskSetter, setter: setter)
-
-proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
-proc assignment*(statement: ResolvedStatement): ResolvedAssignment =
-  assert statement.kind == rskAssignment,
-    fmt"ResolvedStatement.assignment accessed but kind is {statement.kind}"
-  statement.assignment
-proc setter*(statement: ResolvedStatement): ResolvedSetter =
-  assert statement.kind == rskSetter,
-    fmt"ResolvedStatement.setter accessed but kind is {statement.kind}"
-  statement.setter
-proc loc*(statement: ResolvedStatement): Location =
-  case statement.kind:
-  of rskAssignment: statement.assignment.loc
-  of rskSetter: statement.setter.loc
+proc assignment*(statement: ResolvedStatement): ResolvedAssignment = statement.assignment
+proc loc*(statement: ResolvedStatement): Location = statement.assignment.loc
 
 # Accessor used by callers to thread bindings into scope.
 proc variable*(statement: ResolvedStatement): Option[Identifier] =
   ## Returns the new binding introduced by this statement (if any).
-  case statement.kind:
-  of rskAssignment: statement.assignment.target
-  of rskSetter: none(Identifier)
+  statement.assignment.target

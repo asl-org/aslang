@@ -80,16 +80,8 @@ type
     resolved: ResolvedAssignment
     expression: AnalyzedDefExpression
 
-  AnalyzedDefSetter* = ref object
-    resolved: ResolvedSetter
-    expression: AnalyzedDefExpression
-
-  AnalyzedDefStatementKind* = enum
-    adskAssignment, adskSetter
   AnalyzedDefStatement* = ref object
-    case kind: AnalyzedDefStatementKind
-    of adskAssignment: assignment: AnalyzedDefAssignment
-    of adskSetter: setter: AnalyzedDefSetter
+    assignment: AnalyzedDefAssignment
 
 # AnalyzedDefLiteral
 proc newAnalyzedDefLiteral*(resolved: ResolvedLiteral, default: ResolvedModule, def: ResolvedLiteralDef): AnalyzedDefLiteral =
@@ -256,32 +248,10 @@ proc loc*(assignment: AnalyzedDefAssignment): Location = assignment.resolved.loc
 proc target*(assignment: AnalyzedDefAssignment): Option[Identifier] = assignment.resolved.target
 proc expression*(assignment: AnalyzedDefAssignment): AnalyzedDefExpression = assignment.expression
 
-# AnalyzedDefSetter
-proc newAnalyzedDefSetter*(resolved: ResolvedSetter, expression: AnalyzedDefExpression): AnalyzedDefSetter =
-  AnalyzedDefSetter(resolved: resolved, expression: expression)
-
-proc loc*(setter: AnalyzedDefSetter): Location = setter.resolved.loc
-proc getter*(setter: AnalyzedDefSetter): ResolvedGetter = setter.resolved.getter
-proc expression*(setter: AnalyzedDefSetter): AnalyzedDefExpression = setter.expression
-
 # AnalyzedDefStatement
 proc newAnalyzedDefStatement*(assignment: AnalyzedDefAssignment): AnalyzedDefStatement =
-  AnalyzedDefStatement(kind: adskAssignment, assignment: assignment)
+  AnalyzedDefStatement(assignment: assignment)
 
-proc newAnalyzedDefStatement*(setter: AnalyzedDefSetter): AnalyzedDefStatement =
-  AnalyzedDefStatement(kind: adskSetter, setter: setter)
+proc assignment*(statement: AnalyzedDefStatement): AnalyzedDefAssignment = statement.assignment
 
-proc kind*(statement: AnalyzedDefStatement): AnalyzedDefStatementKind = statement.kind
-proc assignment*(statement: AnalyzedDefStatement): AnalyzedDefAssignment =
-  assert statement.kind == adskAssignment,
-    fmt"AnalyzedDefStatement.assignment accessed but kind is {statement.kind}"
-  statement.assignment
-proc setter*(statement: AnalyzedDefStatement): AnalyzedDefSetter =
-  assert statement.kind == adskSetter,
-    fmt"AnalyzedDefStatement.setter accessed but kind is {statement.kind}"
-  statement.setter
-
-proc loc*(statement: AnalyzedDefStatement): Location =
-  case statement.kind:
-  of adskAssignment: statement.assignment.loc
-  of adskSetter: statement.setter.loc
+proc loc*(statement: AnalyzedDefStatement): Location = statement.assignment.loc

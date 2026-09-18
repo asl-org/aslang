@@ -53,11 +53,6 @@ type
     of ikStruct: struct: StructInitializer
     of ikUnion: union: UnionInitializer
 
-  Setter* = ref object
-    target: Getter
-    expression: InlineExpression
-    loc: Location
-
   InlineExpressionKind* = enum
     iekLiteral, iekFnCall, iekGetter, iekInitializer, iekVariable
   InlineExpression* = ref object
@@ -313,28 +308,6 @@ let initSpec* = oneOf("initializer spec", @[
   map(structInitSpec, newInitializer),
   map(literalInitSpec, newInitializer),
 ])
-
-# ----------------- Setter -----------------
-proc newSetter*(target: Getter, expression: InlineExpression,
-    loc: Location): Setter =
-  Setter(target: target, expression: expression, loc: loc)
-
-proc target*(setter: Setter): Getter = setter.target
-proc expression*(setter: Setter): InlineExpression = setter.expression
-proc loc*(setter: Setter): Location = setter.loc
-
-proc asl(setter: Setter): string =
-  fmt"{asl(setter.target)} = {asl(setter.expression)}"
-
-proc setterConsumer(parser: Parser): Result[Setter, ParserError] =
-  let target = ? parser.expect(getterSpec)
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect("=")
-  discard ? parser.expect(spaceSpec.optional())
-  let expression = ? parser.expect(inlineExpressionSpec)
-  ok(newSetter(target, expression, target.loc))
-
-let setterSpec* = newSpec[Setter]("setter", setterConsumer)
 
 # ----------------- InlineExpression -----------------
 proc newInlineExpression*(literal: Literal): InlineExpression =

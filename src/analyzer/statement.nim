@@ -6,7 +6,7 @@
 ##   AnalyzedFunctionCall, AnalyzedKeywordArgument,
 ##   AnalyzedStructInitializer, AnalyzedUnionInitializer,
 ##   AnalyzedInitializer, AnalyzedCaseBlock,
-##   AnalyzedMatchExpression, AnalyzedAssignment, AnalyzedSetter,
+##   AnalyzedMatchExpression, AnalyzedAssignment,
 ##   AnalyzedExpression, AnalyzedStatement
 ##
 ## Leaf nodes that carry no back-reference into the cycle
@@ -107,11 +107,6 @@ type
     def: AnalyzedDefAssignment
     expression: AnalyzedExpression
 
-  AnalyzedSetter* = ref object
-    def: AnalyzedDefSetter
-    getter: AnalyzedGetter
-    expression: AnalyzedExpression
-
   AnalyzedExpressionKind* = enum
     aekVariable, aekFunctionCall, aekMatchExpr, aekInitializer, aekGetter
   AnalyzedExpression* = ref object
@@ -122,12 +117,8 @@ type
     of aekInitializer: init: AnalyzedInitializer
     of aekGetter: getter: AnalyzedGetter
 
-  AnalyzedStatementKind* = enum
-    askAssignment, askSetter
   AnalyzedStatement* = ref object
-    case kind: AnalyzedStatementKind
-    of askAssignment: assignment: AnalyzedAssignment
-    of askSetter: setter: AnalyzedSetter
+    assignment: AnalyzedAssignment
 
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
@@ -243,12 +234,6 @@ proc target*(assignment: AnalyzedAssignment): Option[Identifier] = assignment.de
 proc argType*(assignment: AnalyzedAssignment): AnalyzedArgumentType = assignment.expression.argType
 proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression= assignment.expression
 
-proc newAnalyzedSetter*(def: AnalyzedDefSetter, getter: AnalyzedGetter, expression: AnalyzedExpression): AnalyzedSetter =
-  AnalyzedSetter(def: def, getter: getter, expression: expression)
-
-proc loc*(setter: AnalyzedSetter): Location = setter.def.loc
-proc argType*(setter: AnalyzedSetter): AnalyzedArgumentType = setter.expression.argType
-
 proc newAnalyzedExpression*(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
 
@@ -312,38 +297,17 @@ proc impls*(expression: AnalyzedExpression): AnalyzedImplMap =
   expression.argType.impls
 
 proc newAnalyzedStatement*(assignment: AnalyzedAssignment): AnalyzedStatement =
-  AnalyzedStatement(kind: askAssignment, assignment: assignment)
+  AnalyzedStatement(assignment: assignment)
 
-proc newAnalyzedStatement*(setter: AnalyzedSetter): AnalyzedStatement =
-  AnalyzedStatement(kind: askSetter, setter: setter)
-
-proc kind*(statement: AnalyzedStatement): AnalyzedStatementKind = statement.kind
-proc assignment*(statement: AnalyzedStatement): AnalyzedAssignment =
-  assert statement.kind == askAssignment,
-    fmt"AnalyzedStatement.assignment accessed but kind is {statement.kind}"
-  statement.assignment
-proc setter*(statement: AnalyzedStatement): AnalyzedSetter =
-  assert statement.kind == askSetter,
-    fmt"AnalyzedStatement.setter accessed but kind is {statement.kind}"
-  statement.setter
-
-proc loc*(statement: AnalyzedStatement): Location =
-  case statement.kind:
-  of askAssignment: statement.assignment.loc
-  of askSetter: statement.setter.loc
-
-proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType =
-  case statement.kind:
-  of askAssignment: statement.assignment.argType
-  of askSetter: statement.setter.argType
+proc assignment*(statement: AnalyzedStatement): AnalyzedAssignment = statement.assignment
+proc loc*(statement: AnalyzedStatement): Location = statement.assignment.loc
+proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType = statement.assignment.argType
 
 proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
-  # Only assignments introduce a new binding into the function scope;
-  # bare-expression and setter statements return none. Post-Approach C
-  # every statement's argType is concrete, so no "no-type" fallback.
-  case statement.kind:
-  of askSetter: none(AnalyzedBinding)
-  of askAssignment:
-    let maybeTarget = statement.assignment.target
-    if maybeTarget.isSome: some(newAnalyzedBinding(maybeTarget.get, statement.argType))
-    else: none(AnalyzedBinding)
+  # Only a targeted assignment introduces a new binding into the function
+  # scope; a targetless one (bare expression / field mutation) returns
+  # none. Post-Approach C every statement's argType is concrete, so no
+  # "no-type" fallback.
+  let maybeTarget = statement.assignment.target
+  if maybeTarget.isSome: some(newAnalyzedBinding(maybeTarget.get, statement.argType))
+  else: none(AnalyzedBinding)

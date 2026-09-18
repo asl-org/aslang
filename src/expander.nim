@@ -408,9 +408,7 @@ proc expand(app: IRApp, assignment: AnalyzedAssignment, argId: int): (seq[string
 
 
 proc expand(app: IRApp, statement: AnalyzedStatement, argId: int): (seq[string], int, string) =
-  case statement.kind:
-  of askSetter: assert(false)
-  of askAssignment: return expand(app, statement.assignment, argId)
+  expand(app, statement.assignment, argId)
 
 proc expand*(app: AnalyzedApp): string =
   let app = newIRApp(app)

@@ -481,22 +481,9 @@ proc analyzeAssignment*(funcCtx: AnalyzedUserFunctionContext, assignment: Analyz
   let analyzedExpr = ? analyzeExpression(funcCtx, assignment.expression, none(AnalyzedArgumentType))
   ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
-proc analyzeSetter*(funcCtx: AnalyzedUserFunctionContext, setter: AnalyzedDefSetter): Result[AnalyzedSetter, string] =
-  let analyzedGetter = ? analyzeGetter(funcCtx, setter.getter)
-  let analyzedExpression = ? analyzeExpression(funcCtx, setter.expression, some(analyzedGetter.argType))
-  if analyzedGetter.argType != analyzedExpression.argType:
-    err(fmt"{setter.loc} argument type mismatch") # TODO: improve error message
-  else:
-    ok(newAnalyzedSetter(setter, analyzedGetter, analyzedExpression))
-
 proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string] =
-  case statement.kind:
-  of adskAssignment:
-    let analyzedAssignment = ? analyzeAssignment(funcCtx, statement.assignment)
-    ok(newAnalyzedStatement(analyzedAssignment))
-  of adskSetter:
-    let analyzedMutation = ? analyzeSetter(funcCtx, statement.setter)
-    ok(newAnalyzedStatement(analyzedMutation))
+  let analyzedAssignment = ? analyzeAssignment(funcCtx, statement.assignment)
+  ok(newAnalyzedStatement(analyzedAssignment))
 
 proc analyzeUserFunction*(moduleCtx: AnalyzedModuleContext, function: AnalyzedDefUserFunction): Result[AnalyzedUserFunction, string] =
   var funcCtx = newAnalyzedUserFunctionContext(moduleCtx, function)

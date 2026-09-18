@@ -284,20 +284,9 @@ proc analyzeDefAssignment(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeCon
   let expression = ? analyzeDefExpression(fileCtx, typeCtx, assignment.expression)
   ok(newAnalyzedDefAssignment(assignment, expression))
 
-proc analyzeDefSetter(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, setter: ResolvedSetter): Result[AnalyzedDefSetter, string] =
-  # The getter side is skipped on purpose — same rationale as the
-  # rekGetter arm in analyzeDefExpression.
-  let expression = ? analyzeDefExpression(fileCtx, typeCtx, setter.expression)
-  ok(newAnalyzedDefSetter(setter, expression))
-
 proc analyzeDefStatement(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, statement: ResolvedStatement): Result[AnalyzedDefStatement, string] =
-  case statement.kind:
-  of rskAssignment:
-    let assignment = ? analyzeDefAssignment(fileCtx, typeCtx, statement.assignment)
-    ok(newAnalyzedDefStatement(assignment))
-  of rskSetter:
-    let setter = ? analyzeDefSetter(fileCtx, typeCtx, statement.setter)
-    ok(newAnalyzedDefStatement(setter))
+  let assignment = ? analyzeDefAssignment(fileCtx, typeCtx, statement.assignment)
+  ok(newAnalyzedDefStatement(assignment))
 
 proc analyzeDefUserFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
   let funcDef = ? analyzeDefFunctionDefinition(fileCtx, typeCtx, function.def)
