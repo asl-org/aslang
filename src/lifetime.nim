@@ -49,9 +49,6 @@ proc analyzeLifetime(app: AnalyzedApp, scope: Table[Identifier, Source], express
 proc analyzeLifetime(app: AnalyzedApp, scope: Table[Identifier, Source], statement: AnalyzedStatement): Result[void, string] =
   case statement.kind:
   of askAssignment: err(fmt"{statement.loc} todo: analyze lifetime of analyzed Assignment")
-  of askExpr:
-    ? analyzeLifetime(app, scope, statement.expression)
-    ok()
   of askSetter: err(fmt"{statement.loc} todo: analyze lifetime of analyzed Setter")
 
 proc analyzeLifetime(app: AnalyzedApp, function: AnalyzedFunction): Result[void, string] =

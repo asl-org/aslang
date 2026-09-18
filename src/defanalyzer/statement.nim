@@ -85,11 +85,10 @@ type
     expression: AnalyzedDefExpression
 
   AnalyzedDefStatementKind* = enum
-    adskAssignment, adskExpr, adskSetter
+    adskAssignment, adskSetter
   AnalyzedDefStatement* = ref object
     case kind: AnalyzedDefStatementKind
     of adskAssignment: assignment: AnalyzedDefAssignment
-    of adskExpr: expression: AnalyzedDefExpression
     of adskSetter: setter: AnalyzedDefSetter
 
 # AnalyzedDefLiteral
@@ -269,17 +268,10 @@ proc expression*(setter: AnalyzedDefSetter): AnalyzedDefExpression = setter.expr
 proc newAnalyzedDefStatement*(assignment: AnalyzedDefAssignment): AnalyzedDefStatement =
   AnalyzedDefStatement(kind: adskAssignment, assignment: assignment)
 
-proc newAnalyzedDefStatement*(expression: AnalyzedDefExpression): AnalyzedDefStatement =
-  AnalyzedDefStatement(kind: adskExpr, expression: expression)
-
 proc newAnalyzedDefStatement*(setter: AnalyzedDefSetter): AnalyzedDefStatement =
   AnalyzedDefStatement(kind: adskSetter, setter: setter)
 
 proc kind*(statement: AnalyzedDefStatement): AnalyzedDefStatementKind = statement.kind
-proc expression*(statement: AnalyzedDefStatement): AnalyzedDefExpression =
-  assert statement.kind == adskExpr,
-    fmt"AnalyzedDefStatement.expression accessed but kind is {statement.kind}"
-  statement.expression
 proc assignment*(statement: AnalyzedDefStatement): AnalyzedDefAssignment =
   assert statement.kind == adskAssignment,
     fmt"AnalyzedDefStatement.assignment accessed but kind is {statement.kind}"
@@ -292,5 +284,4 @@ proc setter*(statement: AnalyzedDefStatement): AnalyzedDefSetter =
 proc loc*(statement: AnalyzedDefStatement): Location =
   case statement.kind:
   of adskAssignment: statement.assignment.loc
-  of adskExpr: statement.expression.loc
   of adskSetter: statement.setter.loc

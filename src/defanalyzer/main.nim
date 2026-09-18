@@ -295,9 +295,6 @@ proc analyzeDefStatement(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeCont
   of rskAssignment:
     let assignment = ? analyzeDefAssignment(fileCtx, typeCtx, statement.assignment)
     ok(newAnalyzedDefStatement(assignment))
-  of rskExpr:
-    let expression = ? analyzeDefExpression(fileCtx, typeCtx, statement.expression)
-    ok(newAnalyzedDefStatement(expression))
   of rskSetter:
     let setter = ? analyzeDefSetter(fileCtx, typeCtx, statement.setter)
     ok(newAnalyzedDefStatement(setter))

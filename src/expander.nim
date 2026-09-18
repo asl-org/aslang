@@ -409,7 +409,6 @@ proc expand(app: IRApp, assignment: AnalyzedAssignment, argId: int): (seq[string
 
 proc expand(app: IRApp, statement: AnalyzedStatement, argId: int): (seq[string], int, string) =
   case statement.kind:
-  of askExpr: return expand(app, statement.expression, argId)
   of askSetter: assert(false)
   of askAssignment: return expand(app, statement.assignment, argId)
 

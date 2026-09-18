@@ -123,10 +123,9 @@ type
     of aekGetter: getter: AnalyzedGetter
 
   AnalyzedStatementKind* = enum
-    askExpr, askAssignment, askSetter
+    askAssignment, askSetter
   AnalyzedStatement* = ref object
     case kind: AnalyzedStatementKind
-    of askExpr: expression: AnalyzedExpression
     of askAssignment: assignment: AnalyzedAssignment
     of askSetter: setter: AnalyzedSetter
 
@@ -312,9 +311,6 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
 proc impls*(expression: AnalyzedExpression): AnalyzedImplMap =
   expression.argType.impls
 
-proc newAnalyzedStatement*(expression: AnalyzedExpression): AnalyzedStatement =
-  AnalyzedStatement(kind: askExpr, expression: expression)
-
 proc newAnalyzedStatement*(assignment: AnalyzedAssignment): AnalyzedStatement =
   AnalyzedStatement(kind: askAssignment, assignment: assignment)
 
@@ -322,10 +318,6 @@ proc newAnalyzedStatement*(setter: AnalyzedSetter): AnalyzedStatement =
   AnalyzedStatement(kind: askSetter, setter: setter)
 
 proc kind*(statement: AnalyzedStatement): AnalyzedStatementKind = statement.kind
-proc expression*(statement: AnalyzedStatement): AnalyzedExpression =
-  assert statement.kind == askExpr,
-    fmt"AnalyzedStatement.expression accessed but kind is {statement.kind}"
-  statement.expression
 proc assignment*(statement: AnalyzedStatement): AnalyzedAssignment =
   assert statement.kind == askAssignment,
     fmt"AnalyzedStatement.assignment accessed but kind is {statement.kind}"
@@ -337,13 +329,11 @@ proc setter*(statement: AnalyzedStatement): AnalyzedSetter =
 
 proc loc*(statement: AnalyzedStatement): Location =
   case statement.kind:
-  of askExpr: statement.expression.loc
   of askAssignment: statement.assignment.loc
   of askSetter: statement.setter.loc
 
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType =
   case statement.kind:
-  of askExpr: statement.expression.argType
   of askAssignment: statement.assignment.argType
   of askSetter: statement.setter.argType
 
@@ -352,7 +342,7 @@ proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
   # bare-expression and setter statements return none. Post-Approach C
   # every statement's argType is concrete, so no "no-type" fallback.
   case statement.kind:
-  of askExpr, askSetter: none(AnalyzedBinding)
+  of askSetter: none(AnalyzedBinding)
   of askAssignment:
     let maybeTarget = statement.assignment.target
     if maybeTarget.isSome: some(newAnalyzedBinding(maybeTarget.get, statement.argType))

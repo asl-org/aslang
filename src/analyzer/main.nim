@@ -491,9 +491,6 @@ proc analyzeSetter*(funcCtx: AnalyzedUserFunctionContext, setter: AnalyzedDefSet
 
 proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string] =
   case statement.kind:
-  of adskExpr:
-    let analyzedExpr = ? analyzeExpression(funcCtx, statement.expression, none(AnalyzedArgumentType))
-    ok(newAnalyzedStatement(analyzedExpr))
   of adskAssignment:
     let analyzedAssignment = ? analyzeAssignment(funcCtx, statement.assignment)
     ok(newAnalyzedStatement(analyzedAssignment))

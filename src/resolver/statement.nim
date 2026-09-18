@@ -168,11 +168,10 @@ type
     of rekMatchExpr: match: ResolvedMatchExpression
 
   ResolvedStatementKind* = enum
-    rskAssignment, rskExpr, rskSetter
+    rskAssignment, rskSetter
   ResolvedStatement* = ref object
     case kind: ResolvedStatementKind
     of rskAssignment: assignment: ResolvedAssignment
-    of rskExpr: expression: ResolvedExpression
     of rskSetter: setter: ResolvedSetter
 
 # ---- ResolvedKeywordArgument ----
@@ -391,17 +390,10 @@ proc loc*(expression: ResolvedExpression): Location =
 proc newResolvedStatement*(assignment: ResolvedAssignment): ResolvedStatement =
   ResolvedStatement(kind: rskAssignment, assignment: assignment)
 
-proc newResolvedStatement*(expression: ResolvedExpression): ResolvedStatement =
-  ResolvedStatement(kind: rskExpr, expression: expression)
-
 proc newResolvedStatement*(setter: ResolvedSetter): ResolvedStatement =
   ResolvedStatement(kind: rskSetter, setter: setter)
 
 proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
-proc expression*(statement: ResolvedStatement): ResolvedExpression =
-  assert statement.kind == rskExpr,
-    fmt"ResolvedStatement.expression accessed but kind is {statement.kind}"
-  statement.expression
 proc assignment*(statement: ResolvedStatement): ResolvedAssignment =
   assert statement.kind == rskAssignment,
     fmt"ResolvedStatement.assignment accessed but kind is {statement.kind}"
@@ -413,7 +405,6 @@ proc setter*(statement: ResolvedStatement): ResolvedSetter =
 proc loc*(statement: ResolvedStatement): Location =
   case statement.kind:
   of rskAssignment: statement.assignment.loc
-  of rskExpr: statement.expression.loc
   of rskSetter: statement.setter.loc
 
 # Accessor used by callers to thread bindings into scope.
@@ -421,5 +412,4 @@ proc variable*(statement: ResolvedStatement): Option[Identifier] =
   ## Returns the new binding introduced by this statement (if any).
   case statement.kind:
   of rskAssignment: statement.assignment.target
-  of rskExpr: none(Identifier)
   of rskSetter: none(Identifier)
