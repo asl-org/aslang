@@ -1,4 +1,4 @@
-import results, strformat, strutils, options, parseutils
+import results, strformat, strutils, options
 
 import parser
 

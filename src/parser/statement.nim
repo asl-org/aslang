@@ -1,4 +1,4 @@
-import strformat, strutils, sequtils, tables, results
+import strformat, strutils, sequtils, tables, results, options
 
 import parser
 
@@ -404,10 +404,15 @@ inlineExpressionSpec = oneOf("expression", @[
 ])
 
 type
+  AssignmentKind* = enum
+    akNone, akVariable, akGetter
   Assignment* = ref object
-    target: Identifier
     expression: Expression
     loc: Location
+    case kind: AssignmentKind
+    of akNone: discard
+    of akVariable: target: Identifier
+    of akGetter: getter: Getter
 
   CaseBlock* = ref object
     pattern: CasePattern
@@ -441,13 +446,8 @@ type
     of ekInline: inline: InlineExpression
     of ekMatch: match: MatchExpression
 
-  StatementKind* = enum
-    skAssignment, skExpr, skSetter
   Statement* = ref object
-    case kind: StatementKind
-    of skAssignment: assignment: Assignment
-    of skExpr: expression: Expression
-    of skSetter: setter: Setter
+    assignment: Assignment
 
   StatementList* = ref object
     statements: seq[Statement]
@@ -461,18 +461,46 @@ proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string]
 var statementListSpec*: Spec[StatementList]
 
 # ----------------- Assignment -----------------
-proc newAssignment*(target: Identifier, expression: Expression,
-    loc: Location): Assignment =
-  Assignment(target: target, expression: expression, loc: loc)
+proc newAssignment*(expression: Expression, loc: Location): Assignment =
+  Assignment(kind: akNone, expression: expression, loc: loc)
 
-proc loc*(assignment: Assignment): Location = assignment.target.loc
-proc target*(assignment: Assignment): Identifier = assignment.target
+proc newAssignment*(target: Identifier, expression: Expression, loc: Location): Assignment =
+  Assignment(kind: akVariable, target: target, expression: expression, loc: loc)
+
+proc newAssignment*(getter: Getter, expression: Expression, loc: Location): Assignment =
+  Assignment(kind: akGetter, getter: getter, expression: expression, loc: loc)
+
+proc kind*(assignment: Assignment): AssignmentKind = assignment.kind
+proc loc*(assignment: Assignment): Location = assignment.loc
 proc expression*(assignment: Assignment): Expression = assignment.expression
+proc getter*(assignment: Assignment): Getter =
+  assert(assignment.kind == akGetter, fmt"Assignment.getter accessed but kind is {assignment.kind}")
+  assignment.getter
+proc target*(assignment: Assignment): Option[Identifier] =
+  case assignment.kind:
+  of akNone: none(Identifier)
+  of akVariable: some(assignment.target)
+  # A getter-assignment (`x.y = z`) mutates a field — it introduces no new
+  # variable binding, so it names no target.
+  of akGetter: none(Identifier)
 
 proc asl(assignment: Assignment): string =
-  fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
+  case assignment.kind:
+  of akNone: asl(assignment.expression)
+  of akVariable: fmt"{asl(assignment.target)} = {asl(assignment.expression)}"
+  of akGetter: fmt"{asl(assignment.getter)} = {asl(assignment.expression)}"
 
-proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
+proc getterAssignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
+  let getter = ? parser.expect(getterSpec)
+  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect("=")
+  discard ? parser.expect(spaceSpec.optional())
+  let expression = ? parser.expect(inlineExpressionSpec)
+  ok(newAssignment(getter, newExpression(expression), getter.loc))
+
+let getterAssignmentSpec = newSpec[Assignment]("getter assignment", getterAssignmentConsumer)
+
+proc variableAssignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
   let target = ? parser.expect(identifierSpec)
   discard ? parser.expect(spaceSpec.optional())
   discard ? parser.expect("=")
@@ -480,7 +508,15 @@ proc assignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
   let expression = ? parser.expect(inlineExpressionSpec)
   ok(newAssignment(target, newExpression(expression), target.loc))
 
-let assignmentSpec* = newSpec[Assignment]("assignment", assignmentConsumer)
+let variableAssignmentSpec = newSpec[Assignment]("variable assignment", variableAssignmentConsumer)
+
+proc emptyAssignmentConsumer(parser: Parser): Result[Assignment, ParserError] =
+  let expression = ? parser.expect(inlineExpressionSpec)
+  ok(newAssignment(newExpression(expression), expression.loc))
+
+let emptyAssignmentSpec = newSpec[Assignment]("empty assignment", emptyAssignmentConsumer)
+
+let assignmentSpec* = oneOf("assignment", @[getterAssignmentSpec, variableAssignmentSpec, emptyAssignmentSpec])
 
 # ----------------- CaseBlock -----------------
 proc newCaseBlock*(pattern: CasePattern, body: StatementList,
@@ -660,89 +696,43 @@ proc asl(expression: Expression): string =
 
 # ----------------- Statement -----------------
 proc newStatement*(assignment: Assignment): Statement =
-  Statement(kind: skAssignment, assignment: assignment)
-
-proc newStatement*(expression: Expression): Statement =
-  Statement(kind: skExpr, expression: expression)
-
-proc newStatement*(expression: InlineExpression): Statement =
-  Statement(kind: skExpr, expression: expression.newExpression())
-
-proc newStatement*(setter: Setter): Statement =
-  Statement(kind: skSetter, setter: setter)
+  Statement(assignment: assignment)
 
 # TODO: Cleanup after proper break down of Expression
 proc newStatement*(header: MatchHeader, cases: seq[CaseBlock]): Result[Statement, ParserError] =
   let matchExpr = ? newMatchExpression(header.subject, cases, header.loc)
   case header.kind:
-  of mhkDefault: ok(newStatement(newExpression(matchExpr)))
+  of mhkDefault: ok(newStatement(newAssignment(newExpression(matchExpr), matchExpr.loc)))
   of mhkAssigned: ok(newStatement(newAssignment(header.target, newExpression(matchExpr), header.loc)))
 
-proc kind*(s: Statement): StatementKind = s.kind
-
-proc assignment*(s: Statement): Assignment =
-  assert s.kind == skAssignment,
-    fmt"Statement.assignment accessed but kind is {s.kind}"
-  s.assignment
-
-proc expression*(s: Statement): Expression =
-  assert s.kind == skExpr,
-    fmt"Statement.expression accessed but kind is {s.kind}"
-  s.expression
-
-proc setter*(s: Statement): Setter =
-  assert s.kind == skSetter,
-    fmt"Statement.setter accessed but kind is {s.kind}"
-  s.setter
-
-proc loc*(statement: Statement): Location =
-  case statement.kind:
-  of skAssignment: statement.assignment.loc
-  of skExpr: statement.expression.loc
-  of skSetter: statement.setter.loc
-
-proc isBlockStatement(stmt: Statement): bool =
-  case stmt.kind:
-  of skExpr: stmt.expression.kind == ekMatch
-  of skAssignment:
-    stmt.assignment.expression.kind == ekMatch
-  of skSetter: false
-
-proc asl*(stmt: Statement): string =
-  case stmt.kind:
-  of skAssignment: asl(stmt.assignment)
-  of skSetter: asl(stmt.setter)
-  of skExpr: asl(stmt.expression)
+proc assignment*(s: Statement): Assignment = s.assignment
+proc loc*(statement: Statement): Location = statement.assignment.loc
+proc isBlockStatement(stmt: Statement): bool = stmt.assignment.expression.kind == ekMatch
+proc asl*(stmt: Statement): string = asl(stmt.assignment)
 
 proc asl*(stmt: Statement, level: int, indentWidth: uint32): seq[string] =
   let indent = " ".repeat(level * indentWidth.int)
   if not stmt.isBlockStatement:
     return @[fmt"{indent}{asl(stmt)}"]
+  # RHS is a match expression spanning multiple lines.
+  let matchLines = asl(stmt.assignment.expression.match, level, indentWidth)
+  let maybeTarget = target(stmt.assignment)
   var lines: seq[string]
-  case stmt.kind:
-  of skExpr:
-    lines = asl(stmt.expression.match, level, indentWidth)
-  of skAssignment:
-    # RHS is a match expression spanning multiple lines. Render as:
-    #   <indent>x = match <subj>:
-    #   <indent+width>  case ...
-    # The match's asl returns lines already indented at `level`; the
-    # first line starts with `<indent>match <subj>:` — replace the
-    # leading indent + `match` with `<indent>x = match` to join.
-    let matchLines = asl(stmt.assignment.expression.match, level, indentWidth)
+  if maybeTarget.isNone:
+    # Bare `match <subj>:` statement (no assignment target) — the match's
+    # own asl already renders it correctly, so pass the lines through.
+    lines = matchLines
+  else:
+    # Targeted `x = match <subj>:`. The match's asl returns lines already
+    # indented at `level`; the first starts `<indent>match <subj>:`, so
+    # splice `<target> = ` in after the leading indent to join.
     let firstAfterIndent = matchLines[0][indent.len..^1]
-    lines.add(fmt"{indent}{asl(stmt.assignment.target)} = {firstAfterIndent}")
+    lines.add(fmt"{indent}{asl(maybeTarget.get)} = {firstAfterIndent}")
     for i in 1..<matchLines.len:
       lines.add(matchLines[i])
-  of skSetter:
-    lines = @[fmt"{indent}{asl(stmt.setter)}"]
   lines
 
-let inlineStatementSpec = oneOf("statement", @[
-  map(setterSpec, newStatement),
-  map(assignmentSpec, newStatement),
-  map(inlineExpressionSpec, newStatement),
-])
+let inlineStatementSpec = assignmentSpec.map(newStatement)
 
 let statementSpec = oneOf("statement", @[
   matchBlockSpec,

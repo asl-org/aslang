@@ -240,7 +240,7 @@ proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpr
   AnalyzedAssignment(def: def, expression: expression)
 
 proc loc*(assignment: AnalyzedAssignment): Location = assignment.def.loc
-proc target*(assignment: AnalyzedAssignment): Identifier = assignment.def.target
+proc target*(assignment: AnalyzedAssignment): Option[Identifier] = assignment.def.target
 proc argType*(assignment: AnalyzedAssignment): AnalyzedArgumentType = assignment.expression.argType
 proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression= assignment.expression
 
@@ -353,4 +353,7 @@ proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
   # every statement's argType is concrete, so no "no-type" fallback.
   case statement.kind:
   of askExpr, askSetter: none(AnalyzedBinding)
-  of askAssignment: some(newAnalyzedBinding(statement.assignment.target, statement.argType))
+  of askAssignment:
+    let maybeTarget = statement.assignment.target
+    if maybeTarget.isSome: some(newAnalyzedBinding(maybeTarget.get, statement.argType))
+    else: none(AnalyzedBinding)

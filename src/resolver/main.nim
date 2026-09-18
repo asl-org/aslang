@@ -348,8 +348,14 @@ proc resolveExpression(fileCtx: FileContext, ctxType: LocalType, funcCtx: Functi
     ok(newResolvedExpression(resolvedMatchExpr))
 
 proc resolveAssignment(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, assignment: Assignment): Result[ResolvedAssignment, string] =
-  let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, assignment.expression)
-  ok(newResolvedAssignment(assignment, resolvedExpression))
+  case assignment.kind:
+  of akNone, akVariable:
+    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, assignment.expression)
+    ok(newResolvedAssignment(assignment, resolvedExpression))
+  of akGetter:
+    let resolvedGetter = ? resolveGetter(funcCtx, assignment.getter)
+    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, assignment.expression)
+    ok(newResolvedAssignment(assignment, resolvedGetter, resolvedExpression))
 
 proc resolveSetter(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, setter: Setter): Result[ResolvedSetter, string] =
   let resolvedGetter = ? resolveGetter(funcCtx, setter.target)
@@ -357,16 +363,8 @@ proc resolveSetter(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionCo
   ok(newResolvedSetter(setter, resolvedGetter, resolvedExpression))
 
 proc resolveStatement(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string] =
-  case statement.kind:
-  of skExpr:
-    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, statement.expression)
-    ok(newResolvedStatement(resolvedExpression))
-  of skAssignment:
-    let resolvedAssignment = ? resolveAssignment(fileCtx, ctxType, funcCtx, statement.assignment)
-    ok(newResolvedStatement(resolvedAssignment))
-  of skSetter:
-    let resolvedMutation = ? resolveSetter(fileCtx, ctxType, funcCtx, statement.setter)
-    ok(newResolvedStatement(resolvedMutation))
+  let resolvedAssignment = ? resolveAssignment(fileCtx, ctxType, funcCtx, statement.assignment)
+  ok(newResolvedStatement(resolvedAssignment))
 
 proc resolveUserFunction(fileCtx: FileContext, typeId: int, ctxType: LocalType, functionId: int, function: UserFunction): Result[ResolvedUserFunction, string] =
   let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeId, ctxType, functionId, function.def)

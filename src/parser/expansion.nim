@@ -172,8 +172,10 @@ proc expand(expression: Expression, start: int): (seq[Statement], Expression, in
   expand(expression, start, true)
 
 proc expand(assignment: Assignment, start: int): (seq[Statement], Assignment, int) =
-  let (expandedStmts, expandedExpr, counter) = assignment.expression.expand(start, replace = false)
-  (expandedStmts, newAssignment(assignment.target, expandedExpr, assignment.loc), counter)
+  case assignment.kind:
+  of akVariable:
+    let (expandedStmts, expandedExpr, counter) = assignment.expression.expand(start, replace = false)
+    (expandedStmts, newAssignment(assignment.target, expandedExpr, assignment.loc), counter)
 
 proc expand(setter: Setter, start: int): (seq[Statement], Setter, int) =
   let (expandedStmts, expandedExpr, counter) = setter.expression.expand(start, replace = false)

@@ -130,9 +130,15 @@ type
     typ: parser.LocalType
     args: seq[ResolvedExpression]
 
+  ResolvedAssignmentKind* = enum
+    # TODO: Expand rakDefault into rakNone and rakVariable
+    rakGetter, rakDefault
   ResolvedAssignment* = ref object
     parsed: Assignment
     expression: ResolvedExpression
+    case kind: ResolvedAssignmentKind
+    of rakGetter: getter: ResolvedGetter
+    of rakDefault: discard
 
   ResolvedSetter* = ref object
     parsed: Setter
@@ -286,11 +292,14 @@ proc impls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
 
 proc newResolvedAssignment*(parsed: Assignment,
     expression: ResolvedExpression): ResolvedAssignment =
-  ResolvedAssignment(parsed: parsed, expression: expression)
+  ResolvedAssignment(kind: rakDefault, parsed: parsed, expression: expression)
+
+proc newResolvedAssignment*(parsed: Assignment, getter: ResolvedGetter, expression: ResolvedExpression): ResolvedAssignment =
+  ResolvedAssignment(kind: rakGetter, parsed: parsed, getter: getter, expression: expression)
 
 proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
 proc loc*(assignment: ResolvedAssignment): Location = assignment.parsed.loc
-proc target*(assignment: ResolvedAssignment): Identifier = assignment.parsed.target
+proc target*(assignment: ResolvedAssignment): Option[Identifier] = assignment.parsed.target
 
 # ---- ResolvedSetter ----
 
@@ -411,6 +420,6 @@ proc loc*(statement: ResolvedStatement): Location =
 proc variable*(statement: ResolvedStatement): Option[Identifier] =
   ## Returns the new binding introduced by this statement (if any).
   case statement.kind:
-  of rskAssignment: some(statement.assignment.target)
+  of rskAssignment: statement.assignment.target
   of rskExpr: none(Identifier)
   of rskSetter: none(Identifier)

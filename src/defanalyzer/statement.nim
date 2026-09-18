@@ -6,7 +6,7 @@
 ## file scope. Built by the `analyzeDef*` body walk on the defanalyzer
 ## barrel; consumed by phase B.
 
-import strformat
+import strformat, options
 
 import ../tokenizer/main as tokenizer
 import ../parser/main as parser
@@ -254,7 +254,7 @@ proc newAnalyzedDefAssignment*(resolved: ResolvedAssignment, expression: Analyze
   AnalyzedDefAssignment(resolved: resolved, expression: expression)
 
 proc loc*(assignment: AnalyzedDefAssignment): Location = assignment.resolved.loc
-proc target*(assignment: AnalyzedDefAssignment): Identifier = assignment.resolved.target
+proc target*(assignment: AnalyzedDefAssignment): Option[Identifier] = assignment.resolved.target
 proc expression*(assignment: AnalyzedDefAssignment): AnalyzedDefExpression = assignment.expression
 
 # AnalyzedDefSetter
