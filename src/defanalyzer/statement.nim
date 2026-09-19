@@ -77,7 +77,7 @@ type
     of adekMatchExpr: match: AnalyzedDefMatch
 
   AnalyzedDefAssignment* = ref object
-    resolved: ResolvedAssignment
+    resolved: ResolvedStatement
     expression: AnalyzedDefExpression
 
   AnalyzedDefStatement* = ref object
@@ -241,7 +241,7 @@ proc loc*(expression: AnalyzedDefExpression): Location =
   of adekMatchExpr: expression.match.loc
 
 # AnalyzedDefAssignment
-proc newAnalyzedDefAssignment*(resolved: ResolvedAssignment, expression: AnalyzedDefExpression): AnalyzedDefAssignment =
+proc newAnalyzedDefAssignment*(resolved: ResolvedStatement, expression: AnalyzedDefExpression): AnalyzedDefAssignment =
   AnalyzedDefAssignment(resolved: resolved, expression: expression)
 
 proc loc*(assignment: AnalyzedDefAssignment): Location = assignment.resolved.loc

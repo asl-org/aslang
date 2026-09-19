@@ -347,26 +347,18 @@ proc resolveExpression(fileCtx: FileContext, ctxType: LocalType, funcCtx: Functi
     let resolvedMatchExpr = ? resolveMatchExpression(fileCtx, ctxType, funcCtx, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))
 
-# TODO: The parser collapsed its `Assignment` type into `Statement` — a
-# statement IS a (bare | variable | getter) assignment, so there is no
-# separate Assignment node anymore, hence the `Statement` param here and
-# `ResolvedAssignment.parsed: Statement`. The resolver still keeps the
-# `ResolvedStatement` wrapper around `ResolvedAssignment`; fold the two the
-# same way (and rename `resolveAssignment`/`ResolvedAssignment` to the
-# Statement forms) so this layer mirrors the parser.
-proc resolveAssignment(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, assignment: Statement): Result[ResolvedAssignment, string] =
-  case assignment.kind:
-  of skNone, skVariable:
-    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, assignment.expression)
-    ok(newResolvedAssignment(assignment, resolvedExpression))
-  of skGetter:
-    let resolvedGetter = ? resolveGetter(funcCtx, assignment.getter)
-    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, assignment.expression)
-    ok(newResolvedAssignment(assignment, resolvedGetter, resolvedExpression))
-
 proc resolveStatement(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string] =
-  let resolvedAssignment = ? resolveAssignment(fileCtx, ctxType, funcCtx, statement)
-  ok(newResolvedStatement(resolvedAssignment))
+  case statement.kind:
+  of skNone:
+    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, statement.expression)
+    ok(newResolvedStatement(statement, resolvedExpression))
+  of skVariable:
+    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, statement.expression)
+    ok(newResolvedStatement(statement, statement.target.get, resolvedExpression))
+  of skGetter:
+    let resolvedGetter = ? resolveGetter(funcCtx, statement.getter)
+    let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, statement.expression)
+    ok(newResolvedStatement(statement, resolvedGetter, resolvedExpression))
 
 proc resolveUserFunction(fileCtx: FileContext, typeId: int, ctxType: LocalType, functionId: int, function: UserFunction): Result[ResolvedUserFunction, string] =
   let resolvedFuncDef = ? resolveFunctionDef(fileCtx, typeId, ctxType, functionId, function.def)

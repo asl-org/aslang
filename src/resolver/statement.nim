@@ -5,9 +5,8 @@
 ##
 ##   ResolvedKeywordArgument, ResolvedStructInitializer,
 ##   ResolvedUnionInitializer, ResolvedInitializer,
-##   ResolvedFunctionCall, ResolvedAssignment,
-##   ResolvedCaseBlock, ResolvedMatchExpression,
-##   ResolvedExpression, ResolvedStatement
+##   ResolvedFunctionCall, ResolvedCaseBlock,
+##   ResolvedMatchExpression, ResolvedExpression, ResolvedStatement
 ##
 ## Leaf nodes that carry no back-reference into the cycle
 ## (ResolvedGetter, ResolvedLiteralInitializer, ResolvedStructRef,
@@ -130,15 +129,15 @@ type
     typ: parser.LocalType
     args: seq[ResolvedExpression]
 
-  ResolvedAssignmentKind* = enum
-    # TODO: Expand rakDefault into rakNone and rakVariable
-    rakGetter, rakDefault
-  ResolvedAssignment* = ref object
+  ResolvedStatementKind* = enum
+    rskNone, rskVariable, rskGetter
+  ResolvedStatement* = ref object
     parsed: Statement
     expression: ResolvedExpression
-    case kind: ResolvedAssignmentKind
-    of rakGetter: getter: ResolvedGetter
-    of rakDefault: discard
+    case kind: ResolvedStatementKind
+    of rskNone: discard
+    of rskVariable: target: Identifier
+    of rskGetter: getter: ResolvedGetter
 
   ResolvedCaseBlock* = ref object
     parsed: CaseBlock
@@ -161,9 +160,6 @@ type
     of rekInitializer: initializer: ResolvedInitializer
     of rekGetter: getter: ResolvedGetter
     of rekMatchExpr: match: ResolvedMatchExpression
-
-  ResolvedStatement* = ref object
-    assignment: ResolvedAssignment
 
 # ---- ResolvedKeywordArgument ----
 
@@ -278,18 +274,28 @@ proc impls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
   ## that.
   fncall.impls
 
-# ---- ResolvedAssignment ----
+# ---- ResolvedStatement ----
 
-proc newResolvedAssignment*(parsed: Statement,
-    expression: ResolvedExpression): ResolvedAssignment =
-  ResolvedAssignment(kind: rakDefault, parsed: parsed, expression: expression)
+proc newResolvedStatement*(parsed: Statement, expression: ResolvedExpression): ResolvedStatement =
+  ResolvedStatement(kind: rskNone, parsed: parsed, expression: expression)
 
-proc newResolvedAssignment*(parsed: Statement, getter: ResolvedGetter, expression: ResolvedExpression): ResolvedAssignment =
-  ResolvedAssignment(kind: rakGetter, parsed: parsed, getter: getter, expression: expression)
+proc newResolvedStatement*(parsed: Statement, target: Identifier, expression: ResolvedExpression): ResolvedStatement =
+  ResolvedStatement(kind: rskVariable, parsed: parsed, target: target, expression: expression)
 
-proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
-proc loc*(assignment: ResolvedAssignment): Location = assignment.parsed.loc
-proc target*(assignment: ResolvedAssignment): Option[Identifier] = assignment.parsed.target
+proc newResolvedStatement*(parsed: Statement, getter: ResolvedGetter, expression: ResolvedExpression): ResolvedStatement =
+  ResolvedStatement(kind: rskGetter, parsed: parsed, getter: getter, expression: expression)
+
+proc expression*(statement: ResolvedStatement): ResolvedExpression = statement.expression
+proc loc*(statement: ResolvedStatement): Location = statement.parsed.loc
+proc target*(statement: ResolvedStatement): Option[Identifier] =
+  case statement.kind:
+  of rskVariable: some(statement.target)
+  of rskNone, rskGetter: none(Identifier)
+
+# Accessor used by callers to thread bindings into scope.
+proc variable*(statement: ResolvedStatement): Option[Identifier] =
+  ## Returns the new binding introduced by this statement (if any).
+  target(statement)
 
 # ---- ResolvedCaseBlock ----
 
@@ -365,16 +371,3 @@ proc loc*(expression: ResolvedExpression): Location =
   of rekMatchExpr: expression.match.loc
   of rekVariable: expression.variable.loc
   of rekLiteral: expression.literal.loc
-
-# ---- ResolvedStatement ----
-
-proc newResolvedStatement*(assignment: ResolvedAssignment): ResolvedStatement =
-  ResolvedStatement(assignment: assignment)
-
-proc assignment*(statement: ResolvedStatement): ResolvedAssignment = statement.assignment
-proc loc*(statement: ResolvedStatement): Location = statement.assignment.loc
-
-# Accessor used by callers to thread bindings into scope.
-proc variable*(statement: ResolvedStatement): Option[Identifier] =
-  ## Returns the new binding introduced by this statement (if any).
-  statement.assignment.target

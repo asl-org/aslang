@@ -280,12 +280,18 @@ proc analyzeDefExpression(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeCon
     let match = ? analyzeDefMatch(fileCtx, typeCtx, expression.match)
     ok(newAnalyzedDefExpression(match))
 
-proc analyzeDefAssignment(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, assignment: ResolvedAssignment): Result[AnalyzedDefAssignment, string] =
+# TODO: The resolver folded its `ResolvedAssignment` into `ResolvedStatement`
+# (mirroring the parser's Assignment -> Statement collapse), so this consumes
+# a `ResolvedStatement` directly. The defanalyzer still keeps the
+# `AnalyzedDefStatement` wrapper around `AnalyzedDefAssignment`; fold the two
+# the same way (and rename `analyzeDefAssignment`/`AnalyzedDefAssignment`) so
+# this layer mirrors the resolver.
+proc analyzeDefAssignment(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, assignment: ResolvedStatement): Result[AnalyzedDefAssignment, string] =
   let expression = ? analyzeDefExpression(fileCtx, typeCtx, assignment.expression)
   ok(newAnalyzedDefAssignment(assignment, expression))
 
 proc analyzeDefStatement(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, statement: ResolvedStatement): Result[AnalyzedDefStatement, string] =
-  let assignment = ? analyzeDefAssignment(fileCtx, typeCtx, statement.assignment)
+  let assignment = ? analyzeDefAssignment(fileCtx, typeCtx, statement)
   ok(newAnalyzedDefStatement(assignment))
 
 proc analyzeDefUserFunction(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, function: ResolvedUserFunction): Result[AnalyzedDefUserFunction, string] =
