@@ -313,9 +313,11 @@ analyzer) sees only the normalized form.
   can never carry a nested `FunctionCall` / `Initializer` / `Getter` /
   `MatchExpression`. Those get lifted into preceding synthetic
   assignments and replaced with `Variable(__asl_arg_N)`.
-- **Every top-level statement is an `Assignment` or `Setter`.** Bare-
-  expression statements are always wrapped in an assignment — `foo(x)`
-  as a statement becomes `__asl_arg_N = foo(x)`.
+- **After expansion, every top-level statement has a target.** A statement
+  is one `Statement` node — a variable assignment (`x = e`), a getter
+  assignment (`x.y = e`), or a bare expression — and this pass wraps the
+  bare-expression form in a synthetic assignment: `foo(x)` as a statement
+  becomes `__asl_arg_N = foo(x)`.
 - **Sub-expressions inside nested scopes recurse.** Case block bodies
   are their own `StatementList` and receive their own expansion pass.
 
@@ -326,7 +328,7 @@ analyzer) sees only the normalized form.
 - `ekVariable` — never lifted. Already a named binding; wrapping in
   another temp would just add noise.
 - `ekGetter` — lifted at value positions (`p.a` in `foo(p.a)` becomes
-  `t = p.a; foo(t)`), passed through at assignment / setter RHS
+  `t = p.a; foo(t)`), passed through at assignment / getter-assignment RHS
   positions (`x = p.a` stays `x = p.a`; the enclosing construct is
   already the binding).
 - `ekFnCall`, `ekInitializer`, `ekMatch` — always recurse into sub-
@@ -666,7 +668,10 @@ Concrete-position wiring:
   Any` produces `Status[i32, Error]` — i32 is picked as the value
   default AND bound as the impl (the error slot is `Error`, from the
   `!` sugar's default).
-- **Setter RHS** — the getter's field type is `expected`.
+- **Getter-assignment RHS** — the getter's field type is `expected`, and
+  the analyzer additionally requires the RHS type to equal the field type
+  (a `Statement` whose kind is getter; `analyzeStatement` in
+  `analyzer/main.nim`).
 
 Defaults are looked up in the file scope. Every `.asl` file gets `@std`
 auto-injection that brings `i32` / `f32` / `String` into scope; a bare
@@ -677,7 +682,7 @@ naming the missing default type.
 `analyzer — bare literal defaulting` — three defaulting cases
 (int/float/string in bare assignment), one concrete-adopt regression
 guard for function args, three concrete-adopt sites (struct kwarg,
-union kwarg, setter RHS), two generic-default sites (struct kwarg
+union kwarg, getter-assignment RHS), two generic-default sites (struct kwarg
 with generic field, union kwarg with generic field), and three
 error branches (fit-check range overflow, default type not in scope,
 bare literal where a struct is expected).

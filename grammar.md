@@ -110,8 +110,12 @@ FunctionName: Identifier
 
 # ==== Body-level cluster — heaviest cyclic relation of objects. ====
 
-Statement: Assignment | Setter | Expression
-Assignment: VarName Expression
+# A statement is a single `Statement` node with three forms (kinds
+# none / variable / getter): a bare Expression, a variable assignment
+# `VarName = Expression`, or a getter assignment `Getter = Expression`
+# (field mutation). There is no separate `Assignment` / `Setter` type.
+Statement: Expression | VariableAssignment | GetterAssignment
+VariableAssignment: VarName Expression
 VarName: Identifier
 
 Expression: Initializer | FunctionCall | Getter | Variable | MatchExpression | Literal
@@ -120,7 +124,7 @@ Expression: Initializer | FunctionCall | Getter | Variable | MatchExpression | L
 # literals, `f32` for float, `String` for string. The expansion happens
 # at the analyzer layer via contextual defaulting: bare literals in
 # concrete-typed positions (function args with concrete arg type, kwarg
-# fields with concrete field type, setter RHS) adopt the position's
+# fields with concrete field type, getter-assignment RHS) adopt the position's
 # declared type; bare literals in generic-typed or unconstrained
 # positions (`x = 10`) take the default. See §8.3a of validations.md.
 
@@ -155,7 +159,7 @@ FunctionCall: 'try'? FunctionRef Expression*
 # rides the same call machinery; only calls — not arbitrary expressions —
 # can be `try`'d. See §8.7 of validations.md.
 Getter: Source Property
-Setter: Getter Expression
+GetterAssignment: Getter Expression
 Source: Identifier
 Property: Identifier
 
@@ -318,7 +322,7 @@ contributors can find the *why* alongside the *what*.
   outweighed the compile-error protection for what turns out to be
   a small class of realistic mistakes.
 
-- **Discard (`_ = expr`) is a regular `Assignment` with `VarName = "_"`.**
+- **Discard (`_ = expr`) is a regular variable-assignment statement with `VarName = "_"`.**
   `_` is a valid `Identifier`. No dedicated `Discard` statement
   variant until we see a downstream branch that specifically needs
   the distinction.

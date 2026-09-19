@@ -1177,6 +1177,34 @@ public module Pair:
     check errorContains(r.error, "8-bit unsigned integer")
     check errorContains(r.error, "100000")
 
+  test "getter-assignment with a non-literal RHS of the wrong type is rejected":
+    # `p.a = v` where field `a` is u8 but `v` is u64 — the RHS is a bound
+    # variable (not a literal), so it keeps its own type; the explicit
+    # field-vs-RHS type check rejects the mismatch.
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "uint8"
+
+public module i32:
+  literal: "int32"
+
+public module u64:
+  literal: "uint64"
+
+public module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  public func setWrong(p: Pair, v: u64): Pair
+    p.a = v
+    p
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "u8")
+    check errorContains(r.error, "u64")
+
   test "bare literal exceeding the concrete range is rejected":
     # `u8.add(300, 0)` — 300 doesn't fit in u8 (0..255). The concrete-
     # adopt branch adopts u8, then analyzeLiteral's range-check rejects.

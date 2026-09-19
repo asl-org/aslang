@@ -566,10 +566,14 @@ p.a = v
 bitset.bits = updated_bits
 ```
 
-`obj.field = expr` writes a struct field. This is a `Setter` statement
-(distinct from an `Assignment`, which binds a new local). The analyzer
-enforces that the RHS type equals the field's declared type and
-rejects mismatches.
+`obj.field = expr` writes a struct field. This is a **getter-assignment**
+— a `Statement` whose target is a getter (`obj.field`) rather than a plain
+name, so it mutates an existing field and binds no new local. (There is no
+separate `Setter` type: a statement is one `Statement` node whose kind is
+bare-expression, variable-assignment `x = e`, or getter-assignment
+`x.y = e`.) The analyzer threads the field's declared type into the RHS —
+a bare literal adopts it and is range-checked against it — and rejects a
+RHS whose type doesn't match the field.
 
 ---
 
@@ -782,6 +786,15 @@ describing what feature it exercises.
 ## Changelog
 
 This section records language changes as they land, newest first.
+
+- **2026-09** — `Assignment` and `Setter` collapsed into a single
+  `Statement` node at every layer (parser → resolver → defanalyzer →
+  analyzer). A statement's kind is bare-expression, variable assignment
+  (`x = e`), or getter assignment (`x.y = e`, field mutation) — there is
+  no longer a separate `Setter` type. Getter-assignment RHS type-checking
+  is enforced in `analyzeStatement`: the field type is threaded into the
+  RHS (a bare literal adopts and is range-checked against it) and the RHS
+  type must equal the field type. No surface-syntax changes.
 
 - **2026-07 (docs sync)** — Documentation aligned with the DDD refactor
   vocabulary locked in `grammar.md`. Parser/resolver/analyzer types now

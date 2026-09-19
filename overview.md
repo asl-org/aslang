@@ -71,7 +71,8 @@ to it. When a domain concept is renamed, added, or restructured, it
 lands there first; the code catches up. The DDD-refactor roadmap
 (`tasks.md`) enumerates which renames/reshapings have been applied
 so far — headline landings are `StructDef`/`UnionDef`/`LiteralDef`
-data-block variant names, `Setter` moved to `Statement`,
+data-block variant names, `Assignment`/`Setter` collapsed into a single
+`Statement` node (kinds none / variable / getter) at every layer,
 `VariablePattern` as a first-class `CaseDef`, the flat
 `ResolvedArgumentType: ResolvedModuleArgumentType |
 ResolvedGenericArgumentType` split, retirement of the 12 def-level
@@ -282,11 +283,13 @@ every `StatementList` runs through this normalization pass so that:
   `Initializer` / `Getter` / `MatchExpression` values get lifted
   into preceding synthetic assignments `__asl_arg_N = <expr>`, and
   the original position is replaced with `Variable(__asl_arg_N)`.
-- **Every top-level statement is an `Assignment` or `Setter`** —
-  never a bare-expression. A bare `foo(x)` statement becomes
-  `__asl_arg_N = foo(x)`. The tail statement of a function body
-  carries the return value via the assignment's RHS type (see the
-  analyzer's `analyzedStatements[^1].argType` check).
+- **After expansion, every top-level statement has a target.** A
+  statement is one `Statement` node — a variable assignment (`x = e`),
+  a getter assignment (`x.y = e`), or a bare expression — and this pass
+  wraps the bare-expression form: `foo(x)` becomes `__asl_arg_N = foo(x)`.
+  The tail statement of a function body carries the return value via the
+  statement's RHS type (see the analyzer's
+  `analyzedStatements[^1].argType` check).
 - **Sub-expressions inside nested scopes recurse.** Case block
   bodies are their own `StatementList`, so they get their own
   expansion.
@@ -298,7 +301,7 @@ Lift rules by expression kind:
   named bindings.
 - `ekGetter` — lifted at value positions (`p.a` in `foo(p.a)`
   becomes `t = p.a; foo(t)`), passed through at assignment /
-  setter RHS positions (`x = p.a` stays `x = p.a`).
+  getter-assignment RHS positions (`x = p.a` stays `x = p.a`).
 - `ekFnCall`, `ekInitializer`, `ekMatch` — always recurse into
   their sub-expressions; the outer expression is lifted at value
   positions, passed through at RHS positions.
@@ -670,13 +673,14 @@ their `AnalyzedFunctionDef`). Scope:
   file. Concrete positions thread `expected` from the callee's
   declared arg types (per-candidate for overloads), the struct/
   union kwarg's field type (post-implMap concretization for unions),
-  and the setter RHS's getter type.
+  and the getter-assignment RHS's field type.
 - **Case-pattern duplicate detection** — `checkDuplicate[T: SomeInteger]`
   handles all eight integer kinds in `analyzer/patterns.nim`.
 - **Body-level constructs** — getter (struct-shaped property read),
   variable case patterns (`VariablePattern` is a first-class
   `CaseDef` variant alongside `LiteralPattern` and `UnionPattern`),
-  setters, assignments, match expressions with case-arm bindings,
+  statements (bare-expression / variable / getter assignments),
+  match expressions with case-arm bindings,
   struct + union initializers, literal initializers.
 - **Pattern-side bindings** — `AnalyzedUnionPattern.fields` is now
   a seq of `AnalyzedBinding = tuple[name: Identifier, argType:
@@ -914,9 +918,9 @@ What the analyzer does today (all wired):
   handles all eight integer kinds uniformly.
 - Body-level constructs — getter (struct-shaped property read),
   variable case patterns (`VariablePattern` is a first-class
-  `CaseDef` variant), setters, assignments, match expressions with
-  case-arm bindings, struct + union initializers, literal
-  initializers.
+  `CaseDef` variant), statements (bare-expression / variable / getter
+  assignments), match expressions with case-arm bindings, struct + union
+  initializers, literal initializers.
 
 **Phase B (body analysis) is the next fix target.** The phase-A
 hardening arc — the identity ladder with assert-backed lookups, the
@@ -1123,9 +1127,9 @@ Focused TODOs still open:
   Either derive `typ` from the binding or assert the tie in the
   constructor.
 - **Type-correctness checks across statements** — assignment
-  compatibility and match exhaustiveness. (Setter type equality is
-  now enforced in `analyzeSetter`; its error message is still rough
-  — flagged with a TODO.)
+  compatibility and match exhaustiveness. (Getter-assignment field-type
+  equality is enforced in `analyzeStatement`'s getter arm — the RHS
+  adopts the field type and must match it.)
 - **Redundant constraint re-checking — PERFORMANCE, revisit after
   codegen.** The def-time constraint check in
   `analyzeDefModuleArgumentType` runs at every occurrence of a
