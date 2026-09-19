@@ -347,18 +347,25 @@ proc resolveExpression(fileCtx: FileContext, ctxType: LocalType, funcCtx: Functi
     let resolvedMatchExpr = ? resolveMatchExpression(fileCtx, ctxType, funcCtx, expression.match)
     ok(newResolvedExpression(resolvedMatchExpr))
 
-proc resolveAssignment(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, assignment: Assignment): Result[ResolvedAssignment, string] =
+# TODO: The parser collapsed its `Assignment` type into `Statement` — a
+# statement IS a (bare | variable | getter) assignment, so there is no
+# separate Assignment node anymore, hence the `Statement` param here and
+# `ResolvedAssignment.parsed: Statement`. The resolver still keeps the
+# `ResolvedStatement` wrapper around `ResolvedAssignment`; fold the two the
+# same way (and rename `resolveAssignment`/`ResolvedAssignment` to the
+# Statement forms) so this layer mirrors the parser.
+proc resolveAssignment(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, assignment: Statement): Result[ResolvedAssignment, string] =
   case assignment.kind:
-  of akNone, akVariable:
+  of skNone, skVariable:
     let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, assignment.expression)
     ok(newResolvedAssignment(assignment, resolvedExpression))
-  of akGetter:
+  of skGetter:
     let resolvedGetter = ? resolveGetter(funcCtx, assignment.getter)
     let resolvedExpression = ? resolveExpression(fileCtx, ctxType, funcCtx, assignment.expression)
     ok(newResolvedAssignment(assignment, resolvedGetter, resolvedExpression))
 
 proc resolveStatement(fileCtx: FileContext, ctxType: LocalType, funcCtx: FunctionContext, statement: Statement): Result[ResolvedStatement, string] =
-  let resolvedAssignment = ? resolveAssignment(fileCtx, ctxType, funcCtx, statement.assignment)
+  let resolvedAssignment = ? resolveAssignment(fileCtx, ctxType, funcCtx, statement)
   ok(newResolvedStatement(resolvedAssignment))
 
 proc resolveUserFunction(fileCtx: FileContext, typeId: int, ctxType: LocalType, functionId: int, function: UserFunction): Result[ResolvedUserFunction, string] =

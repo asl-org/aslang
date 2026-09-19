@@ -134,7 +134,7 @@ type
     # TODO: Expand rakDefault into rakNone and rakVariable
     rakGetter, rakDefault
   ResolvedAssignment* = ref object
-    parsed: Assignment
+    parsed: Statement
     expression: ResolvedExpression
     case kind: ResolvedAssignmentKind
     of rakGetter: getter: ResolvedGetter
@@ -280,11 +280,11 @@ proc impls*(fncall: ResolvedFunctionCall): seq[ResolvedArgumentType] =
 
 # ---- ResolvedAssignment ----
 
-proc newResolvedAssignment*(parsed: Assignment,
+proc newResolvedAssignment*(parsed: Statement,
     expression: ResolvedExpression): ResolvedAssignment =
   ResolvedAssignment(kind: rakDefault, parsed: parsed, expression: expression)
 
-proc newResolvedAssignment*(parsed: Assignment, getter: ResolvedGetter, expression: ResolvedExpression): ResolvedAssignment =
+proc newResolvedAssignment*(parsed: Statement, getter: ResolvedGetter, expression: ResolvedExpression): ResolvedAssignment =
   ResolvedAssignment(kind: rakGetter, parsed: parsed, getter: getter, expression: expression)
 
 proc expression*(assignment: ResolvedAssignment): ResolvedExpression = assignment.expression
