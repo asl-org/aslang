@@ -104,7 +104,7 @@ type
     cases: seq[AnalyzedCaseBlock]
 
   AnalyzedAssignment* = ref object
-    def: AnalyzedDefAssignment
+    def: AnalyzedDefStatement
     expression: AnalyzedExpression
 
   AnalyzedExpressionKind* = enum
@@ -226,7 +226,7 @@ proc returns*(m: AnalyzedMatchExpression): AnalyzedArgumentType = m.cases[0].arg
 proc subject*(m: AnalyzedMatchExpression): AnalyzedExpression = m.subject
 proc cases*(m: AnalyzedMatchExpression): seq[AnalyzedCaseBlock] = m.cases
 
-proc newAnalyzedAssignment*(def: AnalyzedDefAssignment, expression: AnalyzedExpression): AnalyzedAssignment =
+proc newAnalyzedAssignment*(def: AnalyzedDefStatement, expression: AnalyzedExpression): AnalyzedAssignment =
   AnalyzedAssignment(def: def, expression: expression)
 
 proc loc*(assignment: AnalyzedAssignment): Location = assignment.def.loc

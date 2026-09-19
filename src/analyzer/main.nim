@@ -477,12 +477,18 @@ proc analyzeExpression*(funcCtx: AnalyzedUserFunctionContext, expression: Analyz
     let analyzedMatchExpr = ? analyzeMatchExpression(funcCtx, expression.match)
     ok(newAnalyzedExpression(analyzedMatchExpr))
 
-proc analyzeAssignment*(funcCtx: AnalyzedUserFunctionContext, assignment: AnalyzedDefAssignment): Result[AnalyzedAssignment, string] =
+# TODO: The defanalyzer folded its `AnalyzedDefAssignment` into
+# `AnalyzedDefStatement` (mirroring the resolver/parser collapse), so this
+# consumes an `AnalyzedDefStatement` directly. The analyzer still keeps the
+# `AnalyzedStatement` wrapper around `AnalyzedAssignment`; fold the two the
+# same way (and rename `analyzeAssignment`/`AnalyzedAssignment`) so this layer
+# mirrors the defanalyzer.
+proc analyzeAssignment*(funcCtx: AnalyzedUserFunctionContext, assignment: AnalyzedDefStatement): Result[AnalyzedAssignment, string] =
   let analyzedExpr = ? analyzeExpression(funcCtx, assignment.expression, none(AnalyzedArgumentType))
   ok(newAnalyzedAssignment(assignment, analyzedExpr))
 
 proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string] =
-  let analyzedAssignment = ? analyzeAssignment(funcCtx, statement.assignment)
+  let analyzedAssignment = ? analyzeAssignment(funcCtx, statement)
   ok(newAnalyzedStatement(analyzedAssignment))
 
 proc analyzeUserFunction*(moduleCtx: AnalyzedModuleContext, function: AnalyzedDefUserFunction): Result[AnalyzedUserFunction, string] =

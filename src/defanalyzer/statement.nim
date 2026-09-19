@@ -76,12 +76,9 @@ type
     of adekInitializer: init: AnalyzedDefInitializer
     of adekMatchExpr: match: AnalyzedDefMatch
 
-  AnalyzedDefAssignment* = ref object
+  AnalyzedDefStatement* = ref object
     resolved: ResolvedStatement
     expression: AnalyzedDefExpression
-
-  AnalyzedDefStatement* = ref object
-    assignment: AnalyzedDefAssignment
 
 # AnalyzedDefLiteral
 proc newAnalyzedDefLiteral*(resolved: ResolvedLiteral, default: ResolvedModule, def: ResolvedLiteralDef): AnalyzedDefLiteral =
@@ -240,18 +237,10 @@ proc loc*(expression: AnalyzedDefExpression): Location =
   of adekInitializer: expression.init.loc
   of adekMatchExpr: expression.match.loc
 
-# AnalyzedDefAssignment
-proc newAnalyzedDefAssignment*(resolved: ResolvedStatement, expression: AnalyzedDefExpression): AnalyzedDefAssignment =
-  AnalyzedDefAssignment(resolved: resolved, expression: expression)
-
-proc loc*(assignment: AnalyzedDefAssignment): Location = assignment.resolved.loc
-proc target*(assignment: AnalyzedDefAssignment): Option[Identifier] = assignment.resolved.target
-proc expression*(assignment: AnalyzedDefAssignment): AnalyzedDefExpression = assignment.expression
-
 # AnalyzedDefStatement
-proc newAnalyzedDefStatement*(assignment: AnalyzedDefAssignment): AnalyzedDefStatement =
-  AnalyzedDefStatement(assignment: assignment)
+proc newAnalyzedDefStatement*(resolved: ResolvedStatement, expression: AnalyzedDefExpression): AnalyzedDefStatement =
+  AnalyzedDefStatement(resolved: resolved, expression: expression)
 
-proc assignment*(statement: AnalyzedDefStatement): AnalyzedDefAssignment = statement.assignment
-
-proc loc*(statement: AnalyzedDefStatement): Location = statement.assignment.loc
+proc loc*(statement: AnalyzedDefStatement): Location = statement.resolved.loc
+proc target*(statement: AnalyzedDefStatement): Option[Identifier] = statement.resolved.target
+proc expression*(statement: AnalyzedDefStatement): AnalyzedDefExpression = statement.expression
