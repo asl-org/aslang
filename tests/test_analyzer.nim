@@ -1124,9 +1124,10 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
-  test "bare literal in setter RHS adopts the field's type":
-    # `p.a = 10` — the setter's RHS is threaded with the getter's
-    # field type as expected. Bare 10 adopts u8 via concrete-adopt.
+  test "bare literal in getter-assignment RHS adopts the field's type":
+    # `p.a = 10` — field `a` is u8. The getter-assignment threads the
+    # field type into the RHS, so bare 10 adopts u8 via concrete-adopt and
+    # its type matches the field. Accepted.
     let (r, dir) = analyzeSingle("""
 public module u8:
   literal: "uint8"
@@ -1148,6 +1149,33 @@ public module Pair:
 """)
     cleanupDir(dir)
     check r.isOk
+
+  test "getter-assignment RHS that does not fit the field type is rejected":
+    # `p.a = 100000` — field `a` is u8, so the RHS adopts u8 (field-type
+    # threading) and analyzeLiteral's range-check rejects 100000 (> 255).
+    let (r, dir) = analyzeSingle("""
+public module u8:
+  literal: "uint8"
+
+public module i32:
+  literal: "int32"
+
+public module u64:
+  literal: "uint64"
+
+public module Pair:
+  struct:
+    a: u8
+    b: u8
+
+  public func setA(p: Pair): Pair
+    p.a = 100000
+    p
+""")
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "8-bit unsigned integer")
+    check errorContains(r.error, "100000")
 
   test "bare literal exceeding the concrete range is rejected":
     # `u8.add(300, 0)` — 300 doesn't fit in u8 (0..255). The concrete-

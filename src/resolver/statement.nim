@@ -285,8 +285,13 @@ proc newResolvedStatement*(parsed: Statement, target: Identifier, expression: Re
 proc newResolvedStatement*(parsed: Statement, getter: ResolvedGetter, expression: ResolvedExpression): ResolvedStatement =
   ResolvedStatement(kind: rskGetter, parsed: parsed, getter: getter, expression: expression)
 
+proc kind*(statement: ResolvedStatement): ResolvedStatementKind = statement.kind
 proc expression*(statement: ResolvedStatement): ResolvedExpression = statement.expression
 proc loc*(statement: ResolvedStatement): Location = statement.parsed.loc
+proc getter*(statement: ResolvedStatement): ResolvedGetter =
+  assert statement.kind == rskGetter,
+    fmt"ResolvedStatement.getter accessed but kind is {statement.kind}"
+  statement.getter
 proc target*(statement: ResolvedStatement): Option[Identifier] =
   case statement.kind:
   of rskVariable: some(statement.target)

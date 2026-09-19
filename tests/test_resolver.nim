@@ -224,11 +224,11 @@ public module u64:
     check r.isOk
 
   test "setter value can be a non-trivial inline expression":
-    # The setter RHS is a getter, not a bare variable, driving
-    # resolveSetter -> resolveInlineExpression(iekGetter). Setter values
-    # were narrowed to InlineExpression (direct match assignment to a
-    # setter is intentionally not supported yet), so the inline path
-    # needs its own coverage.
+    # The setter RHS is a getter (`p.b`), not a bare variable, driving
+    # resolveStatement's skGetter arm -> resolveExpression on an inline
+    # getter expression. Setter values are InlineExpression (direct match
+    # assignment to a setter is intentionally not supported yet), so the
+    # inline path needs its own coverage.
     let (r, dir) = resolveSingle("""
 module Pair:
   struct:

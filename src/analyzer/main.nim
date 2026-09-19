@@ -478,8 +478,21 @@ proc analyzeExpression*(funcCtx: AnalyzedUserFunctionContext, expression: Analyz
     ok(newAnalyzedExpression(analyzedMatchExpr))
 
 proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, statement: AnalyzedDefStatement): Result[AnalyzedStatement, string] =
-  let analyzedExpr = ? analyzeExpression(funcCtx, statement.expression, none(AnalyzedArgumentType))
-  ok(newAnalyzedStatement(statement, analyzedExpr))
+  case statement.kind:
+  of rskGetter:
+    # A getter-assignment (`p.a = <rhs>`) mutates a field: analyze the
+    # getter to get the field's type, thread it into the RHS as the
+    # expected type (so a bare literal adopts the field type and is
+    # range-checked against it), then require the RHS type to match.
+    let analyzedGetter = ? analyzeGetter(funcCtx, statement.getter)
+    let analyzedExpr = ? analyzeExpression(funcCtx, statement.expression, some(analyzedGetter.argType))
+    if analyzedGetter.argType != analyzedExpr.argType:
+      err(fmt"{statement.loc} `{analyzedGetter.argType.asl}` field cannot be assigned a `{analyzedExpr.argType.asl}` value")
+    else:
+      ok(newAnalyzedStatement(statement, analyzedExpr))
+  of rskNone, rskVariable:
+    let analyzedExpr = ? analyzeExpression(funcCtx, statement.expression, none(AnalyzedArgumentType))
+    ok(newAnalyzedStatement(statement, analyzedExpr))
 
 proc analyzeUserFunction*(moduleCtx: AnalyzedModuleContext, function: AnalyzedDefUserFunction): Result[AnalyzedUserFunction, string] =
   var funcCtx = newAnalyzedUserFunctionContext(moduleCtx, function)

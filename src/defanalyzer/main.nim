@@ -262,7 +262,7 @@ proc analyzeDefExpression(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeCon
   case expression.kind:
   # Variables and getters touch only function-scope names and struct
   # fields — nothing def-level to analyze, so they wrap as-is; phase B
-  # checks the field path (see the matching note in analyzeDefSetter).
+  # checks the field path.
   of rekVariable:
     ok(newAnalyzedDefExpression(expression.variable))
   of rekGetter:

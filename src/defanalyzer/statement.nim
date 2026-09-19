@@ -241,6 +241,8 @@ proc loc*(expression: AnalyzedDefExpression): Location =
 proc newAnalyzedDefStatement*(resolved: ResolvedStatement, expression: AnalyzedDefExpression): AnalyzedDefStatement =
   AnalyzedDefStatement(resolved: resolved, expression: expression)
 
+proc kind*(statement: AnalyzedDefStatement): ResolvedStatementKind = statement.resolved.kind
 proc loc*(statement: AnalyzedDefStatement): Location = statement.resolved.loc
 proc target*(statement: AnalyzedDefStatement): Option[Identifier] = statement.resolved.target
+proc getter*(statement: AnalyzedDefStatement): ResolvedGetter = statement.resolved.getter
 proc expression*(statement: AnalyzedDefStatement): AnalyzedDefExpression = statement.expression
