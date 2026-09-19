@@ -398,17 +398,13 @@ proc expand(app: IRApp, expression: AnalyzedExpression, argId: int): (seq[string
   of aekVariable: expand(app, expression.variable, argId)
 
 
-proc expand(app: IRApp, assignment: AnalyzedAssignment, argId: int): (seq[string], int, string) =
-  let res = expand(app, assignment.expression, argId)
+proc expand(app: IRApp, statement: AnalyzedStatement, argId: int): (seq[string], int, string) =
+  let res = expand(app, statement.expression, argId)
 
   var code: seq[string]
   code.add(res[0])
-  code.add(fmt"// {assignment.target.asl} = {res[2]};")
+  code.add(fmt"// {statement.target.asl} = {res[2]};")
   return (code, res[1], res[2])
-
-
-proc expand(app: IRApp, statement: AnalyzedStatement, argId: int): (seq[string], int, string) =
-  expand(app, statement.assignment, argId)
 
 proc expand*(app: AnalyzedApp): string =
   let app = newIRApp(app)

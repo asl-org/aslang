@@ -6,8 +6,7 @@
 ##   AnalyzedFunctionCall, AnalyzedKeywordArgument,
 ##   AnalyzedStructInitializer, AnalyzedUnionInitializer,
 ##   AnalyzedInitializer, AnalyzedCaseBlock,
-##   AnalyzedMatchExpression, AnalyzedAssignment,
-##   AnalyzedExpression, AnalyzedStatement
+##   AnalyzedMatchExpression, AnalyzedExpression, AnalyzedStatement
 ##
 ## Leaf nodes that carry no back-reference into the cycle
 ## (AnalyzedVariable, AnalyzedGetter, AnalyzedLiteralInitializer) live
@@ -103,10 +102,6 @@ type
     subject: AnalyzedExpression
     cases: seq[AnalyzedCaseBlock]
 
-  AnalyzedAssignment* = ref object
-    def: AnalyzedDefStatement
-    expression: AnalyzedExpression
-
   AnalyzedExpressionKind* = enum
     aekVariable, aekFunctionCall, aekMatchExpr, aekInitializer, aekGetter
   AnalyzedExpression* = ref object
@@ -118,7 +113,8 @@ type
     of aekGetter: getter: AnalyzedGetter
 
   AnalyzedStatement* = ref object
-    assignment: AnalyzedAssignment
+    def: AnalyzedDefStatement
+    expression: AnalyzedExpression
 
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
@@ -226,13 +222,13 @@ proc returns*(m: AnalyzedMatchExpression): AnalyzedArgumentType = m.cases[0].arg
 proc subject*(m: AnalyzedMatchExpression): AnalyzedExpression = m.subject
 proc cases*(m: AnalyzedMatchExpression): seq[AnalyzedCaseBlock] = m.cases
 
-proc newAnalyzedAssignment*(def: AnalyzedDefStatement, expression: AnalyzedExpression): AnalyzedAssignment =
-  AnalyzedAssignment(def: def, expression: expression)
+proc newAnalyzedStatement*(def: AnalyzedDefStatement, expression: AnalyzedExpression): AnalyzedStatement =
+  AnalyzedStatement(def: def, expression: expression)
 
-proc loc*(assignment: AnalyzedAssignment): Location = assignment.def.loc
-proc target*(assignment: AnalyzedAssignment): Option[Identifier] = assignment.def.target
-proc argType*(assignment: AnalyzedAssignment): AnalyzedArgumentType = assignment.expression.argType
-proc expression*(assignment: AnalyzedAssignment): AnalyzedExpression= assignment.expression
+proc loc*(statement: AnalyzedStatement): Location = statement.def.loc
+proc target*(statement: AnalyzedStatement): Option[Identifier] = statement.def.target
+proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType = statement.expression.argType
+proc expression*(statement: AnalyzedStatement): AnalyzedExpression = statement.expression
 
 proc newAnalyzedExpression*(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
@@ -296,18 +292,11 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
 proc impls*(expression: AnalyzedExpression): AnalyzedImplMap =
   expression.argType.impls
 
-proc newAnalyzedStatement*(assignment: AnalyzedAssignment): AnalyzedStatement =
-  AnalyzedStatement(assignment: assignment)
-
-proc assignment*(statement: AnalyzedStatement): AnalyzedAssignment = statement.assignment
-proc loc*(statement: AnalyzedStatement): Location = statement.assignment.loc
-proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType = statement.assignment.argType
-
 proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
   # Only a targeted assignment introduces a new binding into the function
   # scope; a targetless one (bare expression / field mutation) returns
   # none. Post-Approach C every statement's argType is concrete, so no
   # "no-type" fallback.
-  let maybeTarget = statement.assignment.target
+  let maybeTarget = statement.target
   if maybeTarget.isSome: some(newAnalyzedBinding(maybeTarget.get, statement.argType))
   else: none(AnalyzedBinding)
