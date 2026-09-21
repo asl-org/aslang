@@ -1,16 +1,23 @@
 {
   "name": "vscode-asl",
   "displayName": "ASLang",
-  "description": "Syntax highlighting for ASLang (.asl, .aslr)",
-  "version": "0.0.1",
+  "description": "Syntax highlighting and live diagnostics for ASLang (.asl, .aslr)",
+  "version": "0.0.2",
   "publisher": "zms",
   "private": true,
   "engines": {
-    "vscode": "^1.80.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
     "Programming Languages"
   ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:asl"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
   "contributes": {
     "languages": [
       {
@@ -32,6 +39,39 @@
         "scopeName": "source.asl",
         "path": "./syntaxes/asl.tmLanguage.json"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "asl.restartServer",
+        "title": "ASLang: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "ASLang",
+      "properties": {
+        "asl.compilerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the `asl` compiler. Empty: `asl` in the workspace root if present, else `asl` on PATH."
+        },
+        "asl.vendors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Vendor roots passed as `--vendor=<name>:<path>`. Without a `std` entry the compiler defaults to `examples/base.aslr` relative to the workspace root."
+        },
+        "asl.indentWidth": {
+          "type": "number",
+          "enum": [
+            2,
+            4
+          ],
+          "default": 2,
+          "description": "Spaces per indentation level."
+        }
+      }
+    }
   }
 }
