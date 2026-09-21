@@ -199,27 +199,12 @@ proc hash*(m: AnalyzedArgumentType): Hash =
 
 proc `==`*(a, b: AnalyzedArgumentType): bool = a.hash == b.hash
 
-# TODO(union-inference): `==` is only correct when both sides are
-# ground. Under leave-as-is, a value's type can carry free generics in
-# impl positions (e.g. Box[u8, Sample]). Assignability against an
-# expected type (Box[u8, MyImpl]) is unification, not equality. Audit
-# every callsite of AnalyzedArgumentType `==` used for assignability
-# (value-type vs expected-type matches in arg checks, return checks,
-# kwarg checks) and route through analyzeValueTypeAgainstDefType
-# / AnalyzedImplMap merge instead. Pure type-identity uses
-# (deduplication, table keying) stay as-is.
-
 
 # ============================================================
 # AnalyzedImplMap operations (merge / concrete)
 # ============================================================
 
 proc merge*(global: var AnalyzedImplMap, local: AnalyzedImplMap): Result[AnalyzedImplMap, string] =
-  # TODO(union-inference): the `!=` conflict check on the next line
-  # needs to become a unification check once free generics can appear
-  # on either side of the SAME key — a bound `u8` vs a free `K` should
-  # not "conflict"; `K` should unify to `u8`.
-  #
   # Note: independent generics are deliberately NOT collapsed into each
   # other. A map like `{Sample → K, K → u8}` is expected and correct —
   # `Sample` stays bound to `K` (see `concrete`), because `Sample` and
