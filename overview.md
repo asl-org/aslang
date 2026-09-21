@@ -929,18 +929,16 @@ mapping and message handling.
 Each fixture has a leading `#` comment documenting what feature or
 error condition it exercises. `test.sh` drives 36 fixtures (21 positive
 + 15 negative; `dep.asl` and `cycle_b.asl` in `examples/errors/` are
-dependency files the runner skips). Current result: 35/36 — the one
-red fixture is `nested_generics.asl`, a correct rejection of an
-aspirational example: it uses types (`Map`, and the pre-rename
-`String`) that `base.aslr` does not define.
+dependency files the runner skips). Current result: 36/36 —
+`nested_generics.asl` resolves now that `base.aslr` defines `Map` and
+the `Key` generic.
 
 ## What's Next
 
 **The front end is green.** tokenizer → parser → resolver →
 defanalyzer → analyzer runs end to end, and `compile` returns
 `[SUCCESS]` once `analyze` does. Unit suite **394/394**; integration
-**35/36** (only `nested_generics.asl`, a correct rejection — see
-Testing). Recent structural work: the collapse of the assignment /
+**36/36**. Recent structural work: the collapse of the assignment /
 setter / bare-expression forms into one `Statement` at every layer with
 value positions typed `InlineExpression`; the phase-B context ladder
 (`analyzer/context.nim`) replacing the separate import and app contexts

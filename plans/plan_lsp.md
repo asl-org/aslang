@@ -5,9 +5,10 @@
 - Done before this plan: `tooling/vscode-asl` TextMate grammar
   (a1a88e4); `.vscode/tasks.json` problem matchers over `asl build`
   output (1b48ffb).
-- Phase 0 (W1–W4): implemented, uncommitted. Gates: 394/394 unit
-  (+4 loader overlay, +2 CLI, +15 LSP), 35/36 integration (only
-  nested_generics.asl, unchanged), sample.asl [SUCCESS]. Verified
+- Phase 0 (W1–W4): COMPLETE (ddbf4b4 overlays, 2d180f5 server,
+  c6a60a9 client). Gates: 394/394 unit (+4 loader overlay, +2 CLI,
+  +15 LSP), integration 35/36 at landing (36/36 after 83b7b29 added
+  `Map` to std), sample.asl [SUCCESS]. Verified
   end-to-end against `asl lsp` with a scripted client and with
   `vscode-jsonrpc`: all 38 fixtures in `examples/` + `examples/errors/`
   publish the same error as `asl build`. Robustness also checked:
