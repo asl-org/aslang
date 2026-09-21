@@ -1,0 +1,216 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ASLang",
+  "scopeName": "source.asl",
+  "fileTypes": ["asl", "aslr"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#decorator" },
+    { "include": "#import" },
+    { "include": "#type-declaration" },
+    { "include": "#function-declaration" },
+    { "include": "#data-block" },
+    { "include": "#literal-property" },
+    { "include": "#expression" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.asl"
+    },
+
+    "decorator": {
+      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.decorator.asl" },
+        "2": { "name": "entity.name.function.decorator.asl" }
+      }
+    },
+
+    "import": {
+      "begin": "^\\s*(import)\\b",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.import.asl" }
+      },
+      "end": "$",
+      "patterns": [
+        { "include": "#comment" },
+        { "match": "\\b(from|as)\\b", "name": "keyword.control.import.asl" },
+        { "include": "#string" },
+        { "include": "#type-name" },
+        { "include": "#builtin-type" },
+        { "match": "[{},]", "name": "punctuation.separator.asl" }
+      ]
+    },
+
+    "type-declaration": {
+      "match": "^\\s*(?:(public)\\s+)?(module|generic)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
+      "captures": {
+        "1": { "name": "storage.modifier.asl" },
+        "2": { "name": "storage.type.asl" },
+        "3": { "name": "entity.name.type.asl" },
+        "4": { "name": "punctuation.separator.asl" }
+      }
+    },
+
+    "function-declaration": {
+      "begin": "^\\s*(?:(public)\\s+)?(func)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(\\()",
+      "beginCaptures": {
+        "1": { "name": "storage.modifier.asl" },
+        "2": { "name": "storage.type.function.asl" },
+        "3": { "name": "entity.name.function.asl" },
+        "4": { "name": "punctuation.definition.parameters.begin.asl" }
+      },
+      "end": "\\)",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.parameters.end.asl" }
+      },
+      "patterns": [
+        { "include": "#parameter" },
+        { "include": "#type-expression" },
+        { "match": ",", "name": "punctuation.separator.parameters.asl" }
+      ]
+    },
+
+    "parameter": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(:)",
+      "captures": {
+        "1": { "name": "variable.parameter.asl" },
+        "2": { "name": "punctuation.separator.asl" }
+      }
+    },
+
+    "data-block": {
+      "match": "^\\s*(struct|union)\\s*(?:(\\()\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(\\)))?\\s*(:)",
+      "captures": {
+        "1": { "name": "storage.type.asl" },
+        "2": { "name": "punctuation.definition.generic.begin.asl" },
+        "3": { "name": "entity.name.type.generic.asl" },
+        "4": { "name": "punctuation.definition.generic.end.asl" },
+        "5": { "name": "punctuation.separator.asl" }
+      }
+    },
+
+    "literal-property": {
+      "match": "^\\s*(literal)\\s*(:)",
+      "captures": {
+        "1": { "name": "keyword.other.literal.asl" },
+        "2": { "name": "punctuation.separator.asl" }
+      }
+    },
+
+    "expression": {
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#keyword" },
+        { "include": "#string" },
+        { "include": "#number" },
+        { "include": "#status-suffix" },
+        { "include": "#builtin-type" },
+        { "include": "#type-name" },
+        { "include": "#function-call" },
+        { "include": "#field-key" },
+        { "include": "#wildcard" },
+        { "include": "#punctuation" }
+      ]
+    },
+
+    "type-expression": {
+      "patterns": [
+        { "include": "#status-suffix" },
+        { "include": "#builtin-type" },
+        { "include": "#type-name" },
+        { "match": "[\\[\\]]", "name": "punctuation.definition.generic.asl" }
+      ]
+    },
+
+    "keyword": {
+      "patterns": [
+        { "match": "\\b(match|case|try)\\b", "name": "keyword.control.asl" },
+        { "match": "\\b(public)\\b", "name": "storage.modifier.asl" },
+        { "match": "\\b(module|generic|struct|union)\\b", "name": "storage.type.asl" },
+        { "match": "\\b(func)\\b", "name": "storage.type.function.asl" }
+      ]
+    },
+
+    "string": {
+      "begin": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.asl" }
+      },
+      "end": "\"|$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.asl" }
+      },
+      "name": "string.quoted.double.asl",
+      "patterns": [
+        { "match": "\\\\[\\\\\"nt]", "name": "constant.character.escape.asl" },
+        { "match": "\\\\.", "name": "invalid.illegal.escape.asl" }
+      ]
+    },
+
+    "number": {
+      "patterns": [
+        {
+          "match": "(?<![A-Za-z0-9_])[+-]?(?:inf)\\b|(?<![A-Za-z0-9_+-])nan\\b",
+          "name": "constant.numeric.float.special.asl"
+        },
+        {
+          "match": "(?<![A-Za-z0-9_.])-?[0-9]+\\.[0-9]+(?:[eE][+-]?[0-9]+)?\\b|(?<![A-Za-z0-9_.])-?[0-9]+[eE][+-]?[0-9]+\\b",
+          "name": "constant.numeric.float.asl"
+        },
+        {
+          "match": "(?<![A-Za-z0-9_.])-?[0-9]+\\b",
+          "name": "constant.numeric.integer.asl"
+        }
+      ]
+    },
+
+    "status-suffix": {
+      "match": "(?<=[A-Za-z0-9_\\]])!",
+      "name": "keyword.operator.status.asl"
+    },
+
+    "builtin-type": {
+      "match": "\\b(u8|u16|u32|u64|i8|i16|i32|i64|f32|f64|string)\\b",
+      "name": "support.type.primitive.asl"
+    },
+
+    "type-name": {
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b",
+      "name": "entity.name.type.asl"
+    },
+
+    "function-call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.call.asl" }
+      }
+    },
+
+    "field-key": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(:)(?=[ \\t])",
+      "captures": {
+        "1": { "name": "variable.other.property.asl" },
+        "2": { "name": "punctuation.separator.asl" }
+      }
+    },
+
+    "wildcard": {
+      "match": "\\b_\\b",
+      "name": "variable.language.wildcard.asl"
+    },
+
+    "punctuation": {
+      "patterns": [
+        { "match": "=", "name": "keyword.operator.assignment.asl" },
+        { "match": "\\.", "name": "punctuation.accessor.asl" },
+        { "match": ",", "name": "punctuation.separator.asl" },
+        { "match": ":", "name": "punctuation.separator.asl" },
+        { "match": "[{}]", "name": "punctuation.section.braces.asl" },
+        { "match": "[()]", "name": "punctuation.section.parens.asl" },
+        { "match": "[\\[\\]]", "name": "punctuation.section.brackets.asl" }
+      ]
+    }
+  }
+}

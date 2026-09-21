@@ -1,0 +1,37 @@
+{
+  "name": "vscode-asl",
+  "displayName": "ASLang",
+  "description": "Syntax highlighting for ASLang (.asl, .aslr)",
+  "version": "0.0.1",
+  "publisher": "zms",
+  "private": true,
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "asl",
+        "aliases": [
+          "ASLang",
+          "asl"
+        ],
+        "extensions": [
+          ".asl",
+          ".aslr"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "asl",
+        "scopeName": "source.asl",
+        "path": "./syntaxes/asl.tmLanguage.json"
+      }
+    ]
+  }
+}
