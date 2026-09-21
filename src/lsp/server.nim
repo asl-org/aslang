@@ -80,6 +80,12 @@ proc publish(diagnostics: Table[string, Diagnostic], path: string): JsonNode =
 
 proc recheckAll(server: LspServer, first: string): (LspServer, seq[JsonNode]) =
   ## `first` (the edited file) goes first; then every other open root.
+  ##
+  ## TODO(lsp-stale-edits): every didChange recompiles every open root,
+  ## even when newer edits are already queued on stdin. Once files grow,
+  ## drain the queued frames first and handle only the newest buffer per
+  ## document (and/or debounce), so typing never waits on outdated
+  ## compiles. 50 queued edits take ~190 ms today, so not urgent.
   let roots = @[first] & toSeq(server.documents.keys).filterIt(it != first)
   var next = server
   var affected: seq[string]

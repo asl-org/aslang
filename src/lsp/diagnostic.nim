@@ -10,6 +10,14 @@
 ## Anything else lands at the top of the compile root. Compiler
 ## positions are 1-based and rune-counted; LSP's are 0-based UTF-16
 ## units, which agree with runes across the BMP.
+##
+## TODO(structured-errors): replace this string parsing once the
+## compiler reports structured errors — a `(Location, message,
+## related: seq[Location])` value instead of `Result[_, string]` in
+## every layer. Then `see previous declaration at <loc>` becomes a
+## clickable `relatedInformation` entry, a file can carry more than one
+## diagnostic, and nothing here depends on message wording. Deferred
+## until the resolver settles (plans/plan_lsp.md W8).
 
 import std/[json, options, strscans, strutils, unicode]
 
@@ -53,6 +61,11 @@ proc fileLevel(error: string): Option[Diagnostic] =
     some(newDiagnostic("/" & path, message))
   else: none(Diagnostic)
 
+# TODO(lsp-error-shapes): add a `<abs path> <message>` shape (no colon
+# after the path). The 1 MB limit, invalid UTF-8 and "failed to read
+# file" errors use it, so today they fall through to the top of the
+# compile root with the path inside the message, instead of landing
+# on the file they name.
 const ErrorShapes = [located, cyclic, fileLevel]
 
 proc toDiagnostic*(error: string, rootPath: string): Diagnostic =

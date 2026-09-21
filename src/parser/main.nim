@@ -59,6 +59,15 @@ export app
 type File = app.File
 
 # aslFile: import* (module | generic)*  — user-authored source files.
+#
+# TODO(parser-errors): report the failure that got furthest into the
+# token stream, not the last alternative tried. Today `any(importSpec)` /
+# `atLeastOne(typeSpec)` backtracking discards the real error, so
+# `module Bool:` followed by `func x(: u8` reports "module must have at
+# least 1 struct/union/function block" at the `module` line instead of
+# at the `(`, and bad import paths surface as "expected 'module'". The
+# forced re-parse below is a partial workaround. Editors (`asl lsp`)
+# show exactly this message, so it is the biggest diagnostics-quality win.
 proc parseAslFile(parser: Parser, vendorRoots: VendorRoots): Result[File, ParserError] =
   discard ? parser.expect(NEWLINE.any())
   let imports = ? parser.expect(importSpec.any())
