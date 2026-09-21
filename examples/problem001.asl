@@ -14,25 +14,16 @@ public module Solver:
     d = try Solver.sum(c)
     i64.multiply(b, d)
 
+  func solve(): i64!
+    a = try Solver.count(999, 3)
+    b = try Solver.count(999, 5)
+    c = try Solver.count(999, 15)
+    d = try i64.add(a, b)
+    i64.subtract(d, c)
+
   public func start(): i32
-    match Solver.count(999, 3):
-      case Ok { value: a }:
-        match Solver.count(999, 5):
-          case Ok { value: b }:
-            match Solver.count(999, 15):
-              case Ok { value: c }:
-                match i64.add(a, b):
-                  case Ok { value: d }:
-                    match i64.subtract(d, c):
-                      case Ok { value: e }:
-                        i32 0
-                      case _:
-                        i32 1
-                  case _:
-                    i32 1
-              case _:
-                i32 1
-          case _:
-            i32 1
+    match Solver.solve():
+      case Ok {}:
+        i32 0
       case _:
         i32 1
