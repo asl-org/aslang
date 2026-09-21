@@ -427,3 +427,58 @@ module M:
     cleanupDir(dir)
     check r.isErr
     check errorContains(r.error, "importing the source file in itself")
+
+suite "loader — source overlays":
+
+  test "an overlay shadows the root file on disk":
+    # Disk holds a broken file; the overlay's valid buffer wins.
+    let dir = writeFiles([("entry.asl", "module M:\n")])
+    let entry = dir / "entry.asl"
+    var overlays = initTable[string, string]()
+    overlays[entry] = "module M:\n  func go(): u8\n    u8 0\n"
+    let r = parse(entry, 2, false, initTable[string, string](), overlays)
+    cleanupDir(dir)
+    check r.isOk
+
+  test "an overlay shadows an imported file on disk":
+    let dir = writeFiles([
+      ("entry.asl", """
+import { Helper } from "./helper.asl"
+
+module Main:
+  func go(): u8
+    u8 0
+"""),
+      ("helper.asl", """
+public module Helper:
+  func go(): u8
+    u8 0
+""")
+    ])
+    let entry = dir / "entry.asl"
+    var overlays = initTable[string, string]()
+    overlays[dir / "helper.asl"] = "public module Helper:\n"
+    let r = parse(entry, 2, false, initTable[string, string](), overlays)
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "helper.asl:1:8 module must have at least 1")
+
+  test "an overlay stands in for a file that is not on disk":
+    let dir = writeFiles([("placeholder.asl", "")])
+    let entry = dir / "unsaved.asl"
+    var overlays = initTable[string, string]()
+    overlays[entry] = "module M:\n  func go(): u8\n    u8 0\n"
+    let r = parse(entry, 2, false, initTable[string, string](), overlays)
+    cleanupDir(dir)
+    check r.isOk
+    check r.get.files.len == 1
+
+  test "an overlay with invalid UTF-8 is rejected":
+    let dir = writeFiles([("placeholder.asl", "")])
+    let entry = dir / "unsaved.asl"
+    var overlays = initTable[string, string]()
+    overlays[entry] = "module M:\n  func go(): u8\n    u8 0 \xff\n"
+    let r = parse(entry, 2, false, initTable[string, string](), overlays)
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "invalid UTF-8")

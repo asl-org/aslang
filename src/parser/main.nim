@@ -1,4 +1,4 @@
-import strformat, strutils, unicode, results, options, sets, os
+import strformat, strutils, unicode, results, options, sets, os, tables
 
 # parser.nim (Parser + Spec[T] + oneOf / any / optional / ...) holds the
 # combinator scaffolding. It is re-exported so the parser tests can drive
@@ -93,8 +93,17 @@ proc parseFile*(parser: Parser, vendorRoots: VendorRoots): Result[File, string] 
   of ".aslr": parseAslrFile(parser).toStringErr
   else: err(fmt"{parser.filepath}: unrecognized file extension '{ext}' — expected '.asl' or '.aslr'")
 
+const MaxFileByteSize = 1 * 1024 * 1024 # 1 MB
+
+proc validateSource(filepath: string, source: string): Result[string, string] =
+  if source.len > MaxFileByteSize:
+    err(fmt"{filepath} file exceeds 1 MB limit ({source.len} bytes).")
+  else:
+    let pos = validateUtf8(source)
+    if pos == -1: ok(source)
+    else: err(fmt"{filepath} invalid UTF-8 byte at position {pos}.")
+
 proc readFileSafe(filepath: string): Result[string, string] =
-  const MaxFileByteSize = 1 * 1024 * 1024 # 1 MB
   if not fileExists(filepath):
     return err(fmt"{filepath}: file not found")
   try:
@@ -102,12 +111,15 @@ proc readFileSafe(filepath: string): Result[string, string] =
     if fileByteSize > MaxFileByteSize:
       err(fmt"{filepath} file exceeds 1 MB limit ({fileByteSize} bytes).")
     else:
-      let source = readFile(filepath)
-      let pos = validateUtf8(source)
-      if pos == -1: ok(source)
-      else: err(fmt"{filepath} invalid UTF-8 byte at position {pos}.")
+      validateSource(filepath, readFile(filepath))
   except CatchableError:
     err(fmt"{filepath} failed to read file.")
+
+proc readSource(filepath: string, overlays: Table[string, string]): Result[string, string] =
+  ## An overlay (an editor's unsaved buffer, keyed by absolute path)
+  ## shadows the file on disk; both pass the same size + UTF-8 checks.
+  if filepath in overlays: validateSource(filepath, overlays[filepath])
+  else: readFileSafe(filepath)
 
 proc dump(filepath: string, tokens: seq[Token]): string =
   var content: seq[string]
@@ -117,15 +129,16 @@ proc dump(filepath: string, tokens: seq[Token]): string =
   content.add(fmt"--- // END {filepath} ---")
   return content.join("\n")
 
-proc loadFile(filepath: string, indentWidth: uint32,
-    dumpTokens: bool, vendorRoots: VendorRoots): Result[File, string] =
-  let source = ? readFileSafe(filepath)
+proc loadFile(filepath: string, indentWidth: uint32, dumpTokens: bool,
+    vendorRoots: VendorRoots, overlays: Table[string, string]): Result[File, string] =
+  let source = ? readSource(filepath, overlays)
   let tokens = ? tokenize(source, filepath)
   if dumpTokens: echo filepath.dump(tokens)
   let parser = newParser(filepath, indentWidth, tokens)
   parser.parseFile(vendorRoots)
 
-proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool, vendorRoots: VendorRoots): Result[App, string] =
+proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool,
+    vendorRoots: VendorRoots, overlays: Table[string, string]): Result[App, string] =
   ## Loads the root file and everything it transitively imports in a
   ## single depth-first walk, returning an App whose files are in
   ## dependency order — each file's imports precede it (leaves first,
@@ -142,6 +155,8 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool, vendorRoots
   ## reuses it directly rather than re-resolving. `vendorRoots` threads
   ## through every `loadFile` so the per-file `aslFileSpec` can hand it
   ## to `newAslFile` (which auto-injects `import "@std"` in W10).
+  ## `overlays` (absolute path → source text) shadow the files on disk,
+  ## so an editor can check unsaved buffers.
   var visiting: seq[string]      # DFS recursion stack: membership + cycle-path report
   var visited: HashSet[string]   # files already walked and emitted
   var ordered: seq[File]         # dependency order: leaves first, root last
@@ -153,7 +168,7 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool, vendorRoots
       return err(fmt"cyclic dependency detected: {chain}")
 
     visiting.add(path)
-    let file = ? loadFile(path, indentWidth, dumpTokens, vendorRoots)
+    let file = ? loadFile(path, indentWidth, dumpTokens, vendorRoots, overlays)
     for importPath in file.importPaths:
       ? walk(importPath)
     discard visiting.pop()
@@ -164,3 +179,8 @@ proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool, vendorRoots
 
   ? walk(rootPath)
   ok(newApp(ordered))
+
+proc parse*(rootPath: string, indentWidth: uint32, dumpTokens: bool,
+    vendorRoots: VendorRoots): Result[App, string] =
+  ## Disk-only parse: no overlays.
+  parse(rootPath, indentWidth, dumpTokens, vendorRoots, initTable[string, string]())
