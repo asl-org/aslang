@@ -1,0 +1,62 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "asl: check current file",
+      "type": "shell",
+      "command": "${workspaceFolder}/asl",
+      "args": ["build", "${file}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "silent", "clear": true },
+      "problemMatcher": [
+        {
+          "owner": "asl",
+          "source": "asl",
+          "fileLocation": "absolute",
+          "severity": "error",
+          "pattern": {
+            "regexp": "^\\[ERROR\\] - (.+?):(\\d+):(\\d+) (.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "message": 4
+          }
+        },
+        {
+          "owner": "asl",
+          "source": "asl",
+          "fileLocation": "absolute",
+          "severity": "error",
+          "pattern": {
+            "regexp": "^\\[ERROR\\] - (/[^:]+): (.*)$",
+            "kind": "file",
+            "file": 1,
+            "message": 2
+          }
+        },
+        {
+          "owner": "asl",
+          "source": "asl",
+          "fileLocation": "absolute",
+          "severity": "error",
+          "pattern": {
+            "regexp": "^\\[ERROR\\] - (cyclic dependency detected: (/\\S+) -> .*)$",
+            "kind": "file",
+            "file": 2,
+            "message": 1
+          }
+        }
+      ]
+    },
+    {
+      "label": "asl: rebuild compiler",
+      "type": "shell",
+      "command": "nimble build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "presentation": { "reveal": "silent", "clear": true },
+      "problemMatcher": []
+    }
+  ]
+}
