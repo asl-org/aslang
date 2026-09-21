@@ -14,7 +14,7 @@ generic Eq:
 
 public module App:
   struct:
-    name: String
+    name: string
     age: u32
 
   public func start(): u8
@@ -30,19 +30,26 @@ public module App:
 ### Language Features
 
 - **Modules**: top-level blocks containing an optional data block
-  (struct or union) and functions
-- **Structs**: product types with named fields (`struct: name: String`)
+  (struct, union, or — for built-in scalars — `literal: "uint8"` etc.)
+  and functions
+- **Structs**: product types with named fields (`struct: name: string`)
 - **Unions**: sum types with named variants, each optionally carrying
   fields (`union: Free { usage: u32 }; Pro { credits: u32 }`)
 - **Functions**: typed, overloadable by parameter signature. Method
-  call syntax via `Type.method(args)`. Two kinds: user functions
-  (with a body) and extern functions (`@extern("symbol")` linking
-  to an external implementation)
+  call syntax via `Type.method(args)`. Two authored kinds: user
+  functions (with a body) and extern functions (`@extern("symbol")`
+  linking to an external implementation); a third, generated kind is
+  the `public func byte_size(): u64` that `newModule` injects into
+  every module with a data block
 - **Generics**: type-parameterized function signature blocks
   (`generic Eq: func eq(a: Eq, b: Eq): u8`)
-- **Pattern matching**: `match` expressions with three `CaseDef`
-  shapes — literal (`case 0`), variable binding (`case other`),
-  and variant destructuring (`case Pro { credits: c }: ...`)
+- **Pattern matching**: `match` expressions whose `CasePattern` has
+  three kinds — integer (`cpkInteger`, `case 0`), variable binding
+  (`cpkVariable`, `case other`), and variant destructuring
+  (`cpkUnion` over a `UnionPattern`, `case Pro { credits: c }: ...`)
+- **Error propagation**: `try f(...)` unwraps the `Ok` value of a call
+  returning `Status[Value, Error]` and propagates its `Err`; the
+  enclosing function must return a `Status` with the same error type
 - **Imports**: cross-file module/generic imports with aliasing
   (`import { User as U } from "./user.asl"`)
 - **Visibility**: `public` keyword on modules and functions to
@@ -55,9 +62,14 @@ public module App:
 ### Built-in Types
 
 Fixed-width integers: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`,
-`u32`, `u64`. Floats: `f32`, `f64`. Text: `String`. Containers:
-`Array`, `Bitset`. Fallibility: `Status[T]` + `Error`. System
-namespace: `System` — a function-only module. Modules without a
+`u32`, `u64`. Floats: `f32`, `f64`. Text: `string`. Containers:
+`Array`, `Bitset`. Fallibility: the union `Status[Value, Error]`
+(`Ok { value: Any }` / `Err { error: Failure }`), with `T!` as parse-time
+sugar for `Status[T, Error]` and `T!E` for `Status[T, E]`; `Failure` is
+the error-contract generic and `Error` the built-in struct module that
+satisfies it. Generic contract: `Any` (`byte_size`). System
+namespace: `System` — a function-only module. All of these live in
+`examples/base.aslr`, the default `@std` vendor. Modules without a
 data block are pure namespaces: their functions are callable
 (`System.println(...)`) but the module itself is not a value and
 cannot appear as an argument or return type.
@@ -68,16 +80,18 @@ The compiler's domain vocabulary — the type names and shapes that
 parser / resolver / analyzer values conform to — is captured in
 [`grammar.md`](grammar.md). Every layer's type module traces back
 to it. When a domain concept is renamed, added, or restructured, it
-lands there first; the code catches up. The DDD-refactor roadmap
-(`tasks.md`) enumerates which renames/reshapings have been applied
-so far — headline landings are `StructDef`/`UnionDef`/`LiteralDef`
-data-block variant names, `Assignment`/`Setter` collapsed into a single
-`Statement` node (kinds none / variable / getter) at every layer,
-`VariablePattern` as a first-class `CaseDef`, the flat
-`ResolvedArgumentType: ResolvedModuleArgumentType |
-ResolvedGenericArgumentType` split, retirement of the 12 def-level
-analyzer wrappers, and collapse of the `StructRef`/`UnionRef`
-default/impl arms into a single shape with an `impls` seq.
+lands there first; the code catches up. Headline reshapings so far:
+`StructDef`/`UnionDef`/`LiteralDef` data-block variant names, the
+former assignment / setter / bare-expression forms collapsed into a
+single `Statement` node (kinds none / variable / getter: `skNone` /
+`skVariable` / `skGetter` in the parser, `rskNone` / `rskVariable` /
+`rskGetter` downstream) at every layer, value positions typed
+`InlineExpression`, the variable binding as a first-class
+`CasePattern` kind, the flat `ResolvedArgumentType:
+ResolvedModuleArgumentType | ResolvedGenericArgumentType` split, and
+`StructRef`/`UnionRef` as a single shape carrying an `ArgumentType`
+whose (possibly empty) impls seq distinguishes `Module { ... }` from
+`Module[Impl] { ... }`.
 
 The user-facing surface language reference is
 [`documentation.md`](documentation.md).
@@ -92,8 +106,9 @@ Tokenizer ─── seq[Token]
   │
   ▼
 Parser ────── App           (raw AST + uniqueness/structural checks
-  │                          enforced in constructors, BFS multi-file
-  │                          resolution, topo-sorted leaves-first,
+  │                          enforced in constructors; one depth-first
+  │                          walk loads every imported file, detects
+  │                          cycles, and emits files leaves-first;
   │                          per-file typeIndex over locally-defined
   │                          types + importedNameIndex over
   │                          explicit-import bindings)
@@ -102,60 +117,52 @@ Resolver ──── Walks the parsed App and produces a ResolvedApp:
   │              name/shape resolution for every ArgumentType,
   │              body-level name resolution for user-function
   │              bodies. Impl-list arity + generic-constraint
-  │              checks are the analyzer's job. Resolved* def-level
-  │              types carry
-  │              the accessors + indices the analyzer needs
-  │              (findField, findVariant, findFunctionDefs,
-  │              genericTypeIndex, ...). Single-pass: resolved
-  │              argument types + struct/union refs hold the parser
-  │              `Module` identifier (not a ResolvedModule back-ref),
-  │              so no ref-object cycle forms. Downstream layers
-  │              that need the resolved module do an identity-keyed
-  │              lookup at their site (`fileCtx.findModule(module)`
-  │              on either FileContext rung, or
-  │              `ResolvedFile.findModule` — assert-backed direct
-  │              returns; keys hash by source location, so aliased
-  │              imports can never miss).
+  │              checks are the def analyzer's job. Resolved*
+  │              def-level types carry the accessors + indices
+  │              later phases need (findField, findVariant,
+  │              findFunctionDefs, genericTypeIndex, ...) plus a
+  │              (fileId, typeId, functionId) identity path.
+  │              Single-pass: resolved argument types + struct/union
+  │              refs hold the parser `Module` identifier (not a
+  │              ResolvedModule back-ref), so no ref-object cycle
+  │              forms. Downstream layers that need the resolved
+  │              module do an identity-keyed lookup at their site
+  │              (`fileCtx.findModule(module)` on the phase-A /
+  │              phase-B contexts, `ResolvedFile.findLocalType` —
+  │              assert-backed direct returns; keys hash by source
+  │              location, so aliased imports can never miss).
   ▼
-Analyzer ──── Two-pass over the resolved app.
-  │
-  │              Pass A (analyzeDefApp) — walks every file,
-  │              every module + generic, every struct/union/literal,
-  │              every funcDef AND every user-function statement
-  │              across the whole app. Produces AnalyzedDefApp
-  │              bundling per-file AnalyzedDefFile + per-module
-  │              AnalyzedDefModule + per-def
-  │              AnalyzedFunctionDef (args + return type
+Defanalyzer ─ Phase A (analyzeDefApp) — walks every file, every
+  │              module + generic, every struct/union/literal, every
+  │              funcDef AND every user-function statement across the
+  │              whole app. Produces AnalyzedDefApp bundling per-file
+  │              AnalyzedDefFile + per-module AnalyzedDefModule +
+  │              per-def AnalyzedFunctionDef (args + return type
   │              fully analyzed) + per-function AnalyzedDefStatement
   │              trees (every def-level fact in a body — literal
   │              defaults, call receivers, struct/union refs —
-  │              re-bound to its resolved def). Any def-site error
-  │              surfaces here before any body walker runs — the
-  │              guarantee that phase A gives.
-  │
-  │              Pass B — walks function bodies. Consumes phase-A
-  │              results: analyzeFunctionCall looks up its overload
-  │              candidates via the per-file AnalyzedFileContext
-  │              (`fileCtx.findType(typ).findFunctionDefs(name,
-  │              arity, public)`) returning
-  │              seq[AnalyzedFunctionDef] — no re-analysis
-  │              at the call site. Return types come pre-analyzed
-  │              from matchingFuncDef.returns; only the
-  │              generic-impl substitution (.concrete) runs per
-  │              call. Union initializer parametric inference
-  │              accumulates a AnalyzedImplMap from the kwargs
-  │              (merged across fields), concretizes the result
-  │              type through it (covered slots bound, uncovered
-  │              left free), and the result argtype carries that
-  │              map as its own impls. Literal initializers, case patterns over
-  │              all integer kinds + String, and per-arg-list
-  │              literal validation share one analyzeLiteral
-  │              helper. The equality-vs-unification gap
-  │              (case-arm uniformity) and a handful of focused
-  │              TODOs remain — see the "What's Next" section.
+  │              re-bound to its resolved def). Impl counts and
+  │              generic-constraint satisfaction are checked here.
+  │              Any def-site error surfaces before any body walker
+  │              runs — the guarantee that phase A gives.
   ▼
-(future)
-  Codegen   ── target emission (C or LLVM IR).
+Analyzer ──── Phase B — walks function bodies through the context
+  │              ladder AnalyzedFileContext → AnalyzedModuleContext →
+  │              AnalyzedUserFunctionContext. analyzeFunctionCall
+  │              reads its overload candidates off the phase-A twin
+  │              (`funcCtx.findType(fncall.typ).findFunctionDefs(
+  │              name, arity, access)`) — no re-analysis at the call
+  │              site; only the generic-impl substitution (`concrete`)
+  │              runs per call. Struct/union initializers merge the
+  │              AnalyzedImplMap each kwarg contributes; `try` calls
+  │              unwrap Status; bare literals adopt or default their
+  │              type; matches check exhaustiveness and duplicate
+  │              integer patterns.
+  ▼
+(planned — plans/plan_monomorphization.md)
+  Monomorphize ── specialize generics from `start`; concrete C-typed AST
+  Lifetime ────── ownership / in-place-vs-copy on the concrete AST
+  Codegen ─────── C now; Verilog/VHDL later
 ```
 
 Orchestrated by `src/asl.nim`:
@@ -163,36 +170,42 @@ Orchestrated by `src/asl.nim`:
 let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
 let resolvedApp = ? resolve(app)
 let analyzedApp = ? analyze(resolvedApp)
+ok("[SUCCESS]")
 ```
 
-`analyze*` returns a structured `AnalyzedApp` — the `ResolvedApp`
-back-reference plus a `seq[AnalyzedFile]`, where each `AnalyzedFile`
-carries its `AnalyzedDefFile` back-reference (the phase-A
-output that produced it), analyzed import definitions, and the
-analyzed modules parsed out of it.
+`compile` stops after `analyze` and returns `[SUCCESS]` — there is no
+code generation on main yet. `analyze*` (on the analyzer barrel) runs
+`analyzeDefApp` first and then walks its bundle; it returns a structured
+`AnalyzedApp` — the `AnalyzedDefApp` back-reference plus a
+`seq[AnalyzedFile]`, where each `AnalyzedFile` carries its
+`AnalyzedDefFile` back-reference (the phase-A output that produced it)
+and the analyzed modules parsed out of it. Imports have no analyzed
+form of their own: an imported type's analyzed twin is fetched from its
+source file's def bundle and folded into the file context.
+`AnalyzedApp` also exposes `entry` (the single public `start` function
+of the root file) and `findModule`; it is the handle the planned
+monomorphization pass will consume.
 
-Phase-A output (`AnalyzedDefApp` + per-file
-`AnalyzedDefFile` + per-module `AnalyzedDefModule` +
-`AnalyzedGeneric` + `AnalyzedFunctionDef` + the data-block
-wrappers `AnalyzedStructDef` / `AnalyzedVariantDef` / `AnalyzedUnionDef` /
-`AnalyzedLiteralDef` / `AnalyzedDataDef`) is threaded through the
-body walker chain as `(appDef, fileDef, fileCtx)` — the
-`AnalyzedFileContext` built at `analyzeFile` entry spans imports +
-local types, so phase-B overload resolution reads pre-analyzed
-funcDef signatures via `fileCtx.findType(typ).findFunctionDefs(...)`
-— no re-analysis of arg types or return types at call sites.
-`AnalyzedApp` is the handle downstream codegen will thread through.
+Phase-A output (`AnalyzedDefApp` + per-file `AnalyzedDefFile` +
+per-module `AnalyzedDefModule` + `AnalyzedGeneric` +
+`AnalyzedFunctionDef` + the data-block wrappers `AnalyzedStructDef` /
+`AnalyzedVariantDef` / `AnalyzedUnionDef` / `AnalyzedLiteralDef` /
+`AnalyzedDataDef`) is consumed by the phase-B body walkers through the
+context ladder in `analyzer/context.nim`, so overload resolution reads
+pre-analyzed funcDef signatures — no re-analysis of arg types or return
+types at call sites.
 
 There is no separate `Validator` phase. Every uniqueness / structural
 rule the validator used to enforce (duplicate names, empty blocks,
 import collisions, duplicate fields/variants) is now a precondition
-inside an AST constructor (`newStruct`, `newUnion`, `newModule`,
-`newFile`, etc.). Invalid AST nodes cannot be constructed, so no
-separate validation pass is needed.
+inside an AST constructor (`newStructDef`, `newUnionDef`, `newModule`,
+`newAslFile`, etc.). Invalid AST nodes cannot be constructed, so no
+separate validation pass is needed. `validations.md` catalogues the
+rules by pipeline phase, each pinned to the test that asserts it.
 
 ### Phase 1: Tokenization
 
-`src/tokenizer/index.nim` (barrel) + `src/tokenizer/`
+`src/tokenizer/main.nim` (barrel + `tokenize` driver) + `src/tokenizer/`
 
 Whole-lexeme classifier driven by an ordered list of token specs.
 Produces `seq[Token]` where each token carries `kind`
@@ -214,68 +227,72 @@ the last line of a file with no terminating newline.
 
 ### Phase 2: Parsing
 
-`src/parser/index.nim` (barrel — hosts the combinator layer plus shared
-leaf specs and the multi-file `parse*` entry point) + `src/parser/`
-(per-concept AST modules — see the Project Structure table for the
-current listing). The tokenizer is a separate sibling package
-(`src/tokenizer/`), imported by the parser via
-`import ../tokenizer/index as tokenizer`.
+`src/parser/main.nim` (barrel — re-exports every per-concept module and
+hosts the file-level grammar plus the multi-file `parse*` entry point)
++ `src/parser/` (per-concept AST modules — see the Project Structure
+table for the current listing). The combinator layer and `ParserError`
+live in `src/parser/parser.nim`. The tokenizer is a separate sibling
+package (`src/tokenizer/`); `parser.nim` imports it via
+`import ../tokenizer/main as tokenizer` and re-exports it, so every
+parser submodule (and every `import ../parser/main` consumer) gets
+`Location` / `Token` without a separate import.
 
 The parser is a sibling package, not a sub-tree of the resolver:
-analyzer, cli, and asl.nim that need parser types import
-`../parser/index as parser` directly (barrels no longer re-export the
-layer beneath them). Parser combinators (`Spec[T]`, `oneOf` / `any` /
-`atLeastOne` / `optional` / `map`) live in `src/parser/index.nim`;
-they're imported by every per-concept file but stay parser-internal —
-the barrel doesn't re-export them, and no code outside `src/parser/`
-needs them.
+defanalyzer, analyzer, lsp, cli, and asl.nim that need parser types
+import `../parser/main as parser` directly. The barrel re-exports
+`parser.nim` too, so the parser tests can drive the combinator
+machinery through `parser/main`; downstream layers use only the AST
+types and `parse*`.
 
-Recursive descent via composable `Spec[T]` combinators. Two families:
-
-**Primitives** — the historical layer:
+Recursive descent via composable `Spec[T]` combinators. A `Spec[T]` is
+a named, typed tagged union (`skDefault` wraps a consumer proc,
+`skToken` a single-token matcher); `newSpec` builds either. The
+exported combinators:
+- `expect` — run a spec (or a literal token value) against the parser
 - `oneOf` — ordered alternatives with backtracking
 - `any` / `atLeastOne` — repetition (zero-or-more / one-or-more)
 - `optional` — zero-or-one, returns `Option[T]`
-- `separatedBy` — comma-separated lists
-- `contained` — delimited containers (`(...)`, `[...]`, `{...}`)
-- `map` — transform parse result
+- `map` — transform the parse result (plain or `Result`-returning mapper)
+- `parenthesisList` / `squareBracketList` / `curlyBracketList` —
+  comma-separated lists wrapped in `(...)` / `[...]` / `{...}`
+- `indentedLine` — indentation + item + trailing newline(s); the
+  block-body item shape
+- `indentedBody` / `indentedBlock` — run a body one indent level
+  deeper (optionally after a header line)
+- `done` / `loc` / `newParser` / `newParserError` — parser state and
+  error helpers
 
-**Sequence-composition atoms** — landed via Tasks 14–15 to eliminate
-the `let X = Spec[T](parseFn: ...)` scaffolding on ~20 hand-written
-specs:
-- `prefixed(prefix, inner)` — parse `prefix inner`, discard prefix
-- `suffixed(inner, suffix)` — parse `inner suffix`, discard suffix
-- `pair(a, b)` — sequence into `(A, B)` tuple; `.map` to lift
-- `triple(a, b, c)` — three-spec sequence into `(A, B, C)`
-- `separated(a, sep, b)` — `pair(a, prefixed(sep, b))` — the
-  grammar-natural "X separator Y" shape (8 sites)
-- `presence(spec) → Spec[bool]` — rollback-safe test, distinct from
-  `optional`
-- `indentedLine(inner)` — `prefixed(indent, suffixed(inner, eol))`;
-  the block-body item shape (4 sites)
-- `ws0` / `ws1` / `blankLines` — named trivia specs; drop-in
-  replacements for `any(spaceSpec)` etc.
-- `blockSpec` / `decoratedBlockSpec` — indented blocks with headers
+Shared leaf specs (`SPACE`, `NEWLINE`, `indentationSpec`) also live in
+`parser.nim`. Backtracking via checkpoint/restore of `parser.index` and
+`parser.level` inside `expect`. A body failure under `indentedBody` is
+marked fatal: once a header has committed a block, `oneOf` / `optional`
+/ repetition no longer backtrack out of it, which keeps diagnostics
+precise. Forward-declared `var` specs (`inlineExpressionSpec`,
+`statementListSpec` in `parser/statement.nim`) resolve the body
+cluster's mutual recursion.
 
-Backtracking via checkpoint/restore on `parser.index`. Fatal errors
-in block bodies bypass backtracking for precise diagnostics.
-Forward-declared specs enable mutual recursion
-(`expressionSpec ↔ argumentListSpec`).
+**Multi-file resolution** (`parser/main.nim`'s `parse*(rootPath, …)`
+entry): a single depth-first walk tokenizes + parses the root and every
+file it transitively imports, emitting files in dependency order
+(leaves first, root last). A `visiting` stack doubles as cycle detection
+(reported as the offending chain); a `visited` set loads a diamond
+dependency once. Parent-directory escape prevention
+(`./sub/../../escape` caught by normalizing the resolved path) happens
+when the import path is resolved inside the import-line spec.
+A second `parse*` overload takes `overlays: Table[string, string]`
+(absolute path → source text): an overlay shadows that file on disk
+and passes the same size / UTF-8 checks. `asl lsp` uses it to compile
+unsaved editor buffers; the 4-argument form passes no overlays.
 
-**Multi-file resolution** (`parser/index.nim`'s `parse*(rootPath, …)`
-entry): BFS traversal of imports,
-tokenize + parse each dependency, topological sort via DFS with
-cycle detection. Parent-directory escape prevention
-(`./sub/../../escape` caught by normalizing the resolved path). Both
-graph algorithms live in `src/utils.nim` — `bfs[T, V]` is generic;
-`topoSort` is currently string-typed.
-
-**Post-parse A-normal form expansion** (`parser/statement.nim`,
-`expand(...)` procs). Currently NOT wired into parsing —
-`statementListConsumer` builds the `StatementList` without expanding,
-and the `expand*` procs are kept as reference pending a post-analysis
-expander (see plans/plan_post_analysis_expansion.md). When re-enabled,
-every `StatementList` runs through this normalization pass so that:
+**A-normal form expansion** (`parser/expansion.nim`, `expand(...)`
+procs). Currently NOT wired in — no module imports `expansion.nim`
+(`statementListSpec` builds the `StatementList` without expanding), and
+the file still targets the pre-collapse assignment / setter shapes. It
+is kept as reference for a post-analysis expander
+(`TODO(post-analysis-expander)`, plans/plan_post_analysis_expansion.md).
+The value positions it lifts are already narrowed to
+`InlineExpression` in the grammar. When re-enabled, every
+`StatementList` runs through this normalization pass so that:
 
 - **Every value-position expression is a `Variable` or `Literal`**.
   Function-call arguments, keyword-argument values, and match
@@ -288,33 +305,33 @@ every `StatementList` runs through this normalization pass so that:
   a getter assignment (`x.y = e`), or a bare expression — and this pass
   wraps the bare-expression form: `foo(x)` becomes `__asl_arg_N = foo(x)`.
   The tail statement of a function body carries the return value via the
-  statement's RHS type (see the analyzer's
-  `analyzedStatements[^1].argType` check).
+  statement's RHS type (see the `statements[^1].argType` check in
+  `analyzeUserFunction`).
 - **Sub-expressions inside nested scopes recurse.** Case block
   bodies are their own `StatementList`, so they get their own
   expansion.
 
-Lift rules by expression kind:
-- `ekLiteral`, `ekVariable` — never lifted. Literals must reach
+Lift rules by expression kind (`InlineExpressionKind`, plus `ekMatch`
+on `Expression`):
+- `iekLiteral`, `iekVariable` — never lifted. Literals must reach
   `analyzeBareLiteral` with their expected context intact for
   Approach C's concrete-adopt behavior; variables are already
   named bindings.
-- `ekGetter` — lifted at value positions (`p.a` in `foo(p.a)`
+- `iekGetter` — lifted at value positions (`p.a` in `foo(p.a)`
   becomes `t = p.a; foo(t)`), passed through at assignment /
   getter-assignment RHS positions (`x = p.a` stays `x = p.a`).
-- `ekFnCall`, `ekInitializer`, `ekMatch` — always recurse into
+- `iekFnCall`, `iekInitializer`, `ekMatch` — always recurse into
   their sub-expressions; the outer expression is lifted at value
   positions, passed through at RHS positions.
 
-Synthetic identifiers use the `__asl_arg_N` prefix, which
-`newIdentifier` reserves (rejects for user code). Compiler-internal
+Synthetic identifiers use the `__asl_arg_N` form; `newIdentifier`
+rejects any user identifier starting with `__asl`. Compiler-internal
 construction goes through `newGeneratedIdentifier` in
 `identifiers.nim`, which bypasses the prefix check. A per-function
 counter provides uniqueness within the function scope.
 
-Downstream (resolver, analyzer) sees only the ANF-normalized AST —
-they never need to reason about nested value-position expressions,
-which simplifies type-flow analysis considerably.
+Once wired, downstream layers would see only the ANF-normalized AST and
+never need to reason about nested value-position expressions.
 
 ### Phase 3: Parser-level indexing (absorbed)
 
@@ -330,47 +347,50 @@ Indices on AST nodes:
   every explicit-import binding on `fkAsl` files. Duplicate detection
   at parse time checks both indexes so an imported name and a local
   definition sharing an identifier collide immediately.
-- `Module.functionIndex` / `Generic.funcDefIndex` — allow function
-  overloading by keying on `seq[int]`.
+- `Module.functionIndex` / `Generic.funcDefArityIndex` — name → arity
+  → positions, which is what allows overloading.
 - `StructDef.fieldIndex`, `UnionDef.variantIndex`, `VariantDef.fieldIndex`,
-  `ArgumentDefList.argDefIndex` — per-block duplicate detection.
+  `ArgumentDefList.argNameIndex` — per-block duplicate detection.
 - `App.fileIndex` — absolute path → file index.
 
-The parser exposes two focused lookups instead of a union:
-`findType(name): LocalType` (local defs only) and
-`findImportedName(name): ImportedType`. The historical `Type` umbrella
-(`tkImported | tkDefined`) was retired — every downstream caller
-already unwrapped it, so the union was ceremony that leaked through
-the public API.
+The parser exposes focused lookups on `File` instead of a union:
+`findType(name): LocalType` (local defs only), `findImportedType(name):
+ImportedType` (explicit-import bindings), and `findExportedType(name)`
+(a local def that must also be public). There is no parser-level
+imported-or-defined umbrella type.
 
 ### Phase 4: Resolution
 
-`src/resolver/index.nim` (facade — hosts the per-type `resolve*` procs
-and cross-cluster scope lookups) + `src/resolver/` (per-type files; see
-the Project Structure table for the current listing). The parser it
-builds on is a sibling package (`src/parser/`, Phase 2), imported
-directly via `import ../parser/index as parser`.
+`src/resolver/main.nim` (facade — hosts every `resolve*` proc) +
+`src/resolver/` (per-cluster files; see the Project Structure table for
+the current listing). The parser it builds on is a sibling package
+(`src/parser/`, Phase 2), imported directly via
+`import ../parser/main as parser`.
 
-Returns a `ResolvedApp` containing a `ResolvedFile` per source file,
-which in turn holds resolved imports plus a `ResolvedLocalType` for each
-module/generic. Body-level name resolution is complete (variables,
-getters, function calls, initializers, match/case patterns). The
-resolver also enforces the structural `struct(...)`-header
-constraint (unique generics in the header — enforced by
-`validateRequiresNameConflict` inside `newStructDefHeader`) and unions
-the header generics with those collected recursively from the field
-types, populates each module argument
+Entry: `resolve*(app: App): Result[ResolvedApp, string]`. Returns a
+`ResolvedApp` containing a `ResolvedFile` per source file, which in turn
+holds resolved imports plus a `ResolvedLocalType` for each
+module/generic. Every `ResolvedFile`, `ResolvedModule`,
+`ResolvedGeneric` and `ResolvedFunctionDef` records a fully-qualified
+identity path — `fileId` (the file's index in the app), `typeId` (the
+type's index in its file), `id` (the function's index in its
+module/generic) — groundwork for referring to resolved entities by id;
+the ids are not part of any hash. Body-level name resolution is
+complete (variables, getters, function calls, initializers, match/case
+patterns). The resolver unions a struct's explicit `struct(...)`-header
+generics (whose uniqueness the parser already enforced via
+`validateRequiresNameConflict` inside `newStructDefHeader`) with those
+collected recursively from the field types, populates each module argument
 type's impl slots (leaving impl-count + generic-constraint validation
 to the def analyzer), resolves struct/union refs into provably valid
 shapes at ref-resolve time (`ResolvedStructRef` carries the
 receiver's `ResolvedModuleArgumentType` + its `StructDef`;
-`ResolvedUnionRef` additionally its `UnionDef` + the referenced
-`VariantDef` — wrong-kind receivers and unknown variants rejected on
-the spot), field-maps initializer kwargs
-(`resolveKeywordArguments` resolves the expressions in source order;
-unknown/duplicate fields, undersupply, and canonical field ordering
-are owned by the initializer constructors — one shared shape for
-struct and union), and binds every bare literal's
+`ResolvedUnionRef` the receiver plus the referenced `VariantDef` —
+wrong-kind receivers and unknown variants rejected on the spot),
+field-maps initializer kwargs (`resolveKeywordArguments` resolves the
+expressions in source order; unknown/duplicate fields, undersupply, and
+canonical field ordering are owned by the initializer constructors — one
+shared shape for struct and union), and binds every bare literal's
 default module against the FileContext (`ResolvedLiteral.default` —
 same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 
@@ -378,43 +398,39 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   the facade.** The per-cluster files (`argtype`, `datadef`,
   `function`, `functioncontext`, `refs`, `statement`, `types`,
   `imports`, `app`, `indexing`) hold the type declarations, their
-  constructors, and their accessors. Every cross-type `resolve*` proc
-  (plus the scope-lookup helpers that need to cross cluster boundaries)
-  lives on the facade `src/resolver/index.nim`; per-cluster files never
-  import each other transitively via the resolve chain. See the Project
-  Structure table for the current file listing.
+  constructors, and their accessors. Every `resolve*` proc lives on the
+  facade `src/resolver/main.nim`, from `resolveArgumentType` through
+  `resolveFile` and the public `resolve*`.
 
-  The facade `src/resolver/index.nim` re-exports its own submodules —
-  but NOT the parser layer beneath it — so `import resolver/index`
-  gives every resolved-side type. Consumers that also need parser or
-  tokenizer types import those packages directly. The facade owns every
-  `resolve*` proc from `resolveArgumentType` through `resolveApp`.
-  Impl-count and generic-constraint checks are not done here — the
-  resolver only populates a module argument type's impls; both live one
-  phase up in the def analyzer (`analyzeDefModuleArgumentType`), for the
-  cyclic-dependency reason in the comment block above
-  `resolveModuleArgumentType`. Every resolution site carries a
-  `TypeContext` (enclosing module | enclosing generic, typecontext.nim)
-  from which `FunctionAccess` is derived: `faAll` inside the
-  defining module, `faPublic` everywhere else — `findFunctionDefs`
-  filters by it at every layer. Scope lookups live with their owning type:
-  name-keyed `findType` / `findModule` / `findGeneric` on `FileContext`
-  (filecontext.nim, the name→parser-Type bridge), identity-keyed
-  `findType` / `findModule` / `findGeneric` plus the scope-spanning
-  `findGenericInScope` on `ResolvedFile` (files.nim), and identity-
-  keyed `findFile` plus path-keyed `findImportedFile` on `ResolvedApp`
-  (app.nim — the resolve-time result-and-accumulator that owns the
-  topo-order assert).
-- **Single-pass walk per app** (files come topo-sorted leaves-first
-  from the parser's multi-file `parse*` entry, so imports are always
-  resolved before use). For
-  each file: build the `FileContext` (locally-defined names +
-  imported bindings). Then for each defined type resolve requires
-  (if any), the data block, and each function signature/body.
+  The facade re-exports its own submodules — but NOT the parser layer
+  beneath it — so `import ../resolver/main` gives every resolved-side
+  type. Consumers that also need parser or tokenizer types import those
+  packages directly. Impl-count and generic-constraint checks are not
+  done here — the resolver only populates a module argument type's
+  impls; both live one phase up in the def analyzer
+  (`analyzeDefModuleArgumentType`), for the cyclic-dependency reason in
+  the comment block above `resolveModuleArgumentType`. Every resolution
+  site carries `ctxType`, the enclosing definition as a parser
+  `LocalType` (module | generic); `LocalType.access(context)` derives
+  the `FunctionAccess` from it — `faAll` for a module's own functions,
+  `faPublic` everywhere else — and `findFunctionDefs` filters by it at
+  every layer. Scope lookups live with their owning type: name-keyed
+  `findType` / `findModule` / `findGeneric` on `FileContext`
+  (`resolver/app.nim`, the name→parser `LocalType` bridge: local defs
+  first, then import bindings), identity-keyed `findLocalType` plus the
+  scope-spanning `findGenericInScope` on `ResolvedFile`, and path-keyed
+  `findFile` on `ResolvedApp` (the resolve-time result-and-accumulator
+  whose assert enforces that an import was resolved before its
+  importer).
+- **Single-pass walk per app** (files arrive in dependency order,
+  leaves first, from the parser's multi-file `parse*` entry, so imports
+  are always resolved before use). For each file: build the
+  `FileContext` (the parsed file + imported bindings, added import by
+  import with duplicate-binding rejection). Then for each defined type
+  resolve the data block and each function signature/body.
   Argument types along the way carry parser Module identifiers, so
   every `ResolvedModuleArgumentType` is well-formed at construction
-  without any forward-reference dance. The historical shell /
-  populate two-pass has been retired.
+  without any forward-reference dance.
 - **Impl population, not validation** — `resolveModuleArgumentType`
   only resolves a module argument type's impls in slot order; it does
   NOT derive the module's require slots, count the impls, or check
@@ -434,8 +450,10 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   across variants — one union scope, Rust-style shared params),
   `ResolvedStructDef` from the union of its explicit `struct(...)`
   header generics and the generics collected recursively from its field
-  types (the constructed def carries no kind — nothing downstream needs
-  to know which path produced it).
+  types (a field typed `Array[K]` contributes `K`; the constructed def
+  carries no kind — nothing downstream needs to know which path
+  produced it). A public module whose require slots name a non-public
+  generic is rejected in `newResolvedModule`.
   `genericTypeIndex` is an on-demand projection of that seq; the
   `requires*` accessors read it directly. Use-sites never re-derive
   this list: the def analyzer reads it off the module's data block
@@ -452,26 +470,25 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
   at resolve time, keeping each generic's type world bounded.
 - **Enriched Resolved* def-level types** — `ResolvedStructDef` /
   `ResolvedVariantDef` / `ResolvedUnionDef` / `ResolvedModule` /
-  `ResolvedGeneric` carry every accessor the analyzer's retired
-  phase-A wrappers used to add: `findField`, `findVariant`,
-  `findFunctionDefs(name, arity, public)`, `funcNameArityIndex`,
-  `funcDefIndex`. The analyzer reads these directly rather than
-  rebuilding a parallel def-level view.
+  `ResolvedGeneric` carry the accessors later phases need:
+  `findField`, `findVariant`, `findFunctionDefs(name, arity, access)`,
+  `findImplDef`, plus the `funcNameArityIndex` / `funcDefIndex` behind
+  them. Constructors own the module/generic invariants
+  (input-signature uniqueness: a `ResolvedFunctionDef` hashes by name +
+  input types, return type deliberately excluded).
 - **Body-level name resolution** — the resolver walks user-function
   bodies: each statement is dispatched, each expression is resolved,
   and every function call's root (the user-typed receiver name) is
   resolved against the FileContext to a `parser.LocalType` carried on
   `ResolvedFunctionCall.typ` — so the analyzer never resolves a
   user-typed name; it does identity lookups on what the resolver
-  already bound. The per-file `FileContext` itself is stored on
-  `ResolvedFile.scope` for downstream name→parser.LocalType bridging
-  (e.g. the analyzer's bare-literal defaults). A `FunctionContext`
-  (Table[Identifier, Location]) tracks the names of variables
+  already bound. A `FunctionContext` (`Table[Identifier, Location]`,
+  `resolver/functioncontext.nim`) tracks the names of variables
   currently in scope; the value stores the declaration site so
   duplicate-declaration errors can point at the prior source
   location. Variable types remain the Analyzer's concern. The
-  resolver collects candidate overloads but does not pick the unique
-  one — that's the Analyzer.
+  resolver checks that a call target exists for the name, arity and
+  access, but does not pick among overloads — that's the Analyzer.
 - **Not the resolver's job**: overload selection (picking the unique
   candidate after matching concrete arg types) and body-level
   type-correctness checks. Those belong to the Analyzer phase.
@@ -489,23 +506,22 @@ same resolve-time binding as `ResolvedFunctionCall.typ`). Scope:
 
 Two barrels split along the phase boundary. The five layers are flat
 sibling packages under `src/` (pipeline order tokenizer → parser →
-resolver → defanalyzer → analyzer), each with an `index.nim` barrel;
+resolver → defanalyzer → analyzer), each with a `main.nim` barrel;
 no package is physically nested inside another:
 
-- `src/defanalyzer/index.nim` — definition-analysis barrel.
+- `src/defanalyzer/main.nim` — definition-analysis barrel.
   Hosts the phase-A analyze* procs (analyzeDefGenericArgumentType →
   analyzeDefApp) and re-exports its own def-level submodules. It does
   NOT re-export the resolver layer beneath it; code here imports
-  `../resolver/index as resolver` (and `../parser/index` for parser
+  `../resolver/main as resolver` (and `../parser/main` for parser
   types) directly. `src/defanalyzer/` holds the def-level per-type
-  files.
-- `src/analyzer/index.nim` — body-analysis barrel and top of the stack.
-  Hosts the phase-B body walkers, the extract/find helpers, and the
-  public two-pass `analyze*` entry; it re-exports its own body-level
-  submodules only. `import analyzer/index` does NOT transitively reach
-  the lower layers — consumers import each layer whose types they use
-  directly. `src/analyzer/` holds the body-level per-type files (`ls`
-  the folders for the authoritative lists).
+  files plus `context.nim` (the phase-A contexts).
+- `src/analyzer/main.nim` — body-analysis barrel and top of the stack.
+  Hosts the phase-B body walkers and the public two-pass `analyze*`
+  entry; it re-exports its own body-level submodules only (the
+  context ladder in `context.nim` is imported, not re-exported).
+  `import ../analyzer/main` does NOT transitively reach the lower
+  layers — consumers import each layer whose types they use directly.
 
 Takes a `ResolvedApp` and returns an `AnalyzedApp` — a type-rich view
 of every value, expression, and statement in each function body.
@@ -515,33 +531,34 @@ of every value, expression, and statement in each function body.
 every module + generic → every struct/union/literal block → every
 funcDef signature → every user-function statement across the whole
 app, producing an `AnalyzedDefApp`: per-file `AnalyzedDefFile`
-(analyzed imports + defined types + the name-keyed
-`ResolvedFileContext`), per-def `AnalyzedDefModule` (whose `functions`
-are tagged `AnalyzedDefFunction`s — extern/user, each pairing the
-resolver function with its pre-analyzed
-`AnalyzedFunctionDef`; user functions additionally carry
-their `AnalyzedDefStatement` tree) / `AnalyzedGeneric` (bare
-`AnalyzedFunctionDef`s — generics have no extern/user split)
-and the data-block wrappers (`AnalyzedStructDef` /
-`AnalyzedVariantDef` / `AnalyzedUnionDef` / `AnalyzedLiteralDef` /
-`AnalyzedDataDef`). The statement walk mirrors the resolver's statement
-cluster 1:1 (`AnalyzedDefLiteral` → kwargs → fncalls → initializers
-→ match → expression → statement, hosted in
-`defanalyzer/statement.nim` with the ref wrappers in
-`defanalyzer/structref.nim` / `unionref.nim`), re-binding each
-def-level fact (literal default module + LiteralDef, call receiver
-`ResolvedLocalType`, struct/union defs behind refs) from the file scope.
-`AnalyzedDefApp` itself is just the fileDefs + a path-keyed
-`fileDefIndex` behind `findFileDef` — all type lookup state lives on
-the per-file scopes. Any def-site error fires here before any body
-walker touches the AST.
+(analyzed imports (`AnalyzedDefImport`) + defined types + the
+identity-keyed `ResolvedFileContext` as its `scope`), per-def
+`AnalyzedDefModule` (whose `functions` are tagged `AnalyzedDefFunction`s
+— extern / user / generated, each carrying its pre-analyzed
+`AnalyzedFunctionDef`; user functions additionally carry their
+`AnalyzedDefStatement` tree) / `AnalyzedGeneric` (bare
+`AnalyzedFunctionDef`s — generics have no extern/user split) and the
+data-block wrappers (`AnalyzedStructDef` / `AnalyzedVariantDef` /
+`AnalyzedUnionDef` / `AnalyzedLiteralDef` / `AnalyzedDataDef`). The
+statement walk mirrors the resolver's statement cluster 1:1
+(`AnalyzedDefLiteral` → kwargs → fncalls → initializers → match →
+expression → statement, hosted in `defanalyzer/statement.nim` with the
+`AnalyzedStructRef` / `AnalyzedUnionRef` wrappers in
+`defanalyzer/refs.nim`), re-binding each def-level fact (literal
+default module + LiteralDef, call receiver, struct/union defs behind
+refs) from the file scope. The app walk accumulates file defs in a
+`ResolvedAppContext` (`defanalyzer/app.nim`, wrapping the
+`ResolvedApp`); the result `AnalyzedDefApp` is just the fileDefs + a
+path-keyed `fileDefIndex` behind `findFileDef` — all type lookup state
+lives on the per-file scopes. Any def-site error fires here before any
+body walker touches the AST.
 
 Three phase-A invariants worth naming:
 
 - **One context value, no twins.** Phase-A walkers carry a single
   `ResolvedTypeContext` (enclosing resolved module | resolved
-  generic, defanalyzer/typecontext.nim — the identity-ladder twin of
-  the resolver's `TypeContext`), consumed for exactly one decision:
+  generic, `defanalyzer/context.nim` — the resolved-rung counterpart
+  of the resolver's `ctxType: LocalType`), consumed for exactly one decision:
   function visibility during constraint satisfaction. Everything
   else context-sensitive (e.g. the generic self-reference rule) was
   already enforced at resolve time, so there are no module/generic
@@ -556,20 +573,20 @@ Three phase-A invariants worth naming:
   separately) — and each concretized def is probed by IDENTITY
   against the impl's funcDefIndex through
   `ResolvedTypeContext.findImplDef`, which owns the visibility
-  decision (module → `access(module)`, generic → `faAll`). Hash =
-  name + input types (input-signature uniqueness rule; return type
-  and access are checked explicitly on the hit). Satisfaction is a
-  binding-independent property of the module, decided by one index
-  probe per required def — an impl with a mismatched signature is
-  rejected at its declaration even if the function is never called.
-  Phase B's `analyzeValueTypeAgainstDefType` generic arm now runs
-  this same check (was a shallower identity-only loop), so the
-  value-position check is visibility-aware too.
+  decision (module impl → `access(module)`: `faAll` only from inside
+  that module; generic impl → `faAll`). Hash = name + input types
+  (input-signature uniqueness rule; return type and access are checked
+  explicitly on the hit). Satisfaction is a binding-independent
+  property of the module, decided by one index probe per required def
+  — an impl with a mismatched signature is rejected at its declaration
+  even if the function is never called. Phase B's
+  `analyzeValueTypeAgainstDefType` generic arm runs this same check, so
+  the value-position check is visibility-aware too.
 - **Identity lookups assert, never err — on the types themselves.**
   Every identity-keyed lookup (`findType` / `findModule` /
-  `findGeneric` on both FileContext rungs, `ResolvedFile.findType`,
-  `ResolvedApp.findFile` / `ResolvedApp.findImportedFile`,
-  `AnalyzedDefApp.findFileDef`, `ResolvedFile.findGenericInScope`,
+  `findGeneric` on `ResolvedFileContext`, `ResolvedFile.findLocalType`,
+  `ResolvedFile.findGenericInScope`, `ResolvedApp.findFile`,
+  `AnalyzedDefFile.findType`, `AnalyzedDefApp.findFileDef`,
   `AnalyzedDefModule.findFunctionDef`) returns its value directly
   with an `assert "[BUG] - ..."` inside: by construction callers can
   only ask about identities the layer below bound, so a miss is a
@@ -577,22 +594,34 @@ Three phase-A invariants worth naming:
   principled — name-keyed lookups (resolve time, `findVariant`,
   `findFunctionDefs`, `findImplDef`) keep `Result` because user
   errors genuinely surface there; constraint-check failures are the
-  def analyzer's own user errors. The exported surface is
-  deliberately narrow: `analyzeDefApp` (the pass entry) and
-  `analyzeDefArgumentType` (reused by phase B for synthetic argument
-  types); every other walker is private to the barrel.
+  def analyzer's own user errors. The exported walker surface is
+  deliberately narrow: `analyzeDefApp` (the pass entry),
+  `analyzeDefArgumentType`, and `analyzeDefImpl` (reused by phase B's
+  generic value check); every other walker is private to the barrel.
 
-**Pass B — bodies.** The per-file `analyzeFile` walk first collects
-each import's analyzed types (`analyzeImport` — each imported type's
-`AnalyzedLocalType` twin, fetched from the source file's fileDef; it
-returns a plain `seq[AnalyzedLocalType]`, no wrapper), merges them with
-this file's defs into the per-file `AnalyzedFileContext`, and then
-analyzes each module's function bodies against it. Call sites read pre-analyzed funcDef
-signatures via `fileCtx.findType(typ).findFunctionDefs(...)` — no
-re-analysis of arg types or return types per call site. Body-level
+**Pass B — bodies.** Phase B threads one context value per walker,
+a nested ladder in `analyzer/context.nim`:
+
+    AnalyzedFileContext  ←  AnalyzedModuleContext  ←  AnalyzedUserFunctionContext
+
+`analyzeFile` builds the `AnalyzedFileContext` from the `AnalyzedDefApp`
++ this file's `AnalyzedDefFile`: imported types map to their analyzed
+twin from the SOURCE file (`appDef.importedTypes(imp)`), local types go
+through the file's own def bundle (`fileDef.findType`).
+`analyzeModule` wraps it in an `AnalyzedModuleContext` (+ the enclosing
+`AnalyzedDefModule`), and `analyzeUserFunction` in an
+`AnalyzedUserFunctionContext`, which adds the variable scope
+(`Table[Identifier, AnalyzedBinding]`, seeded from the function's
+args), `returns` (the declared return type, which a `try` call checks
+its error type against), `update` (extend the scope with a statement's
+or case pattern's bindings) and `branch` (a child scope per case arm,
+so arm bindings don't leak). Each rung delegates `findType` /
+`findModule` down. Call sites read pre-analyzed funcDef signatures via
+`funcCtx.findType(fncall.typ).findFunctionDefs(name, arity, access)` —
+no re-analysis of arg types or return types per call site. Body-level
 analyzed types back-reference the phase-A defs that produced them
-(`AnalyzedFile.def` / `AnalyzedModule.def`; extern functions carry
-their `AnalyzedFunctionDef`). Scope:
+(`AnalyzedFile.def` / `AnalyzedModule.def` / `AnalyzedStatement.def`;
+extern functions carry their `AnalyzedExternFunction`). Scope:
 
 - **Identity-based lookups only** — the analyzer never resolves a
   user-typed name. Every reference reaching it already carries the
@@ -600,7 +629,8 @@ their `AnalyzedFunctionDef`). Scope:
   to a `parser.LocalType` at resolve time (`ResolvedFunctionCall.typ`);
   argument types carry their parser Module/Generic. Each layer's
   per-file scope answers "given what the layer below handed me,
-  find my enrichment of it", all hash-by-loc:
+  find my enrichment of it" (the resolver rung is name-keyed; the two
+  identity rungs hash by source location):
 
       resolver     FileContext           Identifier   → parser.LocalType
       defanalyzer  ResolvedFileContext   parser.LocalType  → ResolvedLocalType
@@ -609,163 +639,197 @@ their `AnalyzedFunctionDef`). Scope:
   Aliased imports (`import { u8 as Byte }`) can never miss.
   Bare-literal defaults are bound at resolve time too
   (`resolveLiteral` looks up `Literal.defaultType` — "i32"/"f32"/
-  "String" — against the FileContext and stores the parser.Module on
+  "string" — against the FileContext and stores the parser.Module on
   `ResolvedLiteral.default`); phase A carries the resolved default as
   an `AnalyzedModuleArgumentType` on `AnalyzedDefLiteral.default`,
   which phase B's `analyzeBareLiteral` reads directly (module-argtype
   throughout — no re-wrapping). See
   plans/plan_identity_based_lookups.md and
   plans/plan_alias_lookup_cleanup.md.
-- **Per-file context = fileDef + fileCtx, minimal params** —
-  phase A threads the `ResolvedFileContext` it is building and stores
-  it on `AnalyzedDefFile.scope`; phase B threads the
-  finished `fileDef: AnalyzedDefFile` (identity scope,
-  resolver file, analyzed defs) plus the body-level
-  `fileCtx: AnalyzedFileContext` built at `analyzeFile` entry.
-  Phase-B shape: `(appDef, fileDef, fileCtx, module, funcCtx,
-  ...)` where `module` is the enclosing `AnalyzedDefModule`
-  (body walkers reach the resolver module via `module.resolved`);
-  the extract helpers (`extractDataDef` / `extractStructFor`
-  / `extractUnionFor`) dispatch off the AnalyzedFileContext. Wider
-  contexts stay off the signatures: `app: ResolvedApp` appears only
-  in phase A's file walk, where the app is the subject (`analyze*` /
-  `analyzeDefApp` / `analyzeDefFile` and
-  `analyzeDefImport`'s `app.findFile`). Phase B never sees
-  it. `fileDef.findType` stays local-only by design —
-  `analyzeImport` fetches an imported type's analyzed twin through it
-  (from the source file's fileDef), so the name must be DEFINED there,
-  not merely visible.
+- **One context per walker, minimal params** — phase A threads
+  `(fileCtx: ResolvedFileContext, typeCtx: ResolvedTypeContext, ...)`
+  and stores the file context on `AnalyzedDefFile.scope`; phase-B body
+  walkers take a single `funcCtx: AnalyzedUserFunctionContext` (module
+  and file walkers the rung above it). Wider contexts stay off the
+  signatures: the app appears only in the file walks, where it is the
+  subject (`analyzeDefApp` / `analyzeDefFile` / `analyzeDefImport` via
+  `ResolvedAppContext`; `analyze*` / `analyzeFile` via
+  `AnalyzedDefApp`). `AnalyzedDefFile.findType` stays local-only by
+  design — an imported type's analyzed twin is fetched through the
+  SOURCE file's fileDef, so the name must be DEFINED there, not merely
+  visible.
 
-- **Overload selection** — at each function-call site, every
-  candidate funcDef is unified against the call's argument types
-  via `AnalyzedImplMap` + `merge`. The unique survivor is picked;
-  ambiguity is rejected.
-- **Concretization** — funcDef return types and match-subject
-  unions are rewritten through `concrete(argType, implMap)` using the
-  inferred impls so downstream sites see substituted types. The map is
-  identity-keyed by `ResolvedGeneric`; the old positional overload that
-  re-zipped against the resolver's `genericTypeIndex` is gone.
-- **Union-initializer parametric inference** — the initializer walks
-  its kwargs, checking each value against its variant field type
-  (`analyzeValueTypeAgainstDefType`) for the bindings that kwarg
-  contributes, and `merge`s them across fields (inconsistent bindings
-  rejected). The merged map concretizes the receiver's result type via
-  `concrete()` — covered slots bound, uncovered slots left free
-  (leave-as-is) — and the resulting `AnalyzedModuleArgumentType`
-  carries that map as its own `impls`.
-- **Literal type inference + validation** — the `analyzeLiteral`
-  helper on the analyzer facade dispatches on `ResolvedLiteralDef`
-  and validates the literal text against all integer kinds plus
-  String (parsing lives in `analyzer/literalparse.nim`).
-  `analyzeArgumentList`, `analyzeKeywordArgument`, and
-  `analyzeLiteralInitializer` all route through it.
+- **Overload selection** — `analyzeArgumentList` analyzes the call's
+  arguments against each candidate funcDef (the candidate's declared
+  arg types are the `expected` context), then matches each argument
+  type against its declared type via `analyzeValueTypeAgainstDefType`,
+  accumulating an `AnalyzedImplMap` with `merge`. The unique survivor
+  is picked; no match or more than one is rejected with every
+  candidate's error listed.
+- **Value-vs-def matching** — `analyzeValueTypeAgainstDefType` walks a
+  value type and a declared type in lockstep and PRODUCES the generic
+  bindings: module vs module must be the same module, recursing into
+  each impl slot; a def-side generic binds `generic → valType` (after
+  the `analyzeDefImpl` constraint check); a def-side module against a
+  value-side generic is rejected. `merge` enforces one concrete type per
+  generic per construction.
+- **The impl map is the type's impls** — an
+  `AnalyzedModuleArgumentType`'s `impls` IS its `AnalyzedImplMap`
+  (`OrderedTable[ResolvedGeneric, AnalyzedImpl]`, `AnalyzedImpl` = the
+  bound argtype + the concretized contract defs), built once in
+  `analyzeDefModuleArgumentType` and kept in slot order, so consumers
+  (a match subject, a `try` call's `Status` slots) read bindings
+  straight off the type. `concrete(argType, implMap)` (in
+  `defanalyzer/argtype.nim`) rewrites funcDef return types and
+  variant-field types through it — single-pass and deliberately not
+  chained, so independent generics stay independent.
+- **Initializer parametric inference** — struct and union initializers
+  seed the map with the ref's explicit impls (`Pair[u8] { ... }`), walk
+  their kwargs (`analyzeKeywordArgument` checks each value against its
+  field type and carries the bindings it contributes), and `merge`
+  them across fields, so kwargs binding the same generic must agree.
+  A union initializer then rebuilds the map over the union's full
+  require slots: covered slots bound, uncovered ones left as the free
+  generic (leave-as-is).
+- **`try` calls** — `analyzeFunctionCall`'s `fckTry` arm requires the
+  callee to return `Status`, reads its `(Value, Error)` slots
+  (`statusSlots`), requires the enclosing function to return a
+  `Status` with the same error type, and evaluates to `Value`
+  (`newAnalyzedTryFunctionCall`, kind `afckTry`).
+- **Literal validation** — literal text is parsed eagerly at parse
+  time; `ResolvedLiteralDef.validate` (`resolver/datadef.nim`) fits a
+  value against its target via `validateInteger` / `validateFloat` /
+  `validateString` (`parser/literals.nim`), covering all eight integer
+  kinds, `f32` / `f64`, and `string`. `analyzeBareLiteral` and
+  `analyzeLiteralInitializer` route through it.
 - **Bare-literal contextual defaulting** — bare literals (`x = 10`,
-  `f(1)`, `Struct { field: "data" }`) parse as `ekLiteral`
+  `f(1)`, `Struct { field: "data" }`) parse as `iekLiteral` inline
   expressions and reach the analyzer typeless. `analyzeExpression`
   takes an `expected: Option[AnalyzedArgumentType]` from every
-  caller; the `rekLiteral` arm dispatches through `analyzeBareLiteral`,
-  which picks a concrete type by rule: `some(module w/ literal data
-  def)` → adopt (concrete adapt); `some(generic)` or `none` →
-  default to `i32` / `f32` / `String`. The value is then fit-checked
+  caller; the `adekLiteral` arm dispatches through `analyzeBareLiteral`,
+  which picks a concrete type by rule: `some(module)` → adopt (an error
+  if that module is a struct/union); `some(generic)` or `none` →
+  default to `i32` / `f32` / `string`. The value is then fit-checked
   and wrapped as an `AnalyzedLiteralInitializer` under `aekInitializer`,
   so no downstream site sees an untyped bare literal. Defaults must
   be in scope — `@std` auto-injection handles this for every `.asl`
   file. Concrete positions thread `expected` from the callee's
   declared arg types (per-candidate for overloads), the struct/
-  union kwarg's field type (post-implMap concretization for unions),
-  and the getter-assignment RHS's field type.
-- **Case-pattern duplicate detection** — `checkDuplicate[T: SomeInteger]`
-  handles all eight integer kinds in `analyzer/patterns.nim`.
+  union kwarg's field type, and the getter-assignment RHS's field type.
+- **Match checking** (`analyzer/pattern.nim`) — a variable pattern is
+  allowed only in the last case. Union matches reject duplicate
+  variants and must cover every variant unless that trailing variable
+  pattern catches the rest (`hasUncoveredCases`; the catch-all is itself
+  rejected when the variants are already covered). Integer matches
+  require the trailing variable pattern, and
+  `checkDuplicate[T: SomeInteger]` rejects duplicate integer patterns
+  across all eight integer kinds. Float / string subjects are rejected.
+  Every case arm must yield the same type (`verifyUniformReturnType`).
 - **Body-level constructs** — getter (struct-shaped property read),
-  variable case patterns (`VariablePattern` is a first-class
-  `CaseDef` variant alongside `LiteralPattern` and `UnionPattern`),
-  statements (bare-expression / variable / getter assignments),
-  match expressions with case-arm bindings,
-  struct + union initializers, literal initializers.
-- **Pattern-side bindings** — `AnalyzedUnionPattern.fields` is now
-  a seq of `AnalyzedBinding = tuple[name: Identifier, argType:
-  AnalyzedArgumentType]` — the body-level replacement for the
-  retired def-level `AnalyzedArgumentDef` wrapper.
-- **Scope tables** — `ResolvedFileContext`
-  (defanalyzer/filecontext.nim) and `AnalyzedFileContext`
-  (analyzer/filecontext.nim) both span imports + local defined types;
-  the same type imported under two bindings lands on one key, so
-  construction only rejects a genuinely different entry under an
-  existing key. `AnalyzedFunctionContext` (analyzer/funccontext.nim,
-  `Identifier → AnalyzedArgumentType`) is the per-function variable
-  scope threaded through the body walkers — variables have no
-  identity beyond their name, so name keying is correct there.
+  case patterns (`AnalyzedCasePattern`: `acpkUnion` / `acpkInteger` /
+  `acpkVariable`), statements (none / variable / getter targets; a
+  getter statement's RHS adopts and must match the field type), match
+  expressions with case-arm bindings, struct + union initializers,
+  literal initializers, `try` calls. A function body's last statement
+  must have the declared return type.
+- **Pattern-side bindings** — `AnalyzedBinding` is a tagged union
+  (`abkVariable` over an `AnalyzedVariable`, `abkVariantField` over an
+  `AnalyzedVariantField` whose type is concretized through the
+  subject's impl map); `AnalyzedUnionPattern.bindings` and the
+  function scope both hold it.
+- **Scope tables** — `ResolvedFileContext` (`defanalyzer/context.nim`,
+  a `Table[parser.LocalType, ResolvedType]` whose entries are
+  local | imported) and `AnalyzedFileContext` (`analyzer/context.nim`)
+  both span imports + local defined types; the same type imported under
+  two bindings lands on one key, so construction only rejects a
+  genuinely different entry under an existing key. The variable scope
+  on `AnalyzedUserFunctionContext` is keyed by `Identifier` —
+  variables have no identity beyond their name, so name keying is
+  correct there.
 
-The remaining gaps are listed in **What's Next**. The headline ones
-are the equality-vs-unification trap for free-generic types and the
-substitution-chain handling in `concrete()` — both are flagged as
-`TODO(union-inference)` in `analyzer/defanalyzer/argtype.nim` /
-`analyzer/defanalyzer/analyzedimplmap.nim` and surface as case-arm uniformity
-check failures on fixtures that flow leave-as-is values through
-`verifyUniformReturnType` (the 2 known integration failures).
+The remaining gaps are listed in **What's Next**.
 
 ## Project Structure
 
 ```
 src/
-  asl.nim              entry point — the `build` command pipeline
-  cli.nim              CLI parsing via argparse (--vendor, --indent-width, …)
-  codegen.nim          C code generation from the analyzed app
-  expander.nim         post-analysis expander (off the CLI path)
-  lifetime.nim         lifetime / ownership pass (skeleton, off the CLI path)
+  asl.nim              entry point — the `build` command pipeline; `lsp`
+                       hands off to lsp/main.nim
+  cli.nim              CLI parsing via argparse (`build` / `lsp`,
+                       --vendor, --indent-width, …)
+
+  lsp/                 `asl lsp` — language server over stdio (plans/plan_lsp.md).
+    main.nim           barrel + stdio loop (read frame → decode → handle → write)
+    server.nim         LspServer state + pure `handle`; compiles each open
+                       document as a root with open buffers as overlays
+    message.nim        LspMessage tagged union decoded from JSON-RPC
+    diagnostic.nim     compiler error string → Diagnostic (ordered shapes)
+    jsonrpc.nim        Content-Length framing + response/notification builders
+    documenturi.nim    file:// URI ↔ absolute path
 
   # Five flat sibling packages — the compiler pipeline, in order. Each
-  # is a package with an `index.nim` barrel; a barrel re-exports only its
-  # OWN submodules (no cross-layer re-exports), so a consumer imports each
-  # layer whose types it uses directly.
+  # is a package with a `main.nim` barrel that re-exports its OWN
+  # submodules; the only cross-layer re-export is the parser's re-export
+  # of the tokenizer. A consumer imports each layer whose types it uses.
 
   tokenizer/           Phase 1 — lexing.
-    index.nim          driver: ordered token specs → seq[Token]; Trojan-
-                       Source defense; synthetic trailing newline
-    constants.nim      token matchers (consumeIdentifier / Integer / Float /
-                       String / Comment / …), Punctuations, Trojan codepoints
+    main.nim           `tokenize` driver: ordered token specs → seq[Token];
+                       Trojan-Source defense; synthetic trailing newline
+    spec.nim           TokenSpec / TokenSpecMatcher + the ordered
+                       TOKEN_SPECS matchers
+    constants.nim      Punctuations, lexeme constants, Trojan-Source
+                       codepoint tables (bidi / zero-width / invisible)
     token.nim          Token + TokenKind (tkPunctuation, tkSpace, tkNewline,
                        tkIdentifier, tkInteger, tkFloat, tkString, tkComment)
     location.nim       Location (filepath:line:col) + advance
-    spec.nim           TokenSpec / TokenSpecMatcher
 
   parser/              Phase 2 — recursive-descent parse into the AST.
-    index.nim          barrel: Spec[T] combinators (oneOf / any / atLeastOne /
-                       optional / map), leaf specs, and the multi-file
-                       `parse*` entry point
-    identifiers.nim literals.nim imports.nim argtype.nim refs.nim
-    datadef.nim statement.nim function.nim types.nim app.nim
+    main.nim           barrel: re-exports every module below; file-level
+                       grammar (.asl / .aslr) and the multi-file `parse*`
+                       entry point (DFS walk, cycle detection, overlays)
+    parser.nim         Parser, ParserError, Spec[T] + combinators, leaf
+                       specs; re-exports the tokenizer
+    identifiers.nim scalars.nim literals.nim getter.nim importpath.nim
+    imports.nim argtype.nim refs.nim datadef.nim pattern.nim
+    statement.nim function.nim generic.nim module.nim types.nim app.nim
                        per-concept AST modules (type + constructor +
-                       accessors); constructors enforce invariants
-    decorator.nim error.nim utils.nim
-                       decorator sugar, ParserError, and the generic
-                       bfs / topoSort helpers
+                       accessors + grammar specs); constructors enforce
+                       invariants
+    decorator.nim      decorator sugar
+    expansion.nim      ANF expand procs (reference only, not imported)
 
   resolver/            Phase 4 — name resolution → ResolvedApp.
-    index.nim          facade: every cross-cluster `resolve*` proc; re-
-                       exports its own submodules (NOT the parser layer)
-    argtype.nim datadef.nim function.nim functioncontext.nim refs.nim
-    statement.nim types.nim imports.nim app.nim indexing.nim
-                       resolved-side types by cluster, plus FileContext /
-                       FunctionContext scope lookups
+    main.nim           facade: every `resolve*` proc; re-exports its own
+                       submodules (NOT the parser layer)
+    argtype.nim datadef.nim function.nim refs.nim statement.nim
+    types.nim imports.nim indexing.nim
+                       resolved-side types by cluster
+    app.nim            FileContext (name-keyed scope), ResolvedFile,
+                       ResolvedApp
+    functioncontext.nim  FunctionContext (variable names in scope)
 
   defanalyzer/         Phase 5A — definition analysis.
-    index.nim          phase-A analyze* procs (analyzeDefGenericArgumentType
+    main.nim           phase-A analyze* procs (analyzeDefGenericArgumentType
                        → analyzeDefApp); re-exports its own submodules
     argtype.nim datadef.nim function.nim statement.nim types.nim
-    refs.nim app.nim importdef.nim context.nim
-                       def-level analyzed types + ResolvedFileContext
+    refs.nim importdef.nim
+                       def-level analyzed types (+ AnalyzedImplMap,
+                       merge / concrete in argtype.nim)
+    context.nim        ResolvedFileContext + ResolvedTypeContext
+    app.nim            AnalyzedDefFile, AnalyzedDefApp, ResolvedAppContext
 
   analyzer/            Phase 5B — body analysis, top of the stack.
-    index.nim          phase-B body walkers + public two-pass `analyze*`
+    main.nim           phase-B body walkers + public two-pass `analyze*`
     pattern.nim statement.nim function.nim module.nim app.nim
-    funccontext.nim filecontext.nim
-                       body-level analyzed types + per-scope contexts
+                       body-level analyzed types (AnalyzedApp in app.nim)
+    context.nim        AnalyzedFileContext → AnalyzedModuleContext →
+                       AnalyzedUserFunctionContext
 
 examples/
   base.aslr            standard library (extern fns) — default `std` vendor
   *.asl                positive test fixtures
   errors/*.asl         negative test fixtures (each documented)
+  actor.c allocator.c  hand-written reference C (actor runtime, allocator)
 
 tests/
   config.nims          sets the search path to `$projectDir/../src`
@@ -776,27 +840,35 @@ tests/
   test_combinators.nim Spec / combinator unit tests
   test_ast.nim         AST constructor invariants (covers src/parser/)
   test_grammar.nim     single-file parse tests across the grammar specs
-  test_loader.nim      BFS / topo / parent-escape tests
+  test_loader.nim      multi-file load order, cycles, import-path
+                       fallbacks, parent escape, vendor injection, overlays
   test_resolver.nim    end-to-end resolver tests
   test_analyzer.nim    end-to-end analyzer tests
-  test_utils.nim       bfs / topoSort helper tests
-  test_cli.nim         CLI parsing tests (--vendor flag, etc.)
+  test_cli.nim         CLI parsing tests (--vendor flag, lsp command, etc.)
+  test_lsp.nim         LSP error mapping, URI/message decoding, `handle`
+
+tooling/vscode-asl/    VSCode extension: TextMate grammar + `asl lsp` client
+.vscode/tasks.json     Cmd+Shift+B `asl build` task with problem matchers
 
 test.sh                regression runner (exit-code based)
+plans/                 design plans (plan_*.md) + DAG-IR step sketches
+                       (dag_ir_core.nim, phase_*.nim; plan_dag_ir.md)
 grammar.md             source-of-truth domain grammar
-tasks.md               DDD refactor roadmap
-bugs.md                issue tracker (open + resolved)
-lessons.md             design retrospective
 documentation.md       user-facing language reference
+validations.md         catalogue of enforced validations, by phase
+lessons.md             design retrospective
 overview.md            this file
 ```
 
 Cross-layer imports are relative-path with the barrel — e.g.
-`import ../tokenizer/index as tokenizer`, `import ../parser/index as
-parser`. Each barrel re-exports only its own submodules, so a consumer
-imports every layer whose types it uses directly (there is no single
-"import the top and get everything" barrel). There is no `nim.cfg`; the
-tests set their search path via `tests/config.nims`.
+`import ../parser/main as parser`, `import ../resolver/main as
+resolver`. Each barrel re-exports its own submodules; the one
+cross-layer re-export is `parser/parser.nim` re-exporting the
+tokenizer (so `import ../parser/main` also brings `Location` /
+`Token`). Beyond that a consumer imports every layer whose types it
+uses directly (there is no single "import the top and get everything"
+barrel). There is no `nim.cfg`; the tests set their search path via
+`tests/config.nims`.
 
 ## Design Patterns
 
@@ -808,11 +880,13 @@ display boundary (`asl.nim`), not in library code.
 **Private fields + readonly accessors** — types are `ref object`
 with unexported fields. Public accessor procs (`proc name*(m): T`)
 provide readonly access. Variant-field accessors assert the kind
-before returning (`assert db.kind == dbkStruct`).
+before returning (`assert(db.kind == ddkStruct, ...)` in
+`DataDef.struct`).
 
-**Tagged unions** — `Expression`, `Statement`, `DataDef`,
-`Initializer`, `CasePattern`, `Function`, `Type`, `File`,
-`ImportPath` all use `case kind:` discriminators with exhaustive
+**Tagged unions** — `InlineExpression`, `Expression`, `Statement`,
+`DataDef`, `Initializer`, `CasePattern`, `FunctionCall`, `Function`,
+`LocalType`, `File`, `Import`, `ImportPath` (and their resolved /
+analyzed twins) all use `case kind:` discriminators with exhaustive
 matching. Naming normalized: every "definition" concept uses the
 `Def` suffix (`ArgumentDef`, `FunctionDef`, `VariantDef`, `StructDef`,
 `UnionDef`, `LiteralDef`, `DataDef`) so the union umbrella and its
@@ -839,130 +913,99 @@ Two suites, both runnable from the repo root:
 
 `nimble test` — unit suite under `tests/`. Each component (tokenizer,
 combinators, AST constructors, grammar, loader, resolver, analyzer,
-CLI, utils) has its own `test_*.nim` file aggregated by
-`tests/all.nim`. **327 tests** covering positive paths, negative
+CLI, LSP) has its own `test_*.nim` file aggregated by
+`tests/all.nim`. **394 tests** covering positive paths, negative
 paths, edge cases, Trojan Source defenses in the tokenizer, direct
-rollback / composition tests for every combinator atom, and the
-generic graph algorithms in `src/utils.nim`.
+rollback / composition tests for the combinators, multi-file loading
+(cycles, diamonds, source overlays), and the language server's error
+mapping and message handling.
 
-`./test.sh` — integration suite that drives the binary against
-every `examples/*.asl` fixture and asserts exit codes:
+`./test.sh` — integration suite that builds the binary and runs
+`asl build` against every fixture, asserting exit codes:
 
 - **Positive** (`examples/*.asl`): must exit 0
 - **Negative** (`examples/errors/*.asl`): must exit non-zero
 
 Each fixture has a leading `#` comment documenting what feature or
-error condition it exercises. 35 fixtures total (20 positive + 15
-negative; two of the error fixtures are dependency files skipped by
-the runner).
+error condition it exercises. `test.sh` drives 36 fixtures (21 positive
++ 15 negative; `dep.asl` and `cycle_b.asl` in `examples/errors/` are
+dependency files the runner skips). Current result: 35/36 — the one
+red fixture is `nested_generics.asl`, a correct rejection of an
+aspirational example: it uses types (`Map`, and the pre-rename
+`String`) that `base.aslr` does not define.
 
 ## What's Next
 
-The **Analyzer phase is functionally complete** — `analyze*` walks
-the `ResolvedApp` end-to-end and returns an `AnalyzedApp` that
-holds a type-rich representation of every value, expression, and
-statement in each function body. Unit suite **351/351** (green);
-integration **33/35** (2 fixtures red on the equality-vs-unification
-gap, see Focused TODOs). Recent structural work: the
-impl-map-per-argument-type rebuild (the intrinsic `AnalyzedImplMap` on
-every module argtype) and its resolver/defanalyzer duplication cleanup
-(delegated function-def lookup, shared `indexByName` generic), the
-two-pass
-analyzer recovery (plans/plan_analyzer_two_pass.md), the
-identity-based lookup migration
-(plans/plan_identity_based_lookups.md +
-plans/plan_alias_lookup_cleanup.md — post-resolution lookups key on
-parser-level identity, immune to aliased imports), and the fileCtx
-threading removal (plans/plan_filescope_threading.md). See tasks.md
-for the DDD-refactor trail that preceded them.
+**The front end is green.** tokenizer → parser → resolver →
+defanalyzer → analyzer runs end to end, and `compile` returns
+`[SUCCESS]` once `analyze` does. Unit suite **394/394**; integration
+**35/36** (only `nested_generics.asl`, a correct rejection — see
+Testing). Recent structural work: the collapse of the assignment /
+setter / bare-expression forms into one `Statement` at every layer with
+value positions typed `InlineExpression`; the phase-B context ladder
+(`analyzer/context.nim`) replacing the separate import and app contexts
+of phase B; the (fileId, typeId, functionId) identity path on resolved
+entities; two-parameter `Status[Value, Error]` with `T!` sugar and the
+`try` operator; the single-DFS multi-file walk in `parse*`; and the
+removal of the dead WIP codegen and lifetime skeleton from `src/`.
+Earlier arcs are recorded in plans/plan_analyzer_two_pass.md,
+plans/plan_identity_based_lookups.md,
+plans/plan_alias_lookup_cleanup.md and plans/plan_filescope_threading.md.
 
-What the analyzer does today (all wired):
+**Next arc — monomorphize → lifetime → codegen**
+(plans/plan_monomorphization.md):
 
-- Overload selection at function-call sites — each candidate funcDef
-  is unified against the call's argument types via `AnalyzedImplMap`
-  + `merge`, and uniqueness picks the survivor (ambiguity rejected).
-- Impl-list arity + generic constraint satisfaction — both owned by
-  `analyzeDefModuleArgumentType`: it counts the impls against the
-  module's require slots ("expects N impls but found M") and probes
-  each impl by identity (contract funcDefs concretized at definition
-  level, checked via `findImplDef`). The resolver no longer does any
-  of this — it only populates the impls.
-  `analyzeValueTypeAgainstDefType` still runs use-site checks.
-- Concretization — every argument type carries its own generic-impl
-  map intrinsically: an `AnalyzedModuleArgumentType`'s `impls` IS the
-  ordered slot→impl map, built once in `analyzeDefModuleArgumentType`
-  (where the slot generics are already resolved in the module's own
-  scope). Consumers read the bindings straight off the type —
-  `expression.impls` is just `expression.argType.impls`, and a match's
-  variant-field concretization pulls the map off the subject type — so
-  a `match` on a plain function argument (`s: Status[u8]`) sees
-  `{Any: u8}` with no file-context re-derivation. The matched
-  funcDef's return type is still rewritten through `concrete()` with
-  the call-inferred impls.
-- Struct / union initializer inference — the initializer walks its
-  kwargs; each kwarg's value is checked against its field type by
-  `analyzeValueTypeAgainstDefType`, which yields the generic
-  bindings that field contributes (`value: T` + a `u8` value binds
-  `T -> u8`). Those bindings ride on `AnalyzedKeywordArgument.impls`,
-  and the initializer `merge`s them across fields — so kwargs
-  binding the same generic must agree (`Pair { a: T, b: T }` with
-  `a: u8, b: String` is rejected). The merged map concretizes the
-  initializer's result type (`Pair[T]` → `Pair[u8]`), which then
-  carries that map as its own `impls`.
-- Literal type inference — the `analyzeLiteral` helper dispatches on
-  `ResolvedLiteralDef` and validates every integer kind
-  (U8/U16/U32/U64/I8/I16/I32/I64) plus String against the expected
-  target. `analyzeArgumentList`, `analyzeKeywordArgument`, and
-  `analyzeLiteralInitializer` all route through it.
-- Case-pattern duplicate detection — `checkDuplicate[T: SomeInteger]`
-  handles all eight integer kinds uniformly.
-- Body-level constructs — getter (struct-shaped property read),
-  variable case patterns (`VariablePattern` is a first-class
-  `CaseDef` variant), statements (bare-expression / variable / getter
-  assignments), match expressions with case-arm bindings, struct + union
-  initializers, literal initializers.
+    analyze (AnalyzedApp)
+      → monomorphize          specialize generics; concrete C-typed AST
+      → lifetime / ownership  on the concrete AST; in-place vs copy
+      → codegen               C now; Verilog/VHDL later
 
-**Phase B (body analysis) is the next fix target.** The phase-A
-hardening arc — the identity ladder with assert-backed lookups, the
-TypeContext/visibility machinery, definition-level constraint
-satisfaction, input-signature uniqueness — was groundwork: phase B's
-unification rebuild can now assume every def-level fact it consumes
-is already validated and identity-addressable. The equality-vs-
-unification TODO below is the bug that rebuild exists to fix.
+Monomorphization runs after analysis (concrete argtypes and each impl's
+concrete contract defs are available) and is driven demand-first from
+the fully concrete `start`, so no generics survive to codegen — a hard
+requirement of the hardware target. Build order (each step ships
+correct; later steps only remove copies):
 
-**The lifetime / ownership pass has a skeleton** (`src/lifetime.nim`,
-`analyzeLifetime`), kept OFF the CLI compile path — the call in
-`asl.nim` is commented out because the pass is incomplete (most
-expression/statement arms return `todo:` errors). It walks the entry
-point (`app.entry`) statement-by-statement, seeding a scope that
-resolves every variable to a `Source` (input-param position | local
-statement index), and recurses into module-function call targets via
-new identity indexes: `AnalyzedApp.findModule`,
-`AnalyzedModule.findFunction`, and `AnalyzedFunctionCall.localType`.
-The intended design — a per-function value graph (node = value, not
-name), consumer→producer edges, escape / uniqueness / last-use
-queries, and interprocedural ownership summaries — is captured in
-plans/plan_dag_ir.md. No memoization / cycle guard yet; it lands once
-the recursive arms do.
+1. **Monomorphize** with a memo/worklist, rejecting strictly-growing
+   instantiations (subterm occurs-check, depth-cap seatbelt).
+2. **Conservative memory** — always shallow-copy structs, always
+   persistent Array/Map; no ownership analysis yet.
+3. **Struct in-place** (optional) — mutate unique structs instead of
+   copying, or keep structs always-copy.
+4. **Transient marking** for Array/Map — the must-be-unique analysis on
+   the value graph flips provably-unique ops to in-place.
+5. **Formal obligations** (`@requires unique`) once the ACSL layer
+   exists.
+
+Open decisions in the plan: whether structs get an in-place path at
+all; type vs. code-only monomorphization (structs/unions are
+pointer-backed, so only size/clone/dispatch code may need duplicating);
+the collection capacity model for HDL; and the boundary serialization
+format. The value-graph / DAG-IR design downstream of this is
+plans/plan_dag_ir.md.
+
+**Editor tooling.** `asl lsp` (phase 0, live diagnostics) and the
+VSCode client are in; the roadmap and open items are in
+plans/plan_lsp.md, tagged at their code sites as `TODO(parser-errors)`
+(report the furthest parse failure, not the last alternative tried),
+`TODO(structured-errors)` (structured location + message errors across
+all layers, retiring the string parsing), `TODO(lsp-error-shapes)` and
+`TODO(lsp-stale-edits)`.
 
 Focused TODOs still open:
 
 - **Equality vs unification for analyzed types**
-  (`analyzer/defanalyzer/argtype.nim`, the `==` on `AnalyzedArgumentType` —
-  flagged as `TODO(union-inference)`). Assignability against an
-  expected type that carries free generics (post leave-as-is) needs
-  unification, not hash equality. Surfaces as the case-arm
-  uniformity check failing on fixtures that flow free-generic
-  values through `verifyUniformReturnType` — the 2 known
-  integration failures (`match.asl`, `nested_generics.asl`). Fix is
-  to route every assignability check through
-  `analyzeValueTypeAgainstDefType` + `merge`, turning the same-key
-  conflict check into a unification check (a free generic unifies with
-  the concrete type it is matched against). This is what both known
-  integration failures (`match.asl`, `nested_generics.asl`) need —
-  their `verifyUniformReturnType` errors are a still-free generic
-  comparing unequal to a concrete type. Owned by
-  plans/plan_deferred_typing.md.
+  (`defanalyzer/argtype.nim`, the hash-based `==` on
+  `AnalyzedArgumentType`). Several assignability checks still compare
+  with `==` / `!=` rather than unifying: `verifyUniformReturnType`
+  (case-arm uniformity), the last-statement return check in
+  `analyzeUserFunction`, the getter-statement field check in
+  `analyzeStatement`, and `merge`'s same-key conflict check. A
+  still-free generic (e.g. an uncovered union slot left as-is) then
+  compares unequal to the concrete type it should unify with. No
+  current fixture trips it. Fix is to route every assignability check
+  through `analyzeValueTypeAgainstDefType` + a unifying `merge`. Owned
+  by plans/plan_deferred_typing.md.
 
   Independent generics are deliberately NOT collapsed into each other:
   a map like `{Sample → K, K → u8}` is correct as-is — `Box[Sample, K]`
@@ -970,173 +1013,60 @@ Focused TODOs still open:
   earlier draft flagged a "substitution chain" bug here; that was a
   misdiagnosis — flattening the chain would wrongly couple two
   independent parameters.)
-- **Two generic-substitution engines (resolver-positional vs
-  analyzer-map).** The core "instantiate generics into a parameterized
-  type" operation is forked into two independent implementations over
-  two type universes:
-  - resolver: `concrete(argType, replacement, generic)`
-    (`resolver/argtype.nim:160`, cascading through `argdef.nim`,
-    `funcdef.nim`, `generic.nim`) substitutes ONE `parser.Generic` by
-    identity, recursively at any depth. Used at DEFINITION time to
-    ground contract funcDefs before the `findImplDef` identity probe.
+- **Two generic-substitution engines (resolver vs analyzer).** The
+  "instantiate generics into a parameterized type" operation exists
+  twice, over two type universes:
+  - resolver: `concrete(argType, subst: ResolvedImplMap)`
+    (`resolver/argtype.nim`, a `Table[Generic, ResolvedArgumentType]`),
+    reached via `ResolvedGeneric.concrete` with a one-entry map. Used
+    at DEFINITION time to ground contract funcDefs before the
+    `findImplDef` identity probe.
   - analyzer: `concrete(argType, implMap: AnalyzedImplMap)`
-    (`defanalyzer/analyzedimplmap.nim:35`) substitutes ALL free
-    generics at once via the ordered `ResolvedGeneric ->
-    AnalyzedArgumentType` map. Used at USE time (call returns,
-    initializer results, match fields).
-  The two must agree on substitution semantics for soundness, yet are
-  maintained separately and already diverge: the map engine has the
-  substitution-chain gap above (one-pass `getOrDefault`), the resolver
-  engine sidesteps chains only because it rewrites one generic per
-  call and so cannot express a multi-binding instantiation in a single
-  pass. Full consolidation is hard (different type universes), but the
-  fork is a latent-soundness liability worth naming; the map engine is
-  the intended long-term home.
+    (`defanalyzer/argtype.nim`), keyed by `ResolvedGeneric`. Used at
+    USE time (call returns, initializer results, match fields).
+  Both are map-based and single-pass (deliberately not chained), but
+  they are maintained separately and must keep agreeing on
+  substitution semantics; full consolidation is hard (different type
+  universes), and the fork is a latent-soundness liability worth
+  naming.
 - **Inconsistent absence contract across the `find*` family.** The
-  same conceptual "look X up by name/identity" is spelled with three
-  different failure modes and no legible rule: `findFunctionDefs` ->
-  `Result`, `findFunctionDef` -> `Option` (resolver) or assert-returning
-  bare value (analyzed twin), and `findVariant` / `findType` /
-  `findModule` each expose BOTH a `Result` overload AND an
-  assert-returning bare overload under one name. The intended rule
-  (user error -> `Result`, compiler invariant -> `assert`) is real but
-  applied unevenly — a reader can't predict a `find*`'s failure mode
-  from its signature. Low risk, but a genuine legibility debt; worth a
-  naming convention (e.g. `tryFind*` returns, `find*` asserts).
-- **Fabricated sentinel locations in identity reconstruction.**
-  `newLocation()` (a 0:0 sentinel) is minted at ~5 sites (across the
-  `defanalyzer/` and `resolver/` argument-type / type clusters and
-  `parser/app.nim`) whenever a `*ArgumentType` is
-  rebuilt from a def rather than a source position. Any diagnostic
-  built from a reconstructed self-type points at 0:0. The single
-  `AnalyzedArgumentType.self` spot is already flagged below; the
-  pattern is systemic to every `self`/identity reconstruction. Fix
-  when a phase first needs to render one of these locs — the self
-  shape should carry the use site's loc.
-- **Phase-B re-entries analyze DEF-side argtypes in the USING
-  file's scope** — found by the cross-file provenance tests
-  (test_analyzer.nim documents the repro). Body walkers re-enter
-  `analyzeDefArgumentType(fileDef.scope, ...)` on an imported
-  module's OWN definition types — struct/variant field types
-  (`analyzeStructInitializer`, `analyzeUnionCasePattern`) and union
-  generic slots — so a field typed by the module's contract generic
-  (`Pair { value: Comparable }`) hits
-  `analyzeDefGenericArgumentType` → `fileCtx.findGeneric` against
-  the use site's context and crashes on the phase-A `[BUG]` assert
-  when the contract legitimately isn't imported there (legal since
-  the P3-flip). The existing suite never hit it because every test
-  container is `Array` with an explicit phantom header — no
-  generic-typed field. Symptom chain: `Pair[Impl] { value: x }` in
-  a file that imports Pair but not Comparable → AssertionDefect
-  "type `Comparable` missing from the file context". Two fix
-  routes, both P3-shaped: read the stored twin (the defining file
-  already analyzed its own fields — B's `AnalyzedDefModule`
-  carries the `AnalyzedArgumentType`s; reachable via
-  `appDef.findFileDef(entry.imported.impFile.path)`) or route the
-  re-entry's fileCtx to the owner's scope by module-entry
-  provenance, mirroring the P3-swap dispatch. Site-WRITTEN
-  argtypes (initializer/ref impl lists, synthetic literal types)
-  stay in the use-site scope — only def-side re-entries move.
-  ROUTE CHOSEN: read the stored twin — phase B was incrementally
-  rewired to walk the AnalyzedDef* bundle instead of re-deriving.
-  DONE: analyzer/index.nim no longer calls `analyzeDefArgumentType` at
-  all — the module/function walk, the whole statement/expression
-  walk, the statement outputs, the initializers, and finally the
-  union case-pattern field types all read what phase A already
-  analyzed (the last read `fieldDef.argType` off the analyzed
-  variant twin). Every body output now anchors on its AnalyzedDef*
-  twin (getter → AnalyzedArgumentDef; function call / kwarg /
-  case block / match → their def twins; union pattern →
-  AnalyzedVariantDef). The cross-file re-entry crash path is
-  structurally gone. Acceptance gate: the two deferred positive
-  provenance tests (see test_analyzer.nim's suite comment) go back
-  in once concretization is restored.
-
-  CURRENT STATE: 351/351 unit (green), 33/35 integration. The
-  impl-map-per-argument-type replacement for the stripped positional
-  concretization has landed AND the union initializer now builds its
-  result type from the completed impl map — which flipped the 3
-  formerly-red unit tests (bare-literal default in a generic union
-  kwarg, both banged-return cases) green. The only remaining reds are
-  the 2 integration fixtures `match.asl` and `nested_generics.asl`,
-  which trace to the equality-vs-unification + substitution-chain gaps
-  above, not the impl-map plumbing.
-
-- **ImplMap-per-argument-type — the concretization rebuild (DONE).**
-  WHY: phase B used to rebuild concrete instantiations positionally —
-  impls stored as a bare seq, each consumer re-zipping against the
-  resolver's `genericTypeIndex` and re-entering `analyzeDefArgumentType`
-  to translate slots, per initializer and per case pattern. Positions
-  only compose when the substituted generic is one of the container's
-  OWN slots in the container's OWN order — shape-fragile and
-  resolver-coupled. WHAT (shipped):
-  an `AnalyzedModuleArgumentType`'s `impls` field now IS its
-  `AnalyzedImplMap` — a single `OrderedTable[ResolvedGeneric,
-  AnalyzedArgumentType]` whose values, in slot order, ARE the
-  positional impls (the seq + separate map collapsed into one). Built
-  once in `analyzeDefModuleArgumentType` where `zip(requires, impls)`
-  already happens; identity-keyed (alias/cross-file-immune); free
-  generics are simply absent keys; slot ORDER is the OrderedTable's
-  insertion order, so `genericTypeIndex` is no longer consulted in
-  phase B. hash/== fold module + ordered values (keys fixed by the
-  module). Consumers read the map straight off the type:
-  `expression.impls` ≡ `expression.argType.impls`, and the retired
-  per-node maps (`variable`/`binding`/`fncall`/initializer `.impls`
-  accessors, and the whole `subjectImplMap` threading through
-  `analyzeCases`/`CaseBlock`/`CasePattern`) collapse into that one
-  read. This completes the function-argument match subject
-  (`match s` on `s: Status[u8]`). `merge`'s still-TODO is the
-  unification check (a free generic vs. a concrete type on the same
-  key) — part of the equality-vs-unification rebuild below. What still
-  keeps the 3 unit + integration cases red is NOT this plumbing but
-  bare-literal type-defaulting in a generic kwarg slot and the
-  module-position equality-vs-unification gap (see below).
-- **Dummy location in `AnalyzedArgumentType.self`**
-  (`analyzer/defanalyzer/argtype.nim`, marked TODO) — the generic arm
-  reconstructs a `ResolvedGenericArgumentType` with a fabricated
-  `newLocation()` (0:0). No current consumer renders that loc
-  (constraint errors report the impl site; hashing ignores loc), but
-  any future diagnostic built from a reconstructed self-type will
-  point nowhere. Fix when the phase-B rebuild touches this path —
-  the self shape should carry the use site's loc.
-- **F32 / F64 / Pointer literal kinds** — Pointer literal positions
-  still return a todo (`analyzer/index.nim`'s literal dispatch).
-- **Impl-map update from literal positions** — when a literal arg
-  flows into a generic position (e.g., `f(K=…)` with literal
-  inferable type), the resulting binding isn't yet recorded.
-- **Nested-impl generic accumulation** — a field typed
-  `Box[u8, Sample]` should contribute `Sample` to the parent's
-  requires; none of the generic-collection walks (the per-type builds
-  in structdef / variantdef / uniondef) descend into impls yet — when
-  this lands, all of them need the same descent.
-- **Require-slot derivation now has a single source** — the
-  construction-time collections in structdef and uniondef feed each
-  resolved type's stored `generics`, and the def analyzer reads those
-  slots off the module's data block (`module.dataDef.requires`)
-  uniformly for both local and imported modules. The former use-site
-  derivation (`fileCtx.inferGenerics`) is gone, so
-  `analyzeDefModuleArgumentType`'s count check is a real diagnostic
-  rather than a [BUG] crash from cross-phase drift. The residual item
-  is only that struct's and union's construction-time collections must
-  keep matching ordering + dedup semantics (and the impl-descent
-  above), since they still feed the one stored slot list.
+  intended rule (user error → `Result`, compiler invariant → `assert`)
+  is real but spelled unevenly: `findFunctionDefs` → `Result`,
+  `findFunctionDef` → assert-returning bare value; `ResolvedUnionDef`
+  has BOTH a `Result` `findVariant` (by name) and an assert-returning
+  one (by `VariantDef`) under one name; `findType` is `Result` on the
+  resolver's `FileContext` and asserting on `ResolvedFileContext` /
+  `AnalyzedDefFile`. A reader can't predict a `find*`'s failure mode
+  from its signature. Low risk, but a legibility debt; worth a naming
+  convention (e.g. `tryFind*` returns, `find*` asserts).
+- **Fabricated sentinel locations.** `newLocation()` (a 1:1 sentinel
+  with an empty filepath) is minted at 5 sites: the auto-injected
+  `@std` import in `parser/app.nim` (2), `ResolvedModule.self` in
+  `resolver/types.nim` (2), and `AnalyzedGenericArgumentType.self` in
+  `defanalyzer/argtype.nim`. Any diagnostic built from a reconstructed
+  self-type points nowhere. No current consumer renders these locs;
+  fix when one does — the self shape should carry the use site's loc.
+  (`resolver/imports.nim` has a related `TODO` on
+  `newResolvedImportedType`'s locations.)
 - **`AnalyzedDefImportedType` stores the twin twice** — `typ` and
   `resolved.localType` are the same object arriving via two
-  different derivations (the def-time `impFile.findType` re-lookup
-  vs the resolve-time P3-pre-1 capture), with no assert tying them.
-  Either derive `typ` from the binding or assert the tie in the
-  constructor.
-- **Type-correctness checks across statements** — assignment
-  compatibility and match exhaustiveness. (Getter-assignment field-type
-  equality is enforced in `analyzeStatement`'s getter arm — the RHS
-  adopts the field type and must match it.)
+  different derivations (`analyzeDefImportedType`'s
+  `impFile.findLocalType` re-lookup vs the resolve-time capture on
+  `ResolvedImportedType`), with no assert tying them. Either derive
+  `typ` from the binding or assert the tie in the constructor.
+- **Diagnostics polish.** The case-arm mismatch in
+  `verifyUniformReturnType` still returns a `todo:` placeholder
+  message; the uncovered-cases errors in `analyzer/pattern.nim` don't
+  name the missing variants (two `TODO`s); `MatchExpression.kind` is
+  set at parse time but never read (`TODO` in `parser/statement.nim`);
+  and float-literal precision warnings go straight to stderr
+  (`TODO(diagnostics)` in `parser/scalars.nim`).
 - **Redundant constraint re-checking — PERFORMANCE, revisit after
   codegen.** The def-time constraint check in
   `analyzeDefModuleArgumentType` runs at every occurrence of a
   parameterized argument type: every field, every funcDef
-  arg/return, every ref/initializer in the statement walk, plus
-  phase B's synthetic argtypes. Because the check compares at
-  DEFINITION level, its verdict is a constant per
+  arg/return, every ref/initializer in the statement walk. Because the
+  check compares at DEFINITION level, its verdict is a constant per
   `(impl root, contract generic, access)` triple — a file writing
   `Array[u8]` fifty times derives the same fact fifty times. The
   natural fix is a per-app memo keyed on that triple (access has
@@ -1147,8 +1077,3 @@ Focused TODOs still open:
   dedicated caching pass over the whole pipeline.
   Priority order is settled: memory-safe C code generation first,
   then the performance pass.
-
-After the analyzer:
-- **IR generation** — lower the analyzed AST into an intermediate
-  representation suitable for optimization and code generation.
-- **Code generation** — emit target code (likely C or LLVM IR).
