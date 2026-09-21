@@ -79,3 +79,20 @@ suite "cli — --vendor flag":
     check r.isOk
     let buildCmd = r.get.build.get
     check buildCmd.vendorRoots["rt"][0] == '/'
+
+suite "cli — lsp command":
+
+  test "lsp defaults indent width and the `std` vendor":
+    let r = parseCliArgs(@["lsp"])
+    check r.isOk
+    check r.get.kind == ackLsp
+    let lspCmd = r.get.lsp.get
+    check lspCmd.indentWidth == 2
+    check "std" in lspCmd.vendorRoots
+
+  test "lsp accepts --vendor and --indent-width":
+    let r = parseCliArgs(@["lsp", "--indent-width=4", "--vendor=rt:./rt.aslr"])
+    check r.isOk
+    let lspCmd = r.get.lsp.get
+    check lspCmd.indentWidth == 4
+    check "rt" in lspCmd.vendorRoots

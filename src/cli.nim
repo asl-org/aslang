@@ -6,6 +6,8 @@ const Usage = """Usage: asl <command> [options]
 
 Commands:
   build <filename>      Compile an ASLang source file
+  lsp                   Run the language server over stdio (accepts
+                        --indent-width and --vendor)
 
 Options:
   --debug               Emit source location comments in generated C
@@ -58,21 +60,43 @@ proc newAslHelpCommand(): AslHelpCommand =
 proc help*(cmd: AslHelpCommand): string = cmd.help
 proc `$`*(cmd: AslHelpCommand): string = "--help"
 
+type AslLspCommand* = object
+  indentWidth: uint32
+  vendorRoots: VendorRoots
+
+proc newAslLspCommand(indentWidth: uint32, vendorRoots: VendorRoots): AslLspCommand =
+  AslLspCommand(indentWidth: indentWidth, vendorRoots: vendorRoots)
+
+proc indentWidth*(cmd: AslLspCommand): uint32 = cmd.indentWidth
+proc vendorRoots*(cmd: AslLspCommand): VendorRoots = cmd.vendorRoots
+
+proc `$`*(cmd: AslLspCommand): string =
+  var vendorFlags: seq[string]
+  for name, path in cmd.vendorRoots.pairs:
+    vendorFlags.add(fmt"--vendor={name}:{path}")
+  let vendorFlagsStr = vendorFlags.join(" ")
+  fmt"lsp --indent-width={cmd.indentWidth} {vendorFlagsStr}"
+
 type
   AslCommandKind* = enum
     ackBuild
     ackHelp
+    ackLsp
 
   AslCommand* = object
     case kind: AslCommandKind
     of ackBuild: build: AslBuildCommand
     of ackHelp: help: AslHelpCommand
+    of ackLsp: lsp: AslLspCommand
 
 proc newAslCommand(build: AslBuildCommand): AslCommand =
   AslCommand(kind: ackBuild, build: build)
 
 proc newAslCommand(help: AslHelpCommand): AslCommand =
   AslCommand(kind: ackHelp, help: help)
+
+proc newAslCommand(lsp: AslLspCommand): AslCommand =
+  AslCommand(kind: ackLsp, lsp: lsp)
 
 proc kind*(cmd: AslCommand): AslCommandKind = cmd.kind
 proc build*(cmd: AslCommand): Result[AslBuildCommand, string] =
@@ -83,11 +107,16 @@ proc help*(cmd: AslCommand): Result[AslHelpCommand, string] =
   case cmd.kind:
   of ackHelp: ok(cmd.help)
   else: err("property `help` is not available on `AslCommand` object.")
+proc lsp*(cmd: AslCommand): Result[AslLspCommand, string] =
+  case cmd.kind:
+  of ackLsp: ok(cmd.lsp)
+  else: err("property `lsp` is not available on `AslCommand` object.")
 
 proc `$`*(cmd: AslCommand): string =
   case cmd.kind:
   of ackBuild: fmt"asl {cmd.build}"
   of ackHelp: fmt"asl {cmd.help}"
+  of ackLsp: fmt"asl {cmd.lsp}"
 
 proc isValidVendorIdent(name: string): bool =
   ## ASL identifier rules — same shape as the parser's vendor-name
@@ -144,10 +173,18 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
       option("--vendor", multiple = true)
       flag("--debug")
       flag("--dump-tokens")
+    command("lsp"):
+      option("--indent-width", default = some("2"), choices = @["2", "4"])
+      option("--vendor", multiple = true)
 
   try:
     let opts = p.parse(args)
-    if opts.argparseBuildOpts.isSome:
+    if opts.argparseLspOpts.isSome:
+      let lspOpts = opts.argparseLspOpts.get
+      let indentWidth = parseInt(lspOpts.indentWidth).uint32
+      let vendorRoots = ? buildVendorRoots(lspOpts.vendor)
+      ok(newAslCommand(newAslLspCommand(indentWidth, vendorRoots)))
+    elif opts.argparseBuildOpts.isSome:
       let buildOpts = opts.argparseBuildOpts.get
 
       let (_, _, ext) = buildOpts.filename.splitFile()
