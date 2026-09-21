@@ -30,25 +30,22 @@ export app
 import context
 
 # ============================================================
-# ⚠ KNOWN LIMITATION — SIGNATURE-PARITY IS HASH-EQUALITY, NOT
-#   UNIFICATION.
+# analyzeValueTypeAgainstDefType — structurally match a value's type
+# against a declared (def) type, PRODUCING the generic impl map.
 #
-# The value-vs-defType walk below compares argument types with
-# hash-based `==` at module positions. That is sound when both sides
-# are ground, but a free generic in impl position (post leave-as-is
-# inference, e.g. Box[u8, Sample] against Box[u8, MyImpl]) needs
-# unification — solving for the binding — not equality. The def-time
-# constraint check no longer shares this limitation (its deep
-# `concrete` grounds contract defs before the identity probe).
-#
-# The fix routes every assignability check through
-# `analyzeValueTypeAgainstDefType` + `merge`, turning the same-key
-# conflict check into a unification check (a free generic unifies with
-# the concrete type it is matched against). Independent generics are
-# NOT collapsed into each other — `{Sample → K, K → u8}` legitimately
-# keeps `Sample` bound to `K`. See `plans/plan_deferred_typing.md` §
-# "Equality vs unification for analyzed types" — that plan owns the
-# fix.
+# A plain `==` on AnalyzedArgumentType only tests identity; it cannot
+# report what each generic slot bound to. This walk descends both types
+# in lockstep and, at each position:
+#   - module vs module: require the same module, then recurse into every
+#     impl slot (both sides carry the same require keys);
+#   - def-side generic: solve it — record `generic -> valType` (with the
+#     constraint defs the value must satisfy) into the map;
+#   - def-side module vs value-side generic: reject (a concrete position
+#     cannot be filled by an unbound generic).
+# Bindings accumulate through `merge`, which enforces one concrete type
+# per generic. This is why the assignability checks that must recover
+# generic bindings (function-argument and kwarg checks) route through
+# here rather than comparing with `==`.
 # ============================================================
 
 proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string]
@@ -81,7 +78,6 @@ proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: Analyzed
   of aatkModule:
     analyzeValueTypeAgainstDefType(module, defType, valType.module, loc)
 
-# TODO: Return a map of generic -> argType from the recursive analysis
 proc analyzeValueTypeAgainstDefType(module: AnalyzedDefModule, defType: AnalyzedArgumentType, valType: AnalyzedArgumentType, loc: Location): Result[AnalyzedImplMap, string] =
   case defType.kind:
   of aatkModule: analyzeValueTypeAgainstDefType(module, defType.module, valType, loc)
@@ -395,7 +391,7 @@ proc analyzeUnionInitializer*(funcCtx: AnalyzedUserFunctionContext, init: Analyz
   ## (carried on `AnalyzedKeywordArgument.impls`). Merging across
   ## fields enforces that kwargs binding the same generic agree — e.g.
   ## a variant `Ok { a: T, b: T }` with `a: u8, b: String` is rejected
-  ## here. TODO: consume the merged map to concretize the result type.
+  ## here.
   let unionModule = funcCtx.findModule(init.unionRef.module)
   let unionDef = unionModule.dataOrFail.union
   let variantDef = unionDef.findVariant(init.variant)
@@ -428,7 +424,6 @@ proc analyzeStructInitializer*(funcCtx: AnalyzedUserFunctionContext, init: Analy
   ## type and accumulating the generic bindings each kwarg contributes
   ## (carried on `AnalyzedKeywordArgument.impls`). Merging across
   ## fields enforces that kwargs binding the same generic agree.
-  ## TODO: consume the merged map to concretize the result type.
   let structModule = funcCtx.findModule(init.structRef.module)
   let structDef = structModule.dataOrFail.struct
   var analyzedKwargs: seq[AnalyzedKeywordArgument]
