@@ -713,6 +713,29 @@ Options:
 - `std` is added automatically pointing at `examples/base.aslr` if the
   user does not register their own `std` vendor.
 
+### `asl lsp`
+
+```
+asl lsp [--indent-width=<N>] [--vendor=<name>:<path> ...]
+```
+
+Runs a Language Server Protocol server over stdin/stdout for editors.
+It takes the same `--indent-width` and `--vendor` options as `build`
+(same rules, same `std` default). Every open document is compiled as its
+own root, with all open buffers (saved or not) standing in for the
+files on disk. The compiler's error is published as a diagnostic on the
+file it points at. The compiler stops at its first error, so each root
+contributes at most one diagnostic. Only diagnostics are provided today;
+see `plans/plan_lsp.md` for the roadmap.
+
+## Editor support (VSCode)
+
+`tooling/vscode-asl/` is a VSCode extension with syntax highlighting
+for `.asl` / `.aslr` and live diagnostics via `asl lsp`. Setup and
+settings are in `tooling/vscode-asl/README.md`. For a build-on-demand
+alternative, `.vscode/tasks.json` runs `asl build` on the current file
+(Cmd+Shift+B) and turns its errors into Problems-panel entries.
+
 ---
 
 ## What ASL does not have (yet)

@@ -1,5 +1,31 @@
 # Lessons Learned
 
+## 2026-09-21 — Editor tooling: TextMate grammar, problem matchers, `asl lsp`
+
+Added a VSCode extension (`tooling/vscode-asl`), a build task with
+problem matchers, and Phase 0 of a language server (live diagnostics).
+Plan and roadmap: `plans/plan_lsp.md`.
+
+- **The compiler's error strings were already a protocol.** Every
+  located error starts with `Location`'s `file:line:col`, so the
+  tasks.json matcher and the LSP's `toDiagnostic` both parse the same
+  three shapes (located / cyclic / file-level) without touching a single
+  `err(` site. Structured errors can wait until the resolver settles.
+- **Unsaved buffers need one seam, at the parser's file read.** An
+  `overlays` table consulted by `readSource` lets the whole pipeline
+  compile editor text unchanged. Data (a table) rather than a
+  callback kept `parse` free of closures.
+- **Key diagnostics by compile root, not by file.** Every open document
+  is a root, and a root's error can land in a file it imports. Storing
+  one diagnostic per root and publishing a file's union means one root's
+  fix never clears another root's error.
+- **stdout is the protocol channel.** Any stray `echo` (like the
+  `[INFO]` banner) corrupts the stream, so `lsp` skips it. Log to stderr only.
+- **Check the server against the CLI, not just against unit tests.**
+  A scripted client opened every fixture in `examples/` and
+  `examples/errors/` and compared the published diagnostic with
+  `asl build`'s error: 38/38 matched.
+
 ## 2026-09-13 — `try` operator: a call variant, and threading the return type to a leaf
 
 Added `try f(...)`: it unwraps the callee's `Status[Value, Error]` to
