@@ -28,11 +28,11 @@ proc loc*(header: GenericHeader): Location = header.loc
 
 proc genericHeaderConsumer(parser: Parser): Result[GenericHeader, ParserError] =
   let public = parser.expect("public").isOk
-  if public: discard ? parser.expect(spaceSpec)
+  if public: discard ? parser.expect(SPACE)
   let genericKeyword = ? parser.expect("generic")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let nameIdent = ? parser.expect(identifierSpec)
-  discard parser.expect(spaceSpec.optional())
+  discard parser.expect(SPACE.optional())
   discard ? parser.expect(":")
   ok(newGenericHeader(public, nameIdent, genericKeyword.loc))
 

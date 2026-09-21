@@ -68,7 +68,7 @@ proc structHeaderConsumer(parser: Parser): Result[StructDefHeader, ParserError] 
   let maybeRequires = ? parser.expect(requiredStructGenerics.optional())
   let requires = if maybeRequires.isSome: maybeRequires.get else: @[]
 
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
   newStructDefHeader(requires, structKeyword.loc)
 
@@ -112,7 +112,7 @@ proc findFieldId*(struct: StructDef, name: Identifier): Result[int, string] =
 
 # Each field line: (blank lines) + indentation + argumentDef + newline
 proc indentedArgumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserError] =
-  discard ? parser.expect(any(emptyLineSpec))
+  discard ? parser.expect(any(NEWLINE))
   let def = ? parser.expect(argumentDefSpec.indentedLine())
   ok(def)
 
@@ -164,7 +164,7 @@ proc findFieldId*(variant: VariantDef, name: Identifier): Result[int, string] =
 # with a variable-binding case pattern.
 proc variantDefConsumer(parser: Parser): Result[VariantDef, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  discard parser.expect(spaceSpec.optional())
+  discard parser.expect(SPACE.optional())
   let (fields, _) = ? parser.expect(argumentDefSpec.curlyBracketList())
   newVariantDef(name, fields, name.loc)
 
@@ -213,7 +213,7 @@ proc findVariant*(union: UnionDef, variant: Identifier): Result[VariantDef, stri
 
 proc unionDefHeaderConsumer(parser: Parser): Result[Location, ParserError] =
   let unionKeyword = ? parser.expect("union")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
   ok(unionKeyword.loc)
 

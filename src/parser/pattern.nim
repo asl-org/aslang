@@ -32,9 +32,9 @@ proc asl(field: UnionPatternField): string =
 
 proc unionExplicitPatternFieldConsumer(parser: Parser): Result[UnionPatternField, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let binding = ? parser.expect(identifierSpec)
   ok(newUnionPatternField(name, binding, name.loc))
 
@@ -99,7 +99,7 @@ proc asl(vp: UnionPattern): string =
 # Variant pattern: VariantName { field: binding, field: binding }
 proc unionPatternConsumer(parser: Parser): Result[UnionPattern, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let (fields, _) = ? parser.expect(unionPatternFieldSpec.curlyBracketList())
   newUnionPattern(name, fields)
 
@@ -163,9 +163,9 @@ let casePatternSpec* = oneOf("case pattern", @[
 
 proc caseHeaderConsumer(parser: Parser): Result[CasePattern, ParserError] =
   discard ? parser.expect("case")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let pat = ? parser.expect(casePatternSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
   ok(pat)
 

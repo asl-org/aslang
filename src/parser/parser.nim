@@ -84,7 +84,6 @@ proc newSpec*(name: string, kind: TokenKind): Spec[Token] =
 proc newSpec*(value: string): Spec[Token] =
   newSpec("'" & value & "'", proc(t: Token): bool = t.value == value)
 
-# TODO: Remove it after fixing tokenizer
 proc expect*[T](parser: Parser, spec: Spec[T]): Result[T, ParserError] =
   let indexCheckpoint = parser.index
   let levelCheckpoint = parser.level
@@ -186,33 +185,23 @@ proc newSpec*[T](name: string, kind: TokenKind, mapper: Mapper[Token, T]): Spec[
 #
 # Named singletons for grammar files, each a skToken `Spec` built via
 # `newSpec`; kept named because grammar code reads better as
-# `parser.expect(spaceSpec)` than `parser.expect(newSpec("space ' '", tkSpace))`.
+# `parser.expect(SPACE)` than `parser.expect(newSpec("space ' '", tkSpace))`.
 
-let spaceSpec* = newSpec("space ' '", tkSpace)
-let newlineSpec* = newSpec("newline '\\n'", tkNewline)
-let commentSpec* = newSpec("comment", tkComment)
-
-let bangSpec* = newSpec("!")
-let leftParenthesisSpec* = newSpec("(")
-let rightParenthesisSpec* = newSpec(")")
-let leftCurlyBracketSpec* = newSpec("{")
-let rightCurlyBracketSpec* = newSpec("}")
-let leftSquareBracketSpec* = newSpec("[")
-let rightSquareBracketSpec* = newSpec("]")
+let SPACE* = newSpec("space ' '", tkSpace)
 
 # space* comment? newline
 proc emptyLineConsumer(parser: Parser): Result[Location, ParserError] =
   let loc = parser.loc
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(commentSpec.optional())
-  discard ? parser.expect(newlineSpec)
+  discard ? parser.expect(SPACE.optional())
+  discard ? parser.expect(newSpec("comment", tkComment).optional())
+  discard ? parser.expect(newSpec("newline '\\n'", tkNewline))
   ok(loc)
 
-let emptyLineSpec* = newSpec("empty line", emptyLineConsumer)
+let NEWLINE* = newSpec("empty line", emptyLineConsumer)
 
 proc indentationConsumer(parser: Parser): Result[Location, ParserError] =
   let loc = parser.loc
-  let maybeSpace = ? parser.expect(spaceSpec.optional())
+  let maybeSpace = ? parser.expect(SPACE.optional())
   let count: uint32 = if maybeSpace.isSome: maybeSpace.get.value.len.uint32 else: 0
   let expected = parser.indentWidth * parser.level
   if count != expected:
@@ -229,7 +218,7 @@ proc wrappedList[O, I, C](opener: Spec[O], item: Spec[I], closer: Spec[C], allow
   let consumer =
     proc(parser: Parser): Result[(seq[I], Location), ParserError] =
       let start = ? parser.expect(opener)
-      discard ? parser.expect(spaceSpec.optional())
+      discard ? parser.expect(SPACE.optional())
       var items: seq[I]
 
       let maybeFirstItem = parser.expect(item)
@@ -241,13 +230,13 @@ proc wrappedList[O, I, C](opener: Spec[O], item: Spec[I], closer: Spec[C], allow
           err(maybeFirstItem.error)
       else:
         items.add(maybeFirstItem.get)
-        discard ? parser.expect(spaceSpec.optional())
+        discard ? parser.expect(SPACE.optional())
         var maybeComma = parser.expect(",")
         while maybeComma.isOk:
-          discard ? parser.expect(spaceSpec.optional())
+          discard ? parser.expect(SPACE.optional())
           let item = ? parser.expect(item)
           items.add(item)
-          discard ? parser.expect(spaceSpec.optional())
+          discard ? parser.expect(SPACE.optional())
           maybeComma = parser.expect(",")
 
         discard ? parser.expect(closer)
@@ -255,20 +244,20 @@ proc wrappedList[O, I, C](opener: Spec[O], item: Spec[I], closer: Spec[C], allow
   newSpec(specName, consumer)
 
 proc squareBracketList*[T](item: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
-  wrappedList(leftSquareBracketSpec, item, rightSquareBracketSpec, allowEmpty)
+  wrappedList(newSpec("["), item, newSpec("]"), allowEmpty)
 
 proc curlyBracketList*[T](item: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
-  wrappedList(leftCurlyBracketSpec, item, rightCurlyBracketSpec, allowEmpty)
+  wrappedList(newSpec("{"), item, newSpec("}"), allowEmpty)
 
 proc parenthesisList*[T](item: Spec[T], allowEmpty: bool = true): Spec[(seq[T], Location)] =
-  wrappedList(leftParenthesisSpec, item, rightParenthesisSpec, allowEmpty)
+  wrappedList(newSpec("("), item, newSpec(")"), allowEmpty)
 
 proc indentedLine*[T](item: Spec[T]): Spec[T] =
   let consumer =
     proc (parser: Parser): Result[T, ParserError] =
       discard ? parser.expect(indentationSpec)
       let val = ? parser.expect(item)
-      discard ? parser.expect(emptyLineSpec.atLeastOne())
+      discard ? parser.expect(NEWLINE.atLeastOne())
       ok(val)
   newSpec(fmt"indented {item.name}", consumer)
 

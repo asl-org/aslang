@@ -60,11 +60,11 @@ type File = app.File
 
 # aslFile: import* (module | generic)*  — user-authored source files.
 proc parseAslFile(parser: Parser, vendorRoots: VendorRoots): Result[File, ParserError] =
-  discard ? parser.expect(emptyLineSpec.any())
+  discard ? parser.expect(NEWLINE.any())
   let imports = ? parser.expect(importSpec.any())
-  discard ? parser.expect(emptyLineSpec.any())
+  discard ? parser.expect(NEWLINE.any())
   let items = ? parser.expect(typeSpec.atLeastOne())
-  discard ? parser.expect(emptyLineSpec.any())
+  discard ? parser.expect(NEWLINE.any())
   # Force a parse attempt to get a specific error message
   if not parser.done(): discard ? parser.expect(typeSpec)
   newAslFile(parser.filepath, imports, items, vendorRoots)
@@ -72,9 +72,9 @@ proc parseAslFile(parser: Parser, vendorRoots: VendorRoots): Result[File, Parser
 # aslrFile: (module | generic)*  — no imports section. Aslr files
 # are the runtime interface; they cannot reference other files.
 proc parseAslrFile(parser: Parser): Result[File, ParserError] =
-  discard ? parser.expect(emptyLineSpec.any())
+  discard ? parser.expect(NEWLINE.any())
   let types = ? parser.expect(typeSpec.atLeastOne())
-  discard ? parser.expect(emptyLineSpec.any())
+  discard ? parser.expect(NEWLINE.any())
   # Force a parse attempt to get a specific error message
   if not parser.done(): discard ? parser.expect(typeSpec)
   newAslrFile(parser.filepath, types)

@@ -35,9 +35,9 @@ proc asl*(importedType: ImportedType): string =
 
 proc explicitImportedTypeConsumer(parser: Parser): Result[ImportedType, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   discard ? parser.expect("as")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let alias = ? parser.expect(identifierSpec)
   ok(newImportedType(name, alias))
 
@@ -204,13 +204,13 @@ proc asl*(imp: Import): string =
 # Explicit form: `import { Name, Name as Alias } from "path"`.
 proc explicitImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let importKeyword = ? parser.expect("import")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let (importedTypes, _)  = ? parser.expect(importedTypeSpec.curlyBracketList(allowEmpty = false))
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   discard ? parser.expect("from")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let importPath = ? parser.expect(importPathSpec)
-  discard ? parser.expect(emptyLineSpec)
+  discard ? parser.expect(NEWLINE)
   let absPath = ? validateAbsolutePath(importPath, parser.filepath, initTable[string, string]())
   newImport(importedTypes, importPath, absPath, importKeyword.loc)
 
@@ -222,9 +222,9 @@ let explicitImportLineSpec = newSpec[Import]("explicit import", explicitImportLi
 # target file's types are resolved.
 proc shorthandImportLineConsumer(parser: Parser): Result[Import, ParserError] =
   let importKeyword = ? parser.expect("import")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let importPath = ? parser.expect(importPathSpec)
-  discard ? parser.expect(emptyLineSpec)
+  discard ? parser.expect(NEWLINE)
   let absPath = ? validateAbsolutePath(importPath, parser.filepath, initTable[string, string]())
   newImport(importPath, absPath, importKeyword.loc)
 
@@ -240,7 +240,7 @@ proc importConsumer(parser: Parser): Result[Import, ParserError] =
   ## Skips leading blank / comment lines, then parses one import line
   ## (either explicit `import { A, B } from "path"` or shorthand
   ## `import "path"`).
-  discard ? parser.expect(any(emptyLineSpec))
+  discard ? parser.expect(any(NEWLINE))
   parser.expect(importLineSpec)
 
 let importSpec* = newSpec[Import]("import", importConsumer)

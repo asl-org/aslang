@@ -53,16 +53,16 @@ proc filter*(defs: seq[FunctionDef], access: FunctionAccess): seq[FunctionDef] =
 
 proc functionDefConsumer(parser: Parser): Result[FunctionDef, ParserError] =
   let public = parser.expect("public").isOk
-  if public: discard ? parser.expect(spaceSpec)
+  if public: discard ? parser.expect(SPACE)
 
   let funcKeyword = ? parser.expect("func")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let funcName = ? parser.expect(identifierSpec)
-  discard parser.expect(spaceSpec.optional())
+  discard parser.expect(SPACE.optional())
   let argDefList = ? parser.expect(argumentDefListSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let returnType = ? parser.expect(argumentTypeSpec)
   ok(newFunctionDef(public, funcName, argDefList, returnType, funcKeyword.loc))
 
@@ -99,14 +99,14 @@ proc externFunctionConsumer(parser: Parser): Result[ExternFunction, ParserError]
   discard ? parser.expect(indentationSpec)
   discard ? parser.expect("@")
   discard ? parser.expect("extern")
-  discard parser.expect(spaceSpec.optional())
+  discard parser.expect(SPACE.optional())
   let loc = parser.loc
-  discard ? parser.expect(leftParenthesisSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect("(")
+  discard ? parser.expect(SPACE.optional())
   let symbol = ? parser.expect(stringLiteralSpec)
-  discard ? parser.expect(spaceSpec.optional())
-  discard ? parser.expect(rightParenthesisSpec)
-  discard ? parser.expect(emptyLineSpec)
+  discard ? parser.expect(SPACE.optional())
+  discard ? parser.expect(")")
+  discard ? parser.expect(NEWLINE)
   let def = ? parser.expect(functionDefSpec.indentedLine())
   ok(newExternFunction(symbol.content, def, loc))
 
@@ -244,7 +244,7 @@ proc byteSizeBuiltinFunction*(loc: Location): Function =
 proc functionConsumer(parser: Parser): Result[Function, ParserError] =
   ## Parses one function block — skips leading blank lines, then tries
   ## the extern form; falls back to user function on non-fatal failure.
-  discard parser.expect(any(emptyLineSpec))
+  discard parser.expect(any(NEWLINE))
   let f = parser.expect(externFuncSpec)
   if f.isOk: return ok(newFunction(f.get))
   let u = ? parser.expect(userFuncSpec)

@@ -108,7 +108,7 @@ proc typeConsumer(parser: Parser): Result[LocalType, ParserError] =
   ## generic block. Used at file level between top-level type blocks so
   ## `typeSpec.atLeastOne()` collects every definition across the blank
   ## lines that separate them (not just the first block).
-  discard ? parser.expect(any(emptyLineSpec))
+  discard ? parser.expect(any(NEWLINE))
   parser.expect(oneOf("type", @[
     moduleSpec.map(newLocalType),
     genericSpec.map(newLocalType),

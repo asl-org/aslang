@@ -128,7 +128,7 @@ proc defaultFunctionCallConsumer(parser: Parser): Result[FunctionCall, ParserErr
   let target = ? parser.expect(identifierSpec)
   discard ? parser.expect(".")
   let function = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let args = ? parser.expect(argumentListSpec)
   ok(newFunctionCall(target, function, args))
 
@@ -136,7 +136,7 @@ let defaultFunctionCallSpec* = newSpec[FunctionCall]("default function call", de
 
 proc tryFunctionCallConsumer(parser: Parser): Result[FunctionCall, ParserError] =
   let tryKeyword = ? parser.expect("try")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let fncall = ? parser.expect(defaultFunctionCallSpec)
   ok(newFunctionCall(tryKeyword.loc, fncall))
 
@@ -175,9 +175,9 @@ proc validateKeyNameConflict(args: seq[KeywordArgument]): Result[void, ParserErr
 
 proc explicitKwargConsumer(parser: Parser): Result[KeywordArgument, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let expression = ? parser.expect(inlineExpressionSpec)
   ok(newKeywordArgument(name, expression, name.loc))
 
@@ -233,7 +233,7 @@ proc asl(nonPrim: StructInitializer): string =
 
 proc structInitializerConsumer(parser: Parser): Result[StructInitializer, ParserError] =
   let structRef = ? parser.expect(structRefSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let fields = ? parser.expect(kwargListSpec)
   ok(newStructInitializer(structRef, fields))
 
@@ -258,7 +258,7 @@ proc asl(unionInit: UnionInitializer): string =
 # on the same UnionRef shape carrying an impls seq; empty means bare.
 proc unionInitializerConsumer(parser: Parser): Result[UnionInitializer, ParserError] =
   let unionRef = ? parser.expect(unionRefSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let fields = ? parser.expect(kwargListSpec)
   ok(newUnionInitializer(unionRef, fields))
 
@@ -462,9 +462,9 @@ proc asl*(statement: Statement): string =
 
 proc getterStatementConsumer(parser: Parser): Result[Statement, ParserError] =
   let getter = ? parser.expect(getterSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect("=")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let expression = ? parser.expect(inlineExpressionSpec)
   ok(newStatement(getter, newExpression(expression), getter.loc))
 
@@ -472,9 +472,9 @@ let getterStatementSpec = newSpec[Statement]("getter statement", getterStatement
 
 proc variableStatementConsumer(parser: Parser): Result[Statement, ParserError] =
   let target = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect("=")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let expression = ? parser.expect(inlineExpressionSpec)
   ok(newStatement(target, newExpression(expression), target.loc))
 
@@ -527,9 +527,9 @@ proc target*(header: MatchHeader): Identifier =
 
 proc defaultMatchHeaderConsumer(parser: Parser): Result[MatchHeader, ParserError] =
   let matchKeyword = ? parser.expect("match")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let subject = ? parser.expect(inlineExpressionSpec)
-  discard parser.expect(spaceSpec.optional())
+  discard parser.expect(SPACE.optional())
   discard ? parser.expect(":")
   newMatchHeader(subject, matchKeyword.loc)
 
@@ -537,9 +537,9 @@ let defaultMatchHeaderSpec* = newSpec("match header", defaultMatchHeaderConsumer
 
 proc assignedMatchHeaderConsumer(parser: Parser): Result[MatchHeader, ParserError] =
   let target = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect("=")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let matchHeader = ? parser.expect(defaultMatchHeaderSpec)
   newMatchHeader(target, matchHeader.subject, matchHeader.loc)
 
@@ -663,7 +663,6 @@ proc asl(expression: Expression): string =
   of ekMatch: "" # match is a block expression, use asl(stmt, level, indentWidth)
 
 # ----------------- Statement (match construction) -----------------
-# TODO: Cleanup after proper break down of Expression
 proc newStatement*(header: MatchHeader, cases: seq[CaseBlock]): Result[Statement, ParserError] =
   let matchExpr = ? newMatchExpression(header.subject, cases, header.loc)
   case header.kind:

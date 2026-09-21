@@ -29,12 +29,12 @@ proc loc*(header: ModuleHeader): Location = header.loc
 
 proc moduleHeaderConsumer(parser: Parser): Result[ModuleHeader, ParserError] =
   let public = parser.expect("public").isOk
-  if public: discard ? parser.expect(spaceSpec)
+  if public: discard ? parser.expect(SPACE)
 
   let moduleKeyword = ? parser.expect("module")
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let nameIdent = ? parser.expect(identifierSpec)
-  discard parser.expect(spaceSpec.optional())
+  discard parser.expect(SPACE.optional())
   discard ? parser.expect(":")
   ok(newModuleHeader(public, nameIdent, moduleKeyword.loc))
 
@@ -53,7 +53,7 @@ proc data*(body: ModuleBody): Option[DataDef] = body.data
 proc funcList*(body: ModuleBody): FunctionList = body.funcList
 
 proc moduleBodyConsumer(parser: Parser): Result[ModuleBody, ParserError] =
-  discard parser.expect(any(emptyLineSpec))
+  discard parser.expect(any(NEWLINE))
   let data = ? parser.expect(dataDefSpec.optional())
   let funcList = ? parser.expect(functionListSpec)
   ok(newModuleBody(data, funcList))

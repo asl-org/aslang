@@ -117,9 +117,9 @@ proc asl*(l: LiteralDef, level: int, indentWidth: uint32): seq[string] =
 proc literalDefConsumer(parser: Parser): Result[LiteralDef, ParserError] =
   discard ? parser.expect(indentationSpec)
   let literalKeyword = ? parser.expect("literal")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let strLit = ? parser.expect(stringLiteralSpec)
   ok(newLiteralDef(strLit, literalKeyword.loc))
 
@@ -146,7 +146,7 @@ proc asl*(init: LiteralInitializer): string =
 
 proc literalInitializerConsumer(parser: Parser): Result[LiteralInitializer, ParserError] =
   let argType = ? parser.expect(argumentTypeSpec)
-  discard ? parser.expect(spaceSpec)
+  discard ? parser.expect(SPACE)
   let lit = ? parser.expect(literalSpec)
   ok(newLiteralInitializer(argType, lit))
 

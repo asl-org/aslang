@@ -121,9 +121,9 @@ proc asl*(argDef: ArgumentDef): string =
 
 proc argumentDefConsumer(parser: Parser): Result[ArgumentDef, ParserError] =
   let name = ? parser.expect(identifierSpec)
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   discard ? parser.expect(":")
-  discard ? parser.expect(spaceSpec.optional())
+  discard ? parser.expect(SPACE.optional())
   let argType = ? parser.expect(argumentTypeSpec)
   ok(newArgumentDef(name, argType))
 

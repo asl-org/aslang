@@ -21,7 +21,7 @@ proc decoratorConsumer(parser: Parser): Result[Decorator, ParserError] =
   discard ? parser.expect(indentationSpec)
   discard ? parser.expect("@")
   let ident = ? parser.expect(identifierSpec)
-  discard ? parser.expect(emptyLineSpec)
+  discard ? parser.expect(NEWLINE)
   ok(newDecorator(ident))
 
 let decoratorSpec* = newSpec("decorator", decoratorConsumer)

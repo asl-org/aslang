@@ -5,17 +5,12 @@ import parser/main as parser
 import resolver/main as resolver
 import analyzer/main as analyzer
 
-# import lifetime
-# import expander
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
   let filepath = opts.filename.absolutePath
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
   let resolvedApp = ? resolve(app)
   let analyzedApp = ? analyze(resolvedApp)
-  # TODO: Uncomment the line below to enable lifetime analysis
-  # let _ = expand(analyzedApp)
-  # ? analyzeLifetime(analyzedApp)
   ok("[SUCCESS]")
 
 when isMainModule:
