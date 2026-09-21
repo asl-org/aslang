@@ -771,8 +771,7 @@ Source: `tests/test_cli.nim`.
 
 - **Domain-model source of truth:** `grammar.md`.
 - **Pipeline overview + phase descriptions:** `overview.md`.
-- **Open TODOs and known bugs:** `bugs.md`, `overview.md` §
-  "What's Next".
+- **Open TODOs and known bugs:** `overview.md` §"What's Next".
 - **Test entry point:** `tests/all.nim`.
 
 Every rule above has at least one corresponding test. When a

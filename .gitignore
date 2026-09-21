@@ -1,4 +1,5 @@
 asl
+.DS_Store
 nimcache/
 nimbledeps/
 *.o

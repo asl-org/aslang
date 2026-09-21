@@ -8,8 +8,8 @@ written here is either not yet supported or in flux.
 
 For compiler internals (pipeline phases, AST shapes, design patterns),
 see `overview.md`. For the domain vocabulary that parser/resolver/analyzer
-types trace back to, see `grammar.md`. For active issues and design
-lessons, see `bugs.md` and `lessons.md`.
+types trace back to, see `grammar.md`. For known issues and next steps,
+see `overview.md` §"What's Next"; for design lessons, see `lessons.md`.
 
 ---
 

@@ -88,8 +88,7 @@ GenericName: Identifier
 UnionDef: VariantDef+
 VariantDef: Variant ArgumentDef*
 # `ArgumentDef*` — empty variants are structurally legal; whether
-# the parser exposes surface syntax for them is a separate question
-# (see the "empty variants" task in tasks.md).
+# the parser exposes surface syntax for them is a separate question.
 
 Function: ExternFunction | UserFunction
 ExternFunction: Public? ExternDecorator FunctionDef
@@ -338,6 +337,5 @@ level), both are recognizable projections of the same grammar rule —
 the resolver layer just carries additional fields (indices, resolved
 references) added via accessor delegation from the parser back-ref.
 
-Ongoing refactor tasks that reshape the code toward this grammar are
-tracked in `tasks.md` under "DDD refactor: align every layer with the
-locked domain grammar."
+Ongoing refactor work that reshapes the code toward this grammar is
+summarized in `overview.md` §"Domain grammar (source of truth)".
