@@ -583,12 +583,18 @@ public module string:
   @extern("string_concat")
   public func concat(first: string, second: string): string
 
+  @extern("string_hash")
+  public func hash(value: string): u64
+
 public generic Any:
   func byte_size(): u64
 
 public generic Failure:
   func code(failure: Failure): i32
   func message(failure: Failure): string
+
+public generic Key:
+  func hash(key: Key): u64
 
 public module Error:
   struct:
@@ -622,6 +628,16 @@ public module Array:
 
   @extern("array_set")
   public func set(arr: Array[Any], index: u32, item: Any): Array[Any]!
+
+public module Map:
+  struct(Key, Any):
+    size: u32
+
+  @extern("map_get")
+  public func get(map: Map[Key, Any], key: Key): Any!
+
+  @extern("map_set")
+  public func set(map: Map[Key, Any], key: Key, value: Any): Map[Key, Any]!
 
 public module Bitset:
   struct:

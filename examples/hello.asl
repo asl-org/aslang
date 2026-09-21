@@ -4,9 +4,6 @@
 
 import { Sample } from "./sample.asl"
 
-generic Key:
-  func hash(key: Key): u64
-
 public module App:
   public func start(): u8
     arr = Array[u32] { size: 100 }

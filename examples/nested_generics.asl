@@ -3,9 +3,9 @@
 # fields and function signatures.
 module Cache:
   struct:
-    entries: Map[String, Array[u64]]
+    entries: Map[string, Array[u64]]
 
-  func get(c: Cache): Map[String, Array[u64]]
+  func get(c: Cache): Map[string, Array[u64]]
     c.entries
 
 public module Driver:
