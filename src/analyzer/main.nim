@@ -113,7 +113,7 @@ proc analyzeVariable*(funcCtx: AnalyzedUserFunctionContext, variable: Identifier
   let binding = ? funcCtx.get(variable)
   ok(newAnalyzedVariable(variable, binding.argType))
 
-proc analyzeGetter*(funcCtx: AnalyzedUserFunctionContext, getter: ResolvedGetter): Result[AnalyzedGetter, string] =
+proc analyzeStructGetter*(funcCtx: AnalyzedUserFunctionContext, getter: ResolvedGetter): Result[AnalyzedStructGetter, string] =
   let binding = ? funcCtx.get(getter.source)
   let sourceArgType = binding.argType
   case sourceArgType.kind:
@@ -128,7 +128,7 @@ proc analyzeGetter*(funcCtx: AnalyzedUserFunctionContext, getter: ResolvedGetter
     of adkStruct:
       let struct = sourceModule.dataOrFail.struct
       let property = ? struct.findField(getter.property)
-      ok(newAnalyzedGetter(getter, sourceModuleArgType, property))
+      ok(newAnalyzedStructGetter(getter, sourceModuleArgType, property))
 
 proc analyzeLiteralInitializer*(funcCtx: AnalyzedUserFunctionContext, init: AnalyzedDefLiteralInitializer): Result[AnalyzedLiteralInitializer, string] =
   let argDefModule = funcCtx.findModule(init.argType.module)
@@ -460,8 +460,8 @@ proc analyzeExpression*(funcCtx: AnalyzedUserFunctionContext, expression: Analyz
     let analyzedVariable = ? analyzeVariable(funcCtx, expression.variable)
     ok(newAnalyzedExpression(analyzedVariable))
   of adekGetter:
-    let analyzedGetter = ? analyzeGetter(funcCtx, expression.getter)
-    ok(newAnalyzedExpression(analyzedGetter))
+    let analyzedStructGetter = ? analyzeStructGetter(funcCtx, expression.getter)
+    ok(newAnalyzedExpression(analyzedStructGetter))
   of adekInitializer:
     let analyzedInit = ? analyzeInitializer(funcCtx, expression.init)
     ok(newAnalyzedExpression(analyzedInit))
@@ -479,10 +479,10 @@ proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, statement: Analyzed
     # getter to get the field's type, thread it into the RHS as the
     # expected type (so a bare literal adopts the field type and is
     # range-checked against it), then require the RHS type to match.
-    let analyzedGetter = ? analyzeGetter(funcCtx, statement.getter)
-    let analyzedExpr = ? analyzeExpression(funcCtx, statement.expression, some(analyzedGetter.argType))
-    if analyzedGetter.argType != analyzedExpr.argType:
-      err(fmt"{statement.loc} `{analyzedGetter.argType.asl}` field cannot be assigned a `{analyzedExpr.argType.asl}` value")
+    let analyzedStructGetter = ? analyzeStructGetter(funcCtx, statement.getter)
+    let analyzedExpr = ? analyzeExpression(funcCtx, statement.expression, some(analyzedStructGetter.argType))
+    if analyzedStructGetter.argType != analyzedExpr.argType:
+      err(fmt"{statement.loc} `{analyzedStructGetter.argType.asl}` field cannot be assigned a `{analyzedExpr.argType.asl}` value")
     else:
       ok(newAnalyzedStatement(statement, analyzedExpr))
   of rskNone, rskVariable:

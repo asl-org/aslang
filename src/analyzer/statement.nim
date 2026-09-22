@@ -9,7 +9,7 @@
 ##   AnalyzedMatchExpression, AnalyzedExpression, AnalyzedStatement
 ##
 ## Leaf nodes that carry no back-reference into the cycle
-## (AnalyzedVariable, AnalyzedGetter, AnalyzedLiteralInitializer) live
+## (AnalyzedVariable, AnalyzedStructGetter, AnalyzedLiteralInitializer) live
 ## in their own files and are imported here. AnalyzedBinding and
 ## AnalyzedCasePattern come from the pattern cluster (pattern.nim).
 
@@ -21,20 +21,20 @@ import ../resolver/main as resolver
 import ../defanalyzer/main as defanalyzer
 import pattern
 
-# ---- AnalyzedGetter (resolved struct field access) ----
+# ---- AnalyzedStructGetter (resolved struct field access) ----
 
-type AnalyzedGetter* = ref object
+type AnalyzedStructGetter* = ref object
   resolved: ResolvedGetter
   source: AnalyzedModuleArgumentType
   property: AnalyzedArgumentDef
 
-proc newAnalyzedGetter*(resolved: ResolvedGetter, source: AnalyzedModuleArgumentType, property: AnalyzedArgumentDef): AnalyzedGetter =
-  AnalyzedGetter(resolved: resolved, source: source, property: property)
+proc newAnalyzedStructGetter*(resolved: ResolvedGetter, source: AnalyzedModuleArgumentType, property: AnalyzedArgumentDef): AnalyzedStructGetter =
+  AnalyzedStructGetter(resolved: resolved, source: source, property: property)
 
-proc loc*(getter: AnalyzedGetter): Location = getter.resolved.loc
-proc source*(getter: AnalyzedGetter): AnalyzedModuleArgumentType = getter.source
-proc argType*(getter: AnalyzedGetter): AnalyzedArgumentType =
-  getter.property.argType.concrete(getter.source.impls)
+proc loc*(structGetter: AnalyzedStructGetter): Location = structGetter.resolved.loc
+proc source*(structGetter: AnalyzedStructGetter): AnalyzedModuleArgumentType = structGetter.source
+proc argType*(structGetter: AnalyzedStructGetter): AnalyzedArgumentType =
+  structGetter.property.argType.concrete(structGetter.source.impls)
 
 # ---- AnalyzedLiteralInitializer (a literal + the argtype it adopts) ----
 
@@ -103,14 +103,14 @@ type
     cases: seq[AnalyzedCaseBlock]
 
   AnalyzedExpressionKind* = enum
-    aekVariable, aekFunctionCall, aekMatchExpr, aekInitializer, aekGetter
+    aekVariable, aekFunctionCall, aekMatchExpr, aekInitializer, aekStructGetter
   AnalyzedExpression* = ref object
     case kind: AnalyzedExpressionKind
     of aekVariable: variable: AnalyzedVariable
     of aekFunctionCall: fncall: AnalyzedFunctionCall
     of aekMatchExpr: match: AnalyzedMatchExpression
     of aekInitializer: init: AnalyzedInitializer
-    of aekGetter: getter: AnalyzedGetter
+    of aekStructGetter: structGetter: AnalyzedStructGetter
 
   AnalyzedStatement* = ref object
     def: AnalyzedDefStatement
@@ -242,8 +242,8 @@ proc newAnalyzedExpression*(match: AnalyzedMatchExpression): AnalyzedExpression 
 proc newAnalyzedExpression*(init: AnalyzedInitializer): AnalyzedExpression =
   AnalyzedExpression(kind: aekInitializer, init: init)
 
-proc newAnalyzedExpression*(getter: AnalyzedGetter): AnalyzedExpression =
-  AnalyzedExpression(kind: aekGetter, getter: getter)
+proc newAnalyzedExpression*(structGetter: AnalyzedStructGetter): AnalyzedExpression =
+  AnalyzedExpression(kind: aekStructGetter, structGetter: structGetter)
 
 proc kind*(expression: AnalyzedExpression): AnalyzedExpressionKind = expression.kind
 proc variable*(expression: AnalyzedExpression): AnalyzedVariable =
@@ -262,16 +262,16 @@ proc init*(expression: AnalyzedExpression): AnalyzedInitializer =
   assert expression.kind == aekInitializer,
     fmt"AnalyzedExpression.init accessed but kind is {expression.kind}"
   expression.init
-proc getter*(expression: AnalyzedExpression): AnalyzedGetter =
-  assert expression.kind == aekGetter,
-    fmt"AnalyzedExpression.getter accessed but kind is {expression.kind}"
-  expression.getter
+proc structGetter*(expression: AnalyzedExpression): AnalyzedStructGetter =
+  assert expression.kind == aekStructGetter,
+    fmt"AnalyzedExpression.structGetter accessed but kind is {expression.kind}"
+  expression.structGetter
 
 proc loc*(expression: AnalyzedExpression): Location =
   case expression.kind:
   of aekFunctionCall: expression.fncall.loc
   of aekVariable: expression.variable.loc
-  of aekGetter: expression.getter.loc
+  of aekStructGetter: expression.structGetter.loc
   of aekMatchExpr: expression.match.loc
   of aekInitializer: expression.init.loc
 
@@ -281,7 +281,7 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
   of aekVariable: expression.variable.argType
   of aekMatchExpr: expression.match.returns
   of aekInitializer: newAnalyzedArgumentType(expression.init.argType)
-  of aekGetter: expression.getter.argType
+  of aekStructGetter: expression.structGetter.argType
 
 # The generic bindings the expression carries for its result type —
 # the map a match/case pattern uses to concretize a variant field
