@@ -20,6 +20,13 @@ proc hash(funcRef: FunctionRef): Hash =
     acc = acc !& impl.hash
   return acc
 
+# A FunctionRef is the memo key, so it needs value equality: without an
+# explicit `==` a `ref object` compares by pointer identity, and since a
+# fresh FunctionRef is allocated at every call site the visiting/visited
+# tables would never dedup (and recursion would never terminate). Mirrors
+# the hash-based `==` convention used across the analyzer/resolver layers.
+proc `==`(a, b: FunctionRef): bool = a.hash == b.hash
+
 type State = ref object
   counter: int
   visiting: Table[FunctionRef, int]
@@ -86,6 +93,11 @@ proc monomorphize(state: State, app: AnalyzedApp, funcRef: FunctionRef, args: se
   if funcRef in state.visited:
     ok(state.visited[funcRef])
   else:
+    # Recursion knot: a funcRef already on the stack is a recursive call into
+    # the same instantiation; return its in-progress id so the caller ties the
+    # cycle. TODO(occurs-check): polymorphic recursion whose type args grow
+    # (T -> List[T] -> ...) mints a fresh funcRef each level, so `visiting`
+    # grows without bound — guard that here before it can run away.
     if funcRef in state.visiting:
       ok(state.visiting[funcRef])
     else:
