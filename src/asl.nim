@@ -5,6 +5,7 @@ import parser/main as parser
 import resolver/main as resolver
 import analyzer/main as analyzer
 import lsp/main as lsp
+import monomorphize
 
 
 proc compile(opts: AslBuildCommand): Result[string, string] =
@@ -12,6 +13,7 @@ proc compile(opts: AslBuildCommand): Result[string, string] =
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
   let resolvedApp = ? resolve(app)
   let analyzedApp = ? analyze(resolvedApp)
+  ? monomorphize(analyzedApp)
   ok("[SUCCESS]")
 
 when isMainModule:

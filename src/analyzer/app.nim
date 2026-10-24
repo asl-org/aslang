@@ -45,6 +45,8 @@ type EntryPoint* = ref object
 proc newEntryPoint(file: AnalyzedFile, module: AnalyzedModule, function: AnalyzedFunction): EntryPoint =
   EntryPoint(file: file, module: module, function: function)
 
+proc file*(entry: EntryPoint): AnalyzedFile = entry.file
+proc module*(entry: EntryPoint): AnalyzedModule = entry.module
 proc function*(entry: EntryPoint): AnalyzedFunction = entry.function
 
 # ---- AnalyzedApp ----

@@ -2,7 +2,7 @@
 ## the def) + AnalyzedUserFunction (def + analyzed statements) + the
 ## AnalyzedFunction tagged union over them.
 
-import strformat
+import strformat, hashes
 
 import ../tokenizer/main as tokenizer
 import ../parser/main as parser
@@ -27,6 +27,8 @@ proc generics*(function: AnalyzedUserFunction): seq[ResolvedGeneric] = function.
 proc def*(function: AnalyzedUserFunction): AnalyzedFunctionDef = function.def.def
 proc statements*(function: AnalyzedUserFunction): seq[AnalyzedStatement] = function.statements
 proc entry(function: AnalyzedUserFunction): bool = function.def.entry
+proc hash*(function: AnalyzedUserFunction): Hash = function.def.hash
+proc `==`*(a, b: AnalyzedUserFunction): bool = a.hash == b.hash
 
 # ---- AnalyzedFunction ----
 
@@ -80,3 +82,10 @@ proc entry*(function: AnalyzedFunction): bool =
   case function.kind:
   of afkUser: function.user.entry
   of afkExtern, afkGenerated: false
+proc hash*(function: AnalyzedFunction): Hash =
+  case function.kind:
+  of afkUser: function.user.hash
+  of afkExtern: function.extern.hash
+  of afkGenerated: function.generated.hash
+proc `==`*(a, b: AnalyzedFunction): bool =
+  a.hash == b.hash

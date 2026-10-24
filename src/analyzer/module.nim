@@ -1,7 +1,7 @@
 ## AnalyzedModule — the per-module driver's result: the resolver
 ## ResolvedModule back-ref plus the analyzed function list.
 
-import tables, options
+import tables, options, hashes
 
 import ../tokenizer/main as tokenizer
 import ../parser/main as parser
@@ -29,6 +29,9 @@ proc name*(module: AnalyzedModule): Identifier = module.def.name
 proc data*(module: AnalyzedModule): Option[AnalyzedDataDef] = module.def.data
 proc def*(module: AnalyzedModule): AnalyzedDefModule = module.def
 proc functions*(module: AnalyzedModule): seq[AnalyzedFunction] = module.functions
+proc hash*(module: AnalyzedModule): Hash = module.def.hash
+proc `==`*(a, b: AnalyzedModule): bool = a.hash == b.hash
+
 proc findFunctionId*(module: AnalyzedModule, funcDef: AnalyzedFunctionDef): int =
   assert(funcDef in module.funcDefIndex, "[BUG] - function definition not present in the module func def index")
   module.funcDefIndex[funcDef]

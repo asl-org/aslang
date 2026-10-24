@@ -91,6 +91,8 @@ proc name*(function: ResolvedUserFunction): Identifier = function.def.name
 proc arity*(function: ResolvedUserFunction): int = function.def.arity
 proc def*(function: ResolvedUserFunction): ResolvedFunctionDef = function.def
 proc statements*(function: ResolvedUserFunction): seq[ResolvedStatement] = function.statements
+proc hash*(function: ResolvedUserFunction): Hash = function.def.hash
+proc `==`*(a, b: ResolvedUserFunction): bool = a.hash == b.hash
 
 type
   ResolvedFunctionKind* = enum

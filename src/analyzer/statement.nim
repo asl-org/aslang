@@ -229,6 +229,16 @@ proc loc*(statement: AnalyzedStatement): Location = statement.def.loc
 proc target*(statement: AnalyzedStatement): Option[Identifier] = statement.def.target
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType = statement.expression.argType
 proc expression*(statement: AnalyzedStatement): AnalyzedExpression = statement.expression
+proc kind*(statement: AnalyzedStatement): ResolvedStatementKind = statement.def.kind
+proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
+  # Only a targeted assignment introduces a new binding into the function
+  # scope; a targetless one (bare expression / field mutation) returns
+  # none. Post-Approach C every statement's argType is concrete, so no
+  # "no-type" fallback.
+  let maybeTarget = statement.target
+  if maybeTarget.isSome: some(newAnalyzedBinding(maybeTarget.get, statement.argType))
+  else: none(AnalyzedBinding)
+
 
 proc newAnalyzedExpression*(variable: AnalyzedVariable): AnalyzedExpression =
   AnalyzedExpression(kind: aekVariable, variable: variable)
@@ -291,12 +301,3 @@ proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType =
 # is intrinsic to the type, whatever expression produced it.
 proc impls*(expression: AnalyzedExpression): AnalyzedImplMap =
   expression.argType.impls
-
-proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
-  # Only a targeted assignment introduces a new binding into the function
-  # scope; a targetless one (bare expression / field mutation) returns
-  # none. Post-Approach C every statement's argType is concrete, so no
-  # "no-type" fallback.
-  let maybeTarget = statement.target
-  if maybeTarget.isSome: some(newAnalyzedBinding(maybeTarget.get, statement.argType))
-  else: none(AnalyzedBinding)

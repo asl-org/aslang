@@ -73,6 +73,8 @@ proc name*(function: AnalyzedExternFunction): Identifier = function.resolved.nam
 proc arity*(function: AnalyzedExternFunction): int = function.resolved.arity
 proc def*(function: AnalyzedExternFunction): AnalyzedFunctionDef = function.def
 proc generics*(function: AnalyzedExternFunction): seq[ResolvedGeneric] = function.def.generics
+proc hash*(function: AnalyzedExternFunction): Hash = function.def.hash
+proc `==`*(a, b: AnalyzedExternFunction): bool = a.hash == b.hash
 
 type AnalyzedDefUserFunction* = ref object
   resolved: ResolvedUserFunction
@@ -88,6 +90,8 @@ proc name*(function: AnalyzedDefUserFunction): Identifier = function.resolved.na
 proc arity*(function: AnalyzedDefUserFunction): int = function.resolved.arity
 proc def*(function: AnalyzedDefUserFunction): AnalyzedFunctionDef = function.def
 proc statements*(function: AnalyzedDefUserFunction): seq[AnalyzedDefStatement] = function.statements
+proc hash*(function: AnalyzedDefUserFunction): Hash = function.resolved.hash
+proc `==`*(a, b: AnalyzedDefUserFunction): bool = a.hash == b.hash
 
 type
   AnalyzedDefFunctionKind* = enum
