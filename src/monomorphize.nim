@@ -72,20 +72,34 @@ type
 proc newMatchNode(subject: ValueId, branches: seq[BranchNode]): MatchNode =
   MatchNode(subject: subject, branches: branches)
 
+# A try call: like a call, but an Err result returns from the enclosing
+# function. `returns` is the finalized type of the unwrapped Ok value this node
+# produces; codegen emits the early return on an Err.
+type TryNode = ref object
+  call: FunctionCallNode
+  returns: AnalyzedArgumentType
+
+proc newTryNode(call: FunctionCallNode, returns: AnalyzedArgumentType): TryNode =
+  TryNode(call: call, returns: returns)
+
 type
   NodeKind = enum
-    nkCall, nkMatch
+    nkCall, nkMatch, nkTry
   Node = object
     id: ValueId
     case kind: NodeKind
     of nkCall: fncall: FunctionCallNode
     of nkMatch: match: MatchNode
+    of nkTry: tryCall: TryNode
 
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
 
 proc newNode(id: ValueId, match: MatchNode): Node =
   Node(kind: nkMatch, id: id, match: match)
+
+proc newNode(id: ValueId, tryCall: TryNode): Node =
+  Node(kind: nkTry, id: id, tryCall: tryCall)
 
 # The work area for building one function copy. It hands out that copy's own
 # ValueIds (`counter`), remembers for each variable name in scope the value it
@@ -123,29 +137,32 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, s
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string]
 
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, fncall: AnalyzedFunctionCall, impls: AnalyzedImplMap): Result[ValueId, string] =
-  case fncall.kind:
-  of afckDefault:
-    var args: seq[ValueId]
-    for arg in fncall.args:
-      let id = ? monomorphize(scope, mono, app, arg, impls)
-      args.add(id)
+  var args: seq[ValueId]
+  for arg in fncall.args:
+    let argId = ? monomorphize(scope, mono, app, arg, impls)
+    args.add(argId)
 
-    case fncall.localType.kind:
-    of altkModule:
-      let module = app.findModule(fncall.localType.module)
-      let function = module.findFunction(fncall.funcDef)
+  var callee: FunctionId
+  case fncall.localType.kind:
+  of altkModule:
+    let module = app.findModule(fncall.localType.module)
+    let function = module.findFunction(fncall.funcDef)
+    let funcRef = newFunctionRef(module, function, fncall.impls.calleeImpls(impls))
+    callee = ? monomorphize(mono, app, funcRef)
+  of altkGeneric:
+    return err(fmt"{fncall.loc} todo: generic-target call")
 
-      let funcRef = newFunctionRef(module, function, fncall.impls.calleeImpls(impls))
-      let callee = ? monomorphize(mono, app, funcRef)
+  let id = scope.nextId()
+  let node =
+    case fncall.kind:
+    of afckDefault:
+      newNode(id, newFunctionCallNode(callee, args))
+    of afckTry:
+      let tryCall = newTryNode(newFunctionCallNode(callee, args), fncall.returns.concrete(impls))
+      newNode(id, tryCall)
 
-      let fncallNode = newFunctionCallNode(callee, args)
-      let id = scope.nextId()
-      scope.nodes.add(newNode(id, fncallNode))
-      ok(id)
-    of altkGeneric:
-      err(fmt"{fncall.loc} todo: default generic function call")
-  of afckTry:
-    err(fmt"{fncall.loc} todo: try function call")
+  scope.nodes.add(node)
+  ok(id)
 
 
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string] =
