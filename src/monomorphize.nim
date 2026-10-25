@@ -1,4 +1,4 @@
-import results, strformat, tables, hashes
+import options, results, strformat, tables, hashes
 
 import parser/main as parser
 import resolver/main as resolver
@@ -58,16 +58,34 @@ type FunctionCallNode = ref object
 proc newFunctionCallNode(callee: FunctionId, args: seq[ValueId]): FunctionCallNode =
   FunctionCallNode(callee: callee, args: args)
 
+# A match on a value. `subject` is the value being matched; each BranchNode
+# names the pattern it covers and the value it produces. The match node's own
+# id is the matched result — the value of whichever branch runs.
+type
+  BranchNode = object
+    pattern: AnalyzedCasePattern
+    resultId: ValueId
+  MatchNode = ref object
+    subject: ValueId
+    branches: seq[BranchNode]
+
+proc newMatchNode(subject: ValueId, branches: seq[BranchNode]): MatchNode =
+  MatchNode(subject: subject, branches: branches)
+
 type
   NodeKind = enum
-    nkCall
+    nkCall, nkMatch
   Node = object
     id: ValueId
     case kind: NodeKind
     of nkCall: fncall: FunctionCallNode
+    of nkMatch: match: MatchNode
 
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
+
+proc newNode(id: ValueId, match: MatchNode): Node =
+  Node(kind: nkMatch, id: id, match: match)
 
 # The work area for building one function copy. It hands out that copy's own
 # ValueIds (`counter`), remembers for each variable name in scope the value it
@@ -101,7 +119,7 @@ proc nextId(mono: Monomorphizer): FunctionId =
   id
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string]
-proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[void, string]
+proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[ValueId, string]
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string]
 
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, fncall: AnalyzedFunctionCall, impls: AnalyzedImplMap): Result[ValueId, string] =
@@ -133,19 +151,32 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, f
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string] =
   case expression.kind:
   of aekFunctionCall:
-    let id = ? monomorphize(scope, mono, app, expression.fncall, impls)
-    err(fmt"{expression.loc} todo: function call")
+    ok(? monomorphize(scope, mono, app, expression.fncall, impls))
+  of aekMatchExpr:
+    let subjectId = ? monomorphize(scope, mono, app, expression.match.subject, impls)
+    var branches: seq[BranchNode]
+    for caseBlock in expression.match.cases:
+      var branchResult: ValueId
+      for statement in caseBlock.statements:
+        branchResult = ? monomorphize(scope, mono, app, statement, impls)
+      branches.add(BranchNode(pattern: caseBlock.pattern, resultId: branchResult))
+    let id = scope.nextId()
+    scope.nodes.add(newNode(id, newMatchNode(subjectId, branches)))
+    ok(id)
   of aekInitializer: err(fmt"{expression.loc} todo: initializer")
   of aekStructGetter: err(fmt"{expression.loc} todo: struct getter")
-  of aekMatchExpr: err(fmt"{expression.loc} todo: match expression")
   of aekVariable: err(fmt"{expression.loc} todo: variable")
 
-proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[void, string] =
+proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[ValueId, string] =
   case statement.kind:
   of rskNone:
-    let id = ? monomorphize(scope, mono, app, statement.expression, impls)
-    err(fmt"{statement.loc} todo: raw expression")
-  of rskVariable: err(fmt"{statement.loc} todo: variable assignment")
+    monomorphize(scope, mono, app, statement.expression, impls)
+  of rskVariable:
+    let value = ? monomorphize(scope, mono, app, statement.expression, impls)
+    let target = statement.target
+    assert(target.isSome, "[BUG] - rskVariable statement has no target")
+    scope.argMap[target.get] = value
+    ok(value)
   of rskGetter: err(fmt"{statement.loc} todo: setter")
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, function: AnalyzedUserFunction): Result[FunctionId, string] =
@@ -155,7 +186,7 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, f
 
   # TODO: handle function statements.
   for statement in function.statements:
-    ? monomorphize(scope, mono, app, statement, funcRef.impls)
+    discard ? monomorphize(scope, mono, app, statement, funcRef.impls)
 
   err("todo: handle user function")
 
