@@ -1,4 +1,4 @@
-import results, strformat, tables, hashes, sequtils
+import results, strformat, tables, hashes
 
 import parser/main as parser
 import resolver/main as resolver
@@ -77,26 +77,24 @@ proc nextId(mono: Monomorphizer): FunctionId =
   mono.counter += 1
   id
 
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, args: seq[ValueId]): Result[FunctionId, string]
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Identifier, ValueId], statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[void, string]
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Identifier, ValueId], expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string]
+proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string]
+proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[void, string]
+proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string]
 
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Identifier, ValueId], fncall: AnalyzedFunctionCall, impls: AnalyzedImplMap): Result[ValueId, string] =
+proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, fncall: AnalyzedFunctionCall, impls: AnalyzedImplMap): Result[ValueId, string] =
   case fncall.kind:
   of afckDefault:
     var args: seq[ValueId]
     for arg in fncall.args:
-      let id = ? monomorphize(mono, app, argMap, arg, impls)
+      let id = ? monomorphize(scope, mono, app, arg, impls)
       args.add(id)
 
     case fncall.localType.kind:
     of altkModule:
       let module = app.findModule(fncall.localType.module)
       let function = module.findFunction(fncall.funcDef)
-
       let funcRef = newFunctionRef(module, function, fncall.impls.calleeImpls(impls))
-      let id = ? monomorphize(mono, app, funcRef, args)
-
+      let id = ? monomorphize(mono, app, funcRef)
       err(fmt"{fncall.loc} todo: default module function call")
     of altkGeneric:
       err(fmt"{fncall.loc} todo: default generic function call")
@@ -104,36 +102,36 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Ident
     err(fmt"{fncall.loc} todo: try function call")
 
 
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Identifier, ValueId], expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string] =
+proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, expression: AnalyzedExpression, impls: AnalyzedImplMap): Result[ValueId, string] =
   case expression.kind:
   of aekFunctionCall:
-    let id = ? monomorphize(mono, app, argMap, expression.fncall, impls)
+    let id = ? monomorphize(scope, mono, app, expression.fncall, impls)
     err(fmt"{expression.loc} todo: function call")
   of aekInitializer: err(fmt"{expression.loc} todo: initializer")
   of aekStructGetter: err(fmt"{expression.loc} todo: struct getter")
   of aekMatchExpr: err(fmt"{expression.loc} todo: match expression")
   of aekVariable: err(fmt"{expression.loc} todo: variable")
 
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Identifier, ValueId], statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[void, string] =
+proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[void, string] =
   case statement.kind:
   of rskNone:
-    let id = ? monomorphize(mono, app, argMap, statement.expression, impls)
+    let id = ? monomorphize(scope, mono, app, statement.expression, impls)
     err(fmt"{statement.loc} todo: raw expression")
   of rskVariable: err(fmt"{statement.loc} todo: variable assignment")
   of rskGetter: err(fmt"{statement.loc} todo: setter")
 
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, function: AnalyzedUserFunction, args: seq[ValueId]): Result[FunctionId, string] =
-  var argMap: Table[Identifier, ValueId]
-  for (id, arg) in zip(args, function.def.args):
-    argMap[arg.name] = id
+proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, function: AnalyzedUserFunction): Result[FunctionId, string] =
+  let scope = newFunctionScope()
+  for arg in function.def.args:
+    scope.argMap[arg.name] = scope.nextId()
 
   # TODO: handle function statements.
   for statement in function.statements:
-    ? monomorphize(mono, app, argMap, statement, funcRef.impls)
+    ? monomorphize(scope, mono, app, statement, funcRef.impls)
 
   err("todo: handle user function")
 
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, args: seq[ValueId]): Result[FunctionId, string] =
+proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string] =
   if funcRef in mono.visited:
     ok(mono.visited[funcRef])
   else:
@@ -153,7 +151,7 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, a
         let id = mono.nextId()
         mono.visiting[funcRef] = id
 
-        discard ? monomorphize(mono, app, funcRef, funcRef.function.user, args)
+        discard ? monomorphize(mono, app, funcRef, funcRef.function.user)
 
         mono.visited[funcRef] = id
         mono.visiting.del(funcRef)
@@ -166,6 +164,6 @@ proc monomorphize*(app: AnalyzedApp): Result[void, string] =
   assert(entry.function.def.args.len == 0, "[BUG] - entry function should not accept any arguments")
 
   let funcRef = newFunctionRef(entry.module, entry.function, default(AnalyzedImplMap))
-  discard ? monomorphize(newMonomorphizer(), app, funcRef, @[])
+  discard ? monomorphize(newMonomorphizer(), app, funcRef)
   # TODO: Return a monomorphized app
   err("todo: implement monomorphized app")
