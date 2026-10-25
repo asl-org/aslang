@@ -5,12 +5,33 @@ import resolver/main as resolver
 import defanalyzer/main as defanalyzer
 import analyzer/main as analyzer
 
+# Works out the concrete types for a call's target. A call records the types
+# it passes (`fncallImpls`), but inside a generic function those can still
+# mention the function's own type parameters. `funcImpls` says what this copy
+# of the function set them to, so filling it in gives the fully concrete types
+# that name the exact callee copy.
+proc calleeImpls(fncallImpls: AnalyzedImplMap, funcImpls: AnalyzedImplMap): AnalyzedImplMap =
+  var concreteImpls: AnalyzedImplMap
+  for generic, impl in fncallImpls:
+    concreteImpls[generic] = impl.concrete(funcImpls)
+  concreteImpls
+
+# Names one fully-typed copy of a function. A generic function used with
+# different concrete types becomes several copies, and each copy has its own
+# number. These numbers are unique across the whole program.
 type FunctionId = distinct int
 proc `==`(a, b: FunctionId): bool {.borrow.}
 proc hash(a: FunctionId): Hash {.borrow.}
 
+# Names one value computed inside a single function copy. Each copy numbers
+# its own values from zero, so a ValueId means nothing on its own — only
+# together with the function copy it belongs to.
 type ValueId = distinct int
 
+# Says which function copy we mean: the module it is in, the function itself,
+# and the concrete types chosen for its generics (`impls`). Two calls that pick
+# the same module, function, and types give an equal FunctionRef, so each copy
+# is built only once.
 type FunctionRef = ref object
   module: AnalyzedModule
   function: AnalyzedFunction
@@ -25,19 +46,36 @@ proc hash(funcRef: FunctionRef): Hash =
     acc = acc !& impl.hash
   return acc
 
-# A FunctionRef is the memo key, so it needs value equality: without an
-# explicit `==` a `ref object` compares by pointer identity, and since a
-# fresh FunctionRef is allocated at every call site the visiting/visited
-# tables would never dedup (and recursion would never terminate). Mirrors
-# the hash-based `==` convention used across the analyzer/resolver layers.
 proc `==`(a, b: FunctionRef): bool = a.hash == b.hash
 
+# The work area for building one function copy. It hands out that copy's own
+# ValueIds (`valueCounter`) and remembers, for each variable name in scope, the
+# value it currently stands for (`argMap`).
+type FunctionScope = ref object
+  counter: int
+  argMap: Table[Identifier, ValueId]
+
+proc newFunctionScope(): FunctionScope = FunctionScope()
+
+proc nextId(scope: FunctionScope): ValueId =
+  let id = ValueId(scope.counter)
+  scope.counter += 1
+  id
+
+# Drives the whole pass. It tracks which function copies are finished
+# (`visited`) and which are still being built (`visiting`), and gives out the
+# next free FunctionId (`counter`). There is one for the entire program.
 type Monomorphizer = ref object
   counter: int
   visiting: Table[FunctionRef, FunctionId]
   visited: Table[FunctionRef, FunctionId]
 
 proc newMonomorphizer(): Monomorphizer = Monomorphizer()
+
+proc nextId(mono: Monomorphizer): FunctionId =
+  let id = FunctionId(mono.counter)
+  mono.counter += 1
+  id
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, args: seq[ValueId]): Result[FunctionId, string]
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Identifier, ValueId], statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[void, string]
@@ -56,10 +94,7 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, argMap: var Table[Ident
       let module = app.findModule(fncall.localType.module)
       let function = module.findFunction(fncall.funcDef)
 
-      var calleeImpls: AnalyzedImplMap
-      for generic, impl in fncall.impls:
-        calleeImpls[generic] = impl.concrete(impls)
-      let funcRef = newFunctionRef(module, function, calleeImpls)
+      let funcRef = newFunctionRef(module, function, fncall.impls.calleeImpls(impls))
       let id = ? monomorphize(mono, app, funcRef, args)
 
       err(fmt"{fncall.loc} todo: default module function call")
@@ -102,27 +137,28 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, a
   if funcRef in mono.visited:
     ok(mono.visited[funcRef])
   else:
-    # Recursion knot: a funcRef already on the stack is a recursive call into
-    # the same instantiation; return its in-progress id so the caller ties the
-    # cycle. TODO(occurs-check): polymorphic recursion whose type args grow
-    # (T -> List[T] -> ...) mints a fresh funcRef each level, so `visiting`
-    # grows without bound — guard that here before it can run away.
+    # Recursion is handled here: if we reach a function copy that is still
+    # being built, this is a recursive call back into it, so return the id we
+    # already gave it and let the cycle close instead of looping forever.
+    # TODO(occurs-check): if a recursive function keeps calling itself with
+    # ever-bigger types (T, then List[T], then List[List[T]]...), each call is
+    # a new copy and `visiting` never stops growing — guard against that here.
     if funcRef in mono.visiting:
       ok(mono.visiting[funcRef])
     else:
-
       case funcRef.function.kind:
       of afkExtern: err(fmt"todo: handle extern function monomorphization")
       of afkGenerated: err(fmt"todo: handle generated function monomorphization")
       of afkUser:
-        mono.visiting[funcRef] = FunctionId(mono.counter)
-        mono.counter += 1
+        let id = mono.nextId()
+        mono.visiting[funcRef] = id
 
-        let id = ? monomorphize(mono, app, funcRef, funcRef.function.user, args)
+        discard ? monomorphize(mono, app, funcRef, funcRef.function.user, args)
 
-        mono.visited[funcRef] = mono.visiting[funcRef]
+        mono.visited[funcRef] = id
         mono.visiting.del(funcRef)
-        ok(mono.visited[funcRef])
+
+        ok(id)
 
 proc monomorphize*(app: AnalyzedApp): Result[void, string] =
   let entry = ? app.entry
