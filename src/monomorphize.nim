@@ -48,12 +48,35 @@ proc hash(funcRef: FunctionRef): Hash =
 
 proc `==`(a, b: FunctionRef): bool = a.hash == b.hash
 
+# One step inside a function copy's body that produces a value. For now the
+# only kind is a call: `callee` is the function copy being called and `args`
+# are the values passed to it; the node's own `id` is the value it returns.
+type FunctionCallNode = ref object
+  callee: FunctionId
+  args: seq[ValueId]
+
+proc newFunctionCallNode(callee: FunctionId, args: seq[ValueId]): FunctionCallNode =
+  FunctionCallNode(callee: callee, args: args)
+
+type
+  NodeKind = enum
+    nkCall
+  Node = object
+    id: ValueId
+    case kind: NodeKind
+    of nkCall: fncall: FunctionCallNode
+
+proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
+  Node(kind: nkCall, id: id, fncall: fncall)
+
 # The work area for building one function copy. It hands out that copy's own
-# ValueIds (`valueCounter`) and remembers, for each variable name in scope, the
-# value it currently stands for (`argMap`).
+# ValueIds (`counter`), remembers for each variable name in scope the value it
+# currently stands for (`argMap`), and collects the body's nodes as it goes
+# (`nodes`).
 type FunctionScope = ref object
   counter: int
   argMap: Table[Identifier, ValueId]
+  nodes: seq[Node]
 
 proc newFunctionScope(): FunctionScope = FunctionScope()
 
@@ -93,9 +116,14 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, f
     of altkModule:
       let module = app.findModule(fncall.localType.module)
       let function = module.findFunction(fncall.funcDef)
+
       let funcRef = newFunctionRef(module, function, fncall.impls.calleeImpls(impls))
-      let id = ? monomorphize(mono, app, funcRef)
-      err(fmt"{fncall.loc} todo: default module function call")
+      let callee = ? monomorphize(mono, app, funcRef)
+
+      let fncallNode = newFunctionCallNode(callee, args)
+      let id = scope.nextId()
+      scope.nodes.add(newNode(id, fncallNode))
+      ok(id)
     of altkGeneric:
       err(fmt"{fncall.loc} todo: default generic function call")
   of afckTry:
