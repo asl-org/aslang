@@ -82,15 +82,25 @@ type TryNode = ref object
 proc newTryNode(call: FunctionCallNode, returns: AnalyzedArgumentType): TryNode =
   TryNode(call: call, returns: returns)
 
+# A literal value. `literal` is the parsed constant; `returns` is the module
+# type it adopted — its finalized type.
+type LiteralNode = ref object
+  literal: Literal
+  returns: AnalyzedArgumentType
+
+proc newLiteralNode(literal: Literal, returns: AnalyzedArgumentType): LiteralNode =
+  LiteralNode(literal: literal, returns: returns)
+
 type
   NodeKind = enum
-    nkCall, nkMatch, nkTry
+    nkCall, nkMatch, nkTry, nkLiteral
   Node = object
     id: ValueId
     case kind: NodeKind
     of nkCall: fncall: FunctionCallNode
     of nkMatch: match: MatchNode
     of nkTry: tryCall: TryNode
+    of nkLiteral: literal: LiteralNode
 
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
@@ -100,6 +110,9 @@ proc newNode(id: ValueId, match: MatchNode): Node =
 
 proc newNode(id: ValueId, tryCall: TryNode): Node =
   Node(kind: nkTry, id: id, tryCall: tryCall)
+
+proc newNode(id: ValueId, literal: LiteralNode): Node =
+  Node(kind: nkLiteral, id: id, literal: literal)
 
 # The work area for building one function copy. It hands out that copy's own
 # ValueIds (`counter`), remembers for each variable name in scope the value it
@@ -180,9 +193,21 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, e
     let id = scope.nextId()
     scope.nodes.add(newNode(id, newMatchNode(subjectId, branches)))
     ok(id)
-  of aekInitializer: err(fmt"{expression.loc} todo: initializer")
+  of aekInitializer:
+    case expression.init.kind:
+    of aikLiteral:
+      let lit = expression.init.literal
+      let id = scope.nextId()
+      scope.nodes.add(newNode(id, newLiteralNode(lit.literal, lit.argType.concrete(impls))))
+      ok(id)
+    of aikStruct: err(fmt"{expression.loc} todo: struct initializer")
+    of aikUnion: err(fmt"{expression.loc} todo: union initializer")
   of aekStructGetter: err(fmt"{expression.loc} todo: struct getter")
-  of aekVariable: err(fmt"{expression.loc} todo: variable")
+  of aekVariable:
+    # A variable is not a node — it resolves to the value its binding produced.
+    let name = expression.variable.name
+    assert(name in scope.argMap, "[BUG] - variable out of scope during monomorphization")
+    ok(scope.argMap[name])
 
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[ValueId, string] =
   case statement.kind:
