@@ -230,7 +230,7 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, f
   for statement in function.statements:
     discard ? monomorphize(scope, mono, app, statement, funcRef.impls)
 
-  err("todo: handle user function")
+  err(fmt"{function.loc} todo: handle user function")
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string] =
   if funcRef in mono.visited:
@@ -246,8 +246,8 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
       ok(mono.visiting[funcRef])
     else:
       case funcRef.function.kind:
-      of afkExtern: err(fmt"todo: handle extern function monomorphization")
-      of afkGenerated: err(fmt"todo: handle generated function monomorphization")
+      of afkExtern: err(fmt"{funcRef.function.loc} todo: handle extern function monomorphization")
+      of afkGenerated: err(fmt"{funcRef.function.loc} todo: handle generated function monomorphization")
       of afkUser:
         let id = mono.nextId()
         mono.visiting[funcRef] = id
@@ -267,4 +267,4 @@ proc monomorphize*(app: AnalyzedApp): Result[void, string] =
   let funcRef = newFunctionRef(entry.module, entry.function, default(AnalyzedImplMap))
   discard ? monomorphize(newMonomorphizer(), app, funcRef)
   # TODO: Return a monomorphized app
-  err("todo: implement monomorphized app")
+  err(fmt"{entry.function.loc} todo: implement monomorphized app")
