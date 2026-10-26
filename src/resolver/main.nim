@@ -168,6 +168,17 @@ proc resolveFunctionDef(fileCtx: FileContext, typeId: int, ctxType: LocalType, f
     resolvedArgDefs.add(resolvedArgDef)
 
   let resolvedReturnType = ? resolveArgumentType(fileCtx, ctxType, def.returns)
+  # TODO(return-generic-bound): every generic in the return type must also
+  # appear in a parameter type — i.e. the free generics of `resolvedReturnType`
+  # must be a subset of the free generics across `resolvedArgDefs`, searched
+  # transitively through nested types (Array[U], Status[U, E], ...). Otherwise
+  # the return generic is under-determined: inference is argument-driven (no
+  # explicit type application / return-context inference), so the caller has
+  # nothing to pin it to. The analyzer only rejects this when a call actually
+  # instantiates the function, so uncalled generic functions slip through —
+  # this is the definition-time guard. Verified safe against today's generics
+  # (Any/Failure/Key/Behavior/Eq/Cache all satisfy it). Relax the rule if
+  # explicit type arguments are ever added.
   ok(newResolvedFunctionDef(fileCtx.id, typeId, functionId, def, resolvedArgDefs, resolvedReturnType))
 
 proc resolveExternFunction(fileCtx: FileContext, typeId: int, ctxType: LocalType, functionId: int, function: ExternFunction): Result[ResolvedExternFunction, string] =
