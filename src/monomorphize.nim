@@ -269,8 +269,20 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
       ok(mono.visiting[funcRef])
     else:
       case funcRef.kind:
-      of frkExtern: err(fmt"{funcRef.extern.loc} todo: handle extern function monomorphization")
-      of frkGenerated: err(fmt"{funcRef.generated.loc} todo: handle generated function monomorphization")
+      of frkGenerated:
+        err(fmt"{funcRef.generated.loc} todo: handle generated function monomorphization")
+      of frkExtern:
+        # An extern function is an FFI declaration with no body, so there is
+        # nothing to walk and no recursion knot to tie: mint its id and
+        # memoize it directly.
+        # TODO(extern-generic-wrapper): a generic extern needs a per-instance
+        # kind-tagged C wrapper driven by `funcRef.impls` — a concrete scalar
+        # passed into a generic slot lowers to `(value, kindTag, &out)`. If (and
+        # only if) the extern reports failure, that flag is lifted back into a
+        # Status.Ok/Err; an extern need not return a status.
+        let id = mono.nextId()
+        mono.visited[funcRef] = id
+        ok(id)
       of frkUser:
         let id = mono.nextId()
         mono.visiting[funcRef] = id
