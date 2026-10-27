@@ -109,9 +109,25 @@ type LiteralNode = ref object
 proc newLiteralNode(literal: Literal, returns: AnalyzedArgumentType): LiteralNode =
   LiteralNode(literal: literal, returns: returns)
 
+# One field of an aggregate initializer: the field it fills (by name) and the
+# value put there.
+type InitField = object
+  field: Identifier
+  value: ValueId
+
+# Constructs a union value. `returns` is the finalized union type, `variant`
+# the variant built, and `fields` its field values.
+type UnionInitNode = ref object
+  returns: AnalyzedArgumentType
+  variant: Identifier
+  fields: seq[InitField]
+
+proc newUnionInitNode(returns: AnalyzedArgumentType, variant: Identifier, fields: seq[InitField]): UnionInitNode =
+  UnionInitNode(returns: returns, variant: variant, fields: fields)
+
 type
   NodeKind = enum
-    nkCall, nkMatch, nkTry, nkLiteral
+    nkCall, nkMatch, nkTry, nkLiteral, nkUnion
   Node = object
     id: ValueId
     case kind: NodeKind
@@ -119,6 +135,7 @@ type
     of nkMatch: match: MatchNode
     of nkTry: tryCall: TryNode
     of nkLiteral: literal: LiteralNode
+    of nkUnion: unionInit: UnionInitNode
 
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
@@ -131,6 +148,9 @@ proc newNode(id: ValueId, tryCall: TryNode): Node =
 
 proc newNode(id: ValueId, literal: LiteralNode): Node =
   Node(kind: nkLiteral, id: id, literal: literal)
+
+proc newNode(id: ValueId, unionInit: UnionInitNode): Node =
+  Node(kind: nkUnion, id: id, unionInit: unionInit)
 
 # The built body of one user-function copy: the ValueIds its parameters were
 # given (in signature order), the nodes its body computed, and the ValueId its
@@ -237,7 +257,15 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, e
       scope.nodes.add(newNode(id, newLiteralNode(lit.literal, lit.argType.concrete(impls))))
       ok(id)
     of aikStruct: err(fmt"{expression.loc} todo: struct initializer")
-    of aikUnion: err(fmt"{expression.loc} todo: union initializer")
+    of aikUnion:
+      let union = expression.init.union
+      var fields: seq[InitField]
+      for kwarg in union.kwargs:
+        let value = ? monomorphize(scope, mono, app, kwarg.expression, impls)
+        fields.add(InitField(field: kwarg.field.name, value: value))
+      let id = scope.nextId()
+      scope.nodes.add(newNode(id, newUnionInitNode(expression.argType.concrete(impls), union.variant, fields)))
+      ok(id)
   of aekStructGetter: err(fmt"{expression.loc} todo: struct getter")
   of aekVariable:
     # A variable is not a node — it resolves to the value its binding produced.
