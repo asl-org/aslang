@@ -31,17 +31,35 @@ type ValueId = distinct int
 # Says which function copy we mean: the module it is in, the function itself,
 # and the concrete types chosen for its generics (`impls`). Two calls that pick
 # the same module, function, and types give an equal FunctionRef, so each copy
-# is built only once.
-type FunctionRef = ref object
-  module: AnalyzedModule
-  function: AnalyzedFunction
-  impls: AnalyzedImplMap
+# is built only once. The function is held by its concrete kind — user, extern,
+# or generated — so each later stage sees exactly the shape it handles instead
+# of re-casing on an AnalyzedFunction.
+type
+  FunctionRefKind = enum frkUser, frkExtern, frkGenerated
+  FunctionRef = ref object
+    module: AnalyzedModule
+    impls: AnalyzedImplMap
+    case kind: FunctionRefKind
+    of frkUser: user: AnalyzedUserFunction
+    of frkExtern: extern: AnalyzedExternFunction
+    of frkGenerated: generated: AnalyzedFunctionDef
 
-proc newFunctionRef(module: AnalyzedModule, function: AnalyzedFunction, impls: AnalyzedImplMap): FunctionRef =
-  FunctionRef(module: module, function: function, impls: impls)
+proc newFunctionRef(module: AnalyzedModule, user: AnalyzedUserFunction, impls: AnalyzedImplMap): FunctionRef =
+  FunctionRef(kind: frkUser, module: module, impls: impls, user: user)
+
+proc newFunctionRef(module: AnalyzedModule, extern: AnalyzedExternFunction, impls: AnalyzedImplMap): FunctionRef =
+  FunctionRef(kind: frkExtern, module: module, impls: impls, extern: extern)
+
+proc newFunctionRef(module: AnalyzedModule, generated: AnalyzedFunctionDef, impls: AnalyzedImplMap): FunctionRef =
+  FunctionRef(kind: frkGenerated, module: module, impls: impls, generated: generated)
 
 proc hash(funcRef: FunctionRef): Hash =
-  var acc = funcRef.module.hash !& funcRef.function.hash
+  let functionHash =
+    case funcRef.kind:
+    of frkUser: funcRef.user.hash
+    of frkExtern: funcRef.extern.hash
+    of frkGenerated: funcRef.generated.hash
+  var acc = funcRef.module.hash !& funcRef.kind.ord.hash !& functionHash
   for _, impl in funcRef.impls:
     acc = acc !& impl.hash
   return acc
@@ -160,7 +178,12 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, f
   of altkModule:
     let module = app.findModule(fncall.localType.module)
     let function = module.findFunction(fncall.funcDef)
-    let funcRef = newFunctionRef(module, function, fncall.impls.calleeImpls(impls))
+    let concreteImpls = fncall.impls.calleeImpls(impls)
+    let funcRef =
+      case function.kind:
+      of afkUser: newFunctionRef(module, function.user, concreteImpls)
+      of afkExtern: newFunctionRef(module, function.extern, concreteImpls)
+      of afkGenerated: newFunctionRef(module, function.generated, concreteImpls)
     callee = ? monomorphize(mono, app, funcRef)
   of altkGeneric:
     return err(fmt"{fncall.loc} todo: generic-target call")
@@ -245,14 +268,14 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
     if funcRef in mono.visiting:
       ok(mono.visiting[funcRef])
     else:
-      case funcRef.function.kind:
-      of afkExtern: err(fmt"{funcRef.function.loc} todo: handle extern function monomorphization")
-      of afkGenerated: err(fmt"{funcRef.function.loc} todo: handle generated function monomorphization")
-      of afkUser:
+      case funcRef.kind:
+      of frkExtern: err(fmt"{funcRef.extern.loc} todo: handle extern function monomorphization")
+      of frkGenerated: err(fmt"{funcRef.generated.loc} todo: handle generated function monomorphization")
+      of frkUser:
         let id = mono.nextId()
         mono.visiting[funcRef] = id
 
-        discard ? monomorphize(mono, app, funcRef, funcRef.function.user)
+        discard ? monomorphize(mono, app, funcRef, funcRef.user)
 
         mono.visited[funcRef] = id
         mono.visiting.del(funcRef)
@@ -264,7 +287,7 @@ proc monomorphize*(app: AnalyzedApp): Result[void, string] =
   assert(entry.function.kind == afkUser, "[BUG] - entry function must always be a user function")
   assert(entry.function.def.args.len == 0, "[BUG] - entry function should not accept any arguments")
 
-  let funcRef = newFunctionRef(entry.module, entry.function, default(AnalyzedImplMap))
+  let funcRef = newFunctionRef(entry.module, entry.function.user, default(AnalyzedImplMap))
   discard ? monomorphize(newMonomorphizer(), app, funcRef)
   # TODO: Return a monomorphized app
   err(fmt"{entry.function.loc} todo: implement monomorphized app")
