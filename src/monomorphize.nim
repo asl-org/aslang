@@ -125,9 +125,18 @@ type UnionInitNode = ref object
 proc newUnionInitNode(returns: AnalyzedArgumentType, variant: Identifier, fields: seq[InitField]): UnionInitNode =
   UnionInitNode(returns: returns, variant: variant, fields: fields)
 
+# Constructs a struct value: the finalized struct type and its field values.
+# (A struct has no variant — the only difference from UnionInitNode.)
+type StructInitNode = ref object
+  returns: AnalyzedArgumentType
+  fields: seq[InitField]
+
+proc newStructInitNode(returns: AnalyzedArgumentType, fields: seq[InitField]): StructInitNode =
+  StructInitNode(returns: returns, fields: fields)
+
 type
   NodeKind = enum
-    nkCall, nkMatch, nkTry, nkLiteral, nkUnion
+    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct
   Node = object
     id: ValueId
     case kind: NodeKind
@@ -136,6 +145,7 @@ type
     of nkTry: tryCall: TryNode
     of nkLiteral: literal: LiteralNode
     of nkUnion: unionInit: UnionInitNode
+    of nkStruct: structInit: StructInitNode
 
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
@@ -151,6 +161,9 @@ proc newNode(id: ValueId, literal: LiteralNode): Node =
 
 proc newNode(id: ValueId, unionInit: UnionInitNode): Node =
   Node(kind: nkUnion, id: id, unionInit: unionInit)
+
+proc newNode(id: ValueId, structInit: StructInitNode): Node =
+  Node(kind: nkStruct, id: id, structInit: structInit)
 
 # The built body of one user-function copy: the ValueIds its parameters were
 # given (in signature order), the nodes its body computed, and the ValueId its
@@ -256,7 +269,15 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, e
       let id = scope.nextId()
       scope.nodes.add(newNode(id, newLiteralNode(lit.literal, lit.argType.concrete(impls))))
       ok(id)
-    of aikStruct: err(fmt"{expression.loc} todo: struct initializer")
+    of aikStruct:
+      let structInit = expression.init.struct
+      var fields: seq[InitField]
+      for kwarg in structInit.kwargs:
+        let value = ? monomorphize(scope, mono, app, kwarg.expression, impls)
+        fields.add(InitField(field: kwarg.field.name, value: value))
+      let id = scope.nextId()
+      scope.nodes.add(newNode(id, newStructInitNode(expression.argType.concrete(impls), fields)))
+      ok(id)
     of aikUnion:
       let union = expression.init.union
       var fields: seq[InitField]
