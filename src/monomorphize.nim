@@ -132,6 +132,17 @@ proc newNode(id: ValueId, tryCall: TryNode): Node =
 proc newNode(id: ValueId, literal: LiteralNode): Node =
   Node(kind: nkLiteral, id: id, literal: literal)
 
+# The built body of one user-function copy: the ValueIds its parameters were
+# given (in signature order), the nodes its body computed, and the ValueId its
+# tail produced — the value this copy returns.
+type MonoUserFunction = ref object
+  params: seq[ValueId]
+  nodes: seq[Node]
+  resultId: ValueId
+
+proc newMonoUserFunction(params: seq[ValueId], nodes: seq[Node], resultId: ValueId): MonoUserFunction =
+  MonoUserFunction(params: params, nodes: nodes, resultId: resultId)
+
 # The work area for building one function copy. It hands out that copy's own
 # ValueIds (`counter`), remembers for each variable name in scope the value it
 # currently stands for (`argMap`), and collects the body's nodes as it goes
@@ -149,12 +160,14 @@ proc nextId(scope: FunctionScope): ValueId =
   id
 
 # Drives the whole pass. It tracks which function copies are finished
-# (`visited`) and which are still being built (`visiting`), and gives out the
-# next free FunctionId (`counter`). There is one for the entire program.
+# (`visited`) and which are still being built (`visiting`), gives out the next
+# free FunctionId (`counter`), and keeps each finished copy's built body
+# (`instances`). There is one for the entire program.
 type Monomorphizer = ref object
   counter: int
   visiting: Table[FunctionRef, FunctionId]
   visited: Table[FunctionRef, FunctionId]
+  instances: Table[FunctionId, MonoUserFunction]
 
 proc newMonomorphizer(): Monomorphizer = Monomorphizer()
 
@@ -244,16 +257,20 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, s
     ok(value)
   of rskGetter: err(fmt"{statement.loc} todo: setter")
 
-proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, function: AnalyzedUserFunction): Result[FunctionId, string] =
+proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, function: AnalyzedUserFunction): Result[MonoUserFunction, string] =
   let scope = newFunctionScope()
+  var params: seq[ValueId]
   for arg in function.def.args:
-    scope.argMap[arg.name] = scope.nextId()
+    let paramId = scope.nextId()
+    scope.argMap[arg.name] = paramId
+    params.add(paramId)
 
-  # TODO: handle function statements.
+  # The function's value is the value its last statement produces — its tail.
+  var resultId: ValueId
   for statement in function.statements:
-    discard ? monomorphize(scope, mono, app, statement, funcRef.impls)
+    resultId = ? monomorphize(scope, mono, app, statement, funcRef.impls)
 
-  err(fmt"{function.loc} todo: handle user function")
+  ok(newMonoUserFunction(params, scope.nodes, resultId))
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string] =
   if funcRef in mono.visited:
@@ -287,7 +304,8 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
         let id = mono.nextId()
         mono.visiting[funcRef] = id
 
-        discard ? monomorphize(mono, app, funcRef, funcRef.user)
+        let instance = ? monomorphize(mono, app, funcRef, funcRef.user)
+        mono.instances[id] = instance
 
         mono.visited[funcRef] = id
         mono.visiting.del(funcRef)
