@@ -6,6 +6,7 @@ import tokenizer/main as tokenizer
 import parser/main as parser
 import resolver/main as resolver
 import analyzer/main as analyzer
+import monomorphize
 
 type FileSpec* = tuple[name: string, content: string]
 
@@ -169,6 +170,21 @@ proc analyzeAppSingle*(source: string,
     let parsed = ? app
     let resolved = ? resolve(parsed)
     analyze(resolved)
+  (go(maybeApp), dir)
+
+proc monomorphizeSingle*(source: string,
+    indentWidth: uint32 = 2,
+    vendorRoots: VendorRoots = emptyVendorRoots()): tuple[res: Result[void, string], dir: string] =
+  ## Parse + resolve + analyze + monomorphize a single-file program.
+  ## Returns the Result[void, string] form — MonoApp internals are
+  ## private, so tests assert on ok/err and (for todo arms) the message.
+  let (maybeApp, dir) = parseFiles([("entry.asl", source)], indentWidth, vendorRoots)
+  proc go(app: Result[App, string]): Result[void, string] =
+    let parsed = ? app
+    let resolved = ? resolve(parsed)
+    let analyzed = ? analyze(resolved)
+    discard ? monomorphize(analyzed)
+    ok()
   (go(maybeApp), dir)
 
 proc errorContains*(err: string, needle: string): bool =
