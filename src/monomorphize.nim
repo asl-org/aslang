@@ -16,25 +16,14 @@ proc calleeImpls(fncallImpls: AnalyzedImplMap, funcImpls: AnalyzedImplMap): Anal
     concreteImpls[generic] = impl.concrete(funcImpls)
   concreteImpls
 
-# Names one fully-typed copy of a function. A generic function used with
-# different concrete types becomes several copies, and each copy has its own
-# number. These numbers are unique across the whole program.
-type FunctionId = distinct int
-proc `==`(a, b: FunctionId): bool {.borrow.}
-proc hash(a: FunctionId): Hash {.borrow.}
-
-# Names one value computed inside a single function copy. Each copy numbers
-# its own values from zero, so a ValueId means nothing on its own — only
-# together with the function copy it belongs to.
-type ValueId = distinct int
-
-# Says which function copy we mean: the module it is in, the function itself,
-# and the concrete types chosen for its generics (`impls`). Two calls that pick
-# the same module, function, and types give an equal FunctionRef, so each copy
-# is built only once. The function is held by its concrete kind — user, extern,
-# or generated — so each later stage sees exactly the shape it handles instead
-# of re-casing on an AnalyzedFunction.
 type
+  # FunctionId — one fully-typed copy of a function; numbers are unique program-wide.
+  FunctionId = distinct int
+
+  # ValueId — one value inside a single function copy; numbered from zero per copy.
+  ValueId = distinct int
+
+  # FunctionRef — which function copy we mean: module + concrete function + impls.
   FunctionRefKind = enum frkUser, frkExtern, frkGenerated
   FunctionRef = ref object
     module: AnalyzedModule
@@ -44,6 +33,86 @@ type
     of frkExtern: extern: AnalyzedExternFunction
     of frkGenerated: generated: AnalyzedFunctionDef
 
+  # FunctionCallNode — a call step; the callee copy and the values passed to it.
+  FunctionCallNode = ref object
+    callee: FunctionId
+    args: seq[ValueId]
+
+  # BranchNode / MatchNode — a match on a value and the branches it covers.
+  BranchNode = object
+    pattern: AnalyzedCasePattern
+    resultId: ValueId
+  MatchNode = ref object
+    subject: ValueId
+    branches: seq[BranchNode]
+
+  # TryNode — a call whose Err result returns from the enclosing function.
+  TryNode = ref object
+    call: FunctionCallNode
+    returns: AnalyzedArgumentType
+
+  # LiteralNode — a parsed constant and the module type it adopted.
+  LiteralNode = ref object
+    literal: Literal
+    returns: AnalyzedArgumentType
+
+  # InitField — one field of an aggregate initializer: the field name + its value.
+  InitField = object
+    field: Identifier
+    value: ValueId
+
+  # UnionInitNode — constructs a union value: finalized type, variant, field values.
+  UnionInitNode = ref object
+    returns: AnalyzedArgumentType
+    variant: Identifier
+    fields: seq[InitField]
+
+  # StructInitNode — constructs a struct value: finalized type + field values (no variant).
+  StructInitNode = ref object
+    returns: AnalyzedArgumentType
+    fields: seq[InitField]
+
+  # Node — one value-producing step in a copy's body, tagged by kind.
+  NodeKind = enum
+    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct
+  Node = object
+    id: ValueId
+    case kind: NodeKind
+    of nkCall: fncall: FunctionCallNode
+    of nkMatch: match: MatchNode
+    of nkTry: tryCall: TryNode
+    of nkLiteral: literal: LiteralNode
+    of nkUnion: unionInit: UnionInitNode
+    of nkStruct: structInit: StructInitNode
+
+  # MonoUserFunction — the built body of one user-function copy.
+  MonoUserFunction = ref object
+    params: seq[ValueId]
+    nodes: seq[Node]
+    resultId: ValueId
+
+  # FunctionScope — the work area for building one function copy.
+  FunctionScope = ref object
+    counter: int
+    argMap: Table[Identifier, ValueId]
+    nodes: seq[Node]
+
+  # Monomorphizer — drives the whole pass; one for the entire program.
+  Monomorphizer = ref object
+    counter: int
+    visiting: Table[FunctionRef, FunctionId]
+    visited: Table[FunctionRef, FunctionId]
+    instances: Table[FunctionId, MonoUserFunction]
+
+# FunctionId — a generic function used with different concrete types becomes
+# several copies, each with its own program-unique number.
+proc `==`(a, b: FunctionId): bool {.borrow.}
+proc hash(a: FunctionId): Hash {.borrow.}
+
+# FunctionRef — two calls that pick the same module, function, and types give an
+# equal FunctionRef, so each copy is built only once. The function is held by
+# its concrete kind, so each later stage sees exactly the shape it handles
+# instead of re-casing on an AnalyzedFunction.
 proc newFunctionRef(module: AnalyzedModule, user: AnalyzedUserFunction, impls: AnalyzedImplMap): FunctionRef =
   FunctionRef(kind: frkUser, module: module, impls: impls, user: user)
 
@@ -66,87 +135,36 @@ proc hash(funcRef: FunctionRef): Hash =
 
 proc `==`(a, b: FunctionRef): bool = a.hash == b.hash
 
-# One step inside a function copy's body that produces a value. For now the
-# only kind is a call: `callee` is the function copy being called and `args`
-# are the values passed to it; the node's own `id` is the value it returns.
-type FunctionCallNode = ref object
-  callee: FunctionId
-  args: seq[ValueId]
-
+# FunctionCallNode — one call step inside a copy's body; the node's own id is
+# the value it returns.
 proc newFunctionCallNode(callee: FunctionId, args: seq[ValueId]): FunctionCallNode =
   FunctionCallNode(callee: callee, args: args)
 
-# A match on a value. `subject` is the value being matched; each BranchNode
-# names the pattern it covers and the value it produces. The match node's own
-# id is the matched result — the value of whichever branch runs.
-type
-  BranchNode = object
-    pattern: AnalyzedCasePattern
-    resultId: ValueId
-  MatchNode = ref object
-    subject: ValueId
-    branches: seq[BranchNode]
-
+# MatchNode — each BranchNode names the pattern it covers and the value it
+# produces; the match node's own id is the value of whichever branch runs.
 proc newMatchNode(subject: ValueId, branches: seq[BranchNode]): MatchNode =
   MatchNode(subject: subject, branches: branches)
 
-# A try call: like a call, but an Err result returns from the enclosing
-# function. `returns` is the finalized type of the unwrapped Ok value this node
-# produces; codegen emits the early return on an Err.
-type TryNode = ref object
-  call: FunctionCallNode
-  returns: AnalyzedArgumentType
-
+# TryNode — like a call, but an Err result returns from the enclosing function.
+# `returns` is the finalized type of the unwrapped Ok value; codegen emits the
+# early return on an Err.
 proc newTryNode(call: FunctionCallNode, returns: AnalyzedArgumentType): TryNode =
   TryNode(call: call, returns: returns)
 
-# A literal value. `literal` is the parsed constant; `returns` is the module
-# type it adopted — its finalized type.
-type LiteralNode = ref object
-  literal: Literal
-  returns: AnalyzedArgumentType
-
+# LiteralNode — a literal value and its finalized type.
 proc newLiteralNode(literal: Literal, returns: AnalyzedArgumentType): LiteralNode =
   LiteralNode(literal: literal, returns: returns)
 
-# One field of an aggregate initializer: the field it fills (by name) and the
-# value put there.
-type InitField = object
-  field: Identifier
-  value: ValueId
-
-# Constructs a union value. `returns` is the finalized union type, `variant`
-# the variant built, and `fields` its field values.
-type UnionInitNode = ref object
-  returns: AnalyzedArgumentType
-  variant: Identifier
-  fields: seq[InitField]
-
+# UnionInitNode — constructs a union value.
 proc newUnionInitNode(returns: AnalyzedArgumentType, variant: Identifier, fields: seq[InitField]): UnionInitNode =
   UnionInitNode(returns: returns, variant: variant, fields: fields)
 
-# Constructs a struct value: the finalized struct type and its field values.
-# (A struct has no variant — the only difference from UnionInitNode.)
-type StructInitNode = ref object
-  returns: AnalyzedArgumentType
-  fields: seq[InitField]
-
+# StructInitNode — constructs a struct value (a struct has no variant — the
+# only difference from UnionInitNode).
 proc newStructInitNode(returns: AnalyzedArgumentType, fields: seq[InitField]): StructInitNode =
   StructInitNode(returns: returns, fields: fields)
 
-type
-  NodeKind = enum
-    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct
-  Node = object
-    id: ValueId
-    case kind: NodeKind
-    of nkCall: fncall: FunctionCallNode
-    of nkMatch: match: MatchNode
-    of nkTry: tryCall: TryNode
-    of nkLiteral: literal: LiteralNode
-    of nkUnion: unionInit: UnionInitNode
-    of nkStruct: structInit: StructInitNode
-
+# Node — wraps each node kind with the ValueId it produces.
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
 
@@ -165,26 +183,13 @@ proc newNode(id: ValueId, unionInit: UnionInitNode): Node =
 proc newNode(id: ValueId, structInit: StructInitNode): Node =
   Node(kind: nkStruct, id: id, structInit: structInit)
 
-# The built body of one user-function copy: the ValueIds its parameters were
-# given (in signature order), the nodes its body computed, and the ValueId its
-# tail produced — the value this copy returns.
-type MonoUserFunction = ref object
-  params: seq[ValueId]
-  nodes: seq[Node]
-  resultId: ValueId
-
+# MonoUserFunction — the params' ValueIds (in signature order), the body nodes,
+# and the ValueId the tail produced (the value the copy returns).
 proc newMonoUserFunction(params: seq[ValueId], nodes: seq[Node], resultId: ValueId): MonoUserFunction =
   MonoUserFunction(params: params, nodes: nodes, resultId: resultId)
 
-# The work area for building one function copy. It hands out that copy's own
-# ValueIds (`counter`), remembers for each variable name in scope the value it
-# currently stands for (`argMap`), and collects the body's nodes as it goes
-# (`nodes`).
-type FunctionScope = ref object
-  counter: int
-  argMap: Table[Identifier, ValueId]
-  nodes: seq[Node]
-
+# FunctionScope — hands out the copy's ValueIds (`counter`), remembers the value
+# each in-scope variable stands for (`argMap`), and collects the body's nodes.
 proc newFunctionScope(): FunctionScope = FunctionScope()
 
 proc nextId(scope: FunctionScope): ValueId =
@@ -192,16 +197,9 @@ proc nextId(scope: FunctionScope): ValueId =
   scope.counter += 1
   id
 
-# Drives the whole pass. It tracks which function copies are finished
-# (`visited`) and which are still being built (`visiting`), gives out the next
-# free FunctionId (`counter`), and keeps each finished copy's built body
-# (`instances`). There is one for the entire program.
-type Monomorphizer = ref object
-  counter: int
-  visiting: Table[FunctionRef, FunctionId]
-  visited: Table[FunctionRef, FunctionId]
-  instances: Table[FunctionId, MonoUserFunction]
-
+# Monomorphizer — tracks which copies are finished (`visited`) and in progress
+# (`visiting`), hands out the next FunctionId (`counter`), and keeps each
+# finished copy's built body (`instances`).
 proc newMonomorphizer(): Monomorphizer = Monomorphizer()
 
 proc nextId(mono: Monomorphizer): FunctionId =
