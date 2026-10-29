@@ -84,9 +84,17 @@ type
     field: Identifier
     returns: AnalyzedArgumentType
 
+  # StructFieldNode — reads one field out of a struct value: the `source` value,
+  # the `field` read, and that field's finalized type. (The struct twin of
+  # VariantFieldNode — no variant, since a struct has none.)
+  StructFieldNode = ref object
+    source: ValueId
+    field: Identifier
+    returns: AnalyzedArgumentType
+
   # Node — one value-producing step in a copy's body, tagged by kind.
   NodeKind = enum
-    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct, nkVariantField
+    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct, nkVariantField, nkStructField
   Node = object
     id: ValueId
     case kind: NodeKind
@@ -97,6 +105,7 @@ type
     of nkUnion: unionInit: UnionInitNode
     of nkStruct: structInit: StructInitNode
     of nkVariantField: variantField: VariantFieldNode
+    of nkStructField: structField: StructFieldNode
 
   # MonoUserFunction — the built body of one user-function copy.
   MonoUserFunction = ref object
@@ -181,6 +190,10 @@ proc newStructInitNode(returns: AnalyzedArgumentType, fields: seq[InitField]): S
 proc newVariantFieldNode(subject: ValueId, variant: Identifier, field: Identifier, returns: AnalyzedArgumentType): VariantFieldNode =
   VariantFieldNode(subject: subject, variant: variant, field: field, returns: returns)
 
+# StructFieldNode — reads one field out of a struct value.
+proc newStructFieldNode(source: ValueId, field: Identifier, returns: AnalyzedArgumentType): StructFieldNode =
+  StructFieldNode(source: source, field: field, returns: returns)
+
 # Node — wraps each node kind with the ValueId it produces.
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
@@ -202,6 +215,9 @@ proc newNode(id: ValueId, structInit: StructInitNode): Node =
 
 proc newNode(id: ValueId, variantField: VariantFieldNode): Node =
   Node(kind: nkVariantField, id: id, variantField: variantField)
+
+proc newNode(id: ValueId, structField: StructFieldNode): Node =
+  Node(kind: nkStructField, id: id, structField: structField)
 
 # MonoUserFunction — the params' ValueIds (in signature order), the body nodes,
 # and the ValueId the tail produced (the value the copy returns).
@@ -324,7 +340,12 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, e
       let id = scope.nextId()
       scope.nodes.add(newNode(id, newUnionInitNode(expression.argType.concrete(impls), union.variant, fields)))
       ok(id)
-  of aekStructGetter: err(fmt"{expression.loc} todo: struct getter")
+  of aekStructGetter:
+    let getter = expression.structGetter
+    assert(getter.sourceName in scope.argMap, "[BUG] - struct getter source out of scope during monomorphization")
+    let id = scope.nextId()
+    scope.nodes.add(newNode(id, newStructFieldNode(scope.argMap[getter.sourceName], getter.property.name, expression.argType.concrete(impls))))
+    ok(id)
   of aekVariable:
     # A variable is not a node — it resolves to the value its binding produced.
     let name = expression.variable.name

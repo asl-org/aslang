@@ -33,6 +33,8 @@ proc newAnalyzedStructGetter*(resolved: ResolvedGetter, source: AnalyzedModuleAr
 
 proc loc*(structGetter: AnalyzedStructGetter): Location = structGetter.resolved.loc
 proc source*(structGetter: AnalyzedStructGetter): AnalyzedModuleArgumentType = structGetter.source
+proc sourceName*(structGetter: AnalyzedStructGetter): Identifier = structGetter.resolved.source
+proc property*(structGetter: AnalyzedStructGetter): AnalyzedArgumentDef = structGetter.property
 proc argType*(structGetter: AnalyzedStructGetter): AnalyzedArgumentType =
   structGetter.property.argType.concrete(structGetter.source.impls)
 
