@@ -429,7 +429,10 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
     else:
       case funcRef.kind:
       of frkGenerated:
-        err(fmt"{funcRef.generated.loc} todo: handle generated function monomorphization")
+        # Generated functions come only from the (not-yet-implemented)
+        # try->match expansion, so monomorphization can never reach one.
+        assert(false, fmt"{funcRef.generated.loc} [BUG] - generated functions are not reachable during monomorphization")
+        err("[BUG] - unreachable generated function")
       of frkExtern:
         # An extern function is an FFI declaration with no body, so there is
         # nothing to walk and no recursion knot to tie: mint its id and
