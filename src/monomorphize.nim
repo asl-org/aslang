@@ -91,9 +91,17 @@ type
     field: Identifier
     returns: AnalyzedArgumentType
 
+  # StructSetterNode — a functional field update: a new struct equal to `source`
+  # with `field` replaced by `value`. `returns` is the (struct) result type.
+  StructSetterNode = ref object
+    source: ValueId
+    field: Identifier
+    value: ValueId
+    returns: AnalyzedArgumentType
+
   # Node — one value-producing step in a copy's body, tagged by kind.
   NodeKind = enum
-    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct, nkVariantField, nkStructField
+    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct, nkVariantField, nkStructField, nkStructSetter
   Node = object
     id: ValueId
     case kind: NodeKind
@@ -105,6 +113,7 @@ type
     of nkStruct: structInit: StructInitNode
     of nkVariantField: variantField: VariantFieldNode
     of nkStructField: structField: StructFieldNode
+    of nkStructSetter: structSetter: StructSetterNode
 
   # MonoUserFunction — the built body of one user-function copy.
   MonoUserFunction = ref object
@@ -193,6 +202,10 @@ proc newVariantFieldNode(subject: ValueId, variant: Identifier, field: Identifie
 proc newStructFieldNode(source: ValueId, field: Identifier, returns: AnalyzedArgumentType): StructFieldNode =
   StructFieldNode(source: source, field: field, returns: returns)
 
+# StructSetterNode — a functional field update producing a new struct.
+proc newStructSetterNode(source: ValueId, field: Identifier, value: ValueId, returns: AnalyzedArgumentType): StructSetterNode =
+  StructSetterNode(source: source, field: field, value: value, returns: returns)
+
 # Node — wraps each node kind with the ValueId it produces.
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
@@ -217,6 +230,9 @@ proc newNode(id: ValueId, variantField: VariantFieldNode): Node =
 
 proc newNode(id: ValueId, structField: StructFieldNode): Node =
   Node(kind: nkStructField, id: id, structField: structField)
+
+proc newNode(id: ValueId, structSetter: StructSetterNode): Node =
+  Node(kind: nkStructSetter, id: id, structSetter: structSetter)
 
 # MonoUserFunction — the params' ValueIds (in signature order), the body nodes,
 # and the ValueId the tail produced (the value the copy returns).
@@ -361,7 +377,17 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, s
     assert(target.isSome, "[BUG] - rskVariable statement has no target")
     scope.argMap[target.get] = value
     ok(value)
-  of askGetter: err(fmt"{statement.loc} todo: setter")
+  of askGetter:
+    # A field setter is a functional update: build a new struct equal to the
+    # source with the field replaced, then rebind the source variable to it so
+    # later statements see the updated struct.
+    let getter = statement.getter
+    let value = ? monomorphize(scope, mono, app, statement.expression, impls)
+    assert(getter.sourceName in scope.argMap, "[BUG] - setter source out of scope during monomorphization")
+    let id = scope.nextId()
+    scope.nodes.add(newNode(id, newStructSetterNode(scope.argMap[getter.sourceName], getter.property.name, value, newAnalyzedArgumentType(getter.source).concrete(impls))))
+    scope.argMap[getter.sourceName] = id
+    ok(id)
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, function: AnalyzedUserFunction): Result[MonoUserFunction, string] =
   let scope = newFunctionScope()
