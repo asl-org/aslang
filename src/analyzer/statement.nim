@@ -114,9 +114,15 @@ type
     of aekInitializer: init: AnalyzedInitializer
     of aekStructGetter: structGetter: AnalyzedStructGetter
 
+  AnalyzedStatementKind* = enum
+    askNone, askVariable, askGetter
   AnalyzedStatement* = ref object
     def: AnalyzedDefStatement
     expression: AnalyzedExpression
+    case kind: AnalyzedStatementKind
+    of askNone: discard
+    of askVariable: targetName: Identifier
+    of askGetter: getter: AnalyzedStructGetter
 
 proc argType*(expression: AnalyzedExpression): AnalyzedArgumentType
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType
@@ -225,13 +231,29 @@ proc subject*(m: AnalyzedMatchExpression): AnalyzedExpression = m.subject
 proc cases*(m: AnalyzedMatchExpression): seq[AnalyzedCaseBlock] = m.cases
 
 proc newAnalyzedStatement*(def: AnalyzedDefStatement, expression: AnalyzedExpression): AnalyzedStatement =
-  AnalyzedStatement(def: def, expression: expression)
+  ## For rskNone / rskVariable; a setter (rskGetter) uses the getter overload.
+  case def.kind:
+  of rskNone: AnalyzedStatement(kind: askNone, def: def, expression: expression)
+  of rskVariable:
+    assert(def.target.isSome, fmt"{def.loc} [BUG] - rskVariable statement has no target")
+    AnalyzedStatement(kind: askVariable, def: def, expression: expression, targetName: def.target.get)
+  of rskGetter:
+    raise newException(Defect, fmt"{def.loc} [BUG] - a setter statement must be built with its getter")
+
+proc newAnalyzedStatement*(def: AnalyzedDefStatement, expression: AnalyzedExpression, getter: AnalyzedStructGetter): AnalyzedStatement =
+  AnalyzedStatement(kind: askGetter, def: def, expression: expression, getter: getter)
 
 proc loc*(statement: AnalyzedStatement): Location = statement.def.loc
-proc target*(statement: AnalyzedStatement): Option[Identifier] = statement.def.target
+proc kind*(statement: AnalyzedStatement): AnalyzedStatementKind = statement.kind
+proc target*(statement: AnalyzedStatement): Option[Identifier] =
+  case statement.kind:
+  of askVariable: some(statement.targetName)
+  of askNone, askGetter: none(Identifier)
+proc getter*(statement: AnalyzedStatement): AnalyzedStructGetter =
+  assert(statement.kind == askGetter, fmt"{statement.loc} [BUG] - getter accessed on a non-setter statement")
+  statement.getter
 proc argType*(statement: AnalyzedStatement): AnalyzedArgumentType = statement.expression.argType
 proc expression*(statement: AnalyzedStatement): AnalyzedExpression = statement.expression
-proc kind*(statement: AnalyzedStatement): ResolvedStatementKind = statement.def.kind
 proc arg*(statement: AnalyzedStatement): Option[AnalyzedBinding] =
   # Only a targeted assignment introduces a new binding into the function
   # scope; a targetless one (bare expression / field mutation) returns

@@ -484,7 +484,7 @@ proc analyzeStatement*(funcCtx: AnalyzedUserFunctionContext, statement: Analyzed
     if analyzedStructGetter.argType != analyzedExpr.argType:
       err(fmt"{statement.loc} `{analyzedStructGetter.argType.asl}` field cannot be assigned a `{analyzedExpr.argType.asl}` value")
     else:
-      ok(newAnalyzedStatement(statement, analyzedExpr))
+      ok(newAnalyzedStatement(statement, analyzedExpr, analyzedStructGetter))
   of rskNone, rskVariable:
     let analyzedExpr = ? analyzeExpression(funcCtx, statement.expression, none(AnalyzedArgumentType))
     ok(newAnalyzedStatement(statement, analyzedExpr))

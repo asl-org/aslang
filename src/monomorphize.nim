@@ -1,7 +1,6 @@
 import options, results, strformat, tables, hashes
 
 import parser/main as parser
-import resolver/main as resolver
 import defanalyzer/main as defanalyzer
 import analyzer/main as analyzer
 
@@ -354,15 +353,15 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, e
 
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[ValueId, string] =
   case statement.kind:
-  of rskNone:
+  of askNone:
     monomorphize(scope, mono, app, statement.expression, impls)
-  of rskVariable:
+  of askVariable:
     let value = ? monomorphize(scope, mono, app, statement.expression, impls)
     let target = statement.target
     assert(target.isSome, "[BUG] - rskVariable statement has no target")
     scope.argMap[target.get] = value
     ok(value)
-  of rskGetter: err(fmt"{statement.loc} todo: setter")
+  of askGetter: err(fmt"{statement.loc} todo: setter")
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef, function: AnalyzedUserFunction): Result[MonoUserFunction, string] =
   let scope = newFunctionScope()
