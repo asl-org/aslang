@@ -39,8 +39,11 @@ type
     args: seq[ValueId]
 
   # BranchNode / MatchNode — a match on a value and the branches it covers.
+  # Each branch owns the `nodes` of its body, so they are evaluated only when
+  # that branch is taken.
   BranchNode = object
     pattern: AnalyzedCasePattern
+    nodes: seq[Node]
     resultId: ValueId
   MatchNode = ref object
     subject: ValueId
@@ -72,9 +75,18 @@ type
     returns: AnalyzedArgumentType
     fields: seq[InitField]
 
+  # VariantFieldNode — projects one field out of a matched union value: the
+  # matched `subject`, the `variant` it matched as, the `field` pulled out, and
+  # that field's finalized type.
+  VariantFieldNode = ref object
+    subject: ValueId
+    variant: Identifier
+    field: Identifier
+    returns: AnalyzedArgumentType
+
   # Node — one value-producing step in a copy's body, tagged by kind.
   NodeKind = enum
-    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct
+    nkCall, nkMatch, nkTry, nkLiteral, nkUnion, nkStruct, nkVariantField
   Node = object
     id: ValueId
     case kind: NodeKind
@@ -84,6 +96,7 @@ type
     of nkLiteral: literal: LiteralNode
     of nkUnion: unionInit: UnionInitNode
     of nkStruct: structInit: StructInitNode
+    of nkVariantField: variantField: VariantFieldNode
 
   # MonoUserFunction — the built body of one user-function copy.
   MonoUserFunction = ref object
@@ -164,6 +177,10 @@ proc newUnionInitNode(returns: AnalyzedArgumentType, variant: Identifier, fields
 proc newStructInitNode(returns: AnalyzedArgumentType, fields: seq[InitField]): StructInitNode =
   StructInitNode(returns: returns, fields: fields)
 
+# VariantFieldNode — projects one field out of a matched union value.
+proc newVariantFieldNode(subject: ValueId, variant: Identifier, field: Identifier, returns: AnalyzedArgumentType): VariantFieldNode =
+  VariantFieldNode(subject: subject, variant: variant, field: field, returns: returns)
+
 # Node — wraps each node kind with the ValueId it produces.
 proc newNode(id: ValueId, fncall: FunctionCallNode): Node =
   Node(kind: nkCall, id: id, fncall: fncall)
@@ -183,6 +200,9 @@ proc newNode(id: ValueId, unionInit: UnionInitNode): Node =
 proc newNode(id: ValueId, structInit: StructInitNode): Node =
   Node(kind: nkStruct, id: id, structInit: structInit)
 
+proc newNode(id: ValueId, variantField: VariantFieldNode): Node =
+  Node(kind: nkVariantField, id: id, variantField: variantField)
+
 # MonoUserFunction — the params' ValueIds (in signature order), the body nodes,
 # and the ValueId the tail produced (the value the copy returns).
 proc newMonoUserFunction(params: seq[ValueId], nodes: seq[Node], resultId: ValueId): MonoUserFunction =
@@ -196,6 +216,12 @@ proc nextId(scope: FunctionScope): ValueId =
   let id = ValueId(scope.counter)
   scope.counter += 1
   id
+
+# A child scope for a case arm: it takes its own copy of argMap and a fresh,
+# empty node list, so bindings and body nodes added inside the arm do not leak
+# to the parent, sibling arms, or the code after the match.
+proc branch(scope: FunctionScope): FunctionScope =
+  FunctionScope(counter: scope.counter, argMap: scope.argMap, nodes: @[])
 
 # Monomorphizer — tracks which copies are finished (`visited`) and in progress
 # (`visiting`), hands out the next FunctionId (`counter`), and keeps each
@@ -253,10 +279,23 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, e
     let subjectId = ? monomorphize(scope, mono, app, expression.match.subject, impls)
     var branches: seq[BranchNode]
     for caseBlock in expression.match.cases:
+      let branchScope = scope.branch()
+      for binding in caseBlock.pattern.bindings:
+        case binding.kind:
+        of abkVariable:
+          # A whole-subject binding (a `case other:`) names the matched value.
+          branchScope.argMap[binding.name] = subjectId
+        of abkVariantField:
+          # A variant-field binding projects one field out of the matched
+          # subject; the projection is scoped to this arm.
+          let variant = caseBlock.pattern.variant.variant
+          let fieldId = branchScope.nextId()
+          branchScope.nodes.add(newNode(fieldId, newVariantFieldNode(subjectId, variant.name, binding.variantField.field.name, binding.argType.concrete(impls))))
+          branchScope.argMap[binding.name] = fieldId
       var branchResult: ValueId
       for statement in caseBlock.statements:
-        branchResult = ? monomorphize(scope, mono, app, statement, impls)
-      branches.add(BranchNode(pattern: caseBlock.pattern, resultId: branchResult))
+        branchResult = ? monomorphize(branchScope, mono, app, statement, impls)
+      branches.add(BranchNode(pattern: caseBlock.pattern, nodes: branchScope.nodes, resultId: branchResult))
     let id = scope.nextId()
     scope.nodes.add(newNode(id, newMatchNode(subjectId, branches)))
     ok(id)
