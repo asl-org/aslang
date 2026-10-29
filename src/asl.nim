@@ -13,7 +13,7 @@ proc compile(opts: AslBuildCommand): Result[string, string] =
   let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
   let resolvedApp = ? resolve(app)
   let analyzedApp = ? analyze(resolvedApp)
-  ? monomorphize(analyzedApp)
+  discard ? monomorphize(analyzedApp)
   ok("[SUCCESS]")
 
 when isMainModule:

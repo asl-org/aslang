@@ -134,6 +134,12 @@ type
     visited: Table[FunctionRef, FunctionId]
     instances: Table[FunctionId, MonoUserFunction]
 
+  # MonoApp — the monomorphized program: every built user copy keyed by id,
+  # plus the entry copy's id.
+  MonoApp = object
+    instances: Table[FunctionId, MonoUserFunction]
+    entry: FunctionId
+
 # FunctionId — a generic function used with different concrete types becomes
 # several copies, each with its own program-unique number.
 proc `==`(a, b: FunctionId): bool {.borrow.}
@@ -263,6 +269,10 @@ proc nextId(mono: Monomorphizer): FunctionId =
   let id = FunctionId(mono.counter)
   mono.counter += 1
   id
+
+# MonoApp — the finished monomorphized program.
+proc newMonoApp(instances: Table[FunctionId, MonoUserFunction], entry: FunctionId): MonoApp =
+  MonoApp(instances: instances, entry: entry)
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string]
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[ValueId, string]
@@ -444,12 +454,12 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
 
         ok(id)
 
-proc monomorphize*(app: AnalyzedApp): Result[void, string] =
+proc monomorphize*(app: AnalyzedApp): Result[MonoApp, string] =
   let entry = ? app.entry
   assert(entry.function.kind == afkUser, "[BUG] - entry function must always be a user function")
   assert(entry.function.def.args.len == 0, "[BUG] - entry function should not accept any arguments")
 
+  let mono = newMonomorphizer()
   let funcRef = newFunctionRef(entry.module, entry.function.user, default(AnalyzedImplMap))
-  discard ? monomorphize(newMonomorphizer(), app, funcRef)
-  # TODO: Return a monomorphized app
-  err(fmt"{entry.function.loc} todo: implement monomorphized app")
+  let entryId = ? monomorphize(mono, app, funcRef)
+  ok(newMonoApp(mono.instances, entryId))
