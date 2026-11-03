@@ -297,7 +297,31 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, f
       of afkGenerated: newFunctionRef(module, function.generated, concreteImpls)
     callee = ? monomorphize(mono, app, funcRef)
   of altkGeneric:
-    return err(fmt"{fncall.loc} todo: generic-target call")
+    # Resolve the generic target to the concrete type bound for this call. The
+    # binding can come from the enclosing copy's impls (a context generic, e.g.
+    # Behavior in Runtime[Behavior]) or from the call's own inferred impls (a
+    # generic inferred from an argument, e.g. Shape in Shape.sides(x)), so
+    # resolve against both. The binding may itself be a generic (one generic
+    # satisfying another), so follow the chain to a concrete module, translating
+    # the called funcDef through each hop's index. Only `callee` is produced
+    # here; the shared tail builds the node, so a `try` is handled there.
+    var resolveImpls = impls
+    for generic, impl in fncall.impls.calleeImpls(impls):
+      resolveImpls[generic] = impl
+    var impl = resolveImpls[fncall.localType.generic.resolved]
+    var funcDef = impl.defs[fncall.funcDef.resolved]
+    while impl.argType.kind == aatkGeneric:
+      impl = resolveImpls[impl.argType.generic.generic]
+      funcDef = impl.defs[funcDef]
+    let module = app.findModule(impl.argType.module.module)
+    let function = module.findFunction(funcDef)
+    let concreteImpls = impl.argType.module.impls
+    let funcRef =
+      case function.kind:
+      of afkUser: newFunctionRef(module, function.user, concreteImpls)
+      of afkExtern: newFunctionRef(module, function.extern, concreteImpls)
+      of afkGenerated: newFunctionRef(module, function.generated, concreteImpls)
+    callee = ? monomorphize(mono, app, funcRef)
 
   let id = scope.nextId()
   let node =

@@ -183,15 +183,15 @@ public module M:
     cleanupDir(dir)
     check r.isOk
 
-suite "monomorphize — todo arms":
+suite "monomorphize — generic dispatch":
 
-  test "a call through a generic parameter is a todo":
+  test "a call through a generic parameter resolves to the concrete impl":
     # A drawing domain: a Shape reports how many sides it has, consuming the
     # shape itself. A Polygon stores its vertices (an Array of Points) and its
     # side count is how many it holds; a Square is fixed at four. `start` builds
     # a triangle and asks it via the generic (`Shape.sides(triangle)`) — a call
-    # through the generic parameter, which the monomorphizer does not yet
-    # resolve to the concrete impl.
+    # through the generic parameter, which the monomorphizer resolves through
+    # the copy's impls to the concrete impl (here Polygon.sides).
     let (r, dir) = monomorphizeSingle(Prelude & """
 generic Shape:
   public func sides(s: Shape): u32
@@ -234,5 +234,4 @@ public module Driver:
         i32 1
 """)
     cleanupDir(dir)
-    check r.isErr
-    check errorContains(r.error, "generic-target call")
+    check r.isOk
