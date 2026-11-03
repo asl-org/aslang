@@ -187,6 +187,19 @@ proc monomorphizeSingle*(source: string,
     ok()
   (go(maybeApp), dir)
 
+proc monomorphizeAppSingle*(source: string,
+    indentWidth: uint32 = 2,
+    vendorRoots: VendorRoots = emptyVendorRoots()): tuple[res: Result[MonoApp, string], dir: string] =
+  ## Same as monomorphizeSingle but returns the MonoApp, so tests can inspect
+  ## the built instances (e.g. that an extern call produced an extern instance).
+  let (maybeApp, dir) = parseFiles([("entry.asl", source)], indentWidth, vendorRoots)
+  proc go(app: Result[App, string]): Result[MonoApp, string] =
+    let parsed = ? app
+    let resolved = ? resolve(parsed)
+    let analyzed = ? analyze(resolved)
+    monomorphize(analyzed)
+  (go(maybeApp), dir)
+
 proc errorContains*(err: string, needle: string): bool =
   ## Case-sensitive substring check, useful for asserting on error
   ## messages without locking in exact wording.

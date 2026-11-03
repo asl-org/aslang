@@ -5,9 +5,10 @@
 ## arms. MonoApp internals are private, so each test asserts on whether
 ## the program lowers (isOk) or hits a specific `todo` (isErr + message).
 
-import unittest, results
+import unittest, results, tables
 
 import tutils
+import monomorphize
 
 # A minimal prelude: the primitive types and Status a program needs to
 # reach the monomorphizer. Defined inline (no std vendor) so each test is
@@ -235,3 +236,23 @@ public module Driver:
 """)
     cleanupDir(dir)
     check r.isOk
+
+suite "monomorphize — extern instances":
+
+  test "an extern call produces an extern instance":
+    let (r, dir) = monomorphizeAppSingle(Prelude & """
+public module M:
+  @extern("m_compute")
+  func compute(): i32
+
+  public func start(): i32
+    M.compute()
+""")
+    cleanupDir(dir)
+    check r.isOk
+    # start (a user copy) plus compute (an extern copy) -> exactly one extern.
+    var externInstances = 0
+    for instance in r.get.instances.values:
+      if instance.kind == mikExtern:
+        externInstances += 1
+    check externInstances == 1
