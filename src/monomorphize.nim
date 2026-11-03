@@ -17,7 +17,7 @@ proc calleeImpls(fncallImpls: AnalyzedImplMap, funcImpls: AnalyzedImplMap): Anal
 
 type
   # FunctionId — one fully-typed copy of a function; numbers are unique program-wide.
-  FunctionId = distinct int
+  FunctionId* = distinct int
 
   # ValueId — one value inside a single function copy; numbered from zero per copy.
   ValueId = distinct int
@@ -128,8 +128,8 @@ type
     impls: AnalyzedImplMap
 
   # MonoInstance — one monomorphized function copy, what a FunctionId names.
-  MonoInstanceKind = enum mikUser, mikExtern
-  MonoInstance = object
+  MonoInstanceKind* = enum mikUser, mikExtern
+  MonoInstance* = object
     case kind: MonoInstanceKind
     of mikUser: user: MonoUserFunction
     of mikExtern: extern: MonoExternFunction
@@ -147,16 +147,16 @@ type
     visited: Table[FunctionRef, FunctionId]
     instances: Table[FunctionId, MonoInstance]
 
-  # MonoApp — the monomorphized program: every built user copy keyed by id,
+  # MonoApp — the monomorphized program: every built copy keyed by id,
   # plus the entry copy's id.
-  MonoApp = object
+  MonoApp* = object
     instances: Table[FunctionId, MonoInstance]
     entry: FunctionId
 
 # FunctionId — a generic function used with different concrete types becomes
 # several copies, each with its own program-unique number.
-proc `==`(a, b: FunctionId): bool {.borrow.}
-proc hash(a: FunctionId): Hash {.borrow.}
+proc `==`*(a, b: FunctionId): bool {.borrow.}
+proc hash*(a: FunctionId): Hash {.borrow.}
 
 # FunctionRef — two calls that pick the same module, function, and types give an
 # equal FunctionRef, so each copy is built only once. The function is held by
@@ -294,9 +294,15 @@ proc nextId(mono: Monomorphizer): FunctionId =
   mono.counter += 1
   id
 
-# MonoApp — the finished monomorphized program.
+# MonoInstance — which kind of copy this is (user body vs extern declaration).
+proc kind*(instance: MonoInstance): MonoInstanceKind = instance.kind
+
+# MonoApp — read access to the built program for downstream passes.
 proc newMonoApp(instances: Table[FunctionId, MonoInstance], entry: FunctionId): MonoApp =
   MonoApp(instances: instances, entry: entry)
+
+proc instances*(app: MonoApp): Table[FunctionId, MonoInstance] = app.instances
+proc entry*(app: MonoApp): FunctionId = app.entry
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string]
 proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, statement: AnalyzedStatement, impls: AnalyzedImplMap): Result[ValueId, string]
