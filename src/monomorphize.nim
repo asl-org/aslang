@@ -121,6 +121,19 @@ type
     nodes: seq[Node]
     resultId: ValueId
 
+  # MonoExternFunction — one extern copy: the FFI declaration and the concrete
+  # types its generics were set to (what a kind-tagged C wrapper will need).
+  MonoExternFunction = ref object
+    extern: AnalyzedExternFunction
+    impls: AnalyzedImplMap
+
+  # MonoInstance — one monomorphized function copy, what a FunctionId names.
+  MonoInstanceKind = enum mikUser, mikExtern
+  MonoInstance = object
+    case kind: MonoInstanceKind
+    of mikUser: user: MonoUserFunction
+    of mikExtern: extern: MonoExternFunction
+
   # FunctionScope — the work area for building one function copy.
   FunctionScope = ref object
     counter: int
@@ -132,12 +145,12 @@ type
     counter: int
     visiting: Table[FunctionRef, FunctionId]
     visited: Table[FunctionRef, FunctionId]
-    instances: Table[FunctionId, MonoUserFunction]
+    instances: Table[FunctionId, MonoInstance]
 
   # MonoApp — the monomorphized program: every built user copy keyed by id,
   # plus the entry copy's id.
   MonoApp = object
-    instances: Table[FunctionId, MonoUserFunction]
+    instances: Table[FunctionId, MonoInstance]
     entry: FunctionId
 
 # FunctionId — a generic function used with different concrete types becomes
@@ -245,6 +258,17 @@ proc newNode(id: ValueId, structSetter: StructSetterNode): Node =
 proc newMonoUserFunction(params: seq[ValueId], nodes: seq[Node], resultId: ValueId): MonoUserFunction =
   MonoUserFunction(params: params, nodes: nodes, resultId: resultId)
 
+# MonoExternFunction — the extern declaration plus the concrete impls of its copy.
+proc newMonoExternFunction(extern: AnalyzedExternFunction, impls: AnalyzedImplMap): MonoExternFunction =
+  MonoExternFunction(extern: extern, impls: impls)
+
+# MonoInstance — wraps a built copy with the kind of function it is.
+proc newMonoInstance(user: MonoUserFunction): MonoInstance =
+  MonoInstance(kind: mikUser, user: user)
+
+proc newMonoInstance(extern: MonoExternFunction): MonoInstance =
+  MonoInstance(kind: mikExtern, extern: extern)
+
 # FunctionScope — hands out the copy's ValueIds (`counter`), remembers the value
 # each in-scope variable stands for (`argMap`), and collects the body's nodes.
 proc newFunctionScope(): FunctionScope = FunctionScope()
@@ -271,7 +295,7 @@ proc nextId(mono: Monomorphizer): FunctionId =
   id
 
 # MonoApp — the finished monomorphized program.
-proc newMonoApp(instances: Table[FunctionId, MonoUserFunction], entry: FunctionId): MonoApp =
+proc newMonoApp(instances: Table[FunctionId, MonoInstance], entry: FunctionId): MonoApp =
   MonoApp(instances: instances, entry: entry)
 
 proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): Result[FunctionId, string]
@@ -467,6 +491,7 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
         # only if) the extern reports failure, that flag is lifted back into a
         # Status.Ok/Err; an extern need not return a status.
         let id = mono.nextId()
+        mono.instances[id] = newMonoInstance(newMonoExternFunction(funcRef.extern, funcRef.impls))
         mono.visited[funcRef] = id
         ok(id)
       of frkUser:
@@ -474,7 +499,7 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
         mono.visiting[funcRef] = id
 
         let instance = ? monomorphize(mono, app, funcRef, funcRef.user)
-        mono.instances[id] = instance
+        mono.instances[id] = newMonoInstance(instance)
 
         mono.visited[funcRef] = id
         mono.visiting.del(funcRef)
