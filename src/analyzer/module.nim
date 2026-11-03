@@ -37,3 +37,6 @@ proc findFunctionId*(module: AnalyzedModule, funcDef: AnalyzedFunctionDef): int 
   module.funcDefIndex[funcDef]
 proc findFunction*(module: AnalyzedModule, funcDef: AnalyzedFunctionDef): AnalyzedFunction =
   module.functions[module.findFunctionId(funcDef)]
+
+proc findFunction*(module: AnalyzedModule, funcDef: ResolvedFunctionDef): AnalyzedFunction =
+  module.findFunction(module.def.findFunctionDef(funcDef))

@@ -514,6 +514,16 @@ Union:
 
 ### 7.4 Struct header (`struct(...)`) rules
 
+> **Reserved for `Array`/`Map`.** Although the grammar permits a
+> `struct(...Generic)` header anywhere, its use is reserved for the
+> built-in `Array` and `Map` allocation types defined in `base.aslr`.
+> User `.asl` code — and every other `.aslr` type — must use a plain
+> `struct:` with fields. A generic contract is satisfied by a plain
+> module that provides the required functions, never by parameterising a
+> struct over the generic. (So e.g. `Runtime: struct(Behavior)` is
+> non-conforming.) The mechanical rules below still describe how the
+> `Array`/`Map` headers are checked.
+
 - **All named generics must be unique** — `struct(K, K):` is rejected
   with "duplicate generic encountered". Fires at struct-header parse
   time via `validateRequiresNameConflict` inside `newStructDefHeader`.

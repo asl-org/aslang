@@ -44,7 +44,9 @@ type
   # genericTypeIndex already relies on.
   AnalyzedImpl* = ref object
     argType: AnalyzedArgumentType
-    defs: seq[ResolvedFunctionDef]
+    # Maps each generic contract funcDef to the concrete funcDef that
+    # satisfies it, so a generic-target call can resolve by hash lookup.
+    defs: Table[ResolvedFunctionDef, ResolvedFunctionDef]
 
   AnalyzedImplMap* = OrderedTable[ResolvedGeneric, AnalyzedImpl]
 
@@ -72,7 +74,7 @@ proc asl*(argType: AnalyzedArgumentType): string
 proc newAnalyzedImpl*(argType: AnalyzedArgumentType): AnalyzedImpl =
   AnalyzedImpl(argType: argType)
 
-proc newAnalyzedImpl*(argType: AnalyzedArgumentType, defs: seq[ResolvedFunctionDef]): AnalyzedImpl =
+proc newAnalyzedImpl*(argType: AnalyzedArgumentType, defs: Table[ResolvedFunctionDef, ResolvedFunctionDef]): AnalyzedImpl =
   AnalyzedImpl(argType: argType, defs: defs)
 
 proc loc*(impl: AnalyzedImpl): Location = impl.argType.loc
@@ -81,6 +83,7 @@ proc `==`*(a, b: AnalyzedImpl): bool = a.hash == b.hash
 proc asl*(impl: AnalyzedImpl): string = impl.argType.asl
 proc argType*(impl: AnalyzedImpl): AnalyzedArgumentType = impl.argType
 proc impls*(impl: AnalyzedImpl): AnalyzedImplMap = impl.impls
+proc defs*(impl: AnalyzedImpl): Table[ResolvedFunctionDef, ResolvedFunctionDef] = impl.defs
 
 # ---- AnalyzedGenericArgumentType accessors ----
 proc newAnalyzedGenericArgumentType*(resolved: ResolvedGeneric, loc: Location): AnalyzedGenericArgumentType =

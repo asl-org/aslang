@@ -13,6 +13,7 @@
 
 import results, strformat, tables
 
+import ../resolver/main as resolver
 import ../defanalyzer/main as defanalyzer
 import module
 import function
@@ -55,16 +56,19 @@ type AnalyzedApp* = ref object
   def: AnalyzedDefApp
   files: seq[AnalyzedFile]
   moduleIndex: Table[AnalyzedDefModule, AnalyzedModule]
+  resolvedModuleIndex: Table[ResolvedModule, AnalyzedModule]
 
 proc newAnalyzedApp*(def: AnalyzedDefApp, files: seq[AnalyzedFile]): AnalyzedApp =
   # NOTE: Dissolve file level barrier for analyzed modules
   var moduleIndex: Table[AnalyzedDefModule, AnalyzedModule]
+  var resolvedModuleIndex: Table[ResolvedModule, AnalyzedModule]
   for file in files:
     for module in file.modules:
       assert(module.def notin moduleIndex, "[BUG] - duplicate module def found")
       moduleIndex[module.def] = module
+      resolvedModuleIndex[module.resolved] = module
 
-  AnalyzedApp(def: def, files: files, moduleIndex: moduleIndex)
+  AnalyzedApp(def: def, files: files, moduleIndex: moduleIndex, resolvedModuleIndex: resolvedModuleIndex)
 
 proc files*(app: AnalyzedApp): seq[AnalyzedFile] = app.files
 
@@ -86,3 +90,7 @@ proc entry*(app: AnalyzedApp): Result[EntryPoint, string] =
 proc findModule*(app: AnalyzedApp, module: AnalyzedDefModule): AnalyzedModule =
   assert(module in app.moduleIndex, "[BUG] - module does not exist in the module index")
   app.moduleIndex[module]
+
+proc findModule*(app: AnalyzedApp, module: ResolvedModule): AnalyzedModule =
+  assert(module in app.resolvedModuleIndex, "[BUG] - resolved module does not exist in the module index")
+  app.resolvedModuleIndex[module]

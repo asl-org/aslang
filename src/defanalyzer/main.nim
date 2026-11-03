@@ -50,27 +50,32 @@ proc analyzeDefGenericArgumentType(fileCtx: ResolvedFileContext, genericArgType:
   let generic = fileCtx.findGeneric(genericArgType.generic)
   ok(newAnalyzedGenericArgumentType(generic, genericArgType.loc))
 
-proc analyzeDefImpl(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedModuleArgumentType): Result[seq[ResolvedFunctionDef], string] =
-  var impls: seq[ResolvedFunctionDef]
-  for def in base.concrete(impl.self):
+proc analyzeDefImpl(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedModuleArgumentType): Result[Table[ResolvedFunctionDef, ResolvedFunctionDef], string] =
+  # Key by the generic's own contract funcDef (`contract`) and value by the
+  # concrete impl funcDef; `base.concrete(impl.self)` runs parallel to
+  # `base.funcDefs`, so the concretized `def` is only for the identity probe.
+  var index: Table[ResolvedFunctionDef, ResolvedFunctionDef]
+  for (contract, def) in zip(base.funcDefs, base.concrete(impl.self)):
     let maybeMatchingDef = typeCtx.findImplDef(impl.module, def)
     if maybeMatchingDef.isErr:
       return err(fmt"{impl.loc} type `{impl.asl}` does not implement `{def.asl}` to support `{base.name.asl}`")
     else:
-      impls.add(maybeMatchingDef.get)
-  ok(impls)
+      index[contract] = maybeMatchingDef.get
+  ok(index)
 
-proc analyzeDefImpl(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedGenericArgumentType): Result[seq[ResolvedFunctionDef], string] =
-  var impls: seq[ResolvedFunctionDef]
-  for def in base.concrete(impl.self):
+proc analyzeDefImpl(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedGenericArgumentType): Result[Table[ResolvedFunctionDef, ResolvedFunctionDef], string] =
+  # A generic satisfied by another generic: same keying — the contract
+  # funcDef maps to the satisfying generic's own funcDef, so a call chains.
+  var index: Table[ResolvedFunctionDef, ResolvedFunctionDef]
+  for (contract, def) in zip(base.funcDefs, base.concrete(impl.self)):
     let maybeMatchingDef = typeCtx.findImplDef(impl.generic, def)
     if maybeMatchingDef.isErr:
       return err(fmt"{impl.loc} type `{impl.asl}` does not implement `{def.asl}` to support `{base.name.asl}`")
     else:
-      impls.add(maybeMatchingDef.get)
-  ok(impls)
+      index[contract] = maybeMatchingDef.get
+  ok(index)
 
-proc analyzeDefImpl*(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedArgumentType): Result[seq[ResolvedFunctionDef], string] =
+proc analyzeDefImpl*(typeCtx: ResolvedTypeContext, base: ResolvedGeneric, impl: AnalyzedArgumentType): Result[Table[ResolvedFunctionDef, ResolvedFunctionDef], string] =
   case impl.kind:
   of aatkModule: typeCtx.analyzeDefImpl(base, impl.module)
   of aatkGeneric: typeCtx.analyzeDefImpl(base, impl.generic)
