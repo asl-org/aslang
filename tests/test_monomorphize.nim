@@ -237,6 +237,30 @@ public module Driver:
     cleanupDir(dir)
     check r.isOk
 
+suite "monomorphize — occurs check":
+
+  test "type-growing recursion is rejected (does not loop forever)":
+    # `grow` is generic over Any and recurses with its argument wrapped one
+    # Array deeper, so each instantiation is a strictly larger type:
+    # grow[i32] -> grow[Array[i32]] -> grow[Array[Array[i32]]] -> ...
+    # Every level still satisfies Any, so analysis accepts it; only
+    # monomorphization would loop. The occurs-check must make this a hard error.
+    let (r, dir) = monomorphizeSingle(Prelude & """
+public module M:
+  public func grow(x: Any): u32!
+    box = Array[Any] { size: u32 1 }
+    filled = try Array.set(box, u32 0, x)
+    _ = try M.grow(filled)
+    u32!.Ok { value: u32 0 }
+
+  public func start(): i32
+    match M.grow(i32 0):
+      case _:
+        i32 0
+""")
+    cleanupDir(dir)
+    check r.isErr
+
 suite "monomorphize — extern instances":
 
   test "an extern call produces an extern instance":

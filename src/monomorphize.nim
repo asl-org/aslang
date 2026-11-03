@@ -475,11 +475,23 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
     # Recursion is handled here: if we reach a function copy that is still
     # being built, this is a recursive call back into it, so return the id we
     # already gave it and let the cycle close instead of looping forever.
-    # TODO(occurs-check): if a recursive function keeps calling itself with
-    # ever-bigger types (T, then List[T], then List[List[T]]...), each call is
-    # a new copy and `visiting` never stops growing — guard against that here.
     if funcRef in mono.visiting:
       ok(mono.visiting[funcRef])
+    # TODO(growth-check): this depth bound is a stopgap for type-growing
+    # recursion (grow[i32] -> grow[Array[i32]] -> ... enlarges the type each
+    # step, so `visiting` never closes). 128 is kept well under Nim's 2000
+    # call-depth limit, since reaching the bound recurses that deep. Replace
+    # with a proper occurs check: before minting, reject a copy whose type
+    # argument strictly contains that of a same-function ancestor already in
+    # `visiting` — it fires at the first growing step, not only at a fixed
+    # depth, and has no call-depth interaction.
+    elif mono.visiting.len >= 128:
+      let loc =
+        case funcRef.kind:
+        of frkUser: funcRef.user.loc
+        of frkExtern: funcRef.extern.loc
+        of frkGenerated: funcRef.generated.loc
+      err(fmt"{loc} monomorphization depth limit (128) exceeded, likely type-growing recursion")
     else:
       case funcRef.kind:
       of frkGenerated:
