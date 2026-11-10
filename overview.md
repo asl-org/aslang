@@ -159,9 +159,12 @@ Analyzer ──── Phase B — walks function bodies through the context
   │              type; matches check exhaustiveness and duplicate
   │              integer patterns.
   ▼
+  Monomorphize ── specialize generics demand-first from `start` into a
+  │               per-instance node IR, returned as a MonoApp (landed;
+  │               src/monomorphize.nim, plans/plan_monomorphizer.md)
+  ▼
 (planned — plans/plan_monomorphization.md)
-  Monomorphize ── specialize generics from `start`; concrete C-typed AST
-  Lifetime ────── ownership / in-place-vs-copy on the concrete AST
+  Lifetime ────── ownership / in-place-vs-copy on the concrete IR
   Codegen ─────── C now; Verilog/VHDL later
 ```
 
@@ -170,11 +173,12 @@ Orchestrated by `src/asl.nim`:
 let app = ? parse(filepath, opts.indentWidth, opts.dumpTokens, opts.vendorRoots)
 let resolvedApp = ? resolve(app)
 let analyzedApp = ? analyze(resolvedApp)
+discard ? monomorphize(analyzedApp)
 ok("[SUCCESS]")
 ```
 
-`compile` stops after `analyze` and returns `[SUCCESS]` — there is no
-code generation on main yet. `analyze*` (on the analyzer barrel) runs
+`compile` now runs through `monomorphize` and returns `[SUCCESS]`; the
+returned `MonoApp` is discarded — there is no code generation on main yet. `analyze*` (on the analyzer barrel) runs
 `analyzeDefApp` first and then walks its bundle; it returns a structured
 `AnalyzedApp` — the `AnalyzedDefApp` back-reference plus a
 `seq[AnalyzedFile]`, where each `AnalyzedFile` carries its
@@ -749,6 +753,48 @@ extern functions carry their `AnalyzedExternFunction`). Scope:
 
 The remaining gaps are listed in **What's Next**.
 
+### Phase 6: Monomorphization
+
+`src/monomorphize.nim` — the first pass past the front end: consumes
+`AnalyzedApp`, specializes every generic into concrete copies driven
+demand-first from the fully-concrete entry (`app.entry`, so a *built*
+program must expose a `public func start(): i32`), and returns a
+`MonoApp`. Key pieces:
+
+- **Two `distinct int` id spaces** — `FunctionId` (one function copy,
+  program-global) and `ValueId` (a value inside one copy, from zero).
+  They never cross.
+- **`FunctionRef = (module, concrete function, impls)`**, a tagged union
+  over `frkUser | frkExtern | frkGenerated`, names one copy
+  call-site-independently, so a recursive call's ref repeats and the memo
+  (`visiting` / `visited`) closes the cycle — equal refs build once.
+- **Per-copy node IR** — a body lowers to a `seq[Node]` (`nkCall` /
+  `nkMatch` / `nkTry` / `nkLiteral` / `nkUnion` / `nkStruct` /
+  `nkVariantField` / `nkStructField` / `nkStructSetter`); a variable is
+  not a node (resolves through the scope's `argMap`). Match arms own
+  their body nodes via a `branch` scope, so pattern bindings and
+  field projections only evaluate when the arm is taken; a field setter
+  is a functional update that rebinds the source variable.
+- **Generic-target calls** (`Shape.sides(x)` through a bare generic)
+  resolve to the concrete impl: look the generic up in the call's
+  combined impls, translate the funcDef through each `AnalyzedImpl.defs`
+  index (chaining when one generic satisfies another), then dispatch the
+  concrete call. So no generic survives to codegen.
+- **`MonoApp = { instances: Table[FunctionId, MonoInstance], entry }`** —
+  every copy keyed by id; a `MonoInstance` is a user body
+  (`MonoUserFunction`: params + nodes + result id) or an extern
+  declaration (`MonoExternFunction`: decl + impls). No dangling callees.
+- **Termination** — a 128-deep stopgap rejects type-growing recursion
+  (`grow[T] → grow[Array[T]] → …`) before it overruns the stack;
+  `TODO(growth-check)` tracks the precise subterm occurs-check.
+  `afkGenerated` is a `[BUG]` assert (unreachable until the `try`→`match`
+  expansion exists); `TODO(extern-generic-wrapper)` is the codegen-side
+  kind-tagged wrapper for a generic extern.
+
+`compile` runs this pass but discards the `MonoApp` (no codegen yet).
+Design + decisions: `plans/plan_monomorphizer.md`,
+`plans/plan_monomorphization.md`, `plans/plan_execution_model.md`.
+
 ## Project Structure
 
 ```
@@ -844,6 +890,8 @@ tests/
                        fallbacks, parent escape, vendor injection, overlays
   test_resolver.nim    end-to-end resolver tests
   test_analyzer.nim    end-to-end analyzer tests
+  test_monomorphize.nim  monomorphizer: lowering paths, generic dispatch,
+                       occurs-check, extern instances
   test_cli.nim         CLI parsing tests (--vendor flag, lsp command, etc.)
   test_lsp.nim         LSP error mapping, URI/message decoding, `handle`
 
@@ -913,8 +961,8 @@ Two suites, both runnable from the repo root:
 
 `nimble test` — unit suite under `tests/`. Each component (tokenizer,
 combinators, AST constructors, grammar, loader, resolver, analyzer,
-CLI, LSP) has its own `test_*.nim` file aggregated by
-`tests/all.nim`. **394 tests** covering positive paths, negative
+monomorphize, CLI, LSP) has its own `test_*.nim` file aggregated by
+`tests/all.nim`. **405 tests** covering positive paths, negative
 paths, edge cases, Trojan Source defenses in the tokenizer, direct
 rollback / composition tests for the combinators, multi-file loading
 (cycles, diamonds, source overlays), and the language server's error
@@ -929,16 +977,20 @@ mapping and message handling.
 Each fixture has a leading `#` comment documenting what feature or
 error condition it exercises. `test.sh` drives 36 fixtures (21 positive
 + 15 negative; `dep.asl` and `cycle_b.asl` in `examples/errors/` are
-dependency files the runner skips). Current result: 36/36 —
-`nested_generics.asl` resolves now that `base.aslr` defines `Map` and
-the `Key` generic.
+dependency files the runner skips). Current result: **35/36** —
+`mini_actor6.asl` now fails because `compile` runs `monomorphize`, which
+drives from `app.entry` and so requires a `public func start(): i32`
+that this fixture (an actor-library example) does not declare. Wiring
+monomorphize into the build regressed this one positive fixture; the fix
+is either to give it an entry or to exclude it from the built set.
 
 ## What's Next
 
-**The front end is green.** tokenizer → parser → resolver →
-defanalyzer → analyzer runs end to end, and `compile` returns
-`[SUCCESS]` once `analyze` does. Unit suite **394/394**; integration
-**36/36**. Recent structural work: the collapse of the assignment /
+**Front end green; monomorphizer landed.** tokenizer → parser →
+resolver → defanalyzer → analyzer → monomorphize runs end to end, and
+`compile` returns `[SUCCESS]` once monomorphization does. Unit suite
+**405/405**; integration **35/36** (the one failure is `mini_actor6.asl`
+— see Testing). Recent structural work: the collapse of the assignment /
 setter / bare-expression forms into one `Statement` at every layer with
 value positions typed `InlineExpression`; the phase-B context ladder
 (`analyzer/context.nim`) replacing the separate import and app contexts
@@ -950,12 +1002,12 @@ Earlier arcs are recorded in plans/plan_analyzer_two_pass.md,
 plans/plan_identity_based_lookups.md,
 plans/plan_alias_lookup_cleanup.md and plans/plan_filescope_threading.md.
 
-**Next arc — monomorphize → lifetime → codegen**
-(plans/plan_monomorphization.md):
+**Current arc — lifetime → codegen** (monomorphize has landed;
+plans/plan_monomorphization.md):
 
     analyze (AnalyzedApp)
-      → monomorphize          specialize generics; concrete C-typed AST
-      → lifetime / ownership  on the concrete AST; in-place vs copy
+      → monomorphize          specialize generics into a MonoApp (landed)
+      → lifetime / ownership  on the concrete IR; in-place vs copy
       → codegen               C now; Verilog/VHDL later
 
 Monomorphization runs after analysis (concrete argtypes and each impl's
@@ -964,8 +1016,12 @@ the fully concrete `start`, so no generics survive to codegen — a hard
 requirement of the hardware target. Build order (each step ships
 correct; later steps only remove copies):
 
-1. **Monomorphize** with a memo/worklist, rejecting strictly-growing
-   instantiations (subterm occurs-check, depth-cap seatbelt).
+1. **Monomorphize** — **landed** (`src/monomorphize.nim`): memoized by
+   `FunctionRef`, every expression/statement kind lowered, generic-target
+   calls resolved to concrete impls, user + extern copies in the
+   `MonoApp`. The strictly-growing guard is currently the depth-cap
+   seatbelt (128); the precise subterm occurs-check is
+   `TODO(growth-check)`.
 2. **Conservative memory** — always shallow-copy structs, always
    persistent Array/Map; no ownership analysis yet.
 3. **Struct in-place** (optional) — mutate unique structs instead of
