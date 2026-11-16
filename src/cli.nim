@@ -10,14 +10,17 @@ Commands:
                         --indent-width and --vendor)
 
 Options:
-  --debug               Emit source location comments in generated C
+  --debug               Not supported yet (no code generation); will emit
+                        source location comments in the generated C
   --dump-tokens         Dump token stream to stdout after tokenization
   --indent-width=<N>    Spaces per indentation level (default: 2)
   --vendor=<name:path>  Register a vendor (repeatable). Vendor paths
                         are referenced from source as `import "@<name>"`.
                         Default: `std:examples/base.aslr` when --vendor
                         does not include a `std` entry.
-  [-o|--output]=<file>  Output binary path (default: input filename without extension)
+  [-o|--output]=<file>  Not supported yet (no code generation); will set the
+                        output binary path (default: input filename without
+                        extension)
   [-h|--help]           Show this help message"""
 
 
