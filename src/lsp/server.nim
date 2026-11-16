@@ -5,9 +5,9 @@
 ## Diagnostics are owned per compile root: every open document is a
 ## root, compiled with all open buffers as overlays. A root's error may
 ## land in a file it imports, so a file's published list is the union
-## of every root's diagnostic that points at it. After any edit every
-## open root is rechecked, since the edit may break (or fix) a file
-## that imports it.
+## of every root's diagnostic that points at it. After any edit, and
+## after a buffer is closed, every open root is rechecked, since the
+## change may break (or fix) a file that imports it.
 
 import std/[json, sequtils, tables]
 import results
@@ -101,11 +101,18 @@ proc open(server: LspServer, document: TextDocument): LspServer =
   next
 
 proc close(server: LspServer, path: string): (LspServer, seq[JsonNode]) =
+  ## Drops `path`'s buffer and its own diagnostic, then rechecks every
+  ## root still open: they may have compiled against the closed buffer,
+  ## which now falls back to the file on disk.
   var next = server
   next.documents.del(path)
   next.diagnostics.del(path)
-  let affected = (@[path] & diagnosticPaths(server.diagnostics, path)).deduplicate
-  (next, affected.mapIt(publish(next.diagnostics, it)))
+  var affected = @[path] & diagnosticPaths(server.diagnostics, path)
+  for root in toSeq(next.documents.keys):
+    let (checked, paths) = next.recheck(root)
+    next = checked
+    affected.add(paths)
+  (next, affected.deduplicate.mapIt(publish(next.diagnostics, it)))
 
 proc shutdown(server: LspServer): LspServer =
   var next = server

@@ -136,6 +136,23 @@ suite "lsp — handle":
     check closeOut.publishedFor(a)[0].diagnosticsIn.len == 0
     check a notin closed.documents
 
+  test "closing an unsaved broken import rechecks the roots that import it":
+    # `a` imports `b`. A broken unsaved buffer for `b` makes root `a`
+    # report an error on `b`. Closing `b` discards that buffer, so `a`
+    # must be rechecked against the valid `b` on disk and the error cleared.
+    let (roots, vendorDir) = writeStdVendor()
+    let dir = writeFiles([
+      ("a.asl", "import { Helper } from \"./b.asl\"\n\nmodule Main:\n  func go(): u8\n    u8 0\n"),
+      ("b.asl", "public module Helper:\n  public func go(): u8\n    u8 0\n"),
+    ])
+    let (a, b) = (dir / "a.asl", dir / "b.asl")
+    let (withA, _) = newLspServer(2, roots).handle(openMessage(a, readFile(a)))
+    let (withB, openBOut) = withA.handle(openMessage(b, "public module Helper:\n"))
+    let (_, closeOut) = withB.handle(closeMessage(b))
+    cleanupDir(dir); cleanupDir(vendorDir)
+    check openBOut.publishedFor(b)[^1].diagnosticsIn.len == 1
+    check closeOut.publishedFor(b)[^1].diagnosticsIn.len == 0
+
   test "shutdown is acknowledged with a null result":
     let (after, outgoing) = newLspServer(2, initTable[string, string]()).handle(
         decode(%*{"jsonrpc": "2.0", "id": 9, "method": "shutdown"}))
