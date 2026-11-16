@@ -43,6 +43,14 @@ proc capabilities(): JsonNode =
 
 proc compile(rootPath: string, indentWidth: uint32, vendorRoots: VendorRoots,
     overlays: Table[string, string]): Result[void, string] =
+  # Front end only, on purpose: monomorphize needs a whole program (a
+  # `start` entry), and every open document is a root here.
+  # TODO(growth-check): unbounded type growth (a generic function calling
+  # itself with an ever-larger type, grow[T] -> grow[Array[T]] -> ...) is
+  # a developer error that only the monomorphizer detects today, so the
+  # editor shows such code as clean while `asl build` rejects it. Detect
+  # it in a stage this server runs, so it is reported here at the
+  # growing call.
   let app = ? parse(rootPath, indentWidth, false, vendorRoots, overlays)
   let resolvedApp = ? resolve(app)
   discard ? analyze(resolvedApp)

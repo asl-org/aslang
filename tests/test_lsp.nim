@@ -158,3 +158,35 @@ suite "lsp — handle":
         decode(%*{"jsonrpc": "2.0", "id": 9, "method": "shutdown"}))
     check after.shutdownRequested
     check outgoing[0]["result"].kind == JNull
+
+suite "lsp — open TODO(growth-check)":
+
+  # EXPECTED: unbounded type growth (grow[T] -> grow[Array[T]] -> ...) is
+  # reported in the editor, at the growing call.
+  # TODO(growth-check): today only the monomorphizer detects it, and the
+  # server runs the front end only, so the buffer shows no diagnostic even
+  # though `asl build` rejects it. This test asserts that. Flip it when the
+  # TODO is fixed.
+  test "unbounded type growth is not reported by the server":
+    let source = """
+public module M:
+  public func grow(x: Any): u32!
+    box = Array[Any] { size: u32 1 }
+    filled = try Array.set(box, u32 0, x)
+    _ = try M.grow(filled)
+    u32!.Ok { value: u32 0 }
+
+  public func start(): i32
+    match M.grow(i32 0):
+      case _:
+        i32 0
+"""
+    # The real std (not `writeStdVendor`'s trimmed one): the program needs
+    # `i32`, `Array` and `Error`, as it does under `asl build`.
+    var roots = initTable[string, string]()
+    roots["std"] = currentSourcePath().parentDir.parentDir / "examples" / "base.aslr"
+    let dir = writeFiles([("a.asl", source)])
+    let a = dir / "a.asl"
+    let (_, openOut) = newLspServer(2, roots).handle(openMessage(a, source))
+    cleanupDir(dir)
+    check openOut.publishedFor(a)[^1].diagnosticsIn.len == 0

@@ -37,9 +37,13 @@ Read it before changing anything below.
 - stdout is the protocol channel under `lsp`. Never `echo` on that
   path (`asl.nim` skips its `[INFO]` banner for `lsp`); log to stderr.
 - `asl.nim`'s `compile` and `server.nim`'s `compile` each chain the
-  pipeline by hand. When monomorphize / lifetime / codegen are added
-  to the CLI, update the server too, or it silently stops reporting
-  those errors.
+  pipeline by hand. The server runs the front end only (parse →
+  resolve → analyze), on purpose. Monomorphize and later stages need a
+  whole program (a `start` entry) and run only on code that is already
+  correct, so don't add them to the server. The one developer error
+  only the monomorphizer catches, unbounded type growth, is
+  `TODO(growth-check)`. When a new front-end stage is added to the CLI,
+  update the server too, or it silently stops reporting those errors.
 - The server parses the compiler's error *wording*. A new `err(...)`
   should keep the `{loc} message` shape until structured errors land.
 

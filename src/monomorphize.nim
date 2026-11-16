@@ -514,6 +514,10 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
     # enough, though: this walk recurses once per call in the chain, so a deep
     # chain would then hit Nim's call-depth limit. Build copies from a
     # worklist (mint the callee's id, queue its body) instead of recursing.
+    # Unbounded type growth is a developer error, but `asl lsp` runs the
+    # front end only, so this error never reaches the editor. Detect it in
+    # a stage the server runs (see the same TODO in lsp/server.nim) and
+    # report it at the growing call.
     elif mono.visiting.len >= 128:
       let loc =
         case funcRef.kind:
