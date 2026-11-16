@@ -259,12 +259,13 @@ module M:
     cleanupDir(dir)
     check r.isErr
 
+  # EXPECTED: the parse fails with `toAbsPath`'s "escapes to parent
+  # directory" error, at the import line.
+  # TODO(parser-errors): today the parser's `any(importSpec)` backtracking
+  # swallows that message, so the parse reports the generic "expected
+  # 'module'". This test asserts that. Flip it when the TODO is fixed.
   test "parent-directory escape via ../ is rejected":
-    # The grammar's importLineSpec calls toAbsPath; on rejection
-    # the error is produced but currently swallowed by the parser's
-    # `any(importSpec)` backtracking, so the surface error is the
-    # generic "expected module" message. We assert only that the parse
-    # fails. The escaping target exists (`escape.asl`, one level above
+    # The escaping target exists (`escape.asl`, one level above
     # `sub/entry.asl`), so only the escape check can reject this import.
     let (r, dir) = parseFiles([
       ("sub/entry.asl", """
@@ -282,7 +283,12 @@ public module Foo:
     ])
     cleanupDir(dir)
     check r.isErr
+    check errorContains(r.error, "expected 'module'")
 
+  # EXPECTED: the same "escapes to parent directory" error as above.
+  # TODO(parser-errors): today it is swallowed the same way, so the parse
+  # reports "expected 'module'". This test asserts that. Flip it when the
+  # TODO is fixed.
   test "sneaky parent escape via ./inner/../../escape is rejected":
     # `./inner/../../escape.asl` starts with `./` but resolves above
     # `sub/`, to an `escape.asl` that exists — so, as above, only the
@@ -303,6 +309,7 @@ public module Foo:
     ])
     cleanupDir(dir)
     check r.isErr
+    check errorContains(r.error, "expected 'module'")
 
   test "deep import chain (a -> b -> c -> d) loads each in order":
     let (r, dir) = parseFiles([

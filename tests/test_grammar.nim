@@ -182,10 +182,12 @@ module M:
 """)
     check r.isOk
 
+  # EXPECTED: the parse fails with `newImport`'s duplicate-name error,
+  # pointing at the second `Foo`.
+  # TODO(parser-errors): today the parser's `any` backtracking swallows
+  # that message, so the parse reports the generic "expected 'module'".
+  # This test asserts that. Flip it when the TODO is fixed.
   test "duplicate import names within a single statement are rejected":
-    # The `newImport` constructor catches this, but its specific error
-    # message is currently swallowed by the parser's `any` backtracking.
-    # We verify only that the parse fails.
     let r = parseStr("""
 import { Foo, Foo } from "./bar.asl"
 
@@ -194,9 +196,14 @@ module M:
     u8 0
 """)
     check r.isErr
+    check errorContains(r.error, "expected 'module'")
 
+  # EXPECTED: the parse fails with `newImport`'s alias-collision error,
+  # pointing at the second `B`.
+  # TODO(parser-errors): today the message is swallowed the same way, so
+  # the parse reports "expected 'module'". This test asserts that. Flip it
+  # when the TODO is fixed.
   test "duplicate import bindings (alias collision) are rejected":
-    # Same backtracking caveat as above.
     let r = parseStr("""
 import { Foo as B, Bar as B } from "./bar.asl"
 
@@ -205,6 +212,7 @@ module M:
     u8 0
 """)
     check r.isErr
+    check errorContains(r.error, "expected 'module'")
 
   test "shorthand import parses":
     # `import "path"` parses to an ikShorthand Import — the names
