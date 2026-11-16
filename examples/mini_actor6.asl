@@ -426,7 +426,7 @@ module Eq:
     Eq.and(Eq.i32v(a.sum, b.sum), Eq.i32v(a.exitCode, b.exitCode))
 
 # ---- demo: same backlog, two stop semantics ----
-module Driver:
+public module Driver:
   # preload the whole scenario: events 1..3, graceful STAT, events 4..5,
   # then a STOP (urgent if forced, else graceful). Arrival order is fixed.
   public func buildBacklog(forced: Bool): Mailbox!
