@@ -692,9 +692,10 @@ extern functions carry their `AnalyzedExternFunction`). Scope:
   their kwargs (`analyzeKeywordArgument` checks each value against its
   field type and carries the bindings it contributes), and `merge`
   them across fields, so kwargs binding the same generic must agree.
-  A union initializer then rebuilds the map over the union's full
-  require slots: covered slots bound, uncovered ones left as the free
-  generic (leave-as-is).
+  Both then rebuild the map over the type's full require slots, in slot
+  order: covered slots bound, uncovered ones left as the free generic
+  (leave-as-is). The initializer's type is built from that map, so a
+  bare `Box { item: u8 1 }` is a `Box[u8]`.
 - **`try` calls** — `analyzeFunctionCall`'s `fckTry` arm requires the
   callee to return `Status`, reads its `(Value, Error)` slots
   (`statusSlots`), requires the enclosing function to return a
@@ -785,11 +786,21 @@ program must expose a `public func start(): i32`), and returns a
   (`MonoUserFunction`: params + nodes + result id) or an extern
   declaration (`MonoExternFunction`: decl + impls). No dangling callees.
 - **Termination** — a 128-deep stopgap rejects type-growing recursion
-  (`grow[T] → grow[Array[T]] → …`) before it overruns the stack;
-  `TODO(growth-check)` tracks the precise subterm occurs-check.
-  `afkGenerated` is a `[BUG]` assert (unreachable until the `try`→`match`
-  expansion exists); `TODO(extern-generic-wrapper)` is the codegen-side
-  kind-tagged wrapper for a generic extern.
+  (`grow[T] → grow[Array[T]] → …`) before it overruns the stack.
+  `TODO(growth-check)` tracks the precise subterm occurs-check. It also
+  covers the stopgap's false positive (a plain chain of 128+ distinct
+  calls is rejected too, so copies should be built from a worklist) and
+  reporting the error in the editor, which runs the front end only.
+- **Generated functions** — the `frkGenerated` arm is a `[BUG]` assert,
+  but it is reachable: the injected `byte_size` is a generated function,
+  and `u32.byte_size()` or `Any.byte_size()` lands there and crashes.
+  `TODO(generated-functions)` is to build a `MonoInstance` for it, as
+  the extern arm does, so codegen can emit the body.
+  `TODO(extern-generic-wrapper)` is the codegen-side kind-tagged wrapper
+  for a generic extern.
+- **Value ids** — every value in a copy has its own `ValueId`; match
+  arms advance the copy's counter, so arm values and the match result
+  never share an id. `MonoInstance.valueIds` lists them for tests.
 
 `compile` runs this pass but discards the `MonoApp` (no codegen yet).
 Design + decisions: `plans/plan_monomorphizer.md`,
@@ -808,6 +819,7 @@ src/
     main.nim           barrel + stdio loop (read frame → decode → handle → write)
     server.nim         LspServer state + pure `handle`; compiles each open
                        document as a root with open buffers as overlays
+                       (front end only: parse → resolve → analyze)
     message.nim        LspMessage tagged union decoded from JSON-RPC
     diagnostic.nim     compiler error string → Diagnostic (ordered shapes)
     jsonrpc.nim        Content-Length framing + response/notification builders
@@ -962,11 +974,13 @@ Two suites, both runnable from the repo root:
 `nimble test` — unit suite under `tests/`. Each component (tokenizer,
 combinators, AST constructors, grammar, loader, resolver, analyzer,
 monomorphize, CLI, LSP) has its own `test_*.nim` file aggregated by
-`tests/all.nim`. **405 tests** covering positive paths, negative
+`tests/all.nim`. **420 tests** covering positive paths, negative
 paths, edge cases, Trojan Source defenses in the tokenizer, direct
 rollback / composition tests for the combinators, multi-file loading
 (cycles, diamonds, source overlays), and the language server's error
-mapping and message handling.
+mapping and message handling. Known gaps are pinned by tests that
+assert today's behavior under an `EXPECTED:` / `TODO(...)` comment, so
+fixing the TODO makes them fail and get flipped.
 
 `./test.sh` — integration suite that builds the binary and runs
 `asl build` against every fixture, asserting exit codes:
@@ -977,20 +991,24 @@ mapping and message handling.
 Each fixture has a leading `#` comment documenting what feature or
 error condition it exercises. `test.sh` drives 36 fixtures (21 positive
 + 15 negative; `dep.asl` and `cycle_b.asl` in `examples/errors/` are
-dependency files the runner skips). Current result: **35/36** —
-`mini_actor6.asl` now fails because `compile` runs `monomorphize`, which
-drives from `app.entry` and so requires a `public func start(): i32`
-that this fixture (an actor-library example) does not declare. Wiring
-monomorphize into the build regressed this one positive fixture; the fix
-is either to give it an entry or to exclude it from the built set.
+dependency files the runner skips). Current result: **36/36**.
+
+Every built fixture has a `public func start(): i32` entry, because
+`compile` runs `monomorphize`, which drives from `app.entry`. For the
+negative fixtures that means their targeted error is the only thing
+wrong: each one builds once that error is removed.
+`only_imports.asl` is the one exception, since a module would remove
+what it tests. The runner checks exit codes only;
+`TODO(parser-errors)` in `test.sh` is to check each negative fixture's
+message once the parser reports the real error.
 
 ## What's Next
 
 **Front end green; monomorphizer landed.** tokenizer → parser →
 resolver → defanalyzer → analyzer → monomorphize runs end to end, and
 `compile` returns `[SUCCESS]` once monomorphization does. Unit suite
-**405/405**; integration **35/36** (the one failure is `mini_actor6.asl`
-— see Testing). Recent structural work: the collapse of the assignment /
+**420/420**; integration **36/36** (see Testing). Recent structural
+work: the collapse of the assignment /
 setter / bare-expression forms into one `Statement` at every layer with
 value positions typed `InlineExpression`; the phase-B context ladder
 (`analyzer/context.nim`) replacing the separate import and app contexts

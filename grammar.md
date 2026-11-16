@@ -90,10 +90,15 @@ VariantDef: Variant ArgumentDef*
 # `ArgumentDef*` — empty variants are structurally legal; whether
 # the parser exposes surface syntax for them is a separate question.
 
-Function: ExternFunction | UserFunction
+Function: ExternFunction | UserFunction | GeneratedFunction
 ExternFunction: Public? ExternDecorator FunctionDef
 ExternDecorator: StringLiteral
 UserFunction: Public? FunctionDef Statement+
+GeneratedFunction: FunctionDef
+# Never written in source: the compiler injects it. Today that is the
+# public `byte_size(): u64` every data module gets (`newModule`), which
+# is how a data module satisfies `Any`. It has no body in the AST;
+# codegen emits one.
 
 Generic: Public? GenericName FunctionDef+
 Public: "public"
@@ -271,8 +276,8 @@ contributors can find the *why* alongside the *what*.
   defining module (`FunctionAccess`: `faAll` vs `faPublic`). The
   rule is enforced at both checkpoints that look functions up: call
   sites (`resolveFunctionCall`) and generic-constraint satisfaction
-  (`satisfies` at resolve time; the def analyzer's identity-probe
-  check via `findImplDef` at def time) — so a private function can
+  (the def analyzer's identity-probe check via `findImplDef`) — so a
+  private function can
   neither be called from another module nor make its module satisfy
   a constraint written elsewhere. The same principle applies one
   level up at definition sites: a public module's require slots may

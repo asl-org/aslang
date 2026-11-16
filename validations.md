@@ -7,10 +7,10 @@ Grouped by pipeline phase — lexer, parser (AST constructors + grammar
 specs), loader, resolver, analyzer, CLI. Each entry names the test
 file that pins the rule down.
 
-Coverage as of this document: **289 unit tests + 33/35 integration
-fixtures.** The two failing fixtures are a pre-existing analyzer TODO
-(the equality-vs-unification gap) documented in
-`overview.md`'s "What's Next".
+Coverage as of this document: **420 unit tests + 36/36 integration
+fixtures**, all passing. Known gaps are pinned by tests that assert
+today's behavior under an `EXPECTED:` / `TODO(...)` comment; they flip
+when the TODO is fixed.
 
 ---
 
@@ -241,9 +241,12 @@ Source: `tests/test_grammar.nim` and `tests/test_ast.nim`.
 
 ### 4.7 Decorators
 
-- **`@extern("symbol")` is the only decorator with defined semantics.**
-  Other decorator names parse but currently produce a "todo: resolve
-  decorators" error at the resolver.
+- **`@extern("symbol")` is the only supported decorator.** A bare
+  `@name` line above a user function or a module still parses, and the
+  resolver then asserts instead of reporting an error (a crash, pinned
+  by `resolver — open TODO(decorators)` in test_resolver.nim and tracked
+  as `TODO(decorators)`). A decorator with arguments (`@name("x")`)
+  doesn't parse.
 
 ### 4.8 Argument-type shorthand — `T!` = `Status[T, Error]`
 
@@ -297,10 +300,10 @@ name" idiom.
 ### 4.10 A-normal form expansion (post-parse AST normalization)
 
 Not a validation — a *transformation* that normalizes nested calls into
-A-normal form. The `expand*` procs live in `src/parser/statement.nim`.
+A-normal form. The `expand*` procs live in `src/parser/expansion.nim`.
 
-Status: currently NOT wired into parsing — `statementListConsumer`
-(`src/parser/index.nim`) builds the `StatementList` without expanding,
+Status: currently NOT wired into parsing — `statementListSpec`
+(`src/parser/statement.nim`) builds the `StatementList` without expanding,
 and the `expand*` procs are kept as reference pending a post-analysis
 expander (see `plans/plan_post_analysis_expansion.md`). When re-enabled,
 expansion runs after the AST is built so downstream (resolver,
@@ -371,7 +374,11 @@ Source: `tests/test_loader.nim`.
 
 - **Parent-directory escape via `../` is rejected.** The resolved path
   must live under (or at) the importing file's dir. Both direct
-  (`../escape.asl`) and sneaky (`./sub/../../escape.asl`) forms fail.
+  (`../escape.asl`) and sneaky (`./inner/../../escape.asl`) forms fail.
+  The tests create the escaping target, so only the escape check can
+  reject the import. Its message ("escapes to parent directory") is
+  swallowed by the parser's backtracking today, so the tests pin the
+  generic "expected 'module'" (`TODO(parser-errors)`).
 
 ### 5.3 Self-import
 
@@ -381,11 +388,12 @@ Source: `tests/test_loader.nim`.
 
 ### 5.4 Cross-file walk
 
-- **Cyclic imports are detected** by `topoSort` and reported with the
-  full cycle path (`A -> B -> A`).
+- **Cyclic imports are detected** by `parse*`'s depth-first import walk
+  (its `visiting` stack) and reported with the full cycle path
+  (`A -> B -> A`).
 - **Missing imported files** are reported by absolute path.
-- **Diamond imports** load each file exactly once (BFS dedup on
-  absolute path).
+- **Diamond imports** load each file exactly once (the walk's `visited`
+  set, keyed by absolute path).
 - **Diamond dedup with extension normalization** — `./x` and `./x.asl`
   resolve to the same absolute path so are one file.
 
@@ -408,9 +416,9 @@ Source: `tests/test_ast.nim` (parser API), `tests/test_resolver.nim`.
 
 - **`findType(name)`** returns *locally-defined* types only; an
   imported binding is not surfaced here.
-- **`findImportedName(name)`** returns imported bindings; unimported
+- **`findImportedType(name)`** returns imported bindings; unimported
   names produce a "not imported" error.
-- **`findImportedName` on `.aslr` files always errors** (structurally:
+- **`findImportedType` on `.aslr` files always errors** (structurally:
   aslr files have no imports).
 - **`findExportedType`** returns a locally-defined `public` type.
   Non-public types are rejected with "non-public"; missing names with
@@ -503,14 +511,21 @@ Union:
 
 ### 7.3 Argument-type impl-list arity
 
-- **Literal-backed type given type parameters** — `u8[K]` when `u8` is
-  a literal-only module is rejected with "does not require impl
-  types".
+Checked by the def analyzer (`analyzeDefModuleArgumentType`), not the
+resolver, which only fills in the impls. The error is "type `X`
+expects N impls but found M". Source: `tests/test_analyzer.nim`.
+
+- **Literal-backed type given type parameters** — `u8[u8]` (a
+  literal-only module has zero slots) is rejected with "expects 0 impls
+  but found 1".
+- **Union arg type with too few impls** — `Box[Any]` for a union whose
+  variants use two generics is rejected.
 - **Explicit-header mismatch** — a module declaring `struct(K, V):`
-  invoked as `Array[u8]` (too few impls) is rejected with "expects 2
-  impls".
-- **Union arg type with too few impls** — same rule for union types
-  with declared or inferred generics.
+  used with one impl gets the same error. Not pinned by a test yet.
+- **Bare initializer of a header struct** — `Array { size: u32 1 }`
+  (a `struct(...)` header with no impls written) is rejected by the
+  resolver with "module `Array` expects 1 impls". Not pinned by a test
+  yet.
 
 ### 7.4 Struct header (`struct(...)`) rules
 
@@ -559,9 +574,10 @@ to:
 
 - **A concrete impl passed for a required generic must implement every
   funcDef the generic mandates.** Missing a required method is
-  rejected with "does not implement function X to support Y" (test
-  `test_analyzer.nim` under "generic constraint satisfaction" —
-  landed in the resolver via `checkImplSatisfiesGeneric`).
+  rejected with "type `X` does not implement `<funcDef>` to support
+  `Y`" (test `test_analyzer.nim` under "generic constraint
+  satisfaction"). Checked by the def analyzer (`analyzeDefImpl`), not
+  the resolver.
 - **Each concrete impl is checked independently** — a two-generic
   `struct(K, V):` header validates both slots.
 
@@ -661,16 +677,16 @@ Concrete-position wiring:
   declared arg types are the `expected` for the corresponding call
   arg. First match wins; ambiguity fires the existing multi-match
   error.
-- **Struct kwargs** — the field's declared type is `expected`. A
-  struct's outer generic parameters are **not** inferred from bare-
-  literal kwarg values on the bare init path: the `GenericImplMap`
-  returned by the field-vs-value check is currently discarded (see
-  the `discard ?` and TODO in `analyzeBareLiteral`,
-  `src/analyzer/index.nim`). The kwarg-
-  level generic-default still fires — `Holder { value: 42 }` where
-  `value: Any` picks up i32 for the kwarg — but the struct's result
-  type stays impl-less. Union kwargs (below) accumulate; struct
-  kwargs don't.
+- **Struct kwargs** — the field's declared type is `expected`. A bare
+  initializer infers the struct's generic parameters from the kwarg
+  values, the same way union kwargs do (below): the bindings each kwarg
+  contributes are merged, then rebuilt over the struct's slots in slot
+  order (`analyzeStructInitializer`). `Holder { value: 42 }` where
+  `value: Any` is a `Holder[i32]`; `Box { item: 1.5 }` a `Box[f32]`;
+  `Box { item: "s" }` a `Box[string]`. Locked in by `analyzer — struct
+  initializer inference` (test_analyzer.nim, 5 tests), which also
+  covers reading a field back with the inferred type and passing the
+  value to a `Box[Any]` parameter.
 - **Union kwargs** — the field's declared type, first concretized
   through the current `GenericImplMap`, is `expected`. Free-generic
   fields on the bare path fall through to the default rule and
@@ -774,6 +790,24 @@ Source: `tests/test_cli.nim`.
 - **`std` is implicitly registered** if the user doesn't provide it.
   Default value: `examples/base.aslr` resolved absolutely. Test:
   "no --vendor flag → default `std` is registered".
+
+### 9.3 Flags that need code generation
+
+- **`--debug` and `-o/--output` are rejected** by `build` with "not
+  supported yet: there is no code generation", instead of being
+  silently ignored (`TODO(codegen)` in `src/cli.nim`). Tests: `cli —
+  build flags that need codegen` (`--debug`, `-o out`, `--output=out`).
+
+### 9.4 Entry point
+
+- **A built file needs exactly one entry point**: one `public` module
+  with a `public func start(): i32`. Zero or two entry points are
+  rejected with "expected file to contain one public module with
+  `public func start(): i32` but found N". A `start` with the wrong
+  return type, with arguments, without `public`, or in a non-public
+  module is not an entry point. The check runs on the analyzed app
+  (`AnalyzedApp.entry`), which `asl build` hands to the monomorphizer.
+  Tests: `analyzer — entry point` (test_analyzer.nim, 7 tests).
 
 ---
 

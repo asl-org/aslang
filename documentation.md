@@ -30,9 +30,9 @@ their own `@extern` functions when they need to bind a runtime symbol
 directly.
 
 Every `.asl` file gets `import "@std"` injected at parse time, so
-standard-library types (`u8`..`u64`, `i8`..`i64`, `f32`/`f64`, `String`,
-`Status`, `Array`, `Bitset`, `Error`, etc.) are in scope without a
-written import line.
+standard-library types (`u8`..`u64`, `i8`..`i64`, `f32`/`f64`, `string`,
+`Status`, `Error`, `Array`, `Map`, `Bitset`, etc.) are in scope without
+a written import line.
 
 ---
 
@@ -201,7 +201,7 @@ what values of the module's type look like.
 ```asl
 module User:
   struct:
-    name: String
+    name: string
     age: u32
 ```
 
@@ -221,7 +221,7 @@ Each variant carries its own named fields. Variants may be empty
 
 ```asl
 public module u8:
-  literal: "u8"
+  literal: "uint8"
 ```
 
 `literal` declares a primitive type backed by a host-runtime
@@ -283,10 +283,10 @@ those) are visible.
 
 ```asl
 public module u8:
-  literal: "u8"
+  literal: "uint8"
 
   @extern("u8_add_u8")
-  public func add(a: u8, b: u8): Status[u8]
+  public func add(a: u8, b: u8): u8!
 ```
 
 The `@extern("c_symbol")` decorator names the runtime symbol that
@@ -305,7 +305,7 @@ module Foo:
   func bar(a: i64): i64
     a
 
-  func bar(a: String): String
+  func bar(a: string): string
     a
 ```
 
@@ -324,9 +324,10 @@ The empty argument list `()` is accepted.
 
 ### Decorators
 
-`@<name>(...)` lines attach metadata to the following function. Today
-only `@extern("symbol")` is consumed by the compiler; other decorators
-parse but are not yet wired.
+`@extern("symbol")` is the only supported decorator, and no others are
+planned. (Today a bare `@name` line above a function or module still
+parses, and the compiler then crashes instead of reporting an error;
+tracked as `TODO(decorators)`.)
 
 ---
 
@@ -341,10 +342,10 @@ public module Array:
     size: u32
 
   @extern("array_get")
-  public func get(arr: Array[Any], index: u32): Status[Any]
+  public func get(arr: Array[Any], index: u32): Any!
 
   @extern("array_set")
-  public func set(arr: Array[Any], index: u32, item: Any): Status[Array[Any]]
+  public func set(arr: Array[Any], index: u32, item: Any): Array[Any]!
 ```
 
 `struct(Any):` says: "to use this module you must supply something
@@ -354,8 +355,7 @@ that implements `Any`." Use sites then parameterize:
 arr = Array[u32] { size: 100 }
 ```
 
-A struct's generic parameters can be declared in one of two mutually
-exclusive ways:
+A struct's generic parameters can be declared in two ways:
 
 - **Explicit header** (`struct(Any):`) — used for phantom-type
   parameters that no field mentions, as with `Array` above. Required
@@ -380,19 +380,14 @@ original slot; new names take the next).
 ### Constraint satisfaction
 
 Writing `Container[T]` obligates `T` to satisfy the slot's generic.
-Satisfaction is checked in two stages, both before any function body
-is analyzed:
-
-- **At resolve time**: `T` must provide a function for every funcDef
-  the generic declares, matched by name and argument count, and
-  visible from the file where `Container[T]` is written (a private
-  function satisfies a constraint only inside its own module).
-- **At definition-analysis time**: the full signatures must match.
-  The generic's funcDefs are read with the generic's self-references
-  standing for `T`'s own declared shape, and `T` must declare exactly
-  those input types AND the exact return type. A `T` whose `compare`
-  returns the wrong type is rejected at the `Container[T]`
-  declaration even if `compare` is never called.
+The definition analyzer checks this before any function body is
+analyzed. The generic's funcDefs are read with the generic's
+self-references standing for `T`'s own declared shape. For each one,
+`T` must declare a function with exactly those input types AND the
+exact return type, visible from where `Container[T]` is written (a
+private function satisfies a constraint only inside its own module).
+A `T` whose `compare` returns the wrong type is rejected at the
+`Container[T]` declaration even if `compare` is never called.
 
 The constraint generic itself does not need to be in scope at the
 use site. Require slots derive in the file that DEFINES the module,
@@ -424,44 +419,56 @@ modules may use private generics freely.
 - **Unsigned integers:** `u8`, `u16`, `u32`, `u64`
 - **Signed integers:** `i8`, `i16`, `i32`, `i64`
 - **Floats:** `f32`, `f64`
-- **String:** `String`
+- **String:** `string`
 
 Each primitive module exposes the usual operations as extern
 functions: `add`, `subtract`, `multiply`, `quotient`, `remainder`,
-`compare`, bitwise (`and`, `or`, `xor`, `shr`, `shl`, `not`),
-`byte_size`, and various `from` conversions.
+`compare`, bitwise (`and`, `or`, `xor`, `not`, plus `shr` / `shl` on
+the integer types), and various `from` conversions. Most arithmetic
+returns a `Status` (`u8.add` returns `u8!`). Every module with a data
+block also gets a compiler-generated `byte_size(): u64`, which is how
+it satisfies `Any`.
 
-### Result type — `Status[T]`
+### Result type — `Status[Value, Error]`
 
-Every fallible operation returns `Status[T]` instead of throwing.
-`Status` is a union with two variants:
+Every fallible operation returns a `Status` instead of throwing.
+`Status` is a union with two variants and two type parameters, the
+value and the error:
 
 ```asl
 public module Status:
   union:
     Ok { value: Any }
-    Err { error: Error }
+    Err { error: Failure }
 ```
 
-`Error` carries `{ code: i32, message: String }`. Use `match` on a
-`Status` to handle both arms.
+`T!` is sugar for `Status[T, Error]`, and `T!E` for `Status[T, E]`.
+`Failure` is the error contract (`code(failure): i32`,
+`message(failure): string`); `Error` is the built-in struct that
+satisfies it and carries `{ code: i32, message: string }`. Use `match`
+on a `Status` to handle both arms, or `try` to propagate the error (see
+*Idiomatic error propagation*).
 
 ### Containers (declared in `base.aslr`)
 
 - **`Array[T]`** — fixed-size array of `T`; field `size: u32`; functions
-  `get`, `set`, `byte_size`.
+  `get(arr, index): T!` and `set(arr, index, item): Array[T]!`.
+- **`Map[K, V]`** — `K` must satisfy `Key` (`hash(key): u64`); field
+  `size: u32`; functions `get(map, key): V!` and
+  `set(map, key, value): Map[K, V]!`.
 - **`Bitset`** — bit-packed set built on `Array[u32]`; functions
-  `init(size)`, `get(index)`, `set(index)`.
+  `init(size): Bitset!`, `get(bitset, index): u8!` and
+  `set(bitset, index): Bitset!`.
 
 ### Type-parameter syntax
 
 Type parameters are passed in square brackets:
 
 ```asl
-Status[u8]
+Status[u8, Error]    # same as u8!
 Array[u32]
-Map[String, Array[u64]]
-Status[Bitset]
+Map[string, Array[u64]]
+Array[u32!]          # Array[Status[u32, Error]]
 ```
 
 Nesting is unbounded.
@@ -480,10 +487,19 @@ i64 -1
 f64 3.14
 f64 1.5e3
 f64 -0.5
-String.from(42)
+string "hello"
 ```
 
-The type prefix is mandatory — there are no untyped integer literals.
+A literal can also be written bare (`10`, `1.5`, `"text"`). A bare
+literal takes the type its position expects when that type is concrete:
+a parameter, a field, or the target of a field assignment
+(`u8.add(10, 20)` passes two `u8`s). Otherwise it defaults to `i32`,
+`f32` or `string`. In a generic field that default also becomes the
+type argument, so `Box { item: 1 }` is a `Box[i32]`.
+
+A bare literal can't pick between overloads that all accept it:
+`string.from(42)` is ambiguous, because `42` fits every integer
+overload. Write the type: `string.from(i64 42)`.
 
 ### Local bindings (assignment)
 
@@ -514,13 +530,17 @@ User { name: n, age: a }
 
 Curly braces with `field: value` pairs. Field names must match the
 struct exactly. Type parameters (when the struct is generic) are
-attached to the type name: `Pair[u8, u8] { a: u8 0, b: u8 1 }`.
+attached to the type name: `Pair[u8, u8] { a: u8 0, b: u8 1 }`. They
+can be omitted when the fields determine them: `Box { item: u8 1 }` is
+inferred as `Box[u8]`. A struct with an explicit `struct(...)` header,
+like `Array`, always needs them written (`Array[u32] { size: 100 }`),
+since no field carries its type parameters.
 
 ### Union initializer
 
 ```asl
-Status.Ok { value: u8 0 }
-Status[u32].Err { error: err1 }
+u8!.Ok { value: u8 0 }
+u32!.Err { error: err1 }
 Plan.Free { usage: u32 100 }
 ```
 
@@ -531,8 +551,9 @@ bare form, populated for the bracketed form). When impls are omitted the
 compiler infers them from the kwarg values, leaving any generic the
 variant's fields don't touch at its declared position (leave-as-is).
 Explicit impls are needed when the variant alone cannot determine all
-type parameters — e.g. `Status[Bitset].Err { error: e }`, where `Err`
-only constrains `Error`, not `Bitset`.
+type parameters — e.g. `Bitset!.Err { error: e }` (that is,
+`Status[Bitset, Error]`), where `Err`'s field only determines the error
+slot, not `Bitset`.
 
 ### Module-method calls
 
@@ -600,9 +621,9 @@ assigned:
 ```asl
 y = match x:
   case 0:
-    String.from("zero")
+    "zero"
   case n:
-    String.from(n)
+    string.from(n)
 ```
 
 All arms must produce the same type — the case-arm uniformity check
@@ -623,9 +644,9 @@ enforces this.
 ```asl
 match status:
   case Ok { value: v }:
-    use(v)
+    string.from(v)
   case Err { error: e }:
-    String.concat("error: ", e.message)
+    string.concat("error: ", e.message)
 ```
 
 ### Idiomatic error propagation
@@ -689,7 +710,8 @@ cannot be imported. Functions in a `generic` block are always callable
 asl build <filename.asl> [options]
 
 Options:
-  --debug               Emit source location comments in generated C
+  --debug               Not supported yet (rejected): will emit source
+                        location comments in the generated C
   --dump-tokens         Dump token stream to stdout after tokenization
   --indent-width=<N>    Spaces per indentation level (2 or 4; default 2)
   --vendor=<name>:<path>  Register a vendor (repeatable).
@@ -697,10 +719,32 @@ Options:
                           `import "@<name>"`. Default:
                           `std:examples/base.aslr` when --vendor does
                           not include a `std` entry.
-  [-o|--output]=<file>  Output binary path (default: input filename
-                        without extension)
+  [-o|--output]=<file>  Not supported yet (rejected): will set the output
+                        binary path (default: input filename without
+                        extension)
   [-h|--help]           Show this help message
 ```
+
+There is no code generation yet, so `build` checks the program and
+prints `[SUCCESS]` without writing any output. `--debug` and
+`-o/--output` are rejected with "not supported yet" until it exists
+(`TODO(codegen)`).
+
+### Entry point
+
+`build` compiles a whole program, starting from its entry point. The
+file it is given must contain exactly one `public` module with a
+`public func start(): i32`:
+
+```asl
+public module Driver:
+  public func start(): i32
+    i32 0
+```
+
+Without one, the build fails with "expected file to contain one public
+module with `public func start(): i32`". Files that are only imported
+by other files don't need an entry point.
 
 ### `--vendor` rules
 
@@ -774,17 +818,17 @@ current design.
 
 A complete file that exercises modules, struct + union data blocks,
 match expressions with variant destructuring, function calls, and
-local bindings:
+local bindings (the same program as `examples/data.asl`):
 
 ```asl
 # Data blocks — one file with two modules, one backed by a struct
 # data block and the other by a union data block.
 module User:
   struct:
-    name: String
+    name: string
     age: u32
 
-  func new(n: String, a: u32): User
+  func new(n: string, a: u32): User
     User { name: n, age: a }
 
 module Plan:
@@ -792,13 +836,17 @@ module Plan:
     Free { usage: u32 }
     Pro { users: u32, credits: u32 }
 
-  func describe(plan: Plan): String
+  func describe(plan: Plan): string
     free = Plan.Free { usage: u32 100 }
     match plan:
       case Free { usage: usage }:
-        String.from(usage)
+        string.from(usage)
       case Pro { credits: credits, users: users }:
-        String.concat(String.from(credits), String.from(users))
+        string.concat(string.from(credits), string.from(users))
+
+public module Driver:
+  public func start(): i32
+    i32 0
 ```
 
 For more, see `examples/` — every fixture has a leading comment
@@ -809,6 +857,16 @@ describing what feature it exercises.
 ## Changelog
 
 This section records language changes as they land, newest first.
+
+- **2026-11** — Bare struct initializers infer their type arguments
+  from the field values, as union initializers already did:
+  `Box { item: u8 1 }` is a `Box[u8]`, and `Box { item: 1 }` a
+  `Box[i32]` (the bare literal's default). Before, the result had no
+  type arguments: fields read back as the free generic, and passing the
+  value to a `Box[Any]` parameter crashed the analyzer. Also,
+  `asl build` now rejects `--debug` and `-o/--output` as "not supported
+  yet" instead of silently ignoring them, and the docs state the
+  entry-point requirement (`public func start(): i32`).
 
 - **2026-09** — `Assignment` and `Setter` collapsed into a single
   `Statement` node at every layer (parser → resolver → defanalyzer →
