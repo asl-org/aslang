@@ -5,7 +5,7 @@
 ## arms. MonoApp internals are private, so each test asserts on whether
 ## the program lowers (isOk) or hits a specific `todo` (isErr + message).
 
-import unittest, results, tables
+import unittest, results, tables, sequtils
 
 import tutils
 import monomorphize
@@ -280,3 +280,29 @@ public module M:
       if instance.kind == mikExtern:
         externInstances += 1
     check externInstances == 1
+
+suite "monomorphize — value ids":
+
+  test "match arms and the match itself get distinct value ids":
+    let (r, dir) = monomorphizeAppSingle(Prelude & """
+public module M:
+  public func start(): i32
+    x = i32 0
+    y = match x:
+      case 0:
+        i32 1
+      case _:
+        match x:
+          case 1:
+            i32 2
+          case _:
+            i32 3
+    y
+""")
+    cleanupDir(dir)
+    check r.isOk
+    # Every value in one copy (params, body nodes, nested arm bodies, and
+    # each match's own result) must have its own id.
+    for instance in r.get.instances.values:
+      let ids = instance.valueIds
+      check ids.deduplicate.len == ids.len

@@ -297,6 +297,25 @@ proc nextId(mono: Monomorphizer): FunctionId =
 # MonoInstance — which kind of copy this is (user body vs extern declaration).
 proc kind*(instance: MonoInstance): MonoInstanceKind = instance.kind
 
+# MonoInstance — every ValueId a user copy assigns (params, then body nodes in
+# build order, match-arm bodies included); empty for an extern copy.
+proc valueIds*(instance: MonoInstance): seq[int] =
+  var ids: seq[int]
+  proc collect(nodes: seq[Node]) =
+    for node in nodes:
+      ids.add(int(node.id))
+      if node.kind == nkMatch:
+        for arm in node.match.branches:
+          collect(arm.nodes)
+  case instance.kind:
+  of mikUser:
+    for param in instance.user.params:
+      ids.add(int(param))
+    collect(instance.user.nodes)
+  of mikExtern:
+    discard
+  ids
+
 # MonoApp — read access to the built program for downstream passes.
 proc newMonoApp(instances: Table[FunctionId, MonoInstance], entry: FunctionId): MonoApp =
   MonoApp(instances: instances, entry: entry)
@@ -391,6 +410,9 @@ proc monomorphize(scope: FunctionScope, mono: Monomorphizer, app: AnalyzedApp, e
       for statement in caseBlock.statements:
         branchResult = ? monomorphize(branchScope, mono, app, statement, impls)
       branches.add(BranchNode(pattern: caseBlock.pattern, nodes: branchScope.nodes, resultId: branchResult))
+      # The arm's ids belong to this copy too: move past them so the next
+      # arm and the match node itself get fresh ones.
+      scope.counter = branchScope.counter
     let id = scope.nextId()
     scope.nodes.add(newNode(id, newMatchNode(subjectId, branches)))
     ok(id)
