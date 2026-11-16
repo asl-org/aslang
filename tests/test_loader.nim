@@ -264,26 +264,40 @@ module M:
     # the error is produced but currently swallowed by the parser's
     # `any(importSpec)` backtracking, so the surface error is the
     # generic "expected module" message. We assert only that the parse
-    # fails — the constructor invariant is what we care about.
+    # fails. The escaping target exists (`escape.asl`, one level above
+    # `sub/entry.asl`), so only the escape check can reject this import.
     let (r, dir) = parseFiles([
-      ("entry.asl", """
+      ("sub/entry.asl", """
 import { Foo } from "../escape.asl"
 
 module M:
   func go(): u8
+    u8 0
+"""),
+      ("escape.asl", """
+public module Foo:
+  public func go(): u8
     u8 0
 """)
     ])
     cleanupDir(dir)
     check r.isErr
 
-  test "sneaky parent escape via ./sub/../../escape is rejected":
+  test "sneaky parent escape via ./inner/../../escape is rejected":
+    # `./inner/../../escape.asl` starts with `./` but resolves above
+    # `sub/`, to an `escape.asl` that exists — so, as above, only the
+    # escape check can reject it.
     let (r, dir) = parseFiles([
-      ("entry.asl", """
-import { Foo } from "./sub/../../escape.asl"
+      ("sub/entry.asl", """
+import { Foo } from "./inner/../../escape.asl"
 
 module M:
   func go(): u8
+    u8 0
+"""),
+      ("escape.asl", """
+public module Foo:
+  public func go(): u8
     u8 0
 """)
     ])
