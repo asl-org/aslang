@@ -1902,3 +1902,100 @@ module M:
     cleanupDir(dir)
     check r.isOk
     check entry(r.get).isErr
+
+suite "analyzer — struct initializer inference":
+  # A bare struct initializer (`Box { ... }`, no `[...]`) infers the
+  # struct's type arguments from its field values, so the value's type
+  # is `Box[u8]`, not an impl-less `Box`.
+  const BoxPrelude = """
+public module u8:
+  literal: "uint8"
+
+  public func add(a: u8, b: u8): u8
+    a
+
+public module u64:
+  literal: "uint64"
+
+public module i32:
+  literal: "int32"
+
+  public func id(a: i32): i32
+    a
+
+public module f32:
+  literal: "float32"
+
+  public func id(a: f32): f32
+    a
+
+public module string:
+  literal: "string"
+
+  public func id(a: string): string
+    a
+
+public generic Any:
+  func byte_size(): u64
+
+public module Box:
+  struct:
+    item: Any
+
+  public func get(b: Box[Any]): Any
+    b.item
+"""
+
+  test "a field read off a bare struct initializer has the inferred type":
+    let (r, dir) = analyzeSingle(BoxPrelude & """
+public module M:
+  public func go(): u8
+    b = Box { item: u8 1 }
+    u8.add(b.item, u8 2)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "a bare struct initializer passes to a parameter with type arguments":
+    let (r, dir) = analyzeSingle(BoxPrelude & """
+public module M:
+  public func go(): u8
+    b = Box { item: u8 1 }
+    Box.get(b)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  # A bare literal in a generic field takes its default type, and that
+  # default becomes the struct's type argument: `Box { item: 1 }` is
+  # `Box[i32]`. Each test passes `b.item` to a function that accepts only
+  # the default type, so a free `Any` or any other type fails.
+  test "a bare integer literal kwarg infers the struct's type argument as i32":
+    let (r, dir) = analyzeSingle(BoxPrelude & """
+public module M:
+  public func go(): i32
+    b = Box { item: 1 }
+    i32.id(b.item)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "a bare float literal kwarg infers the struct's type argument as f32":
+    let (r, dir) = analyzeSingle(BoxPrelude & """
+public module M:
+  public func go(): f32
+    b = Box { item: 1.5 }
+    f32.id(b.item)
+""")
+    cleanupDir(dir)
+    check r.isOk
+
+  test "a bare string literal kwarg infers the struct's type argument as string":
+    let (r, dir) = analyzeSingle(BoxPrelude & """
+public module M:
+  public func go(): string
+    b = Box { item: "s" }
+    string.id(b.item)
+""")
+    cleanupDir(dir)
+    check r.isOk

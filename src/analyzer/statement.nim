@@ -164,7 +164,8 @@ proc newAnalyzedStructInitializer*(def: AnalyzedDefStructInitializer, kwargs: se
 proc loc*(init: AnalyzedStructInitializer): Location = init.def.loc
 proc kwargs*(init: AnalyzedStructInitializer): seq[AnalyzedKeywordArgument] = init.kwargs
 proc argType*(init: AnalyzedStructInitializer): AnalyzedModuleArgumentType =
-  newAnalyzedArgumentType(init.def.structRef.argType).concrete(init.impls).module
+  let refArgType = init.def.structRef.argType
+  newAnalyzedModuleArgumentType(refArgType.resolved, refArgType.module, init.impls)
 
 proc newAnalyzedUnionInitializer*(def: AnalyzedDefUnionInitializer, kwargs: seq[AnalyzedKeywordArgument], impls: AnalyzedImplMap): AnalyzedUnionInitializer =
   AnalyzedUnionInitializer(def: def, kwargs: kwargs, impls: impls)

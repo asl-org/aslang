@@ -437,7 +437,16 @@ proc analyzeStructInitializer*(funcCtx: AnalyzedUserFunctionContext, init: Analy
     let analyzedKwarg = ? analyzeKeywordArgument(funcCtx, kwarg, field)
     impls = ? impls.merge(analyzedKwarg.impls)
     analyzedKwargs.add(analyzedKwarg)
-  ok(newAnalyzedStructInitializer(init, analyzedKwargs, impls))
+
+  # The merged map follows kwarg order, not slot order. Rebuild it over the
+  # struct's canonical slots so the initializer's type has every slot, in
+  # order: a covered slot keeps its binding, an uncovered one defaults to
+  # itself (a free generic, leave-as-is) — as for union initializers.
+  var completeImpls: AnalyzedImplMap
+  for requirement in structModule.requires:
+    completeImpls[requirement.generic] = impls.getOrDefault(requirement.generic, requirement.newAnalyzedArgumentType.newAnalyzedImpl)
+
+  ok(newAnalyzedStructInitializer(init, analyzedKwargs, completeImpls))
 
 proc analyzeInitializer*(funcCtx: AnalyzedUserFunctionContext, init: AnalyzedDefInitializer): Result[AnalyzedInitializer, string] =
   case init.kind:
