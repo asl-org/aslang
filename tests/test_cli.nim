@@ -96,3 +96,28 @@ suite "cli — lsp command":
     let lspCmd = r.get.lsp.get
     check lspCmd.indentWidth == 4
     check "rt" in lspCmd.vendorRoots
+
+suite "cli — build flags that need codegen":
+  # `--debug` and `-o/--output` only make sense once there is code
+  # generation, so `build` rejects them instead of silently ignoring them.
+
+  # EXPECTED: `--debug` is accepted, and the build emits source-location
+  # comments in the generated C.
+  # TODO(codegen): there is no code generation yet, so `build` rejects the
+  # flag. This test asserts that. Flip it when codegen lands.
+  test "--debug is rejected as not supported yet":
+    let r = parseCliArgs(@["build", "entry.asl", "--debug"])
+    check r.isErr
+    check "--debug" in r.error
+    check "not supported" in r.error
+
+  # EXPECTED: `-o/--output <file>` is accepted, and the build writes its
+  # output binary to that path.
+  # TODO(codegen): there is no code generation yet, so `build` rejects the
+  # flag. This test asserts that. Flip it when codegen lands.
+  test "-o and --output are rejected as not supported yet":
+    for output in [@["-o", "out"], @["--output=out"]]:
+      let r = parseCliArgs(@["build", "entry.asl"] & output)
+      check r.isErr
+      check "--output" in r.error
+      check "not supported" in r.error

@@ -191,6 +191,15 @@ proc parseCliArgs*(args: seq[string]): Result[AslCommand, string] =
       if ext != ".asl":
         return err(fmt"source file `{buildOpts.filename}` must have a '.asl' extension.")
 
+      # TODO(codegen): `--debug` (source-location comments in the generated
+      # C) and `-o/--output` (the output binary path) need code generation,
+      # which doesn't exist yet. Reject them until it lands, then wire them
+      # through `AslBuildCommand` and drop these checks.
+      if buildOpts.debug:
+        return err("`--debug` is not supported yet: there is no code generation.")
+      if buildOpts.output != "":
+        return err("`-o/--output` is not supported yet: there is no code generation.")
+
       let outputFile =
         if buildOpts.output == "": buildOpts.filename.changeFileExt("")
         else: buildOpts.output
