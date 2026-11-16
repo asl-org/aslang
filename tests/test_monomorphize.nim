@@ -356,3 +356,20 @@ public module M:
       crash = getCurrentExceptionMsg()
     cleanupDir(dir)
     check errorContains(crash, "generated functions are not reachable")
+
+  # EXPECTED: a long chain of distinct, non-recursive calls monomorphizes;
+  # nothing in it grows a type.
+  # TODO(growth-check): today the 128-deep cap counts every copy still being
+  # built, so the chain is rejected as "likely type-growing recursion". This
+  # test asserts that error. Flip it when the TODO is fixed.
+  test "a 130-function call chain hits the depth limit":
+    var source = Prelude & "public module M:\n"
+    for i in 1 .. 130:
+      source &= "  func f" & $i & "(): i32\n"
+      source &= (if i < 130: "    M.f" & $(i + 1) & "()\n" else: "    i32 0\n")
+      source &= "\n"
+    source &= "  public func start(): i32\n    M.f1()\n"
+    let (r, dir) = monomorphizeSingle(source)
+    cleanupDir(dir)
+    check r.isErr
+    check errorContains(r.error, "depth limit (128) exceeded")

@@ -507,6 +507,13 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
     # argument strictly contains that of a same-function ancestor already in
     # `visiting` — it fires at the first growing step, not only at a fixed
     # depth, and has no call-depth interaction.
+    # The bound also has false positives: `visiting` holds every copy still
+    # being built, not just repeats of one function, so a plain chain of 128+
+    # distinct non-recursive calls (f1 -> f2 -> ... -> f130) is rejected with
+    # this "type-growing recursion" error. Dropping the bound alone is not
+    # enough, though: this walk recurses once per call in the chain, so a deep
+    # chain would then hit Nim's call-depth limit. Build copies from a
+    # worklist (mint the callee's id, queue its body) instead of recursing.
     elif mono.visiting.len >= 128:
       let loc =
         case funcRef.kind:
