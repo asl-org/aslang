@@ -1,6 +1,6 @@
 # NEGATIVE TEST — struct data block with two fields named `x`.
-# Should fail validation with "struct: duplicate field 'x'"
-# pointing at the second `x` line.
+# Fails with "duplicate field encountered" pointing at the second `x`
+# line, with "see previous declaration" pointing at the first.
 module Foo:
   struct:
     x: i64
@@ -8,3 +8,7 @@ module Foo:
 
   func a(y: i64): i64
     y
+
+public module Driver:
+  public func start(): i32
+    i32 0

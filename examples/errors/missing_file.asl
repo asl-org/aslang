@@ -7,3 +7,7 @@ import { Ghost } from "./does_not_exist.asl"
 module App:
   func start(): u8
     u8 0
+
+public module Driver:
+  public func start(): i32
+    i32 0

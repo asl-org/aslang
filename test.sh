@@ -32,6 +32,10 @@ done
 echo ""
 
 # Negative examples — must exit non-zero
+# TODO(parser-errors): this checks only that each fixture fails, not why,
+# so a fixture can pass for the wrong reason. Once the parser reports the
+# real error instead of a generic "expected 'module'", check each
+# fixture's message too (e.g. an expected-message line in its header).
 echo "=== Negative examples ==="
 for f in examples/errors/*.asl; do
   name=$(basename "$f")
