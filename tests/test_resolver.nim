@@ -6,6 +6,7 @@
 
 import unittest, strutils, results
 
+import resolver/main as resolver
 import tutils
 
 const Base = """
@@ -1286,3 +1287,58 @@ public module Box:
 """)
     cleanupDir(dir)
     check r.isOk
+
+suite "resolver — open TODO(decorators)":
+
+  # EXPECTED: a decorator other than `@extern` on a user function is
+  # rejected with a located error ("decorator `@deprecated` is not
+  # supported").
+  # TODO(decorators): today `newResolvedUserFunction` asserts instead, so
+  # this test asserts the crash. Flip it when the TODO is fixed.
+  test "a decorator on a user function crashes the resolver":
+    let (app, dir) = parseSingle("""
+public module u8:
+  literal: "uint8"
+
+public module u64:
+  literal: "uint64"
+
+module M:
+  @deprecated
+  func go(x: u8): u8
+    x
+""")
+    check app.isOk
+    var crash = ""
+    try:
+      discard resolve(app.get)
+    except AssertionDefect:
+      crash = getCurrentExceptionMsg()
+    cleanupDir(dir)
+    check "todo: resolve decorators in user function" in crash
+
+  # EXPECTED: a decorator on a module is rejected with a located error
+  # ("decorator `@deprecated` is not supported").
+  # TODO(decorators): today `resolveType` asserts instead, so this test
+  # asserts the crash. Flip it when the TODO is fixed.
+  test "a decorator on a module crashes the resolver":
+    let (app, dir) = parseSingle("""
+public module u8:
+  literal: "uint8"
+
+public module u64:
+  literal: "uint64"
+
+@deprecated
+module M:
+  func go(x: u8): u8
+    x
+""")
+    check app.isOk
+    var crash = ""
+    try:
+      discard resolve(app.get)
+    except AssertionDefect:
+      crash = getCurrentExceptionMsg()
+    cleanupDir(dir)
+    check "types do not support decorators" in crash

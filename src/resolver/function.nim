@@ -82,6 +82,12 @@ type
 proc newResolvedUserFunction*(parsed: UserFunction,
     def: ResolvedFunctionDef,
     statements: seq[ResolvedStatement]): ResolvedUserFunction =
+  # TODO(decorators): this assert is reachable. `@extern` is the only
+  # supported decorator, but the parser also accepts a bare `@name` line
+  # above a user function, so user code like `@deprecated` lands here and
+  # crashes instead of reporting an error. (A decorator with arguments,
+  # `@name("x")`, doesn't parse at all and reports an unrelated error.)
+  # Reject unsupported decorators with a located error.
   assert(parsed.decorators.len == 0, fmt"{parsed.loc} todo: resolve decorators in user function")
   ResolvedUserFunction(parsed: parsed, def: def, statements: statements)
 

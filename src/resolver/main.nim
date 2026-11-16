@@ -424,6 +424,11 @@ proc resolveGeneric(fileCtx: FileContext, genericId: int, generic: Generic): Res
   newResolvedGeneric(fileCtx.id, genericId, generic, resolvedFuncDefs)
 
 proc resolveType(fileCtx: FileContext, typeId: int, typ: LocalType): Result[ResolvedLocalType, string] =
+  # TODO(decorators): this assert is reachable. The parser accepts a bare
+  # `@name` line above a module, so user code like `@deprecated` lands
+  # here and crashes instead of reporting an error. Reject unsupported
+  # decorators with a located error (see the same TODO in
+  # resolver/function.nim).
   assert(typ.decorators.len == 0, fmt"{typ.loc} types do not support decorators")
   case typ.kind:
   of ltkGeneric:
