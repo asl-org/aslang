@@ -517,8 +517,14 @@ proc monomorphize(mono: Monomorphizer, app: AnalyzedApp, funcRef: FunctionRef): 
     else:
       case funcRef.kind:
       of frkGenerated:
-        # Generated functions come only from the (not-yet-implemented)
-        # try->match expansion, so monomorphization can never reach one.
+        # TODO(generated-functions): this arm IS reachable. A generated
+        # function is injected by the compiler and its body is emitted by
+        # codegen; today that is `byte_size`, added to every data module.
+        # User code may call it directly (`u32.byte_size()`) or through a
+        # generic (`Any.byte_size()`), and either call lands here and
+        # crashes on this assert instead of reporting an error. Build a
+        # MonoInstance for it (as the extern arm does) so codegen can emit
+        # the body.
         assert(false, fmt"{funcRef.generated.loc} [BUG] - generated functions are not reachable during monomorphization")
         err("[BUG] - unreachable generated function")
       of frkExtern:

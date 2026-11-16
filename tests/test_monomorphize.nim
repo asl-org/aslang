@@ -306,3 +306,53 @@ public module M:
     for instance in r.get.instances.values:
       let ids = instance.valueIds
       check ids.deduplicate.len == ids.len
+
+suite "monomorphize — open TODOs":
+
+  # EXPECTED: calling the generated `byte_size` directly monomorphizes; its
+  # copy is a generated instance whose body codegen emits.
+  # TODO(generated-functions): today the generated arm asserts, so this test
+  # asserts the crash. Flip it when the TODO is fixed.
+  test "a direct byte_size call crashes the monomorphizer":
+    let (app, dir) = analyzeAppSingle(Prelude & """
+public module M:
+  public func start(): i32
+    n = u32.byte_size()
+    i32 0
+""")
+    check app.isOk
+    var crash = ""
+    try:
+      discard monomorphize(app.get)
+    except AssertionDefect:
+      crash = getCurrentExceptionMsg()
+    cleanupDir(dir)
+    check errorContains(crash, "generated functions are not reachable")
+
+  # EXPECTED: calling `byte_size` through the generic `Any` monomorphizes to
+  # the concrete type's generated `byte_size` (here `i32`'s).
+  # TODO(generated-functions): today that call reaches the same assert, so
+  # this test asserts the crash. Flip it when the TODO is fixed.
+  test "a byte_size call through Any crashes the monomorphizer":
+    let (app, dir) = analyzeAppSingle(Prelude & """
+public module Box:
+  struct:
+    item: Any
+
+  public func size(b: Box[Any]): u64
+    Any.byte_size()
+
+public module M:
+  public func start(): i32
+    b = Box[i32] { item: i32 0 }
+    n = Box.size(b)
+    i32 0
+""")
+    check app.isOk
+    var crash = ""
+    try:
+      discard monomorphize(app.get)
+    except AssertionDefect:
+      crash = getCurrentExceptionMsg()
+    cleanupDir(dir)
+    check errorContains(crash, "generated functions are not reachable")
